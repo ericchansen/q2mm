@@ -45,29 +45,29 @@ class FileType(object):
         self.directory = directory
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.filename)
-    def atom_data(self, label, atom_label='# First column is atom index #',
-                  include_anums=[], exclude_anums=[], calculation_indices=None,
-                  calculation_type=None):
+    def get_data(self, label, atom_label='# First column is atom index #',
+                 include_anums=[], exclude_anums=[], calc_indices=None,
+                 calc_type=None):
         '''
         Generic means of helping you extract data associated with
         individual atoms from a single or multiple structures.
         '''
         data = []
         atom_numbers = []
-        if calculation_indices:
-            indices_generator = iter(calculation_indices)
+        if calc_indices:
+            indices_generator = iter(calc_indices)
         for structure in self.raw_data:
             # Helps with .mae files that have many structures from
             # various types of calculations. You may only want data
             # from one type of calculation.
             use_this_structure = True
-            if calculation_type and calculation_indices:
+            if calc_type and calc_indices:
                 try:
-                    current_calculation_type = indices_generator.next()
+                    current_calc_type = indices_generator.next()
                 except StopIteration:
-                    indices_generator = iter(calculation_indices)
-                    current_calculation_type = indices_generator.next()
-                if current_calculation_type != calculation_type:
+                    indices_generator = iter(calc_indices)
+                    current_calc_type = indices_generator.next()
+                if current_calc_type != calc_type:
                     use_this_structure = False
             # Only gather data if that check passed.
             if use_this_structure:
@@ -98,6 +98,21 @@ class FileType(object):
             data = map(float, data)
             atom_numbers = map(int, atom_numbers)
         return data, atom_numbers
+    def get_inv_hess(self, replace_value=1):
+        e_val, e_vec = np.linalg.eigh(self.get_hess())
+        minimum = np.min(e_val)
+        logging.debug('Minimum eigen value: {}'.format(minimum))
+        assert minimum < 0, 'Minimum eigen value is not negative.'
+        min_index = np.where(e_val == minimum)
+        e_val[min_index[0][0]] = replace_value
+        logger.debug('Set minimum eigen value to {}.'.format(replace_value))
+        # Is this the most efficient way to do this?
+        return e_vec.dot(np.diag(e_val)).dot(np.linalg.inv(e_vec))
+    def get_hess(self):
+        return self.raw_data['Hessian']
+    def get_hess_tril_array(self):
+        indices = np.tril_indices_from(self.raw_data['Hessian'])
+        return self.raw_data['Hessian'][indices], indices
 
 class GaussLogFile(FileType):
     '''
@@ -195,6 +210,7 @@ class JagInFile(FileType):
                     zmat = True
                 if hess is True and line.startswith('&'):
                     hess = False
+                    raw_data['Hessian'] += np.tril(raw_data['Hessian'], -1).T
                 if hess is True:
                     cols = line.split()
                     if len(cols) == 1:
@@ -214,7 +230,7 @@ class MaeFile(FileType):
     '''
     def __init__(self, filename, directory=os.getcwd()):
         FileType.__init__(self, filename, directory)
-    def aliphatic_hydrogens(self):
+    def get_aliph_hyds(self):
         '''
         Returns the atom numbers of aliphatic hydrogens. This assumes
         that the atom numbers of the aliphatic hydrogens don't change
