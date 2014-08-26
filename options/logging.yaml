@@ -1,0 +1,23 @@
+disable_existing_loggers: false
+formatters:
+  basic: {format: '%(name)s - %(levelname)s - %(message)s'}
+  simple: {format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'}
+handlers:
+  console: {class: logging.StreamHandler, formatter: basic, level: NOTSET}
+  root_file_handler: {class: logging.FileHandler, filename: root.log, formatter: simple,
+    level: NOTSET}
+loggers:
+  __main__: {level: NOTSET, propagate: true}
+  calculate: {level: NOTSET, propagate: true}
+  evaluate: {level: NOTSET, propagate: true}
+  filetypes: {level: NOTSET, propagate: true}
+  genetic: {level: NOTSET, propagate: true}
+  gradient: {level: NOTSET, propagate: true}
+  loop: {level: NOTSET, propagate: true}
+  parameters: {level: NOTSET, propagate: true}
+  simplex: {level: NOTSET, propagate: true}
+root:
+  handlers: [console, root_file_handler]
+  level: INFO
+  propagate: false
+version: 1
