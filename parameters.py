@@ -45,6 +45,8 @@ import yaml
 # Setup logging.
 logger = logging.getLogger(__name__)
 
+re_substr_name = '[\w\s]+'
+
 class BaseParam(object):
     '''
     Base class for each parameter. Assists with input and output from
@@ -157,6 +159,21 @@ class BaseFF(object):
         self.for_ffs = for_ffs
     def calculate_x2(self, ref_data):
         x2 = 0.
+        # Although the calculated energies are on their own relative
+        # scale, the reference's minimum should be used for the
+        # calculated data's minimum.
+        r_energies = sorted([x for x in ref_data if x.data_type == 'Energy'],
+                            key=calculate.sort_datum)
+        c_energies = sorted([x for x in self.data if x.data_type == 'Energy'],
+                            key=calculate.sort_datum)
+        if r_energies and c_energies:
+            assert len(r_energies) == len(c_energies), \
+                "Number of reference and calculated energies don't match."
+            r_zero = min([x.value for x in r_energies])
+            r_zero_i = [x.value for x in r_energies].index(r_zero)
+            c_zero = c_energies[r_zero_i].value
+            for e in c_energies:
+                e.value -= c_zero
         for r_datum, c_datum in zip(
             sorted(ref_data, key=calculate.sort_datum),
             sorted(self.data, key=calculate.sort_datum)):
@@ -302,7 +319,7 @@ def import_mm3_ff(filename='mm3.fld', substr_name='OPT'):
         for i, line in enumerate(f):
             # Look for the substructure.
             if not substr_section and substr_name in line:
-                matched = re.match('\sC\s+([\w\s]+)', line)
+                matched = re.match('\sC\s+({})'.format(re_substr_name), line)
                 if matched != None:
                     found_substr = True
                     substr_section = True

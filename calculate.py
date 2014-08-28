@@ -80,12 +80,27 @@ def calculate_x2(ref_data, calc_data):
                 the data calculated by the FF.
     '''
     x2 = 0.
+    # Although the calculated energies are on their own relative
+    # scale, the reference's minimum should be used for the
+    # calculated data's minimum.
+    r_energies = sorted([x for x in ref_data if x.data_type == 'Energy'],
+                        key=calculate.sort_datum)
+    c_energies = sorted([x for x in self.data if x.data_type == 'Energy'],
+                        key=calculate.sort_datum)
+    if r_energies and c_energies:
+        assert len(r_energies) == len(c_energies), \
+            "Number of reference and calculated energies don't match."
+        r_zero = min([x.value for x in r_energies])
+        r_zero_i = [x.value for x in r_energies].index(r_zero)
+        c_zero = c_energies[r_zero_i].value
+        for e in c_energies:
+            e.value -= c_zero
     for r_datum, c_datum in zip(sorted(ref_data, key=sort_datum),
                                 sorted(calc_data, key=sort_datum)):
         x2 += r_datum.weight**2 * (r_datum.value - c_datum.value)**2
     return x2
         
-def unit_conv(unit_from, unit_to):
+def convert_units(unit_from, unit_to):
     if unit_from == 'Hartree' and unit_to == 'kcal mol^-1':
         return 627.503
     if unit_from == 'Hartree' and unit_to == 'J':
@@ -474,6 +489,18 @@ def extract_data(commands, inputs, outputs, weights):
                 data.extend(charges)
                 logger.debug('Got {} charges from {}.'.format(
                         len(charges), filename))
+    energies = [x for x in data if x.data_type == 'Energy']
+    # Make all same units.
+    for e in energies:
+        assert e.units in ['Hartree', 'kJ mol^-1'], \
+            'Unrecognized units. Please add conversions to calculate.py.'
+        if e.units == 'Hartree':
+            e.value *= convert_units('Hartree', 'kJ mol^-1')
+            e.units = 'kJ mol^-1'
+    # Convert to relative energies.
+    zero = min([e.value for e in energies])
+    for e in energies:
+        e.value -= zero
     logger.debug('Got {} total data points.'.format(len(data)))
     return data
 

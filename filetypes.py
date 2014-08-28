@@ -20,6 +20,16 @@ import re
 
 logger = logging.getLogger(__name__)
 
+re_float = '[+-]? * (?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+re_substr_name = '[\w\s\-\=\(\)\[\]]+?(?=\s+\d+[\n\r])'
+re_bond = re.compile(
+    '\s+(\d+)\s+(\d+)\s+{}\s+{}\s+({})\s+{}'.format(
+        re_float, re_float, re_float, re_float) +
+    '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
+re_angle = re.compile(
+    '\s+(\d+)\s+(\d+)\s+(\d+)\s+{}\s+{}\s+{}\s+({})\s+{}\s+{}'.format(
+        re_float, re_float, re_float, re_float, re_float, re_float) +
+    '\s+\w+\d+\s+({})\s+(\d+)'.format(re_substr_name))
 class CachedProperty(object):
     '''
     1st call to a class function with this property performs the
@@ -364,3 +374,79 @@ class MaeFile(FileType):
                             sub_data[labels[i]].append(col)
         return structures
         
+class MMoFile(FileType):
+    '''
+    Extracts data from .mmo files.
+    '''
+    def __init__(self, filename, directory=os.getcwd(), substr_name='OPT'):
+        FileType.__init__(self, filename, directory)
+    @CachedProperty
+    def raw_data(self):
+        structures = []
+        with open(os.path.join(self.directory, self.filename), 'r') as f:
+            # Need both to keep track of where we are in the file.
+            # These are used to keep track of which structure we're on
+            # if there are multiple.
+            file_count = 0
+            structure_count = 0
+            previous = 0
+            count = 0
+            # This keeps track of what data we're looking at for a
+            # given structure.
+            section = None
+            for line in f:
+                # Marks the start of a new strucure.
+                if 'Input filename' in line:
+                    file_count += 1
+                if 'Input Structure Name' in line:
+                    structure_count += 1
+                previous = count
+                count = max(file_count, structure_count)
+                # If so, then we are actually at a new structure, not
+                # just a division in the file.
+                if count != previous:
+                    # Add the last structure's data.
+                    if count != 1:
+                        structures.append(data)
+                    # Start a new dictionary.
+                    data = {'B. Nums.': [], # Bonds
+                            'B.':       [],
+                            'B. Com.':  [],
+                            'A. Nums.': [], # Angles
+                            'A.':       [],
+                            'A. Com.':  [],
+                            'T. Nums.': [], # Torisons
+                            'T.':       [],
+                            'T. Com.':  []}
+                if 'BOND LENGTHS AND STRETCH ENERGIES' in line:
+                    section = 'bond'
+                if 'ANGLES, BEND AND STRETCH BEND ENERGIES' in line:
+                    section = 'angle'
+                if 'BEND-BEND ANGLES AND ENERGIES' in line:
+                    section = 'bend-bend'
+                if 'DIHEDRAL ANGLES AND TORSIONAL ENERGIES' in line:
+                    section = 'torsion'
+                if 'Improper torsion interactions present' in line:
+                    section = 'improper'
+                if 'DIHEDRAL ANGLES AND TORSIONAL CROSS-TERMS' in line:
+                    'cross-terms'
+                if 'NONBONDED DISTANCES AND ENERGIES' in line:
+                    'nonbonded'
+                if section == 'bond':
+                    m = re_bond.match(line)
+                    if m is not None:
+                        data['B. Nums.'].append((m.group(1), m.group(2)))
+                        data['B.'].append(m.group(3))
+                        data['B. Com.'].append(m.group(4))
+                if section == 'angle':
+                    m = re_angle.match(line)
+                    if m is not None:
+                        data['A. Nums.'].append(
+                            (m.group(1), m.group(2), m.group(3)))
+                        data['A.'].append(m.group(4))
+                        data['A. Com.'].append(m.group(5))
+                    
+                if section == 'torsion':
+                    pass
+            structures.append(data)
+        return structures
