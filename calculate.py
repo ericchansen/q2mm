@@ -86,9 +86,9 @@ def calculate_x2(ref_data, calc_data):
     # scale, the reference's minimum should be used for the
     # calculated data's minimum.
     r_energies = sorted([x for x in ref_data if x.data_type == 'Energy'],
-                        key=calculate.sort_datum)
-    c_energies = sorted([x for x in self.data if x.data_type == 'Energy'],
-                        key=calculate.sort_datum)
+                        key=sort_datum)
+    c_energies = sorted([x for x in calc_data if x.data_type == 'Energy'],
+                        key=sort_datum)
     if r_energies and c_energies:
         assert len(r_energies) == len(c_energies), \
             "Number of reference and calculated energies don't match."
