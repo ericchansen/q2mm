@@ -1,0 +1,120 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ s_j_Task
+ s_j_QM_Method
+ s_j_QM_Basis
+ i_j_Number_of_canonical_orbitals
+ i_j_Geometry_convergence_category
+ r_j_Gas_Phase_Energy
+ r_j_HOMO
+ r_j_LUMO
+ r_j_QM_Dipole_(debye)
+ r_j_QM_Dipole_X_(debye)
+ r_j_QM_Dipole_Y_(debye)
+ r_j_QM_Dipole_Z_(debye)
+ r_j_Zero_Point_Energy_(kcal/mol)
+ r_j_Entropy_(cal/mol/K,_298K)
+ r_j_Enthalpy_(kcal/mol,_298K)
+ r_j_Free_Energy_(kcal/mol,_298K)
+ r_j_Total_Internal_Energy_at_298.15K_(au)
+ r_j_Total_Enthalpy_at_298.15K_(au)
+ r_j_Total_Free_Energy_at_298.15K_(au)
+ i_m_ct_format
+ :::
+ cs 
+  Optimization 
+  DFT(m06) 
+  cc-pvtz(-f)++ 
+  208
+  3
+  -660.467172067577
+  -0.310769237256824
+  -0.0536992789046882
+  4.02130721399819
+  0.131515637868121
+  0.669766431079439
+  -3.96295701139303
+  39.9415130180793
+  75.0898080540104
+  4.22637397724157
+  -18.1616522940616
+  -660.3977302448
+  -660.396786058908
+  -660.43246364999
+  2
+ m_depend[19] { 
+  # First column is dependency index #
+  i_m_depend_dependency
+  s_m_depend_property
+  :::
+  1 20 s_j_Task 
+  2 20 s_j_QM_Method 
+  3 20 s_j_QM_Basis 
+  4 20 i_j_Number_of_canonical_orbitals 
+  5 20 i_j_Geometry_convergence_category 
+  6 20 r_j_Gas_Phase_Energy 
+  7 20 r_j_HOMO 
+  8 20 r_j_LUMO 
+  9 20 r_j_QM_Dipole_(debye) 
+  10 20 r_j_QM_Dipole_X_(debye) 
+  11 20 r_j_QM_Dipole_Y_(debye) 
+  12 20 r_j_QM_Dipole_Z_(debye) 
+  13 20 r_j_Zero_Point_Energy_(kcal/mol) 
+  14 20 r_j_Entropy_(cal/mol/K,_298K) 
+  15 20 r_j_Enthalpy_(kcal/mol,_298K) 
+  16 20 r_j_Free_Energy_(kcal/mol,_298K) 
+  17 20 r_j_Total_Internal_Energy_at_298.15K_(au) 
+  18 20 r_j_Total_Enthalpy_at_298.15K_(au) 
+  19 20 r_j_Total_Free_Energy_at_298.15K_(au) 
+  :::
+ } 
+ m_atom[9] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  i_m_residue_number
+  i_m_color
+  r_m_charge1
+  r_m_charge2
+  i_m_atomic_number
+  s_m_color_rgb
+  s_m_atom_name
+  r_j_ESP_Charges
+  :::
+  1 113 -0.010267 -0.017247 0.002913 1 13 1.01975 1.01975 16 E1E11E  S1  1.01974538110965
+  2 15 1.229255 0.075297 0.713312 1 70 -0.46156 -0.46156 8 FF2F2F  O2  -0.461564139586104
+  3 15 -1.296349 0.071633 0.625676 1 70 -0.46195 -0.46195 8 FF2F2F  O3  -0.461950733461659
+  4 25 0.029978 1.158667 -1.191434 1 43 -0.83239 -0.83239 7 5757FF  N4  -0.832389798318256
+  5 25 0.018371 -1.476561 -0.765527 1 43 -0.73549 -0.73549 7 5757FF  N5  -0.735486350633479
+  6 43 0.856299 1.730025 -1.055590 1 21 0.37051 0.37051 1 FFFFFF  H6  0.370511102519357
+  7 43 -0.807912 1.724545 -1.117475 1 21 0.37046 0.37046 1 FFFFFF  H7  0.370459742553081
+  8 43 -0.803479 -1.612008 -1.340829 1 21 0.36531 0.36531 1 FFFFFF  H8  0.365309868000061
+  9 43 0.876917 -1.608361 -1.285377 1 21 0.36536 0.36536 1 FFFFFF  H9  0.365364927817325
+  :::
+ } 
+ m_bond[8] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  :::
+  1 1 2 2
+  2 1 3 2
+  3 1 4 1
+  4 1 5 1
+  5 4 6 1
+  6 4 7 1
+  7 5 8 1
+  8 5 9 1
+  :::
+ } 
+} 
+
