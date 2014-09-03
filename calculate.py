@@ -289,6 +289,10 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                 '0.0000     0.0000     0.0000     0.0000\n'
             # Setup for Hessian calculations. Needed for odd method of extracting
             # the Hessian using debug commands.
+            # MINI 9 uses PRCG. Has risk of not converging, but that's okay
+            # because we aren't really optimizing here. This is just a 
+            # necessary workaround (evil?) such that the Hessian will be
+            # output properly.
             if hessian:
                 com_contents += ' MINI       9      0      0      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n' + \
@@ -302,8 +306,10 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                     ' WRIT\n'
                 calc_indices.append('Single Point')
             # Setup for optimizations.
+            # Changed from PRCG (9) to TNCG (1). Upped iterations from 50
+            # to 500.
             if optimization:
-                com_contents += ' MINI       9      0     50      0     ' + \
+                com_contents += ' MINI       1      0    500      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n'
                 calc_indices.append('Optimization')
             # End the multiple structure loop.
