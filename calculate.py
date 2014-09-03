@@ -72,7 +72,9 @@ def sort_datum(datum):
 def calculate_x2(ref_data, calc_data):
     '''
     Calculate the objective function. Uses the weights
-    stored in the reference data points.
+    stored in the reference data points. Note that this
+    now modifies the calculated data to account for
+    relative energies.
     
     ref_data  = A list of Datum objects representing
                 the reference data.
@@ -98,7 +100,7 @@ def calculate_x2(ref_data, calc_data):
     for r_datum, c_datum in zip(sorted(ref_data, key=sort_datum),
                                 sorted(calc_data, key=sort_datum)):
         x2 += r_datum.weight**2 * (r_datum.value - c_datum.value)**2
-    return x2
+    return x2, ref_data, calc_data
         
 def convert_units(unit_from, unit_to):
     if unit_from == 'Hartree' and unit_to == 'kcal mol^-1':
@@ -289,8 +291,8 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                 '0.0000     0.0000     0.0000     0.0000\n'
             # Setup for Hessian calculations. Needed for odd method of extracting
             # the Hessian using debug commands.
-            # MINI 9 uses PRCG. Has risk of not converging, but that's okay
-            # because we aren't really optimizing here. This is just a 
+            # MINI 9 uses PRCG. Has risk of not converging, but that's okay 
+            # because we aren't actually optimizing here. This is just a 
             # necessary workaround (evil?) such that the Hessian will be
             # output properly.
             if hessian:
@@ -306,8 +308,8 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                     ' WRIT\n'
                 calc_indices.append('Single Point')
             # Setup for optimizations.
-            # Changed from PRCG (9) to TNCG (1). Upped iterations from 50
-            # to 500.
+            # Changed from PRCG (9) to TNCG (1). Upped iterations from
+            # 50 to 500.
             if optimization:
                 com_contents += ' MINI       1      0    500      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n'
@@ -496,18 +498,19 @@ def extract_data(commands, inputs, outputs, weights):
                 logger.debug('Got {} charges from {}.'.format(
                         len(charges), filename))
     energies = [x for x in data if x.data_type == 'Energy']
-    # Make all same units.
-    for e in energies:
-        assert e.units in ['Hartree', 'kJ mol^-1'], \
-            'Unrecognized units. Please add conversions to calculate.py.'
-        if e.units == 'Hartree':
-            e.value *= convert_units('Hartree', 'kJ mol^-1')
-            e.units = 'kJ mol^-1'
-    # Convert to relative energies.
-    zero = min([e.value for e in energies])
-    for e in energies:
-        e.value -= zero
-    logger.debug('Got {} total data points.'.format(len(data)))
+    if energies:
+        # Make all same units.
+        for e in energies:
+            assert e.units in ['Hartree', 'kJ mol^-1'], \
+                'Unrecognized units. Please add conversions to calculate.py.'
+            if e.units == 'Hartree':
+                e.value *= convert_units('Hartree', 'kJ mol^-1')
+                e.units = 'kJ mol^-1'
+        # Convert to relative energies.
+        zero = min([e.value for e in energies])
+        for e in energies:
+            e.value -= zero
+        logger.debug('Got {} total data points.'.format(len(data)))
     return data
 
 if __name__ == '__main__':
