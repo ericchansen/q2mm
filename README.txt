@@ -134,7 +134,7 @@ the optimum organization of the code.
 - Inverse distances.
 - Option to automatically scale weights based on Boltzmann contribution
   of the reference structure.
-- gradient.py. I have a tournament style algorithm working with my last
+- genetic.py. I have a tournament style algorithm working with my last
   version of the code.
 
 Some points I tried to emphasize in this version:
@@ -200,8 +200,10 @@ insertion into the penalty function.
 
 evaluate.py
 -----------
-Currently doesn't do much. I will probably just move its functions
-into calculate.py.
+Currently doesn't do much, but can be used to look at reference and 
+calculated data side by side. For the veterans around here, the
+output of this script is very similar to that created by Elaine's
+NR_CalcAll.py.
 
 filetypes.py
 ------------
