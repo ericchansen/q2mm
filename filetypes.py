@@ -22,14 +22,22 @@ logger = logging.getLogger(__name__)
 
 re_float = '[+-]? * (?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 re_substr_name = '[\w\s\-\=\(\)\[\]]+?(?=\s+\d+[\n\r])'
+# Used for mmo files.
 re_bond = re.compile(
     '\s+(\d+)\s+(\d+)\s+{}\s+{}\s+({})\s+{}'.format(
         re_float, re_float, re_float, re_float) +
     '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
 re_angle = re.compile(
-    '\s+(\d+)\s+(\d+)\s+(\d+)\s+{}\s+{}\s+{}\s+({})\s+{}\s+{}'.format(
+    '\s+(\d+)\s+(\d+)\s+(\d+)' +
+    '\s+{}\s+{}\s+{}\s+({})\s+{}\s+{}'.format(
         re_float, re_float, re_float, re_float, re_float, re_float) +
-    '\s+\w+\d+\s+({})\s+(\d+)'.format(re_substr_name))
+    '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
+re_tors = re.compile(
+    '\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)' +
+    '\s+{}\s+{}\s+{}\s+({})\s+{}'.format(
+        re_float, re_float, re_float, re_float, re_float) +
+    '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
+
 class CachedProperty(object):
     '''
     1st call to a class function with this property performs the
@@ -62,14 +70,21 @@ class FileType(object):
         Generic means of helping you extract data associated with
         individual atoms from a single or multiple structures.
         '''
-        data = []
-        atom_numbers = []
+        logger.debug('{} structure(s) in {}.'.format(
+                len(self.raw_data), self.filename))
+        if calc_type is not None and calc_indices is not None:
+            logger.debug("Looking for '{}' in {}.".format(
+                    calc_type, calc_indices))
+        # These will be lists of lists. Each outer list corresponds
+        # to a structure in the file. The inner list is that structures
+        # data or associated atom numbers.
+        all_data = []
+        all_anums = []
         if calc_indices:
             indices_generator = iter(calc_indices)
         for structure in self.raw_data:
-            # Helps with .mae files that have many structures from
-            # various types of calculations. You may only want data
-            # from one type of calculation.
+            # Use to select certain structures from the file that
+            # pertain to the data you want to use.
             use_this_structure = True
             if calc_type and calc_indices:
                 try:
@@ -81,33 +96,42 @@ class FileType(object):
                     use_this_structure = False
             # Only gather data if that check passed.
             if use_this_structure:
+                data = []
+                anums = []
                 # Check to make sure that the data we are retrieving is
-                # a list of values (and also not a string, which is also
-                # iterable in Python).
+                # a list of values (also check to ensure it's not a string,
+                # which is also iterable in Python).
                 if isinstance(structure[label], collections.Iterable) and \
                         not isinstance(structure[label], basestring):
+                    # If so, make sure the associated atom numbers are what
+                    # you selected using the exclude_anums and include_anums
+                    # lists.
                     for datum, atom_number in zip(
-                        structure[label], map(int, structure[atom_label])):
+                        structure[label], structure[atom_label]):
                         if not include_anums and not exclude_anums:
                             data.append(datum)
-                            atom_numbers.append(atom_number)
+                            anums.append(atom_number)
                         elif not include_anums and \
-                                atom_number not in exclude_anums:
+                                int(atom_number) not in exclude_anums:
                             data.append(datum)
-                            atom_numbers.append(atom_number)
+                            anums.append(atom_number)
                         elif not exclude_anums and \
-                                atom_number in include_anums:
+                                int(atom_number) in include_anums:
                             data.append(datum)
-                            atom_numbers.append(atom_number)
-                        elif atom_number in include_anums and \
-                                atom_number not in exclude_anums:
+                            anums.append(atom_number)
+                        elif int(atom_number) in include_anums and \
+                                int(atom_number) not in exclude_anums:
                             data.append(datum)
-                            atom_numbers.append(atom_number)
+                            anums.append(atom_number)
                 else:
+                    # Just append the data. Don't worry about anums because
+                    # you won't use the atom numbers anyway.
                     data.append(structure[label])
-            data = map(float, data)
-            atom_numbers = map(int, atom_numbers)
-        return data, atom_numbers
+                all_data.append(data)
+                all_anums.append(anums)
+        logger.debug('Used {} structure(s) in {}.'.format(
+                len(all_data), self.filename))
+        return all_data, all_anums
     def get_inv_hess(self, replace_value=1):
         e_val, e_vec = np.linalg.eigh(self.get_hess())
         minimum = np.min(e_val)
@@ -270,6 +294,8 @@ class MaeFile(FileType):
                                 == 3:
                             atom_numbers.append(atom_number)
                             break
+        logger.debug('Aliphatic hydrogens in {}: {}'.format(
+                self.filename, atom_numbers))
         return atom_numbers
     @CachedProperty
     def raw_data(self):
@@ -377,6 +403,10 @@ class MaeFile(FileType):
 class MMoFile(FileType):
     '''
     Extracts data from .mmo files.
+
+    Getting raw_data seems to take significantly longer than for
+    MaeFile. Maybe we can eliminate the use of re, and that might
+    speed it up a bit.
     '''
     def __init__(self, filename, directory=os.getcwd(), substr_name='OPT'):
         FileType.__init__(self, filename, directory)
@@ -435,18 +465,24 @@ class MMoFile(FileType):
                 if section == 'bond':
                     m = re_bond.match(line)
                     if m is not None:
-                        data['B. Nums.'].append((m.group(1), m.group(2)))
-                        data['B.'].append(m.group(3))
+                        data['B. Nums.'].append(
+                            map(int, (m.group(1), m.group(2))))
+                        data['B.'].append(float(m.group(3)))
                         data['B. Com.'].append(m.group(4))
                 if section == 'angle':
                     m = re_angle.match(line)
                     if m is not None:
                         data['A. Nums.'].append(
-                            (m.group(1), m.group(2), m.group(3)))
-                        data['A.'].append(m.group(4))
+                            map(int, (m.group(1), m.group(2), m.group(3))))
+                        data['A.'].append(float(m.group(4)))
                         data['A. Com.'].append(m.group(5))
-                    
                 if section == 'torsion':
-                    pass
+                    m = re_tors.match(line)
+                    if m is not None:
+                        data['T. Nums.'].append(
+                            map(int, (m.group(1), m.group(2), m.group(3),
+                                      m.group(4))))
+                        data['T.'].append(float(m.group(5)))
+                        data['T. Com.'].append(m.group(6))
             structures.append(data)
         return structures
