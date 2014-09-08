@@ -129,6 +129,13 @@ def process_args(args):
         'the data to standard output. Format is similar to the old par.one ' +
         'and par.ref files.')
     parser.add_argument(
+        '--substr', type=str, metavar='"string in substructure title"',
+        const='OPT', nargs='?',
+        help='When selecting bonds and angles as data, only include those ' +
+        'that are directly related to a parameter in the substructure of ' +
+        'the FF. If no additional argument is given, it looks for any bonds ' +
+        'or angles in a substructure that includes the word "OPT".')
+    parser.add_argument(
         '--weights', type=str, metavar='relative/path/weights.yaml',
         default='options/weights.yaml',
         help='Relative path to the weights YAML file.')
@@ -230,7 +237,8 @@ def process_args(args):
         os.chdir(current_directory)
     with open(options['weights'], 'r') as f:
         weights = yaml.load(f)
-    data = extract_data(commands, inputs, outputs, weights, options['norel'])
+    data = extract_data(commands, inputs, outputs, weights, options['norel'],
+                        substr=options['substr'])
     # Some options for displaying the data.
     if options['output']:
         if options['output'] == 'print':
@@ -406,7 +414,8 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
     return inputs, outputs, coms_to_run
 
 # CHANGES
-def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
+def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
+                 substr='OPT'):
     data = []
     for command, input_file_sets in commands.iteritems():
         if command == 'gq':
@@ -461,7 +470,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     outputs[inputs[filename][command][0]].get_data(
                     'A.', atom_label='A. Nums.', calc_type='pre-opt. str.',
                     calc_indices=inputs[filename][command][1],
-                    comment_label='A. Com.', substr='OPT')
+                    comment_label='A. Com.', substr=substr)
                 for str_num, (angs, anums) in enumerate(zip(
                         all_angs, all_anums)):
                     some_data = [
@@ -481,7 +490,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     outputs[inputs[filename][command][0]].get_data(
                     'B.', atom_label='B. Nums.', calc_type='pre-opt. str.',
                     calc_indices=inputs[filename][command][1],
-                    comment_label='B. Com.', substr='OPT')
+                    comment_label='B. Com.', substr=substr)
                 for str_num, (bonds, anums) in enumerate(zip(
                         all_bonds, all_anums)):
                     some_data = [
@@ -556,7 +565,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     outputs[inputs[filename][command][0]].get_data(
                     'A.', atom_label='A. Nums.', calc_type='post-opt. str.',
                     calc_indices=inputs[filename][command][1],
-                    comment_label='A. Com.', substr='OPT')
+                    comment_label='A. Com.', substr=substr)
                 for str_num, (angs, anums) in enumerate(zip(
                         all_angs, all_anums)):
                     some_data = [
@@ -576,7 +585,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     outputs[inputs[filename][command][0]].get_data(
                     'B.', atom_label='B. Nums.', calc_type='post-opt. str.',
                     calc_indices=inputs[filename][command][1],
-                    comment_label='B. Com.', substr='OPT')
+                    comment_label='B. Com.', substr=substr)
                 for str_num, (bonds, anums) in enumerate(zip(
                         all_bonds, all_anums)):
                     some_data = [

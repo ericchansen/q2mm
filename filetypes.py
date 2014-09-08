@@ -106,7 +106,7 @@ class FileType(object):
                 # which is also iterable in Python).
                 if isinstance(structure[label], collections.Iterable) and \
                         not isinstance(structure[label], basestring):
-                    if comment_label:
+                    if substr:
                         for datum, atom_number, com in zip(
                             structure[label], structure[atom_label],
                             structure[comment_label]):
