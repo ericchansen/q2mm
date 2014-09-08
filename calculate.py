@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 class Datum(object):
     def __init__(self, value, data_type=None, weight=None, source=None,
-                 index=None, units=None, str_num=None):
+                 index=None, units=None, str_num=None, calc_com=None):
         self.value = value
         self.data_type = data_type
         self.weight = weight
@@ -41,10 +41,11 @@ class Datum(object):
         self.source = source
         self.units = units
         self.str_num = str_num
+        self.calc_com = calc_com
     @property
     def name(self):
         return '{}_{}_{}_{}'.format(
-            self.data_type, self.source_name, self.str_num, self.index)
+            self.calc_com, self.source_name, self.str_num, self.index)
     @property
     def source_name(self):
         return re.split('[-_.]+', self.source)[0]
@@ -419,7 +420,8 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     some_data = [
                         Datum(float(q), data_type='charge',
                               weight=weights['Charge'],
-                              index=a, source=inputs[filename][command])
+                              index=a, source=inputs[filename][command],
+                              calc_com='gq')
                         for q, a in zip(charges, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -445,7 +447,8 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     some_data = [
                         Datum(float(q), data_type='charge', index=int(a),
                               weight=weights['Charge'],
-                              source=inputs[filename][command])
+                              source=inputs[filename][command],
+                              calc_com='gqh')
                         for q, a in zip(charges, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -457,14 +460,15 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 all_angs, all_anums = \
                     outputs[inputs[filename][command][0]].get_data(
                     'A.', atom_label='A. Nums.', calc_type='pre-opt. str.',
-                    calc_indices=inputs[filename][command][1])
+                    calc_indices=inputs[filename][command][1],
+                    comment_label='A. Com.', substr='OPT')
                 for str_num, (angs, anums) in enumerate(zip(
                         all_angs, all_anums)):
                     some_data = [
                         Datum(float(ang), data_type='angle', index=anum,
                               weight=weights['Angle'], units='Degrees',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='ja')
                         for ang, anum in zip(angs, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -476,14 +480,15 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 all_bonds, all_anums = \
                     outputs[inputs[filename][command][0]].get_data(
                     'B.', atom_label='B. Nums.', calc_type='pre-opt. str.',
-                    calc_indices=inputs[filename][command][1])
+                    calc_indices=inputs[filename][command][1],
+                    comment_label='B. Com.', substr='OPT')
                 for str_num, (bonds, anums) in enumerate(zip(
                         all_bonds, all_anums)):
                     some_data = [
                         Datum(float(b), data_type='bond', index=a,
                               weight=weights['Bond'], units='Angstroms',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='jb')
                         for b, a in zip(bonds, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -497,7 +502,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 energies = [
                     Datum(e, data_type='energy', weight=weights['Energy'],
                           str_num=str_num, source=inputs[filename][command],
-                          units='Hartree')
+                          units='Hartree', calc_com='je')
                     for str_num, e in enumerate(energies)]
                 data.extend(energies)
                 logger.debug('{} energ(ies/y) from {}.'.format(
@@ -520,7 +525,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 hessian = [
                     Datum(h, data_type='hessian', weight=weights['Hessian'],
                           index=(x, y), source=inputs[filename][command],
-                          units='Hartree Bohr^-2')
+                          units='Hartree Bohr^-2', calc_com='jh')
                     for h, x, y in zip(hessian, indices[0], indices[1])]
                 data.extend(hessian)
                 logger.debug('{} Hessian elements from {}.'.format(
@@ -537,7 +542,8 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                     some_data = [
                         Datum(float(q), data_type='charge',
                               weight=weights['Charge'],
-                              index=int(a), source=inputs[filename][command])
+                              index=int(a), source=inputs[filename][command],
+                              calc_com='jq')
                         for q, a in zip(charges, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -549,14 +555,15 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 all_angs, all_anums = \
                     outputs[inputs[filename][command][0]].get_data(
                     'A.', atom_label='A. Nums.', calc_type='post-opt. str.',
-                    calc_indices=inputs[filename][command][1])
+                    calc_indices=inputs[filename][command][1],
+                    comment_label='A. Com.', substr='OPT')
                 for str_num, (angs, anums) in enumerate(zip(
                         all_angs, all_anums)):
                     some_data = [
                         Datum(float(ang), data_type='angle', index=anum,
                               weight=weights['Angle'], units='Degrees',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='ma')
                         for ang, anum in zip(angs, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -568,14 +575,15 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 all_bonds, all_anums = \
                     outputs[inputs[filename][command][0]].get_data(
                     'B.', atom_label='B. Nums.', calc_type='post-opt. str.',
-                    calc_indices=inputs[filename][command][1])
+                    calc_indices=inputs[filename][command][1],
+                    comment_label='B. Com.', substr='OPT')
                 for str_num, (bonds, anums) in enumerate(zip(
                         all_bonds, all_anums)):
                     some_data = [
                         Datum(float(bond), data_type='bond', index=anum,
                               weight=weights['Bond'], units='Angstroms',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='mb')
                         for bond, anum in zip(bonds, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -595,7 +603,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                         Datum(float(e), data_type='energy',
                               weight=weights['Energy'], units='kJ mol^-1',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='me')
                         for i, e in enumerate(energies)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -613,7 +621,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                         Datum(float(e), data_type='energy',
                               weight=weights['Energy'], units='kJ mol^-1',
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='meo')
                         for i, e in enumerate(energies)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -626,7 +634,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 hessian = [
                     Datum(h, data_type='hessian', weight=weights['Hessian'],
                           index=(x, y), source=inputs[filename][command],
-                          units='kJ mol^-1 A^-2')
+                          units='kJ mol^-1 A^-2', calc_com='mh')
                     for h, x, y in zip(hessian, indices[0], indices[1])]
                 data.extend(hessian)
                 logger.debug('{} Hessian elements from {}.'.format(
@@ -644,7 +652,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                         Datum(float(q), data_type='charge', index=int(a),
                               weight=weights['Charge'],
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='mq')
                         for q, a in zip(charges, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)
@@ -666,7 +674,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                         Datum(float(q), data_type='charge', index=int(a),
                               weight=weights['Charge'],
                               source=inputs[filename][command][0],
-                              str_num=str_num)
+                              str_num=str_num, calc_com='mqh')
                         for q, a in zip(charges, anums)]
                     more_data.extend(some_data)
                 data.extend(more_data)

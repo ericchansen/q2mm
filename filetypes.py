@@ -66,10 +66,12 @@ class FileType(object):
         return '{}({})'.format(self.__class__.__name__, self.filename)
     def get_data(self, label, atom_label='# First column is atom index #',
                  include_anums=[], exclude_anums=[], calc_indices=None,
-                 calc_type=None):
+                 calc_type=None, substr=None, comment_label=None):
         '''
         Generic means of helping you extract data associated with
-        individual atoms from a single or multiple structures.
+        individual atoms from a single or multiple structures. This has
+        gotten a bit big for my taste, and should probably be broken
+        into smaller functions.
         '''
         logger.debug('{} structure(s) in {}.'.format(
                 len(self.raw_data), self.filename))
@@ -104,26 +106,49 @@ class FileType(object):
                 # which is also iterable in Python).
                 if isinstance(structure[label], collections.Iterable) and \
                         not isinstance(structure[label], basestring):
-                    # If so, make sure the associated atom numbers are what
-                    # you selected using the exclude_anums and include_anums
-                    # lists.
-                    for datum, atom_number in zip(
-                        structure[label], structure[atom_label]):
-                        if not include_anums and not exclude_anums:
-                            data.append(datum)
-                            anums.append(atom_number)
-                        elif not include_anums and \
-                                int(atom_number) not in exclude_anums:
-                            data.append(datum)
-                            anums.append(atom_number)
-                        elif not exclude_anums and \
-                                int(atom_number) in include_anums:
-                            data.append(datum)
-                            anums.append(atom_number)
-                        elif int(atom_number) in include_anums and \
-                                int(atom_number) not in exclude_anums:
-                            data.append(datum)
-                            anums.append(atom_number)
+                    if comment_label:
+                        for datum, atom_number, com in zip(
+                            structure[label], structure[atom_label],
+                            structure[comment_label]):
+                            keep = False
+                            if not include_anums and not exclude_anums:
+                                keep = True
+                            elif not include_anums and \
+                                    int(atom_number) not in exclude_anums:
+                                keep = True
+                            elif not exclude_anums and \
+                                    int(atom_number) in include_anums:
+                                keep = True
+                            elif int(atom_number) in include_anums and \
+                                    int(atom_number) not in exclude_anums:
+                                keep = True
+                            if keep is True and comment_label and \
+                                    not substr in com:
+                                keep = False
+                            if keep is True:
+                                data.append(datum)
+                                anums.append(atom_number)
+                    else:
+                        # If so, make sure the associated atom numbers are what
+                        # you selected using the exclude_anums and include_anums
+                        # lists.
+                        for datum, atom_number in zip(
+                            structure[label], structure[atom_label]):
+                            if not include_anums and not exclude_anums:
+                                data.append(datum)
+                                anums.append(atom_number)
+                            elif not include_anums and \
+                                    int(atom_number) not in exclude_anums:
+                                data.append(datum)
+                                anums.append(atom_number)
+                            elif not exclude_anums and \
+                                    int(atom_number) in include_anums:
+                                data.append(datum)
+                                anums.append(atom_number)
+                            elif int(atom_number) in include_anums and \
+                                    int(atom_number) not in exclude_anums:
+                                data.append(datum)
+                                anums.append(atom_number)
                 else:
                     # Just append the data. Don't worry about anums because
                     # you won't use the atom numbers anyway.
