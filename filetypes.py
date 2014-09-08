@@ -17,6 +17,7 @@ import logging
 import numpy as np
 import os
 import re
+import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -132,8 +133,10 @@ class FileType(object):
         logger.debug('Used {} structure(s) in {}.'.format(
                 len(all_data), self.filename))
         return all_data, all_anums
-    def get_inv_hess(self, replace_value=1):
-        e_val, e_vec = np.linalg.eigh(self.get_hess())
+    def get_inv_hess(self, hess=None, replace_value=1):
+        if hess is None:
+            hess = self.raw_data['Hessian']
+        e_val, e_vec = np.linalg.eigh(hess)
         minimum = np.min(e_val)
         logging.debug('Minimum eigen value: {}'.format(minimum))
         assert minimum < 0, 'Minimum eigen value is not negative.'
@@ -142,11 +145,25 @@ class FileType(object):
         logger.debug('Set minimum eigen value to {}.'.format(replace_value))
         # Is this the most efficient way to do this?
         return e_vec.dot(np.diag(e_val)).dot(np.linalg.inv(e_vec))
-    def get_hess(self):
-        return self.raw_data['Hessian']
-    def get_hess_tril_array(self):
-        indices = np.tril_indices_from(self.raw_data['Hessian'])
-        return self.raw_data['Hessian'][indices], indices
+    def get_hess_tril_array(self, hess=None):
+        if hess is None:
+            hess = self.raw_data['Hessian']
+        indices = np.tril_indices_from(hess)
+        return hess[indices], indices
+    def get_mass_weight_hess(
+        self, atom_types, hess=None, mass_yaml='options/masses.yaml'):
+        if hess is None:
+            hess = self.raw_data['Hessian']
+        with open(mass_yaml, 'r') as f:
+            masses = yaml.load(f)
+        scale_facs = []
+        for atom in atom_types:
+            scale_facs.extend([1/np.sqrt(masses[atom])] * 3)
+        x, y = hess.shape
+        for i in range(0, x):
+            for j in range(0, y):
+                hess[i, j] = hess[i, j] * scale_facs[i] * scale_facs[j]
+        return hess
 
 class GaussLogFile(FileType):
     '''
@@ -486,3 +503,68 @@ class MMoFile(FileType):
                         data['T. Com.'].append(m.group(6))
             structures.append(data)
         return structures
+
+class MMoLogFile(FileType):
+    '''
+    Extracts data from .log files of MacroModel calculations.
+    '''
+    def __init__(self, filename, directory=os.getcwd(), substr_name='OPT'):
+        FileType.__init__(self, filename, directory)
+    @CachedProperty
+    def raw_data(self):
+        logger.debug('Importing: {}'.format(self.filename))
+        raw_data = {'Hessian': None}
+        with open(os.path.join(self.directory, self.filename), 'r') as f:
+            lines = f.read()
+        num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
+        logger.debug('Read {} atoms in {}.'.format(num_atoms, self.filename))
+        # Make appropriately sized matrix.
+        raw_data['Hessian'] = np.zeros(
+            [num_atoms * 3, num_atoms * 3], dtype=float)
+        logger.debug('Creating a {} x {} Hessian matrix.'.format(
+                num_atoms * 3, num_atoms * 3))
+        split_lines = lines.split()
+        hessian_section = False
+        start_row = False
+        start_col = False
+        for i, word in enumerate(split_lines):
+            # 1. Start of Hessian.
+            if word == 'Mass-weighted':
+                hessian_section = True
+                continue
+            # 5. End of Hessian. Add last row of Hessian and break.
+            if word == 'Eigenvalues:':
+                for col_num, element in zip(col_nums, elements):
+                    raw_data['Hessian'][row_num - 1, col_num - 1] = element
+                hessian_section = False
+                break
+            # 4. End of a Hessian row. Add to matrix and reset.
+            if hessian_section and start_col and word == 'Element':
+                for col_num, element in zip(col_nums, elements):
+                    raw_data['Hessian'][row_num - 1, col_num - 1] = element
+                start_col = False
+                start_row = True
+                row_num = int(split_lines[i + 1])
+                col_nums = []
+                elements = []
+                continue
+            # 2. Start of a Hessian row.
+            if hessian_section and word == 'Element':
+                row_num = int(split_lines[i + 1])
+                col_nums = []
+                elements = []
+                start_row = True
+                continue
+            # 3. Okay, made it through the row number. Now look for columns
+            #    and elements.
+            if hessian_section and start_row and word == ':':
+                start_row = False
+                start_col = True
+                continue
+            if hessian_section and start_col and '.' not in word:
+                col_nums.append(int(word))
+                continue
+            if hessian_section and start_col and '.' in word:
+                elements.append(float(word))
+                continue
+        return raw_data

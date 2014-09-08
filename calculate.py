@@ -104,16 +104,6 @@ def calculate_x2(ref_data, calc_data):
         x2 += r_datum.weight**2 * (r_datum.value - c_datum.value)**2
     return x2, ref_data, calc_data
         
-def convert_units(unit_from, unit_to):
-    if unit_from == 'Hartree' and unit_to == 'kcal mol^-1':
-        return 627.503
-    if unit_from == 'Hartree' and unit_to == 'J':
-        return float('4.35974434e-18')
-    if unit_from == 'Hartree' and unit_to == 'kJ mol^-1':
-        return 2625.5
-    if unit_from == 'Hatree Bohr^-2' and unit_to == 'kJ mol^-1 A^-2':
-        return 9375.829222
-
 def process_args(args):
     parser = argparse.ArgumentParser(
         description='Imports data from QM calculations or runs MM '
@@ -160,7 +150,7 @@ def process_args(args):
         help='Jaguar energy (r_j_Gas_Phase_Energy).')
     data_opts.add_argument(
         '-jh', type=str, nargs='+', metavar='file.in',
-        help='Jaguar Hessian elements.')
+        help='Jaguar Hessian elements. Ouputs as the mass-weighted Hessian.')
     data_opts.add_argument(
         '-jq', type=str, nargs='+', metavar='file.mae',
         help='Jaguar charge (r_j_ESP_Charges).')
@@ -178,6 +168,10 @@ def process_args(args):
         help='MacroModel single point energy ' +
         '(r_mmod_Potential_Energy-MM3*) after optimizing.')
     data_opts.add_argument(
+        '-mh', type=str, nargs='+', metavar='file.mae',
+        help='MacroModel Hessian elements. Ouputs as the mass-weighted ' +
+        'Hessian.')
+    data_opts.add_argument(
         '-mq', type=str, nargs='+', metavar='file.mae', 
         help='MacroModel charges (r_m_charge1).')
     data_opts.add_argument(
@@ -190,7 +184,7 @@ def process_args(args):
     for key, value in options.iteritems():
         # CHANGES
         if key in ['gq', 'gqh', 'ja', 'jb', 'je', 'jh', 'jq', 'ma', 'mb',
-                   'me', 'meo', 'mq', 'mqh'] \
+                   'me', 'meo', 'mh', 'mq', 'mqh'] \
                 and value is not None: 
             commands.update({key: value})
     logger.debug('Commands: {}'.format(commands))
@@ -260,10 +254,11 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
         logger.debug('Data types for {}: {}'.format(filename, commands.keys()))
         # MacroModel has to be used for these arguments.
         if set(commands).intersection(
-            ['ja', 'jb', 'ma', 'mb', 'me', 'meo', 'mq', 'mqh']): # CHANGES
+            ['ja', 'jb', 'ma', 'mb', 'me', 'meo', 'mh', 'mq', 'mqh']): # CHANGES
             # Setup filenames.
             out_mae_filename = '.'.join(filename.split('.')[:-1]) + '-out.mae'
             out_mmo_filename = '.'.join(filename.split('.')[:-1]) + '-out.mmo'
+            out_log_filename = '.'.join(filename.split('.')[:-1]) + '.log'
             com_filename = '.'.join(filename.split('.')[:-1]) + '.com'
             coms_to_run.append(com_filename)
             # Sometimes commands duplicate structures in the output. For
@@ -285,6 +280,8 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                 pre_opt_str = True
             if set(commands).intersection(['me', 'mq', 'mqh']):
                 single_point = True
+            if set(commands).intersection(['mh']):
+                hessian = True
             if set(commands).intersection(['ma', 'mb', 'meo']):
                 optimization = True
             if set(commands).intersection(['ma', 'mb']):
@@ -389,6 +386,11 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
             if out_mae_filename not in outputs:
                 outputs[out_mae_filename] = filetypes.MaeFile(
                     out_mae_filename, directory=rel_dir)
+        for command in set(commands).intersection(['mh']):
+            inputs[filename][command] = out_log_filename
+            if out_log_filename not in outputs:
+                outputs[out_log_filename] = filetypes.MMoLogFile(
+                    out_log_filename, directory=rel_dir)
         for command in set(commands).intersection(['gq', 'gqh']):
             inputs[filename][command] = filename
             if command == 'gq':
@@ -502,8 +504,19 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                         len(energies), filename))
         elif command == 'jh':
             for filename in input_file_sets:
+                # Get atom types for mass weighting.
+                atom_types = \
+                    outputs[inputs[filename][command]].raw_data['Atoms']
+                # Remove extra numbers.
+                atom_types = [re.split('\d', x)[0] for x in atom_types]
+                # Mass weight.
+                hessian = \
+                    outputs[inputs[filename][command]].get_mass_weight_hess(
+                    atom_types)
+                # Get lower triangle and indices.
                 hessian, indices = \
-                    outputs[inputs[filename][command]].get_hess_tril_array()
+                    outputs[inputs[filename][command]].get_hess_tril_array(
+                        hess=hessian)
                 hessian = [
                     Datum(h, data_type='hessian', weight=weights['Hessian'],
                           index=(x, y), source=inputs[filename][command],
@@ -606,6 +619,18 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 data.extend(more_data)
                 logger.debug('{} geo. opt. energ(ies/y) from {}.'.format(
                         len(more_data), filename))
+        elif command == 'mh':
+            for filename in input_file_sets:
+                hessian, indices = \
+                    outputs[inputs[filename][command]].get_hess_tril_array()
+                hessian = [
+                    Datum(h, data_type='hessian', weight=weights['Hessian'],
+                          index=(x, y), source=inputs[filename][command],
+                          units='kJ mol^-1 A^-2')
+                    for h, x, y in zip(hessian, indices[0], indices[1])]
+                data.extend(hessian)
+                logger.debug('{} Hessian elements from {}.'.format(
+                        len(hessian), filename))
         elif command == 'mq':
             for filename in input_file_sets:
                 more_data = []
@@ -647,26 +672,35 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False):
                 data.extend(more_data)
                 logger.debug('{} charge(s) from {}.'.format(
                         len(more_data), filename))
+    # Convert units.
+    for d in data:
+        if d.units == 'Hartree':
+            d.value *= convert_units(d.units, 'kJ mol^-1')
+            d.units = 'kJ mol^-1'
+        if d.units == 'Hartree Bohr^-2':
+            d.value *= convert_units(d.units, 'kJ mol^-1 A^-2')
+            d.units = 'kJ mol^-1 A^-2'
     if no_rel_energy:
         logger.debug('Skipping conversion to relative energies.')
     else:
         energies = [x for x in data if x.data_type == 'energy']
         if energies:
             logger.debug('Converting to relative energies.')
-            # Make all same units.
-            for e in energies:
-                assert e.units in ['Hartree', 'kJ mol^-1'], \
-                    'Unrecognized units. Please add conversions to ' + \
-                    'calculate.py.'
-                if e.units == 'Hartree':
-                    e.value *= convert_units('Hartree', 'kJ mol^-1')
-                    e.units = 'kJ mol^-1'
-            # Convert to relative energies.
             zero = min([e.value for e in energies])
             for e in energies:
                 e.value -= zero
     logger.debug('{} total data point(s).'.format(len(data)))
     return data
+
+def convert_units(unit_from, unit_to):
+    if unit_from == 'Hartree' and unit_to == 'kcal mol^-1':
+        return 627.503
+    if unit_from == 'Hartree' and unit_to == 'J':
+        return float('4.35974434e-18')
+    if unit_from == 'Hartree' and unit_to == 'kJ mol^-1':
+        return 2625.5
+    if unit_from == 'Hartree Bohr^-2' and unit_to == 'kJ mol^-1 A^-2':
+        return 9375.829222
 
 if __name__ == '__main__':
     # Setup logs.
