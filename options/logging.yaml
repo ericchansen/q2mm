@@ -15,9 +15,12 @@ loggers:
   gradient: {level: NOTSET, propagate: true}
   loop: {level: NOTSET, propagate: true}
   parameters: {level: NOTSET, propagate: true}
+  plot: {level: NOTSET, propagate: true}
+  remove_dummy: {level: NOTSET, propagate: true}
   simplex: {level: NOTSET, propagate: true}
+  test: {level: NOTSET, propagate: true}
 root:
   handlers: [console, root_file_handler]
-  level: INFO
+  level: DEBUG
   propagate: false
 version: 1

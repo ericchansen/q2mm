@@ -129,6 +129,10 @@ def process_args(args):
         'the data to standard output. Format is similar to the old par.one ' +
         'and par.ref files.')
     parser.add_argument(
+        '--scanind', type=str, metavar='d1,d2',
+        help='If you are retrieving energy data, also search for these ' +
+        'scan indices to be used as the data indeces.')
+    parser.add_argument(
         '--substr', type=str, metavar='"string in substructure title"',
         const='OPT', nargs='?',
         help='When selecting bonds and angles as data, only include those ' +
@@ -238,7 +242,7 @@ def process_args(args):
     with open(options['weights'], 'r') as f:
         weights = yaml.load(f)
     data = extract_data(commands, inputs, outputs, weights, options['norel'],
-                        substr=options['substr'])
+                        substr=options['substr'], scanind=options['scanind'])
     # Some options for displaying the data.
     if options['output']:
         if options['output'] == 'print':
@@ -415,7 +419,7 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
 
 # CHANGES
 def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
-                 substr='OPT'):
+                 substr='OPT', scanind=None):
     data = []
     for command, input_file_sets in commands.iteritems():
         if command == 'gq':
@@ -504,15 +508,32 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 logger.debug('{} bond(s) from {}.'.format(
                         len(more_data), filename))
         elif command == 'je':
+            if scanind:
+                scaninds = scanind.split(',')
+                scaninds = ['r_j_' + x for x in scaninds]
             for filename in input_file_sets:
                 energies = [x['r_j_Gas_Phase_Energy'] for x in 
                             outputs[inputs[filename][command]].raw_data]
                 energies = map(float, energies)
-                energies = [
-                    Datum(e, data_type='energy', weight=weights['Energy'],
-                          str_num=str_num, source=inputs[filename][command],
-                          units='Hartree', calc_com='je')
-                    for str_num, e in enumerate(energies)]
+                if scanind:
+                    labels = []
+                    for x in outputs[inputs[filename][command]].raw_data:
+                        subgrouping = []
+                        for ind in scaninds:
+                            subgrouping.append(x[ind])
+                        labels.append(subgrouping)
+                    energies = [
+                        Datum(e, data_type='energy', weight=weights['Energy'],
+                              str_num=str_num, source=inputs[filename][command],
+                              units='Hartree', calc_com='je', index=l)
+                        for str_num, (e, l) in enumerate(zip(
+                                energies, labels))]
+                else:
+                    energies = [
+                        Datum(e, data_type='energy', weight=weights['Energy'],
+                              str_num=str_num, source=inputs[filename][command],
+                              units='Hartree', calc_com='je')
+                        for str_num, e in enumerate(energies)]
                 data.extend(energies)
                 logger.debug('{} energ(ies/y) from {}.'.format(
                         len(energies), filename))
@@ -599,22 +620,42 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 logger.debug('{} bond(s) from {}'.format(
                         len(more_data), filename))
         elif command == 'me':
+            if scanind:
+                scaninds = scanind.split(',')
+                scaninds = ['r_j_' + x for x in scaninds]
             for filename in input_file_sets:
                 more_data = []
                 # Index 0 corresponds to the filetype class.
                 # Index 1 corresponds to the calculation indices.
-                all_energies, empty_list = \
-                    outputs[inputs[filename][command][0]].get_data(
-                    'r_mmod_Potential_Energy-MM3*', calc_type='pre-opt. energy',
-                    calc_indices=inputs[filename][command][1])
-                for str_num, energies in enumerate(all_energies):
-                    some_data = [
-                        Datum(float(e), data_type='energy',
-                              weight=weights['Energy'], units='kJ mol^-1',
-                              source=inputs[filename][command][0],
-                              str_num=str_num, calc_com='me')
-                        for i, e in enumerate(energies)]
-                    more_data.extend(some_data)
+                if scanind:
+                    all_energies, all_indices = \
+                        outputs[inputs[filename][command][0]].get_data(
+                        'r_mmod_Potential_Energy-MM3*',
+                        calc_type='pre-opt. energy',
+                        calc_indices=inputs[filename][command][1],
+                        scan_inds=scaninds)
+                else:
+                    all_energies, empty_list = \
+                        outputs[inputs[filename][command][0]].get_data(
+                        'r_mmod_Potential_Energy-MM3*',
+                        calc_type='pre-opt. energy',
+                        calc_indices=inputs[filename][command][1])
+                for str_num, (energies, labels) in enumerate(zip(
+                        all_energies, all_indices)):
+                    if scanind:
+                        more_data.append(Datum(
+                                float(energies[0]), data_type='energy',
+                                weight=weights['Energy'],
+                                units='kJ mol^-1',
+                                source=inputs[filename][command][0],
+                                str_num=str_num, calc_com='me',
+                                index=labels))
+                    else:
+                        more_data.append(Datum(
+                                float(energies[0]), data_type='energy',
+                                weight=weights['Energy'], units='kJ mol^-1',
+                                source=inputs[filename][command][0],
+                                str_num=str_num, calc_com='me'))
                 data.extend(more_data)
                 logger.debug('{} energ(ies/y) from {}.'.format(
                         len(more_data), filename))

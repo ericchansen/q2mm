@@ -65,8 +65,9 @@ class FileType(object):
     def __repr__(self):
         return '{}({})'.format(self.__class__.__name__, self.filename)
     def get_data(self, label, atom_label='# First column is atom index #',
-                 include_anums=[], exclude_anums=[], calc_indices=None,
-                 calc_type=None, substr=None, comment_label=None):
+                 include_inds=[], exclude_inds=[], calc_indices=None,
+                 calc_type=None, substr=None, comment_label=None,
+                 scan_inds=None):
         '''
         Generic means of helping you extract data associated with
         individual atoms from a single or multiple structures. This has
@@ -82,7 +83,7 @@ class FileType(object):
         # to a structure in the file. The inner list is that structures
         # data or associated atom numbers.
         all_data = []
-        all_anums = []
+        all_inds = []
         if calc_indices:
             indices_generator = iter(calc_indices)
         for structure in self.raw_data:
@@ -100,64 +101,68 @@ class FileType(object):
             # Only gather data if that check passed.
             if use_this_structure:
                 data = []
-                anums = []
+                inds = []
                 # Check to make sure that the data we are retrieving is
                 # a list of values (also check to ensure it's not a string,
                 # which is also iterable in Python).
                 if isinstance(structure[label], collections.Iterable) and \
                         not isinstance(structure[label], basestring):
-                    if substr:
+                    if substr and comment_label:
                         for datum, atom_number, com in zip(
                             structure[label], structure[atom_label],
                             structure[comment_label]):
                             keep = False
-                            if not include_anums and not exclude_anums:
+                            if not include_inds and not exclude_inds:
                                 keep = True
-                            elif not include_anums and \
-                                    int(atom_number) not in exclude_anums:
+                            elif not include_inds and \
+                                    int(atom_number) not in exclude_inds:
                                 keep = True
-                            elif not exclude_anums and \
-                                    int(atom_number) in include_anums:
+                            elif not exclude_inds and \
+                                    int(atom_number) in include_inds:
                                 keep = True
-                            elif int(atom_number) in include_anums and \
-                                    int(atom_number) not in exclude_anums:
+                            elif int(atom_number) in include_inds and \
+                                    int(atom_number) not in exclude_inds:
                                 keep = True
                             if keep is True and comment_label and \
                                     not substr in com:
                                 keep = False
                             if keep is True:
                                 data.append(datum)
-                                anums.append(atom_number)
+                                inds.append(atom_number)
                     else:
                         # If so, make sure the associated atom numbers are what
-                        # you selected using the exclude_anums and include_anums
+                        # you selected using the exclude_inds and include_inds
                         # lists.
                         for datum, atom_number in zip(
                             structure[label], structure[atom_label]):
-                            if not include_anums and not exclude_anums:
+                            if not include_inds and not exclude_inds:
                                 data.append(datum)
-                                anums.append(atom_number)
-                            elif not include_anums and \
-                                    int(atom_number) not in exclude_anums:
+                                inds.append(atom_number)
+                            elif not include_inds and \
+                                    int(atom_number) not in exclude_inds:
                                 data.append(datum)
-                                anums.append(atom_number)
-                            elif not exclude_anums and \
-                                    int(atom_number) in include_anums:
+                                inds.append(atom_number)
+                            elif not exclude_inds and \
+                                    int(atom_number) in include_inds:
                                 data.append(datum)
-                                anums.append(atom_number)
-                            elif int(atom_number) in include_anums and \
-                                    int(atom_number) not in exclude_anums:
+                                inds.append(atom_number)
+                            elif int(atom_number) in include_inds and \
+                                    int(atom_number) not in exclude_inds:
                                 data.append(datum)
-                                anums.append(atom_number)
+                                inds.append(atom_number)
                 else:
-                    # Just append the data. Don't worry about anums because
+                    # Just append the data. Don't worry about inds because
                     # you won't use the atom numbers anyway.
                     data.append(structure[label])
+                    if scan_inds:
+                        inds = []
+                        for scan_ind in scan_inds:
+                            inds.append(structure[scan_ind])
                 all_data.append(data)
-                all_anums.append(anums)
+                all_inds.append(inds)
         logger.debug('Used {} structure(s) in {}.'.format(
                 len(all_data), self.filename))
-        return all_data, all_anums
+        return all_data, all_inds
     def get_inv_hess(self, hess=None, replace_value=1):
         if hess is None:
             hess = self.raw_data['Hessian']
