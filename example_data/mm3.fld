@@ -1849,7 +1849,7 @@ END OF NONBONDED INTERACTIONS
  4   2   3   4   5         0.0000    -0.2350     0.2058
 -3
  C  Diaminosulfone OPT
- 9  H3-N2-ST(=O2)-N2-H3
+ 9  H3-N2-ST(*O2)-N2-H3
 -2
  1   1   2                 1.0127     5.0000     0.0002
  1   2   3                 1.6608     5.0000     0.0002

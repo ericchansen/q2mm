@@ -223,7 +223,7 @@ def process_args(args):
     logger.debug('Inputs: {}'.format(inputs))
     # Create .com files.
     inputs, outputs, coms_to_run = make_macromodel_coms(
-        inputs, rel_dir=options['dir'])
+        inputs, rel_dir=options['dir'], scaninds=options['scanind'])
     logger.debug('Inputs: {}'.format(inputs))
     logger.debug('Outputs: {}'.format(outputs))
     # Run the .com files.
@@ -256,7 +256,7 @@ def process_args(args):
                             datum.name, datum.weight, datum.value))
     return data
 
-def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
+def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
     coms_to_run = []
     # Create a dictionary where the output filenames are keys. As
     # extracting the data can take several seconds for large
@@ -355,7 +355,7 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd()):
                 com_contents += ' MINI       1      0    500      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n'
                 mae_indices.append('optimization')
-            if post_opt_str:
+            if post_opt_str or scaninds:
                 com_contents += ' ELST       1      0      0      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n' + \
                     ' WRIT\n'
@@ -660,20 +660,37 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 logger.debug('{} energ(ies/y) from {}.'.format(
                         len(more_data), filename))
         elif command == 'meo':
+            if scanind:
+                scaninds = scanind.split(',')
+                scaninds = ['r_j_' + x for x in scaninds]
             for filename in input_file_sets:
                 more_data = []
-                all_energies, empty_list = \
-                    outputs[inputs[filename][command][0]].get_data(
-                    'r_mmod_Potential_Energy-MM3*', calc_type='optimization',
-                    calc_indices=inputs[filename][command][1])
-                for str_num, energies in enumerate(all_energies):
-                    some_data = [
-                        Datum(float(e), data_type='energy',
-                              weight=weights['Energy'], units='kJ mol^-1',
-                              source=inputs[filename][command][0],
-                              str_num=str_num, calc_com='meo')
-                        for i, e in enumerate(energies)]
-                    more_data.extend(some_data)
+                if scanind:
+                    all_energies, all_indices = \
+                        outputs[inputs[filename][command][0]].get_data(
+                        'r_mmod_Potential_Energy-MM3*', calc_type='post-opt. energy',
+                        calc_indices=inputs[filename][command][1],
+                        scan_inds=scaninds)
+                else:
+                    all_energies, empty_list = \
+                        outputs[inputs[filename][command][0]].get_data(
+                        'r_mmod_Potential_Energy-MM3*', calc_type='optimization',
+                        calc_indices=inputs[filename][command][1])
+                for str_num, (energies, labels) in enumerate(zip(
+                        all_energies, all_indices)):
+                    if scanind:
+                        more_data.append(Datum(
+                                float(energies[0]), data_type='energy',
+                                weight=weights['Energy'], units='kJ mol^-1',
+                                source=inputs[filename][command][0],
+                                str_num=str_num, calc_com='meo',
+                                index=labels))
+                    else:
+                        more_data.append(Datum(
+                                float(energies[0]), data_type='energy',
+                                weight=weights['Energy'], units='kJ mol^-1',
+                                source=inputs[filename][command][0],
+                                str_num=str_num, calc_com='meo'))
                 data.extend(more_data)
                 logger.debug('{} geo. opt. energ(ies/y) from {}.'.format(
                         len(more_data), filename))
