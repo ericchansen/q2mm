@@ -119,9 +119,11 @@ def process_args(args):
         '--norel', action='store_true', help="Don't use relative energies " +
         'in the output data.')
     parser.add_argument(
-        '--norun', action='store_true', help="Don't run MacroModel " +
+        '--norun', action='store_true',
+        help="Don't run MacroModel " +
         'calculations. Assumes the output file from the calculation is ' +
-        'already present.')
+        'already present. If an optional argument is given, this is used ' +
+        'as the mae indices.')
     parser.add_argument(
         '--output', '-o', type=str, metavar='filename', const='print',
         nargs='?',
@@ -355,7 +357,7 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
                 com_contents += ' MINI       1      0    500      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n'
                 mae_indices.append('optimization')
-            if post_opt_str or scaninds:
+            if post_opt_str or (scaninds and optimization):
                 com_contents += ' ELST       1      0      0      0     ' + \
                     '0.0000     0.0000     0.0000     0.0000\n' + \
                     ' WRIT\n'
@@ -625,8 +627,6 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 scaninds = ['r_j_' + x for x in scaninds]
             for filename in input_file_sets:
                 more_data = []
-                # Index 0 corresponds to the filetype class.
-                # Index 1 corresponds to the calculation indices.
                 if scanind:
                     all_energies, all_indices = \
                         outputs[inputs[filename][command][0]].get_data(
