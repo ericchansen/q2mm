@@ -635,11 +635,12 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                         calc_indices=inputs[filename][command][1],
                         scan_inds=scaninds)
                 else:
-                    all_energies, empty_list = \
+                    all_energies, all_indices = \
                         outputs[inputs[filename][command][0]].get_data(
                         'r_mmod_Potential_Energy-MM3*',
                         calc_type='pre-opt. energy',
                         calc_indices=inputs[filename][command][1])
+                # This is a bit inefficient in the case of not using the indices.
                 for str_num, (energies, labels) in enumerate(zip(
                         all_energies, all_indices)):
                     if scanind:
@@ -672,7 +673,7 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                         calc_indices=inputs[filename][command][1],
                         scan_inds=scaninds)
                 else:
-                    all_energies, empty_list = \
+                    all_energies, all_indices = \
                         outputs[inputs[filename][command][0]].get_data(
                         'r_mmod_Potential_Energy-MM3*', calc_type='optimization',
                         calc_indices=inputs[filename][command][1])
