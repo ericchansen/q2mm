@@ -53,6 +53,11 @@ def process_args(args):
         '--ref', '-r', type=str, metavar='"calculate.py arguments"', 
         help='Arguments for calculate.py to determine the reference data.')
     opt_opts.add_argument(
+        '--custom', action='store_true',
+        help='Similar to --default, but I am doing using more methods than ' +
+        'before. I recommend this. Soon I will have better input methods ' +
+        'available for this script so you can be more in control.')
+    opt_opts.add_argument(
         '--default', action='store_true',
         help='This invokes the optimization methods used in the previous ' +
         'Python scripts. In each loop, several gradient methods based off ' + 
@@ -104,6 +109,9 @@ def process_args(args):
     options = vars(parser.parse_args(args))
     # More argument handling. This constructs the arguments that will be
     # fed to the optimization methods.
+    if options['custom']:
+        options['default'] = True
+    # if options['default'] or options['custom']:
     if options['default']:
         options['gradient'] = \
             ['-c', options['calc'], '-r', options['ref'], '--ffpath',
@@ -169,10 +177,12 @@ def run(args):
                 # For the 1st time, just do the --init option. This lets us
                 # combine different cutoff/max radius methods.
                 dic = gradient.execute(gradient_options, dic)
+                # Basic and SVD.
                 gradient_options = gradient.process_args(
                     options['gradient'] + 
                     ['--cutoff', '10', '-b', '-s'])
                 dic = gradient.execute(gradient_options, dic)
+                # Lagrange dampening.
                 gradient_options = gradient.process_args(
                     options['gradient'] + 
                     ['--radius', '5', '-l'])
@@ -189,6 +199,14 @@ def run(args):
                     options['gradient'] + 
                     ['--radius', '10', '-nr'])
                 dic = gradient.execute(gradient_options, dic)
+                # Adds a few more things that we didn't use previously.
+                if options['custom']:
+                    # Levenberg-Marquardt. Not sure why that was skipped
+                    # before. Seems to work nicely.
+                    gradient_options = gradient.process_args(
+                        options['gradient'] +
+                        ['--radius', '5', '-lm'])
+                    dic = gradient.execute(gradient_options, dic)
                 # Check for no possible trial FFs.
                 if len(dic['Trial FFs']) == 0:
                     logger.warning("Couldn't create trial FFs. Writing best " +
