@@ -681,7 +681,9 @@ def process_args(args):
                 len(selected_params)))
         # Print them.
         if options['print']:
-            print '\n---------- YAML Parameters ----------\n'
+            print('\n---------- YAML Parameters : {} Selected '.format(
+                    len(selected_params)) +
+                  '----------\n')
             if options['substr']:
                 print yaml.dump(substr)
             else:
