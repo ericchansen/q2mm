@@ -46,6 +46,8 @@ import yaml
 logger = logging.getLogger(__name__)
 
 re_substr_name = '[\w\s]+'
+re_smiles = '[\w\-\=\(\)\.\+\[\]\*]+'
+re_atom_types_split = '[\s\-\(\)\=\.\[\]\*]+'
 
 class BaseParam(object):
     '''
@@ -210,7 +212,7 @@ class MM3FF(BaseFF):
         the substructure name in mm3.fld) to determine the atom types.
         '''
         # I hope I included all the seperators.
-        atom_types = re.split('[\s\-\(\)\=\.\[\]]+', self.smiles)
+        atom_types = re.split(re_atom_types_split, self.smiles)
         if '' in atom_types:
             atom_types.remove('')
         return atom_types
@@ -327,11 +329,11 @@ def import_mm3_ff(filename='mm3.fld', substr_name='OPT'):
                     substr = MM3FF(
                         filename, substr_name=matched.group(1).strip(),
                         starting_row=i+1)
-                    logger.debug('Located {} on line {} of {}.'.format(
+                    logger.debug('Located "{}" on line {} of {}.'.format(
                             substr.substr_name, substr.starting_row,
                             substr.filename))
                    # Get the chemical formula from the next line.
-                    matched = re.match('\s9\s+([\w\-\=\(\)\.\+\[\]]+)',
+                    matched = re.match('\s9\s+({})'.format(re_smiles),
                                        next(f))
                     try:
                         substr.smiles = matched.group(1)
