@@ -386,7 +386,7 @@ def import_mm3_ff(filename='mm3.fld', substr_name='OPT'):
                 cols = line.split()
                 substr.params.extend((
                         MM3Param(value = float(cols[4]),
-                                 param_type = 'eb',
+                                 param_type = 'ea',
                                  atom_types = get_mm3_atom_types(
                                          cols[1:4], substr.atom_types),
                                  mm3_row = i+2,
@@ -395,11 +395,11 @@ def import_mm3_ff(filename='mm3.fld', substr_name='OPT'):
                                  atom_labels = cols[1:4],
                                  substr_name = substr.substr_name),
                         MM3Param(value = float(cols[5]),
-                                 param_type = 'eb',
+                                 param_type = 'af',
                                  atom_types = get_mm3_atom_types(
                                          cols[1:4], substr.atom_types),
                                  mm3_row = i+2,
-                                 mm3_col = 1,
+                                 mm3_col = 2,
                                  mm3_label = line[:2],
                                  atom_labels = cols[1:4],
                                  substr_name = substr.substr_name)
