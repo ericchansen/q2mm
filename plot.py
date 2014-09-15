@@ -50,8 +50,13 @@ colorlevels = 10
 logger = logging.getLogger(__name__)
 
 def setup_matrices(data):
-    xs = [int(d.index[0]) for d in data]
-    ys = [int(d.index[1]) for d in data]
+    try:
+        xs = [int(d.index[0]) for d in data]
+        ys = [int(d.index[1]) for d in data]
+    except TypeError:
+        logger.error("You probably didn't specify the scan index for " +
+                     "calculate.py.")
+        raise
     zs = [d.value for d in data] # Should already be float.
     xset = np.array(sorted(set(xs)))
     yset = np.array(sorted(set(ys)))
@@ -116,7 +121,8 @@ def process_args(args):
     parser = argparse.ArgumentParser(
         description='Script to aid in plotting 2D scan energies.')
     disp_opts = parser.add_argument_group('Display options')
-    mae_opts = parser.add_argument_group('Arguments for mae files')
+    # Not used now that calculate.py gets the data.
+    # mae_opts = parser.add_argument_group('Arguments for mae files')
     out_opts = parser.add_argument_group('Output options')
     # parser.add_argument(
     #     'input', metavar='filename.mae', type=str,
@@ -151,21 +157,24 @@ def process_args(args):
     disp_opts.add_argument(
         '-zl', type=str, metavar='"some string"',
         help='z-axis label.')
-    mae_opts.add_argument(
-        '-x', type=str, metavar='r_j_d1',
-        help='Scan coordinate used for x-axis.')
-    mae_opts.add_argument(
-        '-y', type=str, metavar='r_j_d2',
-        help='Scan coordinate used for y-axis')
-    mae_opts.add_argument(
-        '-z', type=str, metavar='r_mmod_Potential_Energy-MM3*',
-        help='Label used for energies.')
+    # Not used now that calculate.py is used to get data.
+    # mae_opts.add_argument(
+    #     '-x', type=str, metavar='r_j_d1',
+    #     help='Scan coordinate used for x-axis.')
+    # mae_opts.add_argument(
+    #     '-y', type=str, metavar='r_j_d2',
+    #     help='Scan coordinate used for y-axis')
+    # mae_opts.add_argument(
+    #     '-z', type=str, metavar='r_mmod_Potential_Energy-MM3*',
+    #     help='Label used for energies.')
     out_opts.add_argument(
         '--output', '-o', type=str, metavar='filename',
         help='Saves instead of displays.')
     out_opts.add_argument(
-        '--filetype', '-f', type=str, metavar='jpg', default='jpg',
-        help='Output filetype.')
+        '--filetype', '-f', type=str, metavar='jpg,png,eps,pdf',
+        default='jpg',
+        help='Output filetype. Can be one filetype or a comma separated ' +
+        'list of filetypes.')
     out_opts.add_argument(
         '-xi', type=float,
         help='Length of x dimension in inches.')
@@ -174,6 +183,7 @@ def process_args(args):
         help='Length of y dimension in inches.')
     opts = vars(parser.parse_args(args))
     opts['calc'] = opts['calc'].split()
+    opts['filetype'] = opts['filetype'].split(',')
     # Old method.
     # mae = filetypes.MaeFile(opts['input'], directory=os.getcwd())
     # logger.debug('{} structures in {}.'.format(len(mae.raw_data), mae.filename))
@@ -181,7 +191,7 @@ def process_args(args):
     logger.debug('Units of 1st data point: {}'.format(data[0].units))
     xmat, ymat, zmat = setup_matrices(data)
     if opts['display'] == '3d':
-        fig, axs = plot_3d(xmat, ymat, zmat, opts['custom'])
+        fig, axs = plot_3d(xmat, ymat, zmat, opts['c3d'])
     if opts['display'] == 'conf':
         fig, axs1, axs2, cbar = plot_conf(xmat, ymat, zmat)
     if opts['xl']:
@@ -230,8 +240,11 @@ def process_args(args):
             fig.tight_layout()
         logger.debug('DPI: {}'.format(fig.get_dpi()))
         logger.debug('Size (in): {}'.format(fig.get_size_inches()))
-        logger.debug('Size (pixels): {}'.format([x*fig.get_dpi() for x in fig.get_size_inches()]))
-        plt.savefig('{}.{}'.format(opts['output'], opts['filetype']), dpi=300)
+        logger.debug('Size (pixels): {}'.format([x*fig.get_dpi() for x in 
+                                                 fig.get_size_inches()]))
+        for filetype in opts['filetype']:
+            logger.info('Saving to {}.{}.'.format(opts['output'], filetype))
+            plt.savefig('{}.{}'.format(opts['output'], filetype), dpi=300)
     else:
         plt.show()
 
