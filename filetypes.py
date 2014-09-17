@@ -21,7 +21,11 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-re_float = '[+-]? * (?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+# Load some constants.
+with open('options/constants.yaml', 'r') as f:
+    constants = yaml.load(f)
+
+re_float = '[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 re_substr_name = '[\w\s\-\=\(\)\[\]]+?(?=\s+\d+[\n\r])'
 # Used for mmo files.
 re_bond = re.compile(
@@ -38,6 +42,11 @@ re_tors = re.compile(
     '\s+{}\s+{}\s+{}\s+({})\s+{}'.format(
         re_float, re_float, re_float, re_float, re_float) +
     '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
+
+# Used to check if float. Pretty fast.
+re_float_check = re.compile(re_float).match
+def is_float(str):
+    return True if re_float_check(str) else False
 
 class CachedProperty(object):
     '''
@@ -58,6 +67,108 @@ class CachedProperty(object):
             inst.__dict__[self.__name__] = value
         return value
 
+class Hessian(object):
+    def __init__(self, matrix=None, matrix_units=None, evals=None,
+                 evals_units=None, evecs=None,
+                 inv_matrix=None, inv_evals=None):
+        self.matrix = matrix
+        self.matrix_units = matrix_units
+        self.evals = evals
+        self.evals_units = evals_units
+        self.evecs = evecs
+    # CHECK UNITS!
+    def convert_units_for_mm(self):
+        conv_evals = False
+        if self.evals_units == 'au':
+            conv_evals = True
+            self.evals *= constants['eigv_j_2_mm']
+        # CHECK WHICH IS IT?
+        if self.matrix_units == 'au':
+            conv_matrix = True
+            self.matrix *= constants['hess_j_2_mm']
+        elif self.matrix_units == 'Hartree Bohr^-2':
+            conv_matrix = True
+            self.matrix *= constants['hess_j_2_mm']
+        if conv_evals:
+            logger.debug('Converted eigenvalues from {} to {}.'.format(
+                self.evals_units, 'mdyn A^-1'))
+            self.evals_units = 'mdyn A^-1'
+        if conv_matrix:
+            logger.debug('Converted Hessian from {} to {}.'.format(
+                self.matrix_units, 'kJ mol^-1 A^-2'))
+            self.matrix_units = 'kJ mol^-1 A^-2'
+    def inv_hess(self):
+        if self.evals is None and self.evecs is None:
+            logger.debug('No eigenvalues or eigenvectors supplied. Creating ' +
+                         'non-projected Eigensystem.')
+            evals, evecs = np.linalg.eigh(self.matrix)
+            self.evals = evals
+            # CHECK TRANSPOSE OR NOT?
+            self.evecs = evecs.T
+            # CHECK UNITS. I THOUGHT IT SHOULD BE MDYN A^-1.
+            self.evals_units = self.matrix_units
+        minimum = self.evals.min()
+        minimum_i = np.where(self.evals == minimum)
+        logger.debug('Minimum eigenvalue {} located at index {}.'.format(
+            minimum, minimum_i[0][0]))
+        if minimum >= 0:
+            logger.warning('Doing inversion but minimum eigenvalue is not ' +
+                           'negative.')
+        # CHECK UNITS
+        if self.evals_units == 'au':
+            replacement = 1
+        elif self.evals_units == 'Hartree Bohr^-2':
+            replacement = 1
+        elif self.evals_units == 'kJ mol^-1 A^-2':
+            replacement = constants['hess_j_2_mm'] # 9375.828222
+        elif self.evals_units == 'mdyn A^-1':
+            replacement = constants['hess_j_2_mm']
+        else:
+            logger.error('Unknown units for eigenvalues: {}'.format(
+                self.evals_units))
+            raise Exception('Unknown units for eigenvalues: {}'.format(
+                self.evals_units))
+        self.evals[minimum_i] = replacement
+        logger.debug(
+            'Replaced minimum eigenvalue {} ({}) with {} for Hessian '.format(
+                minimum, self.evals_units, replacement) + 'inversion.')
+        print self.evecs.shape
+        print np.diag(self.evals).shape
+        # CHECK WHERE DO I TRANSPOSE?
+        # CHECK INVERSE OR TRANSPOSE?
+        # inv_hess_inv = np.linalg.inv(self.evecs).dot(np.diag(self.evals)).dot(
+        #     self.evecs)
+        # inv_hess_inv = self.evecs.dot(np.diag(self.evals)).dot(
+        #     np.linalg.inv(self.evecs))
+        inv_hess = self.evecs.T.dot(np.diag(self.evals)).dot(self.evecs)
+        # np.testing.assert_array_almost_equal(inv_hess_inv, inv_hess)
+        self.matrix = inv_hess
+        return inv_hess
+    def load_from_jaguar_in(
+            self, fileclass=None, filename=None, directory=None):
+        if not fileclass and filename and directory:
+            fileclass = JagInFile(filename, directory=directory)
+        # Should already be NumPy matrix, but why not.
+        self.matrix = np.matrix(fileclass.raw_data['Hessian'])
+        # CHECK UNITS
+        self.matrix_units = 'Hartree Bohr^-2'
+        logger.debug('Got Hessian ({}, {}) in {} from {}.'.format(
+            self.matrix.shape[0], self.matrix.shape[1], self.matrix_units,
+            fileclass.filename))
+    def load_from_jaguar_out(
+            self, fileclass=None, filename=None, directory=None):
+        if not fileclass and filename and directory:
+            fileclass = JagOutFile(filename, directory=directory)
+        self.evals = np.array(fileclass.raw_data['Eigenvalues'])
+        # CHECK UNITS
+        self.evals_units = 'au'
+        self.evecs = np.matrix(fileclass.raw_data['Eigenvectors'])
+        logger.debug(
+            'Got projected eigenvalues and eigenvectors from {}.'.format(
+                fileclass.filename))
+    def mass_weight_matrix(self):
+        pass
+        
 class FileType(object):
     def __init__(self, filename, directory=os.getcwd()):
         self.filename = filename
@@ -260,7 +371,6 @@ class GaussLogFile(FileType):
         # structures per file.
         return [structure]
 
-# Work in progress.
 class JagInFile(FileType):
     '''
     Extracts data from Jaguar .in files.
@@ -304,7 +414,76 @@ class JagInFile(FileType):
                 if '&hess' in line:
                     hess = True
         return raw_data
-                
+        
+class JagOutFile(FileType):
+    '''
+    Extracts data from Jaguar .out files.
+    '''
+    def __init__(self, filename, directory=os.getcwd()):
+        FileType.__init__(self, filename, directory)
+    @CachedProperty
+    def raw_data(self):
+        dic = {'Geometries': [[]],
+               'Frequencies': [],
+               'Eigenvalues': [],
+               'Eigenvectors': []}
+        with open(os.path.join(self.directory, self.filename), 'r') as f:
+            geo = False
+            eig = False
+            eigv = False
+            for line in f:
+                # Gather geometries.
+                if geo is True:
+                    cols = line.split()
+                    if not len(cols):
+                        geo = False
+                        continue
+                    elif len(cols) == 1:
+                        pass
+                    elif is_float(cols[1]) and is_float(cols[2]) and \
+                         is_float(cols[3]):
+                        dic['Geometries'][-1].append((
+                            cols[0], float(cols[1]), float(cols[2]),
+                            float(cols[2])))
+                if 'geometry:' in line:
+                    geo = True
+                    if dic['Geometries'][-1]:
+                        dic['Geometries'].append([])
+                # Gather eigenvalues ("force const") and eigenvectors.
+                if 'Number of imaginary frequencies' in line or \
+                   'Writing vibrational' in line or \
+                   'Thermochemical properties at' in line:
+                    eig = False
+                if eigv is True:
+                    cols = line.split()
+                    if not len(cols):
+                        eigv = False
+                        dic['Eigenvectors'].extend(temp_eigvs)
+                        continue
+                    else:
+                        for i, x in enumerate(cols[2:]):
+                            if not len(temp_eigvs) > i:
+                                temp_eigvs.append([])
+                            temp_eigvs[i].append(float(x))
+                if eig is True and eigv is False:
+                    if 'frequencies' in line:
+                        cols = line.split()
+                        dic['Frequencies'].extend(map(float, cols[1:]))
+                    if 'force const' in line:
+                        cols = line.split()
+                        dic['Eigenvalues'].extend(map(float, cols[2:]))
+                        eigv = True
+                        temp_eigvs = [[]]
+                if 'IR intensities in' in line:
+                    eig = True
+        logger.debug('Found {} geometrie(s) in {}.'.format(
+            len(dic['Geometries']), self.filename))
+        logger.debug('Found {} eigenvalues and {} eigenvectors '.format(
+            len(dic['Eigenvalues']), len(dic['Eigenvectors'])) +
+                     'of length {} in {}.'.format(
+                         len(dic['Eigenvectors'][0]), self.filename))
+        return dic
+    
 class MaeFile(FileType):
     '''
     Extracts data from .mae files.
