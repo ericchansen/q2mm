@@ -17,6 +17,7 @@ import logging
 import numpy as np
 import os
 import re
+from string import digits
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Load some constants.
 with open('options/constants.yaml', 'r') as f:
     constants = yaml.load(f)
+# Load masses.
+with open('options/masses.yaml', 'r') as f:
+    masses = yaml.load(f)
 
 re_float = '[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 re_substr_name = '[\w\s\-\=\(\)\[\]]+?(?=\s+\d+[\n\r])'
@@ -43,7 +47,7 @@ re_tors = re.compile(
         re_float, re_float, re_float, re_float, re_float) +
     '\s+\w+\s+\d+\s+({})\s+(\d+)'.format(re_substr_name))
 
-# Used to check if float. Pretty fast.
+# Used to check if string can be a float.
 re_float_check = re.compile(re_float).match
 def is_float(str):
     return True if re_float_check(str) else False
@@ -69,106 +73,215 @@ class CachedProperty(object):
 
 class Hessian(object):
     def __init__(self, matrix=None, matrix_units=None, evals=None,
-                 evals_units=None, evecs=None,
-                 inv_matrix=None, inv_evals=None):
+                 evals_units=None, evecs=None, atom_types=None):
         self.matrix = matrix
         self.matrix_units = matrix_units
         self.evals = evals
         self.evals_units = evals_units
         self.evecs = evecs
-    # CHECK UNITS!
+        self.atom_types = atom_types
+    @CachedProperty
+    def atom_masses(self):
+        return [masses[x] for x in self.atom_types]
+    # It would be nice if someone could double check all these units.
+    # Should I be saying au or Hartree Bohr^-2? Is either correct?
+    # Right now I set it up to use either.
     def convert_units_for_mm(self):
-        conv_evals = False
-        if self.evals_units == 'au':
-            conv_evals = True
-            self.evals *= constants['eigv_j_2_mm']
-        # CHECK WHICH IS IT?
-        if self.matrix_units == 'au':
-            conv_matrix = True
-            self.matrix *= constants['hess_j_2_mm']
-        elif self.matrix_units == 'Hartree Bohr^-2':
-            conv_matrix = True
-            self.matrix *= constants['hess_j_2_mm']
-        if conv_evals:
-            logger.debug('Converted eigenvalues from {} to {}.'.format(
-                self.evals_units, 'mdyn A^-1'))
-            self.evals_units = 'mdyn A^-1'
-        if conv_matrix:
-            logger.debug('Converted Hessian from {} to {}.'.format(
-                self.matrix_units, 'kJ mol^-1 A^-2'))
-            self.matrix_units = 'kJ mol^-1 A^-2'
+        # Convert eigenvalues.
+        if self.evals is not None or self.evals_units is not None:
+            if any(x in self.evals_units for x in ['au', 'Hartree Bohr^-2']):
+                self.evals *= constants['eigv_jag_2_mm']
+                evals_units = 'kJ mol^-1 A^-2'
+                # Check if we need to account for amu^-1.
+                if 'amu^-1' in self.evals_units:
+                    evals_units += ' amu^-1'
+                # Report changes and update string to track new units.
+                logger.debug('Conv. eigenvalues: {} --> {}'.format(
+                    self.evals_units, eval_units))
+                self.evals_units = evals_units
+            elif 'kJ mol^-1 A^-2' in self.evals_units:
+                logger.debug('Eigenvalue units accepted for MM: {}'.format(
+                    self.evals_units))
+            else:
+                logger.debug('Unrecognized eigenvalue units: {}'.format(
+                    self.evals_units))
+        if self.matrix is not None or self.matrix_units is not None:
+            # Convert Hessian elements.
+            if any(x in self.matrix_units for x in ['au', 'Hartree Bohr^-2']):
+                self.matrix *= constants['hess_jag_2_mm']
+                matrix_units = 'kJ mol^-1 A^-2'
+                # Check if we need to account for amu^-1.
+                if 'amu^-1' in self.matrix_units:
+                    matrix_units += ' amu^-1'
+                # Report changes and update string to track new units.
+                logger.debug('Conv. Hessian elems.: {} --> {}'.format(
+                    self.matrix_units, matrix_units))
+                self.matrix_units = matrix_units
+            elif 'kJ mol^-1 A^-2' in self.matrix_units:
+                logger.debug('Hessian elem. units accepted for MM: {}'.format(
+                    self.matrix_units))
+            else:
+                logger.debug('Unrecognized Hessian elem. units: {}'.format(
+                    self.matrix_units))
     def inv_hess(self):
-        if self.evals is None and self.evecs is None:
-            logger.debug('No eigenvalues or eigenvectors supplied. Creating ' +
-                         'non-projected Eigensystem.')
+        if self.evals is None or self.evecs is None:
             evals, evecs = np.linalg.eigh(self.matrix)
-            self.evals = evals
-            # CHECK TRANSPOSE OR NOT?
-            self.evecs = evecs.T
-            # CHECK UNITS. I THOUGHT IT SHOULD BE MDYN A^-1.
-            self.evals_units = self.matrix_units
+            evecs = evecs.T # Double check if this should be transposed.
+            logger.debug('Diagonalization: {} '.format(
+                len(evals)) + 'eigenvalues and {} eigenvectors '.format(
+                    len(evecs)) + '(length {})'.format(evecs.shape[1]))
+        # if self.evals is None:
+        #     self.evals = evals
+        #     # Eigenvectors are unitless, so eigenvalues share units with
+        #     # the Hessian.
+        #     self.evals_units = self.matrix_units
+        #     logger.debug(
+        #         "Using non-projected eigenvalues from diag. of Hessian.")
+        if self.evecs is None:
+            self.evecs = evecs
+            logger.debug(
+                "Using non-projected eigenvectors from diag. of Hessian.")
+        # I don't like this.
+        evals = np.dot(np.dot(self.evecs, self.matrix), self.evecs.T)
+        self.evals = evals
+        self.evals_units = self.matrix_units
         minimum = self.evals.min()
         minimum_i = np.where(self.evals == minimum)
-        logger.debug('Minimum eigenvalue {} located at index {}.'.format(
-            minimum, minimum_i[0][0]))
+        logger.debug('Min. eigenvalue: {} ({}) (index {})'.format(
+            minimum, self.evals_units, minimum_i[0][0]))
         if minimum >= 0:
-            logger.warning('Doing inversion but minimum eigenvalue is not ' +
-                           'negative.')
-        # CHECK UNITS
-        if self.evals_units == 'au':
+            logger.warning("Inverting but minimum eigenvalue isn't negative.")
+        # Check me on this, but I don't think mass-weighted units
+        # matter here.
+        if any(x in self.evals_units for x in ['au', 'Hartree Bohr^-2']):
             replacement = 1
-        elif self.evals_units == 'Hartree Bohr^-2':
-            replacement = 1
-        elif self.evals_units == 'kJ mol^-1 A^-2':
-            replacement = constants['hess_j_2_mm'] # 9375.828222
-        elif self.evals_units == 'mdyn A^-1':
-            replacement = constants['hess_j_2_mm']
+        elif 'kJ mol^-1 A^-2' in self.evals_units:
+            replacement = constants['hess_jag_2_mm'] # 9375.828222
         else:
-            logger.error('Unknown units for eigenvalues: {}'.format(
-                self.evals_units))
+            # I setup logging to catch exceptions, so no worries.
             raise Exception('Unknown units for eigenvalues: {}'.format(
                 self.evals_units))
         self.evals[minimum_i] = replacement
+        print np.diagonal(self.evals)
         logger.debug(
-            'Replaced minimum eigenvalue {} ({}) with {} for Hessian '.format(
-                minimum, self.evals_units, replacement) + 'inversion.')
-        print self.evecs.shape
-        print np.diag(self.evals).shape
-        # CHECK WHERE DO I TRANSPOSE?
-        # CHECK INVERSE OR TRANSPOSE?
-        # inv_hess_inv = np.linalg.inv(self.evecs).dot(np.diag(self.evals)).dot(
-        #     self.evecs)
-        # inv_hess_inv = self.evecs.dot(np.diag(self.evals)).dot(
-        #     np.linalg.inv(self.evecs))
-        inv_hess = self.evecs.T.dot(np.diag(self.evals)).dot(self.evecs)
-        # np.testing.assert_array_almost_equal(inv_hess_inv, inv_hess)
+            'Replaced min. eigenvalue with {} for inversion.'.format(
+                replacement))
+        # Check location of transpose.
+        # inv_hess = self.evecs.T.dot(np.diag(self.evals)).dot(self.evecs)
+        inv_hess = np.dot(np.dot(self.evecs.T, np.diag(np.diagonal(self.evals))), self.evecs)
+        print inv_hess
         self.matrix = inv_hess
         return inv_hess
     def load_from_jaguar_in(
             self, fileclass=None, filename=None, directory=None):
         if not fileclass and filename and directory:
             fileclass = JagInFile(filename, directory=directory)
+        # Check atom types.
+        atom_types = fileclass.raw_data['Atoms']
+        atom_types = [x.translate(None, digits) for x in atom_types]
+        if self.atom_types is None:
+            self.atom_types = atom_types
+            logger.debug('Loaded {} atom types from {}.'.format(
+                len(self.atom_types), fileclass.filename))
+        else:
+            assert self.atom_types == atom_types, \
+                "Atom types don't match.\nExisting types: {}\n".format(
+                    self.atom_types) + 'Loaded from {}: {}'.format(
+                        fileclass.filename, atom_types)
         # Should already be NumPy matrix, but why not.
         self.matrix = np.matrix(fileclass.raw_data['Hessian'])
-        # CHECK UNITS
+        # Double check units.
+        # self.matrix_units = 'au'
         self.matrix_units = 'Hartree Bohr^-2'
-        logger.debug('Got Hessian ({}, {}) in {} from {}.'.format(
+        logger.debug('Loaded Hessian ({}, {}) ({}) from {}.'.format(
             self.matrix.shape[0], self.matrix.shape[1], self.matrix_units,
             fileclass.filename))
     def load_from_jaguar_out(
-            self, fileclass=None, filename=None, directory=None):
+            self, fileclass=None, filename=None, directory=None,
+            evals=False, evecs=True):
+        '''
+        evals - Bool. If True, load eigenvalues, else pass.
+        evecs - Bool. If True, load eigenvectors, else pass.
+        '''
         if not fileclass and filename and directory:
             fileclass = JagOutFile(filename, directory=directory)
-        self.evals = np.array(fileclass.raw_data['Eigenvalues'])
-        # CHECK UNITS
-        self.evals_units = 'au'
-        self.evecs = np.matrix(fileclass.raw_data['Eigenvectors'])
-        logger.debug(
-            'Got projected eigenvalues and eigenvectors from {}.'.format(
+        # Check atom types.
+        coords = fileclass.raw_data['Geometries']
+        atom_types = [x[0].translate(None, digits) for x in coords[0]]
+        if self.atom_types is None:
+            self.atom_types = atom_types
+            logger.debug('Loaded {} atom types from {}.'.format(
+                len(self.atom_types), fileclass.filename))
+        else:
+            assert self.atom_types == atom_types, \
+                "Atom types don't match.\nExisting types: {}\n".format(
+                    self.atom_types) + 'Loaded from {}: {}'.format(
+                        fileclass.filename, atom_types)
+        if evals:
+            self.evals = np.array(fileclass.raw_data['Eigenvalues'])
+            # Double check units.
+            # self.evals_units = 'au'
+            self.eval_units = 'Hartree Bohr^-2'
+            logger.debug('Loaded {} projected eigenvalues ({}) '.format(
+                len(self.evals), self.eval_units) + 'from {}.'.format(
                 fileclass.filename))
-    def mass_weight_matrix(self):
-        pass
-        
+        if evecs:
+            # Eigenvectors are unitless?
+            self.evecs = np.matrix(fileclass.raw_data['Eigenvectors'])
+            logger.debug('Loaded {} projected eigenvectors (length '.format(
+                len(self.evecs)) + '{}) from {}.'.format(
+                    self.evecs.shape[1], fileclass.filename))
+    def mass_weight_hess(self, undo=False):
+        scale_factors = []
+        for mass in self.atom_masses:
+            scale_factors.extend([1/np.sqrt(mass)] * 3)
+        x, y = self.matrix.shape
+        for i in xrange(0, x):
+            for j in xrange(0, y):
+                if undo:
+                    self.matrix[i, j] = self.matrix[i, j] / \
+                                        scale_factors[i] / scale_factors[j]
+                else:
+                    self.matrix[i, j] = self.matrix[i, j] * \
+                                        scale_factors[i] * scale_factors[j]
+        if undo:
+            new_units = self.matrix_units.split()
+            new_units.remove('amu^-1')
+            new_units = ' '.join(new_units)
+            logger.debug('Un-mass-weighted Hessian: {} --> {}'.format(
+                self.matrix_units, new_units))
+        else:
+            new_units = self.matrix_units + ' amu^-1'
+            logger.debug('Mass-weighted Hessian: {} --> {}'.format(
+                self.matrix_units, new_units))
+        self.matrix_units = new_units
+    def mass_weight_evec(self, undo=False):
+        scale_factors = []
+        for mass in self.atom_masses:
+            scale_factors.extend([np.sqrt(mass)] * 3)
+        x, y = self.evecs.shape
+        print x, y
+        for i in xrange(0, x):
+            for j in xrange(0, y):
+                if undo:
+                    self.evecs[i, j] /= scale_factors[j]
+                else:
+                    self.evecs[i, j] *= scale_factors[j]
+        if undo:
+            logger.debug('Un-mass-weighted eigenvectors.')
+            # new_units = self.evecs_units.split()
+            # new_units.remove('amu^-1')
+            # new_units = ' '.join(new_units)
+            # logger.debug(
+            #     'Un-mass-weighted eigenvectors: {} --> {}'.format(
+            #         self.evecs_units, new_units))
+        else:
+            logger.debug('Mass-weighted eigenvectors.')
+            # new_units = self.evecs_units + ' amu^-1'
+            # logger.debug('Mass-weighted eigenvectors: {} --> {}'.format(
+            #     self.evecs_units, new_units))
+        # self.evecs_units = new_units
+
 class FileType(object):
     def __init__(self, filename, directory=os.getcwd()):
         self.filename = filename
@@ -476,11 +589,11 @@ class JagOutFile(FileType):
                         temp_eigvs = [[]]
                 if 'IR intensities in' in line:
                     eig = True
-        logger.debug('Found {} geometrie(s) in {}.'.format(
+        logger.debug('{} geometr(y/ies) in {}.'.format(
             len(dic['Geometries']), self.filename))
-        logger.debug('Found {} eigenvalues and {} eigenvectors '.format(
+        logger.debug('{} eigenvalues and {} eigenvectors '.format(
             len(dic['Eigenvalues']), len(dic['Eigenvectors'])) +
-                     'of length {} in {}.'.format(
+                     '(length {}) in {}.'.format(
                          len(dic['Eigenvectors'][0]), self.filename))
         return dic
     

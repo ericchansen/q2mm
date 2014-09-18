@@ -1,9 +1,9 @@
-# Convert eigenvalues from au to mdyn A^-1.
-eigv_j_2_mm: .0642296235
-# Convert eigenvalues from mdyn A^-1 to au.
-eigv_mm_2_j: 15.56914
+# Convert "force const" from Jaguar .out from au to mdyn A^-1.
+forc_jag_2_mm: .0642296235
+# Convert from mdyn A^-1 to au.
+forc_mm_2_jag: 15.56914
 # Convert from eigenvalues of mass-weighted Hessian (units?) to cm^-1.
-eigv_mw_2_cm: 53.0883777868
-# Converts Hessian elements from au (or is it Hartree Bohr^-2) (Jaguar)
-# to kJ mol^-1 A^-2 (MacroModel)
-hess_j_2_mm: 9375.828222
+forc_mw_2_cm: 53.0883777868
+# Converts Hessian elements from au (maybe Hartree Bohr^-2) (Jaguar)
+# to kJ mol^-1 A^-2 (maybe kJ mol^-1 A^-2 amu^-1) (MacroModel)
+hess_jag_2_mm: 9375.828222
