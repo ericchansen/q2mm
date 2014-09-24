@@ -616,6 +616,9 @@ def process_args(args):
         help='Searches for this string to identify which substructure in' +
         'the force field to operate on. The default is "OPT".')
     parser.add_argument(
+        '--nozero', action='store_true',
+        help='If used, skip output of parameters that are equal to zero.')
+    parser.add_argument(
         '--output', '-o', type=str, nargs='?', metavar='filename',
         const='parameters.yaml',
         help='Outputs parameters from the force field using YAML. The ' +
@@ -671,12 +674,13 @@ def process_args(args):
                        if options['all'] or value is True and key in
                        ['af', 'bf', 'df', 'ea', 'eb', 'imp1', 'imp2', 'sb',
                         'q']]
-        logger.debug('Data types to extract: {}'.format(
-                ', '.join(param_types)))
+        logger.debug('Data types to extract: {}'.format(param_types))
         substr = import_mm3_ff(filename=options['filename'],
                                substr_name=options['name'])
         selected_params = [x for x in substr.params if x.param_type in
                            param_types]
+        if options['nozero']:
+            selected_params = [x for x in selected_params if x.value != 0.]
         logger.debug('{} parameters were selected.'.format(
                 len(selected_params)))
         # Print them.
