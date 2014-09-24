@@ -109,6 +109,7 @@ def process_args(args):
     dic['Calc. Data'] = calculate.process_args(options['calc'])
     x2, dic['Ref. Data'], dic['Calc. Data'] = calculate.calculate_x2(
         dic['Ref. Data'], dic['Calc. Data'])
+    logger.info('X2: {}'.format(x2))
     if options['output']:
         lines = ['X2: {}'.format(x2), '']
         head = '{0:^20}{1:^20}{2:^10}{3:^22}{4:^22}'.format(
