@@ -37,7 +37,7 @@ def process_args(args):
     save_opts = parser.add_argument_group('Load/save options')
     share_opts = parser.add_argument_group('Shared options')
     parser.add_argument(
-        '--conv', type=int, default=0.1, metavar='0.1',
+        '--conv', type=float, default=0.1, metavar='0.1',
         help='The parameters are considered to be converged and looping ' +
         'stops once the percent change in the penalty function is less than ' +
         'this variable. By default, this is set to 10%% (0.1). In later ' +
