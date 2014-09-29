@@ -129,6 +129,7 @@ def process_args(args):
     #     help='Input filename.')
     parser.add_argument(
         '--calc', '-c', type=str, metavar='"arguments for calculate.py"',
+        required=True,
         help='Arguments for calculate.py.')
     # parser.add_argument(
     #     '--units', type=str, metavar='kJ mol^-1', default='kJ mol^-1',
@@ -139,6 +140,9 @@ def process_args(args):
         help='Use my custom settings for 3D plot.')
     disp_opts.add_argument(
         '-cdsc', action='store_true',
+        help='Use my custom text.')
+    disp_opts.add_argument(
+        '-cmsa', action='store_true',
         help='Use my custom text.')
     disp_opts.add_argument(
         '--display', '-d', default='3d',
@@ -229,6 +233,28 @@ def process_args(args):
                   [171, 171],
                   [5, 100],
                   [96, 163]]
+        for text, coord in zip(texts, coords):
+            logger.debug('Adding "{}" to {}.'.format(text, coord))
+            plt.text(coord[0], coord[1], text,
+                     path_effects=[patheffects.withStroke(
+                         linewidth=2, foreground='w')])
+    if opts['cmsa']:
+        texts = [r'\textbf{1}_{\textbf{a}}',
+                 r'\textbf{1}_{\textbf{a}}',
+                 r'\textbf{1}_{\textbf{a}}',
+                 r'\textbf{1}_{\textbf{a}}',
+                 r'\textbf{2}_{\textbf{b}}',
+                 r'\textbf{1}_{\textbf{c}}^{\textbf{ts}}',
+                 r'\textbf{1}_{\textbf{d}}^{\textbf{ts}}',
+                 r'\textbf{1}_{\textbf{e}}^{\textbf{ts}}']
+        coords = [[5, 5],
+                  [329, 5],
+                  [5, 333],
+                  [5, 112],
+                  [172, 5],
+                  [5, 50],
+                  [93, 112],
+                  [170, 50]]
         for text, coord in zip(texts, coords):
             logger.debug('Adding "{}" to {}.'.format(text, coord))
             plt.text(coord[0], coord[1], text,
