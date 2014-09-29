@@ -243,7 +243,7 @@ def process_args(args):
                  r'\textbf{1}_{\textbf{a}}',
                  r'\textbf{1}_{\textbf{a}}',
                  r'\textbf{1}_{\textbf{a}}',
-                 r'\textbf{2}_{\textbf{b}}',
+                 r'\textbf{1}_{\textbf{b}}',
                  r'\textbf{1}_{\textbf{c}}^{\textbf{ts}}',
                  r'\textbf{1}_{\textbf{d}}^{\textbf{ts}}',
                  r'\textbf{1}_{\textbf{e}}^{\textbf{ts}}']
@@ -253,8 +253,8 @@ def process_args(args):
                   [5, 112],
                   [172, 5],
                   [5, 50],
-                  [93, 112],
-                  [170, 50]]
+                  [95, 110],
+                  [168, 48]]
         for text, coord in zip(texts, coords):
             logger.debug('Adding "{}" to {}.'.format(text, coord))
             plt.text(coord[0], coord[1], text,
