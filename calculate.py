@@ -22,6 +22,7 @@ import argparse
 import filetypes
 import logging
 import logging.config
+import numpy as np
 import os
 import re
 from setup_logging import log_uncaught_exceptions, remove_logs
@@ -163,8 +164,14 @@ def process_args(args):
         '-je', type=str, nargs='+', metavar='file.mae', 
         help='Jaguar energy (r_j_Gas_Phase_Energy).')
     data_opts.add_argument(
+        '-jeig', type=str, nargs='+', metavar='file.in,file.out',
+        help='Eigenvalues from Jaguar calculation.')
+    data_opts.add_argument(
         '-jh', type=str, nargs='+', metavar='file.in',
         help='Jaguar Hessian elements. Ouputs as the mass-weighted Hessian.')
+    data_opts.add_argument(
+        '-jhi', type=str, nargs='+', metavar='file.in',
+        help='Jaguar Hessian elements. Outputs as inverted and mass-weighted.')
     data_opts.add_argument(
         '-jq', type=str, nargs='+', metavar='file.mae',
         help='Jaguar charge (r_j_ESP_Charges).')
@@ -182,6 +189,9 @@ def process_args(args):
         help='MacroModel single point energy ' +
         '(r_mmod_Potential_Energy-MM3*) after optimizing.')
     data_opts.add_argument(
+        '-meig', type=str, nargs='+', metavar='file.mae,file.out',
+        help='MacroModel eigenvalue method.')
+    data_opts.add_argument(
         '-mh', type=str, nargs='+', metavar='file.mae',
         help='MacroModel Hessian elements. Ouputs as the mass-weighted ' +
         'Hessian.')
@@ -197,8 +207,8 @@ def process_args(args):
     commands = {}
     for key, value in options.iteritems():
         # CHANGES
-        if key in ['gq', 'gqh', 'ja', 'jb', 'je', 'jh', 'jq', 'ma', 'mb',
-                   'me', 'meo', 'mh', 'mq', 'mqh'] \
+        if key in ['gq', 'gqh', 'ja', 'jb', 'je', 'jeig', 'jh', 'jhi', 'jq',
+                   'ma', 'mb', 'me', 'meo', 'meig', 'mh', 'mq', 'mqh'] \
                 and value is not None: 
             commands.update({key: value})
     logger.debug('Commands: {}'.format(commands))
@@ -266,10 +276,19 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
     # want to repeat this operation.
     outputs = {}
     for filename, commands in inputs.iteritems():
+        # Rework flow so this doesn't have to be here.
+        if filename.endswith('.out'):
+            for command in set(commands).intersection(['meig']):
+                if filename not in outputs:
+                    if filename.endswith('.out'):
+                        outputs[filename] = filetypes.JagOutFile(
+                            filename, directory=rel_dir)
+            continue
         logger.debug('Data types for {}: {}'.format(filename, commands.keys()))
         # MacroModel has to be used for these arguments.
+        # CHANGES
         if set(commands).intersection(
-            ['ja', 'jb', 'ma', 'mb', 'me', 'meo', 'mh', 'mq', 'mqh']): # CHANGES
+            ['ja', 'jb', 'ma', 'mb', 'me', 'meo', 'meig', 'mh', 'mq', 'mqh']):
             # Setup filenames.
             out_mae_filename = '.'.join(filename.split('.')[:-1]) + '-out.mae'
             out_mmo_filename = '.'.join(filename.split('.')[:-1]) + '-out.mmo'
@@ -295,7 +314,7 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
                 pre_opt_str = True
             if set(commands).intersection(['me', 'mq', 'mqh']):
                 single_point = True
-            if set(commands).intersection(['mh']):
+            if set(commands).intersection(['meig', 'mh']):
                 hessian = True
             if set(commands).intersection(['ma', 'mb', 'meo']):
                 optimization = True
@@ -386,7 +405,15 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
             if filename not in outputs:
                 outputs[filename] = filetypes.MaeFile(
                     filename, directory=rel_dir)
-        for command in set(commands).intersection(['jh']):
+        for command in set(commands).intersection(['jeig']):
+            if filename not in outputs:
+                if filename.endswith('.in'):
+                    outputs[filename] = filetypes.JagInFile(
+                        filename, directory=rel_dir)
+                if filename.endswith('.out'):
+                    outputs[filename] = filetypes.JagOutFile(
+                        filename, directory=rel_dir)
+        for command in set(commands).intersection(['jh', 'jhi']):
             inputs[filename][command] = filename
             if filename not in outputs:
                 outputs[filename] = filetypes.JagInFile(
@@ -401,6 +428,11 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
             if out_mae_filename not in outputs:
                 outputs[out_mae_filename] = filetypes.MaeFile(
                     out_mae_filename, directory=rel_dir)
+        for command in set(commands).intersection(['meig']):
+            inputs[filename][command] = out_log_filename
+            if out_log_filename not in outputs:
+                outputs[out_log_filename] = filetypes.MMoLogFile(
+                    out_log_filename, directory=rel_dir)
         for command in set(commands).intersection(['mh']):
             inputs[filename][command] = out_log_filename
             if out_log_filename not in outputs:
@@ -539,29 +571,62 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 data.extend(energies)
                 logger.debug('{} energ(ies/y) from {}.'.format(
                         len(energies), filename))
+        elif command == 'jeig':
+            for file_set in input_file_sets:
+                filenames = file_set.split(',')
+                out_file = [x for x in filenames if x.endswith('.out')][0]
+                in_file = [x for x in filenames if x.endswith('.in')][0]
+                hess = filetypes.Hessian()
+                hess.load_from_jaguar_out(outputs[out_file])
+                hess.load_from_jaguar_in(outputs[in_file])
+                hess.mass_weight_hess()
+                hess.mass_weight_evec()
+                hess.convert_units_for_mm()
+                hess.inv_hess()
+                print np.diag(hess.evals)
         elif command == 'jh':
             for filename in input_file_sets:
-                # Get atom types for mass weighting.
-                atom_types = \
-                    outputs[inputs[filename][command]].raw_data['Atoms']
-                # Remove extra numbers.
-                atom_types = [re.split('\d', x)[0] for x in atom_types]
-                # Mass weight.
-                hessian = \
-                    outputs[inputs[filename][command]].get_mass_weight_hess(
-                    atom_types)
-                # Get lower triangle and indices.
-                hessian, indices = \
-                    outputs[inputs[filename][command]].get_hess_tril_array(
-                        hess=hessian)
-                hessian = [
-                    Datum(h, data_type='hessian', weight=weights['Hessian'],
-                          index=(x, y), source=inputs[filename][command],
-                          units='Hartree Bohr^-2', calc_com='jh')
-                    for h, x, y in zip(hessian, indices[0], indices[1])]
-                data.extend(hessian)
-                logger.debug('{} Hessian elements from {}.'.format(
-                        len(hessian), filename))
+                hess = filetypes.Hessian()
+                hess.load_from_jaguar_in(outputs[inputs[filename][command]])
+                hess.mass_weight_hess()
+                hess.convert_units_for_mm()
+                indices = np.tril_indices_from(hess.matrix)
+                used_elements = hess.matrix[indices]
+                used_data = [
+                    Datum(ele,
+                          data_type='hessian',
+                          weight=weights['Hessian'],
+                          index=(x, y),
+                          source=inputs[filename][command],
+                          units='kJ mol^-1 A^-2 amu^-1',
+                          calc_com='jh')
+                    for ele, x, y, in zip(
+                        used_elements, indices[0], indices[1])]
+                data.extend(used_data)
+                logger.debug('{} Hessian elements from {}'.format(
+                        len(used_data), filename))
+        elif command == 'jhi':
+            for filename in input_file_sets:
+                hess = filetypes.Hessian()
+                hess.load_from_jaguar_in(outputs[inputs[filename][command]])
+                hess.mass_weight_hess()
+                hess.convert_units_for_mm()
+                hess.inv_hess()
+                indices = np.tril_indices_from(hess.matrix)
+                used_elements = hess.matrix[indices]
+                used_data = [
+                    Datum(ele,
+                          data_type='hessian',
+                          weight=weights['Hessian'],
+                          index=(x, y),
+                          source=inputs[filename][command],
+                          units='kJ mol^-1 A^-2 amu^-1',
+                          calc_com='jh')
+                    for ele, x, y, in zip(
+                        used_elements, indices[0], indices[1])]
+                data.extend(used_data)
+                logger.debug('{} Hessian elements from {}'.format(
+                        len(used_data), filename))
         elif command == 'jq':
             for filename in input_file_sets:
                 more_data = []
@@ -695,8 +760,41 @@ def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                 data.extend(more_data)
                 logger.debug('{} geo. opt. energ(ies/y) from {}.'.format(
                         len(more_data), filename))
+        elif command == 'meig':
+            for file_set in input_file_sets:
+                filenames = file_set.split(',')
+                mae_file = [x for x in filenames if x.endswith('.mae')][0]
+                out_file = [x for x in filenames if x.endswith('.out')][0]
+                hess = filetypes.Hessian()
+                hess.load_from_jaguar_out(outputs[out_file])
+                hess.load_from_mmo_log(outputs[inputs[mae_file][command]])
+                hess.mass_weight_evec()
+                # print '==== EIGENVECTORS ============================'
+                # print hess.evecs
+                # print '========== HESS ==============================='
+                # print hess.matrix
+                yay = hess.do_what_i_want()
+                yay = np.array(yay)
+                # print '============= ANSWER? ======================='
+                indices = np.tril_indices_from(yay)
+                used_elements = yay[indices]
+                used_data = [
+                    Datum(ele,
+                          data_type='hessian',
+                          weight=weights['Hessian'],
+                          index=(x, y),
+                          source=inputs[mae_file][command],
+                          units='kJ mol^-1 A^-2 amu^-1',
+                          calc_com='jh')
+                    for ele, x, y, in zip(
+                        used_elements, indices[0], indices[1])]
+                data.extend(used_data)
+                logger.debug('{} strange Hessian elements from {}'.format(
+                        len(used_data), inputs[mae_file][command]))
         elif command == 'mh':
             for filename in input_file_sets:
+                hess = filetypes.Hessian()
+                
                 hessian, indices = \
                     outputs[inputs[filename][command]].get_hess_tril_array()
                 hessian = [

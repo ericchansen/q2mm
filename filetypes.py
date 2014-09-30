@@ -122,7 +122,9 @@ class Hessian(object):
                     self.matrix_units))
             else:
                 logger.debug('Unrecognized Hessian elem. units: {}'.format(
-                    self.matrix_units))
+                        self.matrix_units))
+    def do_what_i_want(self):
+        return np.dot(np.dot(self.evecs, self.matrix), self.evecs.T)
     def inv_hess(self):
         if self.evals is None or self.evecs is None:
             evals, evecs = np.linalg.eigh(self.matrix)
@@ -162,16 +164,23 @@ class Hessian(object):
             raise Exception('Unknown units for eigenvalues: {}'.format(
                 self.evals_units))
         self.evals[minimum_i] = replacement
-        print np.diagonal(self.evals)
         logger.debug(
             'Replaced min. eigenvalue with {} for inversion.'.format(
                 replacement))
         # Check location of transpose.
         # inv_hess = self.evecs.T.dot(np.diag(self.evals)).dot(self.evecs)
         inv_hess = np.dot(np.dot(self.evecs.T, np.diag(np.diagonal(self.evals))), self.evecs)
-        print inv_hess
         self.matrix = inv_hess
         return inv_hess
+    def load_from_mmo_log(
+        self, file_class=None, filename=None, direc=None):
+        if not file_class and filename and direc:
+            file_class = MMoLogFile(filename, directory=direc)
+        self.matrix = file_class.raw_data['Hessian']
+        self.matrix_units = 'kJ mol^-1 A^-2 amu^-1'
+        logger.debug('Loaded Hesian ({}, {}) ({}) from {}.'.format(
+                self.matrix.shape[0], self.matrix.shape[1], self.matrix_units,
+                file_class.filename))
     def load_from_jaguar_in(
             self, fileclass=None, filename=None, directory=None):
         if not fileclass and filename and directory:
@@ -188,10 +197,7 @@ class Hessian(object):
                 "Atom types don't match.\nExisting types: {}\n".format(
                     self.atom_types) + 'Loaded from {}: {}'.format(
                         fileclass.filename, atom_types)
-        # Should already be NumPy matrix, but why not.
-        self.matrix = np.matrix(fileclass.raw_data['Hessian'])
-        # Double check units.
-        # self.matrix_units = 'au'
+        self.matrix = fileclass.raw_data['Hessian']
         self.matrix_units = 'Hartree Bohr^-2'
         logger.debug('Loaded Hessian ({}, {}) ({}) from {}.'.format(
             self.matrix.shape[0], self.matrix.shape[1], self.matrix_units,
