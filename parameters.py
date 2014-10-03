@@ -586,10 +586,10 @@ def export_mm3_ff(params, in_filename='mm3.fld', out_filename=None,
         logger.debug('No output force field specified. Printing.')
         for i, line in enumerate(lines):
             if starting_row is None:
-                print line.strip('\n')
+                print(line.strip('\n'))
             else:
                 if i > starting_row - 10:
-                    print line.strip('\n')
+                    print(line.strip('\n'))
     else:
         logger.debug('Wrote {} parameters to {}.'.format(len(params), out_filename))
         with open(out_filename, 'w') as f:
@@ -689,9 +689,9 @@ def process_args(args):
                     len(selected_params)) +
                   '----------\n')
             if options['substr']:
-                print yaml.dump(substr)
+                print(yaml.dump(substr))
             else:
-                print yaml.dump_all(selected_params)
+                print(yaml.dump_all(selected_params))
         # Write them to a file.
         if options['output']:
             with open(options['output'], 'w') as f:
