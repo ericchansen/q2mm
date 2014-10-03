@@ -205,7 +205,8 @@ def process_args(args):
     # ignoring arguments that control settings like --dir, etc.
     # Also ignore unused data types.
     commands = {}
-    for key, value in options.iteritems():
+    # for key, value in options.iteritems():
+    for key, value in options.items():
         # CHANGES
         if key in ['gq', 'gqh', 'ja', 'jb', 'je', 'jeig', 'jh', 'jhi', 'jq',
                    'ma', 'mb', 'me', 'meo', 'meig', 'mh', 'mq', 'mqh'] \
@@ -217,7 +218,8 @@ def process_args(args):
     # want to know all of the commands that are to be performed
     # on a given file.
     inputs = {}
-    for command, input_file_sets in commands.iteritems():
+    # for command, input_file_sets in commands.iteritems():
+    for command, input_file_sets in commands.items():
         # These sets of input files can be a single filename
         # or multiple filenames separated by commas.
         for input_file_set in input_file_sets:
@@ -455,7 +457,8 @@ def make_macromodel_coms(inputs, rel_dir=os.getcwd(), scaninds=None):
 def extract_data(commands, inputs, outputs, weights, no_rel_energy=False,
                  substr='OPT', scanind=None):
     data = []
-    for command, input_file_sets in commands.iteritems():
+    # for command, input_file_sets in commands.iteritems():
+    for command, input_file_sets in commands.items():
         if command == 'gq':
             for filename in input_file_sets:
                 more_data = []

@@ -322,10 +322,10 @@ class FileType(object):
             use_this_structure = True
             if calc_type and calc_indices:
                 try:
-                    current_calc_type = indices_generator.next()
+                    current_calc_type = next(indices_generator)
                 except StopIteration:
                     indices_generator = iter(calc_indices)
-                    current_calc_type = indices_generator.next()
+                    current_calc_type = next(indices_generator)
                 if current_calc_type != calc_type:
                     use_this_structure = False
             # Only gather data if that check passed.
@@ -335,8 +335,10 @@ class FileType(object):
                 # Check to make sure that the data we are retrieving is
                 # a list of values (also check to ensure it's not a string,
                 # which is also iterable in Python).
+                # if isinstance(structure[label], collections.Iterable) and \
+                #         not isinstance(structure[label], basestring):
                 if isinstance(structure[label], collections.Iterable) and \
-                        not isinstance(structure[label], basestring):
+                        not isinstance(structure[label], str):
                     if substr and comment_label:
                         for datum, atom_number, com in zip(
                             structure[label], structure[atom_label],
@@ -686,7 +688,8 @@ class MaeFile(FileType):
                         labels = []
                         values = []
                     if section_type == 'horizontal':
-                        for label, value in sub_data.iteritems():
+                        # for label, value in sub_data.iteritems():
+                        for label, value in sub_data.items():
                             structures[-1].update({label: value})
                         labels = []
                         values = []
