@@ -670,7 +670,7 @@ def process_args(args):
                       out_filename=options['filename'])
     # Export the selected parameters from a force field in YAML format.
     elif options['output'] or options['print']:
-        param_types = [key for key, value in options.iteritems() 
+        param_types = [key for key, value in iter(options.items())
                        if options['all'] or value is True and key in
                        ['af', 'bf', 'df', 'ea', 'eb', 'imp1', 'imp2', 'sb',
                         'q']]
