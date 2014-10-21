@@ -492,7 +492,7 @@ def make_results_file(ref_data, init_ff, cent_ffs, output=None):
     else:
         strings = string.split('\n')
         for string in strings:
-            print string
+            print(string)
         
 if __name__ == '__main__':
     # Setup logs.

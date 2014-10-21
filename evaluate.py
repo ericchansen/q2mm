@@ -125,7 +125,7 @@ def process_args(args):
                     r_d.name, c_d.name, r_d.weight, r_d.value, c_d.value))
         if options['output'] == 'print':
             for line in lines:
-                print line
+                print(line)
         else:
             with open(options['output'], 'w') as f:
                 for line in lines:
