@@ -112,17 +112,18 @@ def process_args(args):
     logger.info('X2: {}'.format(x2))
     if options['output']:
         lines = ['X2: {}'.format(x2), '']
-        head = '{0:^20}{1:^20}{2:^10}{3:^22}{4:^22}'.format(
+        head = '{0:^25}{1:^25}{2:^10}{3:^18}{4:^18}{5:^18}'.format(
             'Ref. Name', 'Calc. Name', 'Ref. Weight', 'Ref. Value',
-            'Calc. Value')
+            'Calc. Value', 'X2')
         lines.append(head)
         lines.append('-' * len(head))
         
         for r_d, c_d in zip(
             sorted(dic['Ref. Data'], key=calculate.sort_datum),
             sorted(dic['Calc. Data'], key=calculate.sort_datum)):
-            lines.append('{0:<20}{1:<20}{2:>10.4f}{3:>22.6f}{4:>22.6f}'.format(
-                    r_d.name, c_d.name, r_d.weight, r_d.value, c_d.value))
+            x2_d = r_d.weight**2 * (r_d.value - c_d.value)**2
+            lines.append('{0:<25}{1:<25}{2:>10.4f}{3:>18.6f}{4:>18.6f}{5:>18.6}'.format(
+                    r_d.name, c_d.name, r_d.weight, r_d.value, c_d.value, x2_d))
         if options['output'] == 'print':
             for line in lines:
                 print(line)
