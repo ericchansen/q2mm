@@ -1,0 +1,26 @@
+# for more information on zeroteth, see example_files_tethering/parzero.txt.
+# just leave zeroteth as 1, as any other value would essentially modify the
+# parameter a, which is described in the aforementioned file.
+
+# i commented out weights that currently aren't in use.
+
+angle:          2.0
+charge:         1.0
+bond:         100.0
+eig_i:          0.01 # weight for 1st diagonal value (typically inverted value)
+eig_d:          0.5
+eig_o:          0.0 
+energy:        25.0
+energy2:        1.0
+hess:           0.1
+hess_11:        0.0
+parteth:      100.0
+zeroteth:       1.0
+
+# chargesum:      2.0
+# hess:           0.01
+# hess_12:        0.02
+# hess_13:        0.04
+# hess_14:        0.1
+# hess_15:        0.01
+# invd:           4.0
