@@ -38,9 +38,9 @@ class Optimizer(object):
             else:
                 ff.x2 = calc_x2(self.com_cal, self.data_ref)
             if ff.method is None:
-                logger.info('ff {}: {}'.format(i + 1, ff.x2))
+                logger.info('{}: {}'.format(i + 1, ff.x2))
             else:
-                logger.info('ff {}: {}'.format(ff.method, ff.x2))
+                logger.info('{}: {}'.format(ff.method, ff.x2))
     def params_diff(self, params, mode='central'):
         '''
         Perform forward or central differentiation of parameters.
@@ -56,16 +56,13 @@ class Optimizer(object):
         for i, param in enumerate(params):
             ff = FF()
             ff.params = copy.deepcopy(params)
-            if mode == 'central':
-                ff.method = 'central {}+'.format(i + 1)
-            else:
-                ff.method = 'forward {}'.format(i + 1)
+            ff.method = 'forward {} {}'.format(param.mm3_row, param.mm3_col)
             ff.params[i].value += ff.params[i].step
             ff.params[i].check_value()
             diff_ffs.append(ff)
             if mode == 'central':
                 ff = FF()
-                ff.method = 'central {}-'.format(i + 1)
+                ff.method = 'backward {} {}'.format(param.mm3_row, param.mm3_col)
                 ff.params = copy.deepcopy(params)
                 ff.params[i].value -= ff.params[i].step
                 ff.params[i].check_value()

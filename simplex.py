@@ -57,9 +57,13 @@ class Simplex(Optimizer):
             self.calc_set_x2(central_ffs)
             self.calc_derivs(self.init_ff, central_ffs)
             self.init_ff.params = self.trim_params_on_2nd(self.init_ff.params)
-        forward_ffs = self.params_diff(self.init_ff.params, mode='forward')
-        # this is doing way more calculations than necessary
-        self.calc_set_x2(forward_ffs)
+            forward_ffs = [x for x in central_ffs if
+                           x.method.split()[0] =='forward' and
+                           int(x.method.split()[1]) in [y.mm3_row for y in self.init_ff.params] and
+                           int(x.method.split()[2]) in [y.mm3_col for y in self.init_ff.params]]
+        else:
+            forward_ffs = self.params_diff(self.init_ff.params, mode='forward')
+            self.calc_set_x2(forward_ffs)
         self.trial_ffs = forward_ffs + [self.init_ff]
         self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
         cycle_num = 0
@@ -67,7 +71,7 @@ class Simplex(Optimizer):
         while cycle_num < self.max_cycles and cycles_wo_change < self.max_wo_change:
             old_best_x2 = self.trial_ffs[0].x2 # copy necessary? copy.deepcopy?
             cycle_num += 1
-            logger.info('start simplex cycle {} - best: {} ({})'.format(
+            logger.info('start simplex cycle {}: {} ({})'.format(
                     cycle_num, self.trial_ffs[0].x2, self.trial_ffs[0].method))
             logger.info('all x2: {}'.format([x.x2 for x in self.trial_ffs]))
             inverted_ff = FF()
@@ -156,8 +160,8 @@ class Simplex(Optimizer):
                 logger.info('{} cycles w/o change in best'.format(cycles_wo_change))
             # if you remove this (not necessary here), don't forget it later
             self.init_ff.export_ff(params=self.trial_ffs[0].params)
-        logger.info('end simplex ({} cycles): {} ({}) {} ({})'.format(
-                cycle_num, self.trial_ffs[0].x2, self.trial_ffs[0].method, self.init_ff.method, self.init_ff.x2))
+        logger.info('end simplex ({} cycles): {} ({}) vs {} ({})'.format(
+                cycle_num, self.trial_ffs[0].x2, self.trial_ffs[0].method, self.init_ff.x2, self.init_ff.method))
         # would be better to copy the initial if it didn't change in case we
         # check for derivatives already existing
         best_ff = MM3()
