@@ -33,6 +33,17 @@ format_macromodel
 '''
 import re
 
+steps = {'ae':      1.0,
+         'af':      0.2,
+         'be':      0.05,
+         'bf':      0.2,
+         'df':     '0.01',
+         # 'df':      0.2
+         'imp1':    0.2,
+         'imp2':    0.2,
+         'sb':      0.2,
+         'q':       0.5}
+
 force_conversion = 15.56914
 eigenvalue_conversion = 53.0883777868
 hessian_conversion = 9375.828222

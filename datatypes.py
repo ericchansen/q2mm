@@ -10,9 +10,19 @@ import constants as cons
 
 logger = logging.getLogger(__name__)
 
+class UnallowedNegative(Exception):
+    pass
+
 class Param(object):
     '''
     Class for a single parameter.
+
+    der1 - float - 1st derivative with respect to objective function.
+    der2 - float - 2nd derivative with respect to objective function.
+    ptype - string - In-house label for parameter type.
+    range - list - Actually, I haven't implemented this yet.
+    step - float - Default step size.
+    value - float - Current value of the parameter.
     '''
     __slots__ = ['_allow_negative', '_default_value', 'der1', 'der2', 'ptype',
                  'range', 'step' ,'value']
@@ -41,27 +51,29 @@ class Param(object):
     def default_value(self):
         '''
         Default value of the parameter used when the parameter must
-        be reset.
+        be reset. Probably better to handle this using a dictionary.
         '''
         if self._default_value is None:
             if self.ptype == 'bf':
-                self._default_value = 1.
+                self._default_value = 1.0
             elif self.ptype == 'af':
                 self._default_value = 0.5
             else:
                 raise Exception("can't set default value for unexpected parameter: {}".format(self))
         return self._default_value
-    # will expand to include allowed parameter ranges.
+    # expand to include allowed parameter ranges.
     def check_value(self):
         '''
         Use to check if the current parameter value is allowed.
         '''
-        if not self.allow_negative and self.value < 0:
-            logger.warning('{} attempted to go below zero'.format(self))
-            self.value = self.default_value
-            return 1
-        else:
-            return 0
+        # if not self.allow_negative and self.value < 0.0:
+        #     logger.warning('{} attempted to go below zero'.format(self))
+        #     self.value = self.default_value
+        #     return 1
+        # else:
+        #     return 0
+        if not self.allow_negative and self.value < 0.0:
+            raise UnallowedNegative('{} attempted to go below zero'.format(self))
     def __repr__(self):
         return '{}({})'.format(self.ptype, self.value)
     
@@ -116,13 +128,29 @@ class MM3(FF):
                 atom_types.remove('')
             self._atom_types = atom_types
         return self._atom_types
-    def copy_attributes_to(self, other_ff):
-        other_ff.lines = self.lines
-        other_ff.path = self.path
-        other_ff.smiles = self.smiles
-        other_ff.sub_search = self.sub_search
-        other_ff.sub_name = self.sub_name
-        other_ff.start_row = self.start_row
+    def copy_attributes(self, other_ff):
+        '''
+        Copies attributes needed for self.export_ff (and a few more).
+        
+        lines - list - Lines in the force field file.
+        path - string - Path to force field file.
+        smiles - string - Smiles formula.
+        sub_search - string - Used to search for substructure.
+        sub_name - string - Substructure name.
+        start_row - integer - 1st line of the force field containing the
+                              substructure.
+
+        I'm worried that lines might need a deepcopy. You would think
+        that would waste more memory, but maybe it would allow other_ff
+        to be garbage collected at some point, thereby saving memory. I'm
+        not sure about these things.
+        '''
+        self.lines = other_ff.lines
+        self.path = other_ff.path
+        self.smiles = other_ff.smiles
+        self.sub_search = other_ff.sub_search
+        self.sub_name = other_ff.sub_name
+        self.start_row = other_ff.start_row
     def select_atom_types(self, atom_labels):
         return [self._atom_types[int(x) - 1] if x.isdigit() else x for x in atom_labels]
     def import_ff(self, sub_search=None):

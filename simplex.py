@@ -17,18 +17,25 @@ logger = logging.getLogger(__name__)
 class Simplex(Optimizer):
     '''
     For implementation details, read:
-    Norrby, Liljefors. Automated Molecular Mechanics Parameterization with
-    Simultaneous Utilization of Experimental and Quantum Mechanical Data.
-    J. Comp. Chem., 1998, 1146-1166.
+    Norrby, Liljefors. Automated Molecular Mechanics Parameterization
+    with Simultaneous Utilization of Experimental and Quantum Mechanical
+    Data. J. Comp. Chem., 1998, 1146-1166.
     '''
-    name = 'simplex'
     def __init__(self):
         super(Simplex, self).__init__()
+        self.best_ff = None
+        self.current_cycle = None
+        self.cycles_wo_change = None
+        self.ffs_central = None
+        self.ffs_forward = None
+        self.last_best = None
         self.massive_contraction = True
         self.max_cycles = 25
         self.max_wo_change = 5
         self.max_params = 15
+        self.params = None
         self.use_weight = True
+
     def parse(self, args):
         parser = self.return_optimizer_parser()
         group = parser.add_argument_group('simplex')
@@ -44,132 +51,159 @@ class Simplex(Optimizer):
         self.massive_contraction = not opts.no_massive
         self.use_weight = not opts.no_weight
         return opts
-    def run(self, data_ref=None):
-        logger.info('--- running {} ---'.format(self.name))
-        if data_ref is None:
-            self.data_ref = run_calculate(self.com_ref.split())
+
+    def run(self):
+        '''
+        Runs the simplex optimization. Run self.setup before this, or
+        manually assign the necessary attributes that would normally
+        be assigned by self.setup.
+
+        self.init_ff must have all the required attributes for
+        self.init_ff.export_ff.
+        '''
+        logger.info('--- running {} ---'.format(type(self).__name__))
         if self.init_ff.x2 is None:
-            self.init_ff.export_ff() # may be unnecessary
-            self.init_ff.x2 = calc_x2(self.com_cal, self.data_ref)
-        logger.info('{}: {}'.format(self.init_ff.method, self.init_ff.x2))
+            self.calc_x2_ff(self.init_ff)
+
         if self.max_params is not None and len(self.init_ff.params) > self.max_params:
-            central_ffs = self.params_diff(self.init_ff.params, mode='central')
-            self.calc_set_x2(central_ffs)
-            self.calc_derivs(self.init_ff, central_ffs)
-            self.init_ff.params = self.trim_params_on_2nd(self.init_ff.params)
-            forward_ffs = [x for x in central_ffs if
+            self.ffs_central = self.params_diff(self.init_ff.params, mode='central')
+            for ff in self.ffs_central:
+                self.calc_x2_ff(ff)
+            self.central_diff_derivs(self.init_ff, self.ffs_central)
+            self.params = self.trim_params_on_2nd(self.init_ff.params)
+            self.ffs_forward = [x for x in self.ffs_central if
                            x.method.split()[0] =='forward' and
-                           int(x.method.split()[1]) in [y.mm3_row for y in self.init_ff.params] and
-                           int(x.method.split()[2]) in [y.mm3_col for y in self.init_ff.params]]
+                           int(x.method.split()[1]) in [y.mm3_row for y in self.params] and
+                           int(x.method.split()[2]) in [y.mm3_col for y in self.params]]
         else:
-            forward_ffs = self.params_diff(self.init_ff.params, mode='forward')
-            self.calc_set_x2(forward_ffs)
-        self.trial_ffs = forward_ffs + [self.init_ff]
-        self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
-        cycle_num = 0
-        cycles_wo_change = 0
-        while cycle_num < self.max_cycles and cycles_wo_change < self.max_wo_change:
-            old_best_x2 = self.trial_ffs[0].x2 # copy necessary? copy.deepcopy?
-            cycle_num += 1
-            logger.info('start simplex cycle {}: {} ({})'.format(
-                    cycle_num, self.trial_ffs[0].x2, self.trial_ffs[0].method))
-            logger.info('all x2: {}'.format([x.x2 for x in self.trial_ffs]))
-            inverted_ff = FF()
-            inverted_ff.method = 'inversion'
-            inverted_ff.params = copy.deepcopy(self.init_ff.params)
-            reflected_ff = FF()
-            reflected_ff.method = 'reflection'
-            reflected_ff.params = copy.deepcopy(self.init_ff.params)
-            for i in xrange(0, len(self.init_ff.params)):
+            self.params = copy.deepcopy(self.init_ff.params)
+            self.ffs_forward = self.params_diff(self.params, mode='forward')
+            for ff in self.ffs_forward:
+                self.calc_x2_ff(ff)
+        self.trial_ffs = sorted(self.ffs_forward + [self.init_ff], key=lambda x: x.x2)
+
+        self.current_cycle = 0
+        self.cycles_wo_change = 0
+        while self.current_cycle < self.max_cycles and self.cycles_wo_change < self.max_wo_change:
+            self.last_best = self.trial_ffs[0].x2 # copy necessary? copy.deepcopy?
+            self.current_cycle += 1
+            logger.info('simplex - start of cycle {} - {} ({})'.format(
+                    self.current_cycle, self.trial_ffs[0].x2, self.trial_ffs[0].method))
+            logger.info('{}'.format([x.x2 for x in self.trial_ffs]))
+            inverted = FF()
+            inverted.method = 'inversion'
+            inverted.params = copy.deepcopy(self.params)
+            reflected = FF()
+            reflected.method = 'reflection'
+            reflected.params = copy.deepcopy(self.params)
+            for i in xrange(0, len(self.params)):
                 if self.use_weight:
-                    inverted_param = \
+                    param_inverted = \
                         sum([x.params[i].value * (x.x2 - self.trial_ffs[-1].x2)
                              for x in self.trial_ffs[:-1]]) / \
                         sum([x.x2 - self.trial_ffs[-1].x2 for x in self.trial_ffs[:-1]])
                 else:
-                    inverted_param = \
+                    param_inverted = \
                         sum([x.params[i].value for x in self.trial_ffs[:-1]]) / \
                         len(self.trial_ffs[:-1])
-                inverted_ff.params[i].value = inverted_param
-                inverted_ff.params[i].check_value()
-                reflected_param = 2 * inverted_param - self.trial_ffs[-1].params[i].value
-                reflected_ff.params[i].value = reflected_param
-                reflected_ff.params[i].check_value()
-            logger.log(7, 'inverted parameters: {}'.format(inverted_ff.params))
-            logger.log(7, 'reflected parameters: {}'.format(reflected_ff.params))
-            self.init_ff.export_ff(params=reflected_ff.params)
-            reflected_ff.x2 = calc_x2(self.com_cal, self.data_ref)
-            logger.info('{}: {}'.format(reflected_ff.method, reflected_ff.x2))
-            if reflected_ff.x2 < self.trial_ffs[0].x2:
+                inverted.params[i].value = param_inverted
+                inverted.params[i].check_value()
+                reflected.params[i].value = 2 * param_inverted - self.trial_ffs[-1].params[i].value
+                reflected.params[i].check_value()
+            logger.log(7, '{} parameters: {}'.format(inverted.method, inverted.params))
+            logger.log(7, '{} parameters: {}'.format(reflected.method, reflected.params))
+            self.calc_x2_ff(reflected)
+            if reflected.x2 < self.trial_ffs[0].x2:
                 logger.info('attempting expansion')
-                expanded_ff = FF()
-                expanded_ff.method = 'expansion'
-                expanded_ff.params = copy.deepcopy(self.init_ff.params)
-                for i in xrange(0, len(self.init_ff.params)):
-                    expanded_param = 3 * inverted_ff.params[i].value - \
+                expanded = FF()
+                expanded.method = 'expansion'
+                expanded.params = copy.deepcopy(self.params)
+                for i in xrange(0, len(self.params)):
+                    # expanded_param = 3 * inverted.params[i].value - \
+                    #     2 * self.trial_ffs[-1].params[i].value
+                    # expanded.params[i].value = expanded_param
+                    expanded.params[i].value = 3 * inverted.params[i].value - \
                         2 * self.trial_ffs[-1].params[i].value
-                    expanded_ff.params[i].value = expanded_param
-                    expanded_ff.params[i].check_value()
-                logger.log(7, 'expanded parameters: {}'.format(expanded_ff.params))
-                self.init_ff.export_ff(params=expanded_ff.params)
-                expanded_ff.x2 = calc_x2(self.com_cal, self.data_ref)
-                logger.info('expansion: {}'.format(expanded_ff.x2))
-                if expanded_ff.x2 < reflected_ff.x2:
-                    self.trial_ffs[-1] = expanded_ff
+                    expanded.params[i].check_value()
+                logger.log(7, 'expanded parameters: {}'.format(expanded.params))
+                self.calc_x2_ff(expanded)
+                if expanded.x2 < reflected.x2:
+                    self.trial_ffs[-1] = expanded
                     logger.info('expansion succeeded. keeping')
                 else:
-                    self.trial_ffs[-1] = reflected_ff
+                    self.trial_ffs[-1] = reflected
                     logger.info('expansion failed. keeping reflection')
-            elif reflected_ff.x2 < self.trial_ffs[-2].x2:
+            elif reflected.x2 < self.trial_ffs[-2].x2:
                 logger.info('keeping reflection')
-                self.trial_ffs[-1] = reflected_ff
+                self.trial_ffs[-1] = reflected
             else:
                 logger.info('attempting contraction')
-                contracted_ff = FF()
-                contracted_ff.method = 'contraction'
-                contracted_ff.params = copy.deepcopy(self.init_ff.params)
-                for i in xrange(0, len(self.init_ff.params)):
-                    if reflected_ff.x2 > self.trial_ffs[-1].x2:
-                        contracted_param = (inverted_ff.params[i].value + self.trial_ffs[-1].params[i].value) / 2
+                contracted = FF()
+                contracted.method = 'contraction'
+                contracted.params = copy.deepcopy(self.params)
+                for i in xrange(0, len(self.params)):
+                    if reflected.x2 > self.trial_ffs[-1].x2:
+                        contracted_param = (inverted.params[i].value + self.trial_ffs[-1].params[i].value) / 2
                     else:
-                        contracted_param = (3 * inverted_ff.params[i].value - self.trial_ffs[-1].params[i].value) / 2
-                    contracted_ff.params[i].value = contracted_param
-                    contracted_ff.params[i].check_value()
-                logger.log(7, 'contracted parameters: {}'.format(contracted_ff.params))
-                self.init_ff.export_ff(params=contracted_ff.params)
-                contracted_ff.x2 = calc_x2(self.com_cal, self.data_ref)
-                logger.info('contraction: {}'.format(contracted_ff.x2))
-                if contracted_ff.x2 < self.trial_ffs[-2].x2:
-                    self.trial_ffs[-1] = contracted_ff
+                        contracted_param = (3 * inverted.params[i].value - self.trial_ffs[-1].params[i].value) / 2
+                    contracted.params[i].value = contracted_param
+                    contracted.params[i].check_value()
+                logger.log(7, 'contracted parameters: {}'.format(contracted.params))
+                self.calc_x2_ff(contracted)
+                if contracted.x2 < self.trial_ffs[-2].x2:
+                    self.trial_ffs[-1] = contracted
                 elif self.massive_contraction:
                     logger.info('doing massive contraction')
                     for ff_num, ff in enumerate(self.trial_ffs[1:]):
-                        for i in xrange(0, len(self.init_ff.params)):
+                        for i in xrange(0, len(self.params)):
                             ff.params[i].value = (ff.params[i].value + self.trial_ffs[0].params[i].value) / 2
                             ff.params[i].check_value()
-                        logger.log(7, 'massive contraction parameters {}: {}'.format(
+                        logger.log(7, 'massive contraction {} parameters: {}'.format(
                                 ff_num + 2, ff.params))
-                        self.init_ff.export_ff(params=ff.params)
-                        ff.x2 = calc_x2(self.com_cal, self.data_ref)
-                    logger.info('after massive contraction: {}'.format([x.x2 for x in self.trial_ffs]))
+                        ff.method += ' / massive contraction'
+                        self.calc_x2_ff(ff)
+                else:
+                    logger.info('contraction failed')
             self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
-            if self.trial_ffs[0].x2 < old_best_x2:
-                cycles_wo_change = 0
+            if self.trial_ffs[0].x2 < self.last_best:
+                self.cycles_wo_change = 0
             else:
-                cycles_wo_change += 1
-                logger.info('{} cycles w/o change in best'.format(cycles_wo_change))
-            # if you remove this (not necessary here), don't forget it later
-            self.init_ff.export_ff(params=self.trial_ffs[0].params)
-        logger.info('end simplex ({} cycles): {} ({}) vs {} ({})'.format(
-                cycle_num, self.trial_ffs[0].x2, self.trial_ffs[0].method, self.init_ff.x2, self.init_ff.method))
-        # would be better to copy the initial if it didn't change in case we
-        # check for derivatives already existing
-        best_ff = MM3()
-        self.init_ff.copy_attributes_to(best_ff)
-        best_ff.params = copy.deepcopy(self.trial_ffs[0].params)
-        best_ff.x2 = self.trial_ffs[0].x2
-        best_ff.export_ff()
-        return best_ff
+                self.cycles_wo_change += 1
+                logger.info('{} cycles w/o change'.format(self.cycles_wo_change))
+            logger.info('simplex - end of cycle {} - {} ({})'.format(
+                    self.current_cycle, self.trial_ffs[0].x2, self.trial_ffs[0].method))
+        if self.trial_ffs[0].x2 < self.init_ff.x2:
+            self.best_ff = MM3()
+            self.best_ff.method = self.trial_ffs[0].method
+            self.best_ff.copy_attributes(self.init_ff)
+            # add in parameters that were previously removed
+            if self.max_params is not None and len(self.init_ff.params) > self.max_params:
+                self.best_ff.params = copy.deepcopy(self.init_ff.params)
+                for param_i in self.best_ff.params:
+                    for param_b in self.trial_ffs[0].params:
+                        if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
+                            # is deep copy necessary? im worried that if simplex is done again
+                            # in the same loop, it will somehow mess this up
+                            # param_i = copy.deepcopy(param_b) 
+                           param_i = copy.deepcopy(param_b)
+            else:
+                self.best_ff.params = copy.deepcopy(self.trial_ffs[0].params)
+            self.best_ff.x2 = self.trial_ffs[0].x2
+            # should never happen
+            if self.trial_ffs[0].data is not None:
+                self.best_ff.data = self.trial_ffs[0].data
+            self.best_ff.export_ff()
+            logger.info('--- {} complete ---'.format(type(self).__name__))
+            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
+            logger.info('final: {} ({})'.format(self.best_ff.x2, self.best_ff.method))
+            return self.best_ff
+        else:
+            self.init_ff.export_ff()
+            logger.info('--- {} complete ---'.format(type(self).__name__))
+            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
+            logger.info('final: {} ({})'.format(self.trial_ffs[0].x2, self.trial_ffs[0].method))
+            logger.info('no improvement from {}'.format(type(self).__name__))
+            return self.init_ff
 
 if __name__ == '__main__':
     import logging.config

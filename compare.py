@@ -11,6 +11,7 @@ import yaml
 
 from calculate import run_calculate
 from datatypes import Datum, datum_sort_key
+import constants as cons
 
 def parse(args):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -50,13 +51,21 @@ def convert_energies(data_cal, data_ref):
         for datum in group_energies_cal:
             datum.value -= minimum_cal
 
-def import_steps(params, yamlfile='steps.yaml', **kwargs):
-    with open(yamlfile, 'r') as f:
-        steps = yaml.load(f)
-    for key,value in kwargs.iteritems():
-        steps[key] = value
+def import_steps(params):
     for param in params:
-        param.step = steps[param.ptype]
+        param.step = cons.steps[param.ptype]
+
+# def import_steps(params, yamlfile='steps.yaml', **kwargs):
+#     '''
+#     Grabs step sizes for parameters from a yaml file. Can also take
+#     arguments to override the dictionary.
+#     '''
+#     with open(yamlfile, 'r') as f:
+#         steps = yaml.load(f)
+#     for key,value in kwargs.iteritems():
+#         steps[key] = value
+#     for param in params:
+#         param.step = steps[param.ptype]
 
 def import_weights(data, yamlfile='weights.yaml', **kwargs):
     with open(yamlfile, 'r') as f:

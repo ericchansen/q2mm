@@ -1,9 +1,10 @@
 disable_existing_loggers: false
 formatters:
+  bare: {format: '%(message)s'}
   basic: {format: '%(name)s - %(levelname)s - %(message)s'}
   simple: {format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'}
 handlers:
-  console: {class: logging.StreamHandler, formatter: basic, level: NOTSET}
+  console: {class: logging.StreamHandler, formatter: bare, level: NOTSET}
   # root_file_handler: {class: logging.FileHandler, filename: root.log, formatter: simple,
   #   level: NOTSET}
 loggers:
@@ -22,6 +23,6 @@ loggers:
 root:
   # handlers: [console, root_file_handler]
   handlers: [console]
-  level: 9
+  level: INFO
   propagate: false
 version: 1
