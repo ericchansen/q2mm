@@ -79,6 +79,7 @@ class Loop(Optimizer):
                 if simplex.trial_ffs:
                     # make a function for this...
                     self.best_ff = MM3()
+                    self.method = simplex.trial_ffs[0].method
                     self.best_ff.copy_attributes(self.init_ff)
                     if simplex.max_params is not None and len(simplex.init_ff.params) > simplex.max_params:
                         self.best_ff.params = copy.deepcopy(self.init_ff.params)
