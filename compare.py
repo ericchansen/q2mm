@@ -73,7 +73,7 @@ def import_weights(data, yamlfile='weights.yaml', **kwargs):
     for key, value in kwargs.iteritems():
         weights[key] = value
     for datum in data:
-        if datum.dtype == 'eig':
+        if datum.dtype == 'eig' or datum.dtype == 'eigz':
             if datum.i == 0 and datum.j == 0:
                 datum.weight = weights['eig_i']
             elif datum.i == datum.j:
