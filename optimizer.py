@@ -13,7 +13,7 @@ import os
 
 from calculate import run_calculate
 from compare import calc_x2, import_steps
-from datatypes import FF, MM3
+from datatypes import FF, MM3, UnallowedNegative
 
 logger = logging.getLogger(__name__)
 
