@@ -51,29 +51,43 @@ class Optimizer(object):
         use some improvements.
         '''
         logger.info('{} differentiation - {} parameters'.format(mode, len(params)))
+        import_steps(params)
         diff_ffs = []
         for i, param in enumerate(params):
-            ff = FF()
-            ff.params = copy.deepcopy(params)
-            ff.method = 'forward {} {}'.format(param.mm3_row, param.mm3_col)
-            # ff.params[i].value += ff.params[i].step
-            if isinstance(ff.params[i].step, basestring):
-                ff.params[i].value += ff.params[i].value * float(ff.params[i].step)
-            else:
-                ff.params[i].value += ff.params[i].step
-            ff.params[i].check_value()
-            diff_ffs.append(ff)
-            if mode == 'central':
-                ff = FF()
-                ff.method = 'backward {} {}'.format(param.mm3_row, param.mm3_col)
-                ff.params = copy.deepcopy(params)
-                # ff.params[i].value -= ff.params[i].step
-                if isinstance(ff.params[i].step, basestring):
-                    ff.params[i].value -= ff.params[i].value * float(ff.params[i].step)
-                else:
-                    ff.params[i].value -= ff.params[i].step
-                ff.params[i].check_value()
-                diff_ffs.append(ff)
+            while True:
+                try:
+                    ff_forward = FF()
+                    ff_forward.params = copy.deepcopy(params)
+                    ff_forward.method = 'forward {} {}'.format(param.mm3_row, param.mm3_col)
+                    # commented region now done in compare.import_steps
+                    # if isinstance(ff_forward.params[i].step, basestring):
+                    #     ff_forward.params[i].value += ff_forward.params[i].value * \
+                    #         float(ff_forward.params[i].step)
+                    # else:
+                    #     ff_forward.params[i].value += ff_forward.params[i].step
+                    ff_forward.params[i].value += ff_forward.params[i].step
+                    ff_forward.params[i].check_value()
+                    if mode == 'central':
+                        ff_backward = FF()
+                        ff_backward.method = 'backward {} {}'.format(param.mm3_row, param.mm3_col)
+                        ff_backward.params = copy.deepcopy(params)
+                        # if isinstance(ff_backward.params[i].step, basestring):
+                        #     ff_backward.params[i].value -= ff_backward.params[i].value * \
+                        #         float(ff_backward.params[i].step)
+                        # else:
+                        #     ff_backward.params[i].value -= ff_backward.params[i].step
+                        ff_backward.params[i].value -= ff_backward.params[i].step
+                        ff_backward.params[i].check_value()
+                    break
+                except UnallowedNegative as e:
+                    logger.warning(e.message)
+                    mod_step = param.value * 0.05
+                    logger.warning('changing step size of {} from {} to {}'.format(param, param.step, mod_step))
+                    param.step = mod_step
+                finally:
+                    diff_ffs.append(ff_forward)
+                    if mode == 'central':
+                        diff_ffs.append(ff_backward)
         return diff_ffs
 
     def return_optimizer_parser(self):
@@ -118,7 +132,7 @@ class Optimizer(object):
                                 params_to_optimize.append(param)
         for param in params_to_optimize:
             param.check_value()
-        import_steps(params_to_optimize)
+        # import_steps(params_to_optimize)
         self.init_ff.params = params_to_optimize
         logger.info('{} parameters selected for optimization'.format(len(self.init_ff.params)))
 

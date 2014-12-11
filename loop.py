@@ -2,9 +2,11 @@
 import copy
 import logging
 import sys
+import traceback
 
 from calculate import run_calculate
 from compare import calc_x2
+from datatypes import MM3
 from gradient import Gradient
 from optimizer import Optimizer
 from simplex import Simplex
@@ -68,29 +70,29 @@ class Loop(Optimizer):
             self.best_ff = gradient.run()
             self.best_ff.export_ff(path=self.best_ff.path + '.{}.grad'.format(self.current_cycle))
             simplex.init_ff = self.best_ff
-            self.best_ff = simplex.run()
-            # try:
-            #     self.best_ff = simplex.run()
-            # except Exception:
-            #     logger.warning(traceback.format_exc)
-            #     logger.warning("in case you didn't notice, simplex raised an exception")
-            #     if simplex.trial_ffs:
-            #         # make a function for this...
-            #         self.best_ff = MM3()
-            #         self.best_ff.copy_attributes(self.init_ff)
-            #         if simplex.max_params is not None and len(simplex.init_ff.params) > simplex.max_params:
-            #             self.best_ff.params = copy.deepcopy(self.init_ff.params)
-            #             for param_i in self.best_ff.params:
-            #                 for param_b in simplex.trial_ffs[0].params:
-            #                     if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
-            #                         param_i = copy.deepcopy(param_b)
-            #         else:
-            #             self.best_ff.params = copy.deepcopy(simplex.trial_ffs[0].params)
-            #         self.best_ff.x2 = simplex.trial_ffs[0].x2
-            #         if simplex.trial_ffs[0].data is not None:
-            #             self.best_ff.data = self.trial_ffs[0].data
-            #         # ... block of code
-            #     self.best_ff.export_ff()
+            # self.best_ff = simplex.run()
+            try:
+                self.best_ff = simplex.run()
+            except Exception:
+                logger.warning(traceback.format_exc())
+                logger.warning("in case you didn't notice, simplex raised an exception")
+                if simplex.trial_ffs:
+                    # make a function for this...
+                    self.best_ff = MM3()
+                    self.best_ff.copy_attributes(self.init_ff)
+                    if simplex.max_params is not None and len(simplex.init_ff.params) > simplex.max_params:
+                        self.best_ff.params = copy.deepcopy(self.init_ff.params)
+                        for param_i in self.best_ff.params:
+                            for param_b in simplex.trial_ffs[0].params:
+                                if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
+                                    param_i = copy.deepcopy(param_b)
+                    else:
+                        self.best_ff.params = copy.deepcopy(simplex.trial_ffs[0].params)
+                    self.best_ff.x2 = simplex.trial_ffs[0].x2
+                    if simplex.trial_ffs[0].data is not None:
+                        self.best_ff.data = simplex.trial_ffs[0].data
+                    # ... block of code
+                self.best_ff.export_ff()
             self.best_ff.export_ff(path=self.best_ff.path + '.{}.simp'.format(self.current_cycle))
             change = abs(self.last_best - self.best_ff.x2) / self.last_best
             logger.info('loop - end of cycle {} - {} ({}) - % change {}'.format(
