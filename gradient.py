@@ -273,12 +273,14 @@ class Gradient(Optimizer):
                         self.trial_ffs.append(ff)
 
         if len(self.trial_ffs) == 0:
-            logger.warning('no trial force fields were generated')
+            self.init_ff.export_ff()
+            logger.warning('zero trial force fields generated')
             logger.info('--- {} complete ---'.format(type(self).__name__))
             logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
             logger.info('final: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
+            logger.info('no change from {}'.format(type(self).__name__))
             return self.init_ff
-        logger.info('{} trial ffs'.format(len(self.trial_ffs)))
+        logger.info('{} trial force fields generated'.format(len(self.trial_ffs)))
         for ff in self.trial_ffs:
             self.calc_x2_ff(ff)
         self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
@@ -298,6 +300,7 @@ class Gradient(Optimizer):
             logger.info('final: {} ({})'.format(self.best_ff.x2, self.best_ff.method))
             return self.best_ff
         else:
+            self.init_ff.export_ff()
             logger.info('--- {} complete ---'.format(type(self).__name__))
             logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
             logger.info('final: {} ({})'.format(self.trial_ffs[0].x2, self.trial_ffs[0].method))
