@@ -102,6 +102,11 @@ class FF(object):
         self.path = path
         self.params = None
         self.x2 = None
+    def check_params(self):
+        for param in self.params:
+            param.check_value()
+    def display_params(self, level=9):
+        logger.log(level, '{} parameters: {}'.format(self.method, [x for x in self.params]))
 
 class MM3(FF):
     '''

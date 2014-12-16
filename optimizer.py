@@ -71,22 +71,18 @@ class Optimizer(object):
                         ff_backward = FF()
                         ff_backward.method = 'backward {} {}'.format(param.mm3_row, param.mm3_col)
                         ff_backward.params = copy.deepcopy(params)
-                        # if isinstance(ff_backward.params[i].step, basestring):
-                        #     ff_backward.params[i].value -= ff_backward.params[i].value * \
-                        #         float(ff_backward.params[i].step)
-                        # else:
-                        #     ff_backward.params[i].value -= ff_backward.params[i].step
                         ff_backward.params[i].value -= ff_backward.params[i].step
                         ff_backward.params[i].check_value()
                     break
                 except UnallowedNegative as e:
                     logger.warning(e.message)
-                    mod_step = param.value * 0.05
-                    logger.warning('changing step size of {} from {} to {}'.format(param, param.step, mod_step))
-                    param.step = mod_step
+                    param.step = param.value * 0.05
+                    logger.warning('changed step size of {} from {} to {}'.format(param, param.step, param.value * 0.05))
                 finally:
+                    ff_forward.display_params()
                     diff_ffs.append(ff_forward)
                     if mode == 'central':
+                        ff_backward.display_params()
                         diff_ffs.append(ff_backward)
         return diff_ffs
 

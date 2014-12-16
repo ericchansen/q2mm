@@ -107,11 +107,11 @@ class Simplex(Optimizer):
                         sum([x.params[i].value for x in self.trial_ffs[:-1]]) / \
                         len(self.trial_ffs[:-1])
                 inverted.params[i].value = param_inverted
-                inverted.params[i].check_value()
                 reflected.params[i].value = 2 * param_inverted - self.trial_ffs[-1].params[i].value
-                reflected.params[i].check_value()
-            logger.log(7, '{} parameters: {}'.format(inverted.method, inverted.params))
-            logger.log(7, '{} parameters: {}'.format(reflected.method, reflected.params))
+            inverted.display_params()
+            reflected.display_params()
+            inverted.check_params()
+            reflected.check_params()
             self.calc_x2_ff(reflected)
             if reflected.x2 < self.trial_ffs[0].x2:
                 logger.info('attempting expansion')
@@ -124,8 +124,8 @@ class Simplex(Optimizer):
                     # expanded.params[i].value = expanded_param
                     expanded.params[i].value = 3 * inverted.params[i].value - \
                         2 * self.trial_ffs[-1].params[i].value
-                    expanded.params[i].check_value()
-                logger.log(7, 'expanded parameters: {}'.format(expanded.params))
+                expanded.display_params()
+                expanded.check_params()
                 self.calc_x2_ff(expanded)
                 if expanded.x2 < reflected.x2:
                     self.trial_ffs[-1] = expanded
@@ -147,8 +147,8 @@ class Simplex(Optimizer):
                     else:
                         contracted_param = (3 * inverted.params[i].value - self.trial_ffs[-1].params[i].value) / 2
                     contracted.params[i].value = contracted_param
-                    contracted.params[i].check_value()
-                logger.log(7, 'contracted parameters: {}'.format(contracted.params))
+                contracted.display_params()
+                contracted.show_params()
                 self.calc_x2_ff(contracted)
                 if contracted.x2 < self.trial_ffs[-2].x2:
                     self.trial_ffs[-1] = contracted
@@ -157,9 +157,8 @@ class Simplex(Optimizer):
                     for ff_num, ff in enumerate(self.trial_ffs[1:]):
                         for i in xrange(0, len(self.params)):
                             ff.params[i].value = (ff.params[i].value + self.trial_ffs[0].params[i].value) / 2
-                            ff.params[i].check_value()
-                        logger.log(7, 'massive contraction {} parameters: {}'.format(
-                                ff_num + 2, ff.params))
+                        ff.display_params()
+                        ff.check_params()
                         ff.method += ' / massive contraction'
                         self.calc_x2_ff(ff)
                 else:

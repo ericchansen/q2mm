@@ -170,20 +170,24 @@ class Gradient(Optimizer):
             self.central_diff_derivs(self.init_ff, self.ffs_central)
             try:
                 changes = self.one_dim_newton(self.ffs_central)
-                self.check_radius(changes)
                 ff = FF()
-                ff.method = 'newton-raphson'
+                ff.method = 'one dimensional newton-raphson'
                 ff.params = copy.deepcopy(self.init_ff.params)
                 for param, change in zip(ff.params, changes):
                     param.value += change
-                    param.check_value()
-                self.trial_ffs.append(ff)
             except OptimizerException as e:
                 logger.warning(e.message)
-            except RadiusException as e:
-                logger.warning(e.message)
-            except UnallowedNegative as e:
-                logger.warning(e.message)
+            else:
+                ff.display_params()
+                try:
+                    ff.check_params()
+                    self.check_radius(changes)
+                except UnallowedNegative as e:
+                    logger.warning(e.message)
+                except RadiusException as e:
+                    logger.warning(e.message)
+                else:
+                    self.trial_ffs.append(ff)
 
         if self.do_basic or self.do_lagrange or self.do_levenberg or self.do_svd:
             residual_vector = self.calc_residual_vector(self.init_ff.data)
@@ -192,73 +196,81 @@ class Gradient(Optimizer):
             b = jacobian.T.dot(residual_vector) # b = J.T r
 
             if self.do_basic:
+                changes = self.solver(A, b)
+                ff = FF()
+                ff.params = copy.deepcopy(self.init_ff.params)
+                ff.method = 'basic'
+                for param, change in zip(ff.params, changes):
+                    param.value += change
+                ff.display_params()
                 try:
-                    changes = self.solver(A, b)
+                    ff.check_params()
                     self.check_radius(changes)
-                    ff = FF()
-                    ff.params = copy.deepcopy(self.init_ff.params)
-                    ff.method = 'basic'
-                    for param, change in zip(ff.params, changes):
-                        param.value += change
-                        param.check_value()
-                    self.trial_ffs.append(ff)
-                except RadiusException as e:
-                    logger.warning(e.message)
                 except UnallowedNegative as e:
                     logger.warning(e.message)
+                except RadiusException as e:
+                    logger.warning(e.message)
+                else:
+                    self.trial_ffs.append(ff)
 
             if self.do_lagrange:
                 logger.log(8, 'lagrange factors: {}'.format(self.lagrange_factors))
                 for factor in self.lagrange_factors:
+                    changes = self.calc_lagrange(A, b, factor)
+                    ff = FF()
+                    ff.params = copy.deepcopy(self.init_ff.params)
+                    ff.method = 'lagrange {}'.format(factor)
+                    for param, change in zip(ff.params, changes):
+                        param.value += change
+                    ff.display_params()
                     try:
-                        changes = self.calc_lagrange(A, b, factor)
+                        ff.check_params()
                         self.check_radius(changes)
-                        ff = FF()
-                        ff.params = copy.deepcopy(self.init_ff.params)
-                        ff.method = 'lagrange {}'.format(factor)
-                        for param, change in zip(ff.params, changes):
-                            param.value += change
-                            param.check_value()
-                        self.trial_ffs.append(ff)
-                    except RadiusException as e:
-                        logger.warning(e.message)
                     except UnallowedNegative as e:
                         logger.warning(e.message)
+                    except RadiusException as e:
+                        logger.warning(e.message)
+                    else:
+                        self.trial_ffs.append(ff)
 
             if self.do_levenberg:
                 logger.log(8, 'levenberg factors: {}'.format(self.levenberg_factors))
                 for factor in self.levenberg_factors:
-                    try:
-                        changes = self.calc_levenberg(A, b, factor)
-                        self.check_radius(changes)
-                        ff = FF()
-                        ff.params = copy.deepcopy(self.init_ff.params)
-                        ff.method = 'levenberg {}'.format(factor)
-                        for param, change in zip(ff.params, changes):
-                            param.value += change
-                            param.check_value()
-                        self.trial_ffs.append(ff)
-                    except RadiusException as e:
-                        logger.warning(e.message)
-                    except UnallowedNegative as e:
-                        logger.warning(e.message)
+                            changes = self.calc_levenberg(A, b, factor)
+                            ff = FF()
+                            ff.params = copy.deepcopy(self.init_ff.params)
+                            ff.method = 'levenberg {}'.format(factor)
+                            for param, change in zip(ff.params, changes):
+                                param.value += change
+                            ff.display_params()
+                            try:
+                                ff.check_params()
+                                self.check_radius(changes)
+                            except UnallowedNegative as e:
+                                logger.warning(e.message)
+                            except RadiusException as e:
+                                logger.warning(e.message)
+                            else:
+                                self.trial_ffs.append(ff)
 
             if self.do_svd:
                 param_sets = self.calc_svd(A, b)
                 for changes in param_sets:
+                    ff = FF()
+                    ff.params = copy.deepcopy(self.init_ff.params)
+                    ff.method = 'svd'
+                    for param, change in zip(ff.params, changes):
+                        param.value += change
+                    ff.display_params()
                     try:
+                        ff.check_params()
                         self.check_radius(changes)
-                        ff = FF()
-                        ff.params = copy.deepcopy(self.init_ff.params)
-                        ff.method = 'svd'
-                        for param, change in zip(ff.params, changes):
-                            param.value += change
-                            param.check_value()
-                        self.trial_ffs.append(ff)
-                    except RadiusException as e:
-                        logger.warning(e.message)
                     except UnallowedNegative as e:
                         logger.warning(e.message)
+                    except RadiusException as e:
+                        logger.warning(e.message)
+                    else:
+                        self.trial_ffs.append(ff)
 
         if len(self.trial_ffs) == 0:
             logger.warning('no trial force fields were generated')
