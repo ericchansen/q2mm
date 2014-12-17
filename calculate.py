@@ -207,7 +207,7 @@ def run_macromodel(coms_to_run, directory=os.getcwd()):
     logger.log(5, 'moving to {}'.format(directory))
     os.chdir(directory)
     for com in coms_to_run:
-        logger.log(9, 'running {}'.format(com))
+        logger.log(6, 'running {}'.format(com))
         name = '.'.join(com.split('.')[:-1])
         success = False
         attempts = 0
