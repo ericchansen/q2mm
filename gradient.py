@@ -134,7 +134,7 @@ class Gradient(Optimizer):
 
     def check_radius(self, param_changes, max_radius=None, cutoffs=None):
         radius = np.sqrt(sum([x**2 for x in param_changes]))
-        logger.log(8, 'radius: {}'.format(radius))
+        logger.log(2, 'radius: {}'.format(radius))
         if max_radius:
             if radius > max_radius:
                 scale_factor = max_radius / radius
@@ -159,7 +159,10 @@ class Gradient(Optimizer):
                 for max_radius in max_radii:
                     new_param_changes = self.check_radius(param_changes, max_radius=max_radius)
                     ff = FF()
-                    ff.method = '{} / radius {}'.format(method, max_radius)
+                    if new_param_changes is param_changes:
+                        ff.method = method
+                    else:
+                        ff.method = '{} / radius {}'.format(method, max_radius)
                     ff.params = copy.deepcopy(self.init_ff.params)
                     for param, change in izip(ff.params, new_param_changes):
                         param.value += change
