@@ -76,8 +76,9 @@ class Optimizer(object):
                     break
                 except UnallowedNegative as e:
                     logger.warning(e.message)
+                    logger.warning('changing step size of {} from {} to {}'.format(
+                            param, param.step, param.value * 0.05))
                     param.step = param.value * 0.05
-                    logger.warning('changed step size of {} from {} to {}'.format(param, param.step, param.value * 0.05))
                 finally:
                     ff_forward.display_params()
                     diff_ffs.append(ff_forward)
