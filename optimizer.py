@@ -90,7 +90,7 @@ class Optimizer(object):
     def return_optimizer_parser(self):
         parser = argparse.ArgumentParser()
         parser.add_argument('--calculate', '-c', type=str,
-                            metavar = '" commands for calculate.py"',
+                            metavar='" commands for calculate.py"',
                             help=('These commands produce the calculated data. Leave one space '
                                   'after the 1st quotation mark enclosing the arguments.'))
         parser.add_argument('--directory', '-d', type=str, metavar='directory', default=os.getcwd(),
