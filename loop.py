@@ -32,15 +32,23 @@ class Loop(Optimizer):
         group = parser.add_argument_group('loop')
         group.add_argument('--convergence', type=float, default=0.005)
         group.add_argument('--loop_max', type=int, default=None)
+        group.add_argument(
+            '--gradient', type=str, metavar='" commands for gradient.py"',
+            help=('These commands are interpreted by the gradient based optimizer. '
+                  'Leave one space after the 1st quotation mark enclosing the arguments.'))
         opts = parser.parse_args(args)
         self.convergence = opts.convergence
         self.loop_max = opts.loop_max
         return opts
 
-    def run(self):
+    def run(self, opts=None):
         logger.info('--- {} running ---'.format(type(self).__name__))
         # setup gradient
         gradient = Gradient()
+        if opts is not None:
+            gradient.parse(opts.gradient.split())
+        else:
+            gradient.parse(['--default'])
         gradient.com_ref = self.com_ref
         gradient.com_cal = self.com_cal
         gradient.data_ref = self.data_ref
@@ -111,5 +119,5 @@ if __name__ == '__main__':
     logging.config.dictConfig(cfg)
 
     loop = Loop()
-    loop.setup(sys.argv[1:])
-    loop.run()
+    opts = loop.setup(sys.argv[1:])
+    loop.run(opts)

@@ -134,6 +134,8 @@ class Optimizer(object):
         logger.info('{} parameters selected for optimization'.format(len(self.init_ff.params)))
 
         self.data_ref = run_calculate(self.com_ref.split())
+        
+        return opts
 
     def trim_params_on_2nd(self, params):
         '''
