@@ -87,7 +87,7 @@ class Loop(Optimizer):
                 if simplex.trial_ffs:
                     # make a function for this...
                     self.best_ff = MM3()
-                    self.method = simplex.trial_ffs[0].method
+                    self.best_ff.method = simplex.trial_ffs[0].method
                     self.best_ff.copy_attributes(self.init_ff)
                     if simplex.max_params is not None and len(simplex.init_ff.params) > simplex.max_params:
                         self.best_ff.params = copy.deepcopy(self.init_ff.params)
@@ -101,6 +101,8 @@ class Loop(Optimizer):
                     if simplex.trial_ffs[0].data is not None:
                         self.best_ff.data = simplex.trial_ffs[0].data
                     # ... block of code
+                else:
+                    logger.warning('simplex never generated trial force fields')
                 self.best_ff.export_ff()
             self.best_ff.export_ff(path=self.best_ff.path + '.{}.simp'.format(self.current_cycle))
             change = abs(self.last_best - self.best_ff.x2) / self.last_best
