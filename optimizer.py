@@ -104,8 +104,8 @@ class Optimizer(object):
         return parser
 
     def setup(self, args):
-        logger.info('--- setup {} ---'.format(type(self).__name__))
         opts = self.parse(args)
+        logger.info('--- setup {} ---'.format(type(self).__name__))
         self.com_ref = opts.reference
         self.com_cal = opts.calculate
         self.init_ff = MM3(os.path.join(opts.directory, 'mm3.fld'))
