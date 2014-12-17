@@ -73,18 +73,18 @@ class Optimizer(object):
                         ff_backward.params = copy.deepcopy(params)
                         ff_backward.params[i].value -= ff_backward.params[i].step
                         ff_backward.params[i].check_value()
-                    break
                 except UnallowedNegative as e:
                     logger.warning(e.message)
                     logger.warning('changing step size of {} from {} to {}'.format(
                             param, param.step, param.value * 0.05))
                     param.step = param.value * 0.05
-                finally:
+                else:
                     ff_forward.display_params()
                     diff_ffs.append(ff_forward)
                     if mode == 'central':
                         ff_backward.display_params()
                         diff_ffs.append(ff_backward)
+                    break
         logger.info('generated {} force fields for {} differentiation'.format(len(diff_ffs), mode))
         return diff_ffs
 
