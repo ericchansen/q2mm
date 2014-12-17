@@ -1,12 +1,11 @@
 disable_existing_loggers: false
 formatters:
   bare: {format: '%(message)s'}
-  basic: {format: '%(name)s - %(levelname)s - %(message)s'}
-  simple: {format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'}
+  basic: {format: '%(name)s:%(levelname)s - %(message)s'}
+  simple: {format: '%(asctime)s:%(name)s:%(levelname)s - %(message)s'}
 handlers:
-  console: {class: logging.StreamHandler, formatter: bare, level: NOTSET}
-  # root_file_handler: {class: logging.FileHandler, filename: root.log, formatter: simple,
-  #   level: NOTSET}
+  console: {class: logging.StreamHandler, formatter: basic, level: NOTSET}
+  root_file_handler: {class: logging.FileHandler, filename: root.log, formatter: basic, level: NOTSET}
 loggers:
   __main__: {level: NOTSET, propagate: true}
   # calculate: {level: NOTSET, propagate: true}
@@ -21,8 +20,9 @@ loggers:
   # simplex: {level: NOTSET, propagate: true}
   # test: {level: NOTSET, propagate: true}
 root:
-  # handlers: [console, root_file_handler]
-  handlers: [console]
-  level: INFO
+  handlers: [console, root_file_handler]
+  # handlers: [console]
+  # handlers: [root_file_handler]
+  level: 8
   propagate: false
 version: 1
