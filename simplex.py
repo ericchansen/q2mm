@@ -148,7 +148,7 @@ class Simplex(Optimizer):
                         contracted_param = (3 * inverted.params[i].value - self.trial_ffs[-1].params[i].value) / 2
                     contracted.params[i].value = contracted_param
                 contracted.display_params()
-                contracted.show_params()
+                contracted.check_params()
                 self.calc_x2_ff(contracted)
                 if contracted.x2 < self.trial_ffs[-2].x2:
                     self.trial_ffs[-1] = contracted
