@@ -30,6 +30,7 @@ class Gradient(Optimizer):
         self.do_levenberg = True
         self.do_derivs = True
         self.do_svd = True
+        self.extra_print = False
         self.ffs_central = None
         self.lagrange_factors = sorted([10.0, 1.0, 0.1, 0.01])
         self.levenberg_factors = sorted([10.0, 1.0, 0.1, 0.01])
@@ -142,12 +143,14 @@ class Gradient(Optimizer):
     def parse(self, args):
         parser = self.return_optimizer_parser()
         group = parser.add_argument_group('gradient')
+        group.add_argument('--extra_print', action='store_true')
         group.add_argument('--no_basic', action='store_false')
         group.add_argument('--no_lagrange', action='store_false')
         group.add_argument('--no_levenberg', action='store_false')
         group.add_argument('--no_derivs', action='store_false')
         group.add_argument('--no_svd', action='store_false')
         opts = parser.parse_args(args)
+        self.extra_print = opts.extra_print
         self.do_basic = opts.no_basic
         self.do_lagrange = opts.no_lagrange
         self.do_levenberg = opts.no_levenberg
@@ -163,6 +166,20 @@ class Gradient(Optimizer):
         self.ffs_central = self.params_diff(self.init_ff.params, mode='central')
         for ff in self.ffs_central:
             self.calc_x2_ff(ff, save_data=True)
+
+        # warning: i wrote extra print stuff and related options after a few beers
+        if self.extra_print:
+            logger.critical('generating partial par.tot from central differentiation')
+            lines = []
+            for ff in self.ffs_central:
+                for i, datum in enumerate(ff.data):
+                    try:
+                        lines[i] += '\t{0:>10.4f}'.format(datum.value)
+                    except IndexError:
+                        lines.append('{0}\t{1:>10.4f}'.format(datum.name, datum.value))
+            with open('par.tot', 'w') as f:
+                for line in lines:
+                    f.write(line + '\n')
 
         self.trial_ffs = []
 

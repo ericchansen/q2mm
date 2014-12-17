@@ -177,7 +177,12 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
                 indices_mae.append('pre')
                 indices_mmo.append('pre')
             if optimization:
-                com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0)
+                # this commented line is what was used in the code received from Elaine.
+                # arg1: 9 = TNCG, 1 = PRCG
+                # TNCG has risk that structures never converge, and may print NaN instead
+                # of coordinates and forces.
+                # com_string += cons.format_macromodel.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
                 indices_mae.append('opt')
             if post_structure:
                 com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
