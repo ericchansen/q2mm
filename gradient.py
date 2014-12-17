@@ -2,6 +2,7 @@
 '''
 Gradient/Newton-Raphson based optimizer.
 '''
+from itertools import izip
 import argparse
 import copy
 import logging
@@ -24,19 +25,33 @@ class Gradient(Optimizer):
     def __init__(self):
         super(Gradient, self).__init__()
         self.best_ff = None
-        self.cutoffs = [0.01, 100]
-        self.do_basic = True
-        self.do_lagrange = True
-        self.do_levenberg = True
-        self.do_derivs = True
-        self.do_svd = True
         self.extra_print = False
         self.ffs_central = None
-        self.lagrange_factors = sorted([10.0, 1.0, 0.1, 0.01])
-        self.levenberg_factors = sorted([10.0, 1.0, 0.1, 0.01])
-        self.max_radius = 1
         self.solver_method = 'lstsq'
-        self.svd_thresholds = None
+
+        self.basic = False
+        self.basic_cutoffs = None
+        self.basic_radii = None
+
+        self.newton = False
+        self.newton_cutoffs = None
+        self.newton_radii = None
+
+        self.lagrange = False
+        self.lagrange_factors = [0.01, 0.1, 1.0, 10.0]
+        self.lagrange_cutoffs = None
+        self.lagrange_radii = None
+
+        self.levenberg = False
+        self.levenberg_factors = [0.01, 0.1, 1.0, 10.0]
+        self.levenberg_cutoffs = None
+        self.levenberg_radii = None
+
+        self.svd = False
+        # self.svd_factors = [0.001, 0.01, 0.1, 1.0]
+        self.svd_factors = None
+        self.svd_cutoffs = None
+        self.svd_radii = None
 
     def calc_jacobian(self, ffs):
         jacobian = np.empty((len(ffs[0].data), len(ffs) / 2), dtype=float)
@@ -51,26 +66,26 @@ class Gradient(Optimizer):
         logger.log(8, 'created {} jacobian'.format(jacobian.shape))
         return jacobian
 
-    def calc_lagrange(self, A, b, factor):
-        A_copy = copy.deepcopy(A)
-        indices = np.diag_indices_from(A_copy)
-        A_copy[indices] = A_copy[indices] + factor
-        changes = self.solver(A_copy, b)
-        return changes
+    def calc_lagrange(self, mat_a, vec_b, factor):
+        mat_a_copy = copy.deepcopy(mat_a)
+        indices = np.diag_indices_from(mat_a_copy)
+        mat_a_copy[indices] = mat_a_copy[indices] + factor
+        param_changes = self.solver(mat_a_copy, vec_b)
+        return param_changes
 
-    def calc_levenberg(self, A, b, factor):
-        A_copy = copy.deepcopy(A)
-        indices = np.diag_indices_from(A_copy)
-        A_copy[indices] = A_copy[indices] * (1 + factor)
-        changes = self.solver(A_copy, b)
-        return changes
+    def calc_levenberg(self, mat_a, vec_b, factor):
+        mat_a_copy = copy.deepcopy(mat_a)
+        indices = np.diag_indices_from(mat_a_copy)
+        mat_a_copy[indices] = mat_a_copy[indices] * (1 + factor)
+        param_changes = self.solver(mat_a_copy, vec_b)
+        return param_changes
 
-    def one_dim_newton(self, central_ffs):
-        changes = []
+    def calc_one_dim_newton(self, central_ffs):
+        param_changes = []
         for i, param in enumerate(self.init_ff.params):
             if param.der1 != 0.0:
                 if param.der2 > 0.00000001:
-                    changes.append(- param.der1 / param.der2) # ideal
+                    param_changes.append(- param.der1 / param.der2) # ideal
                 else:
                     logger.warning('2nd derivative of {} is {}'.format(param, param.der2))
                     if param.der1 > 0.0:
@@ -79,11 +94,11 @@ class Gradient(Optimizer):
                         change = 1.0
                     logger.warning('1st derivative of {} is {}. parameter change set to {}'.format(
                             param, param.der1, change))
-                    changes.append(change)
+                    param_changes.append(change)
             else:
                 raise OptimizerException('1st derivative of {} is {}. skipping one dimensional newton-raphson'.format(
                         param, param.der1))
-        return changes
+        return param_changes
 
     def calc_residual_vector(self, data_cal):
         residual_vector = np.empty((len(self.data_ref), 1), dtype=float)
@@ -92,9 +107,10 @@ class Gradient(Optimizer):
         logger.log(8, 'created {} residual vector'.format(residual_vector.shape))
         return residual_vector
 
-    def calc_svd(self, A, b, svd_thresholds=None):
+    def calc_svd(self, mat_a, vec_b, svd_thresholds=None):
         param_sets = []
-        U, s, V = np.linalg.svd(A)
+        methods = []
+        U, s, V = np.linalg.svd(mat_a)
         s_copy = copy.deepcopy(s)
         if svd_thresholds:
             svd_thresholds = sorted(svd_thresholds)
@@ -104,58 +120,158 @@ class Gradient(Optimizer):
                     if s_copy[i] < threshold:
                         s_copy[i] = 0.
                 reform = U.dot(np.diag(s_copy)).dot(V)
-                changes = self.solver(reform, b)
-                try:
-                    self.check_radius(changes)
-                except RadiusException as e:
-                    logger.warning(e.message)
-                else:
-                    param_sets.append(changes)
+                param_changes = self.solver(reform, vec_b)
+                param_sets.append(param_changes)
+                methods.append('singular value decomposition threshold {}'.format(threshold))
         else:
             for i in xrange(0, len(s_copy) - 1):
                 s_copy[- (i + 1)] = 0.
                 reform = U.dot(np.diag(s_copy)).dot(V)
-                changes = self.solver(reform, b)
-                try:
-                    self.check_radius(changes)
-                except RadiusException as e:
-                    logger.warning(e.message)
-                else:
-                    param_sets.append(changes)
-        return param_sets
+                param_changes = self.solver(reform, vec_b)
+                param_sets.append(param_changes)
+                methods.append('singular value decomposition {}'.format(i + 1))
+        return param_sets, methods
 
-    def check_radius(self, changes, cutoffs=None, max_radius=None):
-        if cutoffs is None and max_radius is None:
-            cutoffs = self.cutoffs
-        radius = np.sqrt(sum([x**2 for x in changes]))
-        if cutoffs:
-            if radius > max(cutoffs):
-                raise RadiusException('radius {} exceeded cutoff {}. excluding'.format(radius, max(cutoffs)))
-            elif radius < min(cutoffs):
-                raise RadiusException('radius {} below cutoff {}. excluding'.format(radius, min(cutoffs)))
-        elif max_radius:
+    def check_radius(self, param_changes, max_radius=None, cutoffs=None):
+        radius = np.sqrt(sum([x**2 for x in param_changes]))
+        logger.log(8, 'radius: {}'.format(radius))
+        if max_radius:
             if radius > max_radius:
                 scale_factor = max_radius / radius
-                changes = [x * scale_factor for x in changes]
-                logger.warning('radius {} exceeded maximum {}. scaling parameters by {}'.format(
+                new_param_changes = [x * scale_factor for x in param_changes]
+                logger.warning('radius {} exceeded maximum {}. scaled parameter changes by {}'.format(
                         radius, max_radius, scale_factor))
+                return new_param_changes
+            else:
+                return param_changes
+        elif cutoffs:
+            if not max(cutoffs) >= radius >= min(cutoffs):
+                raise RadiusException('radius {} not in bounds {} : {}. excluding parameter changes'.format(
+                        radius, min(cutoffs), max(cutoffs)))
+
+    def do_method(self, function, method, max_radii=None, cutoffs=None):
+        try:
+            param_changes = function
+        except OptimizerException as e:
+            logger.warning(e.message)
+        else:
+            if max_radii:
+                for max_radius in max_radii:
+                    new_param_changes = self.check_radius(param_changes, max_radius=max_radius)
+                    ff = FF()
+                    ff.method = '{} / radius {}'.format(method, max_radius)
+                    ff.params = copy.deepcopy(self.init_ff.params)
+                    for param, change in izip(ff.params, new_param_changes):
+                        param.value += change
+                    ff.display_params()
+                    try:
+                        ff.check_params()
+                    except UnallowedNegative as e:
+                        logger.warning(e.message)
+                    else:
+                        self.trial_ffs.append(ff)
+            elif cutoffs:
+                ff = FF()
+                ff.method = method
+                ff.params = copy.deepcopy(self.init_ff.params)
+                for param, change in izip(ff.params, param_changes):
+                    param.value += change
+                ff.display_params()
+                try:
+                    self.check_radius(param_changes, cutoffs=cutoffs)
+                    ff.check_params()
+                except RadiusException as e:
+                    logger.warning(e.message)
+                except UnallowedNegative as e:
+                    logger.warning(e.message)
+                else:
+                    self.trial_ffs.append(ff)
+            else:
+                ff = FF()
+                ff.method = method
+                ff.params = copy.deepcopy(self.init_ff.params)
+                for param, change in izip(ff.params, param_changes):
+                    param.value += change
+                ff.display_params()
+                try:
+                    ff.check_params()
+                except UnallowedNegative as e:
+                    logger.warning(e.message)
+                else:
+                    self.trial_ffs.append(ff)
 
     def parse(self, args):
         parser = self.return_optimizer_parser()
-        group = parser.add_argument_group('gradient')
-        group.add_argument('--extra_print', action='store_true')
-        group.add_argument('--no_basic', action='store_false')
-        group.add_argument('--no_lagrange', action='store_false')
-        group.add_argument('--no_levenberg', action='store_false')
-        group.add_argument('--no_derivs', action='store_false')
-        group.add_argument('--no_svd', action='store_false')
+        group_gen = parser.add_argument_group('gradient')
+        group_gen.add_argument('--default', action='store_true')
+        group_gen.add_argument('--extra_print', action='store_true')
+        group_com = parser.add_argument_group('gradient methods')
+        group_com.add_argument('--basic', '-b', nargs='?', const=True)
+        group_com.add_argument('--newton', '-n', nargs='?', const=True)
+        group_com.add_argument('--lagrange', '-la', nargs='*')
+        group_com.add_argument('--levenberg', '-le', nargs='*')
+        group_com.add_argument('--svd', '-s', nargs='*')
         opts = parser.parse_args(args)
-        self.extra_print = opts.extra_print
-        self.do_basic = opts.no_basic
-        self.do_lagrange = opts.no_lagrange
-        self.do_levenberg = opts.no_levenberg
-        self.do_derivs = opts.no_derivs
-        self.do_svd = opts.no_svd
+        if opts.extra_print:
+            self.extra_print = True
+        if opts.default:
+            self.basic = True
+            self.basic_radii = [1, 3, 10]
+            self.newton = True
+            self.newton_radii = [1, 3, 10]
+            # lagrange and levenberg factors set in __init__
+            self.lagrange = True
+            self.lagrange_radii = [5]
+            self.levenberg = True
+            self.lagrange_radii = [5]
+            self.svd = True
+            self.svd_cutoffs = [0.1, 10.0]
+        else:
+            if opts.newton is not None:
+                self.newton = True
+                if not isinstance(opts.newton, bool):
+                    if opts.newton.startswith('r'):
+                        self.newton_radii = sorted(map(float, opts.newton.strip('r').split(',')))
+                    if opts.newton.startswith('c'):
+                        self.newton_cutoffs = sorted(map(float, opts.newton.strip('c').split(',')))
+            if opts.basic is not None:
+                self.basic = True
+                if not isinstance(opts.basic, bool):
+                    if opts.basic.startswith('r'):
+                        self.basic_radii = sorted(map(float, opts.basic.strip('r').split(',')))
+                    if opts.basic.startswith('c'):
+                        self.basic_cutoffs = sorted(map(float, opts.basic.strip('c').split(',')))
+
+            if opts.lagrange is not None:
+                self.do_lagrange = True
+                for arg in opts.lagrange:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.lagrange_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.lagrange_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.lagrange_factors = sorted(map(float, arg.strip('f').split(',')))
+            if opts.levenberg is not None:
+                self.levenberg = True
+                for arg in opts.levenberg:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.levenberg_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.levenberg_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.levenberg_factors = sorted(map(float, arg.strip('f').split(',')))
+            if opts.svd is not None:
+                self.svd = True
+                for arg in opts.svd:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.svd_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.svd_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.svd_factors = sorted(map(float, arg.strip('f').split(',')))
         return opts
 
     def run(self):
@@ -169,7 +285,7 @@ class Gradient(Optimizer):
 
         # warning: i wrote extra print stuff and related options after a few beers
         if self.extra_print:
-            logger.critical('generating partial par.tot from central differentiation')
+            logger.info('generating partial par.tot from central differentiation')
             lines = []
             for ff in self.ffs_central:
                 for i, datum in enumerate(ff.data):
@@ -183,111 +299,33 @@ class Gradient(Optimizer):
 
         self.trial_ffs = []
 
-        if self.do_derivs:
+        if self.newton:
             self.central_diff_derivs(self.init_ff, self.ffs_central)
-            try:
-                changes = self.one_dim_newton(self.ffs_central)
-                ff = FF()
-                ff.method = 'one dimensional newton-raphson'
-                ff.params = copy.deepcopy(self.init_ff.params)
-                for param, change in zip(ff.params, changes):
-                    param.value += change
-            except OptimizerException as e:
-                logger.warning(e.message)
-            else:
-                ff.display_params()
-                try:
-                    ff.check_params()
-                    self.check_radius(changes)
-                except UnallowedNegative as e:
-                    logger.warning(e.message)
-                except RadiusException as e:
-                    logger.warning(e.message)
-                else:
-                    self.trial_ffs.append(ff)
+            self.do_method(self.calc_one_dim_newton(self.ffs_central), 'one dimensional newton-raphson',
+                           max_radii=self.newton_radii, cutoffs=self.newton_cutoffs)
 
-        if self.do_basic or self.do_lagrange or self.do_levenberg or self.do_svd:
+        if self.basic or self.lagrange or self.levenberg or self.svd:
             residual_vector = self.calc_residual_vector(self.init_ff.data)
             jacobian = self.calc_jacobian(self.ffs_central)
-            A = jacobian.T.dot(jacobian) # A = J.T J
-            b = jacobian.T.dot(residual_vector) # b = J.T r
+            mat_a = jacobian.T.dot(jacobian) # A = J.T J
+            vec_b = jacobian.T.dot(residual_vector) # b = J.T r
 
-            if self.do_basic:
-                changes = self.solver(A, b)
-                ff = FF()
-                ff.params = copy.deepcopy(self.init_ff.params)
-                ff.method = 'basic'
-                for param, change in zip(ff.params, changes):
-                    param.value += change
-                ff.display_params()
-                try:
-                    ff.check_params()
-                    self.check_radius(changes)
-                except UnallowedNegative as e:
-                    logger.warning(e.message)
-                except RadiusException as e:
-                    logger.warning(e.message)
-                else:
-                    self.trial_ffs.append(ff)
-
-            if self.do_lagrange:
+            if self.basic:
+                self.do_method(self.solver(mat_a, vec_b), 'basic', max_radii=self.basic_radii, cutoffs=self.basic_cutoffs)
+            if self.lagrange:
                 logger.log(8, 'lagrange factors: {}'.format(self.lagrange_factors))
                 for factor in self.lagrange_factors:
-                    changes = self.calc_lagrange(A, b, factor)
-                    ff = FF()
-                    ff.params = copy.deepcopy(self.init_ff.params)
-                    ff.method = 'lagrange {}'.format(factor)
-                    for param, change in zip(ff.params, changes):
-                        param.value += change
-                    ff.display_params()
-                    try:
-                        ff.check_params()
-                        self.check_radius(changes)
-                    except UnallowedNegative as e:
-                        logger.warning(e.message)
-                    except RadiusException as e:
-                        logger.warning(e.message)
-                    else:
-                        self.trial_ffs.append(ff)
-
-            if self.do_levenberg:
+                    self.do_method(self.calc_lagrange(mat_a, vec_b, factor), 'lagrange {}'.format(factor),
+                                   max_radii=self.lagrange_radii, cutoffs=self.lagrange_cutoffs)
+            if self.levenberg:
                 logger.log(8, 'levenberg factors: {}'.format(self.levenberg_factors))
                 for factor in self.levenberg_factors:
-                            changes = self.calc_levenberg(A, b, factor)
-                            ff = FF()
-                            ff.params = copy.deepcopy(self.init_ff.params)
-                            ff.method = 'levenberg {}'.format(factor)
-                            for param, change in zip(ff.params, changes):
-                                param.value += change
-                            ff.display_params()
-                            try:
-                                ff.check_params()
-                                self.check_radius(changes)
-                            except UnallowedNegative as e:
-                                logger.warning(e.message)
-                            except RadiusException as e:
-                                logger.warning(e.message)
-                            else:
-                                self.trial_ffs.append(ff)
-
-            if self.do_svd:
-                param_sets = self.calc_svd(A, b)
-                for changes in param_sets:
-                    ff = FF()
-                    ff.params = copy.deepcopy(self.init_ff.params)
-                    ff.method = 'svd'
-                    for param, change in zip(ff.params, changes):
-                        param.value += change
-                    ff.display_params()
-                    try:
-                        ff.check_params()
-                        self.check_radius(changes)
-                    except UnallowedNegative as e:
-                        logger.warning(e.message)
-                    except RadiusException as e:
-                        logger.warning(e.message)
-                    else:
-                        self.trial_ffs.append(ff)
+                    self.do_method(self.calc_levenberg(mat_a, vec_b, factor), 'levenberg {}'.format(factor),
+                                   max_radii=self.levenberg_radii, cutoffs=self.levenberg_cutoffs)
+            if self.svd:
+                param_change_sets, methods = self.calc_svd(mat_a, vec_b, svd_thresholds=self.svd_factors)
+                for param_changes, method in izip(param_change_sets, methods):
+                    self.do_method(param_changes, method, max_radii=self.svd_radii, cutoffs=self.svd_cutoffs)
 
         if len(self.trial_ffs) == 0:
             self.init_ff.export_ff()
@@ -324,17 +362,17 @@ class Gradient(Optimizer):
             logger.info('no change from {}'.format(type(self).__name__))
             return self.init_ff
 
-    def solver(self, A, b, solver_method='lstsq'):
+    def solver(self, mat_a, vec_b, solver_method='lstsq'):
         if solver_method == 'cholesky':
             import scipy.linalg
-            cho = scipy.linalg.cholesky(A, lower=True)
-            changes = scipy.linalg.cho_solve((cho, True), b)
+            cho = scipy.linalg.cholesky(mat_a, lower=True)
+            param_changes = scipy.linalg.cho_solve((cho, True), vec_b)
         elif solver_method == 'lstsq':
-            changes, residuals, rank, singular_values = np.linalg.lstsq(A, b, rcond=10**-12)
+            param_changes, residuals, rank, singular_values = np.linalg.lstsq(mat_a, vec_b, rcond=10**-12)
         elif solver_method == 'solve':
-            changes = np.linalg.solve(A, b)
-        changes = np.concatenate(changes).tolist()
-        return changes
+            param_changes = np.linalg.solve(mat_a, vec_b)
+        param_changes = np.concatenate(param_changes).tolist()
+        return param_changes
 
 if __name__ == '__main__':
     import logging.config

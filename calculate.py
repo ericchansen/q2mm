@@ -19,8 +19,8 @@ Generates data used to evaluate the penalty function.
 # a lot of repetition in collect_data could be eliminated for the sake of
 # shortening the code. then again, it's all very simple this way. each argument
 from collections import defaultdict
+from itertools import chain, izip
 import argparse
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -100,7 +100,7 @@ def group_commands(commands):
     '''
     commands_grouped = defaultdict(list)
     for calc_command, values in commands.iteritems():
-        for comma_sep_filenames in itertools.chain.from_iterable(values):
+        for comma_sep_filenames in chain.from_iterable(values):
             for filename in comma_sep_filenames.split(','):
                 if filename.endswith('.mae'):
                     commands_grouped[filename].append(calc_command)
@@ -366,7 +366,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 lower_tri = diagonal_matrix[lower_tri_indices]
                 data.extend(
                     [Datum(e, 'jeig', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                    itertools.izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
 
     if 'jeigi' in commands:
@@ -396,7 +396,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 lower_tri = diagonal_matrix[lower_tri_indices]
                 data.extend(
                     [Datum(e, 'jeig', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                    itertools.izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
 
     if 'jeigz' in commands:
@@ -466,7 +466,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 # lower_tri = inv_diagonal_matrix_zeroed[lower_tri_indices]
                 # data.extend(
                 #     [Datum(e, 'jeigz', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                #     itertools.izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                #     izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
 
     if 'jh' in commands:
         for filenames in commands['jh']:
@@ -482,7 +482,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 matrix = hess.mass_weight_hessian()
                 lower_tri_indices = np.tril_indices_from(matrix)
                 lower_tri = matrix[lower_tri_indices]
-                data.extend([Datum(e, 'jh', 'hess', filename, i=x, j=y) for e, x, y in itertools.izip(
+                data.extend([Datum(e, 'jh', 'hess', filename, i=x, j=y) for e, x, y in izip(
                             lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jh from {}'.format(len(lower_tri), filename))
 
@@ -508,7 +508,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 # inv_hess = hess.diagonalize(matrix=np.diag(inv_diagonal), eigenvectors=eigenvectors)
                 lower_tri_indices = np.tril_indices_from(inv_hess)
                 lower_tri = inv_hess[lower_tri_indices]
-                data.extend([Datum(e, 'jhi', 'hess', filename, i=x, j=y) for e, x, y in itertools.izip(
+                data.extend([Datum(e, 'jhi', 'hess', filename, i=x, j=y) for e, x, y in izip(
                             lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jhi from {}'.format(len(lower_tri), filename))
 
@@ -710,7 +710,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 lower_tri = diagonal_matrix[lower_tri_indices]
                 data.extend(
                     [Datum(e, 'meig', 'eig', (name_mae, name_out), i=x, j=y) for e, x, y, in
-                    itertools.izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} meig from {}'.format(len(lower_tri), (name_log, name_out)))
 
     if 'meigz' in commands:
@@ -746,7 +746,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 # lower_tri = diagonal_matrix_zero[lower_tri_indices]
                 # data.extend(
                 #     [Datum(e, 'meigz', 'eig', (name_mae, name_out), i=x, j=y) for e, x, y, in
-                #     itertools.izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                #     izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
 
                 logger.log(7, '{} meigz from {}'.format(len(diagonal), (name_log, name_out)))
 
@@ -764,7 +764,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 lower_tri_indices = np.tril_indices_from(hess)
                 lower_tri = hess[lower_tri_indices]
                 data.extend(
-                    [Datum(e, 'mh', 'hess', filename, i=x, j=y) for e, x, y in itertools.izip(
+                    [Datum(e, 'mh', 'hess', filename, i=x, j=y) for e, x, y in izip(
                     lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} mh from {}'.format(len(lower_tri), name_log))
 
@@ -856,7 +856,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                             mm3_cols.append(int(cols[1]))
                             values.append(float(cols[2]))
                 data_temp = [Datum(value, 'pr', 'parteth', parteth, i=row, j=col) for value, row, col
-                             in itertools.izip(values, mm3_rows, mm3_cols)]
+                             in izip(values, mm3_rows, mm3_cols)]
                 data.extend(data_temp)
                 logger.log(7, '{} pr from {}'.format(len(data_temp), parteth))
 
@@ -880,7 +880,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 params_tethered = [x for x in ff.params if x.mm3_row in mm3_rows and x.mm3_col in mm3_cols]
                 data_temp = [Datum(a * np.exp(- b * x.value * x.value),
                                    'zm', 'zeroteth', parteth, i=x.mm3_row, j=x.mm3_col) for x, a, b
-                             in itertools.izip(params_tethered, ayes, bees)]
+                             in izip(params_tethered, ayes, bees)]
                 data.extend(data_temp)
                 logger.log(7, '{} zm from {}'.format(len(data_temp), parteth))
 
@@ -898,7 +898,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                             mm3_rows.append(int(cols[0]))
                             mm3_cols.append(int(cols[1]))
                 data_temp = [Datum(0., 'zr', 'zeroteth', parteth, i=row, j=col) for row, col in
-                             itertools.izip(mm3_rows, mm3_cols)]
+                             izip(mm3_rows, mm3_cols)]
                 data.extend(data_temp)
                 logger.log(7, '{} zr from {}'.format(len(data_temp), parteth))
 
