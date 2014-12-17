@@ -84,6 +84,7 @@ class Optimizer(object):
                     if mode == 'central':
                         ff_backward.display_params()
                         diff_ffs.append(ff_backward)
+        logger.info('generated {} force fields for {} differentiation'.format(len(diff_ffs), mode))
         return diff_ffs
 
     def return_optimizer_parser(self):
