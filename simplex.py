@@ -98,10 +98,14 @@ class Simplex(Optimizer):
             reflected.params = copy.deepcopy(self.params)
             for i in xrange(0, len(self.params)):
                 if self.use_weight:
-                    param_inverted = \
-                        sum([x.params[i].value * (x.x2 - self.trial_ffs[-1].x2)
-                             for x in self.trial_ffs[:-1]]) / \
-                        sum([x.x2 - self.trial_ffs[-1].x2 for x in self.trial_ffs[:-1]])
+                    try:
+                        param_inverted = \
+                            sum([x.params[i].value * (x.x2 - self.trial_ffs[-1].x2)
+                                 for x in self.trial_ffs[:-1]]) / \
+                            sum([x.x2 - self.trial_ffs[-1].x2 for x in self.trial_ffs[:-1]])
+                    except ZeroDivisionError:
+                        logger.warning('zero division. all x2 are numerically equivalent')
+                        raise
                 else:
                     param_inverted = \
                         sum([x.params[i].value for x in self.trial_ffs[:-1]]) / \
