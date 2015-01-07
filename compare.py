@@ -54,7 +54,7 @@ def convert_energies(data_cal, data_ref):
 def import_steps(params):
     for param in params:
         if isinstance(cons.steps[param.ptype], basestring):
-            param.step = float(cons.steps[param.type]) * param.value
+            param.step = float(cons.steps[param.ptype]) * param.value
         else:
             param.step = cons.steps[param.ptype]
 
