@@ -57,7 +57,8 @@ def import_steps(params):
             param.step = float(cons.steps[param.ptype]) * param.value
         else:
             param.step = cons.steps[param.ptype]
-
+        if param.step  == 0.0:
+            param.step = 0.1
 # def import_steps(params, yamlfile='steps.yaml', **kwargs):
 #     '''
 #     Grabs step sizes for parameters from a yaml file. Can also take
