@@ -12,6 +12,8 @@ logging.basicConfig(level=logging.NOTSET)
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('filename', type=str, help='Filename of Gaussian log.')
+parser.add_argument('--all', '-a', action='store_true',
+                    help='Search for all coordinates, even those outside of the optimization output.')
 parser.add_argument('--coords', '-c', type=str, choices=['input', 'standard', 'both'], default='input',
                     help='Type of coordinates to read.')
 parser.add_argument('--format', '-f', type=str, choices=['gauss', 'latex'], default='gauss',
@@ -19,9 +21,16 @@ parser.add_argument('--format', '-f', type=str, choices=['gauss', 'latex'], defa
 opts = parser.parse_args(sys.argv[1:])
     
 glog = GaussLog(opts.filename)
-glog.import_optimization(opts.coords)
-best_structure = glog.get_most_converged()
-output = best_structure.format_coords(format='gauss')
-
-for line in output:
-    print line
+if opts.all:
+    structures = glog.import_any(coords_type=opts.coords)
+    for structure in structures:
+        output = structure.format_coords(format=opts.format)
+        for line in output:
+            print line
+        print
+else:
+    structures = glog.import_optimization(opts.coords)
+    best_structure = glog.get_most_converged(structures=structures)
+    output = best_structure.format_coords(format=opts.format)
+    for line in output:
+        print line

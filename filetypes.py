@@ -76,17 +76,7 @@ class GaussLog(File):
                         self.path))
         logger.log(3, 'compared {} out of {} structures'.format(structures_compared, len(self.structures)))
         return best_structure
-    def import_optimization(self, coords_type='both'):
-        '''
-        Finds structures from a Gaussian geometry optimization that
-        are listed throughout the log file. Also finds data about
-        their convergence.
-
-        coords_type = "input" or "standard" or "both"
-                      Using both may cause coordinates in one format
-                      to be overwritten by whatever comes later in the
-                      log file.
-        '''
+    def import_any(self, coords_type='both'):
         logger.log(2, 'reading {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
@@ -95,42 +85,14 @@ class GaussLog(File):
             section_convergence = False
             section_optimization = False
             for i, line in enumerate(f):
-
-                if section_optimization and 'Optimization stopped.' in line:
-                    section_optimization = False
-                    logger.log(2, '{} end optimization section'.format(i+1))
-                if not section_optimization and \
-                        'Search for a local minimum.' in line:
-                    section_optimization = True
-                    logger.log(2, '{} start optimization section'.format(i+1))
-                    
-                if section_optimization:
-
-                    if 'Step number' in line:
-                        structures.append(Structure())
-                        current_structure = structures[-1]
-                        logger.log(2, '{} added structure (currently {})'.format(
-                                i+1, len(structures)))
-
-                    if section_convergence and 'GradGradGrad' in line:
-                        section_convergence = False
-                        logger.log(2, '{} end convergence section'.format(i+1))
-                    if section_convergence:
-                        match = re.match(
-                            '\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+({0})\s+(YES|NO)'.format(
-                                cons.re_float), line)
-                        if match:
-                            current_structure.props['{} {}'.format(match.group(1), match.group(2))] = \
-                                (float(match.group(3)), float(match.group(4)), match.group(5))
-                    if 'Converged?' in line:
-                        section_convergence = True
-                        logger.log(2, '{} start convergence section'.format(i+1))
-            
+                    # look for input coords
                     if coords_type == 'input' or coords_type == 'both':
+                        # end of input coords for a given structure
                         if section_coords_input and 'Distance matrix' in line:
                             section_coords_input = False
                             logger.log(2, '{} end input coordinates section ({} atoms)'.format(
                                     i+1, count_atom))
+                        # add atoms and coords to structure
                         if section_coords_input:
                             match = re.match(
                                 '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
@@ -152,19 +114,25 @@ class GaussLog(File):
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
+                        # start of input coords for a given structure
                         if not section_coords_input and \
                                 'Input orientation:' in line:
+                            current_structure = Structure()
+                            structures.append(current_structure)
                             section_coords_input = True
                             count_atom = 0
                             logger.log(2, '{} start input coordinates section'.format(i+1))
 
+                    # look for standard coords
                     if coords_type == 'standard' or coords_type == 'both':
+                        # end of coords for a given structure
                         if section_coords_standard and \
                                 ('Rotational constants' in line or
                                  'Leave Link' in line):
                             section_coords_standard = False
                             logger.log(2, '{} end standard coordinates section ({} atoms)'.format(
                                     i+1, count_atom))
+                        # grab coords for each atom. add atoms to the structure
                         if section_coords_standard:
                             match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
                                     cons.re_float), line)
@@ -185,6 +153,136 @@ class GaussLog(File):
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
+                        # start of standard coords
+                        if not section_coords_standard and \
+                                'Standard orientation' in line:
+                            current_structure = Structure()
+                            structures.append(current_structure)
+                            section_coords_standard = True
+                            count_atom = 0
+                            logger.log(2, '{} start standard coordinates section.'.format(i+1))
+        return structures
+    def import_optimization(self, coords_type='both'):
+        '''
+        Finds structures from a Gaussian geometry optimization that
+        are listed throughout the log file. Also finds data about
+        their convergence.
+
+        coords_type = "input" or "standard" or "both"
+                      Using both may cause coordinates in one format
+                      to be overwritten by whatever comes later in the
+                      log file.
+        '''
+        logger.log(2, 'reading {}'.format(self.path))
+        structures = []
+        with open(self.path, 'r') as f:
+            section_coords_input = False
+            section_coords_standard = False
+            section_convergence = False
+            section_optimization = False
+            for i, line in enumerate(f):
+
+                # look for start of optimization section of log file
+                # set a flag that it has indeed started
+                if section_optimization and 'Optimization stopped.' in line:
+                    section_optimization = False
+                    logger.log(2, '{} end optimization section'.format(i+1))
+                if not section_optimization and \
+                        'Search for a local minimum.' in line:
+                    section_optimization = True
+                    logger.log(2, '{} start optimization section'.format(i+1))
+                    
+                if section_optimization:
+
+                    # start of a structure
+                    if 'Step number' in line:
+                        structures.append(Structure())
+                        current_structure = structures[-1]
+                        logger.log(2, '{} added structure (currently {})'.format(
+                                i+1, len(structures)))
+
+                    # look for convergence information related to a single structure
+                    if section_convergence and 'GradGradGrad' in line:
+                        section_convergence = False
+                        logger.log(2, '{} end convergence section'.format(i+1))
+                    if section_convergence:
+                        match = re.match(
+                            '\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+({0})\s+(YES|NO)'.format(
+                                cons.re_float), line)
+                        if match:
+                            current_structure.props['{} {}'.format(match.group(1), match.group(2))] = \
+                                (float(match.group(3)), float(match.group(4)), match.group(5))
+                    if 'Converged?' in line:
+                        section_convergence = True
+                        logger.log(2, '{} start convergence section'.format(i+1))
+            
+                    # look for input coords
+                    if coords_type == 'input' or coords_type == 'both':
+                        # end of input coords for a given structure
+                        if section_coords_input and 'Distance matrix' in line:
+                            section_coords_input = False
+                            logger.log(2, '{} end input coordinates section ({} atoms)'.format(
+                                    i+1, count_atom))
+                        # add atoms and coords to structure
+                        if section_coords_input:
+                            match = re.match(
+                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
+                                    cons.re_float), line)
+                            if match:
+                                count_atom += 1
+                                try:
+                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                except IndexError:
+                                    current_structure.atoms.append(Atom())
+                                    current_atom = current_structure.atoms[-1]
+                                if current_atom.atomic_num:
+                                    assert current_atom.atomic_num == int(match.group(2)), \
+                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
+                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                else:
+                                    current_atom.atomic_num = int(match.group(2))
+                                current_atom.coords_type = 'input'
+                                current_atom.x = float(match.group(3))
+                                current_atom.y = float(match.group(4))
+                                current_atom.z = float(match.group(5))
+                        # start of input coords for a given structure
+                        if not section_coords_input and \
+                                'Input orientation:' in line:
+                            section_coords_input = True
+                            count_atom = 0
+                            logger.log(2, '{} start input coordinates section'.format(i+1))
+
+                    # look for standard coords
+                    if coords_type == 'standard' or coords_type == 'both':
+                        # end of coords for a given structure
+                        if section_coords_standard and \
+                                ('Rotational constants' in line or
+                                 'Leave Link' in line):
+                            section_coords_standard = False
+                            logger.log(2, '{} end standard coordinates section ({} atoms)'.format(
+                                    i+1, count_atom))
+                        # grab coords for each atom. add atoms to the structure
+                        if section_coords_standard:
+                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
+                                    cons.re_float), line)
+                            if match:
+                                count_atom += 1
+                                try:
+                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                except IndexError:
+                                    current_structure.atoms.append(Atom())
+                                    current_atom = current_structure.atoms[-1]
+                                if current_atom.atomic_num: 
+                                    assert current_atom.atomic_num == int(match.group(2)), \
+                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
+                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                else:
+                                    current_atom.atomic_num = int(match.group(2))
+                                current_atom.coords_type = 'standard'
+                                current_atom.x = float(match.group(3))
+                                current_atom.y = float(match.group(4))
+                                current_atom.z = float(match.group(5))
+                        # start of standard coords
                         if not section_coords_standard and \
                                 'Standard orientation' in line:
                             section_coords_standard = True
