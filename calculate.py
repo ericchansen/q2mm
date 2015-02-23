@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 commands_gaussian = [] # gq, gqh
 commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
 commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'me', 'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
-commands_other = ['pm', 'pr', 'zm', 'zr']
+commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
 
 commands_need_ff = ['ma', 'mb', 'ja', 'jb', 'pm', 'zm']
@@ -85,6 +85,14 @@ def parse_calculate(args):
     parser.add_argument('-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in')
     parser.add_argument('-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae')
     parser.add_argument('-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae')
+    parser.add_argument('-r', type=str, nargs='+', action='append', default=[], metavar='filename',
+                        help='Read data points directly (ex. use with .cal files). '
+                        'Each row corresponds to a data point. Columns may be '
+                        'separated by '
+                        "anything that Python's basic split method recognizes. "
+                        '1st column '
+                        'is the data label, 2nd column is the weight, and 3rd column is the '
+                        'value.')
     parser.add_argument('-zm', type=str, nargs='+', action='append', default=[], metavar='parteth')
     parser.add_argument('-zr', type=str, nargs='+', action='append', default=[], metavar='parteth')
     opts = parser.parse_args(args)
@@ -859,6 +867,19 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                              in izip(values, mm3_rows, mm3_cols)]
                 data.extend(data_temp)
                 logger.log(7, '{} pr from {}'.format(len(data_temp), parteth))
+
+    if 'r' in commands:
+        for filenames in commands['r']:
+            for filename in filenames:
+                data_temp = []
+                with open(os.path.join(directory, filename)) as f:
+                    for line in f:
+                        line = line.partition('#')[0]
+                        label, weight, value = line.split()
+                        data_temp.append(
+                            Datum(float(value), 'r', 'read', filename, i=label, weight=float(weight)))
+                data.extend(data_temp)
+                logger.log(7, '{} r from {}'.format(len(data_temp), filename))
 
     if 'zm' in commands:
         for parteths in commands['zm']:
