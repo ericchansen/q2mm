@@ -326,8 +326,12 @@ class MM3(FF):
             if param.mm3_label == ' 1': # stretches
                 cols[3:6] = map(float, cols[3:6])
                 cols[param.mm3_col + 2] = param.value
-                lines[param.mm3_row - 1] = \
-                    '{0:>2}{1:>4}{2:>4}{3:>23.4f}{4:>11.4f}{5:>11.4f}\n'.format(*cols)
+                if len(cols) == 6:
+                    lines[param.mm3_row - 1] = \
+                        '{0:>2}{1:>4}{2:>4}{3:>23.4f}{4:>11.4f}{5:>11.4f}\n'.format(*cols)
+                elif len(cols) == 5:
+                    lines[param.mm3_row - 1] = \
+                        '{0:>2}{1:>4}{2:>4}{3:>23.4f}{4:>11.4f}\n'.format(*cols)
                 modified_params += 1
             elif param.mm3_label == ' 2': # angles
                 cols[4:6] = map(float, cols[4:6])
