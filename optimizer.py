@@ -125,8 +125,15 @@ class Optimizer(object):
                     cols = line.split()
                     if cols:
                         mm3_row, mm3_col = int(cols[0]), int(cols[1])
+                        allow_negative = None
+                        for arg in cols[2:]:
+                            if any(arg == x for x in ('allowneg', 'neg', 'negative')):
+                                allow_negative = True
+                                logger.log(7, 'param {} {} allowed negative values'.format(
+                                        mm3_row, mm3_col))
                         for param in self.init_ff.params:
                             if mm3_row == param.mm3_row and mm3_col == param.mm3_col:
+                                param._allow_negative = allow_negative
                                 params_to_optimize.append(param)
         for param in params_to_optimize:
             param.check_value()
