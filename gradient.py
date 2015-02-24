@@ -165,7 +165,7 @@ class Gradient(Optimizer):
                         ff.method = '{} / radius {}'.format(method, max_radius)
                     ff.params = copy.deepcopy(self.init_ff.params)
                     for param, change in izip(ff.params, new_param_changes):
-                        param.value += change
+                        param.value += change * param.step
                     ff.display_params()
                     try:
                         ff.check_params()
