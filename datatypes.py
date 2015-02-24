@@ -206,14 +206,18 @@ class MM3(FF):
                                      mm3_col = 2,
                                      mm3_row = i + 2,
                                      mm3_label = line[:2],
-                                     value = float(cols[4])),
+                                     value = float(cols[4]))))
+                    try:
+                        self.params.append(
                             ParamMM3(atom_labels = cols[1:3],
                                      atom_types = self.select_atom_types(cols[1:3]),
                                      ptype = 'q',
                                      mm3_col = 3,
                                      mm3_row = i + 2,
                                      mm3_label = line[:2],
-                                     value = float(cols[5]))))
+                                     value = float(cols[5])))
+                    except IndexError:
+                        pass
                 if section_sub and line.startswith(' 2'): # angles
                     cols = line.split()
                     self.params.extend((
