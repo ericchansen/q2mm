@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 # remember to add in inverse distance
 commands_gaussian = [] # gq, gqh
-commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
+commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
 commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'me', 'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
@@ -79,6 +79,9 @@ def parse_calculate(args):
     parser.add_argument('-je2', type=str, nargs='+', action='append', default=[], metavar='file.mae')
     parser.add_argument('-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
     parser.add_argument('-jeigi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
+    parser.add_argument(
+        '-jeige', type=str, nargs='+', action='append', default=[],
+        metavar='file.in,file.out')
     parser.add_argument('-jeigz', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
     parser.add_argument('-jeigzi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
     parser.add_argument('-jh', type=str, nargs='+', action='append', default=[], metavar='file.in')
@@ -407,8 +410,8 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                     izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
 
-    if 'jeigz' in commands:
-        for comma_filenames in commands['jeigz']:
+    if 'jeig' in commands:
+        for comma_filenames in commands['jeig']:
             for comma_filename in comma_filenames:
                 name_in, name_out = comma_filename.split(',')
                 if name_in in file_storage:
@@ -428,9 +431,41 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 hess.eigenvectors = hess.mass_weight_eigenvectors()
                 diagonal_matrix = hess.diagonalize()
                 diagonal = np.diag(diagonal_matrix)
-                data.extend([Datum(e, 'jeigz', 'eigz', (name_in, name_out), i=i, j=i)
-                             for i, e in enumerate(diagonal)])
-                logger.log(7, '{} jeigz from {}'.format(len(diagonal), (name_in, name_out)))
+                lower_tri_indices = np.tril_indices_from(diagonal_matrix)
+                lower_tri = diagonal_matrix[lower_tri_indices]
+                data.extend(
+                    [Datum(e, 'jeig', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
+                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
+
+    if 'jeige' in commands:
+        for comma_filenames in commands['jeige']:
+            for comma_filename in comma_filenames:
+                name_in, name_out = comma_filename.split(',')
+                if name_in in file_storage:
+                    jin = file_storage[name_in]
+                else:
+                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
+                    file_storage[name_in] = jin
+                if name_out in file_storage:
+                    jout = file_storage[name_out]
+                else:
+                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
+                    file_storage[name_out] = jout
+                hess = Hessian()
+                hess.load_from_jaguar_in(file_class=jin)
+                hess.load_from_jaguar_out(file_class=jout)
+                hess.hessian = hess.mass_weight_hessian()
+                hess.eigenvectors = hess.mass_weight_eigenvectors()
+                diagonal_matrix = hess.diagonalize()
+
+                diagonal_matrix_zero = np.diag(np.diag(diagonal_matrix)) 
+                lower_tri_indices = np.tril_indices_from(diagonal_matrix_zero)
+                lower_tri = diagonal_matrix_zero[lower_tri_indices]
+                data.extend([Datum(e, 'jeige', 'eige', (name_in, name_out), i=x, j=y)
+                             for e, x, y in izip(
+                            lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
+                logger.log(7, '{} jeige from {}'.format(len(lower_tri), (name_in, name_out)))
 
     if 'jeigzi' in commands:
         for comma_filenames in commands['jeigzi']:
