@@ -462,7 +462,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 diagonal_matrix_zero = np.diag(np.diag(diagonal_matrix)) 
                 lower_tri_indices = np.tril_indices_from(diagonal_matrix_zero)
                 lower_tri = diagonal_matrix_zero[lower_tri_indices]
-                data.extend([Datum(e, 'jeige', 'eige', (name_in, name_out), i=x, j=y)
+                data.extend([Datum(e, 'jeige', 'eig', (name_in, name_out), i=x, j=y)
                              for e, x, y in izip(
                             lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
                 logger.log(7, '{} jeige from {}'.format(len(lower_tri), (name_in, name_out)))
