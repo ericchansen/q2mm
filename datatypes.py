@@ -24,13 +24,14 @@ class Param(object):
     step - float - Default step size.
     value - float - Current value of the parameter.
     '''
-    __slots__ = ['_allow_negative', '_default_value', 'der1', 'der2', 'ptype',
-                 'range', 'step' ,'value']
+    __slots__ = ['_allow_negative', '_default_value', 'der1', 'der2', 'group',
+                 'ptype', 'range', 'step' ,'value']
     def __init__(self, ptype, value):
         self._allow_negative = None
         self._default_value = None
         self.der1 = None
         self.der2 = None
+        self.group = None
         self.ptype = ptype
         self.range = None
         self.step = None 
