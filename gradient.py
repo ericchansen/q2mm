@@ -13,6 +13,7 @@ from calculate import run_calculate
 from compare import calc_x2, import_weights
 from datatypes import FF, MM3, UnallowedNegative
 from optimizer import Optimizer
+import constants
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ class RadiusException(Exception):
     pass
 
 class Gradient(Optimizer):
+    '''
+    Class for gradient-based optimization techniques.
+    '''
     def __init__(self):
         super(Gradient, self).__init__()
         self.best_ff = None
@@ -53,6 +57,99 @@ class Gradient(Optimizer):
         self.svd_cutoffs = None
         self.svd_radii = None
 
+    def return_gradient_parser(self, add_help=True):
+        '''
+        Return an argparse.ArgumentParser object containing options
+        for gradient-based optimizations.
+        '''
+        if add_help:
+            description = __doc__
+            parser = argparse.ArgumentParser()
+        else:
+            parser = argparse.ArgumentParser(add_help=False)
+
+        group_gen = parser.add_argument_group('gradient-based optimization')
+        group_gen.add_argument(
+            '--default', action='store_true',
+            help=('Use a recommended combination of gradient-based methods. '
+                  'For fine tuning, select the desired methods under '
+                  '"gradient-based methods".'))
+        group_gen.add_argument('--extra_print', action='store_true')
+
+        group_com = parser.add_argument_group('gradient-based methods')
+        group_com.add_argument('--basic', '-b', nargs='?', const=True)
+        group_com.add_argument('--newton', '-n', nargs='?', const=True)
+        group_com.add_argument('--lagrange', '-la', nargs='*')
+        group_com.add_argument('--levenberg', '-le', nargs='*')
+        group_com.add_argument('--svd', '-s', nargs='*')
+        return parser
+
+    def setup_gradient(self, opts):
+        '''
+        Use options/arguments provided to change settings for gradient-based
+        optimizations.
+        '''
+        if opts.extra_print:
+            self.extra_print = True
+        if opts.default:
+            self.basic = True
+            self.basic_radii = [1, 3, 10]
+            self.newton = True
+            self.newton_radii = [1, 3, 10]
+            # lagrange and levenberg factors set in self.__init__
+            self.lagrange = True
+            self.lagrange_radii = [5]
+            self.levenberg = True
+            self.lagrange_radii = [5]
+            self.svd = True
+            self.svd_cutoffs = [0.1, 10.0]
+        else:
+            if opts.newton is not None:
+                self.newton = True
+                if not isinstance(opts.newton, bool):
+                    if opts.newton.startswith('r'):
+                        self.newton_radii = sorted(map(float, opts.newton.strip('r').split(',')))
+                    if opts.newton.startswith('c'):
+                        self.newton_cutoffs = sorted(map(float, opts.newton.strip('c').split(',')))
+            if opts.basic is not None:
+                self.basic = True
+                if not isinstance(opts.basic, bool):
+                    if opts.basic.startswith('r'):
+                        self.basic_radii = sorted(map(float, opts.basic.strip('r').split(',')))
+                    if opts.basic.startswith('c'):
+                        self.basic_cutoffs = sorted(map(float, opts.basic.strip('c').split(',')))
+
+            if opts.lagrange is not None:
+                self.do_lagrange = True
+                for arg in opts.lagrange:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.lagrange_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.lagrange_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.lagrange_factors = sorted(map(float, arg.strip('f').split(',')))
+            if opts.levenberg is not None:
+                self.levenberg = True
+                for arg in opts.levenberg:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.levenberg_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.levenberg_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.levenberg_factors = sorted(map(float, arg.strip('f').split(',')))
+            if opts.svd is not None:
+                self.svd = True
+                for arg in opts.svd:
+                    if isinstance(arg, basestring):
+                        if arg.startswith('r'):
+                            self.svd_radii = sorted(map(float, arg.strip('r').split(',')))
+                        if arg.startswith('c'):
+                            self.svd_cutoffs = sorted(map(float, arg.strip('c').split(',')))
+                        if arg.startswith('f'):
+                            self.svd_factors = sorted(map(float, arg.strip('f').split(',')))
+
     def calc_jacobian(self, ffs):
         jacobian = np.empty((len(ffs[0].data), len(ffs) / 2), dtype=float)
         for ff in ffs:
@@ -61,7 +158,8 @@ class Gradient(Optimizer):
             # i = 0, 1, 2, ...
             # index_ff = 0, 2, 4, ...
             for index_datum in xrange(0, len(ffs[0].data)):
-                dydp = (ffs[index_ff].data[index_datum].value - ffs[index_ff + 1].data[index_datum].value) / 2
+                dydp = (ffs[index_ff].data[index_datum].value - \
+                            ffs[index_ff + 1].data[index_datum].value) / 2
                 jacobian[index_datum, i] = ffs[index_ff].data[index_datum].weight * dydp
         logger.log(8, 'created {} jacobian'.format(jacobian.shape))
         return jacobian
@@ -96,14 +194,16 @@ class Gradient(Optimizer):
                             param, param.der1, change))
                     param_changes.append(change)
             else:
-                raise OptimizerException('1st derivative of {} is {}. skipping one dimensional newton-raphson'.format(
-                        param, param.der1))
+                raise OptimizerException(
+                    '1st derivative of {} is {}. skipping one dimensional '
+                    'newton-raphson'.format(param, param.der1))
         return param_changes
 
     def calc_residual_vector(self, data_cal):
         residual_vector = np.empty((len(self.data_ref), 1), dtype=float)
         for i in xrange(0, len(self.data_ref)):
-            residual_vector[i, 0] = self.data_ref[i].weight * (self.data_ref[i].value - data_cal[i].value)
+            residual_vector[i, 0] = self.data_ref[i].weight * \
+                (self.data_ref[i].value - data_cal[i].value)
         logger.log(8, 'created {} residual vector'.format(residual_vector.shape))
         return residual_vector
 
@@ -146,7 +246,8 @@ class Gradient(Optimizer):
                 return param_changes
         elif cutoffs:
             if not max(cutoffs) >= radius >= min(cutoffs):
-                raise RadiusException('radius {} not in bounds {} : {}. excluding parameter changes'.format(
+                raise RadiusException(
+                    'radius {} not in bounds {} : {}. excluding parameter changes'.format(
                         radius, min(cutoffs), max(cutoffs)))
 
     def do_method(self, function, method, max_radii=None, cutoffs=None):
@@ -203,85 +304,17 @@ class Gradient(Optimizer):
                 else:
                     self.trial_ffs.append(ff)
 
-    def parse(self, args):
-        parser = self.return_optimizer_parser()
-        group_gen = parser.add_argument_group('gradient')
-        group_gen.add_argument('--default', action='store_true')
-        group_gen.add_argument('--extra_print', action='store_true')
-        group_com = parser.add_argument_group('gradient methods')
-        group_com.add_argument('--basic', '-b', nargs='?', const=True)
-        group_com.add_argument('--newton', '-n', nargs='?', const=True)
-        group_com.add_argument('--lagrange', '-la', nargs='*')
-        group_com.add_argument('--levenberg', '-le', nargs='*')
-        group_com.add_argument('--svd', '-s', nargs='*')
-        opts = parser.parse_args(args)
-        if opts.extra_print:
-            self.extra_print = True
-        if opts.default:
-            self.basic = True
-            self.basic_radii = [1, 3, 10]
-            self.newton = True
-            self.newton_radii = [1, 3, 10]
-            # lagrange and levenberg factors set in __init__
-            self.lagrange = True
-            self.lagrange_radii = [5]
-            self.levenberg = True
-            self.lagrange_radii = [5]
-            self.svd = True
-            self.svd_cutoffs = [0.1, 10.0]
-        else:
-            if opts.newton is not None:
-                self.newton = True
-                if not isinstance(opts.newton, bool):
-                    if opts.newton.startswith('r'):
-                        self.newton_radii = sorted(map(float, opts.newton.strip('r').split(',')))
-                    if opts.newton.startswith('c'):
-                        self.newton_cutoffs = sorted(map(float, opts.newton.strip('c').split(',')))
-            if opts.basic is not None:
-                self.basic = True
-                if not isinstance(opts.basic, bool):
-                    if opts.basic.startswith('r'):
-                        self.basic_radii = sorted(map(float, opts.basic.strip('r').split(',')))
-                    if opts.basic.startswith('c'):
-                        self.basic_cutoffs = sorted(map(float, opts.basic.strip('c').split(',')))
-
-            if opts.lagrange is not None:
-                self.do_lagrange = True
-                for arg in opts.lagrange:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.lagrange_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.lagrange_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.lagrange_factors = sorted(map(float, arg.strip('f').split(',')))
-            if opts.levenberg is not None:
-                self.levenberg = True
-                for arg in opts.levenberg:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.levenberg_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.levenberg_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.levenberg_factors = sorted(map(float, arg.strip('f').split(',')))
-            if opts.svd is not None:
-                self.svd = True
-                for arg in opts.svd:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.svd_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.svd_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.svd_factors = sorted(map(float, arg.strip('f').split(',')))
-        return opts
-
     def run(self):
+        '''
+        Run the gradient-based optimization.
+        '''
         logger.info('--- running {} ---'.format(type(self).__name__))
+
+        # calculate initial force field's value of the penalty function
         if self.init_ff.x2 is None or self.init_ff.data is None:
             self.calc_x2_ff(self.init_ff, save_data=True)
 
+        # differentiate the force field parameters
         self.ffs_central = self.params_diff(self.init_ff.params, mode='central')
         for ff in self.ffs_central:
             self.calc_x2_ff(ff, save_data=True)
@@ -314,21 +347,25 @@ class Gradient(Optimizer):
             vec_b = jacobian.T.dot(residual_vector) # b = J.T r
 
             if self.basic:
-                self.do_method(self.solver(mat_a, vec_b), 'basic', max_radii=self.basic_radii, cutoffs=self.basic_cutoffs)
+                self.do_method(self.solver(mat_a, vec_b), 'basic',
+                               max_radii=self.basic_radii, cutoffs=self.basic_cutoffs)
             if self.lagrange:
                 logger.log(8, 'lagrange factors: {}'.format(self.lagrange_factors))
                 for factor in self.lagrange_factors:
-                    self.do_method(self.calc_lagrange(mat_a, vec_b, factor), 'lagrange {}'.format(factor),
+                    self.do_method(
+                        self.calc_lagrange(mat_a, vec_b, factor), 'lagrange {}'.format(factor),
                                    max_radii=self.lagrange_radii, cutoffs=self.lagrange_cutoffs)
             if self.levenberg:
                 logger.log(8, 'levenberg factors: {}'.format(self.levenberg_factors))
                 for factor in self.levenberg_factors:
-                    self.do_method(self.calc_levenberg(mat_a, vec_b, factor), 'levenberg {}'.format(factor),
+                    self.do_method(
+                        self.calc_levenberg(mat_a, vec_b, factor), 'levenberg {}'.format(factor),
                                    max_radii=self.levenberg_radii, cutoffs=self.levenberg_cutoffs)
             if self.svd:
                 param_change_sets, methods = self.calc_svd(mat_a, vec_b, svd_thresholds=self.svd_factors)
                 for param_changes, method in izip(param_change_sets, methods):
-                    self.do_method(param_changes, method, max_radii=self.svd_radii, cutoffs=self.svd_cutoffs)
+                    self.do_method(
+                        param_changes, method, max_radii=self.svd_radii, cutoffs=self.svd_cutoffs)
 
         if len(self.trial_ffs) == 0:
             self.init_ff.export_ff()
@@ -371,7 +408,8 @@ class Gradient(Optimizer):
             cho = scipy.linalg.cholesky(mat_a, lower=True)
             param_changes = scipy.linalg.cho_solve((cho, True), vec_b)
         elif solver_method == 'lstsq':
-            param_changes, residuals, rank, singular_values = np.linalg.lstsq(mat_a, vec_b, rcond=10**-12)
+            param_changes, residuals, rank, singular_values = \
+                np.linalg.lstsq(mat_a, vec_b, rcond=10**-12)
         elif solver_method == 'solve':
             param_changes = np.linalg.solve(mat_a, vec_b)
         param_changes = np.concatenate(param_changes).tolist()

@@ -30,27 +30,54 @@ class Simplex(Optimizer):
         self.ffs_forward = None
         self.last_best = None
         self.massive_contraction = True
-        self.max_cycles = 25
-        self.max_wo_change = 5
+        self.max_cycles = 15
+        self.max_wo_change = 3
         self.max_params = 15
         self.params = None
         self.use_weight = True
 
-    def parse(self, args):
-        parser = self.return_optimizer_parser()
-        group = parser.add_argument_group('simplex')
-        group.add_argument('--max_cycles', type=int, default=25)
-        group.add_argument('--max_wo_change', type=int, default=5)
-        group.add_argument('--max_params', type=int, default=15)
-        group.add_argument('--no_massive', action='store_true')
-        group.add_argument('--no_weight', action='store_true')
-        opts = parser.parse_args(args)
+    def return_simplex_parser(self, add_help=True):
+        '''
+        Return an argparse.ArgumentParser object containing options
+        for simplex optimizations.
+        '''
+        if add_help:
+            description = __doc__
+            parser = argparse.ArgumentParser(
+                description=description, add_help=add_help)
+        else:
+            parser = argparse.ArgumentParser(add_help=False)
+
+        group = parser.add_argument_group('simplex optimization')
+        group.add_argument(
+            '--max_cycles', type=int, default=15,
+            help='Maximum number of simplex optimization cycles.')
+        group.add_argument(
+            '--max_wo_change', type=int, default=3,
+            help=('Maximum number of consecutive simplex optimization '
+                  'cycles yielding no change to the penalty function.'))
+        group.add_argument(
+            '--max_params', type=int, default=15,
+            help=('Maximum number of parameters used in the simplex '
+                  'optimization.'))
+        group.add_argument(
+            '--no_massive', action='store_true',
+            help="Don't use massive contraction to modify parameter sets.")
+        group.add_argument(
+            '--no_weight', action='store_true',
+            help=('Calculate the simplex inversion point without weighting '
+                  'parameter sets by their value of the penalty function.'))
+        return parser
+
+    def setup_simplex(self, opts):
+        '''
+        Set options used in the simplex optimization.
+        '''
         self.max_cycles = opts.max_cycles
         self.max_wo_change = opts.max_wo_change
         self.max_params = opts.max_params
         self.massive_contraction = not opts.no_massive
         self.use_weight = not opts.no_weight
-        return opts
 
     def run(self):
         '''
@@ -147,9 +174,11 @@ class Simplex(Optimizer):
                 contracted.params = copy.deepcopy(self.params)
                 for i in xrange(0, len(self.params)):
                     if reflected.x2 > self.trial_ffs[-1].x2:
-                        contracted_param = (inverted.params[i].value + self.trial_ffs[-1].params[i].value) / 2
+                        contracted_param = (inverted.params[i].value + \
+                                                self.trial_ffs[-1].params[i].value) / 2
                     else:
-                        contracted_param = (3 * inverted.params[i].value - self.trial_ffs[-1].params[i].value) / 2
+                        contracted_param = (3 * inverted.params[i].value - \
+                                                self.trial_ffs[-1].params[i].value) / 2
                     contracted.params[i].value = contracted_param
                 contracted.display_params()
                 contracted.check_params()
@@ -160,7 +189,8 @@ class Simplex(Optimizer):
                     logger.info('doing massive contraction')
                     for ff_num, ff in enumerate(self.trial_ffs[1:]):
                         for i in xrange(0, len(self.params)):
-                            ff.params[i].value = (ff.params[i].value + self.trial_ffs[0].params[i].value) / 2
+                            ff.params[i].value = (ff.params[i].value + \
+                                                      self.trial_ffs[0].params[i].value) / 2
                         ff.display_params()
                         ff.check_params()
                         ff.method += ' / massive contraction'
