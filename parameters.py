@@ -11,12 +11,12 @@ from datatypes import MM3
 
 logger = logging.getLogger(__name__)
 
-def parse_parameters(args):
+def return_parameters_parser(add_help=True):
     '''
-    Parses command line arguments. Grabs the selected parameters.
+    Returns an argparse.ArgumentParser object for the selection of
+    parameters.
     '''
-    parser = argparse.ArgumentParser(
-        formatter_class=RawTextHelpFormatter,
+    if add_help:
         description=(__doc__ + 
                      '''
 PTYPES:
@@ -28,30 +28,44 @@ df   - dihedral force constants
 imp1 - improper torsions (1st MM3* column)
 imp2 - improper torsions (2nd MM3* column)
 sb   - stretch-bend force constants
-q    - bond dipoles'''))
-    parser.add_argument(
+q    - bond dipoles''')
+        parser = argparse.ArgumentParser(
+            formatter_class=RawTextHelpFormatter,
+            description=description)
+    else:
+        parser = argparse.ArgumentParser(add_help=False)
+
+    arg_group = parser.add_argument_group('parameters')
+    arg_group.add_argument(
         '--all', '-a', action='store_true',
         help='Select all available parameters from the force field.')
-    parser.add_argument(
+    arg_group.add_argument(
         '--ffpath', '-f', metavar='mm3.fld', default='mm3.fld',
         help='Path to force field.')
-    parser.add_argument(
-        '--doprint', '-dp', action='store_true',
-        help='Print locations in force field of the selected parameters.')
-    parser.add_argument(
+    arg_group.add_argument(
+        '--printparams', '-pp', action='store_true',
+        help='Print information about the selected parameters.')
+    arg_group.add_argument(
         '--pfile', '-pf', type=str, metavar='filename',
         help='Use a file to select parameters. Allows advanced options.')
-    parser.add_argument(
+    arg_group.add_argument(
         '--ptypes', '-pt', nargs='+', default=[],
         help='Select these parameter types.')
-    opts = parser.parse_args(args)
+    return parser
 
+def select_parameters(opts, ff=None):
+    '''
+    Imports a force field object, which contains a list of all the available
+    parameters for optimization in the "params" attribute. Returns a list of
+    only the user selected parameters.
+    '''
     if opts.all:
         opts.ptypes.extend(('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2', 'sb', 'q'))
 
-    ff = MM3(opts.ffpath)
-    ff.import_ff()
-    logger.info('{} params in {}'.format(len(ff.params), ff.path))
+    if ff is None:
+        ff = MM3(opts.ffpath)
+        ff.import_ff()
+        logger.info('ff loaded from {} - {} parameters'.format(ff.path, len(ff.params)))
 
     selected_params = []
     if opts.ptypes:
@@ -83,7 +97,7 @@ q    - bond dipoles'''))
                     param.group = temp_param[3]
                     selected_params.append(param)
                                        
-    if opts.doprint:
+    if opts.printparams:
         for param in selected_params:
             # print('{} {}'.format(param.mm3_row, param.mm3_col))
             try:
@@ -103,5 +117,7 @@ if __name__ == '__main__':
         cfg = yaml.load(f)
     logging.config.dictConfig(cfg)
 
-    parse_parameters(sys.argv[1:])
+    parser = return_parameters_parser()
+    opts = parser.parse_args(sys.argv[1:])
+    select_parameters(opts)
 
