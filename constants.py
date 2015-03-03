@@ -34,9 +34,11 @@ format_macromodel
 import re
 
 steps = {'ae':      1.0,
-         'af':      0.2,
+         'af':      '0.1',
+         # 'af':      0.2,
          'be':      0.05,
-         'bf':      0.2,
+         'bf':      '0.1',
+         # 'bf':      0.2,
          'df':     '0.01',
          # 'df':      0.2
          'imp1':    0.2,
@@ -167,3 +169,8 @@ masses = {
     'No':      259.101024000,
     'Lr':      262.109692000
     }
+
+groups = {'bf': {'c': ' -d test -meig X001.mae,X001.01.out',
+                 'r': ' -d test -jeige X001.02.in,X001.01.out'},
+          'eb': {'c': ' -d test -mb X001.mae',
+                 'r': ' -d test -jb X001.mae'}}
