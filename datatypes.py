@@ -1,5 +1,5 @@
 '''
-Contains basic data structures used throughout the Q2MM code.
+Basic data structures.
 '''
 import copy
 import logging
@@ -65,14 +65,8 @@ class Param(object):
     # expand to include allowed parameter ranges.
     def check_value(self):
         '''
-        Use to check if the current parameter value is allowed.
+        Checks if the current parameter value is allowed.
         '''
-        # if not self.allow_negative and self.value < 0.0:
-        #     logger.warning('{} attempted to go below zero'.format(self))
-        #     self.value = self.default_value
-        #     return 1
-        # else:
-        #     return 0
         if not self.allow_negative and self.value < 0.0:
             raise UnallowedNegative('{} attempted to go below zero'.format(self))
     def __repr__(self):
@@ -160,6 +154,9 @@ class MM3(FF):
     def select_atom_types(self, atom_labels):
         return [self._atom_types[int(x) - 1] if x.isdigit() else x for x in atom_labels]
     def import_ff(self, sub_search=None):
+        '''
+        Reads parameters from mm3.fld.
+        '''
         if sub_search is None:
             sub_search = self.sub_search
         else:
@@ -314,6 +311,9 @@ class MM3(FF):
                                      value = float(cols[6]))))
         logger.log(2, 'read {} parameters'.format(len(self.params)))
     def export_ff(self, params=None, path=None):
+        '''
+        Replaces parameters in mm3.fld.
+        '''
         if params is None:
             params = self.params
         if path is None:
@@ -441,6 +441,9 @@ class Hessian(object):
             logger.log(3, '{} diagonalized matrix'.format(new_matrix.shape))
         return new_matrix
     def mass_weight_eigenvectors(self, eigenvectors=None, atoms=None, undo=False):
+        '''
+        Mass-weight (or un-mass-weight) eigenvectors.
+        '''
         if eigenvectors is None:
             eigenvectors = self.eigenvectors
             assert eigenvectors is not None, "couldn't load eigenvectors"
@@ -460,6 +463,9 @@ class Hessian(object):
                     eigenvectors[i, j] *= scale_factors[j]
         return eigenvectors
     def mass_weight_hessian(self, hessian=None, atoms=None, undo=False):
+        '''
+        Mass-weight (or un-mass-weight) the Hessian.
+        '''
         if hessian is None:
             hessian = self.hessian
             assert hessian is not None, "couldn't load hessian"
@@ -479,6 +485,9 @@ class Hessian(object):
                     hessian[i, j] = hessian[i, j] * scale_factors[i] * scale_factors[j]
         return hessian
     def replace_minimum(self, array, value=1):
+        '''
+        Replace the minimum value in an array.
+        '''
         minimum = array.min()
         minimum_index = np.where(array == minimum)
         logger.log(3, 'minimum: {}'.format(minimum))
@@ -491,6 +500,9 @@ class Hessian(object):
         logger.log(3, 'replaced minimum with {}'.format(value))
         return array
     def load_from_jaguar_in(self, file_class=None, file_path=None, get_hessian=True, get_atoms=True):
+        '''
+        Load data from Jaguar input files.
+        '''
         assert file_class is not None or file_path is not None, \
             'must provide class object or path to file'
         if not file_class:
@@ -518,6 +530,9 @@ class Hessian(object):
         if get_atoms:
             self.atoms = file_class.structures[0].atoms
     def load_from_mmo_log(self, file_class=None, file_path=None):
+        '''
+        Load data from MacroModel files.
+        '''
         assert file_class is not None or file_path is not None, \
             'must provide class object or path to file'
         if not file_class:

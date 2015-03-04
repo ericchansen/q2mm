@@ -1,38 +1,9 @@
 '''
-Constants used throughout Q2MM.
-
-force_conversion
-    Converts force constants from Jaguar frequency output, given in
-    mdyn A**-1, to au.
-eigenvalue_conversion
-    Converts eigenvalues of the mass-weighted Hessian to cm**-1.
-hessian_conversion
-    Converts Jaguar Hessian elements from au (hartree bohr**-2) to kJ
-    mol**-1 A**-2, which is used by MacroModel.
-hartree_to_kjmol 
-    Converts hartrees to kJ/mol.
-
-re_float
-    Hopefully this regular expression can pick up any float.
-re_smiles
-    Smile-esque syntax used to pick up atom/structure/smiles notation
-    used by MM3* substructures.
-re_split_atoms
-    Characters used to separate atoms in the smiles-esque syntax found
-    by re_smiles.
-re_sub
-    Used to pick up the name of MM3* substructures.
-    
-re_angle
-    Picks up lines in an mmo file for angles.
-re_bond
-    Picks up lines in an mmo file for bonds.
-
-format_macromodel
-    The string format used to write lines of a MacroModel com file.
+Constants.
 '''
 import re
 
+# default step sizes for parameters
 steps = {'ae':      1.0,
          'af':      '0.1',
          # 'af':      0.2,
@@ -46,24 +17,37 @@ steps = {'ae':      1.0,
          'sb':      0.2,
          'q':       0.5}
 
+# converts force constants from Jaguar frequency output (mdyn A**-1) to au
 force_conversion = 15.56914
+# converts eigenvalues of mass-weighted Hessian to cm**-1
 eigenvalue_conversion = 53.0883777868
+# converts Jaguar Hessian elements from au (Hartree bohr**-2) to
+# kJ mol**-1 A**-2 (used by MacroModel)
 hessian_conversion = 9375.828222
+# convert Hartree to kJ/mol
 hartree_to_kjmol = 2625.5
 
+# matches any float
 re_float = '[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+# picks up smarts notation used by MM3* substructures
 re_smiles = '[\w\-\=\(\)\.\+\[\]\*]+'
+# characters used to split atoms in smarts notation
 re_split_atoms = '[\s\-\(\)\=\.\[\]\*]+'
+# picks up name of MM3* substructuers
 re_sub = '[\w\s]+'
 
+# picks up angle lines in a mmo file
 re_angle = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
                       '({0})\s+{0}\s+{0}\s+\w+\s+\d+\s+({1})\s+(\d+)'.format(re_float, re_sub))
+# picks up bond lines in a mmo file
 re_bond = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
                      '\s+\d+\s+({1})\s+(\d+)'.format(re_float, re_sub))
 
 
+# string format used to write macromodel com files
 format_macromodel = ' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n'
 
+# masses used for mass-weighting
 masses = {
     'H':         1.007825032,
     'He':        4.002603250,
@@ -170,6 +154,7 @@ masses = {
     'Lr':      262.109692000
     }
 
+# in progress--working on grouped parameters
 groups = {'bf': {'c': ' -d test -meig X001.mae,X001.01.out',
                  'r': ' -d test -jeige X001.02.in,X001.01.out'},
           'eb': {'c': ' -d test -mb X001.mae',
