@@ -1,13 +1,12 @@
 #!/usr/bin/python
 '''
-Generates data used to evaluate the penalty function.
+Generates data used in the penalty function.
 '''
 # there seems to be a small difference in the data produced by jhi and the old
 # Hessian inversion scripts
 
 # seems that the value used for inversion randomly switches between 1 and
 # 9375.828222. set so that it reproduces elaine's scripts for each function
-# i compared
 
 # concern over RRHO argument 4. it's temperature. used to be 0 K. should it be
 # 300 K?
@@ -16,8 +15,7 @@ Generates data used to evaluate the penalty function.
 # data.min/data.amin would be faster, but somehow i'd have to set up datum such
 # that it worked.
 
-# a lot of repetition in collect_data could be eliminated for the sake of
-# shortening the code. then again, it's all very simple this way. each argument
+# a lot of repetition in collect_data could be eliminated to shorten the code.
 from collections import defaultdict
 from itertools import chain, izip
 import argparse
@@ -44,60 +42,126 @@ commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'me', 'me2', 'meo', 'meig', 'meig
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
 
+# these commands require me to import the force field
 commands_need_ff = ['ma', 'mb', 'ja', 'jb', 'pm', 'zm']
 
-def parse_calculate(args):
+def return_calculate_parser(add_help=True):
     '''
-    Translates command line syntax into data collection methods.
+    Return an argument parser for calculate.
     '''
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    if add_help:
+        parser = argparse.ArgumentParser(description=__doc__)
+    else:
+        parser = argparse.ArgumentParser(add_help=False)
+    calc_args = parser.add_argument_group('calculate options')
+    calc_args.add_argument(
         '--dir', '-d', type=str, metavar='directory', default=os.getcwd(),
         help=('Searches for files (data files like .mae, .log, etc. and force '
               'field files) in this directory. 3rd party calculations are '
               'executed from this directory.'))
-    parser.add_argument(
+    calc_args.add_argument(
         '--norun', '-n', action='store_true',
         help="Don't run 3rd party software.")
-    parser.add_argument(
-        '--output', '-o', action='store_true', help='Print data.')
-    parser.add_argument('-ma', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-mb', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-me', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-me2', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-meo', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-meig', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out')
-    parser.add_argument('-meigz', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out')
-    parser.add_argument('-mh', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-pm', type=str, nargs='+', action='append', default=[], metavar='parteth')
-    parser.add_argument('-pr', type=str, nargs='+', action='append', default=[], metavar='parteth')
-    parser.add_argument('-ja', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-jb', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-je', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-je2', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
-    parser.add_argument('-jeigi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
-    parser.add_argument(
-        '-jeige', type=str, nargs='+', action='append', default=[],
-        metavar='file.in,file.out')
-    parser.add_argument('-jeigz', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
-    parser.add_argument('-jeigzi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out')
-    parser.add_argument('-jh', type=str, nargs='+', action='append', default=[], metavar='file.in')
-    parser.add_argument('-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in')
-    parser.add_argument('-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae')
-    parser.add_argument('-r', type=str, nargs='+', action='append', default=[], metavar='filename',
-                        help='Read data points directly (ex. use with .cal files). '
-                        'Each row corresponds to a data point. Columns may be '
-                        'separated by '
-                        "anything that Python's basic split method recognizes. "
-                        '1st column '
-                        'is the data label, 2nd column is the weight, and 3rd column is the '
-                        'value.')
-    parser.add_argument('-zm', type=str, nargs='+', action='append', default=[], metavar='parteth')
-    parser.add_argument('-zr', type=str, nargs='+', action='append', default=[], metavar='parteth')
+    calc_args.add_argument(
+        '--printdata', '-pd', action='store_true', help='Print data.')
+    data_args = parser.add_argument_group('calculate data types')
+    data_args.add_argument(
+        '-ma', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel angles (post force field optimization).')
+    data_args.add_argument(
+        '-mb', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel bond lengths (post force field optimization).')
+    data_args.add_argument(
+        '-me', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel energies (pre force field optimization).')
+    data_args.add_argument(
+        '-me2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help=('MacroModel energies. Same as -me, but having two options '
+              'allows for the weights to be set differently.'))
+    data_args.add_argument(
+        '-meo', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel energies (post force field optimization).')
+    data_args.add_argument(
+        '-meig', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out',
+        help='MacroModel eigenmode fitting. Includes diagonal and off diagonal elements.')
+    data_args.add_argument(
+        '-meigz', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out',
+        help="MacroModel eigenmode fitting. Doesn't include off diagonal elements.")
+    data_args.add_argument(
+        '-mh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel Hessian.')
+    data_args.add_argument(
+        '-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel charges.')
+    data_args.add_argument(
+        '-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel charges, but excludes aliphatic hydrogens.')
+    data_args.add_argument(
+        '-pm', type=str, nargs='+', action='append', default=[], metavar='parteth',
+        help='Uses a tethering file for parameters. Calculated data.')
+    data_args.add_argument(
+        '-pr', type=str, nargs='+', action='append', default=[], metavar='parteth',
+        help='Uses a tethering file for parameters. Reference data.')
+    data_args.add_argument(
+        '-ja', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar angles.')
+    data_args.add_argument(
+        '-jb', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar bond lengths.')
+    data_args.add_argument(
+        '-je', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar energies.')
+    data_args.add_argument(
+        '-je2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar energies. Can set weight separately from -je.')
+    data_args.add_argument(
+        '-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+        help='Jaguar eigenmode fitting.')
+    data_args.add_argument(
+        '-jeigi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+        help='Jaguar eigenmode fitting with inversion of the 1st eigenvalue.')
+    data_args.add_argument(
+        '-jeige', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+        help=('Jaguar eigenmode fitting. Zeros all off diagonal elements. '
+              "Equivalent to Elaine's method."))
+    data_args.add_argument(
+        '-jeigz', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+        help="Jaguar eigenmode fitting. Don't include off diagonal elements.")
+    data_args.add_argument(
+        '-jeigzi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+        help=("Jaguar eigenmode fitting. Don't include off diagonal elements. "
+              "Invert lowest eigenvalue."))
+    data_args.add_argument(
+        '-jh', type=str, nargs='+', action='append', default=[], metavar='file.in',
+        help='Jaguar Hessian.')
+    data_args.add_argument(
+        '-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in',
+        help='Jaguar Hessian with inversion.')
+    data_args.add_argument(
+        '-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar charges.')
+    data_args.add_argument(
+        '-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar charges (ignores aliphatic hydrogens).')
+    data_args.add_argument(
+        '-r', type=str, nargs='+', action='append', default=[], metavar='filename',
+        help=('Read data points directly (ex. use with .cal files). '
+              'Each row corresponds to a data point. Columns may be '
+              'separated by '
+              "anything that Python's basic split method recognizes. "
+              '1st column '
+              'is the data label, 2nd column is the weight, and 3rd column is the '
+              'value.'))
+    data_args.add_argument(
+        '-zm', type=str, nargs='+', action='append', default=[], metavar='parteth',
+        help='Tether parameters away from zero. Force field data.')
+    data_args.add_argument(
+        '-zr', type=str, nargs='+', action='append', default=[], metavar='parteth',
+        help='Tether parameters away from zero. Reference data.')
+    return parser
+
+def parse_calculate(args):
+    parser = return_calculate_parser()
     opts = parser.parse_args(args)
     commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all and value}
     # commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all}
@@ -959,7 +1023,9 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
     return data
 
 def run_calculate(args):
-    commands, directory, norun, output = parse_calculate(args)
+    parser = return_calculate_parser()
+    opts = parser.parse_args(args)
+    commands, directory, norun, output = parse_calculate(opts)
     commands_grouped = group_commands(commands)
     coms_to_run, macromodel_indices = make_macromodel_coms(commands_grouped, directory)
     if not norun:
