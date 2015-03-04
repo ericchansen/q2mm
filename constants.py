@@ -23,7 +23,7 @@ force_conversion = 15.56914
 eigenvalue_conversion = 53.0883777868
 # converts Jaguar Hessian elements from au (Hartree bohr**-2) to
 # kJ mol**-1 A**-2 (used by MacroModel)
-hessian_conversion = 9375.828222
+hessian_conversion = 9375.829222
 # convert Hartree to kJ/mol
 hartree_to_kjmol = 2625.5
 
