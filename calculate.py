@@ -45,14 +45,16 @@ commands_all = commands_gaussian + commands_jaguar + commands_macromodel + comma
 # these commands require me to import the force field
 commands_need_ff = ['ma', 'mb', 'ja', 'jb', 'pm', 'zm']
 
-def return_calculate_parser(add_help=True):
+def return_calculate_parser(add_help=True, parents=[]):
     '''
     Return an argument parser for calculate.
     '''
     if add_help:
-        parser = argparse.ArgumentParser(description=__doc__)
+        parser = argparse.ArgumentParser(
+            description=__doc__, parents=parents)
     else:
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = argparse.ArgumentParser(
+            add_help=False, parents=parents)
     calc_args = parser.add_argument_group('calculate options')
     calc_args.add_argument(
         '--dir', '-d', type=str, metavar='directory', default=os.getcwd(),
@@ -159,13 +161,6 @@ def return_calculate_parser(add_help=True):
         '-zr', type=str, nargs='+', action='append', default=[], metavar='parteth',
         help='Tether parameters away from zero. Reference data.')
     return parser
-
-def parse_calculate(args):
-    parser = return_calculate_parser()
-    opts = parser.parse_args(args)
-    commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all and value}
-    # commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all}
-    return commands, opts.dir, opts.norun, opts.output
 
 def group_commands(commands):
     '''
@@ -1025,13 +1020,13 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
 def run_calculate(args):
     parser = return_calculate_parser()
     opts = parser.parse_args(args)
-    commands, directory, norun, output = parse_calculate(opts)
+    commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all and value}
     commands_grouped = group_commands(commands)
-    coms_to_run, macromodel_indices = make_macromodel_coms(commands_grouped, directory)
-    if not norun:
-        run_macromodel(coms_to_run, directory)
-    data = collect_data(commands, macromodel_indices, directory)
-    if output:
+    coms_to_run, macromodel_indices = make_macromodel_coms(commands_grouped, opts.dir)
+    if not opts.norun:
+        run_macromodel(coms_to_run, opts.dir)
+    data = collect_data(commands, macromodel_indices, opts.dir)
+    if opts.printdata:
         for datum in sorted(data, key=datum_sort_key):
             print('{0:<25} {1:>22.6f} {2:>30}'.format(datum.name, datum.value, datum.source))
     return data

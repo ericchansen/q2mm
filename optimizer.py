@@ -103,7 +103,7 @@ class Optimizer(object):
         logger.info('generated {} force fields for {} differentiation'.format(len(diff_ffs), mode))
         return diff_ffs
 
-    def setup(self, args):
+    def parse(self, args):
         '''
         General setup is applied to the start of any optimization technique.
         '''
@@ -127,6 +127,9 @@ class Optimizer(object):
         elif self.__class__.__name__ == 'Loop':
             self.setup_loop(opts)
 
+        return opts
+
+    def setup(self, opts):
         logger.info('--- setup {} ---'.format(type(self).__name__))
 
         # not needed with parameter groups?
@@ -153,8 +156,6 @@ class Optimizer(object):
         # not needed with parameter groups?
         self.data_ref = run_calculate(self.com_ref.split())
         
-        return opts
-
     def trim_params_on_2nd(self, params):
         '''
         Returns a new list of parameters containing the ones that have

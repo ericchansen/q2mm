@@ -424,5 +424,6 @@ if __name__ == '__main__':
     logging.config.dictConfig(cfg)
     
     gradient = Gradient()
-    gradient.setup(sys.argv[1:])
+    opts = gradient.parse(sys.argv[1:])
+    gradient.setup(opts)
     gradient.run()
