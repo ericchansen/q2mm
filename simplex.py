@@ -36,11 +36,13 @@ class Simplex(Optimizer):
         self.params = None
         self.use_weight = True
 
-    def return_simplex_parser(self, add_help=True, parents=[]):
+    def return_simplex_parser(self, add_help=True, parents=None):
         '''
         Return an argparse.ArgumentParser object containing options
         for simplex optimizations.
         '''
+        if parents is None:
+            parents = []
         if add_help:
             parser = argparse.ArgumentParser(
                 description=__doc__, add_help=add_help, parents=parents)
@@ -246,6 +248,7 @@ if __name__ == '__main__':
     logging.config.dictConfig(cfg)
     
     simplex = Simplex()
-    simplex.setup(sys.argv[1:])
+    opts = simplex.parse(sys.argv[1:])
+    simplex.setup(opts)
     simplex.run()
     

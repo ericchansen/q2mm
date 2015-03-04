@@ -23,7 +23,6 @@ class Loop(Optimizer):
 
     Tries to minimize the number of duplicate calculations.
     '''
-    name = 'loop'
     def __init__(self):
         self.best_ff = None
         self.convergence = 0.005
@@ -64,7 +63,7 @@ class Loop(Optimizer):
         logger.info('--- {} running ---'.format(type(self).__name__))
         # setup gradient
         gradient = Gradient()
-        if opts is not None:
+        if opts.gradient is not None:
             gradient.parse(opts.gradient.split())
         else:
             gradient.parse(['--default'])
@@ -143,4 +142,5 @@ if __name__ == '__main__':
 
     loop = Loop()
     opts = loop.parse(sys.argv[1:])
+    loop.setup(opts)
     loop.run(opts)

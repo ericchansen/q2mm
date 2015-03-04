@@ -27,15 +27,17 @@ class Optimizer(object):
         self.data_ref = None
         self.init_ff = None
 
-    def return_optimizer_parser(self, add_help=False, parents=[]):
+    def return_optimizer_parser(self, add_help=False, parents=None):
         '''
         Return an argparse.ArgumentParser object that is general to
         all optimization techniques.
         '''
+        if parents is None:
+            parents = []
         parameters_parser = return_parameters_parser(add_help=False)
         parents.append(parameters_parser)
-        parser = argparse.ArgumentParser(add_help=add_help, parents=parents)
-        
+        parser = argparse.ArgumentParser(add_help=False, parents=parents)
+
         parser.add_argument(
             '--calculate', '-c', type=str, metavar='" commands for calculate.py"',
             help=('These commands produce the calculated data. Leave one space '
@@ -108,6 +110,7 @@ class Optimizer(object):
         General setup is applied to the start of any optimization technique.
         '''
         opt_parser = self.return_optimizer_parser(add_help=False)
+
         if self.__class__.__name__ == 'Gradient':
             parser = self.return_gradient_parser(
                 add_help=True, parents=[opt_parser])
