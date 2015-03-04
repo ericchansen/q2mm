@@ -36,17 +36,17 @@ class Simplex(Optimizer):
         self.params = None
         self.use_weight = True
 
-    def return_simplex_parser(self, add_help=True):
+    def return_simplex_parser(self, add_help=True, parents=[]):
         '''
         Return an argparse.ArgumentParser object containing options
         for simplex optimizations.
         '''
         if add_help:
-            description = __doc__
             parser = argparse.ArgumentParser(
-                description=description, add_help=add_help)
+                description=__doc__, add_help=add_help, parents=parents)
         else:
-            parser = argparse.ArgumentParser(add_help=False)
+            parser = argparse.ArgumentParser(
+                add_help=False, parents=parents)
 
         group = parser.add_argument_group('simplex optimization')
         group.add_argument(

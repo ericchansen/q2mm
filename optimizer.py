@@ -107,14 +107,16 @@ class Optimizer(object):
         '''
         General setup is applied to the start of any optimization technique.
         '''
+        opt_parser = self.return_optimizer_parser(add_help=False)
         if self.__class__.__name__ == 'Gradient':
-            gradient_parser = self.return_gradient_parser(add_help=True)
-            parser = self.return_optimizer_parser(
-                add_help=False, parents=[gradient_parser])
+            parser = self.return_gradient_parser(
+                add_help=True, parents=[opt_parser])
         elif self.__class__.__name__ == 'Simplex':
-            simplex_parser = self.return_simplex_parser(add_help=True)
-            parser = self.return_optimizer_parser(
-                add_help=False, parents=[simplex_parser])
+            parser = self.return_simplex_parser(
+                add_help=True, parents=[opt_parser])
+        elif self.__class__.__name__ == 'Loop':
+            parser = self.return_loop_parser(
+                add_help=True, parents=[opt_parser])
 
         opts = parser.parse_args(args)
 
@@ -122,6 +124,8 @@ class Optimizer(object):
             self.setup_gradient(opts)
         elif self.__class__.__name__ == 'Simplex':
             self.setup_simplex(opts)
+        elif self.__class__.__name__ == 'Loop':
+            self.setup_loop(opts)
 
         logger.info('--- setup {} ---'.format(type(self).__name__))
 

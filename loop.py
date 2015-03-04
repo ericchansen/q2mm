@@ -1,4 +1,8 @@
 #!/usr/bin/python
+'''
+Loop between optimization techniques until stop criteria has been met.
+'''
+import argparse
 import copy
 import logging
 import sys
@@ -27,16 +31,31 @@ class Loop(Optimizer):
         self.loop_max = None
         self.last_best = None
 
-    def parse(self, args):
-        parser = self.return_optimizer_parser()
+    def return_loop_parser(self, add_help=True, parents=[]):
+        '''
+        Returns an argument parser for loop.
+        '''
+        if add_help:
+            parser = argparse.ArgumentParser(
+                description=__doc__, add_help=add_help, parents=parents)
+        else:
+            parser = argparse.ArgumentParser(
+                add_help=False, parents=parents)
         group = parser.add_argument_group('loop')
-        group.add_argument('--convergence', type=float, default=0.005)
-        group.add_argument('--loop_max', type=int, default=None)
+        group.add_argument(
+            '--convergence', type=float, default=0.005,
+            help=('Convergence criterion. If the percent change in the penalty '
+                  'between rounds is less than this number, then stop.'))
+        group.add_argument(
+            '--loop_max', type=int, default=None,
+            help='Maximum number of loop cycles.')
         group.add_argument(
             '--gradient', type=str, metavar='" commands for gradient.py"',
             help=('These commands are interpreted by the gradient based optimizer. '
                   'Leave one space after the 1st quotation mark enclosing the arguments.'))
-        opts = parser.parse_args(args)
+        return parser
+
+    def setup_loop(self, opts):
         self.convergence = opts.convergence
         self.loop_max = opts.loop_max
         return opts

@@ -57,16 +57,17 @@ class Gradient(Optimizer):
         self.svd_cutoffs = None
         self.svd_radii = None
 
-    def return_gradient_parser(self, add_help=True):
+    def return_gradient_parser(self, add_help=True, parents=[]):
         '''
         Return an argparse.ArgumentParser object containing options
         for gradient-based optimizations.
         '''
         if add_help:
-            description = __doc__
-            parser = argparse.ArgumentParser()
+            parser = argparse.ArgumentParser(
+                description=__doc__, add_help=add_help, parents=parents)
         else:
-            parser = argparse.ArgumentParser(add_help=False)
+            parser = argparse.ArgumentParser(
+                add_help=add_help, parents=parents)
 
         group_gen = parser.add_argument_group('gradient-based optimization')
         group_gen.add_argument(
