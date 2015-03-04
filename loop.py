@@ -108,11 +108,13 @@ class Loop(Optimizer):
                     self.best_ff = MM3()
                     self.best_ff.method = simplex.trial_ffs[0].method
                     self.best_ff.copy_attributes(self.init_ff)
-                    if simplex.max_params is not None and len(simplex.init_ff.params) > simplex.max_params:
+                    if simplex.max_params is not None and \
+                            len(simplex.init_ff.params) > simplex.max_params:
                         self.best_ff.params = copy.deepcopy(self.init_ff.params)
                         for param_i in self.best_ff.params:
                             for param_b in simplex.trial_ffs[0].params:
-                                if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
+                                if param_i.mm3_row == param_b.mm3_row and \
+                                        param_i.mm3_col == param_b.mm3_col:
                                     param_i = copy.deepcopy(param_b)
                     else:
                         self.best_ff.params = copy.deepcopy(simplex.trial_ffs[0].params)
@@ -140,5 +142,5 @@ if __name__ == '__main__':
     logging.config.dictConfig(cfg)
 
     loop = Loop()
-    opts = loop.setup(sys.argv[1:])
+    opts = loop.parse(sys.argv[1:])
     loop.run(opts)
