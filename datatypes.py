@@ -167,11 +167,13 @@ class MM3(FF):
         with open(self.path, 'r') as f:
             logger.log(2, 'reading {}'.format(self.path))
             section_sub = False
+            num_subs = 0
             for i, line in enumerate(f):
                 if not section_sub and sub_search in line:
                     # may need to be more robust
                     matched = re.match('\sC\s+({})'.format(cons.re_sub), line)
                     if matched != None:
+                        num_subs += 1
                         section_sub = True
                         self.sub_name = matched.group(1).strip()
                         self.start_row = i + 1
@@ -181,7 +183,7 @@ class MM3(FF):
                         try:
                             self.smiles = matched.group(1)
                         except:
-                            logger.exception("can't read substructure name on line {}".format(i + 2))
+                            logger.exception("can't read substructure name on line {}".format(i + num_subs + 1))
                             raise
                         logger.log(2, 'chemical formula: {}'.format(self.smiles))
                         logger.log(2, 'atom types: {}'.format(self.atom_types))
@@ -195,14 +197,14 @@ class MM3(FF):
                                      atom_types = self.select_atom_types(cols[1:3]),
                                      ptype = 'be',
                                      mm3_col = 1,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[3])),
                             ParamMM3(atom_labels = cols[1:3],
                                      atom_types = self.select_atom_types(cols[1:3]),
                                      ptype = 'bf',
                                      mm3_col = 2,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[4]))))
                     try:
@@ -211,7 +213,7 @@ class MM3(FF):
                                      atom_types = self.select_atom_types(cols[1:3]),
                                      ptype = 'q',
                                      mm3_col = 3,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[5])))
                     except IndexError:
@@ -223,14 +225,14 @@ class MM3(FF):
                                      atom_types = self.select_atom_types(cols[1:4]),
                                      ptype = 'ae',
                                      mm3_col = 1,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[4])),
                             ParamMM3(atom_labels = cols[1:4],
                                      atom_types = self.select_atom_types(cols[1:4]),
                                      ptype = 'af',
                                      mm3_col = 2,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[5]))))
                 if section_sub and line.startswith(' 3'): # stretch-bends
@@ -240,7 +242,7 @@ class MM3(FF):
                                  atom_types = self.select_atom_types(cols[1:4]),
                                  ptype = 'sb',
                                  mm3_col = 1,
-                                 mm3_row = i + 2,
+                                 mm3_row = i + num_subs + 1,
                                  mm3_label = line[:2],
                                  value = float(cols[4])))
                 if section_sub and line.startswith(' 4'): # torsions
@@ -250,21 +252,21 @@ class MM3(FF):
                                      atom_types = self.select_atom_types(cols[1:4]),
                                      ptype = 'df',
                                      mm3_col = 1,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[5])),
                             ParamMM3(atom_labels = cols[1:5],
                                      atom_types = self.select_atom_types(cols[1:4]),
                                      ptype = 'df',
                                      mm3_col = 2,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[6])),
                             ParamMM3(atom_labels = cols[1:5],
                                      atom_types = self.select_atom_types(cols[1:4]),
                                      ptype = 'df',
                                      mm3_col = 3,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[7]))))
                 if section_sub and line.startswith('54'): # higher order torsions
@@ -275,21 +277,21 @@ class MM3(FF):
                                      atom_types = self.params[-1].atom_types,
                                      ptype = 'df',
                                      mm3_col = 1,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[1])),
                             ParamMM3(atom_labels = self.params[-1].atom_labels,
                                      atom_types = self.params[-1].atom_types,
                                      ptype = 'df',
                                      mm3_col = 2,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[2])),
                             ParamMM3(atom_labels = self.params[-1].atom_labels,
                                      atom_types = self.params[-1].atom_types,
                                      ptype = 'df',
                                      mm3_col = 3,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[3]))))
                 if section_sub and line.startswith(' 5'): # improper torsions
@@ -299,14 +301,14 @@ class MM3(FF):
                                      atom_types = self.select_atom_types(cols[1:5]),
                                      ptype = 'imp1',
                                      mm3_col = 1,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[5])),
                             ParamMM3(atom_labels = cols[1:5],
                                      atom_types = self.select_atom_types(cols[1:5]),
                                      ptype = 'imp2',
                                      mm3_col = 2,
-                                     mm3_row = i + 2,
+                                     mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[6]))))
         logger.log(2, 'read {} parameters'.format(len(self.params)))

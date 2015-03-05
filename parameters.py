@@ -124,10 +124,6 @@ def select_parameters(opts, ff=None):
                         angle_dic[angle.ff_row].append(angle.value)
                     else:
                         angle_dic[angle.ff_row] = [angle.value]
-        print
-        print bond_dic
-        print angle_dic
-        print
 
         bond_avg = {}
         for ff_row, values in bond_dic.iteritems():
@@ -135,11 +131,6 @@ def select_parameters(opts, ff=None):
         angle_avg = {}
         for ff_row, values in angle_dic.iteritems():
             angle_avg[ff_row] = np.mean(values)
-
-        print
-        print bond_avg
-        print angle_avg
-        print
 
         for param in selected_params:
             print param
