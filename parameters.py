@@ -37,29 +37,34 @@ q    - bond dipoles''')
     else:
         parser = argparse.ArgumentParser(add_help=False)
 
-    arg_group = parser.add_argument_group('parameters')
-    arg_group.add_argument(
+    par_group = parser.add_argument_group('parameters')
+    par_group.add_argument(
         '--all', '-a', action='store_true',
         help='Select all available parameters from the force field.')
-    arg_group.add_argument(
-        '--average', '-av', type=str, nargs='+',
-        help=('Use these MacroModel files to generate a new force field from '
-              'the input force field where each equilibrium value in the '
-              'optimize section is replaced by the average value listed in '
-              'the MacroModel file. Use --averageff to name the output.'))
-    arg_group.add_argument(
-        '--averageff', '-avff', type=str, metavar='mm3.fld',
-        help='Output force field filename from --average.')
-    arg_group.add_argument(
+    par_group.add_argument(
+        '--average', '-av', type=str, metavar='mm3.fld',
+        help=('Use MacroModel files to generate a new force field where\n'
+              'each equilibrium value in the optimized section is replaced\n'
+              'by the average value from the MacroModel file.'))
+    par_group.add_argument(
+        '--check', action='store_true',
+        help=('Check to see if the selected parameters are used in a\n'
+              'MacroModel file. Currently only supports bonds and angles.\n'
+              'Stretch-Bends appear to overwrite force field rows in the\n'
+              'MacroModel file, resulting in false positives.'))
+    par_group.add_argument(
         '--ffpath', '-f', metavar='mm3.fld', default='mm3.fld',
         help='Path to force field.')
-    arg_group.add_argument(
+    par_group.add_argument(
+        '--mmo', '-m', type=str, nargs='+',
+        help='Read these MacroModel files.')
+    par_group.add_argument(
         '--printparams', '-pp', action='store_true',
         help='Print information about the selected parameters.')
-    arg_group.add_argument(
+    par_group.add_argument(
         '--pfile', '-pf', type=str, metavar='filename',
         help='Use a file to select parameters. Allows advanced options.')
-    arg_group.add_argument(
+    par_group.add_argument(
         '--ptypes', '-pt', nargs='+', default=[],
         help='Select these parameter types.')
     return parser
@@ -108,11 +113,18 @@ def select_parameters(opts, ff=None):
                     param.group = temp_param[3]
                     selected_params.append(param)
                                        
-    if opts.average and opts.averageff:
+    # read mmo's
+    if opts.mmo:
+        mmo_files = []
+        for filename in opts.mmo:
+            mmo = MacroModel(filename)
+            mmo_files.append(mmo)
+    
+    # gather bonds and angles from mmo
+    if opts.average or opts.check:
         bond_dic = {}
         angle_dic = {}
-        for filename in opts.average:
-            mmo = MacroModel(filename)
+        for mmo in mmo_files:
             for structure in mmo.structures:
                 for bond in structure.bonds:
                     if bond.ff_row in bond_dic:
@@ -125,6 +137,25 @@ def select_parameters(opts, ff=None):
                     else:
                         angle_dic[angle.ff_row] = [angle.value]
 
+    # check if the parameter's FF row is used in the selected data
+    # from the mmo file. currently only examines bonds and angles
+    if opts.check:
+        for param in selected_params:
+            found_ff_row = False
+            for ff_row in bond_dic:
+                if ff_row == param.mm3_row:
+                    found_ff_row = True
+                    break
+            if found_ff_row is False:
+                for ff_row in angle_dic:
+                    if ff_row == param.mm3_row:
+                        found_ff_row = True
+                        break
+            if found_ff_row is False:
+                print "{} doesn't appear to be in use".format(param)
+
+    if opts.average:
+        # calculate bond and angle average
         bond_avg = {}
         for ff_row, values in bond_dic.iteritems():
             bond_avg[ff_row] = np.mean(values)
@@ -132,24 +163,24 @@ def select_parameters(opts, ff=None):
         for ff_row, values in angle_dic.iteritems():
             angle_avg[ff_row] = np.mean(values)
 
+        # update params
         for param in selected_params:
-            print param
             if param.mm3_row in bond_avg:
                 param.value = bond_avg[param.mm3_row]
             if param.mm3_row in angle_avg:
                 param.value = angle_avg[param.mm3_row]
                 
-        ff.export_ff(params=selected_params, path=opts.averageff)
+        ff.export_ff(params=selected_params, path=opts.average)
 
     if opts.printparams:
         for param in selected_params:
-            # print('{} {}'.format(param.mm3_row, param.mm3_col))
-            try:
-                print('{}[{},{}]({})({})({})'.format(
-                        param.ptype, param.mm3_row, param.mm3_col, param.value,
-                        param.group, param.allow_negative))
-            except:
-                print param
+            print('{} {}'.format(param.mm3_row, param.mm3_col))
+            # try:
+            #     print('{}[{},{}]({})({})({})'.format(
+            #             param.ptype, param.mm3_row, param.mm3_col, param.value,
+            #             param.group, param.allow_negative))
+            # except:
+            #     print param
             
     return selected_params
 
