@@ -67,7 +67,7 @@ class Optimizer(object):
             ff.x2 = calc_x2(ff.data, self.data_ref)
         else:
             ff.x2 = calc_x2(self.com_cal, self.data_ref)
-        logger.info('{}: {}'.format(ff.method, ff.x2))
+        logger.log(9, '{}: {}'.format(ff.method, ff.x2))
 
     def params_diff(self, params, mode='central'):
         '''
