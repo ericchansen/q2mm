@@ -607,16 +607,20 @@ class MacroModel(File):
                             atom_nums = map(int, [match.group(1), match.group(2)])
                             comment = match.group(4) # this has a lot of extra white space
                             value = float(match.group(3))
+                            ff_row = int(match.group(5))
                             current_structure.bonds.append(
-                                Bond(atom_nums=atom_nums, comment=comment, value=value))
+                                Bond(atom_nums=atom_nums, comment=comment, value=value,
+                                     ff_row=ff_row))
                     if section == 'angle':
                         match = cons.re_angle.match(line)
                         if match:
                             atom_nums = map(int, [match.group(1), match.group(2), match.group(3)])
                             comment = match.group(5)
                             value = float(match.group(4))
+                            ff_row = int(match.group(6))
                             current_structure.angles.append(
-                                Angle(atom_nums=atom_nums, comment=comment, value=value))
+                                Angle(atom_nums=atom_nums, comment=comment, value=value,
+                                      ff_row=ff_row))
             logger.log(3, 'imported {} structures'.format(len(structures)))
             self._structures = structures
         return self._structures
@@ -692,17 +696,20 @@ class Bond(object):
     '''
     Data class for a single bond.
     '''
-    __slots__ = ['atom_nums', 'comment', 'order', 'value']
-    def __init__(self, atom_nums=None, comment=None, order=None, value=None):
+    __slots__ = ['atom_nums', 'comment', 'order', 'value', 'ff_row']
+    def __init__(self, atom_nums=None, comment=None, order=None, value=None,
+                 ff_row=None):
         self.atom_nums = atom_nums
         self.comment = comment
         self.order = order
         self.value = value
+        self.ff_row = ff_row
 
 class Angle(Bond):
     '''
     Data class for a single angle.
     '''
-    def __init__(self, atom_nums=None, comment=None, order=None, value=None):
-        super(Angle, self).__init__(atom_nums, comment, order, value)
+    def __init__(self, atom_nums=None, comment=None, order=None, value=None,
+                 ff_row=None):
+        super(Angle, self).__init__(atom_nums, comment, order, value, ff_row)
         

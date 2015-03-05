@@ -5,9 +5,11 @@ Selects parameters from force fields.
 import argparse
 from argparse import RawTextHelpFormatter
 import logging
+import numpy as np
 import sys
 
 from datatypes import MM3
+from filetypes import MacroModel
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,15 @@ q    - bond dipoles''')
     arg_group.add_argument(
         '--all', '-a', action='store_true',
         help='Select all available parameters from the force field.')
+    arg_group.add_argument(
+        '--average', '-av', type=str, nargs='+',
+        help=('Use these MacroModel files to generate a new force field from '
+              'the input force field where each equilibrium value in the '
+              'optimize section is replaced by the average value listed in '
+              'the MacroModel file. Use --averageff to name the output.'))
+    arg_group.add_argument(
+        '--averageff', '-avff', type=str, metavar='mm3.fld',
+        help='Output force field filename from --average.')
     arg_group.add_argument(
         '--ffpath', '-f', metavar='mm3.fld', default='mm3.fld',
         help='Path to force field.')
@@ -97,6 +108,48 @@ def select_parameters(opts, ff=None):
                     param.group = temp_param[3]
                     selected_params.append(param)
                                        
+    if opts.average and opts.averageff:
+        bond_dic = {}
+        angle_dic = {}
+        for filename in opts.average:
+            mmo = MacroModel(filename)
+            for structure in mmo.structures:
+                for bond in structure.bonds:
+                    if bond.ff_row in bond_dic:
+                        bond_dic[bond.ff_row].append(bond.value)
+                    else:
+                        bond_dic[bond.ff_row] = [bond.value]
+                for angle in structure.angles:
+                    if angle.ff_row in angle_dic:
+                        angle_dic[angle.ff_row].append(angle.value)
+                    else:
+                        angle_dic[angle.ff_row] = [angle.value]
+        print
+        print bond_dic
+        print angle_dic
+        print
+
+        bond_avg = {}
+        for ff_row, values in bond_dic.iteritems():
+            bond_avg[ff_row] = np.mean(values)
+        angle_avg = {}
+        for ff_row, values in angle_dic.iteritems():
+            angle_avg[ff_row] = np.mean(values)
+
+        print
+        print bond_avg
+        print angle_avg
+        print
+
+        for param in selected_params:
+            print param
+            if param.mm3_row in bond_avg:
+                param.value = bond_avg[param.mm3_row]
+            if param.mm3_row in angle_avg:
+                param.value = angle_avg[param.mm3_row]
+                
+        ff.export_ff(params=selected_params, path=opts.averageff)
+
     if opts.printparams:
         for param in selected_params:
             # print('{} {}'.format(param.mm3_row, param.mm3_col))
