@@ -183,14 +183,15 @@ class MM3(FF):
                         try:
                             self.smiles = matched.group(1)
                         except:
-                            logger.exception("can't read substructure name on line {}".format(i + num_subs + 1))
+                            logger.exception("can't read substructure name on line {}".format(
+                                    i + num_subs + 1))
                             raise
                         logger.log(2, 'chemical formula: {}'.format(self.smiles))
                         logger.log(2, 'atom types: {}'.format(self.atom_types))
                 if section_sub and line.startswith('-3'):
                     logger.log(2, '{} ended on line {}'.format(self.sub_name, i))
                     section_sub = False
-                if section_sub and line.startswith(' 1'): # stretches
+                if section_sub and re.match('^[a-z\s]1', line): # bonds
                     cols = line.split()
                     self.params.extend((
                             ParamMM3(atom_labels = cols[1:3],
@@ -218,7 +219,7 @@ class MM3(FF):
                                      value = float(cols[5])))
                     except IndexError:
                         pass
-                if section_sub and line.startswith(' 2'): # angles
+                if section_sub and re.match('^[a-z\s]2', line): # angles
                     cols = line.split()
                     self.params.extend((
                             ParamMM3(atom_labels = cols[1:4],
@@ -235,7 +236,7 @@ class MM3(FF):
                                      mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[5]))))
-                if section_sub and line.startswith(' 3'): # stretch-bends
+                if section_sub and re.match('^[a-z\s]3', line): # stretch-bends
                     cols = line.split()
                     self.params.append(
                         ParamMM3(atom_labels = cols[1:4],
@@ -245,7 +246,7 @@ class MM3(FF):
                                  mm3_row = i + num_subs + 1,
                                  mm3_label = line[:2],
                                  value = float(cols[4])))
-                if section_sub and line.startswith(' 4'): # torsions
+                if section_sub and re.match('^[a-z\s]4', line): # torsions
                     cols = line.split()
                     self.params.extend((
                             ParamMM3(atom_labels = cols[1:5],
@@ -294,7 +295,7 @@ class MM3(FF):
                                      mm3_row = i + num_subs + 1,
                                      mm3_label = line[:2],
                                      value = float(cols[3]))))
-                if section_sub and line.startswith(' 5'): # improper torsions
+                if section_sub and re.match('^[a-z\s]5', line): # improper torsions
                     cols = line.split()
                     self.params.extend((
                             ParamMM3(atom_labels = cols[1:5],
