@@ -20,9 +20,9 @@ loggers:
   # simplex: {level: NOTSET, propagate: true}
   # test: {level: NOTSET, propagate: true}
 root:
-  handlers: [console, root_file_handler]
-  # handlers: [console]
+  # handlers: [console, root_file_handler]
+  handlers: [console]
   # handlers: [root_file_handler]
-  level: 8
+  level: 9
   propagate: false
 version: 1

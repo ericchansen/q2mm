@@ -4,14 +4,14 @@ Constants.
 import re
 
 # default step sizes for parameters
-steps = {'ae':      1.0,
-         'af':      '0.1',
-         # 'af':      0.2,
-         'be':      0.05,
-         'bf':      '0.1',
-         # 'bf':      0.2,
-         'df':     '0.01',
-         # 'df':      0.2
+steps = {'ae':      2.0,
+         # 'af':      '0.1',
+         'af':      0.2,
+         'be':      0.1,
+         # 'bf':      '0.1',
+         'bf':      0.2,
+         # 'df':     '0.01',
+         'df':      0.2,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,

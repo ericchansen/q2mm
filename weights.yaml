@@ -7,10 +7,10 @@
 angle:          2.0
 charge:         1.0
 bond:         100.0
-eig_i:          0.01 # weight for 1st diagonal value (typically inverted value)
-eig_d:          0.5
-eig_o:          0.0 
-energy:        25.0
+eig_i:          0.0 # weight for 1st diagonal value (typically inverted value)
+eig_d:          0.1
+eig_o:          0.1 
+energy:       100.0
 energy2:        1.0
 hess:           0.1
 hess_11:        0.0
