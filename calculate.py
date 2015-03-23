@@ -290,13 +290,13 @@ def run_macromodel(coms_to_run, directory=os.getcwd()):
                 logger.warning('return code: {}'.format(e.returncode))
                 logger.warning('output: {}'.format(e.output))
                 # logger.warning('current directory: {}'.format(os.listdir(os.getcwd())))
-                logger.warning(traceback.format_exc)
+                logger.warning(traceback.format_exc())
                 time.sleep(10)
             except OSError as e:
                 attempts += 1
                 logger.warning('{} failed attempts: bmin {} -WAIT'.format(attempts, name))
                 # logger.warning('current directory: {}'.format(os.listdir(os.getcwd())))
-                logger.warning(traceback.format_exc)
+                logger.warning(traceback.format_exc())
                 time.sleep(10)
             else:
                 success = True
