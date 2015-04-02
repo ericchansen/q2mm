@@ -13,6 +13,8 @@ from calculate import run_calculate
 from datatypes import Datum, datum_sort_key
 import constants as cons
 
+logger = logging.getLogger(__name__)
+
 def parse(args):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -35,8 +37,25 @@ def parse(args):
     return opts
 
 def convert_energies(data_cal, data_ref):
-    energies_ref = [x for x in data_ref if x.dtype in ('energy', 'energy2')]
-    energies_cal = [x for x in data_cal if x.dtype in ('energy', 'energy2')]
+    # duplicating this is such a bullshit fix
+    energies_ref = [x for x in data_ref if x.dtype == 'energy']
+    energies_cal = [x for x in data_cal if x.dtype == 'energy']
+    groups_ref = defaultdict(list)
+    for datum in energies_ref:
+        groups_ref[datum.group].append(datum)
+    groups_cal = defaultdict(list)
+    for datum in energies_cal:
+        groups_cal[datum.group].append(datum)
+    for gnum_ref, gnum_cal in itertools.izip(sorted(groups_ref), sorted(groups_cal)):
+        group_energies_ref = groups_ref[gnum_ref]
+        group_energies_cal = groups_cal[gnum_cal]
+        value, index = min((datum.value, index) for index, datum in enumerate(group_energies_ref))
+        minimum_cal = group_energies_cal[index].value
+        for datum in group_energies_cal:
+            datum.value -= minimum_cal
+
+    energies_ref = [x for x in data_ref if x.dtype == 'energy2']
+    energies_cal = [x for x in data_cal if x.dtype == 'energy2']
     groups_ref = defaultdict(list)
     for datum in energies_ref:
         groups_ref[datum.group].append(datum)

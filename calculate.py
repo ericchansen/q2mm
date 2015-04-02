@@ -237,15 +237,17 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             if multiple_structures:
                 com_string += cons.format_macromodel.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
             com_string += cons.format_macromodel.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+            if pre_structure or pre_energy:
+                com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+                indices_mmo.append('pre')
+                com_string += cons.format_macromodel.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
+                indices_mae.append('pre')
             if hessian:
                 com_string += cons.format_macromodel.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+                indices_mae.append('stupid_extra_structure')
                 com_string += cons.format_macromodel.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
                 indices_mae.append('hess')
-            if pre_structure or pre_energy or hessian:
-                com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0) # adds pre-opt to mae output
-                indices_mae.append('pre')
-                indices_mmo.append('pre')
+            # if pre_structure or pre_energy or hessian:
             if optimization:
                 # this commented line is what was used in the code received from Elaine.
                 # arg1: 9 = TNCG, 1 = PRCG
