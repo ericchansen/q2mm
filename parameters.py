@@ -165,9 +165,9 @@ def select_parameters(opts, ff=None):
 
         # update params
         for param in selected_params:
-            if param.mm3_row in bond_avg:
+            if param.mm3_row in bond_avg and param.ptype in ['be', 'ae']:
                 param.value = bond_avg[param.mm3_row]
-            if param.mm3_row in angle_avg:
+            if param.mm3_row in angle_avg and param.ptype in ['be', 'ae']:
                 param.value = angle_avg[param.mm3_row]
                 
         ff.export_ff(params=selected_params, path=opts.average)
