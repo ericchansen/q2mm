@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # remember to add in inverse distance
 commands_gaussian = [] # gq, gqh
 commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
-commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'me', 'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
+commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'mcs', 'me', 'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
 
@@ -73,6 +73,10 @@ def return_calculate_parser(add_help=True, parents=[]):
     data_args.add_argument(
         '-mb', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='MacroModel bond lengths (post force field optimization).')
+    data_args.add_argument(
+        '-mcs', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help=('Run a MacroModel conformational search. Not designed to work in '
+              'conjunction with any other commands.'))
     data_args.add_argument(
         '-me', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='MacroModel energies (pre force field optimization).')
@@ -202,6 +206,7 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             optimization = False
             post_structure = False
             multiple_structures = False
+            conf_search = False
             # would be faster if we had 2 sets of commands: a set for mae
             # files containing only 1 structure, and a set for mae files
             # containing multiple structures
@@ -228,39 +233,57 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             # if set(commands).intersection(['ma', 'mb']):
             if any(x in ['ma', 'mb'] for x in commands):
                 post_structure = True
+            if any(x in ['mcs'] for x in commands):
+                conf_search = True
             com_string = '{}\n{}\n'.format(filename, name_mae)
-            com_string += cons.format_macromodel.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
-            if hessian:
-                com_string += cons.format_macromodel.format('DEBG', 57, 210, 211, 0, 0, 0, 0, 0)
+            if conf_search:
+                com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('FFLD', 2, 1, 0, 0, 1, 0, 0, 0)
+                com_string += cons.format_macromodel.format('BDCO', 0, 0, 0, 0, 41.5692, 99999., 0, 0)
+                com_string += cons.format_macromodel.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('CRMS', 0, 0, 0, 0, 0, 0.2500, 0, 0)
+                com_string += cons.format_macromodel.format('MCMM', 10000, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MCSS', 2, 0, 0, 0, 50., 0, 0, 0)
+                com_string += cons.format_macromodel.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('DEMX', 0, 166, 0, 0, 50., 100., 0, 0)
+                com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('AUTO', 0, 2, 1, 1, 0, -1., 0, 0)
+                com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
             else:
-                com_string += cons.format_macromodel.format('DEBG', 57, 0, 0, 0, 0, 0, 0, 0)
-            if multiple_structures:
-                com_string += cons.format_macromodel.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
-            com_string += cons.format_macromodel.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
-            if hessian:
-                com_string += cons.format_macromodel.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
-                indices_mae.append('hess')
-            if pre_structure or pre_energy or hessian:
-                com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0) # adds pre-opt to mae output
-                indices_mae.append('pre')
-                indices_mmo.append('pre')
-            if optimization:
-                # this commented line is what was used in the code received from Elaine.
-                # arg1: 9 = TNCG, 1 = PRCG
-                # TNCG has risk that structures never converge, and may print NaN instead
-                # of coordinates and forces.
-                # com_string += cons.format_macromodel.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
-                indices_mae.append('opt')
-            if post_structure:
-                com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-                # faily sure this indices_mae shouldn't be here
-                # indices_mae.append('post')
-                indices_mmo.append('opt')
-            if multiple_structures:
-                com_string += cons.format_macromodel.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
+                if hessian:
+                    com_string += cons.format_macromodel.format('DEBG', 57, 210, 211, 0, 0, 0, 0, 0)
+                else:
+                    com_string += cons.format_macromodel.format('DEBG', 57, 0, 0, 0, 0, 0, 0, 0)
+                if multiple_structures:
+                    com_string += cons.format_macromodel.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+                if hessian:
+                    com_string += cons.format_macromodel.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+                    com_string += cons.format_macromodel.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
+                    indices_mae.append('hess')
+                if pre_structure or pre_energy or hessian:
+                    com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+                    # add pre-opt to mae output
+                    com_string += cons.format_macromodel.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
+                    indices_mae.append('pre')
+                    indices_mmo.append('pre')
+                if optimization:
+                    # this commented line is what was used in the code received from Elaine.
+                    # arg1: 9 = TNCG, 1 = PRCG
+                    # TNCG has risk that structures never converge, and may print NaN instead
+                    # of coordinates and forces.
+                    # com_string += cons.format_macromodel.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
+                    com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
+                    indices_mae.append('opt')
+                if post_structure:
+                    com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+                    # faily sure this indices_mae shouldn't be here
+                    # indices_mae.append('post')
+                    indices_mmo.append('opt')
+                if multiple_structures:
+                    com_string += cons.format_macromodel.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
             macromodel_indices.update({name_mae: indices_mae})
             macromodel_indices.update({name_mmo: indices_mmo})
             with open(os.path.join(directory, name_com), 'w') as f:
@@ -1014,6 +1037,8 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 data.extend(data_temp)
                 logger.log(7, '{} zr from {}'.format(len(data_temp), parteth))
 
+    if 'mcs' in commands:
+        logger.log(7, 'not collecting data for mcs')
     logger.log(7, '{} data points'.format(len(data)))
     return data
 
