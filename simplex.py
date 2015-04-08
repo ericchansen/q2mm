@@ -214,13 +214,15 @@ class Simplex(Optimizer):
             # add in parameters that were previously removed
             if self.max_params is not None and len(self.init_ff.params) > self.max_params:
                 self.best_ff.params = copy.deepcopy(self.init_ff.params)
-                for param_i in self.best_ff.params:
+                for i, param_i in enumerate(self.init_ff.params):
+                # for param_i in self.best_ff.params:
                     for param_b in self.trial_ffs[0].params:
                         if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
+                            logger.log(6, 'Updating {} to {}'.format(param_i, param_b))
                             # is deep copy necessary? im worried that if simplex is done again
                             # in the same loop, it will somehow mess this up
                             # param_i = copy.deepcopy(param_b) 
-                           param_i = copy.deepcopy(param_b)
+                            self.best_ff.params[i] = copy.deepcopy(param_b)
             else:
                 self.best_ff.params = copy.deepcopy(self.trial_ffs[0].params)
             self.best_ff.x2 = self.trial_ffs[0].x2
