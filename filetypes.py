@@ -601,6 +601,10 @@ class MacroModel(File):
                         section = 'angle'
                     if 'BEND-BEND ANGLES AND ENERGIES' in line:
                         section = None
+                    if 'DIHEDRAL ANGLES AND TORSIONAL ENERGIES' in line:
+                        section = 'torsion'
+                    if 'DIHEDRAL ANGLES AND TORSIONAL CROSS-TERMS' in line:
+                        section = None
                     if section == 'bond':
                         match = cons.re_bond.match(line)
                         if match:
@@ -621,6 +625,17 @@ class MacroModel(File):
                             current_structure.angles.append(
                                 Angle(atom_nums=atom_nums, comment=comment, value=value,
                                       ff_row=ff_row))
+                    if section == 'torsion':
+                        match = cons.re_torsion.match(line)
+                        if match:
+                            atom_nums = map(int, [match.group(1), match.group(2), match.group(3),
+                                                  match.group(4)])
+                            comment = match.group(6)
+                            value = float(match.group(5))
+                            ff_row = int(match.group(7))
+                            current_structure.torsions.append(
+                                Torsion(atom_nums=atom_nums, comment=comment, value=value,
+                                      ff_row=ff_row))
             logger.log(3, 'imported {} structures'.format(len(structures)))
             self._structures = structures
         return self._structures
@@ -629,11 +644,12 @@ class Structure(object):
     '''
     Data for a single structure/conformer/snapshot.
     '''
-    __slots__ = ['atoms', 'bonds', 'angles', 'props']
+    __slots__ = ['atoms', 'bonds', 'angles', 'torsions', 'props']
     def __init__(self):
         self.atoms = []
         self.bonds = []
         self.angles = []
+        self.torsions = []
         self.props = {}
     @property
     def coords(self):
@@ -704,6 +720,9 @@ class Bond(object):
         self.order = order
         self.value = value
         self.ff_row = ff_row
+    def __repr__(self):
+        return '{}[{}]({})'.format(
+            self.__class__.__name__, '-'.join(map(str, self.atom_nums)), self.value)
 
 class Angle(Bond):
     '''
@@ -712,4 +731,12 @@ class Angle(Bond):
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Angle, self).__init__(atom_nums, comment, order, value, ff_row)
+        
+class Torsion(Bond):
+    '''
+    Data class for a single torsion.
+    '''
+    def __init__(self, atom_nums=None, comment=None, order=None, value=None,
+                 ff_row=None):
+        super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
         

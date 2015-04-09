@@ -38,13 +38,13 @@ logger = logging.getLogger(__name__)
 # remember to add in inverse distance
 commands_gaussian = [] # gq, gqh
 commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
-commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'mcs', 'mcs2', 'me', 'me2',
-                       'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
+commands_macromodel = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'me', 'me2',
+                       'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh', 'mt']
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
 
 # these commands require me to import the force field
-commands_need_ff = ['ma', 'mb', 'ja', 'jb', 'pm', 'zm']
+commands_need_ff = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
 
 def return_calculate_parser(add_help=True, parents=[]):
     '''
@@ -108,6 +108,9 @@ def return_calculate_parser(add_help=True, parents=[]):
         '-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='MacroModel charges, but excludes aliphatic hydrogens.')
     data_args.add_argument(
+        '-mt', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel torsions (post force field optimization).')
+    data_args.add_argument(
         '-pm', type=str, nargs='+', action='append', default=[], metavar='parteth',
         help='Uses a tethering file for parameters. Calculated data.')
     data_args.add_argument(
@@ -154,6 +157,9 @@ def return_calculate_parser(add_help=True, parents=[]):
     data_args.add_argument(
         '-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar charges (ignores aliphatic hydrogens).')
+    data_args.add_argument(
+        '-jt', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar torsions.')
     data_args.add_argument(
         '-r', type=str, nargs='+', action='append', default=[], metavar='filename',
         help=('Read data points directly (ex. use with .cal files). '
@@ -225,7 +231,7 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
                         multiple_structures = True
                         break
             # if set(commands).intersection(['ja', 'jb']):
-            if any(x in ['ja', 'jb'] for x in commands):
+            if any(x in ['ja', 'jb', 'jt'] for x in commands):
                 pre_structure = True
             # if set(commands).intersection(['me', 'me2', 'mq', 'mqh']):
             if any(x in ['me', 'me2', 'mq', 'mqh'] for x in commands):
@@ -234,10 +240,10 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             if any(x in ['meig', 'meigz', 'mh'] for x in commands):
                 hessian = True
             # if set(commands).intersection(['ma', 'mb', 'meo']):
-            if any(x in ['ma', 'mb', 'meo'] for x in commands):
+            if any(x in ['ma', 'mb', 'meo', 'mt'] for x in commands):
                 optimization = True
             # if set(commands).intersection(['ma', 'mb']):
-            if any(x in ['ma', 'mb'] for x in commands):
+            if any(x in ['ma', 'mb', 'mt'] for x in commands):
                 post_structure = True
             if any(x in ['mcs'] for x in commands):
                 conf_search1 = True
@@ -694,6 +700,34 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 data.extend(data_temp)
                 logger.log(7, '{} jq from {}'.format(len(data_temp), filename))
 
+    if 'jt' in commands:
+        for filenames in commands['jt']:
+            for filename in filenames:
+                data_temp = []
+                name_base = '.'.join(filename.split('.')[:-1])
+                name_mmo = name_base + '.q2mm.mmo'
+                if filename in file_storage:
+                    mmo = file_storage[filename]
+                else:
+                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
+                    # mmo.import_structures()
+                    file_storage[name_mmo] = mmo
+                indices_output = macromodel_indices[name_mmo]
+                indices_generator = iter(indices_output)
+                for i, structure in enumerate(mmo.structures):
+                    try:
+                        index_current = indices_generator.next()
+                    except StopIteration:
+                        indices_generator = iter(indices_output)
+                        index_current = indices_generator.next()
+                    if index_current == 'pre':
+                        for torsion in structure.torsions:
+                            if ff.sub_name in torsion.comment:
+                                data_temp.append(Datum(
+                                    torsion.value, 'jt', 'torsion', filename, i=i, j=torsion.atom_nums))
+                data.extend(data_temp)
+                logger.log(7, '{} jt from {}'.format(len(data_temp), name_mmo))
+
     if 'ma' in commands:
         for filenames in commands['ma']:
             for filename in filenames:
@@ -969,6 +1003,36 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                                     Datum(atom.partial_charge, 'mqh', 'charge', name_mae, i=i, j=atom.index))
             data.extend(data_temp)
             logger.log(7, '{} mqh from {}'.format(len(data_temp), filenames))
+
+    if 'mt' in commands:
+        for filenames in commands['mt']:
+            for filename in filenames:
+                data_temp = []
+                name_base = '.'.join(filename.split('.')[:-1])
+                name_mmo = name_base + '.q2mm.mmo'
+                if name_mmo in file_storage:
+                    mmo = file_storage[name_mmo]
+                else:
+                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
+                    # mmo.import_structures()
+                    file_storage[name_mmo] = mmo
+                indices_output = macromodel_indices[name_mmo]
+                indices_generator = iter(indices_output)
+                for i, structure in enumerate(mmo.structures):
+                    try:
+                        index_current = indices_generator.next()
+                    except StopIteration:
+                        indices_generator = iter(indices_output)
+                        index_current = indices_generator.next()
+                    if index_current == 'opt':
+                        for torsion in structure.torsions:
+                            if ff.sub_name in torsion.comment:
+                                data_temp.append(
+                                    Datum(
+                                        torsion.value, 'mt', 'torsion', filename,
+                                        i=i, j=torsion.atom_nums))
+                data.extend(data_temp)
+                logger.log(7, '{} mt from {}'.format(len(data_temp), filename))
 
     if 'pm' in commands:
         for parteths in commands['pm']:

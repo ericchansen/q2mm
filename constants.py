@@ -42,7 +42,8 @@ re_angle = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
 # picks up bond lines in a mmo file
 re_bond = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
                      '\s+\d+\s+({1})\s+(\d+)'.format(re_float, re_sub))
-
+# picks up torsion lines in a mmo file
+re_torsion = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(re_float, re_sub))
 
 # string format used to write macromodel com files
 format_macromodel = ' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n'

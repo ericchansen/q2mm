@@ -135,25 +135,33 @@ def calc_x2(data_cal, data_ref, output=None, doprint=False):
     total_x2 = 0.
     if output or doprint:
         separate_x2 = defaultdict(float)
-    for datum_ref, datum_cal in itertools.izip(data_ref, data_cal):
-        single_x2 = datum_ref.weight**2 * (datum_ref.value - datum_cal.value)**2
-        total_x2 += single_x2
-        if output or doprint:
-            separate_x2[datum_ref.dtype] += single_x2
-    if output or doprint:
         lines = []
         header = '{0:<20} {1:>16} {2:<20} {3:>16} {4:>16} {5:>16}'.format(
             'ref', 'ref value', 'cal', 'cal value', 'weight', 'x2')
+        lines.append(header)
+        lines.append('-' * len(header))
+    for datum_ref, datum_cal in itertools.izip(data_ref, data_cal):
+        if datum_ref.dtype == 'torsion' or datum_cal.dtype == 'torsion':
+            delta = abs(datum_ref.value - datum_cal.value)
+            if delta > 180.:
+                delta = 360. - delta
+        else:
+            delta = datum_ref.value - datum_cal.value
+        single_x2 = datum_ref.weight**2 * (delta)**2
+        total_x2 += single_x2
+        if output or doprint:
+            separate_x2[datum_ref.dtype] += single_x2
+            lines.append(
+                '{0:<20} {1:>16.6f} {2:<20} {3:>16.6f} {4:>16.6f} {5:>16.6f}'.format(
+                    datum_ref.name, datum_ref.value, datum_cal.name,
+                    datum_cal.value, datum_ref.weight, single_x2))
+            
+    if output or doprint:
+        lines.append('-' * len(header))
+        lines.append('')
         lines.append('total x2: {}'.format(total_x2))
         for dtype, value in separate_x2.iteritems():
             lines.append('{} x2: {}'.format(dtype, value))
-        lines.append('')
-        lines.append(header)
-        lines.append('-' * len(header))
-        for datum_ref, datum_cal in itertools.izip(data_ref, data_cal):
-            single_x2 = datum_ref.weight**2 * (datum_ref.value - datum_cal.value)**2
-            lines.append('{0:<20} {1:>16.6f} {2:<20} {3:>16.6f} {4:>16.6f} {5:>16.6f}'.format(
-                    datum_ref.name, datum_ref.value, datum_cal.name, datum_cal.value, datum_ref.weight, single_x2))
         if doprint:
             for line in lines:
                 print(line)
