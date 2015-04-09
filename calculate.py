@@ -406,11 +406,10 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 data_temp = []
                 name_base = '.'.join(filename.split('.')[:-1])
                 name_mmo = name_base + '.q2mm.mmo'
-                if filename in file_storage:
-                    mmo = file_storage[filename]
+                if name_mmo in file_storage:
+                    mmo = file_storage[name_mmo]
                 else:
                     mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
                     file_storage[name_mmo] = mmo
                 indices_output = macromodel_indices[name_mmo]
                 indices_generator = iter(indices_output)
@@ -434,8 +433,8 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 data_temp = []
                 name_base = '.'.join(filename.split('.')[:-1])
                 name_mmo = name_base + '.q2mm.mmo'
-                if filename in file_storage:
-                    mmo = file_storage[filename]
+                if name_mmo in file_storage:
+                    mmo = file_storage[name_mmo]
                 else:
                     mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
                     # mmo.import_structures()
@@ -443,6 +442,9 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 indices_output = macromodel_indices[name_mmo]
                 indices_generator = iter(indices_output)
                 for i, structure in enumerate(mmo.structures):
+                    # print structure.bonds
+                    # print structure.angles
+                    # print structure.torsions
                     try:
                         index_current = indices_generator.next()
                     except StopIteration:
@@ -733,11 +735,10 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 data_temp = []
                 name_base = '.'.join(filename.split('.')[:-1])
                 name_mmo = name_base + '.q2mm.mmo'
-                if filename in file_storage:
-                    mmo = file_storage[filename]
+                if name_mmo in file_storage:
+                    mmo = file_storage[name_mmo]
                 else:
                     mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
                     file_storage[name_mmo] = mmo
                 indices_output = macromodel_indices[name_mmo]
                 indices_generator = iter(indices_output)
