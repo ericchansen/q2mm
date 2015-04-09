@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # remember to add in inverse distance
 commands_gaussian = [] # gq, gqh
 commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
-commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'mcs', 'mcs2', 'me', 'me2',
+commands_macromodel = ['ja', 'jb', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me', 'me2',
                        'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh']
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
@@ -82,6 +82,12 @@ def return_calculate_parser(add_help=True, parents=[]):
         '-mcs2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help=('Run a MacroModel conformational search. Not designed to work in '
               'conjunction with any other commands.'))
+    data_args.add_argument(
+        '-mcs3', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help=('Run a MacroModel conformational search. Not designed to work in '
+              'conjunction with any other commands. Only difference between '
+              "-mcs2 is that this doesn't use the AUOP cutoff for number of "
+              "steps, and I reduced the maximum steps from 10,000 to 4000."))
     data_args.add_argument(
         '-me', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='MacroModel energies (pre force field optimization).')
@@ -213,6 +219,7 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             multiple_structures = False
             conf_search1 = False
             conf_search2 = False
+            conf_search3 = False
             # would be faster if we had 2 sets of commands: a set for mae
             # files containing only 1 structure, and a set for mae files
             # containing multiple structures
@@ -243,6 +250,8 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
                 conf_search1 = True
             if any(x in ['mcs2'] for x in commands):
                 conf_search2 = True
+            if any(x in ['mcs3'] for x in commands):
+                conf_search3 = True
             com_string = '{}\n{}\n'.format(filename, name_mae)
             if conf_search1:
                 com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
@@ -273,6 +282,24 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
                 com_string += cons.format_macromodel.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
                 com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
                 com_string += cons.format_macromodel.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
+                com_string += cons.format_macromodel.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
+                com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MINI', 1, 0, 2500, 0, 0, 0, 0, 0)
+            elif conf_search3:
+                com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('DEBG', 55, 179, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('FFLD', 2, 1, 0, 0, 1, 0, 0, 0)
+                com_string += cons.format_macromodel.format('BDCO', 0, 0, 0, 0, 41.5692, 99999., 0, 0)
+                com_string += cons.format_macromodel.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('CRMS', 0, 0, 0, 0, 0, 0.2500, 0, 0)
+                com_string += cons.format_macromodel.format('LMCS', 4000, 0, 0, 0, 0, 0, 3, 6)
+                com_string += cons.format_macromodel.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
+                com_string += cons.format_macromodel.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
+                com_string += cons.format_macromodel.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
+                com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
+                com_string += cons.format_macromodel.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
                 com_string += cons.format_macromodel.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
                 com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
                 com_string += cons.format_macromodel.format('MINI', 1, 0, 2500, 0, 0, 0, 0, 0)
