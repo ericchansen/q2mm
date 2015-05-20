@@ -153,6 +153,35 @@ class MM3(FF):
         self.start_row = other_ff.start_row
     def select_atom_types(self, atom_labels):
         return [self._atom_types[int(x) - 1] if x.isdigit() else x for x in atom_labels]
+    def match_mm3_label(self, mm3_label):
+        '''
+        Makes sure the MM3* label is recognized.
+
+        The label is the 1st 2 characters in the line containing the parameter
+        in a Schrodinger mm3.fld file.
+        '''
+        return re.match('[\s5a-z][1-5]', mm3_label)
+    def match_mm3_bond(self, mm3_label):
+        '''Matches MM3* label for bonds.'''
+        return re.match('[\sa-z]1', mm3_label)
+    def match_mm3_angle(self, mm3_label):
+        '''Matches MM3* label for angles.'''
+        return re.match('[\sa-z]2', mm3_label)
+    def match_mm3_stretch_bend(self, mm3_label):
+        '''Matches MM3* label for stretch-bends.'''
+        return re.match('[\sa-z]3', mm3_label)
+    def match_mm3_torsion(self, mm3_label):
+        '''Matches MM3* label for all orders of torsional parameters.'''
+        return re.match('[\sa-z]4|54', mm3_label)
+    def match_mm3_lower_torsion(self, mm3_label):
+        '''Matches MM3* label for torsions (1st through 3rd order).'''
+        return re.match('[\sa-z]4', mm3_label)
+    def match_mm3_higher_torsion(self, mm3_label):
+        '''Matches MM3* label for torsions (4th through 6th order).'''
+        return re.match('54', mm3_label)
+    def match_mm3_improper(self, mm3_label):
+        '''Matches MM3* label for improper torsions.'''
+        return re.match('[\sa-z]5', mm3_label)
     def import_ff(self, sub_search=None):
         '''
         Reads parameters from mm3.fld.
@@ -325,9 +354,7 @@ class MM3(FF):
         modified_params = 0
         for param in params:
             cols = lines[param.mm3_row - 1].split()
-            assert param.mm3_label in [' 1', ' 2', ' 3', ' 4', '54', ' 5'], \
-                'unrecognized MM3* parameter label: {}'.format(param.mm3_label)
-            if param.mm3_label == ' 1': # stretches
+            if self.match_mm3_bond(param.mm3_label):
                 cols[3:6] = map(float, cols[3:6])
                 cols[param.mm3_col + 2] = param.value
                 if len(cols) == 6:
@@ -337,35 +364,38 @@ class MM3(FF):
                     lines[param.mm3_row - 1] = \
                         '{0:>2}{1:>4}{2:>4}{3:>23.4f}{4:>11.4f}\n'.format(*cols)
                 modified_params += 1
-            elif param.mm3_label == ' 2': # angles
+            elif self.match_mm3_angle(param.mm3_label):
                 cols[4:6] = map(float, cols[4:6])
                 cols[param.mm3_col + 3] = param.value
                 lines[param.mm3_row - 1] = \
                     '{0:>2}{1:>4}{2:>4}{3:>4}{4:>19.4f}{5:>11.4f}\n'.format(*cols)
                 modified_params += 1
-            elif param.mm3_label == ' 3': # stretch-bends
+            elif self.match_mm3_stretch_bend(param.mm3_label):
                 cols[param.mm3_col + 3] = param.value
                 lines[param.mm3_row - 1] = \
                     '{0:>2}{1:>4}{2:>4}{3:>4}{4:>19.4f}\n'.format(*cols)
                 modified_params += 1
-            elif param.mm3_label == ' 4': # torsions
+            elif self.match_mm3_torsion(param.mm3_label):
                 cols[5:8] = map(float, cols[5:8])
                 cols[param.mm3_col + 4] = param.value
                 lines[param.mm3_row - 1] = \
                     '{0:>2}{1:>4}{2:>4}{3:>4}{4:>4}{5:>15.4f}{6:>11.4f}{7:>11.4f}\n'.format(*cols)
                 modified_params += 1
-            elif param.mm3_label == '54': # higher order torsions
+            elif self.match_mm3_higher_torsion(param.mm3_label):
                 cols[1:4] = map(float, cols[1:4])
                 cols[param.mm3_col] = param.value
                 lines[param.mm3_row - 1] = \
                     '{0:>2}{1:>31.4f}{2:>11.4f}{3:>11.4f}\n'.format(*cols)
                 modified_params += 1
-            elif param.mm3_label == ' 5': # improper torsions
+            elif self.match_mm3_improper(param.mm3_label):
                 cols[5:7] = map(float, cols[5:7])
                 cols[param.mm3_col + 4] = param.value
                 lines[param.mm3_row - 1] = \
                     '{0:>2}{1:>4}{2:>4}{3:>4}{4:>4}{5:>15.4f}{6:>11.4f}\n'.format(*cols)
                 modified_params += 1
+            else:
+                raise Exception('Unrecognized MM3* parameter label: "{}"'.format(
+                        param.mm3_label))
         logger.log(2, 'modified {} params'.format(modified_params))
         with open(path, 'w') as f:
             f.writelines(lines)
