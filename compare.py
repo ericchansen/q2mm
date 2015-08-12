@@ -1,181 +1,200 @@
 #!/usr/bin/python
 '''
-Short script to evaluate the objective function.
-'''
-from collections import defaultdict
-import argparse
-import itertools
-import logging
-import sys
-import yaml
+compare
+-------
+Contains code necessary to evaluate the objective function,
 
-from calculate import run_calculate
-from datatypes import Datum, datum_sort_key
-import constants as cons
+.. math:: \chi^2 = w^2 (x_r^2 - x_c^2)
+
+where :math:`w` is a weight, :math:`x_r` is the reference data point's value,
+and :math:`x_c` is the calculated or force field's value for the data point.
+
+'''
+from __future__ import print_function
+from collections import defaultdict
+from itertools import izip
+import argparse
+import logging
+import logging.config
+import sys
+
+import calculate
+import constants as co
 
 logger = logging.getLogger(__name__)
 
-def parse(args):
+def return_compare_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        '--calculate', '-c', type=str,
-        metavar = '" commands for calculate.py"',
-        help=('These commands produce the calculated data. Leave one space '
+        '--calculate', '-c', type=str, metavar = '" commands for calculate.py"',
+        help=('These commands produce the FF data. Leave one space after the '
+              '1st quotation mark enclosing the arguments.'))
+    parser.add_argument(
+        '--reference', '-r', type=str, metavar='" commands for calculate.py"',
+        help=('These commands produce the QM/reference data. Leave one space '
               'after the 1st quotation mark enclosing the arguments.'))
     parser.add_argument(
-        '--reference', '-r', type=str,
-        metavar='" commands for calculate.py"',
-        help=('These commands produce the reference data. Leave one space '
-              'after the 1st quotation mark enclosing the arguments.'))
-    parser.add_argument(
-        '--output', '-o', type=str, metavar='filename.txt',
-        help='Write data to file.')
+        '--output', '-o', type=str, metavar='filename', 
+        help='Write pretty output filename.')
     parser.add_argument(
         '--print', '-p', action='store_true', dest='doprint',
-        help='Print data.')
+        help='Print pretty output.')
+    return parser
+
+def zero_energies(conn):
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy_1" OR '
+              'typ = "energy_2" OR typ = "energy_opt"')
+    for set_of_energies in c.fetchall():
+        c.execute("SELECT MIN(val) FROM data WHERE typ = ? AND idx_1 = ?",
+                  (set_of_energies[0], set_of_energies[1]))
+        zero = c.fetchone()[0]
+        c.execute("UPDATE data SET val = val - ? WHERE typ = ? AND idx_1 = ?",
+                  (zero, set_of_energies[0], set_of_energies[1]))
+    conn.commit()
+
+def correlate_energies(ref_conn, cal_conn):
+    cr = ref_conn.cursor()
+    cc = cal_conn.cursor()
+    cr.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy_1" OR '
+               'typ = "energy_2" OR typ = "energy_opt"')
+    for set_of_energies in cr.fetchall():
+        cr.execute('SELECT * FROM data WHERE typ = ? AND idx_1 = ? ORDER BY '
+                   'typ, src_1, src_2, idx_1, idx_2',
+                   (set_of_energies[0], set_of_energies[1]))
+        r_rows = cr.fetchall()
+        r_zero, zero_idx = min((row['val'], idx) for idx, row in enumerate(r_rows))
+        cc.execute('SELECT * FROM data WHERE typ = ? AND idx_1 = ? ORDER BY '
+                   'typ, src_1, src_2, idx_1, idx_2',
+                   (set_of_energies[0], set_of_energies[1]))
+        c_rows = cc.fetchall()
+        c_zero = c_rows[zero_idx]['val']
+        cc.execute('UPDATE data SET val = val - ? WHERE typ = ? and idx_1 = ?',
+                   (c_zero, set_of_energies[0], set_of_energies[1]))
+    cal_conn.commit()
+
+def import_weights(conn):
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT typ FROM data')
+    for typ in c.fetchall():
+        # Will need to include similar code for Hessian and perhaps other
+        # matrix data types.
+        if typ[0] == 'eig':
+            c.execute('UPDATE data set wht = ? WHERE typ = ? AND idx_1 != idx_2',
+                      (co.WEIGHTS['eig_o'], typ[0]))
+            c.execute(('UPDATE data set wht = ? WHERE typ = ? AND idx_1 = idx_2 '
+                       'AND idx_1 != 1'),
+                      (co.WEIGHTS['eig_d'], typ[0]))
+            c.execute(('UPDATE data set wht = ? WHERE typ = ? AND idx_1 = 1 AND '
+                      'idx_2 = 1'),
+                      (co.WEIGHTS['eig_i'], typ[0]))
+        else:
+            c.execute('UPDATE data SET wht = ? WHERE typ = ?',
+                      (co.WEIGHTS[typ[0]], typ[0]))
+    conn.commit()
+
+def compare_data(ref_conn, cal_conn, check_data=True, pretty=False):
+    zero_energies(ref_conn)
+    correlate_energies(ref_conn, cal_conn)
+    import_weights(ref_conn)
+    if pretty:
+        score, pretty_str = calculate_score(
+            ref_conn, cal_conn, check_data=check_data, pretty=pretty)
+    else:
+        score = calculate_score(ref_conn, cal_conn, check_data=check_data,
+                                pretty=pretty)
+    logger.log(10, 'SCORE: {}'.format(score))
+    if pretty:
+        return score, pretty_str
+    else:
+        return score
+
+def calculate_score(ref_conn, cal_conn, check_data=True, pretty=False):
+    cr = ref_conn.cursor()
+    cc = cal_conn.cursor()
+    r_rows = cr.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
+                        'idx_2, atm_1, atm_2, atm_3, atm_4')
+    c_rows = cc.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
+                        'idx_2, atm_1, atm_2, atm_3, atm_4')
+    score = 0.
+    # Keeps track of contributions to objective function from particular data
+    # types.
+    if pretty:
+        counter = defaultdict(float)
+        pretty_str = pretty_data_comp(start=True)
+    # Could do in smaller chunks if memory becomes an issue.
+    for r_row, c_row in izip(cr.fetchall(), c_rows.fetchall()):
+        if check_data:
+            if not r_row['typ'] == c_row['typ'] and \
+                    not r_row['idx_1'] == c_row['idx_1'] and \
+                    not r_row['idx_2'] == c_row['idx_2'] and \
+                    not r_row['atm_1'] == c_row['atm_1'] and \
+                    not r_row['atm_2'] == c_row['atm_2'] and \
+                    not r_row['atm_3'] == c_row['atm_3'] and \
+                    not r_row['atm_4'] == c_row['atm_4']:
+                raise Exception("Data isn't aligned!")
+        # Need to make sure that the difference between -179 and 179 is 2, not
+        # 358 when we're talking about torsions.
+        if r_row['typ'] == 'Torsion':
+            diff = abs(r_row['val'] - c_row['val'])
+            if diff > 180.:
+                diff = 360. - diff
+        # Standard case. Just look at the difference.
+        else:
+            diff = r_row['val'] - c_row['val']
+        individual_score = r_row['wht']**2 * diff**2
+        score += individual_score
+        if pretty:
+            counter[r_row['typ']] += individual_score
+            pretty_str.extend(pretty_data_comp(r_row, c_row, individual_score))
+    if pretty:
+        pretty_str.extend(pretty_data_comp(end=counter))
+        return score, pretty_str
+    else:
+        return score
+
+def pretty_data_comp(r_row=None, c_row=None, score=None, start=None, end=None):
+    string = []
+    if start:
+        string.append('--' + ' Label '.ljust(20, '-') +
+                      '--' + ' Weight '.center(8, '-') + 
+                      '--' + ' R. Value '.center(13, '-') + 
+                      '--' + ' C. Value '.center(13, '-') +
+                      '--' + ' Score '.center(13, '-') + '--')
+    elif end:
+        string.append('-' * 79)
+        total_score = sum((end[k] for k in end))
+        string.append('{:<20}  {:20.4f}'.format('Total:', total_score))
+        for k, v in end.iteritems():
+            string.append('{:<20}  {:20.4f}'.format(k + ':', v))
+    else:
+        label = calculate.get_label(r_row)
+        string.append('  {:<20}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
+            label, r_row['wht'], r_row['val'], c_row['val'], score))
+    return string
+    
+def main(args):
+    parser = return_compare_parser()
     opts = parser.parse_args(args)
-    return opts
-
-def convert_energies(data_cal, data_ref):
-    # duplicating this is such a bullshit fix
-    energies_ref = [x for x in data_ref if x.dtype == 'energy']
-    energies_cal = [x for x in data_cal if x.dtype == 'energy']
-    groups_ref = defaultdict(list)
-    for datum in energies_ref:
-        groups_ref[datum.group].append(datum)
-    groups_cal = defaultdict(list)
-    for datum in energies_cal:
-        groups_cal[datum.group].append(datum)
-    for gnum_ref, gnum_cal in itertools.izip(sorted(groups_ref), sorted(groups_cal)):
-        group_energies_ref = groups_ref[gnum_ref]
-        group_energies_cal = groups_cal[gnum_cal]
-        value, index = min((datum.value, index) for index, datum in enumerate(group_energies_ref))
-        minimum_cal = group_energies_cal[index].value
-        for datum in group_energies_cal:
-            datum.value -= minimum_cal
-
-    energies_ref = [x for x in data_ref if x.dtype == 'energy2']
-    energies_cal = [x for x in data_cal if x.dtype == 'energy2']
-    groups_ref = defaultdict(list)
-    for datum in energies_ref:
-        groups_ref[datum.group].append(datum)
-    groups_cal = defaultdict(list)
-    for datum in energies_cal:
-        groups_cal[datum.group].append(datum)
-    for gnum_ref, gnum_cal in itertools.izip(sorted(groups_ref), sorted(groups_cal)):
-        group_energies_ref = groups_ref[gnum_ref]
-        group_energies_cal = groups_cal[gnum_cal]
-        value, index = min((datum.value, index) for index, datum in enumerate(group_energies_ref))
-        minimum_cal = group_energies_cal[index].value
-        for datum in group_energies_cal:
-            datum.value -= minimum_cal
-
-def import_steps(params):
-    for param in params:
-        if isinstance(cons.steps[param.ptype], basestring):
-            param.step = float(cons.steps[param.ptype]) * param.value
-        else:
-            param.step = cons.steps[param.ptype]
-        if param.step  == 0.0:
-            param.step = 0.1
-# def import_steps(params, yamlfile='steps.yaml', **kwargs):
-#     '''
-#     Grabs step sizes for parameters from a yaml file. Can also take
-#     arguments to override the dictionary.
-#     '''
-#     with open(yamlfile, 'r') as f:
-#         steps = yaml.load(f)
-#     for key,value in kwargs.iteritems():
-#         steps[key] = value
-#     for param in params:
-#         param.step = steps[param.ptype]
-
-def import_weights(data, yamlfile='weights.yaml', **kwargs):
-    with open(yamlfile, 'r') as f:
-        weights = yaml.load(f)
-    for key, value in kwargs.iteritems():
-        weights[key] = value
-    for datum in data:
-        if datum.dtype == 'eig' or datum.dtype == 'eigz':
-            if datum.i == 0 and datum.j == 0:
-                datum.weight = weights['eig_i']
-            elif datum.i == datum.j:
-                datum.weight = weights['eig_d']
-            else:
-                datum.weight = weights['eig_o']
-        elif datum.dtype == 'hess':
-            if datum.i == datum.j:
-                datum.weight = weights['hess_11']
-            else:
-                datum.weight = weights['hess']
-        else:
-            datum.weight = weights[datum.dtype]
-        
-def calc_x2(data_cal, data_ref, output=None, doprint=False):
-    if isinstance(data_cal, list):
-        assert isinstance(data_cal[0], Datum), \
-            "attempted to calculate objective function using an object that isn't Datum"
-    elif isinstance(data_cal, basestring):
-        data_cal = run_calculate(data_cal.split())
+    if opts.doprint or opts.output:
+        pretty = True
     else:
-        raise Exception('failed to determine ff calculated data')
-    if isinstance(data_ref, list):
-        assert isinstance(data_ref[0], Datum), \
-            "attempted to calculate objective function using an object that isn't Datum"
-    elif isinstance(data_ref, basestring):
-        data_ref = run_calculate(data_ref.split())
+        pretty = False
+    ref_conn = calculate.main(opts.reference.split())
+    cal_conn = calculate.main(opts.calculate.split())
+    if pretty:
+        score, pretty_str = compare_data(ref_conn, cal_conn, pretty=pretty)
     else:
-        raise Exception('failed to determine reference data')
-    assert len(data_cal) == len(data_ref), "number of reference and ff calculated data points don't match"
-    data_cal = sorted(data_cal, key=datum_sort_key)
-    data_ref = sorted(data_ref, key=datum_sort_key)
-    convert_energies(data_cal, data_ref)
-    import_weights(data_ref)
-
-    total_x2 = 0.
-    if output or doprint:
-        separate_x2 = defaultdict(float)
-        lines = []
-        header = '{0:<20} {1:>16} {2:<20} {3:>16} {4:>16} {5:>16}'.format(
-            'ref', 'ref value', 'cal', 'cal value', 'weight', 'x2')
-        lines.append(header)
-        lines.append('-' * len(header))
-    for datum_ref, datum_cal in itertools.izip(data_ref, data_cal):
-        if datum_ref.dtype == 'torsion' or datum_cal.dtype == 'torsion':
-            delta = abs(datum_ref.value - datum_cal.value)
-            if delta > 180.:
-                delta = 360. - delta
-        else:
-            delta = datum_ref.value - datum_cal.value
-        single_x2 = datum_ref.weight**2 * (delta)**2
-        total_x2 += single_x2
-        if output or doprint:
-            separate_x2[datum_ref.dtype] += single_x2
-            lines.append(
-                '{0:<20} {1:>16.6f} {2:<20} {3:>16.6f} {4:>16.6f} {5:>16.6f}'.format(
-                    datum_ref.name, datum_ref.value, datum_cal.name,
-                    datum_cal.value, datum_ref.weight, single_x2))
-            
-    if output or doprint:
-        lines.append('-' * len(header))
-        lines.append('')
-        lines.append('total x2: {}'.format(total_x2))
-        for dtype, value in separate_x2.iteritems():
-            lines.append('{} x2: {}'.format(dtype, value))
-        if doprint:
-            for line in lines:
-                print(line)
-        elif output:
-            lines = [x + '\n' for x in lines]
-            with open(output, 'w') as f:
-                f.writelines(lines)
-    return total_x2
+        score = compare_data(ref_conn, cal_conn)
+    if opts.doprint:
+        for line in pretty_str:
+            print(line)
+    if opts.output:
+        with open(opts.output, 'w') as f:
+            for line in pretty_str:
+                f.write(line + '\n')
+    return score
 
 if __name__ == '__main__':
-    import logging.config
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
-   
-    opts = parse(sys.argv[1:])
-    calc_x2(opts.calculate, opts.reference, opts.output, opts.doprint)
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    main(sys.argv[1:])

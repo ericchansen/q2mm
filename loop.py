@@ -1,146 +1,153 @@
-#!/usr/bin/python
-'''
-Loop between optimization techniques until stop criteria has been met.
-'''
 import argparse
-import copy
+import itertools
 import logging
+import logging.config
+import os
+import random
 import sys
-import traceback
 
-from calculate import run_calculate
-from compare import calc_x2
-from datatypes import MM3
-from gradient import Gradient
-from optimizer import Optimizer
-from simplex import Simplex
+import calculate
+import constants as co
+import compare
+import datatypes
+import optimizer
+import parameters
 
 logger = logging.getLogger(__name__)
 
-class Loop(Optimizer):
-    '''
-    Loops between various optimization methods.
-
-    Tries to minimize the number of duplicate calculations.
-    '''
+class Loop(object):
     def __init__(self):
-        self.best_ff = None
-        self.convergence = 0.005
-        self.current_cycle = None
-        self.loop_max = None
-        self.last_best = None
-
-    def return_loop_parser(self, add_help=True, parents=[]):
-        '''
-        Returns an argument parser for loop.
-        '''
-        if add_help:
-            parser = argparse.ArgumentParser(
-                description=__doc__, add_help=add_help, parents=parents)
-        else:
-            parser = argparse.ArgumentParser(
-                add_help=False, parents=parents)
-        group = parser.add_argument_group('loop')
-        group.add_argument(
-            '--convergence', type=float, default=0.005,
-            help=('Convergence criterion. If the percent change in the penalty '
-                  'between rounds is less than this number, then stop.'))
-        group.add_argument(
-            '--loop_max', type=int, default=None,
-            help='Maximum number of loop cycles.')
-        group.add_argument(
-            '--gradient', type=str, metavar='" commands for gradient.py"',
-            help=('These commands are interpreted by the gradient based optimizer. '
-                  'Leave one space after the 1st quotation mark enclosing the arguments.'))
-        return parser
-
-    def setup_loop(self, opts):
-        self.convergence = opts.convergence
-        self.loop_max = opts.loop_max
-        return opts
-
-    def run(self, opts=None):
-        logger.info('--- {} running ---'.format(type(self).__name__))
-        # setup gradient
-        gradient = Gradient()
-        if opts.gradient is not None:
-            gradient.parse(opts.gradient.split())
-        else:
-            gradient.parse(['--default'])
-        gradient.com_ref = self.com_ref
-        gradient.com_cal = self.com_cal
-        gradient.data_ref = self.data_ref
-        # setup simplex
-        simplex = Simplex()
-        simplex.com_ref = self.com_ref
-        simplex.com_cal = self.com_cal
-        simplex.data_ref = self.data_ref
-        # rather than copying, could overwrite to save memory
-        self.best_ff = copy.deepcopy(self.init_ff)
-        if self.best_ff.x2 is None:
-            # data used by gradient, so save it
-            self.calc_x2_ff(self.best_ff, save_data=True)
-            # no need for data here
-            self.init_ff.x2 = self.best_ff.x2
-        self.current_cycle = 0
-        self.last_best = None
-        while ((self.last_best is None or
-                abs(self.last_best - self.best_ff.x2) / self.last_best > self.convergence)
-               and
-               (self.loop_max is None or self.current_cycle < self.loop_max)):
-            self.last_best = self.best_ff.x2
-            self.current_cycle += 1
-            logger.info('loop - start of cycle {} - {} ({})'.format(
-                    self.current_cycle, self.best_ff.x2, self.best_ff.method))
-            gradient.init_ff = self.best_ff
-            self.best_ff = gradient.run()
-            self.best_ff.export_ff(path=self.best_ff.path + '.{}.grad'.format(self.current_cycle))
-            simplex.init_ff = self.best_ff
-            # self.best_ff = simplex.run()
+        self.convergence = 0.01
+        self.current_cycle_num = 0
+        self.ff = None
+        self.ff_args = None
+        self.ff_lines = None
+        self.loop_lines = None
+        self.ref_args = None
+        # Unnecessary if we keep self.ff as an attribute. self.ff and
+        # self.score shouldn't ever be different.
+        self.score = None
+        self.score_init = None
+        self.score_prev = None
+    def opt_loop(self):
+        change = None
+        while self.score_prev is None \
+                or change is None \
+                or change > self.convergence:
+            self.current_cycle_num += 1
+            self.score_prev = self.score
+            self.score = self.run_loop_input(self.loop_lines, score=self.score)
+            change = (self.score_prev - self.score) / self.score_prev
+            logger.log(20, ' Cycle {} Summary '.format(
+                    self.current_cycle_num).center(50, '-'))
+            logger.log(20, '| PF Score: {:36.15f} |'.format(self.score))
+            logger.log(20, '| % change: {:36.15f} |'.format(change))
+            logger.log(20, '-' * 50)
+        return self.score
+    def run_loop_input(self, lines, score=None):
+        if score:
+            self.score = score
+        lines_iterator = iter(lines)
+        while True:
             try:
-                self.best_ff = simplex.run()
-            except Exception:
-                logger.warning(traceback.format_exc())
-                logger.warning("in case you didn't notice, simplex raised an exception")
-                if simplex.trial_ffs:
-                    # make a function for this...
-                    self.best_ff = MM3()
-                    self.best_ff.method = simplex.trial_ffs[0].method
-                    self.best_ff.copy_attributes(self.init_ff)
-                    if simplex.max_params is not None and \
-                            len(simplex.init_ff.params) > simplex.max_params:
-                        self.best_ff.params = copy.deepcopy(self.init_ff.params)
-                        for param_i in self.best_ff.params:
-                            for param_b in simplex.trial_ffs[0].params:
-                                if param_i.mm3_row == param_b.mm3_row and \
-                                        param_i.mm3_col == param_b.mm3_col:
-                                    param_i = copy.deepcopy(param_b)
-                    else:
-                        self.best_ff.params = copy.deepcopy(simplex.trial_ffs[0].params)
-                    self.best_ff.x2 = simplex.trial_ffs[0].x2
-                    if simplex.trial_ffs[0].data is not None:
-                        self.best_ff.data = simplex.trial_ffs[0].data
-                    # ... block of code
+                line = lines_iterator.next()
+            except StopIteration:
+                return self.score
+            cols = line.split()
+            if cols[0] == 'FFLD':
+                # Import FF data.
+                if cols[1] == 'read':
+                    self.ff = datatypes.import_ff(cols[2])
+                    with open(cols[2], 'r') as f:
+                        self.ff_lines = f.readlines()
+                # Export FF data.
+                if cols[1] == 'write':
+                    datatypes.export_ff(cols[2], self.ff.params, lines=self.ff_lines)
+            # Trim parameters.
+            if cols[0] == 'PARM':
+                self.ff.params = parameters.trim_params_by_file(
+                    self.ff.params, cols[1])
+            if cols[0] == 'LOOP':
+                logger.log(20, ' Optimization Loop '.center(50, '='))
+                # Read lines that will be looped over.
+                loop_lines = []
+                line = lines_iterator.next()
+                while line.split()[0] != 'END':
+                    loop_lines.append(line)
+                    line = lines_iterator.next()
+                # Make loop object and populate.
+                loop = Loop()
+                loop.convergence = float(cols[1])
+                loop.loop_lines = loop_lines
+                loop.score = self.score
+                # Log commands.
+                logger.log(20, 'Commands:')
+                for loop_line in loop_lines:
+                    logger.log(20, '> ' + loop_line)
+                logger.log(20,'Initial PF Score: {}'.format(self.score))
+                logger.log(20, '=' * 50)            
+                self.score = loop.opt_loop()
+            if cols[0] == 'RDAT':
+                logger.log(20, 'Calculating reference data...')
+                self.ref_args = ' '.join(cols[1:]).split()
+                ref_conn = calculate.main(self.ref_args)
+            if cols[0] == 'CDAT':
+                logger.log(20, 'Calculating force field data...')
+                self.ff_args = ' '.join(cols[1:]).split()
+                cal_conn = calculate.main(self.ff_args)
+            if cols[0] == 'COMP':
+                if '-o' in cols:
+                    output_filename = cols[cols.index('-o') + 1]
+                    self.score, output_string = compare.compare_data(
+                        ref_conn, cal_conn, pretty=True)
+                    with open(output_filename, 'w') as f:
+                        for output_line in output_string:
+                            f.write(output_line+ '\n')
                 else:
-                    logger.warning('simplex never generated trial force fields')
-                self.best_ff.export_ff()
-            self.best_ff.export_ff(path=self.best_ff.path + '.{}.simp'.format(self.current_cycle))
-            change = abs(self.last_best - self.best_ff.x2) / self.last_best
-            logger.info('loop - end of cycle {} - {} ({}) - % change {}'.format(
-                    self.current_cycle, self.best_ff.x2, self.best_ff.method, change))
-        logger.info('--- {} complete ---'.format(type(self).__name__))
-        logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-        logger.info('final: {} ({})'.format(self.best_ff.x2, self.best_ff.method))
-        return self.best_ff
-        
-if __name__ == '__main__':
-    import logging.config
-    import yaml
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
+                    self.score = compare.compare_data(ref_conn, cal_conn)
+            if cols[0] == 'GRAD':
+                grad = optimizer.Gradient(
+                    ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff_lines,
+                    ref_conn=ref_conn)
+                self.ff = grad.run()
+                self.score = self.ff.score
+            # if cols[0] == 'SIMP':
+            #     score = simplex(score)
 
+def read_loop_input(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    lines = [x.partition('#')[0].strip('\n') for x in lines if
+             x.partition('#')[0].strip('\n') != '']
+    logger.log(20, ' Q2MM '.center(79, '='))
+    logger.log(20, 'Commands:')
+    for line in lines:
+        logger.log(20, '> ' + line)
+    logger.log(20, '=' * 79)
+    return lines
+
+
+# def simplex(score):
+#     logger.log(20, 'Running simplex optimization...')
+#     new_change = random.uniform(0, score)
+#     new_scale = abs(random.gauss(0, 0.1))
+#     while new_scale > 1:
+#         new_scale = abs(random.gauss(0, 0.1))
+#     score = score - new_change * new_scale
+#     logger.log(20, 'PF Score: {}'.format(score))
+#     return score
+
+def main(args):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        'input', type=str, help='Filename containing loop commands.')
+    opts = parser.parse_args(args)
+    lines = read_loop_input(opts.input)
     loop = Loop()
-    opts = loop.parse(sys.argv[1:])
-    loop.setup(opts)
-    loop.run(opts)
+    loop.run_loop_input(lines)
+
+if __name__ == '__main__':
+    # if os.path.isfile('root.log'):
+    #     os.remove('root.log')
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    main(sys.argv[1:])

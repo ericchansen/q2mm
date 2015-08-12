@@ -1,256 +1,309 @@
-#!/usr/bin/python
-'''
-Simplex optimizer.
-'''
-import argparse
+#!/us/bin/python
+"""
+General code related to all optimization techniques.
+"""
 import copy
+import collections
+import itertools
 import logging
-import sys
+import logging.config
+import numpy as np
+import re
+import sqlite3
+import textwrap
 
-from calculate import run_calculate
-from compare import calc_x2
-from datatypes import FF, MM3
-from optimizer import Optimizer
+import calculate
+import compare
+import constants as co
+import datatypes
+import opt
+import parameters
 
 logger = logging.getLogger(__name__)
 
-class Simplex(Optimizer):
-    '''
-    For implementation details, read:
-    Norrby, Liljefors. Automated Molecular Mechanics Parameterization
-    with Simultaneous Utilization of Experimental and Quantum Mechanical
-    Data. J. Comp. Chem., 1998, 1146-1166.
-    '''
-    def __init__(self):
-        super(Simplex, self).__init__()
-        self.best_ff = None
-        self.current_cycle = None
-        self.cycles_wo_change = None
-        self.ffs_central = None
-        self.ffs_forward = None
-        self.last_best = None
-        self.massive_contraction = True
+class Simplex(opt.Optimizer):
+    """
+    Optimizes force field parameters using an in-house version of the simplex
+    method. See `Optimizer` for repeated documentation.
+
+    Attributes
+    ----------
+    do_massive_contraction : bool
+                             If True, allows massive contractions to be
+                             performed, contracting all parameters at once.
+    do_weighted_reflection : bool
+                             If True, weights parameter sets based on their
+                             objective function score when determining the
+                             reflection point.
+    max_cycles : int
+                 Maximum number of simplex cycles.
+    max_cycles_wo_change : int
+                           End the simplex optimization early if there have
+                           been this many consecutive simplex steps without
+                           improvement in the objective function.
+    max_params : int
+                 Maximum number of parameters used in a single simplex cycle.
+    """
+    def __init__(self,
+                 ff=None, ff_lines=None, ff_args=None,
+                 ref_args=None, ref_conn=None,
+                 restore=False):
+        super(Simplex, self).__init__(
+            ff, ff_lines, ff_args, ref_args, ref_conn, restore)
+        self.do_massive_contraction = True
+        self.do_weighted_reflection = True
         self.max_cycles = 15
-        self.max_wo_change = 3
-        self.max_params = 15
-        self.params = None
-        self.use_weight = True
-
-    def return_simplex_parser(self, add_help=True, parents=None):
-        '''
-        Return an argparse.ArgumentParser object containing options
-        for simplex optimizations.
-        '''
-        if parents is None:
-            parents = []
-        if add_help:
-            parser = argparse.ArgumentParser(
-                description=__doc__, add_help=add_help, parents=parents)
-        else:
-            parser = argparse.ArgumentParser(
-                add_help=False, parents=parents)
-
-        group = parser.add_argument_group('simplex optimization')
-        group.add_argument(
-            '--max_cycles', type=int, default=15,
-            help='Maximum number of simplex optimization cycles.')
-        group.add_argument(
-            '--max_wo_change', type=int, default=3,
-            help=('Maximum number of consecutive simplex optimization '
-                  'cycles yielding no change to the penalty function.'))
-        group.add_argument(
-            '--max_params', type=int, default=15,
-            help=('Maximum number of parameters used in the simplex '
-                  'optimization.'))
-        group.add_argument(
-            '--no_massive', action='store_true',
-            help="Don't use massive contraction to modify parameter sets.")
-        group.add_argument(
-            '--no_weight', action='store_true',
-            help=('Calculate the simplex inversion point without weighting '
-                  'parameter sets by their value of the penalty function.'))
-        return parser
-
-    def setup_simplex(self, opts):
-        '''
-        Set options used in the simplex optimization.
-        '''
-        self.max_cycles = opts.max_cycles
-        self.max_wo_change = opts.max_wo_change
-        self.max_params = opts.max_params
-        self.massive_contraction = not opts.no_massive
-        self.use_weight = not opts.no_weight
-
+        self.max_cycles_wo_change = 3
+        self.max_params = 10
     def run(self):
-        '''
-        Runs the simplex optimization. Run self.setup before this, or
-        manually assign the necessary attributes that would normally
-        be assigned by self.setup.
+        """
+        Once all attributes are setup as you so desire, run this method to
+        optimize the parameters.
 
-        self.init_ff must have all the required attributes for
-        self.init_ff.export_ff.
-        '''
-        logger.info('--- running {} ---'.format(type(self).__name__))
-        if self.init_ff.x2 is None:
-            self.calc_x2_ff(self.init_ff)
-
-        if self.max_params is not None and len(self.init_ff.params) > self.max_params:
-            self.ffs_central = self.params_diff(self.init_ff.params, mode='central')
-            for ff in self.ffs_central:
-                self.calc_x2_ff(ff)
-            self.central_diff_derivs(self.init_ff, self.ffs_central)
-            self.params = self.trim_params_on_2nd(self.init_ff.params)
-            self.ffs_forward = [x for x in self.ffs_central if
-                           x.method.split()[0] =='forward' and
-                           int(x.method.split()[1]) in [y.mm3_row for y in self.params] and
-                           int(x.method.split()[2]) in [y.mm3_col for y in self.params]]
+        Returns
+        -------
+        `datatypes.FF` (or subclass)
+            Contains the best parameters.
+        """
+        logger.log(20, '~~ SIMPLEX OPTIMIZATION ~~'.rjust(79, '~'))
+        # Here we don't actually need the database connection/force field data.
+        # We only need the score.
+        if self.ff.score is None:
+            logger.log(20, '~~ CALCULATING INITIAL FF SCORE ~~'.rjust(79, '~'))
+            datatypes.export_ff(
+                self.ff.path, self.ff.params, lines=self.ff.lines)
+            # I could store this object to prevent on self.ff to prevent garbage
+            # collection. Would be nice if simplex was followed by gradient,
+            # which needs that information, and if simplex yielded no
+            # improvements. At most points in the optimization, this is probably
+            # too infrequent for it to be worth the memory, but it might be nice
+            # once the parameters are close to convergence.
+            conn = calculate.main(self.ff_args)
+            self.ff.score = compare.compare_data(self.ref_conn, conn)
         else:
-            self.params = copy.deepcopy(self.init_ff.params)
-            self.ffs_forward = self.params_diff(self.params, mode='forward')
-            for ff in self.ffs_forward:
-                self.calc_x2_ff(ff)
-        self.trial_ffs = sorted(self.ffs_forward + [self.init_ff], key=lambda x: x.x2)
+            logger.log(15, '  -- Reused existing score and data for initial FF.')
+        logger.log(15, 'Initial FF score: {}'.format(self.ff.score))
+        if self.max_params and len(self.ff.params) > self.max_params:
+            logger.log(
+                20, '  -- Reducing number of parameters to {} for the simplex '
+                'optimization.'.format(self.max_params))
+            ffs = opt.differentiate_ff(self.ff)
+            opt.score_ffs(
+                ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
+                restore=False)
+            opt.param_derivs(self.ff, ffs)
+            simp_params = select_simp_params(
+                self.ff.params, max_params=self.max_params)
+            self.new_ffs = opt.extract_forward(ffs)
+            self.new_ffs = opt.extract_ff_by_params(
+                self.new_ffs, simp_params)
+        else:
+            ffs = opt.differentiate_ff(self.ff, central=False)
+            opt.score_ffs(
+                ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
+                restore=False)
+            self.new_ffs = ffs
+        self.new_ffs = sorted(self.new_ffs + [self.ff], key=lambda x: x.score)
+        opt.pretty_ff_params(self.new_ffs)
 
-        self.current_cycle = 0
-        self.cycles_wo_change = 0
-        while self.current_cycle < self.max_cycles and self.cycles_wo_change < self.max_wo_change:
-            self.last_best = self.trial_ffs[0].x2 # copy necessary? copy.deepcopy?
-            self.current_cycle += 1
-            logger.info('simplex - start of cycle {} - {} ({})'.format(
-                    self.current_cycle, self.trial_ffs[0].x2, self.trial_ffs[0].method))
-            logger.info('{}'.format([x.x2 for x in self.trial_ffs]))
-            inverted = FF()
-            inverted.method = 'inversion'
-            inverted.params = copy.deepcopy(self.params)
-            reflected = FF()
-            reflected.method = 'reflection'
-            reflected.params = copy.deepcopy(self.params)
-            for i in xrange(0, len(self.params)):
-                if self.use_weight:
+        current_cycle = 0
+        cycles_wo_change = 0
+        while current_cycle < self.max_cycles \
+                and cycles_wo_change < self.max_cycles_wo_change:
+            current_cycle += 1
+            last_best = self.new_ffs[0].score
+            best_ff = self.new_ffs[0]
+            logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
+                    current_cycle).rjust(79, '~'))
+            inv_ff = self.ff.__class__()
+            if self.do_weighted_reflection:
+                inv_ff.method = 'WEIGHTED INVERSION'
+            else:
+                inv_ff.method = 'INVERSION'
+            inv_ff.params = copy.deepcopy(best_ff.params)
+            ref_ff = self.ff.__class__()
+            ref_ff.method = 'REFLECTION'
+            ref_ff.params = copy.deepcopy(best_ff.params)
+            for i in xrange(0, len(best_ff.params)):
+                if self.do_weighted_reflection:
                     try:
-                        param_inverted = \
-                            sum([x.params[i].value * (x.x2 - self.trial_ffs[-1].x2)
-                                 for x in self.trial_ffs[:-1]]) / \
-                            sum([x.x2 - self.trial_ffs[-1].x2 for x in self.trial_ffs[:-1]])
+                        inv_val = (
+                            sum([x.params[i].value *
+                                 (x.score - self.new_ffs[-1].score)
+                                 for x in self.new_ffs[:-1]])
+                            / 
+                            sum([x.score - self.new_ffs[-1].score
+                                 for x in self.new_ffs[:-1]]))
                     except ZeroDivisionError:
-                        logger.warning('zero division. all x2 are numerically equivalent')
-                        raise
+                        logger.warning(
+                            'Attempted to divide by zero while calculating the '
+                            'weighted simplex inversion point. All penalty '
+                            'function scores for the trial force fields are '
+                            'numerically equivalent.')
+                        # Breaking should just exit the while loop. Should still
+                        # give you the best force field determined thus far.
+                        break
                 else:
-                    param_inverted = \
-                        sum([x.params[i].value for x in self.trial_ffs[:-1]]) / \
-                        len(self.trial_ffs[:-1])
-                inverted.params[i].value = param_inverted
-                reflected.params[i].value = 2 * param_inverted - self.trial_ffs[-1].params[i].value
-            inverted.display_params()
-            reflected.display_params()
-            inverted.check_params()
-            reflected.check_params()
-            self.calc_x2_ff(reflected)
-            if reflected.x2 < self.trial_ffs[0].x2:
-                logger.info('attempting expansion')
-                expanded = FF()
-                expanded.method = 'expansion'
-                expanded.params = copy.deepcopy(self.params)
+                    inv_val = (
+                        sum([x.params[i].value for x in self.new_ffs[:-1]])
+                        /
+                        len(self.new_ffs[:-1]))
+                inv_ff.params[i].value = inv_val
+                ref_ff.params[i].value = (
+                    2 * inv_val - self.new_ffs[-1].params[i].value)
+            # Calculate score for inverted parameters.
+            datatypes.export_ff(
+                self.ff.path, inv_ff.params, lines=self.ff.lines)
+            conn = calculate.main(self.ff_args)
+            inv_ff.score = compare.compare_data(self.ref_conn, conn)
+            opt.pretty_ff_results(inv_ff)
+            # Calculate score for reflected parameters.
+            datatypes.export_ff(
+                self.ff.path, ref_ff.params, lines=self.ff.lines)
+            conn = calculate.main(self.ff_args)
+            ref_ff.score = compare.compare_data(self.ref_conn, conn)
+            opt.pretty_ff_results(ref_ff)
+            if ref_ff.score < self.new_ffs[0].score:
+                logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
+                exp_ff = self.ff.__class__()
+                exp_ff.method = 'EXPANSION'
+                exp_ff.params = copy.deepcopy(best_ff.params)
                 for i in xrange(0, len(self.params)):
-                    # expanded_param = 3 * inverted.params[i].value - \
-                    #     2 * self.trial_ffs[-1].params[i].value
-                    # expanded.params[i].value = expanded_param
-                    expanded.params[i].value = 3 * inverted.params[i].value - \
-                        2 * self.trial_ffs[-1].params[i].value
-                expanded.display_params()
-                expanded.check_params()
-                self.calc_x2_ff(expanded)
-                if expanded.x2 < reflected.x2:
-                    self.trial_ffs[-1] = expanded
-                    logger.info('expansion succeeded. keeping')
+                    exp_ff.params[i].value = (
+                        3 * inv_ff.params[i].value -
+                        2 * self.new_ffs[-1].params[i].value)
+                datatypes.export_ff(
+                    self.ff.path, exp_ff.params, lines=self.ff.lines)
+                conn = calculate.main(self.ff_args)
+                exp_ff.score = compare.compare_data(self.ref_conn, conn)
+                opt.pretty_ff_results(exp_ff)
+                if exp_ff.score < ref_ff.score:
+                    self.new_ffs[-1] = exp_ff
+                    logger.log(
+                        20, '  -- Expansion succeeded. Keeping expanded '
+                        'parameters.')
                 else:
-                    self.trial_ffs[-1] = reflected
-                    logger.info('expansion failed. keeping reflection')
-            elif reflected.x2 < self.trial_ffs[-2].x2:
-                logger.info('keeping reflection')
-                self.trial_ffs[-1] = reflected
+                    self.new_ffs[-1] = ref_ff
+                    logger.log(
+                        20, '  -- Expansion failed. Keeping reflected parameters.')
+            elif ref_ff.score < self.new_ffs[-2].score:
+                logger.log(20, '  -- Keeping reflected parameters.')
+                self.new_ffs[-1] = ref_ff
             else:
-                logger.info('attempting contraction')
-                contracted = FF()
-                contracted.method = 'contraction'
-                contracted.params = copy.deepcopy(self.params)
-                for i in xrange(0, len(self.params)):
-                    if reflected.x2 > self.trial_ffs[-1].x2:
-                        contracted_param = (inverted.params[i].value + \
-                                                self.trial_ffs[-1].params[i].value) / 2
+                logger.log(20, '~~ ATTEMPTING CONTRACTION ~~'.rjust(79, '~'))
+                con_ff = self.ff.__class__()
+                con_ff.method = 'CONTRACTION'
+                con_ff.params = copy.deepcopy(best_ff.params)
+                for i in xrange(0, len(best_ff.params)):
+                    if ref_ff.score > self.new_ffs[-1].score:
+                        con_val = (
+                            (inv_ff.params[i].value +
+                             self.new_ffs[-1].params[i].value) / 2)
                     else:
-                        contracted_param = (3 * inverted.params[i].value - \
-                                                self.trial_ffs[-1].params[i].value) / 2
-                    contracted.params[i].value = contracted_param
-                contracted.display_params()
-                contracted.check_params()
-                self.calc_x2_ff(contracted)
-                if contracted.x2 < self.trial_ffs[-2].x2:
-                    self.trial_ffs[-1] = contracted
-                elif self.massive_contraction:
-                    logger.info('doing massive contraction')
-                    for ff_num, ff in enumerate(self.trial_ffs[1:]):
-                        for i in xrange(0, len(self.params)):
-                            ff.params[i].value = (ff.params[i].value + \
-                                                      self.trial_ffs[0].params[i].value) / 2
-                        ff.display_params()
-                        ff.check_params()
-                        ff.method += ' / massive contraction'
-                        self.calc_x2_ff(ff)
+                        con_val = (
+                            (3 * inv_ff.params[i].value -
+                             self.new_ffs[-1].params[i].value) / 2)
+                    con_ff.params[i].value = con_val
+                datatypes.export_ff(
+                    self.ff.path, con_ff.params, lines=self.ff.lines)
+                conn = calculate.main(self.ff_args)
+                con_ff.score = compare.compare_data(self.ref_conn, conn)
+                opt.pretty_ff_results(con_ff)
+                if con_ff.score < self.new_ffs[-2].score:
+                    self.new_ffs[-1] = con_ff
+                elif self.do_massive_contraction:
+                    logger.log(
+                        20, '~~ DOING MASSIVE CONTRACTION ~~'.rjust(79, '~'))
+                    for ff_num, ff in enumerate(self.new_ffs[1:]):
+                        for i in xrange(0, len(best_ff.params)):
+                            ff.params[i].value = (
+                                (ff.params[i].value +
+                                 self.new_ffs[0].params[i].value) / 2)
+                        datatypes.export_ff(
+                            self.ff.path, ff.params, lines=self.ff.lines)
+                        conn = calculate.main(self.ff_args)
+                        ff.score = compare.compare_data(self.ref_conn, conn)
+                        ff.method += ' MC'
+                        opt.pretty_ff_results(ff)
                 else:
-                    logger.info('contraction failed')
-            self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
-            if self.trial_ffs[0].x2 < self.last_best:
-                self.cycles_wo_change = 0
+                    logger.log(20, '  -- Contraction failed.')
+            self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+            if self.new_ffs[0].score < last_best:
+                cycles_wo_change = 0
             else:
-                self.cycles_wo_change += 1
-                logger.info('{} cycles w/o change'.format(self.cycles_wo_change))
-            logger.info('simplex - end of cycle {} - {} ({})'.format(
-                    self.current_cycle, self.trial_ffs[0].x2, self.trial_ffs[0].method))
-        if self.trial_ffs[0].x2 < self.init_ff.x2:
-            self.best_ff = MM3()
-            self.best_ff.method = self.trial_ffs[0].method
-            self.best_ff.copy_attributes(self.init_ff)
-            # add in parameters that were previously removed
-            if self.max_params is not None and len(self.init_ff.params) > self.max_params:
-                self.best_ff.params = copy.deepcopy(self.init_ff.params)
-                for i, param_i in enumerate(self.init_ff.params):
-                # for param_i in self.best_ff.params:
-                    for param_b in self.trial_ffs[0].params:
-                        if param_i.mm3_row == param_b.mm3_row and param_i.mm3_col == param_b.mm3_col:
-                            logger.log(6, 'Updating {} to {}'.format(param_i, param_b))
-                            # is deep copy necessary? im worried that if simplex is done again
-                            # in the same loop, it will somehow mess this up
-                            # param_i = copy.deepcopy(param_b) 
-                            self.best_ff.params[i] = copy.deepcopy(param_b)
-            else:
-                self.best_ff.params = copy.deepcopy(self.trial_ffs[0].params)
-            self.best_ff.x2 = self.trial_ffs[0].x2
-            # should never happen
-            if self.trial_ffs[0].data is not None:
-                self.best_ff.data = self.trial_ffs[0].data
-            self.best_ff.export_ff()
-            logger.info('--- {} complete ---'.format(type(self).__name__))
-            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('final: {} ({})'.format(self.best_ff.x2, self.best_ff.method))
-            return self.best_ff
+                cycles_wo_change += 1
+                logger.log(20, '  -- {} cycles without change.'.format(
+                        cycles_wo_change))
+            best_ff = self.new_ffs[0]
+            logger.log(20, 'BEST:')
+            opt.pretty_ff_results(self.new_ffs[0], level=20)
+            logger.log(20, '~~ END SIMPLEX CYCLE {} ~~'.format(
+                    current_cycle).rjust(79, '~'))
+        if best_ff.score < self.ff.score:
+            logger.log(20, '~~ SIMPLEX FINISHED WITH IMPROVEMENTS ~~'.rjust(
+                    79, '~'))
+            self.ff.copy_attributes(best_ff)
+            if self.max_params is not None and \
+                    len(self.ff.params) > self.max_params:
+                best_params = copy.deepcopy(best_ff.params)
+                best_ff.params = copy.deepcopy(self.ff.params)
+                for a, param_a in enumerate(self.ff.params):
+                    for param_b in best_params:
+                        if param_a.mm3_row == param_b.mm3_row and \
+                                param_a.mm3_col == param_b.mm3_col:
+                            best_ff.params[i] = copy.deepcopy(param_b)
         else:
-            self.init_ff.export_ff()
-            logger.info('--- {} complete ---'.format(type(self).__name__))
-            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('final: {} ({})'.format(self.trial_ffs[0].x2, self.trial_ffs[0].method))
-            logger.info('no improvement from {}'.format(type(self).__name__))
-            return self.init_ff
+            logger.log(20, '~~ SIMPLEX FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
+                    79, '~'))
+        opt.pretty_ff_results(self.ff, level=20)
+        opt.pretty_ff_results(best_ff, level=20)
+        # Restore original.
+        if self.restore:
+            logger.log(20, '  -- Restoring original force field.')
+            datatypes.export_ff(
+                self.ff.path, self.ff.params, lines=self.ff.lines)
+        # The best force field should be totally okay with doing all of this
+        # now. I guess it does sort suck that I have duplicate data in memory
+        # now. Perhaps I should delete self.ff.
+        else:
+            logger.log(20, '  -- Writing best force field from simplex.')
+            datatypes.export_ff(
+                best_ff.path, best_ff.params, lines=best_ff.lines)
+        return best_ff
+
+def select_simp_params(params, max_params=10):
+    """
+    Sorts parameter sets from lowest to highest second
+    derivatives of their score in the objective function.
+    
+    Parameters
+    ----------
+    params : list of subclasses of `datatypes.Param`
+    """
+    keep = sorted(params, key=lambda x: x.d2)
+    keep = params[:max_params]
+    return keep
 
 if __name__ == '__main__':
-    import logging.config
-    import yaml
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
-    
-    simplex = Simplex()
-    opts = simplex.parse(sys.argv[1:])
-    simplex.setup(opts)
-    simplex.run()
+    logging.config.dictConfig(co.LOG_SETTINGS)
+
+    import shutil
+    shutil.copyfile('d_sulf/mm3.fld.bup', 'd_sulf/mm3.fld')
+    INIT_FF_PATH = 'd_sulf/mm3.fld'
+    REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
+    CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
+    PARM_FILE = 'd_sulf/params.txt'
+
+    logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
+    ff = datatypes.import_ff(INIT_FF_PATH)
+    # ff.params = parameters.trim_params_by_file(ff.params, PARM_FILE)
+    use_these_params = ff.params[:3]
+    # use_these_params = ff.params[:8]
+    ff.params = use_these_params
+
+    simp = Simplex(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
+    simp.max_params = 2
+    # simp.max_params = 8
+
+    simp.run()
     

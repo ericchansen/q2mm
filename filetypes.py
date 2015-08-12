@@ -1,15 +1,32 @@
 '''
-Contains classes for the files that Q2MM will interact with, with the
-exception being force field classes, which are in data.py.
+Handles importing data from the various filetypes that Q2MM uses.
+
+Schrodinger
+-----------
+If the atom.typ file is not in the directory where run the Python scripts,
+you may see a warning similar to the following when you import Schrodinger
+files:
+
+  WARNING mmat_get_atomic_num x is not a valid atom type
+  WARNING mmat_get_mmod_name x is not a valid atom type
+
+In this example, x would be the number of the custom atom types you defined,
+atom types that you added to atom.typ. The warning can safely be ignored. If
+you'd like the warning messages to go away, copy the atom.typ file into the
+directory where you execute the Python scripts. Note that the atom.typ file
+must be located with your structure files, else the MacroModel jobs will fail.
+the atom.typ file
 '''
 from string import digits
 import logging
 import numpy as np
+import os
 import re
 
 from schrodinger import structure as schrod_structure
 from schrodinger.application.jaguar import input as schrod_jaguar_in
-import constants as cons
+
+import constants as co
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +35,11 @@ class File(object):
     Base class for all filetypes.
     '''
     def __init__(self, path):
-        self.path = path
+        # self.path = path
+        self.path = os.path.abspath(path)
+        self.filename = os.path.basename(self.path)
+        # self.directory = os.path.dirname(self.path)
+        # self.name = os.path.splitext(self.filename)[0]
         
 class GaussLog(File):
     '''
@@ -48,16 +69,20 @@ class GaussLog(File):
         structures_compared = 0
         best_structure = None
         best_yes_or_no = None
-        fields = ['RMS Force', 'RMS Displacement', 'Maximum Force', 'Maximum Displacement']
+        fields = ['RMS Force', 'RMS Displacement', 'Maximum Force',
+                  'Maximum Displacement']
         for i, structure in reversed(list(enumerate(structures))):
-            yes_or_no = [value[2] for key, value in structure.props.items() if key in fields]
+            yes_or_no = [value[2] for key, value in structure.props.items()
+                         if key in fields]
             if not structure.atoms:
-                logger.warning('no atoms found in structure {}. skipping'.format(i+1))
+                logger.warning('  -- No atoms found in structure {}. '
+                               'Skipping.'.format(i+1))
                 continue
             if len(yes_or_no) == 4:
                 structures_compared += 1
                 if best_structure is None:
-                    logger.log(3, 'most converged structure: {}'.format(i+1))
+                    logger.log(10, '  -- Most converged structure: {}'.format(
+                            i+1))
                     best_structure = structure
                     best_yes_or_no = yes_or_no
                 elif yes_or_no.count('YES') > best_yes_or_no.count('YES'):
@@ -66,18 +91,21 @@ class GaussLog(File):
                 elif yes_or_no.count('YES') == best_yes_or_no.count('YES'):
                     number_better = 0
                     for field in fields:
-                        if structure.props[field][0] < best_structure.props[field][0]:
+                        if structure.props[field][0] < \
+                                best_structure.props[field][0]:
                             number_better += 1
                     if number_better > 2:
                         best_structure = structure
                         best_yes_or_no = yes_or_no
             elif len(yes_or_no) != 0:
-                logger.warning('partial convergence criterion in structure from {}'.format(
+                logger.warning(
+                    '  -- Partial convergence criterion in structure: {}'.format(
                         self.path))
-        logger.log(3, 'compared {} out of {} structures'.format(structures_compared, len(self.structures)))
+        logger.log(10, '  -- Compared {} out of {} structures.'.format(
+                structures_compared, len(self.structures)))
         return best_structure
     def import_any(self, coords_type='both'):
-        logger.log(2, 'reading {}'.format(self.path))
+        logger.log(10, 'Reading: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -85,70 +113,85 @@ class GaussLog(File):
             section_convergence = False
             section_optimization = False
             for i, line in enumerate(f):
-                    # look for input coords
+                    # Look for input coordinates.
                     if coords_type == 'input' or coords_type == 'both':
-                        # end of input coords for a given structure
+                        # Marks end of input coords for a given structure.
                         if section_coords_input and 'Distance matrix' in line:
                             section_coords_input = False
-                            logger.log(2, '{} end input coordinates section ({} atoms)'.format(
+                            logger.log(5, '[L{}] End of input coordinates '
+                                       '({} atoms).'.format(
                                     i+1, count_atom))
-                        # add atoms and coords to structure
+                        # Add atoms and coordinates to structure.
                         if section_coords_input:
                             match = re.match(
-                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
-                                    cons.re_float), line)
+                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+'
+                                '({0})'.format(co.RE_FLOAT), line)
                             if match:
                                 count_atom += 1
                                 try:
-                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                    current_atom = current_structure.atoms[
+                                        int(match.group(1))-1]
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
                                 if current_atom.atomic_num:
-                                    assert current_atom.atomic_num == int(match.group(2)), \
-                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
-                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                    assert current_atom.atomic_num == int(
+                                        match.group(2)), \
+                                        ("[L{}] Atomic numbers don't match "
+                                         "(current != existing) "
+                                         "({} != {}).".format(
+                                                i+1, int(match.group(2)),
+                                                current_atom.atomic_num))
                                 else:
-                                    current_atom.atomic_num = int(match.group(2))
+                                    current_atom.atomic_num = int(
+                                        match.group(2))
                                 current_atom.coords_type = 'input'
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
-                        # start of input coords for a given structure
+                        # Start of input coords for a given structure.
                         if not section_coords_input and \
                                 'Input orientation:' in line:
                             current_structure = Structure()
                             structures.append(current_structure)
                             section_coords_input = True
                             count_atom = 0
-                            logger.log(2, '{} start input coordinates section'.format(i+1))
-
-                    # look for standard coords
+                            logger.log(5, '[L{}] Start input coordinates '
+                                       'section.'.format(i+1))
+                    # Look for standard coordinates.
                     if coords_type == 'standard' or coords_type == 'both':
-                        # end of coords for a given structure
+                        # End of coordinates for a given structure.
                         if section_coords_standard and \
                                 ('Rotational constants' in line or
                                  'Leave Link' in line):
                             section_coords_standard = False
-                            logger.log(2, '{} end standard coordinates section ({} atoms)'.format(
+                            logger.log(5, '[L{}] End standard coordinates '
+                                       'section ({} atoms).'.format(
                                     i+1, count_atom))
                         # grab coords for each atom. add atoms to the structure
                         if section_coords_standard:
-                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
-                                    cons.re_float), line)
+                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+'
+                                             '({0})\s+({0})'.format(
+                                    co.RE_FLOAT), line)
                             if match:
                                 count_atom += 1
                                 try:
-                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                    current_atom = current_structure.atoms[
+                                        int(match.group(1))-1]
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
                                 if current_atom.atomic_num: 
-                                    assert current_atom.atomic_num == int(match.group(2)), \
-                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
-                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                    assert current_atom.atomic_num == int(
+                                        match.group(2)), \
+                                        ("[L{}] Atomic numbers don't match "
+                                         "(current != existing) "
+                                         "({} != {}).".format(
+                                                i+1, int(match.group(2)),
+                                                current_atom.atomic_num))
                                 else:
-                                    current_atom.atomic_num = int(match.group(2))
+                                    current_atom.atomic_num = int(
+                                        match.group(2))
                                 current_atom.coords_type = 'standard'
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
@@ -160,7 +203,8 @@ class GaussLog(File):
                             structures.append(current_structure)
                             section_coords_standard = True
                             count_atom = 0
-                            logger.log(2, '{} start standard coordinates section.'.format(i+1))
+                            logger.log(5, '[L{}] Start standard coordinates '
+                                       'section.'.format(i+1))
         return structures
     def import_optimization(self, coords_type='both'):
         '''
@@ -173,7 +217,7 @@ class GaussLog(File):
                       to be overwritten by whatever comes later in the
                       log file.
         '''
-        logger.log(2, 'reading {}'.format(self.path))
+        logger.log(10, 'Reading: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -181,113 +225,133 @@ class GaussLog(File):
             section_convergence = False
             section_optimization = False
             for i, line in enumerate(f):
-
-                # look for start of optimization section of log file
-                # set a flag that it has indeed started
+                # Look for start of optimization section of log file and
+                # set a flag that it has indeed started.
                 if section_optimization and 'Optimization stopped.' in line:
                     section_optimization = False
-                    logger.log(2, '{} end optimization section'.format(i+1))
+                    logger.log(5, '[L{}] End optimization section.'.format(i+1))
                 if not section_optimization and \
                         'Search for a local minimum.' in line:
                     section_optimization = True
-                    logger.log(2, '{} start optimization section'.format(i+1))
-                    
+                    logger.log(5, '[L{}] Start optimization section.'.format(
+                            i+1))
                 if section_optimization:
-
-                    # start of a structure
+                    # Start of a structure.
                     if 'Step number' in line:
                         structures.append(Structure())
                         current_structure = structures[-1]
-                        logger.log(2, '{} added structure (currently {})'.format(
+                        logger.log(5, '[L{}] Added structure '
+                                   '(currently {}).'.format(
                                 i+1, len(structures)))
-
-                    # look for convergence information related to a single structure
+                    # Look for convergence information related to a single
+                    # structure.
                     if section_convergence and 'GradGradGrad' in line:
                         section_convergence = False
-                        logger.log(2, '{} end convergence section'.format(i+1))
+                        logger.log(5, '[L{}] End convergence section.'.format(
+                                i+1))
                     if section_convergence:
                         match = re.match(
-                            '\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+({0})\s+(YES|NO)'.format(
-                                cons.re_float), line)
+                            '\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+'
+                            '({0})\s+(YES|NO)'.format(
+                                co.RE_FLOAT), line)
                         if match:
-                            current_structure.props['{} {}'.format(match.group(1), match.group(2))] = \
-                                (float(match.group(3)), float(match.group(4)), match.group(5))
+                            current_structure.props['{} {}'.format(
+                                    match.group(1), match.group(2))] = \
+                                (float(match.group(3)),
+                                 float(match.group(4)), match.group(5))
                     if 'Converged?' in line:
                         section_convergence = True
-                        logger.log(2, '{} start convergence section'.format(i+1))
-            
-                    # look for input coords
+                        logger.log(5, '[L{}] Start convergence section.'.format(
+                                i+1))
+                    # Look for input coords.
                     if coords_type == 'input' or coords_type == 'both':
-                        # end of input coords for a given structure
+                        # End of input coords for a given structure.
                         if section_coords_input and 'Distance matrix' in line:
                             section_coords_input = False
-                            logger.log(2, '{} end input coordinates section ({} atoms)'.format(
+                            logger.log(5, '[L{}] End input coordinates section '
+                                       '({} atoms).'.format(
                                     i+1, count_atom))
-                        # add atoms and coords to structure
+                        # Add atoms and coords to structure.
                         if section_coords_input:
                             match = re.match(
-                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
-                                    cons.re_float), line)
+                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+'
+                                '({0})'.format(
+                                    co.RE_FLOAT), line)
                             if match:
                                 count_atom += 1
                                 try:
-                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                    current_atom = current_structure.atoms[
+                                        int(match.group(1))-1]
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
                                 if current_atom.atomic_num:
-                                    assert current_atom.atomic_num == int(match.group(2)), \
-                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
-                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                    assert current_atom.atomic_num == \
+                                        int(match.group(2)), \
+                                        ("[L{}] Atomic numbers don't match "
+                                         "(current != existing) "
+                                         "({} != {}).".format(
+                                                i+1, int(match.group(2)),
+                                                current_atom.atomic_num))
                                 else:
-                                    current_atom.atomic_num = int(match.group(2))
+                                    current_atom.atomic_num = \
+                                        int(match.group(2))
                                 current_atom.coords_type = 'input'
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
-                        # start of input coords for a given structure
+                        # Start of input coords for a given structure.
                         if not section_coords_input and \
                                 'Input orientation:' in line:
                             section_coords_input = True
                             count_atom = 0
-                            logger.log(2, '{} start input coordinates section'.format(i+1))
-
-                    # look for standard coords
+                            logger.log(5, '[L{}] Start input coordinates '
+                                       'section.'.format(i+1))
+                    # Look for standard coords.
                     if coords_type == 'standard' or coords_type == 'both':
-                        # end of coords for a given structure
+                        # End of coordinates for a given structure.
                         if section_coords_standard and \
                                 ('Rotational constants' in line or
                                  'Leave Link' in line):
                             section_coords_standard = False
-                            logger.log(2, '{} end standard coordinates section ({} atoms)'.format(
+                            logger.log(5, '[L{}] End standard coordinates '
+                                       'section ({} atoms).'.format(
                                     i+1, count_atom))
-                        # grab coords for each atom. add atoms to the structure
+                        # Grab coords for each atom. Add atoms to the structure.
                         if section_coords_standard:
-                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+({0})'.format(
-                                    cons.re_float), line)
+                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+'
+                                             '({0})\s+({0})'.format(
+                                    co.RE_FLOAT), line)
                             if match:
                                 count_atom += 1
                                 try:
-                                    current_atom = current_structure.atoms[int(match.group(1))-1]
+                                    current_atom = current_structure.atoms[
+                                        int(match.group(1))-1]
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
                                 if current_atom.atomic_num: 
-                                    assert current_atom.atomic_num == int(match.group(2)), \
-                                        ("{} atomic numbers don't match (current != existing) ({} != {})".format(
-                                            i+1, int(match.group(2)), current_atom.atomic_num))
+                                    assert current_atom.atomic_num == int(
+                                        match.group(2)), \
+                                        ("[L{}] Atomic numbers don't match "
+                                         "(current != existing) "
+                                         "({} != {}).".format(
+                                            i+1, int(match.group(2)),
+                                            current_atom.atomic_num))
                                 else:
-                                    current_atom.atomic_num = int(match.group(2))
+                                    current_atom.atomic_num = int(
+                                        match.group(2))
                                 current_atom.coords_type = 'standard'
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
-                        # start of standard coords
+                        # Start of standard coords.
                         if not section_coords_standard and \
                                 'Standard orientation' in line:
                             section_coords_standard = True
                             count_atom = 0
-                            logger.log(2, '{} start standard coordinates section.'.format(i+1))
+                            logger.log(5, '[L{}] Start standard coordinates '
+                                       'section.'.format(i+1))
         return structures
                             
 class SchrodingerFile(File):
@@ -297,6 +361,7 @@ class SchrodingerFile(File):
     def convert_schrodinger_structure(self, sch_struct):
         '''
         Converts a schrodinger.structure object to my own structure object.
+        Sort of pointless. Probably remove soon.
         '''
         my_struct = Structure()
         my_struct.props.update(sch_struct.property)
@@ -306,7 +371,8 @@ class SchrodingerFile(File):
             my_atom.atom_type = sch_atom.atom_type
             my_atom.atom_type_name = sch_atom.atom_type_name
             my_atom.atomic_num = sch_atom.atomic_number
-            my_atom.bonded_atom_indices = [x.index for x in sch_atom.bonded_atoms]
+            my_atom.bonded_atom_indices = \
+                [x.index for x in sch_atom.bonded_atoms]
             my_atom.element = sch_atom.element
             my_atom.index = sch_atom.index
             my_atom.partial_charge = sch_atom.partial_charge
@@ -321,21 +387,22 @@ class SchrodingerFile(File):
     
 class JaguarIn(SchrodingerFile):
     '''
-    Used to retrieve data from Jaguar in files.
+    Used to retrieve data from Jaguar .in files.
     '''
     def __init__(self, path):
         super(JaguarIn, self).__init__(path)
         self._structures = None
         self._hessian = None
-        self._sch_ob = None
-        self._sch_struct = None
     @property
     def hessian(self):
         if self._hessian is None:
             num_atoms = len(self.structures[0].atoms)
-            assert num_atoms != 0, 'zero atoms while loading hessian from {}'.format(self.path)
+            assert num_atoms != 0, \
+                'Zero atoms found when loading Hessian from {}!'.format(
+                self.path)
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(2, '{} hessian matrix'.format(hessian.shape))
+            logger.log(5, '  -- Created {} Hessian matrix.'.format(
+                    hessian.shape))
             with open(self.path, 'r') as f:
                 section_hess = False
                 for line in f:
@@ -349,22 +416,24 @@ class JaguarIn(SchrodingerFile):
                         elif len(cols) > 1:
                             hess_row = int(cols[0])
                             for i, hess_ele in enumerate(cols[1:]):
-                                hessian[hess_row - 1, i + hess_col - 1] = float(hess_ele)
+                                hessian[hess_row - 1, i + hess_col - 1] = \
+                                    float(hess_ele)
                     if '&hess' in line:
                         section_hess = True
-            self._hessian = hessian * cons.hessian_conversion
+            self._hessian = hessian * co.HESSIAN_CONVERSION
         return self._hessian
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(2, 'reading {}'.format(self.path))
-            self._sch_ob = schrod_jaguar_in.read(self.path)
-            self._sch_struct = self._sch_ob.getStructure()
-            structures = [self.convert_schrodinger_structure(self._sch_struct)]
-            logger.log(2, 'imported {} structures'.format(len(structures)))
-            # this area is sketch. i added it so i could use hessian data
-            # generated from a jaguar calculation that had a dummy atom.
-            # no gaurantees this will always work.
+            logger.log(10, 'Reading: {}'.format(self.path))
+            sch_ob = schrod_jaguar_in.read(self.path)
+            sch_struct = sch_ob.getStructure()
+            structures = [self.convert_schrodinger_structure(sch_struct)]
+            logger.log(5, '  -- Imported {} structure(s).'.format(
+                    len(structures)))
+            # This area is sketch. I added it so I could use Hessian data
+            # generated from a Jaguar calculation that had a dummy atom.
+            # No gaurantees this will always work.
             for i, structure in enumerate(structures): 
                 empty_atoms = []
                 for atom in structure.atoms:
@@ -373,23 +442,44 @@ class JaguarIn(SchrodingerFile):
                 for atom in empty_atoms:
                     structure.atoms.remove(atom)
                 if empty_atoms:
-                    logger.log(2, 'structure {}: {} empty atoms removed'.format(i + 1, len(empty_atoms)))
+                    logger.log(5, 'Structure {}: {} empty atoms '
+                               'removed.'.format(i + 1, len(empty_atoms)))
             self._structures = structures
         return self._structures
 
 class JaguarOut(File):
     '''
-    Used to retrieve data from Schrodinger Jaguar out files.
+    Used to retrieve data from Schrodinger Jaguar .out files.
     '''
     def __init__(self, path):
         super(JaguarOut, self).__init__(path)
-        self.structures = None
-        self.eigenvalues = None
-        self.eigenvectors = None
-        self.frequencies = None
-        # self.force_constants = None
+        self._structures = None
+        self._eigenvalues = None
+        self._eigenvectors = None
+        self._frequencies = None
+        # self._force_constants = None
+    @property
+    def structures(self):
+        if self._structures is None:
+            self.import_file()
+        return self._structures
+    @property
+    def eigenvalues(self):
+        if self._eigenvalues is None:
+            self.import_file()
+        return self._eigenvalues
+    @property
+    def eigenvectors(self):
+        if self._eigenvectors is None:
+            self.import_file()
+        return self._eigenvectors
+    @property
+    def frequencies(self):
+        if self._frequencies is None:
+            self.import_file()
+        return self._frequencies
     def import_file(self):
-        logger.log(2, 'reading {}'.format(self.path))
+        logger.log(10, 'Reading: {}'.format(self.path))
         frequencies = []
         force_constants = []
         eigenvectors = []
@@ -398,8 +488,7 @@ class JaguarOut(File):
             section_geometry = False
             section_eigenvalues = False
             section_eigenvectors = False
-            for line in f:
-
+            for i, line in enumerate(f):
                 if section_geometry:
                     cols = line.split()
                     if len(cols) == 0:
@@ -409,21 +498,26 @@ class JaguarOut(File):
                     elif len(cols) == 1:
                         pass
                     else:
-                        match = re.match('\s+([\d\w]+)\s+({0})\s+({0})\s+({0})'.format(cons.re_float), line)
+                        match = re.match(
+                            '\s+([\d\w]+)\s+({0})\s+({0})\s+({0})'.format(
+                                co.RE_FLOAT), line)
                         if match != None:
                             current_atom = Atom()
-                            current_atom.element = match.group(1).translate(None, digits)
+                            current_atom.element = match.group(1).translate(
+                                None, digits)
                             current_atom.x = float(match.group(2))
                             current_atom.y = float(match.group(3))
                             current_atom.z = float(match.group(4))
                             current_structure.atoms.append(current_atom)
-                            logger.log(2, '{0:<3}{1:>12.6f}{2:>12.6f}{3:>12.6f}'.format(
-                                    current_atom.element, current_atom.x, current_atom.y, current_atom.z))
+                            logger.log(0,
+                                       '{0:<3}{1:>12.6f}{2:>12.6f}'
+                                       '{3:>12.6f}'.format(
+                                    current_atom.element, current_atom.x,
+                                    current_atom.y, current_atom.z))
                 if 'geometry:' in line:
                     section_geometry = True
                     current_structure = Structure()
-                    logger.log(2, 'located geometry')
-
+                    logger.log(5, '[L{}] Located geometry.'.format(i + 1))
                 if 'Number of imaginary frequencies' in line or \
                         'Writing vibrational' in line or \
                         'Thermochemical properties at' in line:
@@ -439,7 +533,8 @@ class JaguarOut(File):
                             if not len(temp_eigenvectors) > i:
                                 temp_eigenvectors.append([])
                             temp_eigenvectors[i].append(float(x))
-                if section_eigenvalues is True and section_eigenvectors is False:
+                if section_eigenvalues is True and \
+                        section_eigenvectors is False:
                     if 'frequencies' in line:
                         cols = line.split()
                         frequencies.extend(map(float, cols[1:]))
@@ -450,41 +545,47 @@ class JaguarOut(File):
                         temp_eigenvectors = [[]]
                 if 'IR intensities in' in line:
                     section_eigenvalues = True
-
-        eigenvalues = [- fc / cons.force_conversion if f < 0 else fc / cons.force_conversion
-                       for fc, f in zip(force_constants, frequencies)]
-        self.structures = structures
-        self.eigenvalues = np.array(eigenvalues)
-        self.eigenvectors = np.array(eigenvectors)
-        self.frequencies = np.array(frequencies)
-        # self.force_constants = np.array(force_constants)
-        logger.log(2, '{} structures'.format(len(self.structures)))
-        logger.log(2, '{} frequencies'.format(len(self.frequencies)))
-        logger.log(2, '{} eigenvalues'.format(len(self.eigenvalues)))
-        logger.log(2, '{} eigenvectors'.format(self.eigenvectors.shape))
+        eigenvalues = [- fc / co.FORCE_CONVERSION if f < 0 else
+                         fc / co.FORCE_CONVERSION
+                         for fc, f in zip(force_constants, frequencies)]
+        self._structures = structures
+        self._eigenvalues = np.array(eigenvalues)
+        self._eigenvectors = np.array(eigenvectors)
+        self._frequencies = np.array(frequencies)
+        # self._force_constants = np.array(force_constants)
+        logger.log(5, '  -- Read {} structures'.format(
+                len(self.structures)))
+        logger.log(5, '  -- Read {} frequencies.'.format(
+                len(self.frequencies)))
+        logger.log(5, '  -- Read {} eigenvalues.'.format(
+                len(self.eigenvalues)))
+        logger.log(5, '  -- Read {} eigenvectors.'.format(
+                self.eigenvectors.shape))
         num_atoms = len(structures[-1].atoms)
-        # logger.log(3, '({}, {}) eigenvectors expected for linear molecule'.format(
+        # logger.log(5,
+        #            '  -- ({}, {}) eigenvectors expected for linear '
+        #            'molecule.'.format(
         #         num_atoms * 3 - 5, num_atoms * 3))
-        # logger.log(3, '({}, {}) eigenvectors expected for nonlinear molecule'.format(
+        # logger.log(5, '  -- ({}, {}) eigenvectors expected for nonlinear '
+        #            'molecule.'.format(
         #         num_atoms * 3 - 6, num_atoms * 3))
         
 class Mae(SchrodingerFile):
     '''
-    Used to retrieve data from Schrodinger mae files.
+    Used to retrieve data from Schrodinger .mae files.
     '''
     def __init__(self, path):
         super(Mae, self).__init__(path)
         self._structures = None
-        # self._sch_structs = None
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(2, 'reading {}'.format(self.path))
+            logger.log(10, 'Reading: {}'.format(self.path))
             sch_structs = list(schrod_structure.StructureReader(self.path))
-            structures = [self.convert_schrodinger_structure(sch_struct) for sch_struct in sch_structs]
-            logger.log(2, 'imported {} structures'.format(len(structures)))
-            # self._sch_structs = sch_structs
-            self._structures = structures
+            self._structures = [self.convert_schrodinger_structure(sch_struct)
+                                for sch_struct in sch_structs]
+            logger.log(5, '  -- Imported {} structure(s).'.format(
+                    len(self._structures)))
         return self._structures
     def get_aliph_hyds(self):
         '''
@@ -512,13 +613,13 @@ class MacroModelLog(File):
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(2, 'reading {}'.format(self.path))
+            logger.log(10, 'Reading: {}'.format(self.path))
             with open(self.path, 'r') as f:
                 lines = f.read()
             num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
-            logger.log(2, '{} atoms'.format(num_atoms))
+            logger.log(5, '  -- Read {} atoms.'.format(num_atoms))
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(2, '{} hessian matrix'.format(hessian.shape))
+            logger.log(5, '  -- Read {} Hessian matrix.'.format(hessian.shape))
             words = lines.split()
             section_hessian = False
             start_row = False
@@ -568,7 +669,7 @@ class MacroModelLog(File):
 
 class MacroModel(File):
     '''
-    Extracts data from MacroModel mmo files.
+    Extracts data from MacroModel .mmo files.
     '''
     def __init__(self, path):
         super(MacroModel, self).__init__(path)
@@ -576,8 +677,8 @@ class MacroModel(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(2, 'reading {}'.format(self.path))
-            structures = []
+            logger.log(10, 'Reading: {}'.format(self.path))
+            self._structures = []
             with open(self.path, 'r') as f:
                 count_current = 0
                 count_input = 0
@@ -590,11 +691,20 @@ class MacroModel(File):
                     if 'Input Structure Name' in line:
                         count_structure += 1
                     count_previous = count_current
-                    count_current = max(count_input, count_structure) # sometimes both are used
-                                                                      # sometimes only one is used
+                    # Sometimes only one of the above ("Input filename" and
+                    # "Input Structure Name") is used, sometimes both are used.
+                    # count_current will make sure you catch both.
+                    count_current = max(count_input, count_structure)
+                    # If these don't match, then we reached the end of a
+                    # structure.
                     if count_current != count_previous:
                         current_structure = Structure()
-                        structures.append(current_structure)
+                        self._structures.append(current_structure)
+                    # For each structure we come across, look for sections that
+                    # we are interested in: those pertaining to bonds, angles,
+                    # and torsions. Of course more could be added. We set the
+                    # section to None to mark the end of a section, and we leave
+                    # it None for parts of the file we don't care about.
                     if 'BOND LENGTHS AND STRETCH ENERGIES' in line:
                         section = 'bond'
                     if 'ANGLES, BEND AND STRETCH BEND ENERGIES' in line:
@@ -606,39 +716,83 @@ class MacroModel(File):
                     if 'DIHEDRAL ANGLES AND TORSIONAL CROSS-TERMS' in line:
                         section = None
                     if section == 'bond':
-                        match = cons.re_bond.match(line)
-                        if match:
-                            atom_nums = map(int, [match.group(1), match.group(2)])
-                            comment = match.group(4) # this has a lot of extra white space
-                            value = float(match.group(3))
-                            ff_row = int(match.group(5))
-                            current_structure.bonds.append(
-                                Bond(atom_nums=atom_nums, comment=comment, value=value,
-                                     ff_row=ff_row))
+                        bond = self.read_line_for_bond(line)
+                        if bond is not None:
+                            current_structure.bonds.append(bond)
                     if section == 'angle':
-                        match = cons.re_angle.match(line)
-                        if match:
-                            atom_nums = map(int, [match.group(1), match.group(2), match.group(3)])
-                            comment = match.group(5)
-                            value = float(match.group(4))
-                            ff_row = int(match.group(6))
-                            current_structure.angles.append(
-                                Angle(atom_nums=atom_nums, comment=comment, value=value,
-                                      ff_row=ff_row))
+                        angle = self.read_line_for_angle(line)
+                        if angle is not None:
+                            current_structure.angles.append(angle)
                     if section == 'torsion':
-                        match = cons.re_torsion.match(line)
-                        if match:
-                            atom_nums = map(int, [match.group(1), match.group(2), match.group(3),
-                                                  match.group(4)])
-                            comment = match.group(6)
-                            value = float(match.group(5))
-                            ff_row = int(match.group(7))
-                            current_structure.torsions.append(
-                                Torsion(atom_nums=atom_nums, comment=comment, value=value,
-                                      ff_row=ff_row))
-            logger.log(3, 'imported {} structures'.format(len(structures)))
-            self._structures = structures
+                        torsion = self.read_line_for_torsion(line)
+                        if torsion is not None:
+                            current_structure.torsions.append(torsion)
+            logger.log(5, '  -- Imported {} structure(s).'.format(
+                    len(self._structures)))
         return self._structures
+    def read_line_for_bond(self, line):
+        match = co.RE_BOND.match(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(2)])
+            value = float(match.group(3))
+            comment = match.group(4).strip()
+            ff_row = int(match.group(5))
+            return Bond(atom_nums=atom_nums, comment=comment, value=value,
+                        ff_row=ff_row)
+        else:
+            return None
+    def read_line_for_angle(self, line):
+        match = co.RE_ANGLE.match(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(2),
+                                  match.group(3)])
+            value = float(match.group(4))
+            comment = match.group(5).strip()
+            ff_row = int(match.group(6))
+            return Angle(atom_nums=atom_nums, comment=comment, value=value,
+                         ff_row=ff_row)
+        else:
+            return None
+    def read_line_for_torsion(self, line):
+        match = co.RE_TORSION.match(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(2),
+                                  match.group(3), match.group(4)])
+            value = float(match.group(5))
+            comment = match.group(6).strip()
+            ff_row = int(match.group(7))
+            return Torsion(atom_nums=atom_nums, comment=comment, value=value,
+                           ff_row=ff_row)
+        else:
+            return None
+
+def select_structures(structures, indices, label):
+        '''
+        Returns a list of structures where the index matches the label. This
+        is used with the structures in the class MacroModel (.mmo's) and Mae
+        (.mae's of course).
+
+        Basically, you're not sure what structures appear in these files if the
+        files were generated using calculate.py and the .com files it writes.
+        Fear not! calculate.py keeps track of that for you (using indices) and
+        knows which structures to use.
+
+        indices - A list of strings (labels).
+        label   - A string. Possible strings include:
+                      'opt', 'pre', 'hess' (.mae only), and
+                      'stupid_extra_structure'
+        '''
+        selected = []
+        idx_iter = iter(indices)
+        for str_num, struct in enumerate(structures):
+            try:
+                idx_curr = idx_iter.next()
+            except StopIteration:
+                idx_iter = iter(indices)
+                idx_curr = idx_iter.next()
+            if idx_curr == label:
+                selected.append((str_num, struct))
+        return selected
 
 class Structure(object):
     '''
@@ -659,27 +813,57 @@ class Structure(object):
         return [atom.coords for atom in self.atoms]
     def format_coords(self, format='latex'):
         '''
-        Returns a list of strings/lines to easily generate coordinate
-        lists in various formats.
+        Returns a list of strings/lines to easily generate coordinates
+        in various formats.
         '''
+        # Please expand the supported elements.
         elements = {1: 'H',
                     6: 'C',
                     7: 'N',
                     8: 'O',
                     79: 'Au'}
+        # Formatted for LaTeX.
         if format == 'latex':
-            output = ['\\begin{tabular}{l S[table-format=3.6] S[table-format=3.6] S[table-format=3.6]}']
+            output = ['\\begin{tabular}{l S[table-format=3.6] '
+                      'S[table-format=3.6] S[table-format=3.6]}']
             for i, atom in enumerate(self.atoms):
-                output.append('{0}{1} & {2:3.6f} & {3:3.6f} & {4:3.6f}\\\\'.format(
+                output.append('{0}{1} & {2:3.6f} & {3:3.6f} & '
+                              '{4:3.6f}\\\\'.format(
                         elements[atom.atomic_num], i+1, atom.x, atom.y, atom.z))
             output.append('\\end{tabular}')
             return output
+        # Formatted for Gaussian .com's.
         elif format == 'gauss':
             output = []
             for i, atom in enumerate(self.atoms):
                 output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
                         elements[atom.atomic_num], atom.x, atom.y, atom.z))
             return output
+    def select_stuff(self, typ, com_match=None, **kwargs):
+        '''
+        Selects bonds, angles, or torsions from the structure and returns them
+        in the format used as data in the sqlite3 database.
+
+        typ       - 'Bond', 'Angle', or 'Torsion'.
+        com_match - String or None. If None, just returns all of the selected
+                    stuff (bonds, angles, or torsions). If a string, selects
+                    only those that have this string in their comment.
+
+                    In .mmo files, the comment corresponds to the substructures
+                    name. This way, we only fit bonds, angles, and torsions that
+                    directly depend on our parameters.
+        '''
+        data = []
+        for thing in getattr(self, typ):
+            if (com_match and thing.comment in com_match) or \
+                    com_match is None:
+                datum = thing.as_data(**kwargs)
+                # Done now by thing.as_data.
+                # datum.update(kwargs)
+                # datum = {k: datum.get(k, co.DEFAULTS[k]) for k in co.DEFAULTS}
+                data.append(datum)
+        assert data, "No data actually retrieved!"
+        return data
 
 class Atom(object):
     '''
@@ -706,7 +890,8 @@ class Atom(object):
     def coords(self):
         return [self.x, self.y, self.z]
     def __repr__(self):
-        return '{}[{},{}]'.format(self.element, self.atom_type, self.atom_type_name)
+        return '{}[{},{}]'.format(
+            self.element, self.atom_type, self.atom_type_name)
 
 class Bond(object):
     '''
@@ -722,7 +907,17 @@ class Bond(object):
         self.ff_row = ff_row
     def __repr__(self):
         return '{}[{}]({})'.format(
-            self.__class__.__name__, '-'.join(map(str, self.atom_nums)), self.value)
+            self.__class__.__name__, '-'.join(
+                map(str, self.atom_nums)), self.value)
+    def as_data(self, **kwargs):
+        datum = {'val': self.value, 
+                 'typ': self.__class__.__name__
+                 }
+        for i, atom_num in enumerate(self.atom_nums):
+            datum.update({'atm_{}'.format(i + 1): atom_num})
+        datum.update(kwargs)
+        datum = co.set_data_defaults(datum)
+        return datum
 
 class Angle(Bond):
     '''
@@ -731,7 +926,7 @@ class Angle(Bond):
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Angle, self).__init__(atom_nums, comment, order, value, ff_row)
-        
+
 class Torsion(Bond):
     '''
     Data class for a single torsion.
@@ -739,4 +934,3 @@ class Torsion(Bond):
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
-        

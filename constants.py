@@ -1,10 +1,50 @@
 '''
-Constants.
+Constants and fairly basic variables used throughout Q2MM.
 '''
 import re
 
-# default step sizes for parameters
-steps = {'ae':      2.0,
+# Settings loaded using logging.config.
+LOG_SETTINGS = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'bare': {'format': '%(message)s'},
+        'basic': {'format': '%(name)s - %(message)s'},
+        'simple': {'format': '%(asctime)s:%(name)s:%(levelname)s - %(message)s'}
+        },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler', 'formatter': 'bare',
+            'level': 'NOTSET'},
+            # 'class': 'logging.StreamHandler', 'formatter': 'basic',
+            # 'level': 'NOTSET'},
+        'root_file_handler': {
+            'class': 'logging.FileHandler', 'filename': 'root.log',
+            'formatter': 'bare', 'level': 'NOTSET'}
+            # 'class': 'logging.FileHandler', 'filename': 'root.log',
+            # 'formatter': 'basic', 'level': 'NOTSET'}
+        },
+    'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
+                'loop': {'level': 'NOTSET', 'propagate': True},
+                },
+    'root': {
+        'level': 'NOTSET',
+        'propagate': True,
+        'handlers': ['console', 'root_file_handler']}
+    }
+# These are the initial step sizes used in numerical differentiation for all
+# the different parameter types. Floats/integers or strings are accepted.
+#
+# When a float/integer step size is provided, the new, stepped parameter value
+# is determined by simply adding or subtracting the step size for incrementing
+# or decrementing, respectively.
+#   x_new = x +/- step
+#
+# Instead, if a string is provided (by placing the number in single or double
+# quotes), the new parameter value will be decremented or incremented by a
+# percentage of its current value.
+#   x_new = x +/- (x * step)
+STEPS = {'ae':      2.0,
          # 'af':      '0.1',
          'af':      0.2,
          'be':      0.1,
@@ -15,41 +55,74 @@ steps = {'ae':      2.0,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,
-         'q':       0.5}
-
-# converts force constants from Jaguar frequency output (mdyn A**-1) to au
-force_conversion = 15.56914
-# converts eigenvalues of mass-weighted Hessian to cm**-1
-eigenvalue_conversion = 53.0883777868
-# converts Jaguar Hessian elements from au (Hartree bohr**-2) to
-# kJ mol**-1 A**-2 (used by MacroModel)
-hessian_conversion = 9375.829222
-# convert Hartree to kJ/mol
-hartree_to_kjmol = 2625.5
-
-# matches any float
-re_float = '[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
-# picks up smarts notation used by MM3* substructures
-re_smiles = '[\w\-\=\(\)\.\+\[\]\*]+'
-# characters used to split atoms in smarts notation
-re_split_atoms = '[\s\-\(\)\=\.\[\]\*]+'
-# picks up name of MM3* substructuers
-re_sub = '[\w\s]+'
-
-# picks up angle lines in a mmo file
-re_angle = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
-                      '({0})\s+{0}\s+{0}\s+\w+\s+\d+\s+({1})\s+(\d+)'.format(re_float, re_sub))
-# picks up bond lines in a mmo file
-re_bond = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
-                     '\s+\d+\s+({1})\s+(\d+)'.format(re_float, re_sub))
-# picks up torsion lines in a mmo file
-re_torsion = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(re_float, re_sub))
-
-# string format used to write macromodel com files
-format_macromodel = ' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n'
-
-# masses used for mass-weighting
-masses = {
+         'q':       0.5
+         }
+# Weights used in parameterization.
+# Please figure out all units.
+WEIGHTS = {'Angle':         20.0,
+           'charge':         1.0,
+           'Bond':        1000.0,
+           'eig_i':          1.0, # Weight of 1st eigenvalue.
+           'eig_d':          1.0, # Weight of other eigenvalues.
+           'eig_o':          0.5, # Weight of off diagonals in eigenmatrix.
+           'energy_1':     100.0,
+           'energy_2':       3.0,
+           'energy_opt':   125.0,
+           'Torsion':        5.0
+           }
+# String used to make a table in sqlite3 database.
+STR_INIT_SQLITE3 = """DROP TABLE IF EXISTS data;
+CREATE TABLE data (id INTEGER PRIMARY KEY AUTOINCREMENT, val REAL, wht REAL,
+com TEXT, typ TEXT, src_1 TEXT, src_2 TEXT, idx_1 INTEGER, idx_2 INTEGER,
+atm_1 INTEGER, atm_2 INTEGER, atm_3 INTEGER, atm_4 INTEGER)"""
+# String for adding values to database.
+STR_SQLITE3 = ('INSERT INTO data VALUES (:id, :val, :wht, :com, :typ, :src_1, '
+               ':src_2, :idx_1, :idx_2, :atm_1, :atm_2, :atm_3, :atm_4)')
+# These are the columns used in the sqlite3 database.
+DATA_DEFAULTS = {'id': None,
+                 'val': None, 'wht': None,
+                 'com': None, 'typ': None,
+                 'src_1': None, 'src_2': None,
+                 'idx_1': None, 'idx_2': None,
+                 'atm_1': None, 'atm_2': None, 'atm_3': None, 'atm_4': None}
+def set_data_defaults(datum):
+    '''
+    Add keys and default values (None) to a data dictionary if they're missing.
+    '''
+    return {k: datum.get(k, DATA_DEFAULTS[k]) for k in DATA_DEFAULTS}
+# Force constants from Jaguar frequency (mdyn A**-1) to au.
+FORCE_CONVERSION = 15.56914
+# Eigenvalues of mass-weighted Hessian to cm**-1.
+EIGENVALUE_CONVERSION = 53.0883777868
+# Hessian elements in au (Hartree Bohr**-2) from Jaguar to
+# kJ mol**-1 A**-2 (used by MacroModel).
+HESSIAN_CONVERSION = 9375.829222
+# Hartree to kJ mol**-1.
+HARTREE_TO_KJMOL = 2625.5
+# Match any float in a string.
+RE_FLOAT = '[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+# Match SMARTS notation used by MM3* substructures.
+# More from import_ff could be added here.
+RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
+# Possible symbols used to split atoms in SMARTS notation.
+RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
+# Name of MM3* substructures.
+RE_SUB = '[\w\s-]+'
+# Match bonds in lines of a .mmo file.
+RE_BOND = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
+                     '\s+\d+\s+({1})\s+(\d+)'.format(RE_FLOAT, RE_SUB))
+# Match angles in lines of a .mmo file.
+RE_ANGLE = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
+                      '({0})\s+{0}\s+{0}\s+\w+\s+\d+\s+({1})\s+(\d+)'.format(
+        RE_FLOAT, RE_SUB))
+# Match torsions in lines of a .mmo file.
+RE_TORSION = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
+                        '({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(
+        RE_FLOAT, RE_SUB))
+# String format used to write MacroModel .com files.
+FORMAT_MACROMODEL = ' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n'
+# Masses used for mass-weighting
+MASSES = {
     'H':         1.007825032,
     'He':        4.002603250,
     'Li':        7.016004049,
@@ -155,8 +228,3 @@ masses = {
     'Lr':      262.109692000
     }
 
-# in progress--working on grouped parameters
-groups = {'bf': {'c': ' -d test -meig X001.mae,X001.01.out',
-                 'r': ' -d test -jeige X001.02.in,X001.01.out'},
-          'eb': {'c': ' -d test -mb X001.mae',
-                 'r': ' -d test -jb X001.mae'}}

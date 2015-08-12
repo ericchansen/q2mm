@@ -1,1182 +1,819 @@
-#!/usr/bin/python
-'''
-Generates data used in the penalty function.
-'''
-# there seems to be a small difference in the data produced by jhi and the old
-# Hessian inversion scripts
-
-# seems that the value used for inversion randomly switches between 1 and
-# 9375.828222. set so that it reproduces elaine's scripts for each function
-
-# concern over RRHO argument 4. it's temperature. used to be 0 K. should it be
-# 300 K?
-
-# can speed up by making data a np.ndarray using np.array(dtype=object). then
-# data.min/data.amin would be faster, but somehow i'd have to set up datum such
-# that it worked.
-
-# a lot of repetition in collect_data could be eliminated to shorten the code.
-from collections import defaultdict
-from itertools import chain, izip
 import argparse
+import itertools
 import logging
 import logging.config
 import numpy as np
 import os
-import subprocess
+import re
+import sqlite3
+import subprocess as sp
 import sys
+import textwrap
 import time
-import traceback
-import yaml
 
-from datatypes import Datum, datum_sort_key, Hessian, MM3
-import constants as cons
+import constants as co
+import datatypes
 import filetypes
+
+# Shorter! Hooray!
+COM_FORM = co.FORMAT_MACROMODEL
+# LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
+# This allows me to treat it more like an object that I can pass around.
+DATABASE_LOC = ':memory:'
+# Commands where we need to load the force field.
+COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
+# Commands related to Gaussian.
+COM_GAUSSIAN = []
+# Commands related to Jaguar (Schrodinger).
+COM_JAGUAR = ['je', 'je2', 'jeo', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh',
+              'jhi', 'jq', 'jqh']
+# Commands related to MacroModel (Schrodinger).
+COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me',
+                  'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh', 'mt']
+# All other commands.
+COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
+# A list of all the possible commands.
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+# When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
+# allocations appear, but these are the 2 we care about.
+LABEL_SUITE = 'SUITE_26NOV2012'
+LABEL_MACRO = 'MMOD_MACROMODEL'
+# Some regex to pick out the number of available tokens.
+LIC_SUITE = re.compile('(?<!GLIDE_){}\s+(\d+)\sof\s\d+\stokens\savailable'.format(LABEL_SUITE))
+LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\savailable'.format(LABEL_MACRO))
+# Minimum number of tokens required to run MacrModel calculations.
+MIN_SUITE_TOKENS = 2
+MIN_MACRO_TOKENS = 2
 
 logger = logging.getLogger(__name__)
 
-# remember to add in inverse distance
-commands_gaussian = [] # gq, gqh
-commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
-commands_macromodel = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me', 'me2',
-                       'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh', 'mt']
-commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
-commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
+class Mae(object):
+    def __init__(self, path, commands):
+        self.path = os.path.abspath(path)
+        self.commands = commands
+        # More location information.
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
+        self.name = os.path.splitext(self.filename)[0]
+        self.name_com = self.name + '.q2mm.com'
+        self.name_log = self.name + '.q2mm.log'
+        self.name_mae = self.name + '.q2mm.mae'
+        self.name_mmo = self.name + '.q2mm.mmo'
+        self.name_out = self.name + '.q2mm.out'
+        # Used to determine what operations must be done by MacroModel, and 
+        # therefore how the .com is written.
+        self._energy = None
+        self._hessian = None
+        self._structure = None
+        self._optimized_energy = None
+        self._optimized_structure = None
+        # Check if there are multiple structures in the Maestro file, which
+        # also changes how the MacroModel .com is written.
+        self._multiple_structures = None
+        # Keeps track of structures contained in the output files.
+        self._index_output_mae = None
+        self._index_output_mmo = None
+    @property
+    def energy(self):
+        if self._energy is None:
+            if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
+                self._energy = True
+            else:
+                self._energy = False
+        return self._energy
+    @property
+    def hessian(self):
+        if self._hessian is None:
+            if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
+                if self.multiple_structures is True:
+                    raise Exception(
+                        "Can't obtain Hessian from a Maestro file containing "
+                        "multiple structures!\nFilename: {}\n"
+                        "commands: {}\n".format(
+                            self.path, ' '.join(self.commands)))
+                self._hessian = True
+            else:
+                self._hessian = False
+        return self._hessian
+    @hessian.setter
+    def hessian(self, value):
+        if value is True and self.multiple_structures is True:
+            raise Exception(
+                "Can't obtain Hessian from a Maestro file containing multiple "
+                "structures!\nFilename: {}\n"
+                'commands: {}\n'.format(self.path, ' '.join(self.commands)))
+        self._hessian = value
+    @property
+    def structure(self):
+        if self._structure is None:
+            if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
+                self._structure = True
+            else:
+                self._structure = False
+        return self._structure
+    @property
+    def optimized_energy(self):
+        if self._optimized_energy is None:
+            if any(x in ['ma', 'mb', 'meo', 'mt'] for x in self.commands):
+                self._optimized_energy = True
+            else:
+                self._optimized_energy = False
+        return self._optimized_energy
+    @property
+    def optimized_structure(self):
+        if self._optimized_structure is None:
+            if any(x in ['ma', 'mb', 'mt'] for x in self.commands):
+                self._optimized_structure = True
+            else:
+                self._optimized_structure = False
+        return self._optimized_structure
+    @property
+    def multiple_structures(self):
+        '''Checks whether the Maestro file contains multiple structures.'''
+        if self._multiple_structures is None:
+            with open(self.path, 'r') as f:
+                number_of_structures = 0
+                for line in f:
+                    if 'f_m_ct {' in line:
+                        number_of_structures += 1
+                    if number_of_structures > 1:
+                        self._multiple_structures = True
+                        break
+            if number_of_structures <= 1:
+                self._multiple_structures = False
+        return self._multiple_structures
+    @property
+    def index_output_mae(self):
+        return self._index_output_mae
+    @property
+    def index_output_mmo(self):
+        return self._index_output_mmo
+    def run_com(self, max_timeout=None, timeout=10):
+        '''
+        Runs MacroModel .com files. This has to be more complicated than a
+        simple subprocess command due to problems with Schrodinger tokens.
+        This script checks the available tokens, and if there's not enough,
+        waits to run MacroModel until there are.
+        '''
+        assert max_timeout is None or isinstance(max_timeout, int) or \
+            isinstance(max_timeout, float), \
+            "Argument \"max_timeout\" isn't a number: {}".format(max_timeout)
+        assert isinstance(timeout, int) or isinstance(timeout, float), \
+            "Argument \"timeout\" isn't a number: {}".format(timeout)
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        current_timeout = 0
+        while True:
+            token_string = sp.check_output(
+                '$SCHRODINGER/utilities/licutil -available', shell=True)
+            suite_tokens = re.search(LIC_SUITE, token_string)
+            macro_tokens = re.search(LIC_MACRO, token_string)
+            if not suite_tokens or not macro_tokens:
+                raise Exception(
+                    'The command "$SCHRODINGER/utilities/licutil -available" is ' +
+                    'not working with the current regex in calculate.py.')
+            suite_tokens = int(suite_tokens.group(1))
+            macro_tokens = int(macro_tokens.group(1))
+            if suite_tokens > MIN_SUITE_TOKENS and \
+                    macro_tokens > MIN_MACRO_TOKENS:
+                logger.log(5, 'Running: {}'.format(self.name_com))
+                sp.check_output(
+                    'bmin -WAIT {}'.format(
+                        os.path.splitext(self.name_com)[0]), shell=True)
+                break
+            else:
+                if max_timeout is not None and current_timeout > max_timeout:
+                    self.pretty_timeout(
+                        current_timeout, suite_tokens, macro_tokens, end=True)
+                    raise Exception(
+                        "Not enough tokens to run {}. Waited {} seconds before "
+                        "giving up.".format(self.name_com, current_timeout))
+                self.pretty_timeout(current_timeout, suite_tokens, macro_tokens)
+                current_timeout += timeout
+                time.sleep(timeout)
+        os.chdir(current_directory)
+    def pretty_timeout(
+        self, current_timeout, macro_tokens, suite_tokens, end=False):
+        if current_timeout == 0:
+            logger.warning('  -- Waiting on tokens to run {}.'.format(
+                    self.name_com))
+            logger.log(10,
+                       '--' + ' (s) '.center(8, '-') +
+                       '--' + ' {} '.format(LABEL_SUITE).center(17, '-') +
+                       '--' + ' {} '.format(LABEL_MACRO).center(17, '-') +
+                       '--')
+        logger.log(10, '  {:^8d}  {:^17d}  {:^17d}'.format(
+                current_timeout, macro_tokens, suite_tokens))
+        if end is True:
+            logger.log(10, '-' * 50)
+    def figure_out_debug_args(self):
+        'Selects which DEBG arguments should be used.'
+        args = []
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            return None
+        else:
+            args.append(57)
+        if any(x in ['jt', 'mt'] for x in self.commands):
+            args.append(56)
+        if self.hessian:
+            args.extend((210, 211))
+        args.sort()
+        args.insert(0, 'DEBG')
+        while len(args) < 9:
+            args.append(0)
+        return args
+    def write_com(self):
+        if any((self.energy, self.hessian, self.structure,
+                self.optimized_energy, self.optimized_structure)) and \
+           any(x in ['mcs', 'msc2', 'mcs3'] for x in self.commands):
+                raise Exception(
+                    'Conformational search methods must be used alone!\n' +
+                    'Filename: {}\n'.format(self.path) +
+                    'Commands: {}\n'.format(' '.join(self.commands)))
+        elif any((self.energy, self.hessian, self.structure,
+                  self.optimized_energy, self.optimized_structure)) or \
+             any(x in ['mcs', 'msc2', 'mcs3'] for x in self.commands):
+                  pass
+        else:
+            raise Exception(
+                'No operations for MacroModel!\n' +
+                'Filename: {}\n'.format(self.path) +
+                'Commands: {}\n'.format(' '.join(self.commands)) +
+                'MacroModel commands: {}'.format(' '.join(COM_MACROMODEL)))
+        self._index_output_mae = []
+        self._index_output_mmo = []
+        com = '{}\n{}\n'.format(self.filename, self.name_mae)
+        debug_args = self.figure_out_debug_args()
+        if debug_args:
+            com += COM_FORM.format(*debug_args)
+        else:
+            com += COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
+        # May want to turn off arg2 (continuum solvent).
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('FFLD', 2, 1, 0, 0, 0, 0, 0, 0)
+        else:
+            com += COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
+        # Also may want to turn off these cutoffs.
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('BDCO', 0, 0, 0, 0, 41.5692, 99999, 0, 0)
+        if self.multiple_structures:
+            com += COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
+        # Look into differences.
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
+        else:
+            com += COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+        if self.energy or self.structure:
+            com += COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mmo.append('pre')
+            com += COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('pre')
+        if self.hessian:
+            com += COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('stupid_extra_structure')
+            # What does arg1 as 3 even do?
+            com += COM_FORM.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('hess')
+        if self.optimized_energy or self.optimized_structure:
+            # Commented line was used in code from Per-Ola/Elaine.
+            # arg1: 1 = PRCG, 9 = TNCG
+            # TNCG has more risk of not converging, and may print NaN instead
+            # of coordinates and forces to output.
+            # com += COM_FORM.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
+            com += COM_FORM.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
+            self._index_output_mae.append('opt')
+        if self.optimized_structure:
+            com += COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+            # Pretty sure this addition to self._index_output_mae shouldn't be
+            # here.
+            self._index_output_mmo.append('opt')
+        if self.multiple_structures:
+            com += COM_FORM.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('CRMS', 0, 0, 0, 0, 0, 0.25, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
+        if 'mcs2' in self.commands:
+            com += COM_FORM.format('LCMS', 10000, 0, 0, 0, 0, 0, 0, 0)
+        if 'mcs3' in self.commands:
+            com += COM_FORM.format('LCMS', 4000, 0, 0, 0, 0, 0, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
+        # if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+        #     com += COM_FORM.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('DEMX', 0, 166, 0, 0, 50, 100, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
+        # I don't think MSYM does anything when all arguments are set to zero.
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
+        if 'mcs2' in self.commands:
+            com += COM_FORM.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
+        # I'm not sure if this does anything either.
+        if 'mcs3' in self.commands:
+            com += COM_FORM.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('AUTO', 0, 2, 1, 1, 0, -1, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
+        if 'mcs' in self.commands:
+            com += COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
+        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
+            com += COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
+        with open(os.path.join(self.directory, self.name_com), 'w') as f:
+            f.write(com)
+        logger.log(0, 'Wrote: {}'.format(os.path.join(self.directory, self.name_com)))
 
-# these commands require me to import the force field
-commands_need_ff = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
+def collect_data(commands, inps, ff_dir, sub_names=None):
+    if any([x in COM_LOAD_FF for x in commands]):
+        coms_need_ff = [x for x in commands if x in COM_LOAD_FF]
+        if sub_names is None:
+            logger.log(20, '  -- Must read FF for {}.'.format(
+                    ' '.join(coms_need_ff)))
+            ff = datatypes.import_ff(os.path.join(ff_dir, 'mm3.fld'))
+    outs = {}
+    conn = sqlite3.connect(DATABASE_LOC)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.executescript(co.STR_INIT_SQLITE3)
+    for com, groups_of_filenames in commands.iteritems():
+        if com in ['je', 'je2', 'jeo']:
+            # Set the type.
+            if com == 'je':
+                typ = 'energy_1'
+            elif com == 'je2':
+                typ = 'energy_2'
+            elif com == 'jeo':
+                typ = 'energy_opt'
+            # Move through files. Grouping matters here. Each group (idx_1) is
+            # used to separately calculate relative energies.
+            for idx_1, group_of_filenames in enumerate(groups_of_filenames):
+                for filename in group_of_filenames:
+                    # Currently this doesn't exist. inps[filename].filename is
+                    # None.
+                    # if inps[filename].filename not in outs:
+                    if filename not in outs:
+                        # Index the file so you don't read it more than once.
+                        outs[filename] = \
+                            filetypes.Mae(os.path.join(ff_dir, filename))
+                    #     outs[inps[filename].filename] = \
+                    #         filetypes.Mae(os.path.join(
+                    #             inps[filename].directory,
+                    #             inps[filename].filename))
+                    # mae = outs[inps[filename].filename]
+                    mae = outs[filename]
+                    for str_num, struct in enumerate(mae.structures):
+                        energy = {'val': (struct.props['r_j_Gas_Phase_Energy'] *
+                                          co.HARTREE_TO_KJMOL),
+                                  'com': com,
+                                  'typ': typ,
+                                  'src_1': filename,
+                                  # 'src_1': inps[filename].filename,
+                                  'idx_1': idx_1 + 1,
+                                  'idx_2': str_num + 1}
+                        energy = co.set_data_defaults(energy)
+                        c.execute(co.STR_SQLITE3, energy)
+        if com in ['me', 'me2', 'meo']:
+            # Set the type.
+            if com == 'me':
+                typ = 'energy_1'
+            elif com == 'me2':
+                typ = 'energy_2'
+            elif com == 'meo':
+                typ = 'energy_opt'
+            # Set the index.
+            if com in ['me', 'me2']:
+                index = 'pre'
+            elif com == 'meo':
+                index = 'opt'
+            # Move through files. Grouping matters here. Each group (idx_1) is
+            # used to separately calculate relative energies.
+            for idx_1, group_of_filenames in enumerate(groups_of_filenames):
+                for filename in group_of_filenames:
+                    if inps[filename].name_mae not in outs:
+                        # Index the output file so you don't read it more than
+                        # once.
+                        outs[inps[filename].name_mae] = \
+                                 filetypes.Mae(os.path.join(
+                                    inps[filename].directory,
+                                    inps[filename].name_mae))
+                    mae = outs[inps[filename].name_mae]
+                    selected = filetypes.select_structures(
+                        mae.structures, inps[filename]._index_output_mae, index)
+                    for str_num, struct in selected:
+                        energy = {'val': struct.props['r_mmod_Potential_Energy-MM3*'],
+                                  'com': com,
+                                  'typ': typ,
+                                  'src_1': inps[filename].name_mae,
+                                  'idx_1': idx_1 + 1,
+                                  'idx_2': str_num + 1}
+                        energy = co.set_data_defaults(energy)
+                        c.execute(co.STR_SQLITE3, energy)
+        if com in ['ja', 'jb', 'jt', 'ma', 'mb', 'mt']:
+            # Set the .mmo index.
+            if com in ['ja', 'jb', 'jt']:
+                index = 'pre'
+            elif com in ['ma', 'mb', 'mt']:
+                index = 'opt'
+            # Set the type.
+            if com in ['ja', 'ma']:
+                typ = 'angles'
+            elif com in ['jb', 'mb']:
+                typ = 'bonds'
+            elif com in ['jt', 'mt']:
+                typ = 'torsions'
+            # Move through files as you specified them on the command line.
+            for group_of_filenames in groups_of_filenames:
+                for filename in group_of_filenames:
+                    # If 1st time accessing file, go ahead and do it. However,
+                    # if you've already accessed it's data, don't read it again.
+                    # Look it up in the dictionary instead.
+                    if inps[filename].name_mmo not in outs:
+                        outs[inps[filename].name_mmo] = \
+                            filetypes.MacroModel(os.path.join(
+                                inps[filename].directory,
+                                inps[filename].name_mmo))
+                    mmo = outs[inps[filename].name_mmo]
+                    selected = filetypes.select_structures(
+                        mmo.structures, inps[filename]._index_output_mmo, index)
+                    data = []
+                    for str_num, struct in selected:
+                        temp = struct.select_stuff(
+                            typ, com_match=ff.sub_names, com=com,
+                            src_1=mmo.filename, idx_1=str_num + 1)
+                        data.extend(temp)
+                    c.executemany(co.STR_SQLITE3, data)
+        if com in ['jeige', 'meig']:
+            for group_of_filenames in groups_of_filenames:
+                for comma_filenames in group_of_filenames:
+                    if com == 'meig':
+                        name_mae, name_out = comma_filenames.split(',')
+                        name_log = inps[name_mae].name_log
+                        if name_log not in outs:
+                            outs[name_log] = filetypes.MacroModelLog(
+                                os.path.join(inps[name_mae].directory,
+                                             inps[name_mae].name_log))
+                        log = outs[name_log]
+                    elif com == 'jeige':
+                        name_in, name_out = comma_filenames.split(',')
+                        if name_in not in outs:
+                            outs[name_in] = filetypes.JaguarIn(
+                                os.path.join(ff_dir, name_in))
+                        jin = outs[name_in]
+                    if name_out not in outs:
+                        outs[name_out] = filetypes.JaguarOut(os.path.join(
+                                ff_dir, name_out))
+                    out = outs[name_out]
+                    if com == 'jeige':
+                        hess = datatypes.Hessian(jin, out)
+                        hess.mass_weight_hessian()
+                    elif com == 'meig':
+                        hess = datatypes.Hessian(log, out)
+                    hess.mass_weight_eigenvectors()
+                    hess.diagonalize()
+                    if com == 'jeige':
+                        diagonal_matrix = np.diag(np.diag(hess.hessian))
+                    else:
+                        diagonal_matrix = hess.hessian
+                    low_tri_idx = np.tril_indices_from(diagonal_matrix)
+                    lower_tri = diagonal_matrix[low_tri_idx]
+                    if com == 'jeige':
+                        src_1 = name_in
+                    elif com == 'meig':
+                        src_1 = name_mae
+                    data = [{'val': e,
+                             'com': com,
+                             'typ': 'eig',
+                             'src_1': src_1,
+                             'src_2': name_out,
+                             'idx_1': x + 1,
+                             'idx_2': y + 1
+                             }
+                            for e, x, y in itertools.izip(
+                            lower_tri, low_tri_idx[0], low_tri_idx[1])]
+                    data = [co.set_data_defaults(x) for x in data]
+                    c.executemany(co.STR_SQLITE3, data)
+    c.execute('SELECT Count(*) FROM data')
+    count_data = c.fetchone()
+    logging.log(5, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
+    conn.commit()
+    return conn
 
-def return_calculate_parser(add_help=True, parents=[]):
+def main(args):
+    parser = return_calculate_parser()
+    opts = parser.parse_args(args)
+    # commands looks like:
+    # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], ['b1.01.mae', 'b2.01.mae']],
+    #  'mb': [['a1.01.mae'], ['b1.01.mae']],
+    #  'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
+    # }
+    commands = {key: value for key, value in opts.__dict__.iteritems() if key
+                in COM_ALL and value}
+    pretty_commands(commands)
+    # commands_for_filenames looks like:
+    # {'a1.01.mae': ['me', 'mb'],
+    #  'a1.01.in': ['jeig'],
+    #  'a1.out': ['jeig'],
+    #  'a2.01.mae': ['me'],
+    #  'a3.01.mae': ['me'],
+    #  'b1.01.mae': ['me', 'mb'],
+    #  'b1.01.in': ['jeig'],
+    #  'b1.out': ['jeig'],
+    #  'b2.01.mae': ['me']
+    # }
+    commands_for_filenames = sort_commands_by_filename(commands)
+    pretty_commands_for_files(commands_for_filenames)
+    # inps looks like:
+    # {'a1.01.mae': <__main__.Mae object at 0x1110e10>,
+    #  'a1.01.in': None,
+    #  'a1.out': None,
+    #  'a2.01.mae': <__main__.Mae object at 0x1733b23>,
+    #  'a3.01.mae': <__main__.Mae object at 0x1853e12>,
+    #  'b1.01.mae': <__main__.Mae object at 0x2540e10>,
+    #  'b1.01.in': None,
+    #  'b1.out': None,
+    #  'b2.01.mae': <__main__.Mae object at 0x1353e11>,
+    # }
+    inps = {}
+    for filename, commands_for_filename in commands_for_filenames.iteritems():
+        if any(x in COM_MACROMODEL for x in commands_for_filename):
+            if os.path.splitext(filename)[1] == '.mae':
+                inps[filename] = Mae(
+                    os.path.join(opts.directory, filename), commands_for_filename)
+                inps[filename].write_com()
+        else:
+            inps[filename] = None
+    # Run external software if need be.
+    if opts.norun:
+        logger.log(20, "  -- Not running external software calculations. "
+                   "Assume already completed.")
+    else:
+        for filename, some_class in inps.iteritems():
+            if some_class is not None:
+                some_class.run_com()
+    conn = collect_data(commands, inps, opts.directory)
+    if opts.doprint:
+        pretty_conn(conn)
+    return conn
+
+def get_label(row):
+    '''Returns a string that serves as the label for a given data point.'''
+    atoms = [row['atm_1'], row['atm_2'], row['atm_3'], row['atm_4']]
+    atoms = filter(lambda x: x is not None, atoms)
+    if atoms:
+        atoms = '-'.join(map(str, atoms))
+    index = [row['idx_1'], row['idx_2']]
+    index = filter(lambda x: x is not None, index)
+    if index:
+        index = '-'.join(map(str, index))
+    if atoms:
+        label = '{}_{}_{}_{}'.format(
+            row['typ'], row['src_1'].split('.')[0], index, atoms)
+    else:
+        label = '{}_{}_{}'.format(
+            row['typ'], row['src_1'].split('.')[0], index)
+    return label
+
+def pretty_conn(conn):
+    ''''Prints the data in a table.'''
+    print('--' + ' Label '.center(22, '-') +
+          '--' + ' Value '.center(22, '-') + '--')
+    c = conn.cursor()
+    c.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, idx_2, '
+              'atm_1, atm_2, atm_3, atm_4')
+    for row in c.fetchall():
+        print('  ' + '{:22s}'.format(get_label(row)) +
+              '  ' + '{:22.4f}'.format(row['val']))
+    print('-' * 50)
+
+def pretty_commands_for_files(commands_for_files, level=0):
+    '''Pretty verbosity for the .mae commands dictionary.'''
+    if logger.getEffectiveLevel() <= level:
+        foobar = textwrap.TextWrapper(width=48, subsequent_indent=' '*26)
+        logger.log(
+            level,
+            '--' + ' Filename '.center(22, '-') +
+            '--' + ' Commands '.center(22, '-') +
+            '--')
+        for filename, commands in commands_for_files.iteritems():
+            foobar.initial_indent = '  {:22s}  '.format(filename)
+            logger.log(level, foobar.fill(' '.join(commands)))
+        logger.log(level, '-'*50)
+
+def pretty_commands(commands, level=0):
+    '''Pretty verbosity for the commands dictionary.'''
+    if logger.getEffectiveLevel() <= level:
+        foobar = textwrap.TextWrapper(width=48, subsequent_indent=' '*24)
+        logger.log(
+            level,
+            '--' + ' Command '.center(9, '-') +
+            '--' + ' Group # '.center(9, '-') +
+            '--' + ' Filenames '.center(24, '-') + 
+            '--')
+        for command, groups_of_filenames in commands.iteritems():
+            for i, filenames in enumerate(groups_of_filenames):
+                if i == 0:
+                    foobar.initial_indent = \
+                        '  {:9s}  {:^9d}  '.format(command, i+1)
+                else:
+                    foobar.initial_indent = \
+                        '  ' + ' '*9 + '  ' + '{:^9d}  '.format(i+1)
+                logger.log(level, foobar.fill(' '.join(filenames)))
+        logger.log(level, '-'*50)
+
+def sort_commands_by_filename(commands):
     '''
-    Return an argument parser for calculate.
+    Takes a dictionary of commands like...
+
+     {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], ['b1.01.mae', 'b2.01.mae']],
+      'mb': [['a1.01.mae'], ['b1.01.mae']],
+      'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
+     }
+    
+    ... and turn it into a dictionary that looks like...
+
+    {'a1.01.mae': ['me', 'mb'],
+     'a1.01.in': ['jeig'],
+     'a1.out': ['jeig'],
+     'a2.01.mae': ['me'],
+     'a3.01.mae': ['me'],
+     'b1.01.mae': ['me', 'mb'],
+     'b1.01.in': ['jeig'],
+     'b1.out': ['jeig'],
+     'b2.01.mae': ['me']
+    }
     '''
+    sorted_commands = {}
+    for command, groups_of_filenames in commands.iteritems():
+        for comma_separated in itertools.chain.from_iterable(groups_of_filenames):
+            for filename in comma_separated.split(','):
+                if filename in sorted_commands:
+                    sorted_commands[filename].append(command)
+                else:
+                    sorted_commands[filename] = [command]
+    return sorted_commands
+
+def return_calculate_parser(add_help=True, parents=None):
+    '''
+    Returns an argument parser.
+    
+    Uses command line arguments to select types of data to generate.
+    The data is used to evaluate the objective/penalty function.
+    '''
+    # Necessary? I know there can sometimes be problems with lists
+    # as defaults.
+    if parents is None:
+        parents = []
+    # Whether or not to add help. You may not want to add help if
+    # these arguments are being used in another, higher level parser.
     if add_help:
         parser = argparse.ArgumentParser(
             description=__doc__, parents=parents)
     else:
         parser = argparse.ArgumentParser(
             add_help=False, parents=parents)
-    calc_args = parser.add_argument_group('calculate options')
-    calc_args.add_argument(
-        '--dir', '-d', type=str, metavar='directory', default=os.getcwd(),
-        help=('Searches for files (data files like .mae, .log, etc. and force '
-              'field files) in this directory. 3rd party calculations are '
-              'executed from this directory.'))
-    calc_args.add_argument(
+    # General options. Perhaps directory shouldn't be used this way.
+    args_calc = parser.add_argument_group("calculate options")
+    args_calc.add_argument(
+        '--directory', '-d', type=str, metavar='path', default=os.getcwd(),
+        help=('Directory to search for files (.mae, .log, mm3.fld, etc.).'
+              '3rd party calculations are executed from this directory.'))
+    args_calc.add_argument(
         '--norun', '-n', action='store_true',
         help="Don't run 3rd party software.")
-    calc_args.add_argument(
-        '--printdata', '-pd', action='store_true', help='Print data.')
-    data_args = parser.add_argument_group('calculate data types')
-    data_args.add_argument(
+    args_calc.add_argument(
+        '--doprint', '-p', action='store_true',
+        help="Print data.")
+    # Each option corresponds to a particular type of data.
+    args_data = parser.add_argument_group("calculate data types")
+    args_data.add_argument(
         '-ma', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel angles (post force field optimization).')
-    data_args.add_argument(
+        help='MacroModel angles (post-FF optimization).')
+    args_data.add_argument(
         '-mb', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel bond lengths (post force field optimization).')
-    data_args.add_argument(
+        help='MacroModel bond lengths (post-FF optimization).')
+    args_data.add_argument(
         '-mcs', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help=('Run a MacroModel conformational search. Not designed to work in '
-              'conjunction with any other commands.'))
-    data_args.add_argument(
+        help=('Run a MacroModel conformational search. For ease of use only. '
+              "Doesn't work as a data type for FF optimizations."))
+    args_data.add_argument(
         '-mcs2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help=('Run a MacroModel conformational search. Not designed to work in '
-              'conjunction with any other commands.'))
-    data_args.add_argument(
+        help=('Run a MacroModel conformational search. For ease of use only. '
+              "Doesn't work as a data type for FF optimizations."
+              'Uses AUOP cutoff for number of steps.'))
+    args_data.add_argument(
         '-mcs3', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help=('Run a MacroModel conformational search. Not designed to work in '
-              'conjunction with any other commands. Only difference between '
-              "-mcs2 is that this doesn't use the AUOP cutoff for number of "
-              "steps, and I reduced the maximum steps from 10,000 to 4000."))
-    data_args.add_argument(
+        help=('Run a MacroModel conformational search. For ease of use only. '
+              "Doesn't work as a data type for FF optimizations."
+              'Maximum of 4000 steps and no AUOP cutoff.'))
+    args_data.add_argument(
         '-me', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel energies (pre force field optimization).')
-    data_args.add_argument(
+        help='MacroModel energies (pre-FF optimization).')
+    args_data.add_argument(
         '-me2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help=('MacroModel energies. Same as -me, but having two options '
-              'allows for the weights to be set differently.'))
-    data_args.add_argument(
+        help=('Same as -me, but uses a separate weight.'))
+    args_data.add_argument(
         '-meo', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel energies (post force field optimization).')
-    data_args.add_argument(
-        '-meig', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out',
-        help='MacroModel eigenmode fitting. Includes diagonal and off diagonal elements.')
-    data_args.add_argument(
-        '-meigz', type=str, nargs='+', action='append', default=[], metavar='file.mae,file.out',
-        help="MacroModel eigenmode fitting. Doesn't include off diagonal elements.")
-    data_args.add_argument(
-        '-mh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel Hessian.')
-    data_args.add_argument(
-        '-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel charges.')
-    data_args.add_argument(
-        '-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel charges, but excludes aliphatic hydrogens.')
-    data_args.add_argument(
+        help='MacroModel energies (post-FF optimization).')
+    args_data.add_argument(
+        '-meig', type=str, nargs='+', action='append',
+        default=[], metavar='file.mae,file.out',
+        help='MacroModel eigenmatrix (all elements).')
+    # args_data.add_argument(
+    #     '-meigz', type=str, nargs='+', action='append',
+    #     default=[], metavar='file.mae,file.out',
+    #     help="MacroModel eigenmatrix (diagonal elements).")
+    # args_data.add_argument(
+    #     '-mh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+    #     help='MacroModel Hessian.')
+    # args_data.add_argument(
+    #     '-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+    #     help='MacroModel charges.')
+    # args_data.add_argument(
+    #     '-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+    #     help='MacroModel charges (excludes aliphatic hydrogens).')
+    args_data.add_argument(
         '-mt', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='MacroModel torsions (post force field optimization).')
-    data_args.add_argument(
-        '-pm', type=str, nargs='+', action='append', default=[], metavar='parteth',
-        help='Uses a tethering file for parameters. Calculated data.')
-    data_args.add_argument(
-        '-pr', type=str, nargs='+', action='append', default=[], metavar='parteth',
-        help='Uses a tethering file for parameters. Reference data.')
-    data_args.add_argument(
+        help='MacroModel torsions (post-FF optimization).')
+    # args_data.add_argument(
+    #     '-pm', type=str, nargs='+', action='append', default=[], metavar='parteth',
+    #     help='Tethering of parameters for FF data.')
+    # args_data.add_argument(
+    #     '-pr', type=str, nargs='+', action='append', default=[], metavar='parteth',
+    #     help='Tethering of parameters for reference data.')
+    args_data.add_argument(
         '-ja', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar angles.')
-    data_args.add_argument(
+    args_data.add_argument(
         '-jb', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar bond lengths.')
-    data_args.add_argument(
+    args_data.add_argument(
         '-je', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar energies.')
-    data_args.add_argument(
+    args_data.add_argument(
         '-je2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='Jaguar energies. Can set weight separately from -je.')
-    data_args.add_argument(
-        '-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
-        help='Jaguar eigenmode fitting.')
-    data_args.add_argument(
-        '-jeigi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
-        help='Jaguar eigenmode fitting with inversion of the 1st eigenvalue.')
-    data_args.add_argument(
+        help='Same as -je, but uses a separate weight.')
+    args_data.add_argument(
+        '-jeo', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar energies. Same as -je, except the files selected by this '
+        'command will have their energies compared to those selected by -meo.')
+    # args_data.add_argument(
+    #     '-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+    #     help='Jaguar eigenmatrix (all elements).')
+    # args_data.add_argument(
+    #     '-jeigi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+    #     help='Jaguar eigenmatrix (all elements). Invert 1st eigenvalue.')
+    args_data.add_argument(
         '-jeige', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
-        help=('Jaguar eigenmode fitting. Zeros all off diagonal elements. '
-              "Equivalent to Elaine's method."))
-    data_args.add_argument(
-        '-jeigz', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
-        help="Jaguar eigenmode fitting. Don't include off diagonal elements.")
-    data_args.add_argument(
-        '-jeigzi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
-        help=("Jaguar eigenmode fitting. Don't include off diagonal elements. "
-              "Invert lowest eigenvalue."))
-    data_args.add_argument(
-        '-jh', type=str, nargs='+', action='append', default=[], metavar='file.in',
-        help='Jaguar Hessian.')
-    data_args.add_argument(
-        '-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in',
-        help='Jaguar Hessian with inversion.')
-    data_args.add_argument(
-        '-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='Jaguar charges.')
-    data_args.add_argument(
-        '-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-        help='Jaguar charges (ignores aliphatic hydrogens).')
-    data_args.add_argument(
+        help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes those '
+              'that are off-diagonal.'))
+    # args_data.add_argument(
+    #     '-jeigz', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+    #     help="Jaguar eigenmatrix (only diagonal elements).")
+    # args_data.add_argument(
+    #     '-jeigzi', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
+    #     help="Jaguar eigenmatrix (only diagonal elements). Invert 1st eigenvalue.")
+    # args_data.add_argument(
+    #     '-jh', type=str, nargs='+', action='append', default=[], metavar='file.in',
+    #     help='Jaguar Hessian.')
+    # args_data.add_argument(
+    #     '-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in',
+    #     help='Jaguar Hessian with inversion.')
+    # args_data.add_argument(
+    #     '-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+    #     help='Jaguar charges.')
+    # args_data.add_argument(
+    #     '-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+    #     help='Jaguar charges (excludes aliphatic hydrogens).')
+    args_data.add_argument(
         '-jt', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar torsions.')
-    data_args.add_argument(
-        '-r', type=str, nargs='+', action='append', default=[], metavar='filename',
-        help=('Read data points directly (ex. use with .cal files). '
-              'Each row corresponds to a data point. Columns may be '
-              'separated by '
-              "anything that Python's basic split method recognizes. "
-              '1st column '
-              'is the data label, 2nd column is the weight, and 3rd column is the '
-              'value.'))
-    data_args.add_argument(
-        '-zm', type=str, nargs='+', action='append', default=[], metavar='parteth',
-        help='Tether parameters away from zero. Force field data.')
-    data_args.add_argument(
-        '-zr', type=str, nargs='+', action='append', default=[], metavar='parteth',
-        help='Tether parameters away from zero. Reference data.')
+    # args_data.add_argument(
+    #     '-r', type=str, nargs='+', action='append', default=[], metavar='filename',
+    #     help=('Read data points directly (ex. use with .cal files). '
+    #           'Each row corresponds to a data point. Columns are separated '
+    #           'by spaces. 1st column is the data label, 2nd column is the '
+    #           'weight, and 3rd column is the value.'))
+    # args_data.add_argument(
+    #     '-zm', type=str, nargs='+', action='append', default=[], metavar='parteth',
+    #     help='Tether parameters away from zero. FF data.')
+    # args_data.add_argument(
+    #     '-zr', type=str, nargs='+', action='append', default=[], metavar='parteth',
+    #     help='Tether parameters away from zero. Reference data.')
     return parser
 
-def group_commands(commands):
-    '''
-    Determines how many data types are associated with each mae file. This
-    enables us to run only one com file on each mae (instead of a separate com
-    for each data type).
-    '''
-    commands_grouped = defaultdict(list)
-    for calc_command, values in commands.iteritems():
-        for comma_sep_filenames in chain.from_iterable(values):
-            for filename in comma_sep_filenames.split(','):
-                if filename.endswith('.mae'):
-                    commands_grouped[filename].append(calc_command)
-    # comment out later
-    for filename, data_types in commands_grouped.iteritems():
-        logger.log(1, '{}: {}'.format(filename, data_types))
-    return commands_grouped
-
-def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
-    '''
-    Writes MacroModel com files. Uses the dictionary produced by group_commands.
-    '''
-    coms_to_run = []
-    macromodel_indices = {}
-    for filename, commands in commands_grouped.iteritems():
-        # if set(commands).intersection(commands_macromodel):
-        # should be faster
-        if any(x in commands_macromodel for x in commands):
-            indices_mae = []
-            indices_mmo = []
-            name_base = '.'.join(filename.split('.')[:-1])
-            name_mae = name_base + '.q2mm.mae'
-            name_mmo = name_base + '.q2mm.mmo'
-            name_log = name_base + '.q2mm.log'
-            name_com = name_base + '.q2mm.com'
-            pre_structure = False
-            hessian = False
-            pre_energy = False
-            optimization = False
-            post_structure = False
-            multiple_structures = False
-            conf_search1 = False
-            conf_search2 = False
-            conf_search3 = False
-            # would be faster if we had 2 sets of commands: a set for mae
-            # files containing only 1 structure, and a set for mae files
-            # containing multiple structures
-            with open(os.path.join(directory, filename)) as f:
-                number_structures = 0
-                for line in f:
-                    if 'f_m_ct {' in line:
-                        number_structures += 1
-                    if number_structures > 1:
-                        multiple_structures = True
-                        break
-            # if set(commands).intersection(['ja', 'jb']):
-            if any(x in ['ja', 'jb', 'jt'] for x in commands):
-                pre_structure = True
-            # if set(commands).intersection(['me', 'me2', 'mq', 'mqh']):
-            if any(x in ['me', 'me2', 'mq', 'mqh'] for x in commands):
-                pre_energy = True
-            # if set(commands).intersection(['meig', 'meigz', 'mh']):
-            if any(x in ['meig', 'meigz', 'mh'] for x in commands):
-                hessian = True
-            # if set(commands).intersection(['ma', 'mb', 'meo']):
-            if any(x in ['ma', 'mb', 'meo', 'mt'] for x in commands):
-                optimization = True
-            # if set(commands).intersection(['ma', 'mb']):
-            if any(x in ['ma', 'mb', 'mt'] for x in commands):
-                post_structure = True
-            if any(x in ['mcs'] for x in commands):
-                conf_search1 = True
-            if any(x in ['mcs2'] for x in commands):
-                conf_search2 = True
-            if any(x in ['mcs3'] for x in commands):
-                conf_search3 = True
-            com_string = '{}\n{}\n'.format(filename, name_mae)
-            if conf_search1:
-                com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('FFLD', 2, 1, 0, 0, 1, 0, 0, 0)
-                com_string += cons.format_macromodel.format('BDCO', 0, 0, 0, 0, 41.5692, 99999., 0, 0)
-                com_string += cons.format_macromodel.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('CRMS', 0, 0, 0, 0, 0, 0.2500, 0, 0)
-                com_string += cons.format_macromodel.format('MCMM', 10000, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCSS', 2, 0, 0, 0, 50., 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('DEMX', 0, 166, 0, 0, 50., 100., 0, 0)
-                com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('AUTO', 0, 2, 1, 1, 0, -1., 0, 0)
-                com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
-            elif conf_search2:
-                com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('DEBG', 55, 179, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('FFLD', 2, 1, 0, 0, 1, 0, 0, 0)
-                com_string += cons.format_macromodel.format('BDCO', 0, 0, 0, 0, 41.5692, 99999., 0, 0)
-                com_string += cons.format_macromodel.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('CRMS', 0, 0, 0, 0, 0, 0.2500, 0, 0)
-                com_string += cons.format_macromodel.format('LMCS', 10000, 0, 0, 0, 0, 0, 3, 6)
-                com_string += cons.format_macromodel.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
-                com_string += cons.format_macromodel.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
-                com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
-                com_string += cons.format_macromodel.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
-                com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MINI', 1, 0, 2500, 0, 0, 0, 0, 0)
-            elif conf_search3:
-                com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('DEBG', 55, 179, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('FFLD', 2, 1, 0, 0, 1, 0, 0, 0)
-                com_string += cons.format_macromodel.format('BDCO', 0, 0, 0, 0, 41.5692, 99999., 0, 0)
-                com_string += cons.format_macromodel.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('CRMS', 0, 0, 0, 0, 0, 0.2500, 0, 0)
-                com_string += cons.format_macromodel.format('LMCS', 4000, 0, 0, 0, 0, 0, 3, 6)
-                com_string += cons.format_macromodel.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
-                com_string += cons.format_macromodel.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
-                com_string += cons.format_macromodel.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
-                com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
-                com_string += cons.format_macromodel.format('MINI', 1, 0, 2500, 0, 0, 0, 0, 0)
-            else:
-                com_string += cons.format_macromodel.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
-                if hessian:
-                    com_string += cons.format_macromodel.format('DEBG', 57, 210, 211, 0, 0, 0, 0, 0)
-                else:
-                    com_string += cons.format_macromodel.format('DEBG', 57, 0, 0, 0, 0, 0, 0, 0)
-                if multiple_structures:
-                    com_string += cons.format_macromodel.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
-                com_string += cons.format_macromodel.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
-                if pre_structure or pre_energy:
-                    com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-                    indices_mmo.append('pre')
-                    com_string += cons.format_macromodel.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
-                    indices_mae.append('pre')
-                if hessian:
-                    com_string += cons.format_macromodel.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
-                    indices_mae.append('stupid_extra_structure')
-                    com_string += cons.format_macromodel.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
-                    indices_mae.append('hess')
-                # if pre_structure or pre_energy or hessian:
-                if optimization:
-                    # this commented line is what was used in the code received from Elaine.
-                    # arg1: 9 = TNCG, 1 = PRCG
-                    # TNCG has risk that structures never converge, and may print NaN instead
-                    # of coordinates and forces.
-                    # com_string += cons.format_macromodel.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
-                    com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
-                    indices_mae.append('opt')
-                if post_structure:
-                    com_string += cons.format_macromodel.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-                    # faily sure this indices_mae shouldn't be here
-                    # indices_mae.append('post')
-                    indices_mmo.append('opt')
-                if multiple_structures:
-                    com_string += cons.format_macromodel.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
-                macromodel_indices.update({name_mae: indices_mae})
-                macromodel_indices.update({name_mmo: indices_mmo})
-            with open(os.path.join(directory, name_com), 'w') as f:
-                f.write(com_string)
-            coms_to_run.append(name_com)
-            logger.log(5, 'wrote {}'.format(os.path.join(directory, name_com)))
-    # comment later
-    for output_filename, data_indices in macromodel_indices.iteritems():
-        logger.log(1, '{}: {}'.format(output_filename, data_indices))
-    return coms_to_run, macromodel_indices
-
-def run_macromodel(coms_to_run, directory=os.getcwd()):
-    current_directory = os.getcwd()
-    logger.log(5, 'moving to {}'.format(directory))
-    os.chdir(directory)
-    for com in coms_to_run:
-        logger.log(6, 'running {}'.format(com))
-        name = '.'.join(com.split('.')[:-1])
-        success = False
-        attempts = 0
-        while success is False and attempts < 5:
-            try:
-                subprocess.check_output('bmin {} -WAIT'.format(name), shell=True)
-            except subprocess.CalledProcessError as e:
-                attempts += 1
-                logger.warning('{} failed attempts: bmin {} -WAIT'.format(attempts, name))
-                logger.warning('return code: {}'.format(e.returncode))
-                logger.warning('output: {}'.format(e.output))
-                # logger.warning('current directory: {}'.format(os.listdir(os.getcwd())))
-                logger.warning(traceback.format_exc())
-                time.sleep(10)
-            except OSError as e:
-                attempts += 1
-                logger.warning('{} failed attempts: bmin {} -WAIT'.format(attempts, name))
-                # logger.warning('current directory: {}'.format(os.listdir(os.getcwd())))
-                logger.warning(traceback.format_exc())
-                time.sleep(10)
-            else:
-                success = True
-        if success is False:
-            raise Exception('aborting due to > {} failed attempts'.format(attempts))
-    logger.log(5, 'returning to {}'.format(current_directory))
-    os.chdir(current_directory)
-
-def collect_data(commands, macromodel_indices, directory=os.getcwd()):
-    '''
-    Return a list of data points.
-    '''
-    data = []
-    file_storage = {}
-    # would be nice if we could accept a force field as an argument
-    # or we could only do this for the commands where it's needed
-    if any(x in commands_need_ff for x in commands):
-        ff = MM3(os.path.join(directory, 'mm3.fld'))
-        ff.import_ff()
-
-    if 'ja' in commands:
-        for filenames in commands['ja']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        for angle in structure.angles:
-                            if ff.sub_name in angle.comment:
-                                data_temp.append(Datum(
-                                    angle.value, 'ja', 'angle', filename, i=i, j=angle.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} ja from {}'.format(len(data_temp), name_mmo))
-
-    if 'jb' in commands:
-        for filenames in commands['jb']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    # print structure.bonds
-                    # print structure.angles
-                    # print structure.torsions
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        for bond in structure.bonds:
-                            if ff.sub_name in bond.comment:
-                                data_temp.append(Datum(
-                                    bond.value, 'jb', 'bond', filename, i=i, j=bond.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} jb from {}'.format(len(data_temp), name_mmo))
-
-    if 'je' in commands:
-        for file_num, filenames in enumerate(commands['je']):
-            data_temp = []
-            for filename in filenames:
-                if filename in file_storage:
-                    mae = file_storage[filename]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, filename))
-                    file_storage[filename] = mae
-                for structure_num, structure in enumerate(mae.structures):
-                    data_temp.append(Datum(
-                        structure.props['r_j_Gas_Phase_Energy'] * cons.hartree_to_kjmol,
-                        'je', 'energy', filename, group=file_num, i=structure_num))
-            minimum = min([x.value for x in data_temp])
-            for datum in data_temp:
-                datum.value -= minimum
-            data.extend(data_temp)
-            logger.log(7, '{} je from {}'.format(len(data_temp), filenames))
-
-    if 'je2' in commands:
-        for i, filenames in enumerate(commands['je2']):
-            data_temp = []
-            for filename in filenames:
-                if filename in file_storage:
-                    mae = file_storage[filename]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, filename))
-                    file_storage[filename] = mae
-                for j, structure in enumerate(mae.structures):
-                    data_temp.append(Datum(
-                        structure.props['r_j_Gas_Phase_Energy'] * cons.hartree_to_kjmol,
-                        'je2', 'energy2', filename, group=i, i=j))
-            minimum = min([x.value for x in data_temp])
-            for datum in data_temp:
-                datum.value -= minimum
-            data.extend(data_temp)
-            logger.log(7, '{} je2 from {}'.format(len(data_temp), filenames))
-
-    if 'jeig' in commands:
-        for comma_filenames in commands['jeig']:
-            for comma_filename in comma_filenames:
-                name_in, name_out = comma_filename.split(',')
-                if name_in in file_storage:
-                    jin = file_storage[name_in]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
-                    file_storage[name_in] = jin
-                if name_out in file_storage:
-                    jout = file_storage[name_out]
-                else:
-                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = jout
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.load_from_jaguar_out(file_class=jout)
-                hess.hessian = hess.mass_weight_hessian()
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-                diagonal = np.diag(diagonal_matrix)
-                lower_tri_indices = np.tril_indices_from(diagonal_matrix)
-                lower_tri = diagonal_matrix[lower_tri_indices]
-                data.extend(
-                    [Datum(e, 'jeig', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
-
-    if 'jeigi' in commands:
-        for comma_filenames in commands['jeigi']:
-            for comma_filename in comma_filenames:
-                name_in, name_out = comma_filename.split(',')
-                if name_in in file_storage:
-                    jin = file_storage[name_in]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
-                    file_storage[name_in] = jin
-                if name_out in file_storage:
-                    jout = file_storage[name_out]
-                else:
-                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = jout
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.load_from_jaguar_out(file_class=jout)
-                hess.hessian = hess.mass_weight_hessian()
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-                diagonal = np.diag(diagonal_matrix)
-                inv_diagonal = hess.replace_minimum(diagonal, value=cons.hessian_conversion)
-                np.fill_diagonal(diagonal_matrix, inv_diagonal)
-                lower_tri_indices = np.tril_indices_from(diagonal_matrix)
-                lower_tri = diagonal_matrix[lower_tri_indices]
-                data.extend(
-                    [Datum(e, 'jeig', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} jeig from {}'.format(len(lower_tri), (name_in, name_out)))
-
-    if 'jeige' in commands:
-        for comma_filenames in commands['jeige']:
-            for comma_filename in comma_filenames:
-                name_in, name_out = comma_filename.split(',')
-                if name_in in file_storage:
-                    jin = file_storage[name_in]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
-                    file_storage[name_in] = jin
-                if name_out in file_storage:
-                    jout = file_storage[name_out]
-                else:
-                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = jout
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.load_from_jaguar_out(file_class=jout)
-                hess.hessian = hess.mass_weight_hessian()
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-
-                diagonal_matrix_zero = np.diag(np.diag(diagonal_matrix)) 
-                lower_tri_indices = np.tril_indices_from(diagonal_matrix_zero)
-                lower_tri = diagonal_matrix_zero[lower_tri_indices]
-                data.extend([Datum(e, 'jeige', 'eig', (name_in, name_out), i=x, j=y)
-                             for e, x, y in izip(
-                            lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} jeige from {}'.format(len(lower_tri), (name_in, name_out)))
-
-    if 'jeigz' in commands:
-        for comma_filenames in commands['jeigz']:
-            for comma_filename in comma_filenames:
-                name_in, name_out = comma_filename.split(',')
-                if name_in in file_storage:
-                    jin = file_storage[name_in]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
-                    file_storage[name_in] = jin
-                if name_out in file_storage:
-                    jout = file_storage[name_out]
-                else:
-                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = jout
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.load_from_jaguar_out(file_class=jout)
-                hess.hessian = hess.mass_weight_hessian()
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-                diagonal = np.diag(diagonal_matrix)
-                data.extend([Datum(e, 'jeigz', 'eigz', (name_in, name_out), i=i, j=i)
-                             for i, e in enumerate(diagonal)])
-                logger.log(7, '{} jeigz from {}'.format(len(diagonal), (name_in, name_out)))
-
-    if 'jeigzi' in commands:
-        for comma_filenames in commands['jeigzi']:
-            for comma_filename in comma_filenames:
-                name_in, name_out = comma_filename.split(',')
-                if name_in in file_storage:
-                    jin = file_storage[name_in]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, name_in))
-                    file_storage[name_in] = jin
-                if name_out in file_storage:
-                    jout = file_storage[name_out]
-                else:
-                    jout = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = jout
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.load_from_jaguar_out(file_class=jout)
-                hess.hessian = hess.mass_weight_hessian()
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-                diagonal = np.diag(diagonal_matrix)
-                inv_diagonal = hess.replace_minimum(diagonal, value=cons.hessian_conversion)
-                data.extend([Datum(e, 'jeigz', 'eigz', (name_in, name_out), i=i, j=i)
-                             for i, e in enumerate(inv_diagonal)])
-                logger.log(7, '{} jeigz from {}'.format(len(inv_diagonal), (name_in, name_out)))
-
-                # Elaine/Per-Ola's code sets the off-diagonal elements to zero.
-                # These elements are usually close to zero, but not quite zero.
-                # I believe they also set the weights for these elements to zero
-                # and/or set the off diagonal elements of the calculated
-                # diagonalized matrix to zero. Either way, they didn't end up
-                # influencing the penalty function, but they would make the list
-                # of data points longer. Instead, this method just returns the
-                # diagonal elements and ignores the off diagonal elements. Use
-                # jeig if you don't want to ignore the off diagonal elements instead
-                # of jeigz.
-
-                # inv_diagonal_matrix_zeroed = np.diag(inv_diagonal)
-                # lower_tri_indices = np.tril_indices_from(inv_diagonal_matrix_zeroed)
-                # lower_tri = inv_diagonal_matrix_zeroed[lower_tri_indices]
-                # data.extend(
-                #     [Datum(e, 'jeigz', 'eig', (name_in, name_out), i=x, j=y) for e, x, y, in
-                #     izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-
-    if 'jh' in commands:
-        for filenames in commands['jh']:
-            for filename in filenames:
-                if filename in file_storage:
-                    jin = file_storage[filename]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, filename))
-                    # jin.import_structures()
-                    file_storage[filename] = jin
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                matrix = hess.mass_weight_hessian()
-                lower_tri_indices = np.tril_indices_from(matrix)
-                lower_tri = matrix[lower_tri_indices]
-                data.extend([Datum(e, 'jh', 'hess', filename, i=x, j=y) for e, x, y in izip(
-                            lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} jh from {}'.format(len(lower_tri), filename))
-
-    if 'jhi' in commands:
-        for filenames in commands['jhi']:
-            for filename in filenames:
-                if filename in file_storage:
-                    jin = file_storage[filename]
-                else:
-                    jin = filetypes.JaguarIn(os.path.join(directory, filename))
-                    # jin.import_structures()
-                    file_storage[filename] = jin
-                hess = Hessian()
-                hess.load_from_jaguar_in(file_class=jin)
-                hess.hessian = hess.mass_weight_hessian()
-                eigenvalues, eigenvectors = np.linalg.eigh(hess.hessian)
-                inv_eigenvalues = hess.replace_minimum(eigenvalues)
-                inv_hess = hess.diagonalize(matrix=np.diag(inv_eigenvalues), eigenvectors=eigenvectors)
-                # this gets the same answer. sometimes it's nice to see the math
-                # diagonal_matrix = hess.diagonalize(eigenvectors=eigenvectors)
-                # diagonal = np.diag(diagonal_matrix)
-                # inv_diagonal = hess.replace_minimum(diagonal)
-                # inv_hess = hess.diagonalize(matrix=np.diag(inv_diagonal), eigenvectors=eigenvectors)
-                lower_tri_indices = np.tril_indices_from(inv_hess)
-                lower_tri = inv_hess[lower_tri_indices]
-                data.extend([Datum(e, 'jhi', 'hess', filename, i=x, j=y) for e, x, y in izip(
-                            lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} jhi from {}'.format(len(lower_tri), filename))
-
-    if 'jqh' in commands:
-        for filenames in commands['jqh']:
-            for filename in filenames:
-                data_temp = []
-                if filename in file_storage:
-                    mae = file_storage[filename]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, filename))
-                    file_storage[filename] = mae
-                aliph_hyd_inds = mae.get_aliph_hyds()
-                for i, structure in enumerate(mae.structures):
-                    for atom in structure.atoms:
-                        if not atom.index in aliph_hyd_inds:
-                            data_temp.append(
-                                Datum(atom.partial_charge, 'jqh', 'charge', filename, i=i, j=atom.index))
-                data.extend(data_temp)
-                logger.log(7, '{} jqh from {}'.format(len(data_temp), filename))
-
-    if 'jq' in commands:
-        for filenames in commands['jq']:
-            for filename in filenames:
-                data_temp = []
-                if filename in file_storage:
-                    mae = file_storage[filename]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, filename))
-                    file_storage[filename] = mae
-                for i, structure in enumerate(mae.structures):
-                    for atom in structure.atoms:
-                        data_temp.append(Datum(atom.partial_charge, 'jq', 'charge', filename, i=i, j=atom.index))
-                data.extend(data_temp)
-                logger.log(7, '{} jq from {}'.format(len(data_temp), filename))
-
-    if 'jt' in commands:
-        for filenames in commands['jt']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        for torsion in structure.torsions:
-                            if ff.sub_name in torsion.comment:
-                                data_temp.append(Datum(
-                                    torsion.value, 'jt', 'torsion', filename, i=i, j=torsion.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} jt from {}'.format(len(data_temp), name_mmo))
-
-    if 'ma' in commands:
-        for filenames in commands['ma']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'opt':
-                        for angle in structure.angles:
-                            if ff.sub_name in angle.comment:
-                                data_temp.append(Datum(angle.value, 'ma', 'angle', filename, i=i, j=angle.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} ma from {}'.format(len(data_temp), filename))
-
-    if 'mb' in commands:
-        for filenames in commands['mb']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'opt':
-                        for bond in structure.bonds:
-                            if ff.sub_name in bond.comment:
-                                data_temp.append(Datum(bond.value, 'mb', 'bond', filename, i=i, j=bond.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} mb from {}'.format(len(data_temp), filename))
-
-    if 'me' in commands:
-        for i, filenames in enumerate(commands['me']):
-            data_temp = []
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mae = name_base + '.q2mm.mae'
-                if name_mae in file_storage:
-                    mae = file_storage[name_mae]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, name_mae))
-                    file_storage[name_mae] = mae
-                indices_output = macromodel_indices[name_mae]
-                indices_generator = iter(indices_output)
-                for j, structure in enumerate(mae.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        data_temp.append(Datum(structure.props['r_mmod_Potential_Energy-MM3*'],
-                                               'me', 'energy', name_mae, group=i, i=j))
-            # relative energies aren't necessary right now but they can be nice
-            # minimum = min([x.value for x in data_temp])
-            # for datum in data_temp:
-            #     datum.value -= minimum
-            data.extend(data_temp)
-            logger.log(7, '{} me from {}'.format(len(data_temp), filenames))
-
-    if 'me2' in commands:
-        for i, filenames in enumerate(commands['me2']):
-            data_temp = []
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mae = name_base + '.q2mm.mae'
-                if name_mae in file_storage:
-                    mae = file_storage[name_mae]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, name_mae))
-                    file_storage[name_mae] = mae
-                indices_output = macromodel_indices[name_mae]
-                indices_generator = iter(indices_output)
-                for j, structure in enumerate(mae.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        data_temp.append(Datum(structure.props['r_mmod_Potential_Energy-MM3*'],
-                                               'me2', 'energy2', name_mae, group=i, i=j))
-            # minimum = min([x.value for x in data_temp])
-            # for datum in data_temp:
-            #     datum.value -= minimum
-            data.extend(data_temp)
-            logger.log(7, '{} me2 from {}'.format(len(data_temp), filenames))
-
-    if 'meo' in commands:
-        for i, filenames in enumerate(commands['meo']):
-            data_temp = []
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mae = name_base + '.q2mm.mae'
-                if name_mae in file_storage:
-                    mae = file_storage[name_mae]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, name_mae))
-                    file_storage[name_mae] = mae
-                indices_output = macromodel_indices[name_mae]
-                indices_generator = iter(indices_output)
-                for j, structure in enumerate(mae.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'opt':
-                        data_temp.append(Datum(structure.props['r_mmod_Potential_Energy-MM3*'],
-                                               'meo', 'energy', name_mae, group=i, i=j))
-            # relative energies aren't necessary right now but they can be nice
-            # minimum = min([x.value for x in data_temp])
-            # for datum in data_temp:
-            #     datum.value -= minimum
-            data.extend(data_temp)
-            logger.log(7, '{} meo from {}'.format(len(data_temp), filenames))
-
-    if 'meig' in commands:
-        for comma_filenames in commands['meig']:
-            for comma_filename in comma_filenames:
-                name_mae, name_out = comma_filename.split(',')
-                name_base = '.'.join(name_mae.split('.')[:-1])
-                name_log = name_base + '.q2mm.log'
-                if name_log in file_storage:
-                    log = file_storage[name_log]
-                else:
-                    log = filetypes.MacroModelLog(os.path.join(directory, name_log))
-                    file_storage[name_log] = log
-                if name_out in file_storage:
-                    out = file_storage[name_out]
-                else:
-                    out = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = out
-                hess = Hessian()
-                hess.load_from_jaguar_out(file_class=out, get_atoms=True)
-                hess.load_from_mmo_log(file_class=log)
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-                lower_tri_indices = np.tril_indices_from(diagonal_matrix)
-                lower_tri = diagonal_matrix[lower_tri_indices]
-                data.extend(
-                    [Datum(e, 'meig', 'eig', (name_mae, name_out), i=x, j=y) for e, x, y, in
-                    izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} meig from {}'.format(len(lower_tri), (name_log, name_out)))
-
-    if 'meigz' in commands:
-        for comma_filenames in commands['meigz']:
-            for comma_filename in comma_filenames:
-                name_mae, name_out = comma_filename.split(',')
-                name_base = '.'.join(name_mae.split('.')[:-1])
-                name_log = name_base + '.q2mm.log'
-                if name_log in file_storage:
-                    log = file_storage[name_log]
-                else:
-                    log = filetypes.MacroModelLog(os.path.join(directory, name_log))
-                    file_storage[name_log] = log
-                if name_out in file_storage:
-                    out = file_storage[name_out]
-                else:
-                    out = filetypes.JaguarOut(os.path.join(directory, name_out))
-                    file_storage[name_out] = out
-                hess = Hessian()
-                hess.load_from_jaguar_out(file_class=out, get_atoms=True)
-                hess.load_from_mmo_log(file_class=log)
-                hess.eigenvectors = hess.mass_weight_eigenvectors()
-                diagonal_matrix = hess.diagonalize()
-
-                diagonal = np.diag(diagonal_matrix)
-                data.extend([Datum(e, 'meigz', 'eigz', (name_mae, name_out), i=i, j=i)
-                             for i, e in enumerate(diagonal)])
-
-                # this way generates data similar to elaine's code. it has many off-diagonal
-                # data points that are unused. use meig instead of meigz for that.
-                # diagonal_matrix_zero = np.diag(np.diag(diagonal_matrix)) # off diagonal = zero
-                # lower_tri_indices = np.tril_indices_from(diagonal_matrix_zero)
-                # lower_tri = diagonal_matrix_zero[lower_tri_indices]
-                # data.extend(
-                #     [Datum(e, 'meigz', 'eig', (name_mae, name_out), i=x, j=y) for e, x, y, in
-                #     izip(lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-
-                logger.log(7, '{} meigz from {}'.format(len(diagonal), (name_log, name_out)))
-
-    if 'mh' in commands:
-        for filenames in commands['mh']:
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_log = name_base + '.q2mm.log'
-                if name_log in file_storage:
-                    log = file_storage[name_log]
-                else:
-                    log = filetypes.MacroModelLog(os.path.join(directory, name_log))
-                    file_storage[name_log] = log
-                hess = log.hessian
-                lower_tri_indices = np.tril_indices_from(hess)
-                lower_tri = hess[lower_tri_indices]
-                data.extend(
-                    [Datum(e, 'mh', 'hess', filename, i=x, j=y) for e, x, y in izip(
-                    lower_tri, lower_tri_indices[0], lower_tri_indices[1])])
-                logger.log(7, '{} mh from {}'.format(len(lower_tri), name_log))
-
-    if 'mq' in commands:
-        for filenames in commands['mq']:
-            data_temp = []
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mae = name_base + '.q2mm.mae'
-                if name_mae in file_storage:
-                    mae = file_storage[name_mae]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, name_mae))
-                    file_storage[name_mae] = mae
-                indices_output = macromodel_indices[name_mae]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mae.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        for atom in structure.atoms:
-                            data_temp.append(Datum(atom.partial_charge, 'mq', 'charge', name_mae, i=i, j=atom.index))
-            data.extend(data_temp)
-            logger.log(7, '{} mq from {}'.format(len(data_temp), filenames))
-
-    if 'mqh' in commands:
-        for filenames in commands['mqh']:
-            data_temp = []
-            for filename in filenames:
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mae = name_base + '.q2mm.mae'
-                if name_mae in file_storage:
-                    mae = file_storage[name_mae]
-                else:
-                    mae = filetypes.Mae(os.path.join(directory, name_mae))
-                    file_storage[name_mae] = mae
-                indices_output = macromodel_indices[name_mae]
-                indices_generator = iter(indices_output)
-                aliph_hyd_inds = mae.get_aliph_hyds()
-                for i, structure in enumerate(mae.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'pre':
-                        for atom in structure.atoms:
-                            if not atom.index in aliph_hyd_inds:
-                                data_temp.append(
-                                    Datum(atom.partial_charge, 'mqh', 'charge', name_mae, i=i, j=atom.index))
-            data.extend(data_temp)
-            logger.log(7, '{} mqh from {}'.format(len(data_temp), filenames))
-
-    if 'mt' in commands:
-        for filenames in commands['mt']:
-            for filename in filenames:
-                data_temp = []
-                name_base = '.'.join(filename.split('.')[:-1])
-                name_mmo = name_base + '.q2mm.mmo'
-                if name_mmo in file_storage:
-                    mmo = file_storage[name_mmo]
-                else:
-                    mmo = filetypes.MacroModel(os.path.join(directory, name_mmo))
-                    # mmo.import_structures()
-                    file_storage[name_mmo] = mmo
-                indices_output = macromodel_indices[name_mmo]
-                indices_generator = iter(indices_output)
-                for i, structure in enumerate(mmo.structures):
-                    try:
-                        index_current = indices_generator.next()
-                    except StopIteration:
-                        indices_generator = iter(indices_output)
-                        index_current = indices_generator.next()
-                    if index_current == 'opt':
-                        for torsion in structure.torsions:
-                            if ff.sub_name in torsion.comment:
-                                data_temp.append(
-                                    Datum(
-                                        torsion.value, 'mt', 'torsion', filename,
-                                        i=i, j=torsion.atom_nums))
-                data.extend(data_temp)
-                logger.log(7, '{} mt from {}'.format(len(data_temp), filename))
-
-    if 'pm' in commands:
-        for parteths in commands['pm']:
-            for parteth in parteths:
-                mm3_rows = []
-                mm3_cols = []
-                with open(os.path.join(directory, parteth)) as f:
-                    for line in f:
-                        line = line.partition('#')[0]
-                        cols = line.split()
-                        # if not line.startswith('#') and len(cols) > 0:
-                        if len(cols) > 0:
-                            mm3_rows.append(int(cols[0]))
-                            mm3_cols.append(int(cols[1]))
-                params_tethered = [x for x in ff.params if x.mm3_row in mm3_rows and x.mm3_col in mm3_cols]
-                data_temp = [Datum(x.value, 'pm', 'parteth', parteth, i=x.mm3_row, j=x.mm3_col) for x in params_tethered]
-                data.extend(data_temp)
-                logger.log(7, '{} pm from {}'.format(len(data_temp), parteth))
-
-    if 'pr' in commands:
-        for parteths in commands['pr']:
-            for parteth in parteths:
-                mm3_rows = []
-                mm3_cols = []
-                values = []
-                with open(os.path.join(directory, parteth)) as f:
-                    for line in f:
-                        line = line.partition('#')[0]
-                        cols = line.split()
-                        # if not line.startswith('#') and len(cols) > 0:
-                        # if len(cols) > 0:
-                        if cols:
-                            mm3_rows.append(int(cols[0]))
-                            mm3_cols.append(int(cols[1]))
-                            values.append(float(cols[2]))
-                data_temp = [Datum(value, 'pr', 'parteth', parteth, i=row, j=col) for value, row, col
-                             in izip(values, mm3_rows, mm3_cols)]
-                data.extend(data_temp)
-                logger.log(7, '{} pr from {}'.format(len(data_temp), parteth))
-
-    if 'r' in commands:
-        for filenames in commands['r']:
-            for filename in filenames:
-                data_temp = []
-                with open(os.path.join(directory, filename)) as f:
-                    for line in f:
-                        line = line.partition('#')[0]
-                        label, weight, value = line.split()
-                        data_temp.append(
-                            Datum(float(value), 'r', 'read', filename, i=label, weight=float(weight)))
-                data.extend(data_temp)
-                logger.log(7, '{} r from {}'.format(len(data_temp), filename))
-
-    if 'zm' in commands:
-        for parteths in commands['zm']:
-            for parteth in parteths:
-                mm3_rows = []
-                mm3_cols = []
-                ayes = []
-                bees = []
-                with open(os.path.join(directory, parteth)) as f:
-                    for line in f:
-                        line = line.partition('#')[0]
-                        cols = line.split()
-                        # if not line.startswith('#') and len(cols) > 0:
-                        if len(cols) > 0:
-                            mm3_rows.append(int(cols[0]))
-                            mm3_cols.append(int(cols[1]))
-                            ayes.append(float(cols[2]))
-                            bees.append(float(cols[3]))
-                params_tethered = [x for x in ff.params if x.mm3_row in mm3_rows and x.mm3_col in mm3_cols]
-                data_temp = [Datum(a * np.exp(- b * x.value * x.value),
-                                   'zm', 'zeroteth', parteth, i=x.mm3_row, j=x.mm3_col) for x, a, b
-                             in izip(params_tethered, ayes, bees)]
-                data.extend(data_temp)
-                logger.log(7, '{} zm from {}'.format(len(data_temp), parteth))
-
-    if 'zr' in commands:
-        for parteths in commands['zr']:
-            for parteth in parteths:
-                mm3_rows = []
-                mm3_cols = []
-                with open(os.path.join(directory, parteth)) as f:
-                    for line in f:
-                        line = line.partition('#')[0]
-                        cols = line.split()
-                        # if not line.startswith('#') and len(cols) > 0:
-                        if len(cols) > 0:
-                            mm3_rows.append(int(cols[0]))
-                            mm3_cols.append(int(cols[1]))
-                data_temp = [Datum(0., 'zr', 'zeroteth', parteth, i=row, j=col) for row, col in
-                             izip(mm3_rows, mm3_cols)]
-                data.extend(data_temp)
-                logger.log(7, '{} zr from {}'.format(len(data_temp), parteth))
-
-    if 'mcs' in commands:
-        logger.log(7, 'not collecting data for mcs')
-    logger.log(7, '{} data points'.format(len(data)))
-    return data
-
-def run_calculate(args):
-    parser = return_calculate_parser()
-    opts = parser.parse_args(args)
-    commands = {key: value for key, value in opts.__dict__.iteritems() if key in commands_all and value}
-    commands_grouped = group_commands(commands)
-    coms_to_run, macromodel_indices = make_macromodel_coms(commands_grouped, opts.dir)
-    if not opts.norun:
-        run_macromodel(coms_to_run, opts.dir)
-    data = collect_data(commands, macromodel_indices, opts.dir)
-    if opts.printdata:
-        for datum in sorted(data, key=datum_sort_key):
-            print('{0:<25} {1:>22.6f} {2:>30}'.format(datum.name, datum.value, datum.source))
-    return data
-
 if __name__ == '__main__':
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
-    data = run_calculate(sys.argv[1:])
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    main(sys.argv[1:])
+    

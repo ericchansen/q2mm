@@ -1,431 +1,330 @@
-#!/usr/bin/python
-'''
-Gradient/Newton-Raphson based optimizer.
-'''
-from itertools import izip
-import argparse
+#!/us/bin/python
+"""
+General code related to all optimization techniques.
+"""
 import copy
+import collections
+import itertools
 import logging
+import logging.config
 import numpy as np
-import sys
+import sqlite3
 
-from calculate import run_calculate
-from compare import calc_x2, import_weights
-from datatypes import FF, MM3, UnallowedNegative
-from optimizer import Optimizer
-import constants
+import calculate
+import compare
+import constants as co
+import datatypes
+import opt
+import parameters
 
 logger = logging.getLogger(__name__)
 
-class OptimizerException(Exception):
-    pass
-class RadiusException(Exception):
-    pass
+class Gradient(opt.Optimizer):
+    """
+    Gradient based optimization methods (those dependent on derivatives of
+    the penalty function). See `Optimizer` for repeated documentation.
 
-class Gradient(Optimizer):
-    '''
-    Class for gradient-based optimization techniques.
-    '''
-    def __init__(self):
-        super(Gradient, self).__init__()
-        self.best_ff = None
-        self.extra_print = False
-        self.ffs_central = None
-        self.solver_method = 'lstsq'
+    All cutoff attributes are a list of two positive floats. For new parameter
+    sets, if the radius of unsigned parameter change doesn't lie between these
+    floats, then that parameter set is ignored.
 
-        self.basic = False
-        self.basic_cutoffs = None
-        self.basic_radii = None
+    All radii attributes are a list of many positive floats, as many as you'd
+    like. This list is used to scale new parameter changes. For each new
+    parameter set, it iterates through the list from lowest to highest values.
+    If the radius of unsigned parameter change exceeds the given radius, then
+    the parameter changes are scaled to match that radius. If the radius of
+    unsigned parameter change is less than the given radius, the current
+    parameter changes are applied without modification, and the remaining radii
+    are not iterated through. If this is used with an optimization method, it
+    can and probably will generate many new parameter sets for that single
+    method.
 
-        self.newton = False
-        self.newton_cutoffs = None
-        self.newton_radii = None
-
-        self.lagrange = False
-        self.lagrange_factors = [0.01, 0.1, 1.0, 10.0]
+    Attributes
+    ----------------
+    do_basic : bool
+    do_lagrange : bool
+    do_levenberg : bool
+    do_newton : bool
+    do_svd : bool
+    basic_cutoffs : list or None
+    basic_radii : list or None
+                  Default is [0.1, 1., 5., 10.].
+    lagrange_cutoffs : list or None
+    lagrange_factors : list
+                       Default is [0.01, 0.1, 1., 10.].
+    lagrange_radii : list or None
+                     Default is [0.1, 1., 5., 10.].
+    levenberg_cutoffs : list or None
+    levenberg_factors : list
+                        Default is [0.01, 0.1, 1., 10.].
+    levenberg_radii : list or None
+                      Default is [0.1, 1., 5., 10.].
+    newton_cutoffs : list or None
+    newton_radii : list or None
+                   Default is [0.1, 1., 5., 10.].
+    svd_cutoffs : list of None
+                  Default is [0.1, 10.].
+    svd_factors : list or None
+                  Default is [0.001, 0.01, 0.1, 1.].
+    svd_radii : list or None
+    """
+    def __init__(self,
+                 ff=None, ff_lines=None, ff_args=None,
+                 ref_args=None, ref_conn=None,
+                 restore=False):
+        super(Gradient, self).__init__(
+            ff, ff_lines, ff_args, ref_args, ref_conn, restore)
+        # Whether or not to generate parameters with these methods.
+        self.do_lstsq = True
+        self.do_lagrange = True
+        self.do_levenberg = True
+        self.do_newton = True
+        self.do_svd = True
+        # Particular settings for each method.
+        self.lstsq_cutoffs = None
+        self.lstsq_radii = [0.1, 1., 5., 10.]
         self.lagrange_cutoffs = None
-        self.lagrange_radii = None
-
-        self.levenberg = False
-        self.levenberg_factors = [0.01, 0.1, 1.0, 10.0]
+        self.lagrange_factors = [0.01, 0.1, 1., 10.]
+        self.lagrange_radii = [0.1, 1., 5., 10.]
         self.levenberg_cutoffs = None
-        self.levenberg_radii = None
-
-        self.svd = False
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.0]
-        self.svd_factors = None
-        self.svd_cutoffs = None
+        self.levenberg_factors = [0.01, 0.1, 1., 10.]
+        self.levenberg_radii = [0.1, 1., 5., 10.]
+        self.newton_cutoffs = None
+        self.newton_radii = [0.1, 1., 5., 10.]
+        self.svd_cutoffs = [0.1, 10.]
+        self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_radii = None
-
-    def return_gradient_parser(self, add_help=True, parents=None):
-        '''
-        Return an argparse.ArgumentParser object containing options
-        for gradient-based optimizations.
-        '''
-        if parents is None:
-            parents = []
-        if add_help:
-            parser = argparse.ArgumentParser(
-                description=__doc__, add_help=add_help, parents=parents)
-        else:
-            parser = argparse.ArgumentParser(
-                add_help=add_help, parents=parents)
-
-        group_gen = parser.add_argument_group('gradient-based optimization')
-        group_gen.add_argument(
-            '--default', action='store_true',
-            help=('Use a recommended combination of gradient-based methods. '
-                  'For fine tuning, select the desired methods under '
-                  '"gradient-based methods".'))
-        group_gen.add_argument('--extra_print', action='store_true')
-
-        group_com = parser.add_argument_group('gradient-based methods')
-        group_com.add_argument('--basic', '-b', nargs='?', const=True)
-        group_com.add_argument('--newton', '-n', nargs='?', const=True)
-        group_com.add_argument('--lagrange', '-la', nargs='*')
-        group_com.add_argument('--levenberg', '-le', nargs='*')
-        group_com.add_argument('--svd', '-s', nargs='*')
-        return parser
-
-    def setup_gradient(self, opts):
-        '''
-        Use options/arguments provided to change settings for gradient-based
-        optimizations.
-        '''
-        if opts.extra_print:
-            self.extra_print = True
-        if opts.default:
-            self.basic = True
-            self.basic_radii = [1, 3, 10]
-            self.newton = True
-            self.newton_radii = [1, 3, 10]
-            # lagrange and levenberg factors set in self.__init__
-            self.lagrange = True
-            self.lagrange_radii = [5]
-            self.levenberg = True
-            self.lagrange_radii = [5]
-            self.svd = True
-            self.svd_cutoffs = [0.1, 10.0]
-        else:
-            if opts.newton is not None:
-                self.newton = True
-                if not isinstance(opts.newton, bool):
-                    if opts.newton.startswith('r'):
-                        self.newton_radii = sorted(map(float, opts.newton.strip('r').split(',')))
-                    if opts.newton.startswith('c'):
-                        self.newton_cutoffs = sorted(map(float, opts.newton.strip('c').split(',')))
-            if opts.basic is not None:
-                self.basic = True
-                if not isinstance(opts.basic, bool):
-                    if opts.basic.startswith('r'):
-                        self.basic_radii = sorted(map(float, opts.basic.strip('r').split(',')))
-                    if opts.basic.startswith('c'):
-                        self.basic_cutoffs = sorted(map(float, opts.basic.strip('c').split(',')))
-
-            if opts.lagrange is not None:
-                self.do_lagrange = True
-                for arg in opts.lagrange:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.lagrange_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.lagrange_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.lagrange_factors = sorted(map(float, arg.strip('f').split(',')))
-            if opts.levenberg is not None:
-                self.levenberg = True
-                for arg in opts.levenberg:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.levenberg_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.levenberg_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.levenberg_factors = sorted(map(float, arg.strip('f').split(',')))
-            if opts.svd is not None:
-                self.svd = True
-                for arg in opts.svd:
-                    if isinstance(arg, basestring):
-                        if arg.startswith('r'):
-                            self.svd_radii = sorted(map(float, arg.strip('r').split(',')))
-                        if arg.startswith('c'):
-                            self.svd_cutoffs = sorted(map(float, arg.strip('c').split(',')))
-                        if arg.startswith('f'):
-                            self.svd_factors = sorted(map(float, arg.strip('f').split(',')))
-
-    def calc_jacobian(self, ffs):
-        jacobian = np.empty((len(ffs[0].data), len(ffs) / 2), dtype=float)
-        for ff in ffs:
-            import_weights(ff.data)
-        for i, index_ff in enumerate(xrange(0, len(ffs), 2)):
-            # i = 0, 1, 2, ...
-            # index_ff = 0, 2, 4, ...
-            for index_datum in xrange(0, len(ffs[0].data)):
-                dydp = (ffs[index_ff].data[index_datum].value - \
-                            ffs[index_ff + 1].data[index_datum].value) / 2
-                jacobian[index_datum, i] = ffs[index_ff].data[index_datum].weight * dydp
-        logger.log(8, 'created {} jacobian'.format(jacobian.shape))
-        return jacobian
-
-    def calc_lagrange(self, mat_a, vec_b, factor):
-        mat_a_copy = copy.deepcopy(mat_a)
-        indices = np.diag_indices_from(mat_a_copy)
-        mat_a_copy[indices] = mat_a_copy[indices] + factor
-        param_changes = self.solver(mat_a_copy, vec_b)
-        return param_changes
-
-    def calc_levenberg(self, mat_a, vec_b, factor):
-        mat_a_copy = copy.deepcopy(mat_a)
-        indices = np.diag_indices_from(mat_a_copy)
-        mat_a_copy[indices] = mat_a_copy[indices] * (1 + factor)
-        param_changes = self.solver(mat_a_copy, vec_b)
-        return param_changes
-
-    def calc_one_dim_newton(self, central_ffs):
-        param_changes = []
-        for i, param in enumerate(self.init_ff.params):
-            if param.der1 != 0.0:
-                if param.der2 > 0.00000001:
-                    param_changes.append(- param.der1 / param.der2) # ideal
-                else:
-                    logger.warning('2nd derivative of {} is {}'.format(param, param.der2))
-                    if param.der1 > 0.0:
-                        change = -1.0
-                    else:
-                        change = 1.0
-                    logger.warning('1st derivative of {} is {}. parameter change set to {}'.format(
-                            param, param.der1, change))
-                    param_changes.append(change)
-            else:
-                raise OptimizerException(
-                    '1st derivative of {} is {}. skipping one dimensional '
-                    'newton-raphson'.format(param, param.der1))
-        return param_changes
-
-    def calc_residual_vector(self, data_cal):
-        residual_vector = np.empty((len(self.data_ref), 1), dtype=float)
-        for i in xrange(0, len(self.data_ref)):
-            residual_vector[i, 0] = self.data_ref[i].weight * \
-                (self.data_ref[i].value - data_cal[i].value)
-        logger.log(8, 'created {} residual vector'.format(residual_vector.shape))
-        return residual_vector
-
-    def calc_svd(self, mat_a, vec_b, svd_thresholds=None):
-        param_sets = []
-        methods = []
-        U, s, V = np.linalg.svd(mat_a)
-        s_copy = copy.deepcopy(s)
-        if svd_thresholds:
-            svd_thresholds = sorted(svd_thresholds)
-            logger.log(8, 'svd thresholds: {}'.format(svd_thresholds))
-            for threshold in svd_thresholds:
-                for i in xrange(0, len(s_copy)):
-                    if s_copy[i] < threshold:
-                        s_copy[i] = 0.
-                reform = U.dot(np.diag(s_copy)).dot(V)
-                param_changes = self.solver(reform, vec_b)
-                param_sets.append(param_changes)
-                methods.append('singular value decomposition threshold {}'.format(threshold))
-        else:
-            for i in xrange(0, len(s_copy) - 1):
-                s_copy[- (i + 1)] = 0.
-                reform = U.dot(np.diag(s_copy)).dot(V)
-                param_changes = self.solver(reform, vec_b)
-                param_sets.append(param_changes)
-                methods.append('singular value decomposition {}'.format(i + 1))
-        return param_sets, methods
-
-    def check_radius(self, param_changes, max_radius=None, cutoffs=None):
-        radius = np.sqrt(sum([x**2 for x in param_changes]))
-        logger.log(2, 'radius: {}'.format(radius))
-        if max_radius:
-            if radius > max_radius:
-                scale_factor = max_radius / radius
-                new_param_changes = [x * scale_factor for x in param_changes]
-                logger.warning('radius {} exceeded maximum {}. scaled parameter changes by {}'.format(
-                        radius, max_radius, scale_factor))
-                return new_param_changes
-            else:
-                return param_changes
-        elif cutoffs:
-            if not max(cutoffs) >= radius >= min(cutoffs):
-                raise RadiusException(
-                    'radius {} not in bounds {} : {}. excluding parameter changes'.format(
-                        radius, min(cutoffs), max(cutoffs)))
-
-    def do_method(self, function, method, max_radii=None, cutoffs=None):
-        try:
-            param_changes = function
-        except OptimizerException as e:
-            logger.warning(e.message)
-        else:
-            if max_radii:
-                for max_radius in max_radii:
-                    new_param_changes = self.check_radius(param_changes, max_radius=max_radius)
-                    ff = FF()
-                    if new_param_changes is param_changes:
-                        ff.method = method
-                    else:
-                        ff.method = '{} / radius {}'.format(method, max_radius)
-                    ff.params = copy.deepcopy(self.init_ff.params)
-                    for param, change in izip(ff.params, new_param_changes):
-                        param.value += change * param.step
-                    ff.display_params()
-                    try:
-                        ff.check_params()
-                    except UnallowedNegative as e:
-                        logger.warning(e.message)
-                    else:
-                        self.trial_ffs.append(ff)
-            elif cutoffs:
-                ff = FF()
-                ff.method = method
-                ff.params = copy.deepcopy(self.init_ff.params)
-                for param, change in izip(ff.params, param_changes):
-                    param.value += change * param.step
-                ff.display_params()
-                try:
-                    self.check_radius(param_changes, cutoffs=cutoffs)
-                    ff.check_params()
-                except RadiusException as e:
-                    logger.warning(e.message)
-                except UnallowedNegative as e:
-                    logger.warning(e.message)
-                else:
-                    self.trial_ffs.append(ff)
-            else:
-                ff = FF()
-                ff.method = method
-                ff.params = copy.deepcopy(self.init_ff.params)
-                for param, change in izip(ff.params, param_changes):
-                    param.value += change * param.step
-                ff.display_params()
-                try:
-                    ff.check_params()
-                except UnallowedNegative as e:
-                    logger.warning(e.message)
-                else:
-                    self.trial_ffs.append(ff)
-
     def run(self):
-        '''
-        Run the gradient-based optimization.
-        '''
-        logger.info('--- running {} ---'.format(type(self).__name__))
-
-        # calculate initial force field's value of the penalty function
-        if self.init_ff.x2 is None or self.init_ff.data is None:
-            self.calc_x2_ff(self.init_ff, save_data=True)
-
-        # differentiate the force field parameters
-        self.ffs_central = self.params_diff(self.init_ff.params, mode='central')
-        for ff in self.ffs_central:
-            self.calc_x2_ff(ff, save_data=True)
-
-        # warning: i wrote extra print stuff and related options after a few beers
-        if self.extra_print:
-            logger.info('generating partial par.tot from central differentiation')
-            lines = []
-            for ff in self.ffs_central:
-                for i, datum in enumerate(ff.data):
-                    try:
-                        lines[i] += '\t{0:>10.4f}'.format(datum.value)
-                    except IndexError:
-                        lines.append('{0}\t{1:>10.4f}'.format(datum.name, datum.value))
-            with open('par.tot', 'w') as f:
-                for line in lines:
-                    f.write(line + '\n')
-
-        self.trial_ffs = []
-
-        if self.newton:
-            self.central_diff_derivs(self.init_ff, self.ffs_central)
-            self.do_method(self.calc_one_dim_newton(self.ffs_central), 'one dimensional newton-raphson',
-                           max_radii=self.newton_radii, cutoffs=self.newton_cutoffs)
-
-        if self.basic or self.lagrange or self.levenberg or self.svd:
-            residual_vector = self.calc_residual_vector(self.init_ff.data)
-            jacobian = self.calc_jacobian(self.ffs_central)
-            mat_a = jacobian.T.dot(jacobian) # A = J.T J
-            vec_b = jacobian.T.dot(residual_vector) # b = J.T r
-
-            if self.basic:
-                self.do_method(self.solver(mat_a, vec_b), 'basic',
-                               max_radii=self.basic_radii, cutoffs=self.basic_cutoffs)
-            if self.lagrange:
-                logger.log(8, 'lagrange factors: {}'.format(self.lagrange_factors))
-                for factor in self.lagrange_factors:
-                    self.do_method(
-                        self.calc_lagrange(mat_a, vec_b, factor), 'lagrange {}'.format(factor),
-                                   max_radii=self.lagrange_radii, cutoffs=self.lagrange_cutoffs)
-            if self.levenberg:
-                logger.log(8, 'levenberg factors: {}'.format(self.levenberg_factors))
-                for factor in self.levenberg_factors:
-                    self.do_method(
-                        self.calc_levenberg(mat_a, vec_b, factor), 'levenberg {}'.format(factor),
-                                   max_radii=self.levenberg_radii, cutoffs=self.levenberg_cutoffs)
-            if self.svd:
-                param_change_sets, methods = self.calc_svd(mat_a, vec_b, svd_thresholds=self.svd_factors)
-                for param_changes, method in izip(param_change_sets, methods):
-                    self.do_method(
-                        param_changes, method, max_radii=self.svd_radii, cutoffs=self.svd_cutoffs)
-
-        if len(self.trial_ffs) == 0:
-            self.init_ff.export_ff()
-            logger.warning('zero trial force fields generated')
-            logger.info('--- {} complete ---'.format(type(self).__name__))
-            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('final: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('no change from {}'.format(type(self).__name__))
-            return self.init_ff
-        logger.info('{} trial force fields generated'.format(len(self.trial_ffs)))
-        for ff in self.trial_ffs:
-            self.calc_x2_ff(ff)
-        self.trial_ffs = sorted(self.trial_ffs, key=lambda x: x.x2)
-        if self.trial_ffs[0].x2 < self.init_ff.x2:
-            # may be nice if this block...
-            self.best_ff = MM3()
-            self.best_ff.method = self.trial_ffs[0].method
-            self.best_ff.copy_attributes(self.init_ff)
-            self.best_ff.params = copy.deepcopy(self.trial_ffs[0].params)
-            self.best_ff.x2 = self.trial_ffs[0].x2
-            if self.trial_ffs[0].data is not None:
-                self.best_ff.data = self.trial_ffs[0].data
-            # ... was a function
-            self.best_ff.export_ff()
-            logger.info('--- {} complete ---'.format(type(self).__name__))
-            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('final: {} ({})'.format(self.best_ff.x2, self.best_ff.method))
-            return self.best_ff
+        # Going to need this no matter what.
+        if self.ff.conn is None:
+            logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
+            datatypes.export_ff(
+                self.ff.path, self.ff.params, lines=self.ff.lines)
+            self.ff.conn = calculate.main(self.ff_args)
+            compare.correlate_energies(self.ref_conn, self.ff.conn)
+            self.ff.score = compare.calculate_score(
+                self.ref_conn, self.ff.conn)
+            opt.pretty_ff_results(self.ff)
+        logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
+        logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
+        ffs = opt.differentiate_ff(self.ff)
+        logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
+        opt.score_ffs(
+            ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
+            store_conn=True)
+        if self.do_newton:
+            logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
+            opt.param_derivs(self.ff, ffs)
+            try:
+                param_changes = do_newton(self.ff.params)
+            except opt.OptError as e:
+                logger.warning(e)
+            else:
+                param_changes_dictionary = do_checks(
+                    param_changes, self.newton_radii, self.newton_cutoffs,
+                    method='NR')
+                self.new_ffs.extend(gen_ffs(self.ff, param_changes_dictionary))
+        if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
+                self.do_svd:
+            logger.log(
+                20, '~~ JACOBIAN AND RESIDUAL VECTOR ~~ '.rjust(79, '~'))
+            if self.do_lstsq:
+                logger.log(20, '~~ LEAST SQUARES ~~'.rjust(79, '~'))
+            if self.do_lagrange:
+                logger.log(20, '~~ LAGRANGE ~~'.rjust(79, '~'))
+            if self.do_levenberg:
+                logger.log(20, '~~ LEVENBERG-MARQUARDT ~~'.rjust(79, '~'))
+            if self.do_svd:
+                logger.log(
+                    20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
+        logger.log(20, '  -- Generated {} trial force field(s).'.format(
+                len(self.new_ffs)))
+        opt.score_ffs(
+            self.new_ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
+            restore=False)
+        logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
+        self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+        ff = self.new_ffs[0]
+        if ff.score < self.ff.score:
+            self.ff.copy_attributes(ff)
+            logger.log(20, '~~ GRADIENT FINISHED WITH IMPROVEMENTS ~~'.rjust(
+                    79, '~'))
+            opt.pretty_ff_results(self.ff, level=20)
+            opt.pretty_ff_results(ff, level=20)
         else:
-            self.init_ff.export_ff()
-            logger.info('--- {} complete ---'.format(type(self).__name__))
-            logger.info('initial: {} ({})'.format(self.init_ff.x2, self.init_ff.method))
-            logger.info('final: {} ({})'.format(self.trial_ffs[0].x2, self.trial_ffs[0].method))
-            logger.info('no change from {}'.format(type(self).__name__))
-            return self.init_ff
+            logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
+                    79, '~'))
+        if self.restore:
+            logger.log(20, '  -- Restoring original force field.')
+            datatypes.export_ff(
+                self.ff.path, self.ff.params, lines=self.ff.lines)
+        else:
+            logger.log(20, '  -- Writing best force field from gradient.')
+            datatypes.export_ff(
+                ff.path, ff.params, lines=ff.lines)
+        return ff
 
-    def solver(self, mat_a, vec_b, solver_method='lstsq'):
-        if solver_method == 'cholesky':
-            import scipy.linalg
-            cho = scipy.linalg.cholesky(mat_a, lower=True)
-            param_changes = scipy.linalg.cho_solve((cho, True), vec_b)
-        elif solver_method == 'lstsq':
-            param_changes, residuals, rank, singular_values = \
-                np.linalg.lstsq(mat_a, vec_b, rcond=10**-12)
-        elif solver_method == 'solve':
-            param_changes = np.linalg.solve(mat_a, vec_b)
-        param_changes = np.concatenate(param_changes).tolist()
-        return param_changes
+def gen_params(params, param_changes):
+    """
+    Takes the parameters and the unscaled changes, determines the properly
+    scaled parameter changes, and increments the parameter values by them.
+
+    Parameters
+    ----------
+    params : list of `datatypes.Param` (or subclass)
+    param_changes : list of floats
+                    Unscaled changes to the parameter values.
+    """
+    try:
+        for param, param_change in itertools.izip(params, param_changes):
+            param.value += param_change * param.step
+    except datatypes.ParamError as e:
+        logger.warning(e.message)
+        raise
+
+def gen_ffs(ff, param_changes_dictionary):
+    """
+    Wraps :func:`gen_params` to instead return force fields.
+    """
+    print ff.method, param_changes_dictionary
+    print ff.params
+    new_ffs = []
+    for method, param_changes in param_changes_dictionary.iteritems():
+        new_ff = ff.__class__()
+        new_ff.method = method
+        new_ff.params = copy.deepcopy(ff.params)
+        try:
+            gen_params(new_ff.params, param_changes)
+        except datatypes.ParamError as e:
+            logger.warning(e)
+        else:
+            new_ffs.append(new_ff)
+    return new_ffs
+
+def do_checks(par_changes, max_radii, cutoffs, method=None):
+    new_changes = {}
+    par_radius = calculate_radius(par_changes)
+    if max_radii:
+        for max_radius in sorted(max_radii):
+            scale_factor = check_radius(par_radius, max_radius)
+            if method:
+                name = '{} S{}'.format(method, max_radius)
+            else:
+                name = 'S{}'.format(max_radius)
+            new_changes.update({name: [x * scale_factor for x in par_changes]})
+            if scale_factor == 1:
+                break
+    elif cutoffs:
+        if check_cutoffs(par_radius, cutoffs):
+            if method:
+                name = '{} C'.format(method)
+            else:
+                name = 'C'
+            new_changes.update({name: par_changes})
+    return new_changes
+
+def check_cutoffs(par_rad, cutoffs):
+    """
+    Checks whether the radius of unscaled parameter changes lies
+    within the cutoffs. If so, return True, else return False.
+
+    Parameters
+    ----------
+    par_rad : float
+              Radius of unscaled parameter changes.
+    max_rad : float
+              Maximum radius of unscaled parameter changes.
+    """
+    if max(cutoffs) <= par_rad <= min(cutoffs):
+        return True
+    else:
+        return False
+
+def check_radius(par_rad, max_rad):
+    """
+    Checks whether the radius of unscaled parameter changes exceeds
+    the maximum radius. If so, return the scaling factor.
+
+    Parameters
+    ----------
+    par_rad : float
+              Radius of unscaled parameter changes.
+    max_rad : float
+              Maximum radius of unscaled parameter changes.
+    """
+    if par_rad > max_rad:
+        logger.warning(
+            '  -- Radius of unscaled parameter changes exceeded max.')
+        return max_rad / par_rad
+    else:
+        return 1
+
+def calculate_radius(par_changes):
+    """
+    Returns the radius of parameter changes.
+    """
+    return np.sqrt(sum([x**2 for x in par_changes]))
+
+def do_newton(params):
+    """
+    Do a Newton-Raphson type parameter change prediction.
+
+    Parameters
+    ----------
+    params : list of `datatypes.Param` (or subclass)
+             The instances of `datatypes.Param` must already have
+             their first and second derivative attributes populated.
+    """
+    # I would love more explanation about the logic in here that has
+    # been carried down from the original code.
+    par_changes = []
+    for param in params:
+        if param.d1 != 0.:
+            if param.d2 > 0.00000001:
+                par_changes.append(- param.d1 / param.d2)
+            else:
+                logger.warning('  -- 2nd derivative of {} is {:.4f}.'.format(
+                        param, param.d2))
+                logger.warning('  -- 1st derivative of {} is {:.4f}.'.format(
+                        param, param.d1))
+            if param.d1 > 0.:
+                par_changes.append(-1.)
+                logger.warning(
+                    '  -- Change for {} set to -1.'.format(param))
+            else:
+                par_changes.append(1.)
+                logger.warning(
+                    '  -- Change for {} set to 1.'.format(param))
+        else:
+            raise opt.OptError(
+                '1st derivative of {} is {}. Skipping Newton-Raphson.'.format(
+                    param, param.d1))
+    return par_changes
 
 if __name__ == '__main__':
-    import logging.config
-    import yaml
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
+    logging.config.dictConfig(co.LOG_SETTINGS)
+
+    import shutil
+    shutil.copyfile('d_sulf/mm3.fld.bup', 'd_sulf/mm3.fld')
+    INIT_FF_PATH = 'd_sulf/mm3.fld'
+    REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
+    CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
+    PARM_FILE = 'd_sulf/params.txt'
+
+    logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
+    ff = datatypes.import_ff(INIT_FF_PATH)
+    # ff.params = parameters.trim_params_by_file(ff.params, PARM_FILE)
+    # use_these_params = ff.params[:3]
+    use_these_params = ff.params[:2]
+    ff.params = use_these_params
+
+    grad = Gradient(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
     
-    gradient = Gradient()
-    opts = gradient.parse(sys.argv[1:])
-    gradient.setup(opts)
-    gradient.run()
+    grad.do_lstsq = False
+    grad.do_newton = True
+    grad.do_lagrange = False
+    grad.do_levenberg = False
+    grad.do_svd = False
+
+    grad.run()
+    

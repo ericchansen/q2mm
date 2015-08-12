@@ -1,19 +1,24 @@
 #!/usr/bin/python
 '''
 Selects parameters from force fields.
+
+ASSUMES THERE IS NO OVERLAP BETWEEN THE PARAMETERS SELECTED BY THE PARAMETER
+FILE AND BY PTYPES!
 '''
+from __future__ import print_function
 import argparse
-from argparse import RawTextHelpFormatter
 import logging
+import logging.config
 import numpy as np
 import sys
 
-from datatypes import MM3
-from filetypes import MacroModel
+import constants as co
+import datatypes
+import filetypes
 
 logger = logging.getLogger(__name__)
 
-def return_parameters_parser(add_help=True):
+def return_params_parser(add_help=True):
     '''
     Returns an argparse.ArgumentParser object for the selection of
     parameters.
@@ -32,11 +37,10 @@ imp2 - improper torsions (2nd MM3* column)
 sb   - stretch-bend force constants
 q    - bond dipoles''')
         parser = argparse.ArgumentParser(
-            formatter_class=RawTextHelpFormatter,
+            formatter_class=argparse.RawTextHelpFormatter,
             description=description)
     else:
         parser = argparse.ArgumentParser(add_help=False)
-
     par_group = parser.add_argument_group('parameters')
     par_group.add_argument(
         '--all', '-a', action='store_true',
@@ -69,130 +73,174 @@ q    - bond dipoles''')
         help='Select these parameter types.')
     return parser
 
-def select_parameters(opts, ff=None):
+def trim_params_by_type(params, ptypes):
+    '''
+    Select all parameters with a matching ptype.
+    '''
+    chosen_params = [x for x in params if x.ptype in ptypes]
+    logger.log(15, '  -- Trimmed number of parameters down to {}.'.format(
+            len(chosen_params)))
+    return chosen_params
+
+def trim_params_by_file(params, filename):
+    '''
+    Read a parameter file to select parameters.
+
+    Format of parameter file:
+    ff_row ff_col [neg]
+
+    ff_row - Integer for line number in mm3.fld.
+    ff_col - Integer (1, 2, or 3) for column in mm3.fld. Columns can be
+             described as follows:
+
+               A typical MM3* torsion has 3 force constants.
+                 V1 = 1
+                 V2 = 2
+                 V3 = 3
+
+               Similarly, bonds typically use all 3 columns.
+                 Equilibrium value = 1
+                 Force constant    = 2
+                 Bond dipole       = 3
+
+               As my last example, angles (there is no column 3).
+                 Equilibrium angle = 1
+                 Force constants   = 2
+
+    neg    - Just write the string neg to indicate that it's okay for this
+             parameter to have negative values.
+
+    Example parameter file:
+      1858 1         # Equilibrium length of bond on line 1858
+      1858 2         # Force constant of bond on line 1858
+      1859 1         # ...
+      1859 2         # ...
+      1859 3         # Bond dipole of bond on line 1859
+      1872 1         # Equilibrium angle of force constant on line 1872
+      1872 2         # Force constant of angle on line 1872
+      1891 1 neg     # V1 of torsion on line 1891
+      1891 2 neg     # V2 of torsion on line 1891
+      1891 3 neg     # V3 of torsion on line 1891
+    '''
+    # This will hold the parameters you chose.
+    chosen_params = []
+    # All parameters read from the file.
+    temp_params = []
+    with open(filename, 'r') as f:
+        for line in f:
+            line = line.partition('#')[0]
+            cols = line.split()
+            if cols:
+                mm3_row, mm3_col = int(cols[0]), int(cols[1])
+                # Check if you allow negative values.
+                allow_negative = None
+                for arg in cols[2:]:
+                    if 'neg' in arg:
+                        allow_negative = True
+                # Add information to the temporary list.
+                temp_params.append((mm3_row, mm3_col, allow_negative))
+    # Keep only the parameters that are specified in the file.
+    for param in params:
+        for temp_param in temp_params:
+            if param.mm3_row == temp_param[0] and \
+                    param.mm3_col == temp_param[1]:
+                # Update the allow negative information.
+                param._allow_negative = temp_param[2]
+                chosen_params.append(param)
+    logger.log(15, '  -- Trimmed number of parameters down to {}.'.format(
+            len(chosen_params)))
+    return chosen_params
+
+def gather_values(mmos):
+    '''
+    Gather bonds and angles from MacroModel .mmo files. Could expand to load
+    torsions.
+
+    Ex.:
+      bond_dic = {1857: [2.2233, 2.2156, 2.5123],
+                  1858: [1.3601, 1.3535, 1.3532]
+                 }
+    '''
+
+    bond_dic = {}
+    angle_dic = {}
+    for mmo in mmos:
+        for structure in mmo.structures:
+            for bond in structure.bonds:
+                if bond.ff_row in bond_dic:
+                    bond_dic[bond.ff_row].append(bond.value)
+                else:
+                    bond_dic[bond.ff_row] = [bond.value]
+            for angle in structure.angles:
+                if angle.ff_row in angle_dic:
+                    angle_dic[angle.ff_row].append(angle.value)
+                else:
+                    angle_dic[angle.ff_row] = [angle.value]
+    return bond_dic, angle_dic
+
+def main(args):
     '''
     Imports a force field object, which contains a list of all the available
-    parameters for optimization in the "params" attribute. Returns a list of
-    only the user selected parameters.
+    parameters. Returns a list of only the user selected parameters.
     '''
-    if opts.all:
-        opts.ptypes.extend(('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2', 'sb', 'q'))
-
-    if ff is None:
-        ff = MM3(opts.ffpath)
-        ff.import_ff()
-        logger.info('ff loaded from {} - {} parameters'.format(ff.path, len(ff.params)))
-
-    selected_params = []
-    if opts.ptypes:
-        selected_params.extend([x for x in ff.params if x.ptype in opts.ptypes])
-
-    if opts.pfile:
-        temp_params = []
-        with open(opts.pfile, 'r') as f:
-            for line in f:
-                line = line.partition('#')[0]
-                cols = line.split()
-                if cols:
-                    mm3_row, mm3_col = int(cols[0]), int(cols[1])
-                    allow_negative = None
-                    group_label = None
-                    for arg in cols[2:]:
-                        # if any(arg == x for x in ('allowneg', 'neg', 'negative')):
-                        if 'neg' in arg:
-                            allow_negative = True
-                            # logger.log(7, 'param {} {} allowed negative values'.format(
-                            #         mm3_row, mm3_col))
-                        if arg.startswith('g'):
-                            group_label = arg[1:]
-                    temp_params.append((mm3_row, mm3_col, allow_negative, group_label))
-        for param in ff.params:
-            for temp_param in temp_params:
-                if param.mm3_row == temp_param[0] and param.mm3_col == temp_param[1]:
-                    param._allow_negative = temp_param[2]
-                    param.group = temp_param[3]
-                    selected_params.append(param)
-                                       
-    # read mmo's
-    if opts.mmo:
-        mmo_files = []
-        for filename in opts.mmo:
-            mmo = MacroModel(filename)
-            mmo_files.append(mmo)
-    
-    # gather bonds and angles from mmo
+    parser = return_params_parser()
+    opts = parser.parse_args(args)
     if opts.average or opts.check:
-        bond_dic = {}
-        angle_dic = {}
-        for mmo in mmo_files:
-            for structure in mmo.structures:
-                for bond in structure.bonds:
-                    if bond.ff_row in bond_dic:
-                        bond_dic[bond.ff_row].append(bond.value)
-                    else:
-                        bond_dic[bond.ff_row] = [bond.value]
-                for angle in structure.angles:
-                    if angle.ff_row in angle_dic:
-                        angle_dic[angle.ff_row].append(angle.value)
-                    else:
-                        angle_dic[angle.ff_row] = [angle.value]
-
-    # check if the parameter's FF row is used in the selected data
-    # from the mmo file. currently only examines bonds and angles
-    if opts.check:
-        for param in selected_params:
-            found_ff_row = False
-            for ff_row in bond_dic:
-                if ff_row == param.mm3_row:
-                    found_ff_row = True
-                    break
-            if found_ff_row is False:
-                for ff_row in angle_dic:
-                    if ff_row == param.mm3_row:
-                        found_ff_row = True
-                        break
-            if found_ff_row is False:
-                print "{} doesn't appear to be in use".format(param)
-
-    if opts.average:
-        # calculate bond and angle average
-        bond_avg = {}
-        for ff_row, values in bond_dic.iteritems():
-            bond_avg[ff_row] = np.mean(values)
-        angle_avg = {}
-        for ff_row, values in angle_dic.iteritems():
-            angle_avg[ff_row] = np.mean(values)
-
-        # update params
-        for param in selected_params:
-            if param.mm3_row in bond_avg and param.ptype in ['be', 'ae']:
-                param.value = bond_avg[param.mm3_row]
-            if param.mm3_row in angle_avg and param.ptype in ['be', 'ae']:
-                param.value = angle_avg[param.mm3_row]
-                
-        ff.export_ff(params=selected_params, path=opts.average)
-
+        assert opts.mmo, 'Must provide MacroModel .mmo files!'
+    ff = datatypes.import_ff(opts.ffpath)
+    # Set the selected parameter types.
+    if opts.all:
+        opts.ptypes.extend(
+            ('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2', 'sb', 'q'))
+    logger.log(20, 'Selected parameter types: {}'.format(' '.join(opts.ptypes)))
+    params = []
+    # These two functions populate the selected parameter list. Each takes
+    # ff.params and returns a subset of it.
+    # WATCH OUT FOR DUPLICATES!
+    if opts.ptypes:
+        params.extend(trim_params_by_type(ff.params, opts.ptypes))
+    if opts.pfile:
+        params.extend(trim_params_by_file(ff.params, opts.pfile))
+    logger.log(20, '  -- Total number of chosen parameters: {}'.format(
+            len(params)))
+    # Load MacroModel .mmo files if desired.
+    if opts.mmo or opts.average or opts.check:
+        mmos = []
+        for filename in opts.mmo:
+            mmos.append(filetypes.MacroModel(filename))
+        bond_dic, angle_dic = gather_values(mmos)
+        # Check if the parameter's FF row shows up in the data gathered
+        # from the MacroModel .mmo file. Currently only takes into
+        # account bonds and angles.
+        if opts.check:
+            all_rows = bond_dic.keys() + angle_dic.keys()
+            for param in params:
+                if not param.mm3_row in all_rows:
+                    print("{} doesn't appear to be in use.".format(param))
+        # Change parameter values to be their averages.
+        if opts.average:
+            # bond_avg = {1857: 2.3171,
+            #             1858: 1.3556
+            #            }
+            bond_avg = {}
+            for ff_row, values in bond_dic.iteritems():
+                bond_avg[ff_row] = np.mean(values)
+            angle_avg = {}
+            for ff_row, values in angle_dic.iteritems():
+                angle_avg[ff_row] = np.mean(values)
+            # Update parameter values.
+            for param in params:
+                if param.ptype in ['be', 'ae'] and param.mm3_row in bond_avg:
+                    param.value = bond_avg[param.mm3_row]
+                if param.ptype in ['be', 'ae'] and param.mm3_row in angle_avg:
+                    param.value = angle_avg[param.mm3_row]
+            # Export the updated parameters.
+            datatypes.export_ff(opts.average, params)
+    # Print the parameters.
     if opts.printparams:
-        for param in selected_params:
+        for param in params:
             print('{} {}'.format(param.mm3_row, param.mm3_col))
-            # try:
-            #     print('{}[{},{}]({})({})({})'.format(
-            #             param.ptype, param.mm3_row, param.mm3_col, param.value,
-            #             param.group, param.allow_negative))
-            # except:
-            #     print param
-            
-    return selected_params
-
+                    
 if __name__ == '__main__':
-    import logging.config
-    import yaml
-
-    with open('logging.yaml', 'r') as f:
-        cfg = yaml.load(f)
-    logging.config.dictConfig(cfg)
-
-    parser = return_parameters_parser()
-    opts = parser.parse_args(sys.argv[1:])
-    select_parameters(opts)
-
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    main(sys.argv[1:])
