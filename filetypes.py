@@ -1,4 +1,4 @@
-'''
+"""
 Handles importing data from the various filetypes that Q2MM uses.
 
 Schrodinger
@@ -16,9 +16,11 @@ you'd like the warning messages to go away, copy the atom.typ file into the
 directory where you execute the Python scripts. Note that the atom.typ file
 must be located with your structure files, else the MacroModel jobs will fail.
 the atom.typ file
-'''
+"""
+from __future__ import print_function
 from string import digits
 import logging
+import mmap
 import numpy as np
 import os
 import re
@@ -27,13 +29,14 @@ from schrodinger import structure as schrod_structure
 from schrodinger.application.jaguar import input as schrod_jaguar_in
 
 import constants as co
+import datatypes
 
 logger = logging.getLogger(__name__)
 
 class File(object):
-    '''
+    """
     Base class for all filetypes.
-    '''
+    """
     def __init__(self, path):
         # self.path = path
         self.path = os.path.abspath(path)
@@ -42,28 +45,72 @@ class File(object):
         # self.name = os.path.splitext(self.filename)[0]
         
 class GaussLog(File):
-    '''
+    """
     Class used to retrieve data from Gaussian log files.
 
     If you are extracting frequencies/Hessian data from this file, use
     the keyword NoSymmetry when running the Gaussian calculation.
-    '''
+    """
     def __init__(self, path):
         super(GaussLog, self).__init__(path)
         self._structures = None
+        self._hessian = None
     @property
     def structures(self):
         if self._structures is None:
-            self._structures = self.import_optimization(coords_type='both')
+            self.populate()
         return self._structures
+    def populate(self):
+            logger.log(5, 'READING: {}'.format(self.filename))
+            struct = Structure()
+            arch = re.findall(
+                '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
+                open(self.path, 'r').read())[-1]
+            arch = arch.replace('\n ', '')
+            stuff = re.search(
+                '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
+                '\\\\(?P<date>.*?)'
+                '\\\\.*?\\\\\\\\(?P<com>.*?)'
+                '\\\\\\\\(?P<filename>.*?)'
+                '\\\\\\\\(?P<charge>.*?)'
+                ',(?P<multiplicity>.*?)'
+                '\\\\(?P<atoms>.*?)'
+                '\\\\\\\\.*?HF=(?P<hf>.*?)'
+                '\\\\NImag=1\\\\\\\\(?P<hess>.*?)'
+                '\\\\\\\\(?P<evals>.*?)'
+                '\\\\\\\\\\\\',
+                arch)
+            atoms = stuff.group('atoms')
+            atoms = atoms.split('\\')
+            for atom in atoms:
+                ele, x, y, z = atom.split(',')
+                struct.atoms.append(
+                    Atom(element=ele, x=x, y=y, z=z))
+            logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
+            self._structures = [struct]
+            hess_tri = stuff.group('hess')
+            hess_tri = hess_tri.split(',')
+            logger.log(
+                5, '  -- Read {} Hessian elements in triangular form.'.format(
+                    len(hess_tri)))
+            hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+            logger.log(
+                5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+            # hess[np.triu_indices_from(hess)] = hess_tri
+            # hess += np.triu(hess, -1).T
+            hess[np.tril_indices_from(hess)] = hess_tri
+            hess += np.tril(hess, -1).T
+            np.set_printoptions(threshold=np.nan)
+            self._hessian = datatypes.Hessian()
+            self._hessian.hessian = hess
     def get_most_converged(self, structures=None):
-        '''
+        """
         Used with geometry optimizations that don't succeed. Sometimes
         intermediate geometries obtain better convergence than the
         final geometry. This function returns the class Structure for
         the most converged geometry, which can then be used to output
         the coordinates for the next optimization.
-        '''
+        """
         if structures is None:
             structures = self.structures
         structures_compared = 0
@@ -207,7 +254,7 @@ class GaussLog(File):
                                        'section.'.format(i+1))
         return structures
     def import_optimization(self, coords_type='both'):
-        '''
+        """
         Finds structures from a Gaussian geometry optimization that
         are listed throughout the log file. Also finds data about
         their convergence.
@@ -216,7 +263,7 @@ class GaussLog(File):
                       Using both may cause coordinates in one format
                       to be overwritten by whatever comes later in the
                       log file.
-        '''
+        """
         logger.log(10, 'Reading: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
@@ -355,14 +402,14 @@ class GaussLog(File):
         return structures
                             
 class SchrodingerFile(File):
-    '''
+    """
     Parent class used for all Schrodinger files.
-    '''
+    """
     def convert_schrodinger_structure(self, sch_struct):
-        '''
+        """
         Converts a schrodinger.structure object to my own structure object.
         Sort of pointless. Probably remove soon.
-        '''
+        """
         my_struct = Structure()
         my_struct.props.update(sch_struct.property)
         for sch_atom in sch_struct.atom:
@@ -386,9 +433,9 @@ class SchrodingerFile(File):
         return my_struct
     
 class JaguarIn(SchrodingerFile):
-    '''
+    """
     Used to retrieve data from Jaguar .in files.
-    '''
+    """
     def __init__(self, path):
         super(JaguarIn, self).__init__(path)
         self._structures = None
@@ -448,9 +495,9 @@ class JaguarIn(SchrodingerFile):
         return self._structures
 
 class JaguarOut(File):
-    '''
+    """
     Used to retrieve data from Schrodinger Jaguar .out files.
-    '''
+    """
     def __init__(self, path):
         super(JaguarOut, self).__init__(path)
         self._structures = None
@@ -571,9 +618,9 @@ class JaguarOut(File):
         #         num_atoms * 3 - 6, num_atoms * 3))
         
 class Mae(SchrodingerFile):
-    '''
+    """
     Used to retrieve data from Schrodinger .mae files.
-    '''
+    """
     def __init__(self, path):
         super(Mae, self).__init__(path)
         self._structures = None
@@ -588,10 +635,10 @@ class Mae(SchrodingerFile):
                     len(self._structures)))
         return self._structures
     def get_aliph_hyds(self):
-        '''
+        """
         Returns the atom numbers of aliphatic hydrogens. These hydrogens
         always receive a charge of zero in MacroModel calculations.
-        '''
+        """
         aliph_hyd_nums = []
         atoms = self.structures[0].atoms
         bonds = self.structures[0].bonds
@@ -604,9 +651,9 @@ class Mae(SchrodingerFile):
         return aliph_hyd_nums
 
 class MacroModelLog(File):
-    '''
+    """
     Used to retrieve data from MacroModel log files.
-    '''
+    """
     def __init__(self, path):
         super(MacroModelLog, self).__init__(path)
         self._hessian = None
@@ -668,9 +715,9 @@ class MacroModelLog(File):
         return self._hessian
 
 class MacroModel(File):
-    '''
+    """
     Extracts data from MacroModel .mmo files.
-    '''
+    """
     def __init__(self, path):
         super(MacroModel, self).__init__(path)
         self._structures = None
@@ -767,7 +814,7 @@ class MacroModel(File):
             return None
 
 def select_structures(structures, indices, label):
-        '''
+        """
         Returns a list of structures where the index matches the label. This
         is used with the structures in the class MacroModel (.mmo's) and Mae
         (.mae's of course).
@@ -781,7 +828,7 @@ def select_structures(structures, indices, label):
         label   - A string. Possible strings include:
                       'opt', 'pre', 'hess' (.mae only), and
                       'stupid_extra_structure'
-        '''
+        """
         selected = []
         idx_iter = iter(indices)
         for str_num, struct in enumerate(structures):
@@ -795,9 +842,9 @@ def select_structures(structures, indices, label):
         return selected
 
 class Structure(object):
-    '''
+    """
     Data for a single structure/conformer/snapshot.
-    '''
+    """
     __slots__ = ['atoms', 'bonds', 'angles', 'torsions', 'props']
     def __init__(self):
         self.atoms = []
@@ -807,15 +854,15 @@ class Structure(object):
         self.props = {}
     @property
     def coords(self):
-        '''
+        """
         Returns atomic coordinates as a list of lists.
-        '''
+        """
         return [atom.coords for atom in self.atoms]
     def format_coords(self, format='latex'):
-        '''
+        """
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
-        '''
+        """
         # Please expand the supported elements.
         elements = {1: 'H',
                     6: 'C',
@@ -840,7 +887,7 @@ class Structure(object):
                         elements[atom.atomic_num], atom.x, atom.y, atom.z))
             return output
     def select_stuff(self, typ, com_match=None, **kwargs):
-        '''
+        """
         Selects bonds, angles, or torsions from the structure and returns them
         in the format used as data in the sqlite3 database.
 
@@ -852,7 +899,7 @@ class Structure(object):
                     In .mmo files, the comment corresponds to the substructures
                     name. This way, we only fit bonds, angles, and torsions that
                     directly depend on our parameters.
-        '''
+        """
         data = []
         for thing in getattr(self, typ):
             if (com_match and thing.comment in com_match) or \
@@ -866,37 +913,40 @@ class Structure(object):
         return data
 
 class Atom(object):
-    '''
+    """
     Data class for a single atom.
-    '''
+    """
     __slots__ = ['atom_type', 'atom_type_name', 'atomic_num', 'atomic_mass',
                  'bonded_atom_indices', 'coords_type', 'element', 'exact_mass',
                  'index', 'partial_charge', 'x', 'y', 'z']
-    def __init__(self):
-        self.atom_type = None
-        self.atom_type_name = None
-        self.atomic_num = None
-        self.atomic_mass = None
-        self.bonded_atom_indices = None
-        self.coords_type = None
-        self.element = None
-        self.exact_mass = None
-        self.index = None
-        self.partial_charge = None
-        self.x = None
-        self.y = None
-        self.z = None
+    def __init__(self, atom_type=None, atom_type_name=None, atomic_num=None,
+                 atomic_mass=None, bonded_atom_indices=None, coords_type=None,
+                 element=None, exact_mass=None, index=None, partial_charge=None,
+                 x=None, y=None, z=None):
+        self.atom_type = atom_type
+        self.atom_type_name = atom_type_name
+        self.atomic_num = atomic_num
+        self.atomic_mass = atomic_mass
+        self.bonded_atom_indices = bonded_atom_indices
+        self.coords_type = coords_type
+        self.element = element
+        self.exact_mass = exact_mass
+        self.index = index
+        self.partial_charge = partial_charge
+        self.x = x
+        self.y = y
+        self.z = z
     @property
     def coords(self):
         return [self.x, self.y, self.z]
     def __repr__(self):
-        return '{}[{},{}]'.format(
-            self.element, self.atom_type, self.atom_type_name)
+        return '{}[{},{},{}]'.format(
+            self.element, self.x, self.y, self.z)
 
 class Bond(object):
-    '''
+    """
     Data class for a single bond.
-    '''
+    """
     __slots__ = ['atom_nums', 'comment', 'order', 'value', 'ff_row']
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
@@ -920,17 +970,17 @@ class Bond(object):
         return datum
 
 class Angle(Bond):
-    '''
+    """
     Data class for a single angle.
-    '''
+    """
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Angle, self).__init__(atom_nums, comment, order, value, ff_row)
 
 class Torsion(Bond):
-    '''
+    """
     Data class for a single torsion.
-    '''
+    """
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
