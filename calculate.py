@@ -176,7 +176,7 @@ class Mae(object):
             macro_tokens = int(macro_tokens.group(1))
             if suite_tokens > MIN_SUITE_TOKENS and \
                     macro_tokens > MIN_MACRO_TOKENS:
-                logger.log(5, 'Running: {}'.format(self.name_com))
+                logger.log(5, 'RUNNING: {}'.format(self.name_com))
                 sp.check_output(
                     'bmin -WAIT {}'.format(
                         os.path.splitext(self.name_com)[0]), shell=True)
