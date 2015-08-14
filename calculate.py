@@ -333,7 +333,7 @@ class Mae(object):
             com += COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
         with open(os.path.join(self.directory, self.name_com), 'w') as f:
             f.write(com)
-        logger.log(0, 'Wrote: {}'.format(os.path.join(self.directory, self.name_com)))
+        logger.log(0, 'WROTE: {}'.format(os.path.join(self.directory, self.name_com)))
 
 def collect_data(commands, inps, ff_dir, sub_names=None):
     if any([x in COM_LOAD_FF for x in commands]):

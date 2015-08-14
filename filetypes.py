@@ -152,7 +152,7 @@ class GaussLog(File):
                 structures_compared, len(self.structures)))
         return best_structure
     def import_any(self, coords_type='both'):
-        logger.log(10, 'Reading: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -264,7 +264,7 @@ class GaussLog(File):
                       to be overwritten by whatever comes later in the
                       log file.
         """
-        logger.log(10, 'Reading: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -472,7 +472,7 @@ class JaguarIn(SchrodingerFile):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'Reading: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.path))
             sch_ob = schrod_jaguar_in.read(self.path)
             sch_struct = sch_ob.getStructure()
             structures = [self.convert_schrodinger_structure(sch_struct)]
@@ -526,7 +526,7 @@ class JaguarOut(File):
             self.import_file()
         return self._frequencies
     def import_file(self):
-        logger.log(10, 'Reading: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.path))
         frequencies = []
         force_constants = []
         eigenvectors = []
@@ -627,7 +627,7 @@ class Mae(SchrodingerFile):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'Reading: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.path))
             sch_structs = list(schrod_structure.StructureReader(self.path))
             self._structures = [self.convert_schrodinger_structure(sch_struct)
                                 for sch_struct in sch_structs]
@@ -660,7 +660,7 @@ class MacroModelLog(File):
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'Reading: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.path))
             with open(self.path, 'r') as f:
                 lines = f.read()
             num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
@@ -724,7 +724,7 @@ class MacroModel(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'Reading: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.path))
             self._structures = []
             with open(self.path, 'r') as f:
                 count_current = 0
