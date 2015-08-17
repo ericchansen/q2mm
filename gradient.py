@@ -123,6 +123,9 @@ class Gradient(opt.Optimizer):
                 more_changes = do_checks(
                     changes, self.newton_radii, self.newton_cutoffs,
                     method='NR')
+                for key, val in more_changes.iteritems():
+                    opt.pretty_param_changes(
+                        self.ff.params, val, method=key)
                 self.new_ffs.extend(gen_ffs(self.ff, more_changes))
         if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
                 self.do_svd:
@@ -135,6 +138,7 @@ class Gradient(opt.Optimizer):
             jacob = form_jacobian(diff_vals, r_whts)
             ma = jacob.T.dot(jacob)
             vb = jacob.T.dot(resid)
+            logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
             logger.log(5, 'A:\n{}'.format(ma))
             logger.log(5, 'b:\n{}'.format(vb))
             if self.do_lstsq:
@@ -143,6 +147,9 @@ class Gradient(opt.Optimizer):
                 more_changes = do_checks(
                     changes, self.lstsq_radii, self.lstsq_cutoffs,
                     method='LSTSQ')
+                for key, val in more_changes.iteritems():
+                    opt.pretty_param_changes(
+                        self.ff.params, val, method=key)
                 self.new_ffs.extend(gen_ffs(self.ff, more_changes))
             if self.do_lagrange:
                 logger.log(20, '~~ LAGRANGE ~~'.rjust(79, '~'))
@@ -152,6 +159,9 @@ class Gradient(opt.Optimizer):
                     more_changes = do_checks(
                         changes, self.lagrange_radii, self.lagrange_cutoffs,
                         method='LAGRANGE')
+                    for key, val in more_changes.iteritems():
+                        opt.pretty_param_changes(
+                            self.ff.params, val, method=key)
                     self.new_ffs.extend(gen_ffs(self.ff, more_changes))
             if self.do_levenberg:
                 logger.log(20, '~~ LEVENBERG-MARQUARDT ~~'.rjust(79, '~'))
@@ -161,15 +171,24 @@ class Gradient(opt.Optimizer):
                     more_changes = do_checks(
                         changes, self.levenberg_radii, self.levenberg_cutoffs,
                         method='LM')
+                    for key, val in more_changes.iteritems():
+                        opt.pretty_param_changes(
+                            self.ff.params, val, method=key)
                     self.new_ffs.extend(gen_ffs(self.ff, more_changes))
             if self.do_svd:
                 logger.log(
                     20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
                 mu, vs, mv = do_svd(ma)
                 if self.svd_factors:
-                    for factor in sorted(self.svd_factors):
-                        logger.log(20, 'FACTOR: {}'.format(factor))
-                        changes = do_svd_thresholds(mu, vs, mv, factor, vb)
+                    for i, factor in enumerate(sorted(self.svd_factors)):
+                        logger.log(
+                            20, ' FACTOR {} '.format(factor).center(79, '-'))
+                        if i != 0:
+                            old_vs = new_vs
+                        changes, new_vs = do_svd_thresholds(
+                            mu, vs, mv, factor, vb)
+                        if i != 0 and np.all(new_vs == old_vs):
+                            continue
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
                             method='SVD F{}'.format(factor))
@@ -178,65 +197,69 @@ class Gradient(opt.Optimizer):
                                 self.ff.params, val, method=key)
                         self.new_ffs.extend(gen_ffs(self.ff, more_changes))
                 else:
-                    for i in xrange(0, len(vs) - 1):
+                    for i in xrange(0, len(vs)):
                         logger.log(
-                            20,'  -- Zeroed {} diagonal elements.'.format(
-                                i + 1))
+                            20,
+                            ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
                         changes = do_svd_wo_thresholds(mu, vs, mv, i, vb)
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
-                            method='SVD Z{}'.format(i + 1))
+                            method='SVD Z{}'.format(i))
+                        for key, val in more_changes.iteritems():
+                            opt.pretty_param_changes(
+                                self.ff.params, val, method=key)
                         self.new_ffs.extend(gen_ffs(self.ff, more_changes))
         logger.log(20, '  -- Generated {} trial force field(s).'.format(
                 len(self.new_ffs)))
-        logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
-        opt.score_ffs(
-            self.new_ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
-            restore=False)
-        self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
-        ff = self.new_ffs[0]
-        if ff.score < self.ff.score:
-            logger.log(20, '~~ GRADIENT FINISHED WITH IMPROVEMENTS ~~'.rjust(
+        if len(self.new_ffs) == 0:
+            logger.log(
+                20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
-            opt.pretty_ff_results(self.ff, level=20)
-            opt.pretty_ff_results(ff, level=20)
-            self.ff.copy_attributes(ff)
-            if self.restore:
-                logger.log(20, '  -- Restoring original force field.')
-                datatypes.export_ff(
-                    self.ff.path, self.ff.params, lines=self.ff.lines)
-            else:
-                logger.log(20, '  -- Writing best force field from gradient.')
-                datatypes.export_ff(
-                    ff.path, ff.params, lines=ff.lines)
-            return ff
-        else:
-            logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
-                    79, '~'))
-            opt.pretty_ff_results(self.ff, level=20)
-            opt.pretty_ff_results(ff, level=20)
             logger.log(20, '  -- Restoring original force field.')
             datatypes.export_ff(
                 self.ff.path, self.ff.params, lines=self.ff.lines)
             return self.ff
+        else:
+            logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
+            opt.score_ffs(
+                self.new_ffs, sef.ff_args, self.ref_conn, parent_ff=self.ff,
+                restore=False)
+            self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+            ff = self.new_ffs[0]
+            if ff.score < self.ff.score:
+                logger.log(20, '~~ GRADIENT FINISHED WITH IMPROVEMENTS ~~'.rjust(
+                        79, '~'))
+                opt.pretty_ff_results(self.ff, level=20)
+                opt.pretty_ff_results(ff, level=20)
+                self.ff.copy_attributes(ff)
+                if self.restore:
+                    logger.log(20, '  -- Restoring original force field.')
+                    datatypes.export_ff(
+                        self.ff.path, self.ff.params, lines=self.ff.lines)
+                else:
+                    logger.log(20, '  -- Writing best force field from gradient.')
+                    datatypes.export_ff(
+                        ff.path, ff.params, lines=ff.lines)
+                return ff
+            else:
+                logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
+                        79, '~'))
+                opt.pretty_ff_results(self.ff, level=20)
+                opt.pretty_ff_results(ff, level=20)
+                logger.log(20, '  -- Restoring original force field.')
+                datatypes.export_ff(
+                    self.ff.path, self.ff.params, lines=self.ff.lines)
+                return self.ff
 
-def do_svd_wo_thresholds(mu, vs, mv, idx, vb):
-    """
-    Reform original matrix after SVD without thresholds.
+def mod_v_thresholds(v, f):
+    x = np.copy(v)
+    x[x < f] = 0
+    return x
 
-    Parameters
-    ----------
-    mu : NumPy matrix
-    vs : NumPy vector
-    mv : NumPy matrix
-    idx: int
-    vb : NumPy vector
-    """
-    vs[- (idx + 1)] = 0.
-    logger.log(5, 's:\n{}'.format(vs))
-    reform = mu.dot(np.diag(vs)).dot(mv)
-    logger.log(5, 'A:\n{}'.format(reform))
-    return do_lstsq(reform, vb)
+def do_svd_reform(u, s, v):
+    a = u.dot(np.diag(s)).dot(v)
+    logger.log('A:\n{}'.format(a))
+    return a
 
 def do_svd_thresholds(mu, vs, mv, factor, vb):
     """
@@ -256,6 +279,25 @@ def do_svd_thresholds(mu, vs, mv, factor, vb):
     logger.log(5, 's:\n{}'.format(vs))
     reform = mu.dot(np.diag(vs)).dot(mv)
     logger.log(5, 'A:\n{}'.format(reform))
+    return do_lstsq(reform, vb), vs
+
+def do_svd_wo_thresholds(mu, vs, mv, idx, vb):
+    """
+    Reform original matrix after SVD without thresholds.
+
+    Parameters
+    ----------
+    mu : NumPy matrix
+    vs : NumPy vector
+    mv : NumPy matrix
+    idx: int
+    vb : NumPy vector
+    """
+    if idx:
+        vs[-idx] = 0.
+    logger.log(5, 's:\n{}'.format(vs))
+    reform = mu.dot(np.diag(vs)).dot(mv)
+    logger.log(5, 'A:\n{}'.format(reform))
     return do_lstsq(reform, vb)
 
 def do_svd(ma):
@@ -271,7 +313,6 @@ def do_svd(ma):
     logger.log(5, 'U:\n{}'.format(mu))
     logger.log(5, 's:\n{}'.format(vs))
     logger.log(5, 'V:\n{}'.format(mv))
-    logger.log(5, '-' * 79)
     return mu, vs, mv
 
 def do_levenberg(ma, vb, factor):
@@ -347,8 +388,8 @@ def form_jacobian(diff_vals, whts):
             dydp = (diff_vals[i_ff][i_data] -
                     diff_vals[i_ff + 1][i_data]) / 2
             jacob[i_data, i] = whts[i_data] * dydp
-    logger.log(15, '  -- Formed {} Jacobian.'.format(jacob.shape))
     logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
+    logger.log(15, '  -- Formed {} Jacobian.'.format(jacob.shape))
     return jacob
 
 def form_residual_vector(c_vals, r_vals, whts):
@@ -369,8 +410,8 @@ def form_residual_vector(c_vals, r_vals, whts):
     r = np.empty((n, 1), dtype=float)
     for i in xrange(0, n):
         r[i, 0] = whts[i] * (r_vals[i] - c_vals[i])
-    logger.log(15, '  -- Formed {} residual vector.'.format(r.shape))
     logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(r))
+    logger.log(15, '  -- Formed {} residual vector.'.format(r.shape))
     return r
 
 def column_from_conn(conn, *cols):
@@ -429,7 +470,7 @@ def gen_ffs(ff, param_changes_dictionary):
 
 def do_checks(par_changes, max_radii, cutoffs, method=None):
     new_changes = {}
-    par_radius = calculate_radius(par_changes)
+    par_radius = opt.calculate_radius(par_changes)
     if max_radii:
         for max_radius in sorted(max_radii):
             scale_factor = check_radius(par_radius, max_radius)
@@ -489,12 +530,6 @@ def check_radius(par_rad, max_rad):
     else:
         return 1
 
-def calculate_radius(par_changes):
-    """
-    Returns the radius of parameter changes.
-    """
-    return np.sqrt(sum([x**2 for x in par_changes]))
-
 def do_newton(params):
     """
     Do a Newton-Raphson type parameter change prediction.
@@ -539,23 +574,34 @@ if __name__ == '__main__':
     INIT_FF_PATH = 'd_sulf/mm3.fld'
     REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
     CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
+    # REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae msc.01.mae '
+    #             'msd.01.mae mse.01.mae'.split())
+    # CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae msc.01.mae '
+    #             'msd.01.mae mse.01.mae -f'.split())
     PARM_FILE = 'd_sulf/params.txt'
 
     logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
     ff = datatypes.import_ff(INIT_FF_PATH)
     # ff.params = parameters.trim_params_by_file(ff.params, PARM_FILE)
     # use_these_params = ff.params[:3]
-    use_these_params = ff.params[:2]
+    # use_these_params = ff.params[:2]
+    use_these_params = [ff.params[0], ff.params[1], ff.params[3], ff.params[4]]
     ff.params = use_these_params
     ff.method = 'INIT'
 
     grad = Gradient(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
     
     grad.do_lstsq = False
-    grad.do_newton = False
+    grad.do_newton = True
     grad.do_lagrange = False
     grad.do_levenberg = False
-    grad.do_svd = True
+    grad.do_svd = False
+
+    grad.svd_cutoffs = [0.1, 10.]
+    # grad.svd_factors = [0.001, 0.01, 0.1, 1.]
+    grad.svd_factors = None
+    grad.svd_radii = None
+
 
     grad.run()
     
