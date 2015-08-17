@@ -35,9 +35,7 @@ class Gradient(opt.Optimizer):
     the parameter changes are scaled to match that radius. If the radius of
     unsigned parameter change is less than the given radius, the current
     parameter changes are applied without modification, and the remaining radii
-    are not iterated through. If this is used with an optimization method, it
-    can and probably will generate many new parameter sets for that single
-    method.
+    are not iterated through.
 
     Attributes
     ----------------
@@ -84,15 +82,18 @@ class Gradient(opt.Optimizer):
         self.lstsq_cutoffs = None
         self.lstsq_radii = [0.1, 1., 5., 10.]
         self.lagrange_cutoffs = None
-        self.lagrange_factors = [0.01, 0.1, 1., 10.]
+        self.lagrange_factors = [0.01, 10.]
+        # self.lagrange_factors = [0.01, 0.1, 1., 10.]
         self.lagrange_radii = [0.1, 1., 5., 10.]
         self.levenberg_cutoffs = None
-        self.levenberg_factors = [0.01, 0.1, 1., 10.]
+        # self.levenberg_factors = [0.01, 0.1, 1., 10.]
+        self.levenberg_factors = [0.01, 10.]
         self.levenberg_radii = [0.1, 1., 5., 10.]
         self.newton_cutoffs = None
         self.newton_radii = [0.1, 1., 5., 10.]
         self.svd_cutoffs = [0.1, 10.]
-        self.svd_factors = [0.001, 0.01, 0.1, 1.]
+        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
+        self.svd_factors = None
         self.svd_radii = None
     def run(self):
         # Going to need this no matter what.
@@ -188,14 +189,11 @@ class Gradient(opt.Optimizer):
                         changes, new_vs = do_svd_thresholds(
                             mu, vs, mv, factor, vb)
                         if i != 0 and np.all(new_vs == old_vs):
+                            logger.log(20,'  -- No change. Skipping.')
                             continue
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
                             method='SVD F{}'.format(factor))
-                        for key, val in more_changes.iteritems():
-                            opt.pretty_param_changes(
-                                self.ff.params, val, method=key)
-                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
                 else:
                     for i in xrange(0, len(vs)):
                         logger.log(
@@ -205,10 +203,10 @@ class Gradient(opt.Optimizer):
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
                             method='SVD Z{}'.format(i))
-                        for key, val in more_changes.iteritems():
-                            opt.pretty_param_changes(
-                                self.ff.params, val, method=key)
-                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+                for key, val in more_changes.iteritems():
+                    opt.pretty_param_changes(
+                        self.ff.params, val, method=key)
+                self.new_ffs.extend(gen_ffs(self.ff, more_changes))
         logger.log(20, '  -- Generated {} trial force field(s).'.format(
                 len(self.new_ffs)))
         if len(self.new_ffs) == 0:
@@ -222,7 +220,7 @@ class Gradient(opt.Optimizer):
         else:
             logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
             opt.score_ffs(
-                self.new_ffs, sef.ff_args, self.ref_conn, parent_ff=self.ff,
+                self.new_ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
                 restore=False)
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             ff = self.new_ffs[0]
@@ -328,6 +326,7 @@ def do_levenberg(ma, vb, factor):
     mac = copy.deepcopy(ma)
     ind = np.diag_indices_from(mac)
     mac[ind] = mac[ind] * (1 + factor)
+    logger.log(5, 'A:\n{}'.format(mac))
     return do_lstsq(mac, vb)
 
 def do_lagrange(ma, vb, factor):
@@ -343,6 +342,7 @@ def do_lagrange(ma, vb, factor):
     mac = copy.deepcopy(ma)
     ind = np.diag_indices_from(mac)
     mac[ind] = mac[ind] + factor
+    logger.log(5, 'A:\n{}'.format(mac))
     return do_lstsq(mac, vb)
 
 def do_lstsq(ma, vb):
@@ -572,12 +572,18 @@ if __name__ == '__main__':
     import shutil
     shutil.copyfile('d_sulf/mm3.fld.bup', 'd_sulf/mm3.fld')
     INIT_FF_PATH = 'd_sulf/mm3.fld'
-    REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
-    CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
+
+    REF_ARGS = (' -d d_sulf -jeo msa.01.mae msb.01.mae'.split())
+    CAL_ARGS = (' -d d_sulf -meo msa.01.mae msb.01.mae'.split())
+
+    # REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
+    # CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
+
     # REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae msc.01.mae '
     #             'msd.01.mae mse.01.mae'.split())
     # CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae msc.01.mae '
     #             'msd.01.mae mse.01.mae -f'.split())
+
     PARM_FILE = 'd_sulf/params.txt'
 
     logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
@@ -591,11 +597,11 @@ if __name__ == '__main__':
 
     grad = Gradient(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
     
-    grad.do_lstsq = False
+    grad.do_lstsq = True
     grad.do_newton = True
     grad.do_lagrange = False
-    grad.do_levenberg = False
-    grad.do_svd = False
+    grad.do_levenberg = True
+    grad.do_svd = True
 
     grad.svd_cutoffs = [0.1, 10.]
     # grad.svd_factors = [0.001, 0.01, 0.1, 1.]

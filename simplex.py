@@ -52,8 +52,8 @@ class Simplex(opt.Optimizer):
             ff, ff_lines, ff_args, ref_args, ref_conn, restore)
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
-        self.max_cycles = 5
-        self.max_cycles_wo_change = 1
+        self.max_cycles = 10
+        self.max_cycles_wo_change = 3
         self.max_params = 10
     def run(self):
         """
@@ -82,7 +82,7 @@ class Simplex(opt.Optimizer):
             self.ff.score = compare.compare_data(self.ref_conn, conn)
         else:
             logger.log(15, '  -- Reused existing score and data for initial FF.')
-        logger.log(15, 'Initial FF score: {}'.format(self.ff.score))
+        logger.log(15, 'INIT FF SCORE: {}'.format(self.ff.score))
         if self.max_params and len(self.ff.params) > self.max_params:
             logger.log(
                 20, '  -- Reducing number of parameters to {} for the simplex '
