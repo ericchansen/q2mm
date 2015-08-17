@@ -331,25 +331,25 @@ def differentiate_params(params, central=True):
     param_sets = []
     for i, param in enumerate(params):
         while True:
+            original_value = param.value
+            forward_params = copy.deepcopy(params)
+            if central:
+                backward_params = copy.deepcopy(params)
             try:
-                forward_val = param.value + param.step
+                forward_params[i].value = original_value + param.step
                 if central:
-                    backward_val = param.value - param.step
+                    backward_params[i].value = original_value - param.step
             except datatypes.ParamError as e:
                 logger.warning(e.message)
                 old_step = param.step
-                param.step = param.value * 0.05
+                param.step = param.value * 0.1
                 logger.warning(
                     '  -- Changed step size of {} from {} to {}.'.format(
                         param, old_step, param.step))
             else:
                 # So much wasted time and memory.
-                forward_params = copy.deepcopy(params)
-                forward_params[i].value = forward_val
                 param_sets.append(forward_params)
                 if central:
-                    backward_params = copy.deepcopy(params)
-                    backward_params[i].value = backward_val
                     param_sets.append(backward_params)
                 break
     logger.log(15, '  -- Generated {} differentiated parameter sets.'.format(
