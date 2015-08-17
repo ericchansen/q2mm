@@ -50,7 +50,7 @@ class Param(object):
         self._value = None
         self.value = value
     def __repr__(self):
-        return '{}[{}]({})'.format(
+        return '{}[{}]({:7.4f})'.format(
             self.__class__.__name__, self.ptype, self.value)
     @property
     def allow_negative(self):
@@ -389,7 +389,7 @@ def export_ff(path, params, lines=None):
     logger.log(10, '  -- Modified {} parameters.'.format(modified_params))
     with open(path, 'w') as f:
         f.writelines(lines)
-    logger.log(10, 'Wrote: {}'.format(path))
+    logger.log(10, 'WROTE: {}'.format(path))
 
 def import_ff(path, sub_search='OPT'):
     """
@@ -404,7 +404,7 @@ def import_ff(path, sub_search='OPT'):
     ff = MM3(path)
     ff.params = []
     with open(ff.path, 'r') as f:
-        logger.log(15, 'Reading: {}'.format(ff.path))
+        logger.log(15, 'READING: {}'.format(ff.path))
         section_sub = False
         section_smiles = False
         for i, line in enumerate(f):

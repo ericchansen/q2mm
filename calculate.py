@@ -4,6 +4,7 @@ import logging
 import logging.config
 import numpy as np
 import os
+import random
 import re
 import sqlite3
 import subprocess as sp
@@ -506,65 +507,8 @@ def collect_data(commands, inps, ff_dir, sub_names=None):
                     c.executemany(co.STR_SQLITE3, data)
     c.execute('SELECT Count(*) FROM data')
     count_data = c.fetchone()
-    logging.log(5, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
+    logger.log(15, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
     conn.commit()
-    return conn
-
-def main(args):
-    parser = return_calculate_parser()
-    opts = parser.parse_args(args)
-    # commands looks like:
-    # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], ['b1.01.mae', 'b2.01.mae']],
-    #  'mb': [['a1.01.mae'], ['b1.01.mae']],
-    #  'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
-    # }
-    commands = {key: value for key, value in opts.__dict__.iteritems() if key
-                in COM_ALL and value}
-    pretty_commands(commands)
-    # commands_for_filenames looks like:
-    # {'a1.01.mae': ['me', 'mb'],
-    #  'a1.01.in': ['jeig'],
-    #  'a1.out': ['jeig'],
-    #  'a2.01.mae': ['me'],
-    #  'a3.01.mae': ['me'],
-    #  'b1.01.mae': ['me', 'mb'],
-    #  'b1.01.in': ['jeig'],
-    #  'b1.out': ['jeig'],
-    #  'b2.01.mae': ['me']
-    # }
-    commands_for_filenames = sort_commands_by_filename(commands)
-    pretty_commands_for_files(commands_for_filenames)
-    # inps looks like:
-    # {'a1.01.mae': <__main__.Mae object at 0x1110e10>,
-    #  'a1.01.in': None,
-    #  'a1.out': None,
-    #  'a2.01.mae': <__main__.Mae object at 0x1733b23>,
-    #  'a3.01.mae': <__main__.Mae object at 0x1853e12>,
-    #  'b1.01.mae': <__main__.Mae object at 0x2540e10>,
-    #  'b1.01.in': None,
-    #  'b1.out': None,
-    #  'b2.01.mae': <__main__.Mae object at 0x1353e11>,
-    # }
-    inps = {}
-    for filename, commands_for_filename in commands_for_filenames.iteritems():
-        if any(x in COM_MACROMODEL for x in commands_for_filename):
-            if os.path.splitext(filename)[1] == '.mae':
-                inps[filename] = Mae(
-                    os.path.join(opts.directory, filename), commands_for_filename)
-                inps[filename].write_com()
-        else:
-            inps[filename] = None
-    # Run external software if need be.
-    if opts.norun:
-        logger.log(20, "  -- Not running external software calculations. "
-                   "Assume already completed.")
-    else:
-        for filename, some_class in inps.iteritems():
-            if some_class is not None:
-                some_class.run_com()
-    conn = collect_data(commands, inps, opts.directory)
-    if opts.doprint:
-        pretty_conn(conn)
     return conn
 
 def get_label(row):
@@ -597,7 +541,7 @@ def pretty_conn(conn):
               '  ' + '{:22.4f}'.format(row['val']))
     print('-' * 50)
 
-def pretty_commands_for_files(commands_for_files, level=0):
+def pretty_commands_for_files(commands_for_files, level=5):
     '''Pretty verbosity for the .mae commands dictionary.'''
     if logger.getEffectiveLevel() <= level:
         foobar = textwrap.TextWrapper(width=48, subsequent_indent=' '*26)
@@ -611,7 +555,7 @@ def pretty_commands_for_files(commands_for_files, level=0):
             logger.log(level, foobar.fill(' '.join(commands)))
         logger.log(level, '-'*50)
 
-def pretty_commands(commands, level=0):
+def pretty_commands(commands, level=5):
     '''Pretty verbosity for the commands dictionary.'''
     if logger.getEffectiveLevel() <= level:
         foobar = textwrap.TextWrapper(width=48, subsequent_indent=' '*24)
@@ -664,6 +608,90 @@ def sort_commands_by_filename(commands):
                     sorted_commands[filename] = [command]
     return sorted_commands
 
+def generate_fake_conn(commands, inps, ff_dir, sub_names=None):
+    outs = {}
+    conn = sqlite3.connect(DATABASE_LOC)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.executescript(co.STR_INIT_SQLITE3)
+    for com, groups_of_filenames in commands.iteritems():
+        if com in ['je', 'je2', 'jeo']:
+            # Set the type.
+            if com == 'je':
+                typ = 'energy_1'
+            elif com == 'je2':
+                typ = 'energy_2'
+            elif com == 'jeo':
+                typ = 'energy_opt'
+            # Move through files. Grouping matters here. Each group (idx_1) is
+            # used to separately calculate relative energies.
+            for idx_1, group_of_filenames in enumerate(groups_of_filenames):
+                for filename in group_of_filenames:
+                    # Currently this doesn't exist. inps[filename].filename is
+                    # None.
+                    # if inps[filename].filename not in outs:
+                    if filename not in outs:
+                        # Index the file so you don't read it more than once.
+                        outs[filename] = \
+                            filetypes.Mae(os.path.join(ff_dir, filename))
+                    #     outs[inps[filename].filename] = \
+                    #         filetypes.Mae(os.path.join(
+                    #             inps[filename].directory,
+                    #             inps[filename].filename))
+                    # mae = outs[inps[filename].filename]
+                    mae = outs[filename]
+                    for str_num, struct in enumerate(mae.structures):
+                        energy = {'val': random.gauss(2, 3),
+                                  'com': com,
+                                  'typ': typ,
+                                  'src_1': filename,
+                                  # 'src_1': inps[filename].filename,
+                                  'idx_1': idx_1 + 1,
+                                  'idx_2': str_num + 1}
+                        energy = co.set_data_defaults(energy)
+                        c.execute(co.STR_SQLITE3, energy)
+        if com in ['me', 'me2', 'meo']:
+            # Set the type.
+            if com == 'me':
+                typ = 'energy_1'
+            elif com == 'me2':
+                typ = 'energy_2'
+            elif com == 'meo':
+                typ = 'energy_opt'
+            # Set the index.
+            if com in ['me', 'me2']:
+                index = 'pre'
+            elif com == 'meo':
+                index = 'opt'
+            # Move through files. Grouping matters here. Each group (idx_1) is
+            # used to separately calculate relative energies.
+            for idx_1, group_of_filenames in enumerate(groups_of_filenames):
+                for filename in group_of_filenames:
+                    if inps[filename].name_mae not in outs:
+                        # Index the output file so you don't read it more than
+                        # once.
+                        outs[inps[filename].name_mae] = \
+                                 filetypes.Mae(os.path.join(
+                                    inps[filename].directory,
+                                    inps[filename].name_mae))
+                    mae = outs[inps[filename].name_mae]
+                    selected = filetypes.select_structures(
+                        mae.structures, inps[filename]._index_output_mae, index)
+                    for str_num, struct in selected:
+                        energy = {'val': random.gauss(2, 3),
+                                  'com': com,
+                                  'typ': typ,
+                                  'src_1': inps[filename].name_mae,
+                                  'idx_1': idx_1 + 1,
+                                  'idx_2': str_num + 1}
+                        energy = co.set_data_defaults(energy)
+                        c.execute(co.STR_SQLITE3, energy)
+    c.execute('SELECT Count(*) FROM data')
+    count_data = c.fetchone()
+    logger.log(15, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
+    conn.commit()
+    return conn
+
 def return_calculate_parser(add_help=True, parents=None):
     '''
     Returns an argument parser.
@@ -690,11 +718,14 @@ def return_calculate_parser(add_help=True, parents=None):
         help=('Directory to search for files (.mae, .log, mm3.fld, etc.).'
               '3rd party calculations are executed from this directory.'))
     args_calc.add_argument(
+        '--doprint', '-p', action='store_true',
+        help="Print data.")
+    args_calc.add_argument(
         '--norun', '-n', action='store_true',
         help="Don't run 3rd party software.")
     args_calc.add_argument(
-        '--doprint', '-p', action='store_true',
-        help="Print data.")
+        '--fake', '-f', action='store_true',
+        help="Generate fake data.")
     # Each option corresponds to a particular type of data.
     args_data = parser.add_argument_group("calculate data types")
     args_data.add_argument(
@@ -812,6 +843,67 @@ def return_calculate_parser(add_help=True, parents=None):
     #     '-zr', type=str, nargs='+', action='append', default=[], metavar='parteth',
     #     help='Tether parameters away from zero. Reference data.')
     return parser
+
+def main(args):
+    parser = return_calculate_parser()
+    opts = parser.parse_args(args)
+    # commands looks like:
+    # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], 
+    #         ['b1.01.mae', 'b2.01.mae']],
+    #  'mb': [['a1.01.mae'], ['b1.01.mae']],
+    #  'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
+    # }
+    commands = {key: value for key, value in opts.__dict__.iteritems() if key
+                in COM_ALL and value}
+    pretty_commands(commands)
+    # commands_for_filenames looks like:
+    # {'a1.01.mae': ['me', 'mb'],
+    #  'a1.01.in': ['jeig'],
+    #  'a1.out': ['jeig'],
+    #  'a2.01.mae': ['me'],
+    #  'a3.01.mae': ['me'],
+    #  'b1.01.mae': ['me', 'mb'],
+    #  'b1.01.in': ['jeig'],
+    #  'b1.out': ['jeig'],
+    #  'b2.01.mae': ['me']
+    # }
+    commands_for_filenames = sort_commands_by_filename(commands)
+    pretty_commands_for_files(commands_for_filenames)
+    # inps looks like:
+    # {'a1.01.mae': <__main__.Mae object at 0x1110e10>,
+    #  'a1.01.in': None,
+    #  'a1.out': None,
+    #  'a2.01.mae': <__main__.Mae object at 0x1733b23>,
+    #  'a3.01.mae': <__main__.Mae object at 0x1853e12>,
+    #  'b1.01.mae': <__main__.Mae object at 0x2540e10>,
+    #  'b1.01.in': None,
+    #  'b1.out': None,
+    #  'b2.01.mae': <__main__.Mae object at 0x1353e11>,
+    # }
+    inps = {}
+    for filename, commands_for_filename in commands_for_filenames.iteritems():
+        if any(x in COM_MACROMODEL for x in commands_for_filename):
+            if os.path.splitext(filename)[1] == '.mae':
+                inps[filename] = Mae(
+                    os.path.join(opts.directory, filename), commands_for_filename)
+                inps[filename].write_com()
+        else:
+            inps[filename] = None
+    # Run external software if need be.
+    if opts.norun or opts.fake:
+        logger.log(15, "  -- Skipping external software calculations. ")
+    else:
+        for filename, some_class in inps.iteritems():
+            if some_class is not None:
+                some_class.run_com()
+    if opts.fake:
+        conn = generate_fake_conn(commands, inps, opts.directory)
+        logger.log(15, '  -- Generated fake data.')
+    else:
+        conn = collect_data(commands, inps, opts.directory)
+    if opts.doprint:
+        pretty_conn(conn)
+    return conn
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)

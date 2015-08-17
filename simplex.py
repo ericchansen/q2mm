@@ -52,8 +52,8 @@ class Simplex(opt.Optimizer):
             ff, ff_lines, ff_args, ref_args, ref_conn, restore)
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
-        self.max_cycles = 15
-        self.max_cycles_wo_change = 3
+        self.max_cycles = 5
+        self.max_cycles_wo_change = 1
         self.max_params = 10
     def run(self):
         """
@@ -168,7 +168,7 @@ class Simplex(opt.Optimizer):
                 exp_ff = self.ff.__class__()
                 exp_ff.method = 'EXPANSION'
                 exp_ff.params = copy.deepcopy(best_ff.params)
-                for i in xrange(0, len(self.params)):
+                for i in xrange(0, len(self.new_ffs[0].params)):
                     exp_ff.params[i].value = (
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)

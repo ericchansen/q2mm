@@ -78,7 +78,7 @@ class Optimizer(object):
         self.ref_conn = ref_conn
         self.restore = restore
         assert self.ff, \
-            'Must provided initial FF!'
+            'Must provided initial FF! self.ff: {}'.format(self.ff)
         assert self.ff_args, \
             'Must provide arguments for calculating FF data!'
         assert self.ref_args or self.ref_conn, \
@@ -89,18 +89,37 @@ class Optimizer(object):
             self.ref_conn = calculate.main(self.ref_args)
             compare.zero_energies(self.ref_conn)
             compare.import_weights(self.ref_conn)
-    def eval(self):
-        self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
-        ff = self.new_ffs[0]
-        if ff.score < self.ff.score:
-            logger.log(20, '~~ {} FINISHED WITH IMPROVEMENTS ~~'.format(
-                    self.__class__.__name__.upper()))
-            self.ff.copy_attributes(ff)
-    def clean_up(self):
-        if hasattr(self, 'max_params') and self.max_params is not None and \
-                len(self.ff.params)> self.max_params:
-            pass
 
+# Repeats the radius and scaled parameter change calculations.
+def pretty_param_changes(params, changes, method=None, level=15):
+    """
+    Shows some parameter changes.
+    """
+    if logger.getEffectiveLevel() <= level:
+        logger.log(level, ' {} '.format(method).center(79, '='))
+        logger.log(
+            level,
+            '--' + ' PARAMETER '.ljust(34, '-') +
+            '--' + ' UNSCALED CHANGES '.center(19, '-') +
+            '--' + ' CHANGES '.center(18, '-') +
+            '--')
+        for param, change in itertools.izip(params, changes):
+            logger.log(
+                level,
+                '  ' + '{}'.format(param).ljust(34, ' ') +
+                '  ' + '{:7.4f}'.format(change).center(19, ' ') +
+                '  ' + '{:7.4f}'.format(change * param.step).center(18, ' ') +
+                '  ')
+        r = calculate_radius(changes)
+        logger.log(level, 'RADIUS: {}'.format(r))
+        logger.log(level, '=' * 79)
+
+def calculate_radius(changes):
+    """
+    Returns the radius of parameter change.
+    """
+    return float(np.sqrt(sum([x**2 for x in changes])))
+        
 def pretty_ff_results(ff, level=15):
     """
     Shows a force field's method, parameters, and score.
@@ -241,8 +260,6 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
     """
     logger.log(15, '  -- Scoring {} force fields.'.format(len(ffs)))
     for ff in ffs:
-        print ff.method
-        print ff.params
         if ff.path is None:
             path = parent_ff.path
         else:

@@ -10,8 +10,9 @@ import calculate
 import constants as co
 import compare
 import datatypes
-import optimizer
+import gradient
 import parameters
+import simplex
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class Loop(object):
         self.ff_lines = None
         self.loop_lines = None
         self.ref_args = None
+        self.ref_conn = None
         # Unnecessary if we keep self.ff as an attribute. self.ff and
         # self.score shouldn't ever be different.
         self.score = None
@@ -58,6 +60,7 @@ class Loop(object):
                 # Import FF data.
                 if cols[1] == 'read':
                     self.ff = datatypes.import_ff(cols[2])
+                    self.ff.method = 'READ'
                     with open(cols[2], 'r') as f:
                         self.ff_lines = f.readlines()
                 # Export FF data.
@@ -68,7 +71,7 @@ class Loop(object):
                 self.ff.params = parameters.trim_params_by_file(
                     self.ff.params, cols[1])
             if cols[0] == 'LOOP':
-                logger.log(20, ' Optimization Loop '.center(50, '='))
+                logger.log(20, ' OPTIMIZATION LOOP '.center(50, '='))
                 # Read lines that will be looped over.
                 loop_lines = []
                 line = lines_iterator.next()
@@ -78,41 +81,54 @@ class Loop(object):
                 # Make loop object and populate.
                 loop = Loop()
                 loop.convergence = float(cols[1])
+                loop.ff = self.ff
+                loop.ff_args = self.ff_args
+                loop.ref_args = self.ref_args
+                loop.ref_conn = self.ref_conn
                 loop.loop_lines = loop_lines
                 loop.score = self.score
                 # Log commands.
-                logger.log(20, 'Commands:')
+                logger.log(20, 'COMMANDS:')
                 for loop_line in loop_lines:
                     logger.log(20, '> ' + loop_line)
-                logger.log(20,'Initial PF Score: {}'.format(self.score))
+                logger.log(20,'INIT SCORE: {}'.format(self.score))
                 logger.log(20, '=' * 50)            
                 self.score = loop.opt_loop()
             if cols[0] == 'RDAT':
-                logger.log(20, 'Calculating reference data...')
+                logger.log(
+                    20, '~~ CALCULATING REFERENCE DATA ~~'.rjust(79, '~'))
                 self.ref_args = ' '.join(cols[1:]).split()
-                ref_conn = calculate.main(self.ref_args)
+                self.ref_conn = calculate.main(self.ref_args)
             if cols[0] == 'CDAT':
-                logger.log(20, 'Calculating force field data...')
+                logger.log(
+                    20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
                 self.ff_args = ' '.join(cols[1:]).split()
-                cal_conn = calculate.main(self.ff_args)
+                self.ff.conn = calculate.main(self.ff_args)
             if cols[0] == 'COMP':
                 if '-o' in cols:
                     output_filename = cols[cols.index('-o') + 1]
                     self.score, output_string = compare.compare_data(
-                        ref_conn, cal_conn, pretty=True)
+                        self.ref_conn, self.ff.conn, pretty=True)
                     with open(output_filename, 'w') as f:
                         for output_line in output_string:
                             f.write(output_line+ '\n')
+                    self.ff.score = self.score
                 else:
-                    self.score = compare.compare_data(ref_conn, cal_conn)
+                    self.score = compare.compare_data(
+                        self.ref_conn, self.ff.conn)
+                    self.ff.score = self.score
             if cols[0] == 'GRAD':
-                grad = optimizer.Gradient(
+                grad = gradient.Gradient(
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff_lines,
-                    ref_conn=ref_conn)
+                    ref_conn=self.ref_conn)
                 self.ff = grad.run()
                 self.score = self.ff.score
-            # if cols[0] == 'SIMP':
-            #     score = simplex(score)
+            if cols[0] == 'SIMP':
+                simp = simplex.Simplex(
+                    ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff_lines,
+                    ref_conn=self.ref_conn)
+                self.ff = simp.run()
+                self.score = self.ff.score
 
 def read_loop_input(filename):
     with open(filename, 'r') as f:
@@ -125,17 +141,6 @@ def read_loop_input(filename):
         logger.log(20, '> ' + line)
     logger.log(20, '=' * 79)
     return lines
-
-
-# def simplex(score):
-#     logger.log(20, 'Running simplex optimization...')
-#     new_change = random.uniform(0, score)
-#     new_scale = abs(random.gauss(0, 0.1))
-#     while new_scale > 1:
-#         new_scale = abs(random.gauss(0, 0.1))
-#     score = score - new_change * new_scale
-#     logger.log(20, 'PF Score: {}'.format(score))
-#     return score
 
 def main(args):
     parser = argparse.ArgumentParser()
