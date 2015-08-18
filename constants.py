@@ -26,13 +26,13 @@ LOG_SETTINGS = {
         },
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
                 # 'calculate': {'level': 'NOTSET', 'propagate': True},
-                'calculate': {'level': 20, 'propagate': True},
-                # 'compare': {'level': 'NOTSET', 'propagate': True},
-                'compare': {'level': 20, 'propagate': True},
-                # 'datatypes': {'level': 'NOTSET',' propagate': True},
-                'datatypes': {'level': 20,' propagate': True},
-                # 'filetypes': {'level': 'NOTSET', 'propagate': True},
-                'filetypes': {'level': 20, 'propagate': True},
+                # 'calculate': {'level': 20, 'propagate': True},
+                'compare': {'level': 'NOTSET', 'propagate': True},
+                # 'compare': {'level': 20, 'propagate': True},
+                'datatypes': {'level': 'NOTSET',' propagate': True},
+                # 'datatypes': {'level': 20,' propagate': True},
+                'filetypes': {'level': 'NOTSET', 'propagate': True},
+                # 'filetypes': {'level': 20, 'propagate': True},
                 'gradient': {'level': 'NOTSET', 'propagate': True},
                 'loop': {'level': 'NOTSET', 'propagate': True},
                 # 'loop': {'level': 20, 'propagate': True},
@@ -71,9 +71,9 @@ STEPS = {'ae':      2.0,
          }
 # Weights used in parameterization.
 # Please figure out all units.
-WEIGHTS = {'Angle':         20.0,
+WEIGHTS = {'Angle':          5.0,
            'charge':         1.0,
-           'Bond':        1000.0,
+           'Bond':         100.0,
            'eig_i':          1.0, # Weight of 1st eigenvalue.
            'eig_d':          1.0, # Weight of other eigenvalues.
            'eig_o':          0.5, # Weight of off diagonals in eigenmatrix.

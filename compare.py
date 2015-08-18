@@ -109,13 +109,21 @@ def compare_data(ref_conn, cal_conn, check_data=True, pretty=False):
     else:
         return score
 
+def cursor_iter(cursor, arraysize=1000):
+    while True:
+        results = cursor.fetchmany(arraysize)
+        if not results:
+            break
+        for result in results:
+            yield result
+
 def calculate_score(ref_conn, cal_conn, check_data=True, pretty=False):
     cr = ref_conn.cursor()
     cc = cal_conn.cursor()
-    r_rows = cr.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
-                        'idx_2, atm_1, atm_2, atm_3, atm_4')
-    c_rows = cc.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
-                        'idx_2, atm_1, atm_2, atm_3, atm_4')
+    cr.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
+               'idx_2, atm_1, atm_2, atm_3, atm_4')
+    cc.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
+               'idx_2, atm_1, atm_2, atm_3, atm_4')
     score = 0.
     # Keeps track of contributions to objective function from particular data
     # types.
@@ -123,7 +131,8 @@ def calculate_score(ref_conn, cal_conn, check_data=True, pretty=False):
         counter = defaultdict(float)
         pretty_str = pretty_data_comp(start=True)
     # Could do in smaller chunks if memory becomes an issue.
-    for r_row, c_row in izip(cr.fetchall(), c_rows.fetchall()):
+    # for r_row, c_row in izip(cr.fetchall(), cc.fetchall()):
+    for r_row, c_row in izip(cursor_iter(cr), cursor_iter(cc)):
         if check_data:
             if not r_row['typ'] == c_row['typ'] and \
                     not r_row['idx_1'] == c_row['idx_1'] and \
