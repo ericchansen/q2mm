@@ -531,15 +531,15 @@ def get_label(row):
 
 def pretty_conn(conn):
     ''''Prints the data in a table.'''
-    print('--' + ' Label '.center(22, '-') +
-          '--' + ' Value '.center(22, '-') + '--')
+    logger.log(20, '--' + ' Label '.center(22, '-') +
+               '--' + ' Value '.center(22, '-') + '--')
     c = conn.cursor()
     c.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, idx_2, '
               'atm_1, atm_2, atm_3, atm_4')
     for row in c.fetchall():
-        print('  ' + '{:22s}'.format(get_label(row)) +
-              '  ' + '{:22.4f}'.format(row['val']))
-    print('-' * 50)
+        logger.log(20, '  ' + '{:22s}'.format(get_label(row)) +
+                   '  ' + '{:22.4f}'.format(row['val']))
+    logger.log(20, '-' * 50)
 
 def pretty_commands_for_files(commands_for_files, level=5):
     '''Pretty verbosity for the .mae commands dictionary.'''
