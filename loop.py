@@ -87,12 +87,14 @@ class Loop(object):
             if cols[0] == 'RDAT':
                 logger.log(
                     20, '~~ CALCULATING REFERENCE DATA ~~'.rjust(79, '~'))
-                self.ref_args = ' '.join(cols[1:]).split()
+                if len(cols) > 1:
+                    self.ref_args = ' '.join(cols[1:]).split()
                 self.ref_conn = calculate.main(self.ref_args)
             if cols[0] == 'CDAT':
                 logger.log(
                     20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
-                self.ff_args = ' '.join(cols[1:]).split()
+                if len(cols) > 1:
+                    self.ff_args = ' '.join(cols[1:]).split()
                 self.ff.conn = calculate.main(self.ff_args)
             if cols[0] == 'COMP':
                 if '-o' in cols:
@@ -115,7 +117,7 @@ class Loop(object):
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
                     ref_conn=self.ref_conn)
                 self.ff = simp.run()
-
+        
 def read_loop_input(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
