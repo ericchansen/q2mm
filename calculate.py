@@ -340,7 +340,7 @@ def collect_data(commands, inps, ff_dir, sub_names=None):
     if any([x in COM_LOAD_FF for x in commands]):
         coms_need_ff = [x for x in commands if x in COM_LOAD_FF]
         if sub_names is None:
-            logger.log(20, '  -- Must read FF for {}.'.format(
+            logger.log(10, '  -- Must read FF for {}.'.format(
                     ' '.join(coms_need_ff)))
             ff = datatypes.import_ff(os.path.join(ff_dir, 'mm3.fld'))
     outs = {}
