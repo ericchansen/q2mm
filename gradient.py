@@ -552,14 +552,14 @@ def do_newton(params):
                         param, param.d2))
                 logger.warning('  -- 1st derivative of {} is {:.4f}.'.format(
                         param, param.d1))
-            if param.d1 > 0.:
-                par_changes.append(-1.)
-                logger.warning(
-                    '  -- Change for {} set to -1.'.format(param))
-            else:
-                par_changes.append(1.)
-                logger.warning(
-                    '  -- Change for {} set to 1.'.format(param))
+                if param.d1 > 0.:
+                    par_changes.append(-1.)
+                    logger.warning(
+                        '  -- Change for {} set to -1.'.format(param))
+                else:
+                    par_changes.append(1.)
+                    logger.warning(
+                        '  -- Change for {} set to 1.'.format(param))
         else:
             raise opt.OptError(
                 '1st derivative of {} is {}. Skipping Newton-Raphson.'.format(
