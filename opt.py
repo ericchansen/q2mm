@@ -271,7 +271,7 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
         datatypes.export_ff(path, ff.params, lines=lines)
         conn = calculate.main(ff_args)
         ff.score = compare.compare_data(r_conn, conn)
-        logger.log(15, '{}: {}'.format(ff.method, ff.score))
+        pretty_ff_results(ff)
         if store_conn:
             ff.conn = conn
     if restore:
