@@ -82,12 +82,12 @@ class Gradient(opt.Optimizer):
         self.lstsq_cutoffs = None
         self.lstsq_radii = [0.1, 1., 5., 10.]
         self.lagrange_cutoffs = None
-        self.lagrange_factors = [0.01, 10.]
+        self.lagrange_factors = [0.01, 0.1, 1., 10.]
         # self.lagrange_factors = [0.01, 0.1, 1., 10.]
         self.lagrange_radii = [0.1, 1., 5., 10.]
         self.levenberg_cutoffs = None
         # self.levenberg_factors = [0.01, 0.1, 1., 10.]
-        self.levenberg_factors = [0.01, 10.]
+        self.levenberg_factors = [0.01, 0.1, 1., 10.]
         self.levenberg_radii = [0.1, 1., 5., 10.]
         self.newton_cutoffs = None
         self.newton_radii = [0.1, 1., 5., 10.]
@@ -159,7 +159,7 @@ class Gradient(opt.Optimizer):
                     changes = do_lagrange(ma, vb, factor)
                     more_changes = do_checks(
                         changes, self.lagrange_radii, self.lagrange_cutoffs,
-                        method='LAGRANGE')
+                        method='LAGRANGE F{}'.format(factor))
                     for key, val in more_changes.iteritems():
                         opt.pretty_param_changes(
                             self.ff.params, val, method=key)
@@ -171,7 +171,7 @@ class Gradient(opt.Optimizer):
                     changes = do_levenberg(ma, vb, factor)
                     more_changes = do_checks(
                         changes, self.levenberg_radii, self.levenberg_cutoffs,
-                        method='LM')
+                        method='LM F{}'.format(factor))
                     for key, val in more_changes.iteritems():
                         opt.pretty_param_changes(
                             self.ff.params, val, method=key)
@@ -552,14 +552,14 @@ def do_newton(params):
                         param, param.d2))
                 logger.warning('  -- 1st derivative of {} is {:.4f}.'.format(
                         param, param.d1))
-            if param.d1 > 0.:
-                par_changes.append(-1.)
-                logger.warning(
-                    '  -- Change for {} set to -1.'.format(param))
-            else:
-                par_changes.append(1.)
-                logger.warning(
-                    '  -- Change for {} set to 1.'.format(param))
+                if param.d1 > 0.:
+                    par_changes.append(-1.)
+                    logger.warning(
+                        '  -- Change for {} set to -1.'.format(param))
+                else:
+                    par_changes.append(1.)
+                    logger.warning(
+                        '  -- Change for {} set to 1.'.format(param))
         else:
             raise opt.OptError(
                 '1st derivative of {} is {}. Skipping Newton-Raphson.'.format(

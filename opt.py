@@ -150,8 +150,8 @@ def pretty_ff_params(ffs, level=15):
         wrapper = textwrap.TextWrapper(width=79, subsequent_indent=' '*29)
         logger.log(
             level,
-            '--' + ' Parameter '.ljust(25, '-') +
-            '--' + ' Values '.ljust(48, '-') +
+            '--' + ' PARAMETER '.ljust(25, '-') +
+            '--' + ' VALUES '.ljust(48, '-') +
             '--')
         for i in xrange(0, len(ffs[0].params)):
             wrapper.initial_indent = ' {:25s} '.format(repr(ffs[0].params[i]))
@@ -271,7 +271,7 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
         datatypes.export_ff(path, ff.params, lines=lines)
         conn = calculate.main(ff_args)
         ff.score = compare.compare_data(r_conn, conn)
-        logger.log(15, '{}: {}'.format(ff.method, ff.score))
+        pretty_ff_results(ff)
         if store_conn:
             ff.conn = conn
     if restore:
