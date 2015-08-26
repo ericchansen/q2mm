@@ -4,9 +4,8 @@ Q2MM stands for quantum (mechanics) to molecular mechanics, quantum guided molec
 
 
 ## Python Dependencies
----
 
-Q2MM uses Python 2.7.4. 
+Q2MM uses Python 2.7.4. I'm reluctant to use more recent versions of Python because as far as I know, Schrodinger still uses 2.7.4.
 
 The following modules are required, but are included in the standard library for Python 2.7.4
 
@@ -37,8 +36,6 @@ For particular features
 
 ## Usage
 
----
-
 If you'd like to use Schrodinger features, they recommend running external Python scripts using
 
 ```
@@ -55,7 +52,7 @@ and still use the Schrodinger modules.
 
 ### Running most Q2MM code
 
-Most Q2MM code can be executed from the command line to get help. Here's an example
+Most Q2MM code can be executed from the command line to get help. Here's an example.
 
 ```
 python calculate.py -h
@@ -73,7 +70,13 @@ to print a list of the parameters that Q2MM identified.
 
 ### Running an optimization loop
 
-The loop module uses customized input files to manage the optimization of parameters. Here's a typical example
+The loop module uses customized input files to manage the optimization of parameters. You can supply it the input file by simply typing
+
+```
+python loop.py someinputfile
+```
+
+Here's an example of what the input file could look like.
 
 ```
 FFLD read somedir/mm3.fld # This is a comment.
