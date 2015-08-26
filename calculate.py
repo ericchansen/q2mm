@@ -385,6 +385,49 @@ def collect_data(commands, inps, ff_dir, sub_names=None):
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
                         c.execute(co.STR_SQLITE3, energy)
+        if com == 'jq':
+            data_type = 'charge'
+            for comma_sep_names in groups_of_filenames:
+                for filename in comma_sep_names:
+                    if filename in outs:
+                        mae = outs[filename]
+                    else:
+                        mae = filetypes.Mae(os.path.join(
+                                ff_dir, filename))
+                        outs[filename] = mae
+                    for i, structure in enumerate(mae.structures):
+                        for atom in structure.atoms:
+                            dp = {'val': atom.partial_charge,
+                                  'com': com,
+                                  'typ': data_type,
+                                  'src_1': filename,
+                                  'idx_1': i + 1,
+                                  'atm_1': atom.index}
+                            dp = co.set_data_defaults(dp)
+                            c.execute(co.STR_SQLITE3, dp)
+        if com == 'mq':
+            data_type = 'charge'
+            index = 'pre'
+            for comma_sep_names in groups_of_filenames:
+                for filename in comma_sep_names:
+                    mae = inps[filename].name_mae
+                    if mae not in outs:
+                        outs[mae] = filetypes.Mae(
+                            os.path.join(inps[filename].directory, mae))
+                    mae = outs[mae]
+                    structures = filetypes.select_structures(
+                        mae.structures, inps[filename]._index_output_mae, index)
+                    print(len(structures))
+                    for str_num, structure in structures:
+                        for atom in structure.atoms:
+                            dp = {'val': atom.partial_charge,
+                                  'com': com,
+                                  'typ': data_type,
+                                  'src_1': filename,
+                                  'idx_1': str_num + 1,
+                                  'atm_1': atom.index}
+                            dp = co.set_data_defaults(dp)
+                            c.execute(co.STR_SQLITE3, dp)
         if com in ['me', 'me2', 'meo']:
             # Set the type.
             if com == 'me':
@@ -616,60 +659,41 @@ def generate_fake_conn(commands, inps, ff_dir, sub_names=None):
     c.executescript(co.STR_INIT_SQLITE3)
     for com, groups_of_filenames in commands.iteritems():
         if com in ['je', 'je2', 'jeo']:
-            # Set the type.
             if com == 'je':
                 typ = 'energy_1'
             elif com == 'je2':
                 typ = 'energy_2'
             elif com == 'jeo':
                 typ = 'energy_opt'
-            # Move through files. Grouping matters here. Each group (idx_1) is
-            # used to separately calculate relative energies.
             for idx_1, group_of_filenames in enumerate(groups_of_filenames):
                 for filename in group_of_filenames:
-                    # Currently this doesn't exist. inps[filename].filename is
-                    # None.
-                    # if inps[filename].filename not in outs:
                     if filename not in outs:
-                        # Index the file so you don't read it more than once.
                         outs[filename] = \
                             filetypes.Mae(os.path.join(ff_dir, filename))
-                    #     outs[inps[filename].filename] = \
-                    #         filetypes.Mae(os.path.join(
-                    #             inps[filename].directory,
-                    #             inps[filename].filename))
-                    # mae = outs[inps[filename].filename]
                     mae = outs[filename]
                     for str_num, struct in enumerate(mae.structures):
                         energy = {'val': random.gauss(2, 3),
                                   'com': com,
                                   'typ': typ,
                                   'src_1': filename,
-                                  # 'src_1': inps[filename].filename,
                                   'idx_1': idx_1 + 1,
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
                         c.execute(co.STR_SQLITE3, energy)
         if com in ['me', 'me2', 'meo']:
-            # Set the type.
             if com == 'me':
                 typ = 'energy_1'
             elif com == 'me2':
                 typ = 'energy_2'
             elif com == 'meo':
                 typ = 'energy_opt'
-            # Set the index.
             if com in ['me', 'me2']:
                 index = 'pre'
             elif com == 'meo':
                 index = 'opt'
-            # Move through files. Grouping matters here. Each group (idx_1) is
-            # used to separately calculate relative energies.
             for idx_1, group_of_filenames in enumerate(groups_of_filenames):
                 for filename in group_of_filenames:
                     if inps[filename].name_mae not in outs:
-                        # Index the output file so you don't read it more than
-                        # once.
                         outs[inps[filename].name_mae] = \
                                  filetypes.Mae(os.path.join(
                                     inps[filename].directory,
@@ -768,9 +792,9 @@ def return_calculate_parser(add_help=True, parents=None):
     # args_data.add_argument(
     #     '-mh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
     #     help='MacroModel Hessian.')
-    # args_data.add_argument(
-    #     '-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-    #     help='MacroModel charges.')
+    args_data.add_argument(
+        '-mq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='MacroModel charges.')
     # args_data.add_argument(
     #     '-mqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
     #     help='MacroModel charges (excludes aliphatic hydrogens).')
@@ -821,9 +845,9 @@ def return_calculate_parser(add_help=True, parents=None):
     # args_data.add_argument(
     #     '-jhi', type=str, nargs='+', action='append', default=[], metavar='file.in',
     #     help='Jaguar Hessian with inversion.')
-    # args_data.add_argument(
-    #     '-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
-    #     help='Jaguar charges.')
+    args_data.add_argument(
+        '-jq', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar partial charges.')
     # args_data.add_argument(
     #     '-jqh', type=str, nargs='+', action='append', default=[], metavar='file.mae',
     #     help='Jaguar charges (excludes aliphatic hydrogens).')
