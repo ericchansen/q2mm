@@ -26,7 +26,7 @@ LOG_SETTINGS = {
         },
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
                 # 'calculate': {'level': 'NOTSET', 'propagate': True},
-                # 'calculate': {'level': 20, 'propagate': True},
+                'calculate': {'level': 20, 'propagate': True},
                 'compare': {'level': 'NOTSET', 'propagate': True},
                 # 'compare': {'level': 20, 'propagate': True},
                 'datatypes': {'level': 'NOTSET',' propagate': True},
