@@ -194,6 +194,10 @@ class Gradient(opt.Optimizer):
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
                             method='SVD F{}'.format(factor))
+                        for key, val in more_changes.iteritems():
+                            opt.pretty_param_changes(
+                                self.ff.params, val, method=key)
+                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
                 else:
                     for i in xrange(0, len(vs)):
                         logger.log(
@@ -203,10 +207,10 @@ class Gradient(opt.Optimizer):
                         more_changes = do_checks(
                             changes, self.svd_radii, self.svd_cutoffs,
                             method='SVD Z{}'.format(i))
-                for key, val in more_changes.iteritems():
-                    opt.pretty_param_changes(
-                        self.ff.params, val, method=key)
-                self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+                        for key, val in more_changes.iteritems():
+                            opt.pretty_param_changes(
+                                self.ff.params, val, method=key)
+                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
         logger.log(20, '  -- Generated {} trial force field(s).'.format(
                 len(self.new_ffs)))
         if len(self.new_ffs) == 0:
