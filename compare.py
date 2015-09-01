@@ -70,6 +70,38 @@ def convert_energies(data_cal, data_ref):
         for datum in group_energies_cal:
             datum.value -= minimum_cal
 
+    energies_ref = [x for x in data_ref if x.dtype == 'energy3']
+    energies_cal = [x for x in data_cal if x.dtype == 'energy3']
+    groups_ref = defaultdict(list)
+    for datum in energies_ref:
+        groups_ref[datum.group].append(datum)
+    groups_cal = defaultdict(list)
+    for datum in energies_cal:
+        groups_cal[datum.group].append(datum)
+    for gnum_ref, gnum_cal in itertools.izip(sorted(groups_ref), sorted(groups_cal)):
+        group_energies_ref = groups_ref[gnum_ref]
+        group_energies_cal = groups_cal[gnum_cal]
+        value, index = min((datum.value, index) for index, datum in enumerate(group_energies_ref))
+        minimum_cal = group_energies_cal[index].value
+        for datum in group_energies_cal:
+            datum.value -= minimum_cal
+
+    energies_ref = [x for x in data_ref if x.dtype == 'energy_opt']
+    energies_cal = [x for x in data_cal if x.dtype == 'energy_opt']
+    groups_ref = defaultdict(list)
+    for datum in energies_ref:
+        groups_ref[datum.group].append(datum)
+    groups_cal = defaultdict(list)
+    for datum in energies_cal:
+        groups_cal[datum.group].append(datum)
+    for gnum_ref, gnum_cal in itertools.izip(sorted(groups_ref), sorted(groups_cal)):
+        group_energies_ref = groups_ref[gnum_ref]
+        group_energies_cal = groups_cal[gnum_cal]
+        value, index = min((datum.value, index) for index, datum in enumerate(group_energies_ref))
+        minimum_cal = group_energies_cal[index].value
+        for datum in group_energies_cal:
+            datum.value -= minimum_cal
+
 def import_steps(params):
     for param in params:
         if isinstance(cons.steps[param.ptype], basestring):

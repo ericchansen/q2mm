@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 # remember to add in inverse distance
 commands_gaussian = [] # gq, gqh
-commands_jaguar = ['je', 'je2', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
-commands_macromodel = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me', 'me2',
+commands_jaguar = ['je', 'je2', 'je3', 'jeo', 'jeig', 'jeigi', 'jeige', 'jeigz',
+                   'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
+commands_macromodel = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me', 'me2', 'me3',
                        'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh', 'mt']
 commands_other = ['pm', 'pr', 'r', 'zm', 'zr']
 commands_all = commands_gaussian + commands_jaguar + commands_macromodel + commands_other
@@ -96,6 +97,10 @@ def return_calculate_parser(add_help=True, parents=[]):
         help=('MacroModel energies. Same as -me, but having two options '
               'allows for the weights to be set differently.'))
     data_args.add_argument(
+        '-me3', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help=('MacroModel energies. Same as -me, but having two options '
+              'allows for the weights to be set differently.'))
+    data_args.add_argument(
         '-meo', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='MacroModel energies (post force field optimization).')
     data_args.add_argument(
@@ -133,6 +138,12 @@ def return_calculate_parser(add_help=True, parents=[]):
         help='Jaguar energies.')
     data_args.add_argument(
         '-je2', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar energies. Can set weight separately from -je.')
+    data_args.add_argument(
+        '-je3', type=str, nargs='+', action='append', default=[], metavar='file.mae',
+        help='Jaguar energies. Can set weight separately from -je.')
+    data_args.add_argument(
+        '-jeo', type=str, nargs='+', action='append', default=[], metavar='file.mae',
         help='Jaguar energies. Can set weight separately from -je.')
     data_args.add_argument(
         '-jeig', type=str, nargs='+', action='append', default=[], metavar='file.in,file.out',
@@ -241,7 +252,7 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
             if any(x in ['ja', 'jb', 'jt'] for x in commands):
                 pre_structure = True
             # if set(commands).intersection(['me', 'me2', 'mq', 'mqh']):
-            if any(x in ['me', 'me2', 'mq', 'mqh'] for x in commands):
+            if any(x in ['me', 'me2', 'me3', 'mq', 'mqh'] for x in commands):
                 pre_energy = True
             # if set(commands).intersection(['meig', 'meigz', 'mh']):
             if any(x in ['meig', 'meigz', 'mh'] for x in commands):
@@ -291,6 +302,10 @@ def make_macromodel_coms(commands_grouped, directory=os.getcwd()):
                 com_string += cons.format_macromodel.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
                 com_string += cons.format_macromodel.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
                 com_string += cons.format_macromodel.format('MINI', 1, 0, 2500, 0, 0, 0, 0, 0)
+                # com_string += cons.format_macromodel.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
+                # com_string += cons.format_macromodel.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+                # com_string += cons.format_macromodel.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0)
+                # com_string += cons.format_macromodel.format('END', 1, 0, 500, 0, 0, 0, 0, 0)
             elif conf_search3:
                 com_string += cons.format_macromodel.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
                 com_string += cons.format_macromodel.format('DEBG', 55, 179, 0, 0, 0, 0, 0, 0)
@@ -495,6 +510,44 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                 datum.value -= minimum
             data.extend(data_temp)
             logger.log(7, '{} je2 from {}'.format(len(data_temp), filenames))
+
+    if 'je3' in commands:
+        for i, filenames in enumerate(commands['je3']):
+            data_temp = []
+            for filename in filenames:
+                if filename in file_storage:
+                    mae = file_storage[filename]
+                else:
+                    mae = filetypes.Mae(os.path.join(directory, filename))
+                    file_storage[filename] = mae
+                for j, structure in enumerate(mae.structures):
+                    data_temp.append(Datum(
+                        structure.props['r_j_Gas_Phase_Energy'] * cons.hartree_to_kjmol,
+                        'je3', 'energy3', filename, group=i, i=j))
+            minimum = min([x.value for x in data_temp])
+            for datum in data_temp:
+                datum.value -= minimum
+            data.extend(data_temp)
+            logger.log(7, '{} je3 from {}'.format(len(data_temp), filenames))
+
+    if 'jeo' in commands:
+        for i, filenames in enumerate(commands['jeo']):
+            data_temp = []
+            for filename in filenames:
+                if filename in file_storage:
+                    mae = file_storage[filename]
+                else:
+                    mae = filetypes.Mae(os.path.join(directory, filename))
+                    file_storage[filename] = mae
+                for j, structure in enumerate(mae.structures):
+                    data_temp.append(Datum(
+                        structure.props['r_j_Gas_Phase_Energy'] * cons.hartree_to_kjmol,
+                        'jeo', 'energy_opt', filename, group=i, i=j))
+            minimum = min([x.value for x in data_temp])
+            for datum in data_temp:
+                datum.value -= minimum
+            data.extend(data_temp)
+            logger.log(7, '{} jeo from {}'.format(len(data_temp), filenames))
 
     if 'jeig' in commands:
         for comma_filenames in commands['jeig']:
@@ -867,6 +920,34 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
             data.extend(data_temp)
             logger.log(7, '{} me2 from {}'.format(len(data_temp), filenames))
 
+    if 'me3' in commands:
+        for i, filenames in enumerate(commands['me3']):
+            data_temp = []
+            for filename in filenames:
+                name_base = '.'.join(filename.split('.')[:-1])
+                name_mae = name_base + '.q2mm.mae'
+                if name_mae in file_storage:
+                    mae = file_storage[name_mae]
+                else:
+                    mae = filetypes.Mae(os.path.join(directory, name_mae))
+                    file_storage[name_mae] = mae
+                indices_output = macromodel_indices[name_mae]
+                indices_generator = iter(indices_output)
+                for j, structure in enumerate(mae.structures):
+                    try:
+                        index_current = indices_generator.next()
+                    except StopIteration:
+                        indices_generator = iter(indices_output)
+                        index_current = indices_generator.next()
+                    if index_current == 'pre':
+                        data_temp.append(Datum(structure.props['r_mmod_Potential_Energy-MM3*'],
+                                               'me3', 'energy3', name_mae, group=i, i=j))
+            # minimum = min([x.value for x in data_temp])
+            # for datum in data_temp:
+            #     datum.value -= minimum
+            data.extend(data_temp)
+            logger.log(7, '{} me3 from {}'.format(len(data_temp), filenames))
+
     if 'meo' in commands:
         for i, filenames in enumerate(commands['meo']):
             data_temp = []
@@ -888,7 +969,7 @@ def collect_data(commands, macromodel_indices, directory=os.getcwd()):
                         index_current = indices_generator.next()
                     if index_current == 'opt':
                         data_temp.append(Datum(structure.props['r_mmod_Potential_Energy-MM3*'],
-                                               'meo', 'energy', name_mae, group=i, i=j))
+                                               'meo', 'energy_opt', name_mae, group=i, i=j))
             # relative energies aren't necessary right now but they can be nice
             # minimum = min([x.value for x in data_temp])
             # for datum in data_temp:
@@ -1172,7 +1253,8 @@ def run_calculate(args):
     data = collect_data(commands, macromodel_indices, opts.dir)
     if opts.printdata:
         for datum in sorted(data, key=datum_sort_key):
-            print('{0:<25} {1:>22.6f} {2:>30}'.format(datum.name, datum.value, datum.source))
+            # print('{0:<25} {1:>22.6f} {2:>30}'.format(datum.name, datum.value, datum.source))
+            logger.log(20, '{0:<25} {1:>22.6f} {2:>30}'.format(datum.name, datum.value, datum.source))
     return data
 
 if __name__ == '__main__':
