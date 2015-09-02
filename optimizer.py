@@ -94,7 +94,7 @@ class Optimizer(object):
                     logger.warning(e.message)
                     logger.warning('changing step size of {} from {} to {}'.format(
                             param, param.step, param.value * 0.1))
-                    param.step = param.value * 0.05
+                    param.step = param.value * 0.1
                 else:
                     ff_forward.display_params()
                     diff_ffs.append(ff_forward)
