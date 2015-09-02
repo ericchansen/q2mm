@@ -229,18 +229,18 @@ class Mae(object):
            any(x in ['mcs', 'msc2', 'mcs3'] for x in self.commands):
                 raise Exception(
                     'Conformational search methods must be used alone!\n' +
-                    'Filename: {}\n'.format(self.path) +
-                    'Commands: {}\n'.format(' '.join(self.commands)))
+                    'FILENAME: {}\n'.format(self.path) +
+                    'COMMANDS: {}\n'.format(' '.join(self.commands)))
         elif any((self.energy, self.hessian, self.structure,
                   self.optimized_energy, self.optimized_structure)) or \
-             any(x in ['mcs', 'msc2', 'mcs3'] for x in self.commands):
+             any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
                   pass
         else:
             raise Exception(
                 'No operations for MacroModel!\n' +
-                'Filename: {}\n'.format(self.path) +
-                'Commands: {}\n'.format(' '.join(self.commands)) +
-                'MacroModel commands: {}'.format(' '.join(COM_MACROMODEL)))
+                'FILENAME: {}\n'.format(self.path) +
+                'COMMANDS: {}\n'.format(' '.join(self.commands)) +
+                'MACROMODEL COMMANDS: {}'.format(' '.join(COM_MACROMODEL)))
         self._index_output_mae = []
         self._index_output_mmo = []
         com = '{}\n{}\n'.format(self.filename, self.name_mae)
