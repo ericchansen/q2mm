@@ -1,7 +1,9 @@
-'''
-Constants and fairly basic variables used throughout Q2MM.
-'''
+"""
+Constants and variables used throughout Q2MM.
+"""
 import re
+
+# ========== LOGGING SETTINGS ==========
 
 # Settings loaded using logging.config.
 LOG_SETTINGS = {
@@ -44,18 +46,21 @@ LOG_SETTINGS = {
         'propagate': True,
         'handlers': ['console', 'root_file_handler']}
     }
+
+# ========== STEPS ==========
+
 # These are the initial step sizes used in numerical differentiation for all
 # the different parameter types. Floats/integers or strings are accepted.
 #
 # When a float/integer step size is provided, the new, stepped parameter value
 # is determined by simply adding or subtracting the step size for incrementing
 # or decrementing, respectively.
-#   x_new = x +/- step
+#     x_new = x +/- step
 #
 # Instead, if a string is provided (by placing the number in single or double
 # quotes), the new parameter value will be decremented or incremented by a
 # percentage of its current value.
-#   x_new = x +/- (x * step)
+#     x_new = x +/- (x * step)
 STEPS = {'ae':      2.0,
          # 'af':      '0.1',
          'af':      0.2,
@@ -69,8 +74,10 @@ STEPS = {'ae':      2.0,
          'sb':      0.2,
          'q':       0.5
          }
-# Weights used in parameterization.
-# Please figure out all units.
+
+# ========== WEIGHTS ==========
+
+# TO DO: Add units.
 WEIGHTS = {'Angle':          5.0,
            'charge':         1.0,
            'Bond':         100.0,
@@ -82,6 +89,9 @@ WEIGHTS = {'Angle':          5.0,
            'energy_opt':   125.0,
            'Torsion':        5.0
            }
+
+# ========== SQLITE3 DATA ==========
+
 # String used to make a table in sqlite3 database.
 STR_INIT_SQLITE3 = """DROP TABLE IF EXISTS data;
 CREATE TABLE data (id INTEGER PRIMARY KEY AUTOINCREMENT, val REAL, wht REAL,
@@ -98,10 +108,14 @@ DATA_DEFAULTS = {'id': None,
                  'idx_1': None, 'idx_2': None,
                  'atm_1': None, 'atm_2': None, 'atm_3': None, 'atm_4': None}
 def set_data_defaults(datum):
-    '''
-    Add keys and default values (None) to a data dictionary if they're missing.
-    '''
+    """
+    Add keys and default values (None) to a data point dictionary if
+    they're missing.
+    """
     return {k: datum.get(k, DATA_DEFAULTS[k]) for k in DATA_DEFAULTS}
+
+# ========== UNIT CONVERSIONS ==========
+
 # Force constants from Jaguar frequency (mdyn A**-1) to au.
 FORCE_CONVERSION = 15.56914
 # Eigenvalues of mass-weighted Hessian to cm**-1.
@@ -111,8 +125,14 @@ EIGENVALUE_CONVERSION = 53.0883777868
 HESSIAN_CONVERSION = 9375.829222
 # Hartree to kJ mol**-1.
 HARTREE_TO_KJMOL = 2625.5
+
+# ========== COMMON REGEX SYNTAX ==========
+
 # Match any float in a string.
 RE_FLOAT = '[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+
+# ========== REGEX FOR .FLD ==========
+
 # Match SMARTS notation used by MM3* substructures.
 # More from import_ff could be added here.
 RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
@@ -120,6 +140,9 @@ RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
 RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
 # Name of MM3* substructures.
 RE_SUB = '[\w\s-]+'
+
+# ========== REGEX FOR .MMO ==========
+
 # Match bonds in lines of a .mmo file.
 RE_BOND = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
                      '\s+\d+\s+({1})\s+(\d+)'.format(RE_FLOAT, RE_SUB))
@@ -131,9 +154,31 @@ RE_ANGLE = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
 RE_TORSION = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
                         '({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(
         RE_FLOAT, RE_SUB))
-# String format used to write MacroModel .com files.
-FORMAT_MACROMODEL = ' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n'
-# Masses used for mass-weighting
+
+# ========== VARIABLES FOR RUNNING MACROMODEL ==========
+
+# String format used when writing MacroModel .com files.
+COM_FORM = (' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}'
+            '{6:>11.4f}{7:>11.4f}{8:>11.4f}\n')
+
+# When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
+# allocations appear, but these are the 2 we care about.
+LABEL_SUITE = 'SUITE_26NOV2012'
+LABEL_MACRO = 'MMOD_MACROMODEL'
+
+# Some regex to pick out the number of available tokens.
+LIC_SUITE = re.compile('(?<!GLIDE_){}\s+(\d+)\sof\s\d+\s'
+                       'tokens\savailable'.format(LABEL_SUITE))
+LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
+                       'available'.format(LABEL_MACRO))
+
+# Minimum number of tokens required to run MacrModel calculations.
+MIN_SUITE_TOKENS = 2
+MIN_MACRO_TOKENS = 2
+
+# ========== MASSES ==========
+
+# Used for mass weighting.
 MASSES = {
     'H':         1.007825032,
     'He':        4.002603250,

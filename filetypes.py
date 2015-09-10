@@ -24,9 +24,10 @@ import mmap
 import numpy as np
 import os
 import re
+import subprocess as sp
 
-from schrodinger import structure as schrod_structure
-from schrodinger.application.jaguar import input as schrod_jaguar_in
+from schrodinger import structure as sch_str
+from schrodinger.application.jaguar import input as jag_in
 
 import constants as co
 import datatypes
@@ -35,13 +36,13 @@ logger = logging.getLogger(__name__)
 
 class File(object):
     """
-    Base class for all filetypes.
+    Base for every other filetype class.
     """
     def __init__(self, path):
-        # self.path = path
         self.path = os.path.abspath(path)
+        # self.path = path
+        self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        # self.directory = os.path.dirname(self.path)
         # self.name = os.path.splitext(self.filename)[0]
         
 class GaussLog(File):
@@ -405,7 +406,7 @@ class SchrodingerFile(File):
     """
     Parent class used for all Schrodinger files.
     """
-    def convert_schrodinger_structure(self, sch_struct):
+    def conv_sch_str(self, sch_struct):
         """
         Converts a schrodinger.structure object to my own structure object.
         Sort of pointless. Probably remove soon.
@@ -473,9 +474,9 @@ class JaguarIn(SchrodingerFile):
     def structures(self):
         if self._structures is None:
             logger.log(10, 'READING: {}'.format(self.path))
-            sch_ob = schrod_jaguar_in.read(self.path)
+            sch_ob = jag_in.read(self.path)
             sch_struct = sch_ob.getStructure()
-            structures = [self.convert_schrodinger_structure(sch_struct)]
+            structures = [self.conv_sch_str(sch_struct)]
             logger.log(5, '  -- Imported {} structure(s).'.format(
                     len(structures)))
             # This area is sketch. I added it so I could use Hessian data
@@ -619,17 +620,27 @@ class JaguarOut(File):
         
 class Mae(SchrodingerFile):
     """
-    Used to retrieve data from Schrodinger .mae files.
+    Used to retrieve and work with data from Schrodinger .mae files.
     """
     def __init__(self, path):
         super(Mae, self).__init__(path)
+        self._index_output_mae = None
+        self._index_output_mmo = None
         self._structures = None
+        self.commands = None
+        # Strings for keeping track of this file and output files.
+        self.name = os.path.splitext(self.filename)[0]
+        self.name_com = self.name + '.q2mm.com'
+        self.name_log = self.name + '.q2mm.log'
+        self.name_mae = self.name + '.q2mm.mae'
+        self.name_mmo = self.name + '.q2mm.mmo'
+        self.name_out = self.name + '.q2mm.out'
     @property
     def structures(self):
         if self._structures is None:
             logger.log(10, 'READING: {}'.format(self.path))
-            sch_structs = list(schrod_structure.StructureReader(self.path))
-            self._structures = [self.convert_schrodinger_structure(sch_struct)
+            sch_structs = list(sch_str.StructureReader(self.path))
+            self._structures = [self.conv_sch_str(sch_struct)
                                 for sch_struct in sch_structs]
             logger.log(5, '  -- Imported {} structure(s).'.format(
                     len(self._structures)))
@@ -648,8 +659,266 @@ class Mae(SchrodingerFile):
                     bonded_atom = atoms[bonded_atom_index - 1]
                     if bonded_atom.atom_type == 3:
                         aliph_hyd_nums.append(atom.index)
+        logger.log(5, '  -- {} aliphatic hydrogen(s) detected in {}.'.format(
+                self.filename))
         return aliph_hyd_nums
+    def get_com_opts(self):
+        """
+        Takes the users arguments from calculate (ex. mb, me, etc.) and
+        determines what has to be written to the .com file in order to
+        generate the requested data using MacroModel.
 
+        Returns
+        -------
+        dictionary of options used when writing a .com file
+        """
+        com_opts = {
+            'cs1': False,
+            'cs2': False,
+            'cs3': False,
+            'freq': False,
+            'opt': False,
+            'opt_mmo': False,
+            'sp': False,
+            'strs': False,
+            'tors': False}
+        if len(self.structures) > 1:
+            com_opts['strs'] = True
+        if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
+            com_opts['sp'] = True
+        if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
+            if mult_strs:
+                raise Exception(
+                    "Can't obtain the Hessian from a Maestro file "
+                    "containing multiple structures!\n"
+                    "FILENAME: {}\n"
+                    "COMMANDS:{}\n".format(
+                        self.path, ' '.join(commands)))
+            else:
+                com_opts['freq'] = True
+        if any(x in ['ma', 'mb', 'meo', 'mt'] for x in self.commands):
+            com_opts['opt'] = True
+            com_opts['opt_mmo'] = True
+        elif any(x in ['ma', 'mb', 'mt'] for x in self.commands):
+            com_opts['opt'] = True
+        if any(x in ['mt', 'jt'] for x in self.commands):
+            com_opts['tors'] = True
+        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands) and \
+                any(x for x in com_opts.itervalues):
+            raise Exception(
+                "Conformational search methods must be used alone!\n"
+                "FILENAME: {}\n"
+                "COMMANDS: {}\n".format(
+                    self.path, ' '.join(commands)))
+        if 'mcs' in self.commands:
+            com_opts['cs1'] = True
+        elif 'mcs2' in self.commands:
+            com_opts['cs2'] = True
+        elif 'mcs3' in self.commands:
+            com_opts['cs3'] = True
+        return com_opts
+    def get_debg_opts(self, com_opts):
+        """
+        Determines what arguments are needed for the DEBG line used inside
+        a MacroModel .com file.
+
+        Returns
+        -------
+        list of integers
+        """
+        debg_opts = []
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            return None
+        else:
+            debg_opts.append(57)
+        if com_opts['tors']:
+            debg_opts.append(56)
+        if com_opts['freq']:
+            debg_opts.extend((210, 211))
+        debg_opts.sort()
+        debg_opts.insert(0, 'DEBG')
+        while len(debg_opts) < 9:
+            debg_opts.append(0)
+        return debg_opts
+    def write_com(self):
+        """
+        Writes the .com file with all the right arguments to generate
+        the requested data.
+        """
+        self._index_output_mae = []
+        self._index_output_mmo = []
+        com_opts = self.get_com_opts()
+        debg_opts = self.get_debg_opts(com_opts)
+        com = '{}\n{}\n'.format(self.filename, self.name_mae)
+        if debg_opts:
+            com += co.COM_FORM.format(*debg_opts)
+        else:
+            com += co.COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
+        # May want to turn off arg2 (continuum solvent).
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('FFLD', 2, 1, 0, 0, 0, 0, 0, 0)
+        else:
+            com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
+        # Also may want to turn off these cutoffs.
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('BDCO', 0, 0, 0, 0, 41.5692, 99999, 0, 0)
+        if com_opts['strs']:
+            com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
+        # Look into differences.
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
+        else:
+            com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['sp'] or com_opts['opt']:
+            com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mmo.append('pre')
+            com += co.COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('pre')
+        if com_opts['freq']:
+            com += co.COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('stupid_extra_structure')
+            # What does arg1 as 3 even do?
+            com += co.COM_FORM.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mae.append('hess')
+        if com_opts['opt']:
+            # Commented line was used in code from Per-Ola/Elaine.
+            # com += co.COM_FORM.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
+
+            # TNCG has more risk of not converging, and may print NaN instead
+            # of coordinates and forces to output.
+            # arg1: 1 = PRCG, 9 = TNCG
+            com += co.COM_FORM.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
+            self._index_output_mae.append('opt')
+        if com_opts['opt_mmo']:
+            com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
+            self._index_output_mmo.append('opt')
+        if com_opts['strs']:
+            com += co.COM_FORM.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('CRMS', 0, 0, 0, 0, 0, 0.25, 0, 0)
+        if com_opts['cs1']:
+            com += co.COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
+        if com_opts['cs2']:
+            com += co.COM_FORM.format('LCMS', 10000, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs3']:
+            com += co.COM_FORM.format('LCMS', 4000, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
+        # if com_opts['cs2'] or com_opts['cs3']:
+        #     com += co.COM_FORM.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs1']:
+            com += co.COM_FORM.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
+            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
+            com += co.COM_FORM.format('DEMX', 0, 166, 0, 0, 50, 100, 0, 0)
+        if com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
+            com += co.COM_FORM.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
+        # I don't think MSYM does anything when all arguments are set to zero.
+        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs2']:
+            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
+        # I'm not sure if this does anything either.
+        if com_opts['cs3']:
+            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['cs1']:
+            com += co.COM_FORM.format('AUTO', 0, 2, 1, 1, 0, -1, 0, 0)
+        if com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
+        if com_opts['cs1']:
+            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
+        if com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
+        if com_opts['cs1']:
+            com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
+        if com_opts['cs2'] or com_opts['cs3']:
+            com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
+        with open(os.path.join(self.directory, self.name_com), 'w') as f:
+            f.write(com)
+        logger.log(5, 'WROTE: {}'.format(
+                os.path.join(self.directory, self.name_com)))
+    def run_com(self, max_timeout=None, timeout=10):
+        """
+        Runs MacroModel .com files. This has to be more complicated than a
+        simple subprocess command due to problems with Schrodinger tokens.
+        This script checks the available tokens, and if there's not enough,
+        waits to run MacroModel until there are.
+ 
+        Arguments
+        ---------
+        max_timeout : int
+                      Maximum number of attempts to look for Schrodinger
+                      license tokens before giving up.
+        timeout : float
+                  Time waited in between lookups of Schrodinger license
+                  tokens.
+        """
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        current_timeout = 0
+        while True:
+            token_string = sp.check_output(
+                '$SCHRODINGER/utilities/licutil -available', shell=True)
+            suite_tokens = re.search(co.LIC_SUITE, token_string)
+            macro_tokens = re.search(co.LIC_MACRO, token_string)
+            if not suite_tokens or not macro_tokens:
+                raise Exception(
+                    'The command "$SCHRODINGER/utilities/licutil '
+                    '-available" is not working with the current '
+                    'regex in calculate.py.')
+            suite_tokens = int(suite_tokens.group(1))
+            macro_tokens = int(macro_tokens.group(1))
+            if suite_tokens > co.MIN_SUITE_TOKENS and \
+                    macro_tokens > co.MIN_MACRO_TOKENS:
+                logger.log(5, 'RUNNING: {}'.format(self.name_com))
+                sp.check_output(
+                    'bmin -WAIT {}'.format(
+                        os.path.splitext(self.name_com)[0]), shell=True)
+                break
+            else:
+                if max_timeout is not None and current_timeout > max_timeout:
+                    pretty_timeout(
+                        current_timeout, suite_tokens, macro_tokens, end=True)
+                    raise Exception(
+                        "Not enough tokens to run {}. Waited {} seconds "
+                        "before giving up.".format(
+                            self.name_com, current_timeout))
+                pretty_timeout(current_timeout, suite_tokens, macro_tokens)
+                current_timeout += timeout
+                time.sleep(timeout)
+        os.chdir(current_directory)
+
+def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
+                   level=10):
+    """
+    Logs information about the wait for Schrodinger tokens.
+
+    Arguments
+    ---------
+    current_timeout : int
+                      Number of times waited for Schrodinger tokens.
+    macro_tokens : int
+                   Current number of available MacroModel tokens.
+    suite_tokens : int
+                   Current number of available Schrodinger Suite tokens.
+    end : bool
+          If True, adds a pretty ending border to all these logs.
+    level : int
+            Logging level of the pretty messages.
+    """
+    if current_timeout == 0:
+        logger.warning('  -- Waiting on tokens to run {}.'.format(
+                self.name_com))
+        logger.log(level,
+                   '--' + ' (s) '.center(8, '-') +
+                   '--' + ' {} '.format(LABEL_SUITE).center(17, '-') +
+                   '--' + ' {} '.format(LABEL_MACRO).center(17, '-') +
+                   '--')
+    logger.log(level, '  {:^8d}  {:^17d}  {:^17d}'.format(
+            current_timeout, macro_tokens, suite_tokens))
+    if end is True:
+        logger.log(level, '-' * 50)
+        
 class MacroModelLog(File):
     """
     Used to retrieve data from MacroModel log files.

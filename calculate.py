@@ -16,325 +16,25 @@ import constants as co
 import datatypes
 import filetypes
 
-# Shorter! Hooray!
-COM_FORM = co.FORMAT_MACROMODEL
 # LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
-# This allows me to treat it more like an object that I can pass around.
 DATABASE_LOC = ':memory:'
 # Commands where we need to load the force field.
 COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
 # Commands related to Gaussian.
 COM_GAUSSIAN = []
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR = ['je', 'je2', 'jeo', 'jeig', 'jeigi', 'jeige', 'jeigz', 'jeigzi', 'jh',
-              'jhi', 'jq', 'jqh']
+COM_JAGUAR = ['je', 'je2', 'jeo', 'jeig', 'jeigi', 'jeige',
+              'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
-COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2', 'mcs3', 'me',
-                  'me2', 'meo', 'meig', 'meigz', 'mh', 'mq', 'mqh', 'mt']
+COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
+                  'mcs3', 'me', 'me2', 'meo', 'meig', 'meigz',
+                  'mh', 'mq', 'mqh', 'mt']
 # All other commands.
 COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
 # A list of all the possible commands.
 COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
-# When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
-# allocations appear, but these are the 2 we care about.
-LABEL_SUITE = 'SUITE_26NOV2012'
-LABEL_MACRO = 'MMOD_MACROMODEL'
-# Some regex to pick out the number of available tokens.
-LIC_SUITE = re.compile('(?<!GLIDE_){}\s+(\d+)\sof\s\d+\stokens\savailable'.format(LABEL_SUITE))
-LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\savailable'.format(LABEL_MACRO))
-# Minimum number of tokens required to run MacrModel calculations.
-MIN_SUITE_TOKENS = 2
-MIN_MACRO_TOKENS = 2
 
 logger = logging.getLogger(__name__)
-
-class Mae(object):
-    def __init__(self, path, commands):
-        self.path = os.path.abspath(path)
-        self.commands = commands
-        # More location information.
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self.name = os.path.splitext(self.filename)[0]
-        self.name_com = self.name + '.q2mm.com'
-        self.name_log = self.name + '.q2mm.log'
-        self.name_mae = self.name + '.q2mm.mae'
-        self.name_mmo = self.name + '.q2mm.mmo'
-        self.name_out = self.name + '.q2mm.out'
-        # Used to determine what operations must be done by MacroModel, and 
-        # therefore how the .com is written.
-        self._energy = None
-        self._hessian = None
-        self._structure = None
-        self._optimized_energy = None
-        self._optimized_structure = None
-        # Check if there are multiple structures in the Maestro file, which
-        # also changes how the MacroModel .com is written.
-        self._multiple_structures = None
-        # Keeps track of structures contained in the output files.
-        self._index_output_mae = None
-        self._index_output_mmo = None
-    @property
-    def energy(self):
-        if self._energy is None:
-            if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
-                self._energy = True
-            else:
-                self._energy = False
-        return self._energy
-    @property
-    def hessian(self):
-        if self._hessian is None:
-            if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
-                if self.multiple_structures is True:
-                    raise Exception(
-                        "Can't obtain Hessian from a Maestro file containing "
-                        "multiple structures!\nFilename: {}\n"
-                        "commands: {}\n".format(
-                            self.path, ' '.join(self.commands)))
-                self._hessian = True
-            else:
-                self._hessian = False
-        return self._hessian
-    @hessian.setter
-    def hessian(self, value):
-        if value is True and self.multiple_structures is True:
-            raise Exception(
-                "Can't obtain Hessian from a Maestro file containing multiple "
-                "structures!\nFilename: {}\n"
-                'commands: {}\n'.format(self.path, ' '.join(self.commands)))
-        self._hessian = value
-    @property
-    def structure(self):
-        if self._structure is None:
-            if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
-                self._structure = True
-            else:
-                self._structure = False
-        return self._structure
-    @property
-    def optimized_energy(self):
-        if self._optimized_energy is None:
-            if any(x in ['ma', 'mb', 'meo', 'mt'] for x in self.commands):
-                self._optimized_energy = True
-            else:
-                self._optimized_energy = False
-        return self._optimized_energy
-    @property
-    def optimized_structure(self):
-        if self._optimized_structure is None:
-            if any(x in ['ma', 'mb', 'mt'] for x in self.commands):
-                self._optimized_structure = True
-            else:
-                self._optimized_structure = False
-        return self._optimized_structure
-    @property
-    def multiple_structures(self):
-        '''Checks whether the Maestro file contains multiple structures.'''
-        if self._multiple_structures is None:
-            with open(self.path, 'r') as f:
-                number_of_structures = 0
-                for line in f:
-                    if 'f_m_ct {' in line:
-                        number_of_structures += 1
-                    if number_of_structures > 1:
-                        self._multiple_structures = True
-                        break
-            if number_of_structures <= 1:
-                self._multiple_structures = False
-        return self._multiple_structures
-    @property
-    def index_output_mae(self):
-        return self._index_output_mae
-    @property
-    def index_output_mmo(self):
-        return self._index_output_mmo
-    def run_com(self, max_timeout=None, timeout=10):
-        '''
-        Runs MacroModel .com files. This has to be more complicated than a
-        simple subprocess command due to problems with Schrodinger tokens.
-        This script checks the available tokens, and if there's not enough,
-        waits to run MacroModel until there are.
-        '''
-        assert max_timeout is None or isinstance(max_timeout, int) or \
-            isinstance(max_timeout, float), \
-            "Argument \"max_timeout\" isn't a number: {}".format(max_timeout)
-        assert isinstance(timeout, int) or isinstance(timeout, float), \
-            "Argument \"timeout\" isn't a number: {}".format(timeout)
-        current_directory = os.getcwd()
-        os.chdir(self.directory)
-        current_timeout = 0
-        while True:
-            token_string = sp.check_output(
-                '$SCHRODINGER/utilities/licutil -available', shell=True)
-            suite_tokens = re.search(LIC_SUITE, token_string)
-            macro_tokens = re.search(LIC_MACRO, token_string)
-            if not suite_tokens or not macro_tokens:
-                raise Exception(
-                    'The command "$SCHRODINGER/utilities/licutil -available" is ' +
-                    'not working with the current regex in calculate.py.')
-            suite_tokens = int(suite_tokens.group(1))
-            macro_tokens = int(macro_tokens.group(1))
-            if suite_tokens > MIN_SUITE_TOKENS and \
-                    macro_tokens > MIN_MACRO_TOKENS:
-                logger.log(5, 'RUNNING: {}'.format(self.name_com))
-                sp.check_output(
-                    'bmin -WAIT {}'.format(
-                        os.path.splitext(self.name_com)[0]), shell=True)
-                break
-            else:
-                if max_timeout is not None and current_timeout > max_timeout:
-                    self.pretty_timeout(
-                        current_timeout, suite_tokens, macro_tokens, end=True)
-                    raise Exception(
-                        "Not enough tokens to run {}. Waited {} seconds before "
-                        "giving up.".format(self.name_com, current_timeout))
-                self.pretty_timeout(current_timeout, suite_tokens, macro_tokens)
-                current_timeout += timeout
-                time.sleep(timeout)
-        os.chdir(current_directory)
-    def pretty_timeout(
-        self, current_timeout, macro_tokens, suite_tokens, end=False):
-        if current_timeout == 0:
-            logger.warning('  -- Waiting on tokens to run {}.'.format(
-                    self.name_com))
-            logger.log(10,
-                       '--' + ' (s) '.center(8, '-') +
-                       '--' + ' {} '.format(LABEL_SUITE).center(17, '-') +
-                       '--' + ' {} '.format(LABEL_MACRO).center(17, '-') +
-                       '--')
-        logger.log(10, '  {:^8d}  {:^17d}  {:^17d}'.format(
-                current_timeout, macro_tokens, suite_tokens))
-        if end is True:
-            logger.log(10, '-' * 50)
-    def figure_out_debug_args(self):
-        'Selects which DEBG arguments should be used.'
-        args = []
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            return None
-        else:
-            args.append(57)
-        if any(x in ['jt', 'mt'] for x in self.commands):
-            args.append(56)
-        if self.hessian:
-            args.extend((210, 211))
-        args.sort()
-        args.insert(0, 'DEBG')
-        while len(args) < 9:
-            args.append(0)
-        return args
-    def write_com(self):
-        if any((self.energy, self.hessian, self.structure,
-                self.optimized_energy, self.optimized_structure)) and \
-           any(x in ['mcs', 'msc2', 'mcs3'] for x in self.commands):
-                raise Exception(
-                    'Conformational search methods must be used alone!\n' +
-                    'FILENAME: {}\n'.format(self.path) +
-                    'COMMANDS: {}\n'.format(' '.join(self.commands)))
-        elif any((self.energy, self.hessian, self.structure,
-                  self.optimized_energy, self.optimized_structure)) or \
-             any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-                  pass
-        else:
-            raise Exception(
-                'No operations for MacroModel!\n' +
-                'FILENAME: {}\n'.format(self.path) +
-                'COMMANDS: {}\n'.format(' '.join(self.commands)) +
-                'MACROMODEL COMMANDS: {}'.format(' '.join(COM_MACROMODEL)))
-        self._index_output_mae = []
-        self._index_output_mmo = []
-        com = '{}\n{}\n'.format(self.filename, self.name_mae)
-        debug_args = self.figure_out_debug_args()
-        if debug_args:
-            com += COM_FORM.format(*debug_args)
-        else:
-            com += COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-        # May want to turn off arg2 (continuum solvent).
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('FFLD', 2, 1, 0, 0, 0, 0, 0, 0)
-        else:
-            com += COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
-        # Also may want to turn off these cutoffs.
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('BDCO', 0, 0, 0, 0, 41.5692, 99999, 0, 0)
-        if self.multiple_structures:
-            com += COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
-        # Look into differences.
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-        else:
-            com += COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
-        if self.energy or self.structure:
-            com += COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mmo.append('pre')
-            com += COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mae.append('pre')
-        if self.hessian:
-            com += COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mae.append('stupid_extra_structure')
-            # What does arg1 as 3 even do?
-            com += COM_FORM.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mae.append('hess')
-        if self.optimized_energy or self.optimized_structure:
-            # Commented line was used in code from Per-Ola/Elaine.
-            # arg1: 1 = PRCG, 9 = TNCG
-            # TNCG has more risk of not converging, and may print NaN instead
-            # of coordinates and forces to output.
-            # com += COM_FORM.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
-            com += COM_FORM.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
-            self._index_output_mae.append('opt')
-        if self.optimized_structure:
-            com += COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
-            # Pretty sure this addition to self._index_output_mae shouldn't be
-            # here.
-            self._index_output_mmo.append('opt')
-        if self.multiple_structures:
-            com += COM_FORM.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('CRMS', 0, 0, 0, 0, 0, 0.25, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
-        if 'mcs2' in self.commands:
-            com += COM_FORM.format('LCMS', 10000, 0, 0, 0, 0, 0, 0, 0)
-        if 'mcs3' in self.commands:
-            com += COM_FORM.format('LCMS', 4000, 0, 0, 0, 0, 0, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
-        # if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-        #     com += COM_FORM.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('DEMX', 0, 166, 0, 0, 50, 100, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
-        # I don't think MSYM does anything when all arguments are set to zero.
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-        if 'mcs2' in self.commands:
-            com += COM_FORM.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
-        # I'm not sure if this does anything either.
-        if 'mcs3' in self.commands:
-            com += COM_FORM.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('AUTO', 0, 2, 1, 1, 0, -1, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
-        if 'mcs' in self.commands:
-            com += COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
-        if any(x in ['mcs2', 'mcs3'] for x in self.commands):
-            com += COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
-        with open(os.path.join(self.directory, self.name_com), 'w') as f:
-            f.write(com)
-        logger.log(5, 'WROTE: {}'.format(os.path.join(self.directory, self.name_com)))
 
 def collect_data(commands, inps, ff_dir, sub_names=None):
     if any([x in COM_LOAD_FF for x in commands]):
@@ -417,7 +117,6 @@ def collect_data(commands, inps, ff_dir, sub_names=None):
                     mae = outs[mae]
                     structures = filetypes.select_structures(
                         mae.structures, inps[filename]._index_output_mae, index)
-                    print(len(structures))
                     for str_num, structure in structures:
                         for atom in structure.atoms:
                             dp = {'val': atom.partial_charge,
@@ -700,7 +399,8 @@ def generate_fake_conn(commands, inps, ff_dir, sub_names=None):
                                     inps[filename].name_mae))
                     mae = outs[inps[filename].name_mae]
                     selected = filetypes.select_structures(
-                        mae.structures, inps[filename]._index_output_mae, index)
+                        mae.structures,
+                        inps[filename]._index_output_mae, index)
                     for str_num, struct in selected:
                         energy = {'val': random.gauss(2, 3),
                                   'com': com,
@@ -908,8 +608,9 @@ def main(args):
     for filename, commands_for_filename in commands_for_filenames.iteritems():
         if any(x in COM_MACROMODEL for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.mae':
-                inps[filename] = Mae(
-                    os.path.join(opts.directory, filename), commands_for_filename)
+                inps[filename] = filetypes.Mae(
+                    os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
                 inps[filename].write_com()
         else:
             inps[filename] = None
