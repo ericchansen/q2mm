@@ -837,7 +837,7 @@ class Mae(SchrodingerFile):
             f.write(com)
         logger.log(5, 'WROTE: {}'.format(
                 os.path.join(self.directory, self.name_com)))
-    def run_com(self, max_timeout=None, timeout=10):
+    def run(self, max_timeout=None, timeout=10):
         """
         Runs MacroModel .com files. This has to be more complicated than a
         simple subprocess command due to problems with Schrodinger tokens.
