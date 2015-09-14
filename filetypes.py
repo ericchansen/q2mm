@@ -646,23 +646,6 @@ class Mae(SchrodingerFile):
             logger.log(5, '  -- Imported {} structure(s).'.format(
                     len(self._structures)))
         return self._structures
-    def get_aliph_hyds(self):
-        """
-        Returns the atom numbers of aliphatic hydrogens. These hydrogens
-        always receive a charge of zero in MacroModel calculations.
-        """
-        aliph_hyd_nums = []
-        atoms = self.structures[0].atoms
-        bonds = self.structures[0].bonds
-        for atom in atoms:
-            if 40 < atom.atom_type < 49:
-                for bonded_atom_index in atom.bonded_atom_indices:
-                    bonded_atom = atoms[bonded_atom_index - 1]
-                    if bonded_atom.atom_type == 3:
-                        aliph_hyd_nums.append(atom.index)
-        logger.log(5, '  -- {} aliphatic hydrogen(s) detected in {}.'.format(
-                self.filename))
-        return aliph_hyd_nums
     def get_com_opts(self):
         """
         Takes the users arguments from calculate (ex. mb, me, etc.) and
@@ -1181,6 +1164,21 @@ class Structure(object):
                 data.append(datum)
         assert data, "No data actually retrieved!"
         return data
+    def get_aliph_hyds(self):
+        """
+        Returns the atom numbers of aliphatic hydrogens. These hydrogens
+        are always assigned a partial charge of zero in MacroModel
+        calculations.
+        """
+        aliph_hyds = []
+        for atom in self.atoms:
+            if 40 < atom.atom_type < 49:
+                for bonded_atom_index in atom.bonded_atom_indices:
+                    bonded_atom = self.atoms[bonded_atom_index - 1]
+                    if bonded_atom.atom_type == 3:
+                        aliph_hyds.append(atom)
+        logger.log(5, '  -- {} aliphatic hydrogen(s).'.format(len(aliph_hyds)))
+        return aliph_hyds
 
 class Atom(object):
     """

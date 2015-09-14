@@ -196,9 +196,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                 c.execute(co.STR_SQLITE3, dp)
 
         # ----- MACROMODEL CHARGES -----
-        if com == 'mq':
-            typ = 'charge'
-            ind = 'pre'
+        if com in ['mq', 'mqh']:
             for comma_sep_names in groups_filenames:
                 for filename in comma_sep_names:
                     mae = inps[filename].name_mae
@@ -207,19 +205,21 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             os.path.join(inps[filename].directory, mae))
                     mae = outs[mae]
                     structures = filetypes.select_structures(
-                        mae.structures, inps[filename]._index_output_mae, ind)
+                        mae.structures, inps[filename]._index_output_mae, 'pre')
                     for str_num, structure in structures:
+                        aliph_hyds = structure.get_aliph_hyds()
                         for atom in structure.atoms:
                             if not 'b_q_use_charge' in atom.props or \
                                     atom.props['b_q_use_charge']:
-                                dp = {'val': atom.partial_charge,
-                                      'com': com,
-                                      'typ': typ,
-                                      'src_1': filename,
-                                      'idx_1': str_num + 1,
-                                      'atm_1': atom.index}
-                                dp = co.set_data_defaults(dp)
-                                c.execute(co.STR_SQLITE3, dp)
+                                if com == 'mq' or not atom in aliph_hyds:
+                                    dp = {'val': atom.partial_charge,
+                                          'com': com,
+                                          'typ': 'charge',
+                                          'src_1': filename,
+                                          'idx_1': str_num + 1,
+                                          'atm_1': atom.index}
+                                    dp = co.set_data_defaults(dp)
+                                    c.execute(co.STR_SQLITE3, dp)
 
         # ----- MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
@@ -662,10 +662,10 @@ def return_calculate_parser(add_help=True, parents=None):
         '-mq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='MacroModel charges.')
-    # data_args.add_argument(
-    #     '-mqh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.mae',
-    #     help='MacroModel charges (excludes aliphatic hydrogens).')
+    data_args.add_argument(
+        '-mqh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel charges (excludes aliphatic hydrogens).')
     data_args.add_argument(
         '-mt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
