@@ -425,6 +425,7 @@ class SchrodingerFile(File):
             my_atom.index = sch_atom.index
             my_atom.partial_charge = sch_atom.partial_charge
             my_atom.x, my_atom.y, my_atom.z = sch_atom.x, sch_atom.y, sch_atom.z
+            my_atom.props.update(sch_atom.property)
         for sch_bond in sch_struct.bond:
             my_bond = Bond()
             my_struct.bonds.append(my_bond)
@@ -1187,7 +1188,7 @@ class Atom(object):
     """
     __slots__ = ['atom_type', 'atom_type_name', 'atomic_num', 'atomic_mass',
                  'bonded_atom_indices', 'coords_type', 'element', 'exact_mass',
-                 'index', 'partial_charge', 'x', 'y', 'z']
+                 'index', 'partial_charge', 'x', 'y', 'z', 'props']
     def __init__(self, atom_type=None, atom_type_name=None, atomic_num=None,
                  atomic_mass=None, bonded_atom_indices=None, coords_type=None,
                  element=None, exact_mass=None, index=None, partial_charge=None,
@@ -1205,6 +1206,7 @@ class Atom(object):
         self.x = x
         self.y = y
         self.z = z
+        self.props = {}
     @property
     def coords(self):
         return [self.x, self.y, self.z]

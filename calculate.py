@@ -176,25 +176,24 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         c.execute(co.STR_SQLITE3, energy)
         # ----- JAGUAR CHARGES -----
         if com == 'jq':
-            typ = 'charge'
             for comma_sep_names in groups_filenames:
                 for filename in comma_sep_names:
-                    if filename in outs:
-                        mae = outs[filename]
-                    else:
-                        mae = filetypes.Mae(os.path.join(
+                    if filename not in outs:
+                        outs[filename] = filetypes.Mae(os.path.join(
                                 directory, filename))
-                        outs[filename] = mae
+                    mae = outs[filename]
                     for i, structure in enumerate(mae.structures):
                         for atom in structure.atoms:
-                            dp = {'val': atom.partial_charge,
-                                  'com': com,
-                                  'typ': typ,
-                                  'src_1': filename,
-                                  'idx_1': i + 1,
-                                  'atm_1': atom.index}
-                            dp = co.set_data_defaults(dp)
-                            c.execute(co.STR_SQLITE3, dp)
+                            if not 'b_q_use_charge' in atom.props or \
+                                    atom.props['b_q_use_charge']:
+                                dp = {'val': atom.partial_charge,
+                                      'com': com,
+                                      'typ': 'charge',
+                                      'src_1': filename,
+                                      'idx_1': i + 1,
+                                      'atm_1': atom.index}
+                                dp = co.set_data_defaults(dp)
+                                c.execute(co.STR_SQLITE3, dp)
 
         # ----- MACROMODEL CHARGES -----
         if com == 'mq':
@@ -211,14 +210,16 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         mae.structures, inps[filename]._index_output_mae, ind)
                     for str_num, structure in structures:
                         for atom in structure.atoms:
-                            dp = {'val': atom.partial_charge,
-                                  'com': com,
-                                  'typ': typ,
-                                  'src_1': filename,
-                                  'idx_1': str_num + 1,
-                                  'atm_1': atom.index}
-                            dp = co.set_data_defaults(dp)
-                            c.execute(co.STR_SQLITE3, dp)
+                            if not 'b_q_use_charge' in atom.props or \
+                                    atom.props['b_q_use_charge']:
+                                dp = {'val': atom.partial_charge,
+                                      'com': com,
+                                      'typ': typ,
+                                      'src_1': filename,
+                                      'idx_1': str_num + 1,
+                                      'atm_1': atom.index}
+                                dp = co.set_data_defaults(dp)
+                                c.execute(co.STR_SQLITE3, dp)
 
         # ----- MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
