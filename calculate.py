@@ -175,7 +175,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         energy = co.set_data_defaults(energy)
                         c.execute(co.STR_SQLITE3, energy)
         # ----- JAGUAR CHARGES -----
-        if com == 'jq':
+        if com in ['jq', 'jqh']:
             for comma_sep_names in groups_filenames:
                 for filename in comma_sep_names:
                     if filename not in outs:
@@ -183,17 +183,30 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                 directory, filename))
                     mae = outs[filename]
                     for i, structure in enumerate(mae.structures):
+                        if com == 'jqh':
+                            aliph_hyds = structure.get_aliph_hyds()
+                            aliph_hyd_inds = [x.index for x in aliph_hyds]
                         for atom in structure.atoms:
                             if not 'b_q_use_charge' in atom.props or \
                                     atom.props['b_q_use_charge']:
-                                dp = {'val': atom.partial_charge,
-                                      'com': com,
-                                      'typ': 'charge',
-                                      'src_1': filename,
-                                      'idx_1': i + 1,
-                                      'atm_1': atom.index}
-                                dp = co.set_data_defaults(dp)
-                                c.execute(co.STR_SQLITE3, dp)
+                                q = atom.partial_charge
+                                if com == 'jqh':
+                                    for bonded_atom_ind in \
+                                            atom.bonded_atom_indices:
+                                        if bonded_atom_ind in aliph_hyd_inds:
+                                            q += \
+                                                structure.atoms[
+                                                bonded_atom_ind - 
+                                                1].partial_charge
+                                if com == 'jq' or not atom in aliph_hyds:
+                                    dp = {'val': q,
+                                          'com': com,
+                                          'typ': 'charge',
+                                          'src_1': filename,
+                                          'idx_1': i + 1,
+                                          'atm_1': atom.index}
+                                    dp = co.set_data_defaults(dp)
+                                    c.execute(co.STR_SQLITE3, dp)
 
         # ----- MACROMODEL CHARGES -----
         if com in ['mq', 'mqh']:
@@ -207,7 +220,8 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     structures = filetypes.select_structures(
                         mae.structures, inps[filename]._index_output_mae, 'pre')
                     for str_num, structure in structures:
-                        aliph_hyds = structure.get_aliph_hyds()
+                        if com == 'mqh':
+                            aliph_hyds = structure.get_aliph_hyds()
                         for atom in structure.atoms:
                             if not 'b_q_use_charge' in atom.props or \
                                     atom.props['b_q_use_charge']:
@@ -734,10 +748,12 @@ def return_calculate_parser(add_help=True, parents=None):
         '-jq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar partial charges.')
-    # data_args.add_argument(
-    #     '-jqh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.mae',
-    #     help='Jaguar charges (excludes aliphatic hydrogens).')
+    data_args.add_argument(
+        '-jqh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar charges (excludes aliphatic hydrogens). Sums the charge '
+              'of aliphatic hydrogens into the bonded sp3 carbon.'))
+        
     data_args.add_argument(
         '-jt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
