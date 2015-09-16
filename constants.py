@@ -125,6 +125,12 @@ EIGENVALUE_CONVERSION = 53.0883777868
 HESSIAN_CONVERSION = 9375.829222
 # Hartree to kJ mol**-1.
 HARTREE_TO_KJMOL = 2625.5
+# Hartree to J
+HARTREE_TO_J = 4.359744650e-18
+# Hartree to kcal mol**-1
+HARTREE_TO_KCALMOL = 627.51
+# mol**-1
+AVO = 6.022140857e23
 
 # ========== COMMON REGEX SYNTAX ==========
 
@@ -285,3 +291,18 @@ MASSES = {
     'Lr':      262.109692000
     }
 
+# ========== ELEMENTS ==========
+
+ele = {1: 'H',
+       2: 'He',
+       3: 'Na',
+       6: 'C', 
+       7: 'N',
+       8: 'O',
+       9: 'F',
+       15: 'P',
+       16: 'S',
+       45: 'Rh',
+       79: 'Au'
+       }
+       

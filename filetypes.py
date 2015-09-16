@@ -1116,28 +1116,30 @@ class Structure(object):
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
         """
-        # Please expand the supported elements.
-        elements = {1: 'H',
-                    6: 'C',
-                    7: 'N',
-                    8: 'O',
-                    79: 'Au'}
         # Formatted for LaTeX.
         if format == 'latex':
             output = ['\\begin{tabular}{l S[table-format=3.6] '
                       'S[table-format=3.6] S[table-format=3.6]}']
             for i, atom in enumerate(self.atoms):
+                if atom.element is None:
+                    ele = co.element[atom.atomic_num]
+                else:
+                    ele = atom.element
                 output.append('{0}{1} & {2:3.6f} & {3:3.6f} & '
                               '{4:3.6f}\\\\'.format(
-                        elements[atom.atomic_num], i+1, atom.x, atom.y, atom.z))
+                        ele, i+1, atom.x, atom.y, atom.z))
             output.append('\\end{tabular}')
             return output
         # Formatted for Gaussian .com's.
         elif format == 'gauss':
             output = []
             for i, atom in enumerate(self.atoms):
+                if atom.element is None:
+                    ele = co.element[atom.atomic_num]
+                else:
+                    ele = atom.element
                 output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                        elements[atom.atomic_num], atom.x, atom.y, atom.z))
+                        ele, atom.x, atom.y, atom.z))
             return output
     def select_stuff(self, typ, com_match=None, **kwargs):
         """
