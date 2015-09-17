@@ -113,23 +113,25 @@ Select certain parameters in the force field you just read. Without this, all pa
 
 ```
 1854 1
-1854 3
+1854 3 neg
 1855 2
 1856 1
-1856 3
+1856 3 neg
 1854 3
 1855 2
 1857 1
 
 ```
 
-The first column refers to the line of the force field file where the parameter is located. The second column is an index refering to the location of the parameter in that line. For Schrodinger and mm3.fld, equilibrium bond lengths are found in column 1, force constants in column 2, dipoles in column 3, etc. See the documentation inside the parameters module for more details. Output like this can also be generated using
+The first column refers to the line of the force field file where the parameter is located. The second column is an index refering to the location of the parameter in that line. For Schrodinger and mm3.fld, equilibrium bond lengths are found in column 1, force constants in column 2, dipoles in column 3, etc. See the documentation inside the parameters module for more details. Furthermore, adding "neg" after a parameter will allow that parameter to go to negative values (typically, all parameters are restrained to maintain positive values).
+
+Output like this can also be generated using
 
 ```
 python parameters.py -f mm3.fld -pt bf af -o params.txt
 ```
 
-This command would print out the bond and angle force constants in the format described above.
+This command would print out the bond and angle force constants in the format described above. Note that you must manually add the keyword "neg".
 
 ```
 RDAT -d somedir -je str_a.mae str_b.mae str_c.mae -je str_d.mae str_e.mae -jb str_a.mae str_b.mae str_c.mae str_d.mae str_e.mae
