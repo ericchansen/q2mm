@@ -821,7 +821,7 @@ class Mae(SchrodingerFile):
             f.write(com)
         logger.log(5, 'WROTE: {}'.format(
                 os.path.join(self.directory, self.name_com)))
-    def run(self, max_timeout=None, timeout=10):
+    def run(self, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
         simple subprocess command due to problems with Schrodinger tokens.
@@ -840,36 +840,45 @@ class Mae(SchrodingerFile):
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
-        while True:
-            token_string = sp.check_output(
-                '$SCHRODINGER/utilities/licutil -available', shell=True)
-            suite_tokens = re.search(co.LIC_SUITE, token_string)
-            macro_tokens = re.search(co.LIC_MACRO, token_string)
-            if not suite_tokens or not macro_tokens:
-                raise Exception(
-                    'The command "$SCHRODINGER/utilities/licutil '
-                    '-available" is not working with the current '
-                    'regex in calculate.py.')
-            suite_tokens = int(suite_tokens.group(1))
-            macro_tokens = int(macro_tokens.group(1))
-            if suite_tokens > co.MIN_SUITE_TOKENS and \
-                    macro_tokens > co.MIN_MACRO_TOKENS:
-                logger.log(5, 'RUNNING: {}'.format(self.name_com))
-                sp.check_output(
-                    'bmin -WAIT {}'.format(
-                        os.path.splitext(self.name_com)[0]), shell=True)
-                break
-            else:
-                if max_timeout is not None and current_timeout > max_timeout:
-                    pretty_timeout(
-                        current_timeout, suite_tokens, macro_tokens, end=True)
+        if check_tokens is True:
+            logger.log(5, " -- Checking Schrodinger tokens.")
+            while True:
+                token_string = sp.check_output(
+                    '$SCHRODINGER/utilities/licutil -available', shell=True)
+                suite_tokens = re.search(co.LIC_SUITE, token_string)
+                macro_tokens = re.search(co.LIC_MACRO, token_string)
+                if not suite_tokens or not macro_tokens:
                     raise Exception(
-                        "Not enough tokens to run {}. Waited {} seconds "
-                        "before giving up.".format(
-                            self.name_com, current_timeout))
-                pretty_timeout(current_timeout, suite_tokens, macro_tokens)
-                current_timeout += timeout
-                time.sleep(timeout)
+                        'The command "$SCHRODINGER/utilities/licutil '
+                        '-available" is not working with the current '
+                        'regex in calculate.py.')
+                suite_tokens = int(suite_tokens.group(1))
+                macro_tokens = int(macro_tokens.group(1))
+                if suite_tokens > co.MIN_SUITE_TOKENS and \
+                        macro_tokens > co.MIN_MACRO_TOKENS:
+                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
+                    sp.check_output(
+                        'bmin -WAIT {}'.format(
+                            os.path.splitext(self.name_com)[0]), shell=True)
+                    break
+                else:
+                    if max_timeout is not None and \
+                            current_timeout > max_timeout:
+                        pretty_timeout(
+                            current_timeout, suite_tokens,
+                            macro_tokens, end=True)
+                        raise Exception(
+                            "Not enough tokens to run {}. Waited {} seconds "
+                            "before giving up.".format(
+                                self.name_com, current_timeout))
+                    pretty_timeout(current_timeout, suite_tokens, macro_tokens)
+                    current_timeout += timeout
+                    time.sleep(timeout)
+        else:
+                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
+                    sp.check_output(
+                        'bmin -WAIT {}'.format(
+                            os.path.splitext(self.name_com)[0]), shell=True)
         os.chdir(current_directory)
 
 def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,

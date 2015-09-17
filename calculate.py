@@ -106,7 +106,7 @@ def main(args):
     else:
         for filename, some_class in inps.iteritems():
             if some_class is not None:
-                some_class.run()
+                some_class.run(check_tokens=opts.check)
     if opts.fake:
         conn = gather_fake_data(commands, inps, opts.directory)
         logger.log(15, '  -- Generated fake data.')
@@ -613,6 +613,12 @@ def return_calculate_parser(add_help=True, parents=None):
         '--ffpath', '-f', type=str,
         help=("Path to force field. Only necessary for certain data types "
               "and if the subgroup names aren't provided."))
+    opts.add_argument(
+        '--nocheck', '-nc', action='store_false', dest='check', default=True,
+        help=("By default, Q2MM checks whether MacroModel tokens are "
+              "available before attempting a MacroModel calculation. If this "
+              "option is supplied, MacroModel will not check the tokens "
+              "first."))
     opts.add_argument(
         '--norun', '-n', action='store_true',
         help="Don't run 3rd party software.")
