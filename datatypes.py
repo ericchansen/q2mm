@@ -16,8 +16,12 @@ logger = logging.getLogger(__name__)
 # Row of mm3.fld where comments start.
 COM_POS_START = 96
 # Row where standard 3 columns of parameters appear.
-PARM_COLS_START = 22
-PARM_COLS_END = 55
+P_1_START = 23
+P_1_END = 33
+P_2_START = 34
+P_2_END = 44
+P_3_START = 45
+P_3_END = 55
 
 class ParamError(Exception):
     pass
@@ -272,6 +276,9 @@ class MM3(FF):
                 else x
                 for x in atom_labels]
     def import_ff(self, path=None, sub_search='OPT'):
+        """
+        Reads parameters from mm3.fld.
+        """
         if path is None:
             path = self.path
         self.params = []
@@ -341,7 +348,7 @@ class MM3(FF):
                     continue
                 if 'OPT' in line or section_sub:
                     # Bonds.
-                    if re.match('^[a-z\s]1', line):
+                    if match_mm3_bond(line):
                         logger.log(
                             5, '[L{}] Found bond:\n{}'.format(
                                 i + 1, line.strip('\n')))
@@ -354,7 +361,7 @@ class MM3(FF):
                             atm_lbls = atm_typs
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                                 ParamMM3(atom_labels = atm_lbls,
@@ -385,7 +392,7 @@ class MM3(FF):
                             pass
                         continue
                     # Angles.
-                    elif re.match('^[a-z\s]2', line):
+                    elif match_mm3_angle(line):
                         logger.log(
                             5, '[L{}] Found angle:\n{}'.format(
                                 i + 1, line.strip('\n')))
@@ -402,7 +409,7 @@ class MM3(FF):
                             atm_lbls = atm_typs
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
@@ -421,7 +428,7 @@ class MM3(FF):
                                      value = parm_cols[1])))
                         continue
                     # Stretch-bends.
-                    elif re.match('^[a-z\s]3', line):
+                    elif match_mm3_stretch_bend(line):
                         logger.log(
                             5, '[L{}] Found stretch-bend:\n{}'.format(
                                 i + 1, line.strip('\n')))
@@ -438,7 +445,7 @@ class MM3(FF):
                             atm_lbls = atm_typs
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.append(
                             ParamMM3(atom_labels = atm_lbls,
@@ -450,7 +457,7 @@ class MM3(FF):
                                      value = parm_cols[0]))
                         continue
                     # Torsions.
-                    elif re.match('^[a-z\s]4', line):
+                    elif match_mm3_lower_torsion(line):
                         logger.log(
                             5, '[L{}] Found torsion:\n{}'.format(
                                 i + 1, line.strip('\n')))
@@ -467,7 +474,7 @@ class MM3(FF):
                             atm_lbls = atm_typs
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
@@ -493,14 +500,14 @@ class MM3(FF):
                                      value = parm_cols[2])))
                         continue
                     # Higher order torsions.
-                    elif line.startswith('54'):
+                    elif match_mm3_higher_torsion(line):
                         logger.log(
                             5, '[L{}] Found higher order torsion:\n{}'.format(
                                 i + 1, line.strip('\n')))
                         # Will break if torsions aren't also looked up.
                         atm_lbls = self.params[-1].atom_labels
                         atm_typs = self.params[-1].atom_types
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
@@ -526,7 +533,7 @@ class MM3(FF):
                                      value = parm_cols[2])))
                         continue
                     # Improper torsions.
-                    elif re.match('^[a-z\s]5', line):
+                    elif match_mm3_improper(line):
                         logger.log(
                             5, '[L{}] Found torsion:\n{}'.format(
                                 i + 1, line.strip('\n')))
@@ -543,7 +550,7 @@ class MM3(FF):
                             atm_lbls = atm_typs
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = line[P_1_START:P_3_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
@@ -566,6 +573,49 @@ class MM3(FF):
                     section_vdw = True
                     continue
         logger.log(15, '  -- Read {} parameters.'.format(len(self.params)))
+    def export_ff(self, path, params=None, lines=None):
+        """
+        Exports the force field to a file, typically mm3.fld.
+
+        Parameters
+        ----------
+        path : string
+               File to be written or overwritten.
+        params : list of `datatypes.Param` (or subclass)
+        """
+        if params is None:
+            params = self.params
+        if lines is None and self.lines is None:
+            with open(path, 'r') as f:
+                lines = f.readlines()
+            logger.log(10, '  -- Read {} lines from {}.'.format(
+                    len(lines), path))
+        else:
+            lines = self.lines
+        for param in params:
+            line = lines[param.mm3_row - 1]
+            if param.mm3_col == 1:
+                lines[param.mm3_row - 1] = (line[:P_1_START] +
+                                            '{:10.4f}'.format(param.value) +
+                                            line[P_1_END:])
+                # line[P_1_END:] +
+                # '\n')
+            elif param.mm3_col == 2:
+                lines[param.mm3_row - 1] = (line[:P_2_START] +
+                                            '{:10.4f}'.format(param.value) +
+                                            line[P_2_END:])
+                # line[P_2_END:] +
+                # '\n')
+            elif param.mm3_col == 3:
+                lines[param.mm3_row - 1] = (line[:P_3_START] +
+                                            '{:10.4f}'.format(param.value) +
+                                            line[P_3_END:])
+                # line[P_3_END:] +
+                # '\n')
+        with open(path, 'w') as f:
+            f.writelines(lines)
+        logger.log(10, 'WROTE: {}'.format(path))
+
 
 def match_mm3_label(mm3_label):
     """

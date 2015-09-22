@@ -188,6 +188,8 @@ def main(args):
     Imports a force field object, which contains a list of all the available
     parameters. Returns a list of only the user selected parameters.
     '''
+    if isinstance(args, basestring):
+        args = args.split()
     parser = return_params_parser()
     opts = parser.parse_args(args)
     if opts.average or opts.check:
@@ -248,6 +250,8 @@ def main(args):
     if opts.printparams:
         for param in params:
             print('{} {}'.format(param.mm3_row, param.mm3_col))
+    ff.params = params
+    return ff
                     
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
