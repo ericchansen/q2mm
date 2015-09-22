@@ -18,6 +18,9 @@ import filetypes
 
 logger = logging.getLogger(__name__)
 
+ALL_PARM_TYPES = ('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2',
+                  'sb', 'q', 'vdwe', 'vdwr')
+
 def return_params_parser(add_help=True):
     '''
     Returns an argparse.ArgumentParser object for the selection of
@@ -35,7 +38,9 @@ df   - dihedral force constants
 imp1 - improper torsions (1st MM3* column)
 imp2 - improper torsions (2nd MM3* column)
 sb   - stretch-bend force constants
-q    - bond dipoles''')
+q    - bond dipoles
+vdwe - van der Waals epsilon
+vdwr - van der Waals radius''')
         parser = argparse.ArgumentParser(
             formatter_class=argparse.RawTextHelpFormatter,
             description=description)
@@ -187,11 +192,14 @@ def main(args):
     opts = parser.parse_args(args)
     if opts.average or opts.check:
         assert opts.mmo, 'Must provide MacroModel .mmo files!'
-    ff = datatypes.import_ff(opts.ffpath)
+    # The function import_ff should be more like something that just
+    # interprets filetypes.
+    # ff = datatypes.import_ff(opts.ffpath)
+    ff = datatypes.MM3(opts.ffpath)
+    ff.import_ff()
     # Set the selected parameter types.
     if opts.all:
-        opts.ptypes.extend(
-            ('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2', 'sb', 'q'))
+        opts.ptypes.extend(ALL_PARM_TYPES)
     logger.log(20, 'Selected parameter types: {}'.format(' '.join(opts.ptypes)))
     params = []
     # These two functions populate the selected parameter list. Each takes

@@ -13,6 +13,12 @@ import filetypes
 
 logger = logging.getLogger(__name__)
 
+# Row of mm3.fld where comments start.
+COM_POS_START = 96
+# Row where standard 3 columns of parameters appear.
+PARM_COLS_START = 22
+PARM_COLS_END = 55
+
 class ParamError(Exception):
     pass
 
@@ -110,41 +116,14 @@ class Param(object):
                     self, value))
         else:
             self._value = value
-    # Not sure how I feel about increase or decrease as functions.
-    # def increase(self):
-    #     """
-    #     Increases parameter value by its step size and adjusts the step size if
-    #     this results in a bad value.
-
-    #       adjusted step size = parameter value * 0.05
-    #     """
-    #     try:
-    #         self.value += self.step
-    #     except ParamError as e:
-    #         logger.warning(e.message)
-    #         new_step = self.value * 0.05
-    #         logger.warning('  -- Changing step size of {} from {} to {}'.format(
-    #                 self, self.value, new_step))
-    #         self._step = new_step
-    # def decrease(self):
-    #     """
-    #     See `Param.increase`.
-    #     """
-    #     try:
-    #         self.value -= self.step
-    #     except ParamError as e:
-    #         logger.warning(e.message)
-    #         new_step = self.value * 0.05
-    #         logger.warning('  -- Changing step size of {} from {} to {}'.format(
-    #                 self, self.value, new_step))
-    #         self._step = new_step
     
 class ParamMM3(Param):
     '''
     Adds information to Param that is specific to MM3* parameters.
     '''
     __slots__ = ['atom_labels', 'atom_types', 'mm3_col', 'mm3_row', 'mm3_label']
-    def __init__(self, atom_labels, atom_types, mm3_col, mm3_row, mm3_label,
+    def __init__(self, atom_labels=None, atom_types=None, mm3_col=None,
+                 mm3_row=None, mm3_label=None,
                  d1=None, d2=None, ptype=None, value=None):
         super(ParamMM3, self).__init__(ptype=ptype, value=value)
         self.atom_labels = atom_labels
@@ -295,7 +274,6 @@ class MM3(FF):
     def import_ff(self, path=None, sub_search='OPT'):
         if path is None:
             path = self.path
-        assert path is not None, 'Must provide path to force field!'
         self.params = []
         self.smiles = []
         self.sub_names = []
@@ -303,6 +281,7 @@ class MM3(FF):
             logger.log(15, 'READING: {}'.format(path))
             section_sub = False
             section_smiles = False
+            section_vdw = False
             for i, line in enumerate(f):
                 # These lines are for parameters.
                 if not section_sub and sub_search in line \
@@ -342,15 +321,139 @@ class MM3(FF):
                             i, self.sub_names[-1]))
                     section_sub = False
                     continue
+                if 'OPT' in line and section_vdw:
+                    logger.log(15, '[L{}] Found van der Waals:\n{}'.format(
+                            i + 1, line.strip('\n')))
+                    atm = line[2:5]
+                    rad = line[5:15]
+                    eps = line[16:26]
+                    self.params.extend((
+                            ParamMM3(atom_types = atm,
+                                     ptype = 'vdwr',
+                                     mm3_col = 1,
+                                     mm3_row = i + 1,
+                                     value = float(rad)),
+                            ParamMM3(atom_types = atm,
+                                     ptype = 'vdwe',
+                                     mm3_col = 2,
+                                     mm3_row = i + 1,
+                                     value = float(eps))))
+                    continue
                 if 'OPT' in line or section_sub:
+                    # Bonds.
+                    if re.match('^[a-z\s]1', line):
+                        logger.log(
+                            5, '[L{}] Found bond:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        if section_sub:
+                            atm_lbls = [line[4:6], line[8:10]]
+                            atm_typs = self.convert_to_types(
+                                atm_lbls, self.atom_types[-1])
+                        else:
+                            atm_typs = [line[4:6], line[9:11]]
+                            atm_lbls = atm_typs
+                            comment = line[COM_POS_START:].strip()
+                            self.sub_names.append(comment)
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.extend((
+                                ParamMM3(atom_labels = atm_lbls,
+                                         atom_types = atm_typs,
+                                         ptype = 'be',
+                                         mm3_col = 1,
+                                         mm3_row = i + 1,
+                                         mm3_label = line[:2],
+                                         value = parm_cols[0]),
+                                ParamMM3(atom_labels = atm_lbls,
+                                         atom_types = atm_typs,
+                                         ptype = 'bf',
+                                         mm3_col = 2,
+                                         mm3_row = i + 1,
+                                         mm3_label = line[:2],
+                                         value = parm_cols[1])))
+                        try:
+                            self.params.append(
+                                ParamMM3(atom_labels = atm_lbls,
+                                         atom_types = atm_typs,
+                                         ptype = 'q',
+                                         mm3_col = 3,
+                                         mm3_row = i + 1,
+                                         mm3_label = line[:2],
+                                         value = parm_cols[2]))
+                        # Some bonds parameters don't use bond dipoles.
+                        except IndexError:
+                            pass
+                        continue
+                    # Angles.
+                    elif re.match('^[a-z\s]2', line):
+                        logger.log(
+                            5, '[L{}] Found angle:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        if section_sub:
+                            # Do stuff.
+                            atm_lbls = [line[4:6], line[8:10],
+                                        line[12:14]]
+                            atm_typs = self.convert_to_types(
+                                atm_lbls, self.atom_types[-1])
+                        else:
+                            # Do other method.
+                            atm_typs = [line[4:6], line[9:11],
+                                        line[14:16]]
+                            atm_lbls = atm_typs
+                            comment = line[COM_POS_START:].strip()
+                            self.sub_names.append(comment)
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.extend((
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'ae',
+                                     mm3_col = 1,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[0]),
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'af',
+                                     mm3_col = 2,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[1])))
+                        continue
+                    # Stretch-bends.
+                    elif re.match('^[a-z\s]3', line):
+                        logger.log(
+                            5, '[L{}] Found stretch-bend:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        if section_sub:
+                            # Do stuff.
+                            atm_lbls = [line[4:6], line[8:10],
+                                        line[12:14]]
+                            atm_typs = self.convert_to_types(
+                                atm_lbls, self.atom_types[-1])
+                        else:
+                            # Do other method.
+                            atm_typs = [line[4:6], line[9:11],
+                                        line[14:16]]
+                            atm_lbls = atm_typs
+                            comment = line[COM_POS_START:].strip()
+                            self.sub_names.append(comment)
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.append(
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'sb',
+                                     mm3_col = 1,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[0]))
+                        continue
                     # Torsions.
-                    if re.match('^[a-z\s]4', line):
+                    elif re.match('^[a-z\s]4', line):
                         logger.log(
                             5, '[L{}] Found torsion:\n{}'.format(
                                 i + 1, line.strip('\n')))
-                        # Some way to get atom types here.
-                        # For substructure, need to convert atom labels to
-                        # atom types.
                         if section_sub:
                             # Do stuff.
                             atm_lbls = [line[4:6], line[8:10],
@@ -362,9 +465,9 @@ class MM3(FF):
                             atm_typs = [line[4:6], line[9:11],
                                         line[14:16], line[19:21]]
                             atm_lbls = atm_typs
-                            comment = line[96:].strip('\n')
+                            comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
-                        parm_cols = line[22:55]
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
                         parm_cols = map(float, parm_cols.split())
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
@@ -389,6 +492,79 @@ class MM3(FF):
                                      mm3_label = line[:2],
                                      value = parm_cols[2])))
                         continue
+                    # Higher order torsions.
+                    elif line.startswith('54'):
+                        logger.log(
+                            5, '[L{}] Found higher order torsion:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        # Will break if torsions aren't also looked up.
+                        atm_lbls = self.params[-1].atom_labels
+                        atm_typs = self.params[-1].atom_types
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.extend((
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'df',
+                                     mm3_col = 1,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[0]),
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'df',
+                                     mm3_col = 2,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[1]),
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'df',
+                                     mm3_col = 3,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[2])))
+                        continue
+                    # Improper torsions.
+                    elif re.match('^[a-z\s]5', line):
+                        logger.log(
+                            5, '[L{}] Found torsion:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        if section_sub:
+                            # Do stuff.
+                            atm_lbls = [line[4:6], line[8:10],
+                                        line[12:14], line[16:18]]
+                            atm_typs = self.convert_to_types(
+                                atm_lbls, self.atom_types[-1])
+                        else:
+                            # Do other method.
+                            atm_typs = [line[4:6], line[9:11],
+                                        line[14:16], line[19:21]]
+                            atm_lbls = atm_typs
+                            comment = line[COM_POS_START:].strip()
+                            self.sub_names.append(comment)
+                        parm_cols = line[PARM_COLS_START:PARM_COLS_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.extend((
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'imp1',
+                                     mm3_col = 1,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[0]),
+                            ParamMM3(atom_labels = atm_lbls,
+                                     atom_types = atm_typs,
+                                     ptype = 'imp2',
+                                     mm3_col = 2,
+                                     mm3_row = i + 1,
+                                     mm3_label = line[:2],
+                                     value = parm_cols[1])))
+                        continue
+                # The van der Waals are stored in annoying way.
+                if line.startswith('-6'):
+                    section_vdw = True
+                    continue
         logger.log(15, '  -- Read {} parameters.'.format(len(self.params)))
 
 def match_mm3_label(mm3_label):
