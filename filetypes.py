@@ -664,10 +664,13 @@ class Mae(SchrodingerFile):
             'opt': False,
             'opt_mmo': False,
             'sp': False,
+            'sp_mmo': False,
             'strs': False,
             'tors': False}
         if len(self.structures) > 1:
             com_opts['strs'] = True
+        if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
+            com_opts['sp_mmo'] = True
         if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
             com_opts['sp'] = True
         if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
@@ -753,7 +756,7 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
         else:
             com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['sp'] or com_opts['opt']:
+        if com_opts['sp'] or com_opts['sp_mmo']:
             com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
             self._index_output_mmo.append('pre')
             com += co.COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
