@@ -844,7 +844,7 @@ class Mae(SchrodingerFile):
         os.chdir(self.directory)
         current_timeout = 0
         if check_tokens is True:
-            logger.log(5, " -- Checking Schrodinger tokens.")
+            logger.log(5, "  -- Checking Schrodinger tokens.")
             while True:
                 token_string = sp.check_output(
                     '$SCHRODINGER/utilities/licutil -available', shell=True)
