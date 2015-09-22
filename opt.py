@@ -262,6 +262,7 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
     for ff in ffs:
         if ff.path is None:
             path = parent_ff.path
+            ff.path = parent_ff.path
         else:
             path = ff.path
         if not hasattr(ff, 'lines') or ff.lines is None:
@@ -301,13 +302,14 @@ def differentiate_ff(ff, central=True):
     param_sets = differentiate_params(ff.params, central=central)
     ffs = []
     for i, param_set in enumerate(param_sets):
-        ff = ff.__class__()
-        ff.params = param_set
+        new_ff = ff.__class__()
+        new_ff.params = param_set
+        new_ff.path = ff.path
         if central and i % 2 == 1:
-            ff.method = 'BACKWARD {}'.format(param_set[int(np.floor(i/2.))])
+            new_ff.method = 'BACKWARD {}'.format(param_set[int(np.floor(i/2.))])
         else:
-            ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
-        ffs.append(ff)
+            new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+        ffs.append(new_ff)
     return ffs
 
 def differentiate_params(params, central=True):
