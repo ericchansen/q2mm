@@ -268,15 +268,18 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
             lines = parent_ff.lines
         else:
             lines = ff.lines
-        datatypes.export_ff(path, ff.params, lines=lines)
+        ff.export_ff(path, lines=lines)
+        # datatypes.export_ff(path, ff.params, lines=lines)
         conn = calculate.main(ff_args)
         ff.score = compare.compare_data(r_conn, conn)
         pretty_ff_results(ff)
         if store_conn:
             ff.conn = conn
     if restore:
-        datatypes.export_ff(
-            parent_ff.path, parent_ff.params, lines=parent_ff.lines)
+        parent_ff.export_ff(parent_ff.path)
+        # datatypes.export_ff(
+        #     parent_ff.path, parent_ff.params, lines=parent_ff.lines)
+
 
 def differentiate_ff(ff, central=True):
     """
