@@ -99,8 +99,9 @@ class Gradient(opt.Optimizer):
         # Going to need this no matter what.
         if self.ff.conn is None:
             logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
-            datatypes.export_ff(
-                self.ff.path, self.ff.params, lines=self.ff.lines)
+            # datatypes.export_ff(
+            #     self.ff.path, self.ff.params, lines=self.ff.lines)
+            self.ff.export_ff(self.ff.path)
             self.ff.conn = calculate.main(self.ff_args)
             compare.correlate_energies(self.ref_conn, self.ff.conn)
             self.ff.score = compare.calculate_score(
@@ -218,8 +219,9 @@ class Gradient(opt.Optimizer):
                 20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
             logger.log(20, '  -- Restoring original force field.')
-            datatypes.export_ff(
-                self.ff.path, self.ff.params, lines=self.ff.lines)
+            # datatypes.export_ff(
+            #     self.ff.path, self.ff.params, lines=self.ff.lines)
+            self.ff.export_ff(self.ff.path)
             return self.ff
         else:
             logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
@@ -236,12 +238,14 @@ class Gradient(opt.Optimizer):
                 self.ff.copy_attributes(ff)
                 if self.restore:
                     logger.log(20, '  -- Restoring original force field.')
-                    datatypes.export_ff(
-                        self.ff.path, self.ff.params, lines=self.ff.lines)
+                    self.ff.export_ff(self.ff.path)
+                    # datatypes.export_ff(
+                    #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 else:
                     logger.log(20, '  -- Writing best force field from gradient.')
-                    datatypes.export_ff(
-                        ff.path, ff.params, lines=ff.lines)
+                    ff.export_ff(ff.path)
+                    # datatypes.export_ff(
+                    #     ff.path, ff.params, lines=ff.lines)
                 return ff
             else:
                 logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
@@ -249,8 +253,9 @@ class Gradient(opt.Optimizer):
                 opt.pretty_ff_results(self.ff, level=20)
                 opt.pretty_ff_results(ff, level=20)
                 logger.log(20, '  -- Restoring original force field.')
-                datatypes.export_ff(
-                    self.ff.path, self.ff.params, lines=self.ff.lines)
+                self.ff.export_ff(self.ff.path)
+                # datatypes.export_ff(
+                #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 return self.ff
 
 def mod_v_thresholds(v, f):

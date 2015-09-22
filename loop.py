@@ -51,14 +51,17 @@ class Loop(object):
             if cols[0] == 'FFLD':
                 # Import FF data.
                 if cols[1] == 'read':
-                    self.ff = datatypes.import_ff(cols[2])
+                    self.ff = datatypes.MM3(cols[2])
+                    self.ff.import_ff()
+                    # self.ff = datatypes.import_ff(cols[2])
                     self.ff.method = 'READ'
                     with open(cols[2], 'r') as f:
                         self.ff.lines = f.readlines()
                 # Export FF data.
                 if cols[1] == 'write':
-                    datatypes.export_ff(
-                        cols[2], self.ff.params, lines=self.ff.lines)
+                    self.ff.export_ff(cols[2])
+                    # datatypes.export_ff(
+                    #     cols[2], self.ff.params, lines=self.ff.lines)
             # Trim parameters.
             if cols[0] == 'PARM':
                 self.ff.params = parameters.trim_params_by_file(

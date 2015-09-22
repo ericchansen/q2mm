@@ -382,7 +382,9 @@ def get_sub_names(commands, ff_path):
     assert ff_path is not None, \
         "User didn't provide required substructure names " + \
         "or path to force field!"
-    ff = datatypes.import_ff(ff_path)
+    ff = datatypes.MM3(ff_path)
+    ff.import_ff()
+    # ff = datatypes.import_ff(ff_path)
     return ff.sub_names
 
 def beautiful_conn(conn, log_level=20):
