@@ -295,10 +295,6 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
         if com in ['jeige', 'meig']:
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
-                    if name_out not in outs:
-                        outs[name_out] = filetypes.JaguarOut(os.path.join(
-                                directory, name_out))
-                    out = outs[name_out]
                     if com == 'meig':
                         name_mae, name_out = comma_filenames.split(',')
                         name_log = inps[name_mae].name_log
@@ -308,11 +304,16 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                              inps[name_mae].name_log))
                         log = outs[name_log]
                     elif com == 'jeige':
+                        print(comma_filenames)
                         name_in, name_out = comma_filenames.split(',')
                         if name_in not in outs:
                             outs[name_in] = filetypes.JaguarIn(
                                 os.path.join(directory, name_in))
-                        jin = outs[name_in]
+                        jin = outs[name_in] 
+                    if name_out not in outs:
+                        outs[name_out] = filetypes.JaguarOut(os.path.join(
+                                directory, name_out))
+                    out = outs[name_out]
                     if com == 'jeige':
                         hess = datatypes.Hessian(jin, out)
                         hess.mass_weight_hessian()
