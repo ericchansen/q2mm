@@ -674,7 +674,7 @@ class Mae(SchrodingerFile):
         if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
             com_opts['sp'] = True
         if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
-            if mult_strs:
+            if opts['strs']:
                 raise Exception(
                     "Can't obtain the Hessian from a Maestro file "
                     "containing multiple structures!\n"
