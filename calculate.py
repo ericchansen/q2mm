@@ -292,7 +292,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     c.executemany(co.STR_SQLITE3, data)
 
         # ------ SCHRODINGER EIGENMATRIX -----
-        if com in ['jeige', 'meig']:
+        if com in ['jeigz', 'meig']:
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
                     if com == 'meig':
@@ -303,7 +303,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                 os.path.join(inps[name_mae].directory,
                                              inps[name_mae].name_log))
                         log = outs[name_log]
-                    elif com == 'jeige':
+                    elif com == 'jeigz':
                         print(comma_filenames)
                         name_in, name_out = comma_filenames.split(',')
                         if name_in not in outs:
@@ -314,20 +314,20 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         outs[name_out] = filetypes.JaguarOut(os.path.join(
                                 directory, name_out))
                     out = outs[name_out]
-                    if com == 'jeige':
+                    if com == 'jeigz':
                         hess = datatypes.Hessian(jin, out)
                         hess.mass_weight_hessian()
                     elif com == 'meig':
                         hess = datatypes.Hessian(log, out)
                     hess.mass_weight_eigenvectors()
                     hess.diagonalize()
-                    if com == 'jeige':
+                    if com == 'jeigz':
                         diagonal_matrix = np.diag(np.diag(hess.hessian))
                     else:
                         diagonal_matrix = hess.hessian
                     low_tri_idx = np.tril_indices_from(diagonal_matrix)
                     lower_tri = diagonal_matrix[low_tri_idx]
-                    if com == 'jeige':
+                    if com == 'jeigz':
                         src_1 = name_in
                     elif com == 'meig':
                         src_1 = name_mae
@@ -732,7 +732,7 @@ def return_calculate_parser(add_help=True, parents=None):
     #     default=[], metavar='somename.in,somename.out',
     #     help='Jaguar eigenmatrix (all elements). Invert 1st eigenvalue.')
     data_args.add_argument(
-        '-jeige', type=str, nargs='+', action='append',
+        '-jeigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.in,somename.out',
         help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
               'all elements that are off-diagonal.'))
