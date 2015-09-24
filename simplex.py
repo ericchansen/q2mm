@@ -294,24 +294,3 @@ def select_simp_params(params, max_params=10):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
-
-    import shutil
-    shutil.copyfile('d_sulf/mm3.fld.bup', 'd_sulf/mm3.fld')
-    INIT_FF_PATH = 'd_sulf/mm3.fld'
-    REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
-    CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
-    PARM_FILE = 'd_sulf/params.txt'
-
-    logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
-    ff = datatypes.import_ff(INIT_FF_PATH)
-    # ff.params = parameters.trim_params_by_file(ff.params, PARM_FILE)
-    use_these_params = ff.params[:3]
-    # use_these_params = ff.params[:8]
-    ff.params = use_these_params
-
-    simp = Simplex(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
-    simp.max_params = 2
-    # simp.max_params = 8
-
-    simp.run()
-    
