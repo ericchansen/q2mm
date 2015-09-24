@@ -1271,6 +1271,25 @@ class Torsion(Bond):
 class Reference(File):
     """
     Basic class for directly inputting reference data.
+
+    File looks as follows.
+
+    Each row is a data point. The attributes of the data points
+    are separated by spaces, tabs, whatever Python's built-in
+    string.split() function works on.
+
+    Columns:
+    val - Value
+    wht - Weight
+    typ - Data type (must match the MacroModel type)
+    src_1 - 1st data source
+    src_2 - 2nd data source
+    idx_1 - 1st index
+    idx_2 - 2nd index
+    atm_1 - 1st atom
+    atm_2 - 2nd atom
+    atm_3 - 3rd atom
+    atm_4 - 4th atom
     """
     def __init__(self, path):
         self.path = path
@@ -1295,6 +1314,10 @@ class Reference(File):
     def interpret_col(self, col):
         """
         How to deal with an individual column.
+
+        Converts the string "None" to actually being None.
+        Converts floats to floats.
+        Otherwise returns the string.
         """
         if col == 'None':
             return None
