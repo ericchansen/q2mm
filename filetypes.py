@@ -1267,3 +1267,39 @@ class Torsion(Bond):
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
+
+class Reference(File):
+    """
+    Basic class for directly inputting reference data.
+    """
+    def __init__(self, path):
+        self.path = path
+    def get_data(self):
+        """
+        Returns a list of data points. Each data point is a dictionary.
+        """
+        with open(self.path, 'r') as f:
+            data = []
+            for line in f:
+                line = line.partition('#')[0]
+                cols = line.split()
+                labels = ['val', 'wht', 'com', 'typ', 'src_1', 'src_2', 'idx_1',
+                          'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
+                assert len(labels) == len(cols), \
+                    'Column mismatch in reference data file!'
+                datum = {}
+                for label, col in zip(labels, cols):
+                    datum.update({label: self.interpret_col(col)})
+                data.append(datum)
+        return data
+    def interpret_col(self, col):
+        """
+        How to deal with an individual column.
+        """
+        if col == 'None':
+            return None
+        try:
+            atr = float(col)
+            return atr
+        except ValueError:
+            return col

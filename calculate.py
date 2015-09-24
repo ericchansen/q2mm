@@ -151,6 +151,14 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
 
     for com, groups_filenames in commands.iteritems():
 
+        # ----- REFERENCE DATA FILE -----
+        if com == 'r':
+            for filename in groups_filenames:
+                ref = filetypes.Reference(filename[0])
+                data = ref.get_data()
+                for datum in data:
+                    datum = co.set_data_defaults(datum)
+                    c.execute(co.STR_SQLITE3, datum)
         # ----- JAGUAR ENERGIES -----
         if com in ['je', 'je2', 'jeo']:
             if com == 'je': typ = 'energy_1'
@@ -762,11 +770,20 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help=('Jaguar charges (excludes aliphatic hydrogens). Sums the charge '
               'of aliphatic hydrogens into the bonded sp3 carbon.'))
-        
     data_args.add_argument(
         '-jt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar torsions.')
+    data_args.add_argument(
+        '-r', type=str, nargs='+', action='append', default=[],
+        metavar='somefilename',
+        help=('Reads data from a simple file format. '
+              'Column descriptions: 1. value 2. weight '
+              '3. command for calculate 4. type (must match '
+              'the MacroModel data type) 5. 1st source '
+              '6. 2nd source 7. 1st index 8. 2nd index '
+              '9. 1st atom 10. 2nd atom 11. 3rd atom '
+              '12. 4th atom'))
     # data_args.add_argument(
     #     '-r', type=str, nargs='+', action='append',
     #     default=[], metavar='filename',
