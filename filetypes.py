@@ -54,8 +54,14 @@ class GaussFormChk(File):
     def __init__(self, path):
         super(GaussFormChk, self).__init__(path)
         self.atoms = []
-        self.evec = None
-        self.hess = None
+        # Not sure these should really be called the eigenvalues.
+        self.evals = None
+        self._hess = None
+    @property
+    def hess(self):
+        if self._hess is None:
+            self.read_self()
+        return self._hess
     def read_self(self):
         logger.log(5, 'READING: {}'.format(self.filename))
 
@@ -122,12 +128,12 @@ class GaussFormChk(File):
         self.low_tri = np.array(
             map(float, stuff.group('hess').split()), dtype=float)
         one_dim = len(anums) * 3
-        self.hess = np.empty([one_dim, one_dim], dtype=float)
-        self.hess[np.tril_indices_from(self.hess)] = self.low_tri
-        self.hess += np.tril(self.hess, -1).T
+        self._hess = np.empty([one_dim, one_dim], dtype=float)
+        self._hess[np.tril_indices_from(self._hess)] = self.low_tri
+        self._hess += np.tril(self._hess, -1).T
         # Convert to MacroModel units.
-        self.hess *= co.HESSIAN_CONVERSION
-        logger.log(5, '  -- Read {} Hessian.'.format(self.hess.shape))
+        self._hess *= co.HESSIAN_CONVERSION
+        logger.log(5, '  -- Read {} Hessian.'.format(self._hess.shape))
 
 class GaussLog(File):
     """
@@ -139,6 +145,18 @@ class GaussLog(File):
     def __init__(self, path):
         super(GaussLog, self).__init__(path)
         self._structures = None
+        self._evals = None
+        self._evecs = None
+    @property
+    def evecs(self):
+        if self._evecs is None:
+            self.read_out()
+        return self._evecs
+    @property
+    def evals(self):
+        if self._evals is None:
+            self.read_out()
+        return self._evals
     @property
     def structures(self):
         if self._structures is None:
@@ -152,6 +170,8 @@ class GaussLog(File):
         import pHessMan
         atoms, evals, evecs = pHessMan.readgauout(self.path)
         evecs = np.array(evecs)
+        self._evals = evals
+        self._evecs = evecs
         return evals, evecs
 
         # logger.log(5, 'READING: {}'.format(self.filename))
