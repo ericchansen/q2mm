@@ -19,6 +19,7 @@ the atom.typ file
 """
 from __future__ import print_function
 from string import digits
+import itertools
 import logging
 import mmap
 import numpy as np
@@ -33,6 +34,7 @@ import constants as co
 import datatypes
 
 logger = logging.getLogger(__name__)
+np.set_printoptions(threshold=np.nan)
 
 class File(object):
     """
@@ -45,6 +47,88 @@ class File(object):
         self.filename = os.path.basename(self.path)
         # self.name = os.path.splitext(self.filename)[0]
         
+class GaussFormChk(File):
+    """
+    Class used to retrieve data from Gaussian formatted checkpoint files.
+    """
+    def __init__(self, path):
+        super(GaussFormChk, self).__init__(path)
+        self.atoms = []
+        self.evec = None
+        self.hess = None
+    def read_self(self):
+        logger.log(5, 'READING: {}'.format(self.filename))
+
+        # Manual example.
+        # with open(self.path, 'r') as f:
+        #     s_cart_grad = False
+        #     s_cart_fc = False
+        #     for line in f:
+        #         if s_cart_grad is True:
+        #             pass
+        #         if 'Cartesian Gradient' in line:
+        #             s_cart_grad = True
+        #             cols = line.split()
+        #             logger.log(
+        #                 5,
+        #                 '  -- Reading cartesian gradient vector of length {}.'.
+        #                 format(cols[-1]))
+        #             self.evec = np.zeros(1, int(cols[-1]))
+        #         if 'Cartesian Force Constants' in line:
+        #             s_cart_grad = False
+        #             s_cart_fc = True
+        #             cols = line.split()
+        #             logger.log(
+        #                 5,
+        #                 '  -- Reading {} cartesian force constants in lower '
+        #                 'triangular form.'.format(cols[-1]))
+        #         if 'Dipole Moment' in line:
+        #             s_cart_fc = False
+       
+        # re.finditer example
+        # stuff = re.finditer(
+        #     'Atomic numbers\s+I\s+N=\s+(?P<num>\d+)\n\s+(?P<anum>.*)Nuclear charges',
+        #     # 'Atomic numbers\s+I\s+N=\d+\s+(.*)Nuclear charges',
+        #     open(self.path, 'r').read(), flags=re.DOTALL)
+        # stuff = [m.groupdict() for m in stuff]
+        # print(stuff)
+
+        stuff = re.search(
+            'Atomic numbers\s+I\s+N=\s+(?P<num_atoms>\d+)'
+            '\n\s+(?P<anums>.*?)'
+            'Nuclear charges.*?Current cartesian coordinates.*?\n(?P<coords>.*?)'
+            'Force Field'
+            '.*?Real atomic weights.*?\n(?P<masses>.*?)'
+            'Atom fragment info.*?Cartesian Gradient.*?\n(?P<evals>.*?)'
+            'Cartesian Force Constants.*?\n(?P<hess>.*?)'
+            'Dipole Moment',
+            open(self.path, 'r').read(), flags=re.DOTALL)
+
+        anums = map(int, stuff.group('anums').split())
+        masses = map(float, stuff.group('masses').split())
+        coords = map(float, stuff.group('coords').split())
+        coords = [coords[i:i+3] for i in range(0, len(coords), 3)]
+        for anum, mass, coord in itertools.izip(anums, masses, coords):
+            self.atoms.append(
+                Atom(
+                    atomic_num = anum,
+                    coords = coord,
+                    exact_mass = mass)
+                )
+        logger.log(5, '  -- Read {} atoms.'.format(len(self.atoms)))
+        self.evals = np.array(
+            map(float, stuff.group('evals').split()), dtype=float)
+        logger.log(5, '  -- Read {} eigenvectors.'.format(len(self.evals)))
+        self.low_tri = np.array(
+            map(float, stuff.group('hess').split()), dtype=float)
+        one_dim = len(anums) * 3
+        self.hess = np.empty([one_dim, one_dim], dtype=float)
+        self.hess[np.tril_indices_from(self.hess)] = self.low_tri
+        self.hess += np.tril(self.hess, -1).T
+        # Convert to MacroModel units.
+        self.hess *= co.HESSIAN_CONVERSION
+        logger.log(5, '  -- Read {} Hessian.'.format(self.hess.shape))
+
 class GaussLog(File):
     """
     Class used to retrieve data from Gaussian log files.
@@ -55,55 +139,123 @@ class GaussLog(File):
     def __init__(self, path):
         super(GaussLog, self).__init__(path)
         self._structures = None
-        self._hessian = None
     @property
     def structures(self):
         if self._structures is None:
-            self.populate()
+            self.read_archive()
         return self._structures
-    def populate(self):
-            logger.log(5, 'READING: {}'.format(self.filename))
-            struct = Structure()
-            arch = re.findall(
-                '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
-                open(self.path, 'r').read())[-1]
-            arch = arch.replace('\n ', '')
-            stuff = re.search(
-                '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
-                '\\\\(?P<date>.*?)'
-                '\\\\.*?\\\\\\\\(?P<com>.*?)'
-                '\\\\\\\\(?P<filename>.*?)'
-                '\\\\\\\\(?P<charge>.*?)'
-                ',(?P<multiplicity>.*?)'
-                '\\\\(?P<atoms>.*?)'
-                '\\\\\\\\.*?HF=(?P<hf>.*?)'
-                '\\\\NImag=1\\\\\\\\(?P<hess>.*?)'
-                '\\\\\\\\(?P<evals>.*?)'
-                '\\\\\\\\\\\\',
-                arch)
-            atoms = stuff.group('atoms')
-            atoms = atoms.split('\\')
-            for atom in atoms:
-                ele, x, y, z = atom.split(',')
-                struct.atoms.append(
-                    Atom(element=ele, x=x, y=y, z=z))
-            logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
-            self._structures = [struct]
-            hess_tri = stuff.group('hess')
-            hess_tri = hess_tri.split(',')
-            logger.log(
-                5, '  -- Read {} Hessian elements in triangular form.'.format(
-                    len(hess_tri)))
-            hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-            logger.log(
-                5, '  -- Created {} Hessian matrix.'.format(hess.shape))
-            # hess[np.triu_indices_from(hess)] = hess_tri
-            # hess += np.triu(hess, -1).T
-            hess[np.tril_indices_from(hess)] = hess_tri
-            hess += np.tril(hess, -1).T
-            np.set_printoptions(threshold=np.nan)
-            self._hessian = datatypes.Hessian()
-            self._hessian.hessian = hess
+    def read_out(self):
+        """
+        Read force constant and eigenvector data from a frequency
+        calculation.
+        """
+        import pHessMan
+        atoms, evals, evecs = pHessMan.readgauout(self.path)
+        evecs = np.array(evecs)
+        return evals, evecs
+
+        # logger.log(5, 'READING: {}'.format(self.filename))
+        # stuffs = re.findall(
+        #     'Frequencies --(.*?)'
+        #     '\n.*?Z\s*?\n(.*?)Frequencies',
+        #     open(self.path, 'r').read(), flags=re.DOTALL)
+        # freqs = []
+        # # Works with nonlinear molecules only.
+        # # Not good to read this for the atoms.
+        # evecs = np.zeros((len(self.structures[0].atoms)*3 - 6, len(self.structures[0].atoms)))
+        # logger.log(5, '  -- Made {} eigenvector matrix.'.format(evecs.shape))
+
+        # stuff = stuffs[0]
+        # # Get the frequencies on this line.
+        # freqs.extend(map(float, stuff[0].split()))
+        # # Get the eigenvectors.
+        # indices = evec_lines
+        # evecs_lines = stuff[1].split('\n')[:-3]
+        # for line in evecs_lines:
+        #     print(line)
+
+        # print(freqs)
+        # with open(self.path, 'r') as f:
+        #     sec = False
+        #     for line in f:
+        #         if sec == True:
+        #             cols = line.split()
+        #             if len(cols) == 11:
+        #                 try:
+        #                     cols = map(float, cols)
+        #                     print(line)
+                            
+        #                 except ValueError:
+        #                     pass
+        #         if len(line.split()) == 0:
+        #             sec = False
+        #         if 'and normal coordinates:' in line:
+        #             sec = True
+                    
+    def read_archive(self):
+        """
+        Only reads last archive found in the Gaussian .log file.
+        """
+        logger.log(5, 'READING: {}'.format(self.filename))
+        struct = Structure()
+        # Some more manual trimming.
+        # lines = open(self.path, 'r').readlines()
+        # for i, line in enumerate(lines):
+        #     if '1\\1\\' in line:
+        #         last_arch_start = i
+        # lines = ''.join(lines[last_arch_start:])
+        # arch = re.findall(
+        #     '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
+        #     lines)[0]
+        arch = re.findall(
+            '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
+            open(self.path, 'r').read())[-1]
+        logger.log(5, '  -- Found last archive.')
+        arch = arch.replace('\n ', '')
+        # Watch out with NImag. Sometimes equals 1, sometimes 0,
+        # anything else?
+        stuff = re.search(
+            '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
+            '\\\\(?P<date>.*?)'
+            '\\\\.*?\\\\\\\\(?P<com>.*?)'
+            '\\\\\\\\(?P<filename>.*?)'
+            '\\\\\\\\(?P<charge>.*?)'
+            ',(?P<multiplicity>.*?)'
+            '\\\\(?P<atoms>.*?)'
+            '\\\\\\\\.*?HF=(?P<hf>.*?)'
+            '\\\\NImag=[10]\\\\\\\\(?P<hess>.*?)'
+            '\\\\\\\\(?P<evals>.*?)'
+            '\\\\\\\\\\\\',
+            arch)
+        logger.log(5, '  -- Found stuff in archive.')
+        atoms = stuff.group('atoms')
+        atoms = atoms.split('\\')
+        for atom in atoms:
+            ele, x, y, z = atom.split(',')
+            struct.atoms.append(
+                Atom(element=ele, x=x, y=y, z=z))
+        logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
+        self._structures = [struct]
+        hess_tri = stuff.group('hess')
+        hess_tri = hess_tri.split(',')
+        logger.log(
+            5,
+            '  -- Read {} Hessian elements in lower triangular '
+            'form.'.format(len(hess_tri)))
+        hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+        logger.log(
+            5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+        # Code for if it was in upper triangle, but it's not in
+        # upper triangle format. It's lower triangle.
+        # hess[np.triu_indices_from(hess)] = hess_tri
+        # hess += np.triu(hess, -1).T
+        # Lower triangle code.
+        hess[np.tril_indices_from(hess)] = hess_tri
+        hess += np.tril(hess, -1).T
+        hess *= co.HESSIAN_CONVERSION
+        struct.hess = hess
+        # self._hessian = datatypes.Hessian()
+        # self._hessian.hessian = hess
     def get_most_converged(self, structures=None):
         """
         Used with geometry optimizations that don't succeed. Sometimes
@@ -152,7 +304,7 @@ class GaussLog(File):
         logger.log(10, '  -- Compared {} out of {} structures.'.format(
                 structures_compared, len(self.structures)))
         return best_structure
-    def import_any(self, coords_type='both'):
+    def read_any_coords(self, coords_type='both'):
         logger.log(10, 'READING: {}'.format(self.path))
         structures = []
         with open(self.path, 'r') as f:
@@ -254,7 +406,7 @@ class GaussLog(File):
                             logger.log(5, '[L{}] Start standard coordinates '
                                        'section.'.format(i+1))
         return structures
-    def import_optimization(self, coords_type='both'):
+    def read_optimization(self, coords_type='both'):
         """
         Finds structures from a Gaussian geometry optimization that
         are listed throughout the log file. Also finds data about
@@ -1110,12 +1262,13 @@ class Structure(object):
     """
     Data for a single structure/conformer/snapshot.
     """
-    __slots__ = ['atoms', 'bonds', 'angles', 'torsions', 'props']
+    __slots__ = ['atoms', 'bonds', 'angles', 'torsions', 'hess', 'props']
     def __init__(self):
         self.atoms = []
         self.bonds = []
         self.angles = []
         self.torsions = []
+        self.hess = None
         self.props = {}
     @property
     def coords(self):
@@ -1199,29 +1352,58 @@ class Atom(object):
     Data class for a single atom.
     """
     __slots__ = ['atom_type', 'atom_type_name', 'atomic_num', 'atomic_mass',
-                 'bonded_atom_indices', 'coords_type', 'element', 'exact_mass',
-                 'index', 'partial_charge', 'x', 'y', 'z', 'props']
+                 'bonded_atom_indices', 'coords_type', '_element',
+                 '_exact_mass', 'index', 'partial_charge', 'x', 'y', 'z',
+                 'props']
     def __init__(self, atom_type=None, atom_type_name=None, atomic_num=None,
-                 atomic_mass=None, bonded_atom_indices=None, coords_type=None,
-                 element=None, exact_mass=None, index=None, partial_charge=None,
-                 x=None, y=None, z=None):
+                 atomic_mass=None, bonded_atom_indices=None, coords=None,
+                 coords_type=None, element=None, exact_mass=None, index=None,
+                 partial_charge=None, x=None, y=None, z=None):
         self.atom_type = atom_type
         self.atom_type_name = atom_type_name
         self.atomic_num = atomic_num
         self.atomic_mass = atomic_mass
         self.bonded_atom_indices = bonded_atom_indices
         self.coords_type = coords_type
-        self.element = element
-        self.exact_mass = exact_mass
+        self._element = element
+        self._exact_mass = exact_mass
         self.index = index
         self.partial_charge = partial_charge
         self.x = x
         self.y = y
         self.z = z
+        if coords:
+            self.x = coords[0]
+            self.y = coords[1]
+            self.z = coords[2]
         self.props = {}
     @property
     def coords(self):
         return [self.x, self.y, self.z]
+    @coords.setter
+    def coords(self, value):
+        try:
+            self.x = value[0]
+            self.y = value[1]
+            self.z = value[2]
+        except TypeError:
+            pass
+    @property
+    def element(self):
+        if self._element is None:
+            self._element = co.ele[self.atomic_num]
+        return self._element
+    @element.setter
+    def element(self, value):
+        self._element = value
+    @property
+    def exact_mass(self):
+        if self._exact_mass is None:
+            self._exact_mass = co.MASSES[self.element]
+        return self._exact_mass
+    @exact_mass.setter
+    def exact_mass(self, value):
+        self._exact_mass = value
     def __repr__(self):
         return '{}[{},{},{}]'.format(
             self.element, self.x, self.y, self.z)

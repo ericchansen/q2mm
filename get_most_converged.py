@@ -22,14 +22,14 @@ opts = parser.parse_args(sys.argv[1:])
     
 glog = GaussLog(opts.filename)
 if opts.all:
-    structures = glog.import_any(coords_type=opts.coords)
+    structures = glog.read_any_coords(coords_type=opts.coords)
     for structure in structures:
         output = structure.format_coords(format=opts.format)
         for line in output:
             print line
         print
 else:
-    structures = glog.import_optimization(opts.coords)
+    structures = glog.read_optimization(opts.coords)
     best_structure = glog.get_most_converged(structures=structures)
     output = best_structure.format_coords(format=opts.format)
     for line in output:
