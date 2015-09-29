@@ -845,8 +845,9 @@ class Mae(SchrodingerFile):
             com_opts['sp_mmo'] = True
         if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
             com_opts['sp'] = True
-        if any(x in ['meig', 'meigz', 'mh'] for x in self.commands):
-            if opts['strs']:
+        # Command meig is depreciated.
+        if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
+            if com_opts['strs']:
                 raise Exception(
                     "Can't obtain the Hessian from a Maestro file "
                     "containing multiple structures!\n"

@@ -37,7 +37,7 @@ COM_JAGUAR = ['je', 'je2', 'jeo', 'jeig', 'jeigi', 'jeige',
               'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
 COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
-                  'mcs3', 'me', 'me2', 'meo', 'meig', 'meigz',
+                  'mcs3', 'me', 'me2', 'meo', 'mjeig', 'mgeig',
                   'mh', 'mq', 'mqh', 'mt']
 # All other commands.
 COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
@@ -317,12 +317,6 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     hess.evecs = log.evecs
                     hess.atoms = fchk.atoms
                     hess.mass_weight_hessian()
-
-                    print('=' * 25 + ' EVECS ' + '=' * 25)
-                    print(hess.evecs)
-                    
-                    print('=' * 25 + ' HESS ' + '=' * 25)
-                    print(hess.hess)
                     
                     hess.diagonalize()
                     
@@ -343,11 +337,51 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     data = [co.set_data_defaults(x) for x in data]
                     c.executemany(co.STR_SQLITE3, data)
 
-        # ------ SCHRODINGER EIGENMATRIX -----
-        if com in ['jeigz', 'meig']:
+        # ------ MACROMODEL/GAUSSIAN EIGENMATRIX -----
+        if com == 'mgeig':
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
-                    if com == 'meig':
+
+                    name_mae, name_gau_log = comma_filenames.split(',')
+                    name_macro_log = inps[name_mae].name_log
+                    if name_macro_log not in outs:
+                        outs[name_macro_log] = filetypes.MacroModelLog(
+                            os.path.join(inps[name_mae].directory,
+                                         inps[name_mae].name_log))
+                    macro_log = outs[name_macro_log]
+                    if name_gau_log not in outs:
+                        outs[name_gau_log] = filetypes.GaussLog(
+                            os.path.join(directory, name_gau_log))
+                    gau_log = outs[name_gau_log]
+
+                    hess = datatypes.Hessian()
+                    hess.hess = macro_log.hessian
+                    # Eigenvectors should already be mass weighted using
+                    # pHessMan functions.
+                    hess.evecs = gau_log.evecs
+                    hess.diagonalize()
+                    
+                    low_tri_idx = np.tril_indices_from(hess.hess)
+                    lower_tri = hess.hess[low_tri_idx]
+                    
+                    data = [{'val': e,
+                             'com': com,
+                             'typ': 'eig',
+                             'src_1': name_macro_log,
+                             'src_2': name_gau_log,
+                             'idx_1': x + 1,
+                             'idx_2': y + 1
+                             }
+                            for e, x, y in itertools.izip(
+                            lower_tri, low_tri_idx[0], low_tri_idx[1])]
+                    data = [co.set_data_defaults(x) for x in data]
+                    c.executemany(co.STR_SQLITE3, data)
+
+        # ------ SCHRODINGER EIGENMATRIX ------
+        if com in ['jeigz', 'mjeig']:
+            for group_filenames in groups_filenames:
+                for comma_filenames in group_filenames:
+                    if com == 'mjeig':
                         name_mae, name_out = comma_filenames.split(',')
                         name_log = inps[name_mae].name_log
                         if name_log not in outs:
@@ -368,7 +402,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     if com == 'jeigz':
                         hess = datatypes.Hessian(jin, out)
                         hess.mass_weight_hessian()
-                    elif com == 'meig':
+                    elif com == 'mjeig':
                         hess = datatypes.Hessian(log, out)
                     hess.mass_weight_eigenvectors()
                     hess.diagonalize()
@@ -380,7 +414,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     lower_tri = diagonal_matrix[low_tri_idx]
                     if com == 'jeigz':
                         src_1 = name_in
-                    elif com == 'meig':
+                    elif com == 'mjeig':
                         src_1 = name_mae
                     data = [{'val': e,
                              'com': com,
@@ -726,13 +760,15 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='MacroModel energies (post-FF optimization).')
     data_args.add_argument(
-        '-meig', type=str, nargs='+', action='append',
+        '-mjeig', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae,somename.out',
-        help='MacroModel eigenmatrix (all elements).')
-    # data_args.add_argument(
-    #     '-meigz', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.mae,somename.out',
-    #     help="MacroModel eigenmatrix (diagonal elements).")
+        help='MacroModel eigenmatrix (all elements). Uses Jaguar '
+        'eigenvectors.')
+    data_args.add_argument(
+        '-mgeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae,somename.out',
+        help='MacroModel eigenmatrix (all elements). Uses Gaussian '
+        'eigenvectors.')
     # data_args.add_argument(
     #     '-mh', type=str, nargs='+', action='append',
     #     default=[], metavar='somename.mae',
