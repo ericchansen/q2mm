@@ -29,18 +29,20 @@ import filetypes
 # LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
 DATABASE_LOC = ':memory:'
 # Commands where we need to load the force field.
-COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
+# COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
+COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 # Commands related to Gaussian.
-COM_GAUSSIAN = ['geigz']
+COM_GAUSSIAN = ['geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR = ['je', 'je2', 'jeo', 'jeig', 'jeigi', 'jeige',
-              'jeigz', 'jeigzi', 'jh', 'jhi', 'jq', 'jqh']
+COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz',
+              'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
 COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
                   'mcs3', 'me', 'me2', 'meo', 'mjeig', 'mgeig',
-                  'mh', 'mq', 'mqh', 'mt']
+                  'mq', 'mqh', 'mt']
 # All other commands.
-COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
+# COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
+COM_OTHER = ['r']
 # A list of all the possible commands.
 COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
 
@@ -298,8 +300,33 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             src_1=mmo.filename, idx_1=str_num + 1)
                         data.extend(temp)
                     c.executemany(co.STR_SQLITE3, data)
+
+
         # ------ GAUSSIAN EIGENMATRIX ------
         if com == 'geigz':
+            for group_filenames in groups_filenames:
+                for name_log in group_filenames:
+                    if name_log not in outs:
+                        outs[name_log] = filetypes.GaussLog(
+                            os.path.join(directory, name_log))
+                    log = outs[name_log]
+                    evals = log.evals * co.HESSIAN_CONVERSION
+                    evals_matrix = np.diag(evals)
+                    low_tri_idx = np.tril_indices_from(evals_matrix)
+                    lower_tri = evals_matrix[low_tri_idx]
+                    data = [{'val': e,
+                             'com': com,
+                             'typ': 'eig',
+                             'src_1': name_log,
+                             'idx_1': x + 1,
+                             'idx_2': y + 1
+                             }
+                            for e, x, y in itertools.izip(
+                            lower_tri, low_tri_idx[0], low_tri_idx[1])]
+                    data = [co.set_data_defaults(x) for x in data]
+                    c.executemany(co.STR_SQLITE3, data)
+
+        if com == 'geigz2':
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
                     name_log, name_fchk = comma_filenames.split(',')
@@ -719,9 +746,16 @@ def return_calculate_parser(add_help=True, parents=None):
     data_args = parser.add_argument_group("calculate data types")
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
+              'all elements that are off-diagonal. Uses only the .log for '
+              'the eigenvalues and eigenvectors.'))
+    data_args.add_argument(
+        '-geigz2', type=str, nargs='+', action='append',
         default=[], metavar='somename.log,somename.fchk',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
-              'all elements that are off-diagonal.'))
+              'all elements that are off-diagonal. Uses the .log for '
+              'eigenvectors and .fchk for Hessian.'))
     data_args.add_argument(
         '-ma', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -769,10 +803,6 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae,somename.out',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
-    # data_args.add_argument(
-    #     '-mh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.mae',
-    #     help='MacroModel Hessian.')
     data_args.add_argument(
         '-mq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -785,14 +815,6 @@ def return_calculate_parser(add_help=True, parents=None):
         '-mt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='MacroModel torsions (post-FF optimization).')
-    # data_args.add_argument(
-    #     '-pm', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tethering of parameters for FF data.')
-    # data_args.add_argument(
-    #     '-pr', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tethering of parameters for reference data.')
     data_args.add_argument(
         '-ja', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -815,36 +837,11 @@ def return_calculate_parser(add_help=True, parents=None):
         help=('Jaguar energies. Same as -je, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo.'))
-    # data_args.add_argument(
-    #     '-jeig', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help='Jaguar eigenmatrix (all elements).')
-    # data_args.add_argument(
-    #     '-jeigi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help='Jaguar eigenmatrix (all elements). Invert 1st eigenvalue.')
     data_args.add_argument(
         '-jeigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.in,somename.out',
         help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
               'all elements that are off-diagonal.'))
-    # data_args.add_argument(
-    #     '-jeigz', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help="Jaguar eigenmatrix (only diagonal elements).")
-    # data_args.add_argument(
-    #     '-jeigzi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help=("Jaguar eigenmatrix (only diagonal elements). "
-    #           "Invert 1st eigenvalue."))
-    # data_args.add_argument(
-    #     '-jh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in',
-    #     help='Jaguar Hessian.')
-    # data_args.add_argument(
-    #     '-jhi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in',
-    #     help='Jaguar Hessian with inversion.')
     data_args.add_argument(
         '-jq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -868,6 +865,43 @@ def return_calculate_parser(add_help=True, parents=None):
               '6. 2nd source 7. 1st index 8. 2nd index '
               '9. 1st atom 10. 2nd atom 11. 3rd atom '
               '12. 4th atom'))
+    # data_args.add_argument(
+    #     '-mh', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.mae',
+    #     help='MacroModel Hessian.')
+    # data_args.add_argument(
+    #     '-pm', type=str, nargs='+', action='append',
+    #     default=[], metavar='parteth',
+    #     help='Tethering of parameters for FF data.')
+    # data_args.add_argument(
+    #     '-pr', type=str, nargs='+', action='append',
+    #     default=[], metavar='parteth',
+    #     help='Tethering of parameters for reference data.')
+    # data_args.add_argument(
+    #     '-jeig', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in,somename.out',
+    #     help='Jaguar eigenmatrix (all elements).')
+    # data_args.add_argument(
+    #     '-jeigi', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in,somename.out',
+    #     help='Jaguar eigenmatrix (all elements). Invert 1st eigenvalue.')
+    # data_args.add_argument(
+    #     '-jeigz', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in,somename.out',
+    #     help="Jaguar eigenmatrix (only diagonal elements).")
+    # data_args.add_argument(
+    #     '-jeigzi', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in,somename.out',
+    #     help=("Jaguar eigenmatrix (only diagonal elements). "
+    #           "Invert 1st eigenvalue."))
+    # data_args.add_argument(
+    #     '-jh', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in',
+    #     help='Jaguar Hessian.')
+    # data_args.add_argument(
+    #     '-jhi', type=str, nargs='+', action='append',
+    #     default=[], metavar='somename.in',
+    #     help='Jaguar Hessian with inversion.')
     # data_args.add_argument(
     #     '-r', type=str, nargs='+', action='append',
     #     default=[], metavar='filename',

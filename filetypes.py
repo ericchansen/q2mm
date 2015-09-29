@@ -169,6 +169,7 @@ class GaussLog(File):
         """
         import pHessMan
         atoms, evals, evecs = pHessMan.readgauout(self.path)
+        evals = np.array(evals)
         evecs = np.array(evecs)
         self._evals = evals
         self._evecs = evecs
