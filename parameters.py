@@ -249,7 +249,10 @@ def main(args):
     # Print the parameters.
     if opts.printparams:
         for param in params:
-            print('{} {}'.format(param.mm3_row, param.mm3_col))
+            if param.ptype in ['df', 'q']:
+                print('{} {} neg'.format(param.mm3_row, param.mm3_col))
+            else:
+                print('{} {}'.format(param.mm3_row, param.mm3_col))
     ff.params = params
     return ff
                     
