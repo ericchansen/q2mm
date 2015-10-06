@@ -39,6 +39,7 @@ LOG_SETTINGS = {
                 'loop': {'level': 'NOTSET', 'propagate': True},
                 # 'loop': {'level': 20, 'propagate': True},
                 'opt': {'level': 'NOTSET', 'propagate': True},
+                'parameters': {'level': 'NOTSET', 'propagate': True},
                 'simplex': {'level': 'NOTSET', 'propagate': True}
                 },
     'root': {
