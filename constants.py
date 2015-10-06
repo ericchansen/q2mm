@@ -173,11 +173,11 @@ COM_FORM = (' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}'
 
 # When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
 # allocations appear, but these are the 2 we care about.
-LABEL_SUITE = 'SUITE_26NOV2012'
+LABEL_SUITE = 'SUITE_\w+' # Ex.) SUITE_26NOV2012
 LABEL_MACRO = 'MMOD_MACROMODEL'
 
 # Some regex to pick out the number of available tokens.
-LIC_SUITE = re.compile('(?<!GLIDE_){}\s+(\d+)\sof\s\d+\s'
+LIC_SUITE = re.compile('(?<!_){}\s+(\d+)\sof\s\d+\s'
                        'tokens\savailable'.format(LABEL_SUITE))
 LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
                        'available'.format(LABEL_MACRO))
