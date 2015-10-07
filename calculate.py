@@ -142,7 +142,8 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
     if sub_names is None and ff_coms:
         logger.log(5, '  -- Must read force field for datatypes {}.'.format(
                 ', '.join(ff_coms)))
-        sub_names = get_sub_names(commands, ff_path)
+        sub_names = get_sub_names(
+            ff_path=ff_path, directory=directory)
 
     outs = {}
 
@@ -480,7 +481,7 @@ def get_label(row):
             row['typ'], row['src_1'].split('.')[0], index)
     return label
 
-def get_sub_names(commands, ff_path):
+def get_sub_names(ff_path=None, directory=None):
     """
     Some datatypes only work when we also know the names of the
     substructures containing parameters that are being optimized.
@@ -489,15 +490,18 @@ def get_sub_names(commands, ff_path):
 
     Arguments
     ---------
-    commands : dictionary
     ff_path : string
+    directory : string
     """
-    assert ff_path is not None, \
-        "User didn't provide required substructure names " + \
-        "or path to force field!"
+    if ff_path is None and directory is not None:
+        ff_path = os.path.join(directory, 'mm3.fld')
+    elif ff_path is None and directory is None:
+        ff_path = os.path.join(os.getcwd, 'mm3.fld')
+    # assert ff_path is not None, \
+    #     "User didn't provide required substructure names " + \
+    #     "or path to force field!"
     ff = datatypes.MM3(ff_path)
     ff.import_ff()
-    # ff = datatypes.import_ff(ff_path)
     return ff.sub_names
 
 def beautiful_conn(conn, log_level=20):
