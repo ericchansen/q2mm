@@ -149,7 +149,7 @@ RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
 # Possible symbols used to split atoms in SMARTS notation.
 RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
 # Name of MM3* substructures.
-RE_SUB = '[\w\s-]+'
+RE_SUB = '[\w\s\-\.]+'
 
 # ========== REGEX FOR .MMO ==========
 
