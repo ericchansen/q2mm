@@ -265,7 +265,7 @@ def mod_v_thresholds(v, f):
 
 def do_svd_reform(u, s, v):
     a = u.dot(np.diag(s)).dot(v)
-    logger.log('A:\n{}'.format(a))
+    logger.log(5, 'A:\n{}'.format(a))
     return a
 
 def do_svd_thresholds(mu, vs, mv, factor, vb):
