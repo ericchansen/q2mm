@@ -83,7 +83,7 @@ def trim_params_by_type(params, ptypes):
     Select all parameters with a matching ptype.
     '''
     chosen_params = [x for x in params if x.ptype in ptypes]
-    logger.log(15, '  -- Trimmed number of parameters down to {}.'.format(
+    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
             len(chosen_params)))
     return chosen_params
 
@@ -152,7 +152,7 @@ def trim_params_by_file(params, filename):
                 # Update the allow negative information.
                 param._allow_negative = temp_param[2]
                 chosen_params.append(param)
-    logger.log(15, '  -- Trimmed number of parameters down to {}.'.format(
+    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
             len(chosen_params)))
     return chosen_params
 

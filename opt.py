@@ -91,7 +91,7 @@ class Optimizer(object):
             compare.import_weights(self.ref_conn)
 
 # Repeats the radius and scaled parameter change calculations.
-def pretty_param_changes(params, changes, method=None, level=15):
+def pretty_param_changes(params, changes, method=None, level=20):
     """
     Shows some parameter changes.
     """
@@ -137,7 +137,7 @@ def pretty_ff_results(ff, level=15):
         logger.log(level, wrapper.fill(' '.join(map(str, ff.params))))
         logger.log(level, '-' * 79)
                 
-def pretty_ff_params(ffs, level=15):
+def pretty_ff_params(ffs, level=20):
     """
     Shows parameters from many force fields.
 
@@ -258,7 +258,7 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
                  If True, stores the calculated data for use later in the
                  force field's conn attribute, `datatypes.FF.conn`.
     """
-    logger.log(15, '  -- Scoring {} force fields.'.format(len(ffs)))
+    logger.log(20, '  -- Scoring {} force fields.'.format(len(ffs)))
     for ff in ffs:
         if ff.path is None:
             path = parent_ff.path
@@ -357,30 +357,10 @@ def differentiate_params(params, central=True):
                 if central:
                     param_sets.append(backward_params)
                 break
-    logger.log(15, '  -- Generated {} differentiated parameter sets.'.format(
+    logger.log(20, '  -- Generated {} differentiated parameter sets.'.format(
             len(param_sets)))
     return param_sets
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
 
-    import shutil
-    shutil.copyfile('d_sulf/mm3.fld.bup', 'd_sulf/mm3.fld')
-    INIT_FF_PATH = 'd_sulf/mm3.fld'
-    REF_ARGS = (' -d d_sulf -je msa.01.mae msb.01.mae'.split())
-    CAL_ARGS = (' -d d_sulf -me msa.01.mae msb.01.mae'.split())
-    PARM_FILE = 'd_sulf/params.txt'
-
-    logger.log(20, '~~ IMPORTING INITIAL FF ~~'.rjust(79, '~'))
-    ff = datatypes.import_ff(INIT_FF_PATH)
-    # ff.params = parameters.trim_params_by_file(ff.params, PARM_FILE)
-    use_these_params = ff.params[:3]
-    # use_these_params = ff.params[:8]
-    ff.params = use_these_params
-
-    simp = Simplex(ff=ff, ff_args=CAL_ARGS, ref_args=REF_ARGS)
-    simp.max_params = 2
-    # simp.max_params = 8
-
-    simp.run()
-    
