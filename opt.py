@@ -120,7 +120,7 @@ def calculate_radius(changes):
     """
     return float(np.sqrt(sum([x**2 for x in changes])))
         
-def pretty_ff_results(ff, level=15):
+def pretty_ff_results(ff, level=20):
     """
     Shows a force field's method, parameters, and score.
 

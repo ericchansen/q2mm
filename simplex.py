@@ -105,8 +105,11 @@ class Simplex(opt.Optimizer):
                 restore=False)
             self.new_ffs = ffs
         self.new_ffs = sorted(self.new_ffs + [self.ff], key=lambda x: x.score)
+        wrapper = textwrap.TextWrapper(width=79)
+        logger.log(20, 'ORDERED FF SCORES:')
+        logger.log(20, wrapper.fill('{}'.format(
+                ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
         opt.pretty_ff_params(self.new_ffs)
-
         current_cycle = 0
         cycles_wo_change = 0
         while current_cycle < self.max_cycles \
