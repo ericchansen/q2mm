@@ -960,9 +960,9 @@ class Mae(SchrodingerFile):
         if com_opts['cs1']:
             com += co.COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
         if com_opts['cs2']:
-            com += co.COM_FORM.format('LCMS', 10000, 0, 0, 0, 0, 0, 0, 0)
+            com += co.COM_FORM.format('LMCS', 10000, 0, 0, 0, 0, 0, 0, 0)
         if com_opts['cs3']:
-            com += co.COM_FORM.format('LCMS', 4000, 0, 0, 0, 0, 0, 0, 0)
+            com += co.COM_FORM.format('LMCS', 4000, 0, 0, 0, 0, 0, 0, 0)
         if com_opts['cs2'] or com_opts['cs3']:
             com += co.COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
         # if com_opts['cs2'] or com_opts['cs3']:
