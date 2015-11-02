@@ -1309,7 +1309,7 @@ class Structure(object):
                       'S[table-format=3.6] S[table-format=3.6]}']
             for i, atom in enumerate(self.atoms):
                 if atom.element is None:
-                    ele = co.element[atom.atomic_num]
+                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
                 else:
                     ele = atom.element
                 output.append('{0}{1} & {2:3.6f} & {3:3.6f} & '
@@ -1322,7 +1322,7 @@ class Structure(object):
             output = []
             for i, atom in enumerate(self.atoms):
                 if atom.element is None:
-                    ele = co.element[atom.atomic_num]
+                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
                 else:
                     ele = atom.element
                 output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
@@ -1530,3 +1530,38 @@ class Reference(File):
             return atr
         except ValueError:
             return col
+
+def return_filetypes_parser():
+    """
+    Returns an argument parser for filetypes module.
+    """
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '-i', '--input', type=str, 
+        help='Input filename.')
+    return parser
+
+def import_filetype(filename):
+    path = os.path.abspath(filename)
+    ext = os.path.splitext(path)[1]
+    if ext == '.mae':
+        file_ob = Mae(path)
+    else:
+        raise Exception('Filetype not recognized.')
+    return file_ob
+        
+def main(args):
+    parser = return_filetypes_parser()
+    opts = parser.parse_args(args)
+    file_ob = import_filetype(opts.input)
+    for structure in file_ob.structures:
+        output = structure.format_coords(format='gauss')
+        for line in output:
+            print(line)
+
+if __name__ == '__main__':
+    import argparse
+    import sys
+
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    main(sys.argv[1:])
