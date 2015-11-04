@@ -144,9 +144,9 @@ class GaussLog(File):
     """
     def __init__(self, path):
         super(GaussLog, self).__init__(path)
-        self._structures = None
         self._evals = None
         self._evecs = None
+        self._structures = None
     @property
     def evecs(self):
         if self._evecs is None:
@@ -160,6 +160,8 @@ class GaussLog(File):
     @property
     def structures(self):
         if self._structures is None:
+            # self.read_out()
+            # self.read_out_old()
             self.read_archive()
         return self._structures
     def read_out(self):
@@ -167,52 +169,117 @@ class GaussLog(File):
         Read force constant and eigenvector data from a frequency
         calculation.
         """
-        import pHessMan
-        atoms, evals, evecs = pHessMan.readgauout(self.path)
-        evals = np.array(evals)
-        evecs = np.array(evecs)
-        self._evals = evals
-        self._evecs = evecs
-        return evals, evecs
+        logger.log(5, 'READING: {}'.format(self.filename))
+        self._evals = []
+        self._evecs = []
+        self._structures = []
+        weird_nfc = []
+        weird_nvec = []
+        weird_ne = 0
+        with open(self.path, 'r') as f:
+            past_first_harm = False
+            weird_hp_mode = False
+            fi = iter(f)
+            while True:
+                try:
+                    line = fi.next()
+                except:
+                    break
+                if 'orientation:' in line:
+                    self._structures.append(Structure())
+                    fi.next()
+                    fi.next()
+                    fi.next()
+                    fi.next()
+                    line = fi.next()
+                    while not '---' in line:
+                        cols = line.split()
+                        self._structures[-1].atoms.append(
+                            Atom(atomic_num=int(cols[1]),
+                                 x=float(cols[3]),
+                                 y=float(cols[4]),
+                                 z=float(cols[5])))
+                        line = fi.next()
+                    logger.log(5, '  -- Found {} atoms.'.format(
+                            len(self._structures[-1].atoms)))
+                elif 'Harmonic' in line:
+                    if past_first_harm:
+                        break
+                    else:
+                        past_first_harm = True
+                elif 'Frequencies' in line:
+                    del(weird_nfc[:])
+                    del(weird_nvec[:])
+                    cols = line.split()
+                    cols = cols[2:]
+                    for freq in map(float, cols):
+                        if freq < 0.:
+                            weird_nfc.append(-1.)
+                        else:
+                            weird_nfc.append(1.)
+                        weird_nvec.append([])
+                        weird_ne += 1
+                    line = fi.next()
+                    cols = line.split()
+                    for i in  range(len(weird_nfc)):
+                        weird_nfc[i] = weird_nfc[i] / float(cols[i+3])
+                    line = fi.next()
+                    cols = line.split()
+                    for i in range(len(weird_nfc)):
+                        weird_nfc[i] *= float(cols[i+3]) / co.AU_TO_MDYNA
+                    fi.next()
+                    line = fi.next()
+                    if 'Coord' in line:
+                        weird_hp_mode = True
+                    line = fi.next()
+                    cols = line.split()
+                    weird_nel = 0
+                    weird_cl = len(cols)
+                    while len(cols) == weird_cl:
+                        if 'Haromic' in line:
+                            break
+                        if weird_hp_mode:
+                            cols = cols[1:]
+                            weird_nel += 1
+                        else:
+                            weird_nel += 3
+                        weird_m = np.sqrt(co.MASSES.items()[int(cols[1]) - 1][1])
+                        cols = cols[2:]
+                        for i in range(len(weird_nvec)):
+                            if weird_hp_mode:
+                                weird_a = cols.pop(0)
+                                weird_nvec[i].append(float(weird_a) * weird_m)
+                            else:
+                                for j in range(3):
+                                    weird_a = cols.pop(0)
+                                    weird_nvec[i].append(float(weird_a) * weird_m)
+                        line = fi.next()
+                        cols = line.split()
+                    for i in range(len(weird_nvec)):
+                        self._evals.append(weird_nfc[i])
+                        self._evecs.append(weird_nvec[i])
+                    if 'Harmonic' in line:
+                        break
+        for evec in self._evecs:
+            weird_ss = 0.
+            for weird_x in evec:
+                weird_ss += weird_x * weird_x
+            weird_x = 1 / np.sqrt(weird_ss)
+            for i in range(len(evec)):
+                evec[i] *= weird_x
+        
+        self._evals = np.array(self._evals)
+        self._evecs = np.array(self._evecs)
 
-        # logger.log(5, 'READING: {}'.format(self.filename))
-        # stuffs = re.findall(
-        #     'Frequencies --(.*?)'
-        #     '\n.*?Z\s*?\n(.*?)Frequencies',
-        #     open(self.path, 'r').read(), flags=re.DOTALL)
-        # freqs = []
-        # # Works with nonlinear molecules only.
-        # # Not good to read this for the atoms.
-        # evecs = np.zeros((len(self.structures[0].atoms)*3 - 6, len(self.structures[0].atoms)))
-        # logger.log(5, '  -- Made {} eigenvector matrix.'.format(evecs.shape))
+    # def read_out_old(self):
+    #     import pHessMan
+    #     atoms, evals, evecs = pHessMan.readgauout(self.path)
+    #     evals = np.array(evals)
+    #     evecs = np.array(evecs)
+    #     self._evals = evals
+    #     self._evecs = evecs
+    #     return evals, evecs
 
-        # stuff = stuffs[0]
-        # # Get the frequencies on this line.
-        # freqs.extend(map(float, stuff[0].split()))
-        # # Get the eigenvectors.
-        # indices = evec_lines
-        # evecs_lines = stuff[1].split('\n')[:-3]
-        # for line in evecs_lines:
-        #     print(line)
-
-        # print(freqs)
-        # with open(self.path, 'r') as f:
-        #     sec = False
-        #     for line in f:
-        #         if sec == True:
-        #             cols = line.split()
-        #             if len(cols) == 11:
-        #                 try:
-        #                     cols = map(float, cols)
-        #                     print(line)
-                            
-        #                 except ValueError:
-        #                     pass
-        #         if len(line.split()) == 0:
-        #             sec = False
-        #         if 'and normal coordinates:' in line:
-        #             sec = True
-                    
     def read_archive(self):
         """
         Only reads last archive found in the Gaussian .log file.
@@ -254,7 +321,7 @@ class GaussLog(File):
         for atom in atoms:
             ele, x, y, z = atom.split(',')
             struct.atoms.append(
-                Atom(element=ele, x=x, y=y, z=z))
+                Atom(element=ele, x=float(x), y=float(y), z=float(z)))
         logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
         self._structures = [struct]
         hess_tri = stuff.group('hess')
@@ -1413,7 +1480,8 @@ class Atom(object):
     @property
     def element(self):
         if self._element is None:
-            self._element = co.ele[self.atomic_num]
+            self._element = co.MASSES.items()[self.atomic_num - 1][0]
+            # self._element = co.ele[self.atomic_num]
         return self._element
     @element.setter
     def element(self, value):
@@ -1546,6 +1614,8 @@ def import_filetype(filename):
     ext = os.path.splitext(path)[1]
     if ext == '.mae':
         file_ob = Mae(path)
+    elif ext == '.log':
+        file_ob = GaussLog(path)
     else:
         raise Exception('Filetype not recognized.')
     return file_ob
@@ -1554,10 +1624,16 @@ def main(args):
     parser = return_filetypes_parser()
     opts = parser.parse_args(args)
     file_ob = import_filetype(opts.input)
-    for structure in file_ob.structures:
-        output = structure.format_coords(format='gauss')
-        for line in output:
-            print(line)
+    if hasattr(file_ob, 'structures'):
+        for i, structure in enumerate(file_ob.structures):
+            print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
+            output = structure.format_coords(format='gauss')
+            for line in output:
+                print(line)
+    if hasattr(file_ob, 'evals'):
+        print(file_ob.evals)
+    if hasattr(file_ob, 'evecs'):
+        print(file_ob.evecs)
 
 if __name__ == '__main__':
     import argparse

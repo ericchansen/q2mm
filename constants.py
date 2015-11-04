@@ -28,23 +28,23 @@ LOG_SETTINGS = {
             # 'formatter': 'basic', 'level': 'NOTSET'}
         },
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
-                # 'calculate': {'level': 'NOTSET', 'propagate': True},
-                'calculate': {'level': 20, 'propagate': True},
-                # 'compare': {'level': 'NOTSET', 'propagate': True},
-                'compare': {'level': 20, 'propagate': True},
-                # 'datatypes': {'level': 'NOTSET',' propagate': True},
-                'datatypes': {'level': 20,' propagate': True},
-                # 'filetypes': {'level': 'NOTSET', 'propagate': True},
-                'filetypes': {'level': 20, 'propagate': True},
-                # 'gradient': {'level': 'NOTSET', 'propagate': True},
-                'gradient': {'level': 20, 'propagate': True},
-                # 'loop': {'level': 'NOTSET', 'propagate': True},
-                'loop': {'level': 20, 'propagate': True},
-                # 'opt': {'level': 'NOTSET', 'propagate': True},
-                'opt': {'level': 20, 'propagate': True},
-                'parameters': {'level': 20, 'propagate': True},
-                # 'simplex': {'level': 'NOTSET', 'propagate': True}
-                'simplex': {'level': 20, 'propagate': True}
+                # 'calculate': {'level': 20, 'propagate': True},
+                # 'compare': {'level': 20, 'propagate': True},
+                # 'datatypes': {'level': 20,' propagate': True},
+                # 'filetypes': {'level': 20, 'propagate': True},
+                # 'gradient': {'level': 20, 'propagate': True},
+                # 'loop': {'level': 20, 'propagate': True},
+                # 'opt': {'level': 20, 'propagate': True},
+                # 'parameters': {'level': 20, 'propagate': True},
+                # 'simplex': {'level': 20, 'propagate': True}
+                'calculate': {'level': 'NOTSET', 'propagate': True},
+                'compare': {'level': 'NOTSET', 'propagate': True},
+                'datatypes': {'level': 'NOTSET',' propagate': True},
+                'filetypes': {'level': 'NOTSET', 'propagate': True},
+                'gradient': {'level': 'NOTSET', 'propagate': True},
+                'loop': {'level': 'NOTSET', 'propagate': True},
+                'opt': {'level': 'NOTSET', 'propagate': True},
+                'simplex': {'level': 'NOTSET', 'propagate': True}
                 },
     'root': {
         'level': 'NOTSET',
@@ -122,7 +122,7 @@ def set_data_defaults(datum):
 # ========== UNIT CONVERSIONS ==========
 
 # Force constants from Jaguar frequency (mdyn A**-1) to au.
-FORCE_CONVERSION = 15.56914
+FORCE_CONVERSION = 15.569141
 # Eigenvalues of mass-weighted Hessian to cm**-1.
 EIGENVALUE_CONVERSION = 53.0883777868
 # Hessian elements in au (Hartree Bohr**-2) from Jaguar to
