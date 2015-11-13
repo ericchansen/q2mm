@@ -932,7 +932,7 @@ class Mae(SchrodingerFile):
         if any(x in ['mt', 'jt'] for x in self.commands):
             com_opts['tors'] = True
         if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands) and \
-                any(x for x in com_opts.itervalues):
+                any(x for x in com_opts.itervalues()):
             raise Exception(
                 "Conformational search methods must be used alone!\n"
                 "FILENAME: {}\n"
