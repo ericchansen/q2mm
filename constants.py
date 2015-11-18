@@ -28,23 +28,23 @@ LOG_SETTINGS = {
             # 'formatter': 'basic', 'level': 'NOTSET'}
         },
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
-                # 'calculate': {'level': 20, 'propagate': True},
-                # 'compare': {'level': 20, 'propagate': True},
-                # 'datatypes': {'level': 20,' propagate': True},
-                # 'filetypes': {'level': 20, 'propagate': True},
-                # 'gradient': {'level': 20, 'propagate': True},
-                # 'loop': {'level': 20, 'propagate': True},
-                # 'opt': {'level': 20, 'propagate': True},
-                # 'parameters': {'level': 20, 'propagate': True},
-                # 'simplex': {'level': 20, 'propagate': True}
-                'calculate': {'level': 'NOTSET', 'propagate': True},
-                'compare': {'level': 'NOTSET', 'propagate': True},
-                'datatypes': {'level': 'NOTSET',' propagate': True},
-                'filetypes': {'level': 'NOTSET', 'propagate': True},
-                'gradient': {'level': 'NOTSET', 'propagate': True},
+                'calculate': {'level': 20, 'propagate': True},
+                'compare': {'level': 20, 'propagate': True},
+                'datatypes': {'level': 20,' propagate': True},
+                'filetypes': {'level': 20, 'propagate': True},
+                'gradient': {'level': 20, 'propagate': True},
                 'loop': {'level': 'NOTSET', 'propagate': True},
                 'opt': {'level': 'NOTSET', 'propagate': True},
-                'simplex': {'level': 'NOTSET', 'propagate': True}
+                'parameters': {'level': 20, 'propagate': True},
+                'simplex': {'level': 20, 'propagate': True}
+                # 'calculate': {'level': 'NOTSET', 'propagate': True},
+                # 'compare': {'level': 'NOTSET', 'propagate': True},
+                # 'datatypes': {'level': 'NOTSET',' propagate': True},
+                # 'filetypes': {'level': 'NOTSET', 'propagate': True},
+                # 'gradient': {'level': 'NOTSET', 'propagate': True},
+                # 'loop': {'level': 'NOTSET', 'propagate': True},
+                # 'opt': {'level': 'NOTSET', 'propagate': True},
+                # 'simplex': {'level': 'NOTSET', 'propagate': True}
                 },
     'root': {
         'level': 'NOTSET',
