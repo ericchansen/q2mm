@@ -1110,12 +1110,13 @@ class Mae(SchrodingerFile):
                             current_timeout > max_timeout:
                         pretty_timeout(
                             current_timeout, suite_tokens,
-                            macro_tokens, end=True)
+                            macro_tokens, end=True, name_com=self.name_com)
                         raise Exception(
                             "Not enough tokens to run {}. Waited {} seconds "
                             "before giving up.".format(
                                 self.name_com, current_timeout))
-                    pretty_timeout(current_timeout, suite_tokens, macro_tokens)
+                    pretty_timeout(current_timeout, suite_tokens, macro_tokens,
+                                   name_com=self.name_com)
                     current_timeout += timeout
                     time.sleep(timeout)
         else:
@@ -1126,7 +1127,7 @@ class Mae(SchrodingerFile):
         os.chdir(current_directory)
 
 def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
-                   level=10):
+                   level=10, name_com=None):
     """
     Logs information about the wait for Schrodinger tokens.
 
@@ -1144,8 +1145,9 @@ def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
             Logging level of the pretty messages.
     """
     if current_timeout == 0:
-        logger.warning('  -- Waiting on tokens to run {}.'.format(
-                self.name_com))
+        if name_com:
+            logger.warning('  -- Waiting on tokens to run {}.'.format(
+                    name_com))
         logger.log(level,
                    '--' + ' (s) '.center(8, '-') +
                    '--' + ' {} '.format(LABEL_SUITE).center(17, '-') +
