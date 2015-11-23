@@ -26,6 +26,7 @@ import numpy as np
 import os
 import re
 import subprocess as sp
+import time
 
 from schrodinger import structure as sch_str
 from schrodinger.application.jaguar import input as jag_in
@@ -1150,8 +1151,8 @@ def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
                     name_com))
         logger.log(level,
                    '--' + ' (s) '.center(8, '-') +
-                   '--' + ' {} '.format(LABEL_SUITE).center(17, '-') +
-                   '--' + ' {} '.format(LABEL_MACRO).center(17, '-') +
+                   '--' + ' {} '.format(co.LABEL_SUITE).center(17, '-') +
+                   '--' + ' {} '.format(co.LABEL_MACRO).center(17, '-') +
                    '--')
     logger.log(level, '  {:^8d}  {:^17d}  {:^17d}'.format(
             current_timeout, macro_tokens, suite_tokens))
