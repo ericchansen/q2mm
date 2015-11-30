@@ -106,6 +106,8 @@ class Param(object):
         self._step = x
     @property
     def value(self):
+        if self.ptype == 'ae' and self._value > 180.:
+            self._value = 180. - abs(180 - self._value)
         return self._value
     @value.setter
     def value(self, value):
