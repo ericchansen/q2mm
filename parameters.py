@@ -142,6 +142,8 @@ def trim_params_by_file(params, filename):
                 for arg in cols[2:]:
                     if 'neg' in arg:
                         allow_negative = True
+                    elif 'pos' in arg:
+                        allow_negative = False
                 # Add information to the temporary list.
                 temp_params.append((mm3_row, mm3_col, allow_negative))
     # Keep only the parameters that are specified in the file.
