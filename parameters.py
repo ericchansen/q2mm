@@ -89,7 +89,31 @@ def trim_params_by_type(params, ptypes):
 
 def trim_params_by_file(params, filename):
     '''
-    Read a parameter file to select parameters.
+    Trims the list of parameters based upon the parameter
+    file.
+
+    params   - List of datatypes.Param objects
+    filename - Path to parameter file
+    '''
+    # This will hold the parameters you chose.
+    chosen_params = []
+    # All parameters read from the file.
+    temp_params = read_param_file(filename)
+    # Keep only the parameters that are specified in the file.
+    for param in params:
+        for temp_param in temp_params:
+            if param.mm3_row == temp_param[0] and \
+                    param.mm3_col == temp_param[1]:
+                # Update the allow negative information.
+                param._allowed_range = temp_param[2]
+                chosen_params.append(param)
+    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
+            len(chosen_params)))
+    return chosen_params
+
+def read_param_file(filename):
+    '''
+    Read a parameter file.
 
     Format of parameter file:
     ff_row ff_col [neg]
@@ -112,8 +136,9 @@ def trim_params_by_file(params, filename):
                  Equilibrium angle = 1
                  Force constants   = 2
 
-    neg    - Just write the string neg to indicate that it's okay for this
-             parameter to have negative values.
+    neg    - Forces parameter to negative values.
+    pos    - Forces parameter to positive values. 
+    both   - Allows negative or positive values.
 
     Example parameter file:
       1858 1         # Equilibrium length of bond on line 1858
@@ -123,13 +148,16 @@ def trim_params_by_file(params, filename):
       1859 3         # Bond dipole of bond on line 1859
       1872 1         # Equilibrium angle of force constant on line 1872
       1872 2         # Force constant of angle on line 1872
-      1891 1 neg     # V1 of torsion on line 1891
-      1891 2 neg     # V2 of torsion on line 1891
-      1891 3 neg     # V3 of torsion on line 1891
+      1891 1 neg     # V1 of torsion on line 1891 (forced negative)
+      1891 2 neg     # V2 of torsion on line 1891 (forced negative)
+      1891 3 neg     # V3 of torsion on line 1891 (forced negative)
+      1892 3 pos     # V3 of torsion on line 1892 (forced positive)
+      1892 1 both    # V1 of torsion on line 1892 (no restrictions)
+      1985 2 -1. 1.  # V2 of torsion on line 1985 (restrained between
+                     # -1.0 and 1.0.
+
+    Doesn't actually return datatypes.Param objects.
     '''
-    # This will hold the parameters you chose.
-    chosen_params = []
-    # All parameters read from the file.
     temp_params = []
     with open(filename, 'r') as f:
         for line in f:
@@ -138,25 +166,21 @@ def trim_params_by_file(params, filename):
             if cols:
                 mm3_row, mm3_col = int(cols[0]), int(cols[1])
                 # Check if you allow negative values.
-                allow_negative = None
-                for arg in cols[2:]:
-                    if 'neg' in arg:
-                        allow_negative = True
-                    elif 'pos' in arg:
-                        allow_negative = False
+                if 'neg' in cols[2:]:
+                    allowed_range = [-float('inf'), 0.]
+                elif 'pos' in cols[2:]:
+                    allowed_range = [0., float('inf')]
+                elif 'both' in cols[2:]:
+                    allowed_range = [-float('inf'), float('inf')]
+                elif cols[2:]:
+                    # Selects all values after 2 as a list, and then
+                    # trims to only 2 values.
+                    allowed_range = map(float, cols[2:][:2])
+                else:
+                    allowed_range = None
                 # Add information to the temporary list.
-                temp_params.append((mm3_row, mm3_col, allow_negative))
-    # Keep only the parameters that are specified in the file.
-    for param in params:
-        for temp_param in temp_params:
-            if param.mm3_row == temp_param[0] and \
-                    param.mm3_col == temp_param[1]:
-                # Update the allow negative information.
-                param._allow_negative = temp_param[2]
-                chosen_params.append(param)
-    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
-            len(chosen_params)))
-    return chosen_params
+                temp_params.append((mm3_row, mm3_col, allowed_range))
+    return temp_params
 
 def gather_values(mmos):
     '''
@@ -252,8 +276,10 @@ def main(args):
     if opts.printparams:
         for param in params:
             # if param.ptype in ['df', 'q']:
-            if param.allow_negative:
-                print('{} {} neg'.format(param.mm3_row, param.mm3_col))
+            if param.allowed_range:
+                print('{} {} {} {}'.format(
+                        param.mm3_row, param.mm3_col, param.allowed_range[0],
+                        param.allowed_range[1]))
             else:
                 print('{} {}'.format(param.mm3_row, param.mm3_col))
     ff.params = params
