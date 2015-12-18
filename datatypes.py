@@ -30,9 +30,9 @@ class Param(object):
     """
     A single parameter.
 
-    :var _allow_negative: Stored as None if not set, else it's set to be True or
-      False depending on :func:`allow_negative`.
-    :type _allow_negative: None, True or False
+    :var _allowed_range: Stored as None if not set, else it's set to True or
+      False depending on :func:`allowed_range`.
+   :type _allowed_range: None, 'both', 'pos', 'neg'
 
     :ivar ptype: Parameter type can be one of the following: ae, af, be, bf, df,
       imp1, imp2, sb, or q.
@@ -50,9 +50,9 @@ class Param(object):
     value : float
             Value of the parameter.
     """
-    __slots__ = ['_allow_negative', 'd1', 'd2', '_step', 'ptype', '_value']
+    __slots__ = ['_allowed_range', 'd1', 'd2', '_step', 'ptype', '_value']
     def __init__(self, d1=None, d2=None, ptype=None, value=None):
-        self._allow_negative = None
+        self._allowed_range = None
         self.d1 = d1
         self.d2 = d2
         self._step = None 
@@ -63,19 +63,17 @@ class Param(object):
         return '{}[{}]({:7.4f})'.format(
             self.__class__.__name__, self.ptype, self.value)
     @property
-    def allow_negative(self):
+    def allowed_range(self):
         """
         Returns True or False, depending on whether the parameter is
         allowed to be negative values.
         """
-        if self._allow_negative is None:
-            if self.ptype is None:
-                pass
-            elif self.ptype in ['q', 'df']:
-                self._allow_negative = True
+        if self._allowed_range is None and self.ptype is not None:
+            if self.ptype in ['q', 'df']:
+                self._allowed_range = [-float('inf'), float('inf')]
             else:
-                self._allow_negative = False
-        return self._allow_negative
+                self._allowed_range = [0., float('inf')]
+        return self._allowed_range
     @property
     def step(self):
         """
@@ -95,9 +93,7 @@ class Param(object):
                 raise
         if self._step == 0.:
             self._step = 0.1
-            # return 0.1
         if isinstance(self._step, basestring):
-            # return float(self._step) * self._value
             return float(self._step) * self.value
         else:
             return self._step
@@ -114,14 +110,13 @@ class Param(object):
         """
         When you try to give the parameter a value, make sure that's okay.
         """
-        # if not self.allow_negative and value < 0.:
-        if self.allow_negative is not None and not self.allow_negative \
-                and value < 0.:
-            raise ParamError(
-                "{} isn't allowed to have a value of {}!".format(
-                    self, value))
-        else:
+        if self.allowed_range[0] <= value <= self.allowed_range[1]:
             self._value = value
+        else:
+            raise ParamError(
+                "{} isn't allowed to have a value of {}! "
+                "({} <= x <= {})".format(
+                    str(self), value, self.allowed_range[0], self.allowed_range[1]))
     
 class ParamMM3(Param):
     '''
