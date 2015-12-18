@@ -3,19 +3,18 @@ Handles importing data from the various filetypes that Q2MM uses.
 
 Schrodinger
 -----------
-If the atom.typ file is not in the directory where run the Python scripts,
-you may see a warning similar to the following when you import Schrodinger
-files:
+When importing Schrodinger files, if the atom.typ file isn't in the directory
+where you execute the Q2MM Python scripts, you may see this warning:
 
   WARNING mmat_get_atomic_num x is not a valid atom type
   WARNING mmat_get_mmod_name x is not a valid atom type
 
-In this example, x would be the number of the custom atom types you defined,
-atom types that you added to atom.typ. The warning can safely be ignored. If
-you'd like the warning messages to go away, copy the atom.typ file into the
-directory where you execute the Python scripts. Note that the atom.typ file
-must be located with your structure files, else the MacroModel jobs will fail.
-the atom.typ file
+In this example, x is the number of a custom atom type defined and added to
+atom.typ. The warning can be ignored. If it's bothersome, copy atom.typ into
+the directory where you execute the Q2MM Python scripts.
+
+Note that the atom.typ must be located with your structure files, else the
+Schrodinger jobs will fail.
 """
 from __future__ import print_function
 from string import digits
@@ -50,13 +49,14 @@ class File(object):
         
 class GaussFormChk(File):
     """
-    Class used to retrieve data from Gaussian formatted checkpoint files.
+    Used to retrieve data from Gaussian formatted checkpoint files.
     """
     def __init__(self, path):
         super(GaussFormChk, self).__init__(path)
         self.atoms = []
         # Not sure these should really be called the eigenvalues.
         self.evals = None
+        self.low_tri = None
         self._hess = None
     @property
     def hess(self):
@@ -65,41 +65,6 @@ class GaussFormChk(File):
         return self._hess
     def read_self(self):
         logger.log(5, 'READING: {}'.format(self.filename))
-
-        # Manual example.
-        # with open(self.path, 'r') as f:
-        #     s_cart_grad = False
-        #     s_cart_fc = False
-        #     for line in f:
-        #         if s_cart_grad is True:
-        #             pass
-        #         if 'Cartesian Gradient' in line:
-        #             s_cart_grad = True
-        #             cols = line.split()
-        #             logger.log(
-        #                 5,
-        #                 '  -- Reading cartesian gradient vector of length {}.'.
-        #                 format(cols[-1]))
-        #             self.evec = np.zeros(1, int(cols[-1]))
-        #         if 'Cartesian Force Constants' in line:
-        #             s_cart_grad = False
-        #             s_cart_fc = True
-        #             cols = line.split()
-        #             logger.log(
-        #                 5,
-        #                 '  -- Reading {} cartesian force constants in lower '
-        #                 'triangular form.'.format(cols[-1]))
-        #         if 'Dipole Moment' in line:
-        #             s_cart_fc = False
-       
-        # re.finditer example
-        # stuff = re.finditer(
-        #     'Atomic numbers\s+I\s+N=\s+(?P<num>\d+)\n\s+(?P<anum>.*)Nuclear charges',
-        #     # 'Atomic numbers\s+I\s+N=\d+\s+(.*)Nuclear charges',
-        #     open(self.path, 'r').read(), flags=re.DOTALL)
-        # stuff = [m.groupdict() for m in stuff]
-        # print(stuff)
-
         stuff = re.search(
             'Atomic numbers\s+I\s+N=\s+(?P<num_atoms>\d+)'
             '\n\s+(?P<anums>.*?)'
@@ -110,7 +75,6 @@ class GaussFormChk(File):
             'Cartesian Force Constants.*?\n(?P<hess>.*?)'
             'Dipole Moment',
             open(self.path, 'r').read(), flags=re.DOTALL)
-
         anums = map(int, stuff.group('anums').split())
         masses = map(float, stuff.group('masses').split())
         coords = map(float, stuff.group('coords').split())
@@ -138,7 +102,7 @@ class GaussFormChk(File):
 
 class GaussLog(File):
     """
-    Class used to retrieve data from Gaussian log files.
+    Used to retrieve data from Gaussian log files.
 
     If you are extracting frequencies/Hessian data from this file, use
     the keyword NoSymmetry when running the Gaussian calculation.
@@ -162,13 +126,15 @@ class GaussLog(File):
     def structures(self):
         if self._structures is None:
             # self.read_out()
-            # self.read_out_old()
             self.read_archive()
         return self._structures
     def read_out(self):
         """
         Read force constant and eigenvector data from a frequency
         calculation.
+
+        This function is more or less a direct copy of someone else's
+        code (Elaine?), so I'm not sure how it works.
         """
         logger.log(5, 'READING: {}'.format(self.filename))
         self._evals = []
@@ -268,19 +234,8 @@ class GaussLog(File):
             weird_x = 1 / np.sqrt(weird_ss)
             for i in range(len(evec)):
                 evec[i] *= weird_x
-        
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
-
-    # def read_out_old(self):
-    #     import pHessMan
-    #     atoms, evals, evecs = pHessMan.readgauout(self.path)
-    #     evals = np.array(evals)
-    #     evecs = np.array(evecs)
-    #     self._evals = evals
-    #     self._evecs = evecs
-    #     return evals, evecs
-
     def read_archive(self):
         """
         Only reads last archive found in the Gaussian .log file.
@@ -299,7 +254,7 @@ class GaussLog(File):
         arch = re.findall(
             '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
             open(self.path, 'r').read())[-1]
-        logger.log(5, '  -- Found last archive.')
+        logger.log(5, '  -- Located last archive.')
         arch = arch.replace('\n ', '')
         # Watch out with NImag. Sometimes equals 1, sometimes 0,
         # anything else?
@@ -316,7 +271,7 @@ class GaussLog(File):
             '\\\\\\\\(?P<evals>.*?)'
             '\\\\\\\\\\\\',
             arch)
-        logger.log(5, '  -- Found stuff in archive.')
+        logger.log(5, '  -- Read archive.')
         atoms = stuff.group('atoms')
         atoms = atoms.split('\\')
         for atom in atoms:
@@ -334,8 +289,7 @@ class GaussLog(File):
         hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
         logger.log(
             5, '  -- Created {} Hessian matrix.'.format(hess.shape))
-        # Code for if it was in upper triangle, but it's not in
-        # upper triangle format. It's lower triangle.
+        # Code for if it was in upper triangle, but it's not.
         # hess[np.triu_indices_from(hess)] = hess_tri
         # hess += np.triu(hess, -1).T
         # Lower triangle code.
@@ -457,7 +411,8 @@ class GaussLog(File):
                             logger.log(5, '[L{}] End standard coordinates '
                                        'section ({} atoms).'.format(
                                     i+1, count_atom))
-                        # grab coords for each atom. add atoms to the structure
+                        # Grab coordinates for each atom.
+                        # Add atoms to the structure.
                         if section_coords_standard:
                             match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+'
                                              '({0})\s+({0})'.format(
@@ -485,7 +440,7 @@ class GaussLog(File):
                                 current_atom.x = float(match.group(3))
                                 current_atom.y = float(match.group(4))
                                 current_atom.z = float(match.group(5))
-                        # start of standard coords
+                        # Start of standard coordinates.
                         if not section_coords_standard and \
                                 'Standard orientation' in line:
                             current_structure = Structure()
