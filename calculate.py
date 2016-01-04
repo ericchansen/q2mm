@@ -1,12 +1,10 @@
 """
-Extracts data from various files based upon the user's input.
+Extracts QM data from reference files or calculates FF data.
 
-This script takes a sequence of keywords corresponding to various
+Takes a sequence of keywords corresponding to various
 datatypes (ex. mb = MacroModel bond lengths) followed by filenames,
-and extracts that particular data type from the file.
-
-Also handles running 3rd party applications to calculate force
-field data (ex.  writing and running .com files for MacroModel).
+and extracts that particular data type from the file. Note that the
+order of filenames is important.
 """
 import argparse
 import itertools
@@ -693,8 +691,7 @@ def gather_fake_data(commands, inps, directory):
 
 def return_calculate_parser(add_help=True, parents=None):
     '''
-    Command line argument parser for calculate. Used to select various
-    options and what data types to gather from specific files.
+    Command line argument parser for calculate.
 
     Arguments
     ---------
@@ -705,9 +702,9 @@ def return_calculate_parser(add_help=True, parents=None):
               Parent parser incorporated into this parser. Default
               is None.
     '''
-    if parents is None: parents = []
     # Whether or not to add help. You may not want to add help if
     # these arguments are being used in another, higher level parser.
+    if parents is None: parents = []
     if add_help:
         parser = argparse.ArgumentParser(
             description=__doc__, parents=parents)
@@ -718,25 +715,26 @@ def return_calculate_parser(add_help=True, parents=None):
     opts = parser.add_argument_group("calculate options")
     opts.add_argument(
         '--directory', '-d', type=str, metavar='somepath', default=os.getcwd(),
-        help=('Directory to search for files (.mae, .log, mm3.fld, etc.).'
-              '3rd party calculations are executed from this directory.'))
+        help=('Directory searched for files '
+              '(ex. *.mae, *.log, mm3.fld, etc.). '
+              'Subshell commands (ex. MacroModel) are executed from here. '
+              'Default is the current directory.'))
     opts.add_argument(
         '--doprint', '-p', action='store_true',
-        help=("Logs the data that was collected. Be forewarned that this "
-              " can generate lengthy log files."))
+        help=("Logs data. Can generate extensive log files."))
     opts.add_argument(
         '--fake', action='store_true',
-        help=("Generate fake data. Works with me, me2, meo, "
-              "je, je2, and jeo."))
+        help=("Generates fake data. Only works with -me, -me2, -meo, "
+              "-je, -je2 and -jeo."))
     opts.add_argument(
-        '--ffpath', '-f', type=str,
+        '--ffpath', '-f', type=str, metavar='somepath',
         help=("Path to force field. Only necessary for certain data types "
               "and if the subgroup names aren't provided."))
     opts.add_argument(
         '--nocheck', '-nc', action='store_false', dest='check', default=True,
         help=("By default, Q2MM checks whether MacroModel tokens are "
               "available before attempting a MacroModel calculation. If this "
-              "option is supplied, MacroModel will not check the tokens "
+              "option is supplied, MacroModel will not check for tokens "
               "first."))
     opts.add_argument(
         '--norun', '-n', action='store_true',
@@ -744,21 +742,21 @@ def return_calculate_parser(add_help=True, parents=None):
     opts.add_argument(
         '--subnames',  '-s', type=str, nargs='+',
         metavar='"Substructure Name OPT"',
-        help=("Names of all the substructures containing parameters to "
-              "optimize in a MacroModel .fld."))
+        help=("Names of the substructures containing parameters to "
+              "optimize in a mm3.fld file."))
     # ----- DATA TYPES -----
     data_args = parser.add_argument_group("calculate data types")
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
-              'all elements that are off-diagonal. Uses only the .log for '
+              'all off-diagonal elements . Uses only the .log for '
               'the eigenvalues and eigenvectors.'))
     data_args.add_argument(
         '-geigz2', type=str, nargs='+', action='append',
         default=[], metavar='somename.log,somename.fchk',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
-              'all elements that are off-diagonal. Uses the .log for '
+              'all off-diagonal elements. Uses the .log for '
               'eigenvectors and .fchk for Hessian.'))
     data_args.add_argument(
         '-ma', type=str, nargs='+', action='append',
@@ -777,13 +775,13 @@ def return_calculate_parser(add_help=True, parents=None):
         '-mcs2', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help=('Run a MacroModel conformational search. '
-              "Doesn't work as a data type for FF optimizations."
+              "Doesn't work as a data type for FF optimizations. "
               'Uses AUOP cutoff for number of steps.'))
     data_args.add_argument(
         '-mcs3', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help=('Run a MacroModel conformational search. '
-              "Doesn't work as a data type for FF optimizations."
+              "Doesn't work as a data type for FF optimizations. "
               'Maximum of 4000 steps and no AUOP cutoff.'))
     data_args.add_argument(
         '-me', type=str, nargs='+', action='append',
@@ -845,7 +843,7 @@ def return_calculate_parser(add_help=True, parents=None):
         '-jeigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.in,somename.out',
         help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
-              'all elements that are off-diagonal.'))
+              'all off-diagonal elements.'))
     data_args.add_argument(
         '-jq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -853,74 +851,13 @@ def return_calculate_parser(add_help=True, parents=None):
     data_args.add_argument(
         '-jqh', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
-        help=('Jaguar charges (excludes aliphatic hydrogens). Sums the charge '
-              'of aliphatic hydrogens into the bonded sp3 carbon.'))
+        help=('Jaguar partial charges (excludes aliphatic hydrogens). '
+              'Sums aliphatic hydrogen charges into their bonded sp3 '
+              'carbon.'))
     data_args.add_argument(
         '-jt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar torsions.')
-    data_args.add_argument(
-        '-r', type=str, nargs='+', action='append', default=[],
-        metavar='somefilename',
-        help=('Reads data from a simple file format. '
-              'Column descriptions: 1. value 2. weight '
-              '3. command for calculate 4. type (must match '
-              'the MacroModel data type) 5. 1st source '
-              '6. 2nd source 7. 1st index 8. 2nd index '
-              '9. 1st atom 10. 2nd atom 11. 3rd atom '
-              '12. 4th atom'))
-    # data_args.add_argument(
-    #     '-mh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.mae',
-    #     help='MacroModel Hessian.')
-    # data_args.add_argument(
-    #     '-pm', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tethering of parameters for FF data.')
-    # data_args.add_argument(
-    #     '-pr', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tethering of parameters for reference data.')
-    # data_args.add_argument(
-    #     '-jeig', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help='Jaguar eigenmatrix (all elements).')
-    # data_args.add_argument(
-    #     '-jeigi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help='Jaguar eigenmatrix (all elements). Invert 1st eigenvalue.')
-    # data_args.add_argument(
-    #     '-jeigz', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help="Jaguar eigenmatrix (only diagonal elements).")
-    # data_args.add_argument(
-    #     '-jeigzi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in,somename.out',
-    #     help=("Jaguar eigenmatrix (only diagonal elements). "
-    #           "Invert 1st eigenvalue."))
-    # data_args.add_argument(
-    #     '-jh', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in',
-    #     help='Jaguar Hessian.')
-    # data_args.add_argument(
-    #     '-jhi', type=str, nargs='+', action='append',
-    #     default=[], metavar='somename.in',
-    #     help='Jaguar Hessian with inversion.')
-    # data_args.add_argument(
-    #     '-r', type=str, nargs='+', action='append',
-    #     default=[], metavar='filename',
-    #     help=('Read data points directly (ex. use with .cal files). '
-    #           'Each row corresponds to a data point. Columns are separated '
-    #           'by spaces. 1st column is the data label, 2nd column is the '
-    #           'weight, and 3rd column is the value.'))
-    # data_args.add_argument(
-    #     '-zm', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tether parameters away from zero. FF data.')
-    # data_args.add_argument(
-    #     '-zr', type=str, nargs='+', action='append',
-    #     default=[], metavar='parteth',
-    #     help='Tether parameters away from zero. Reference data.')
     return parser
 
 if __name__ == '__main__':
