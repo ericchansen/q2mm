@@ -26,35 +26,31 @@ import filetypes
 
 # LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
 DATABASE_LOC = ':memory:'
+
 # Commands where we need to load the force field.
-# COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt', 'pm', 'zm']
 COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 # Commands related to Gaussian.
 COM_GAUSSIAN = ['geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz',
-              'jq', 'jqh']
+COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
 COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
                   'mcs3', 'me', 'me2', 'meo', 'mjeig', 'mgeig',
                   'mq', 'mqh', 'mt']
-# All other commands.
-# COM_OTHER = ['pm', 'pr', 'r', 'zm', 'zr']
-COM_OTHER = ['r']
-# A list of all the possible commands.
-COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+# # All other commands.
+# COM_OTHER = ['r']
+# All possible commands.
+# COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL
 
 logger = logging.getLogger(__name__)
 
 def main(args):
     """
-    Main control for calculate module.
-
     Arguments
     ---------
     args : string
-           Used by argparse.ArgumentParser to determine
-           what to do.
+           Evaluated using parser returned by return_calculate_parser().
     """
     parser = return_calculate_parser()
     opts = parser.parse_args(args)
@@ -101,28 +97,32 @@ def main(args):
                 inps[filename].write_com()
         else:
             inps[filename] = None
-    if opts.norun or opts.fake:
-        logger.log(15, "  -- Skipping external software calculations. ")
-    else:
-        for filename, some_class in inps.iteritems():
-            if some_class is not None:
-                some_class.run(check_tokens=opts.check)
     if opts.fake:
-        conn = gather_fake_data(commands, inps, opts.directory)
+        data = gather_fake_data(commands, inps, opts.directory)
         logger.log(15, '  -- Generated fake data.')
     else:
-        conn = gather_data(
+        if opts.norun:
+            logger.log(15, "  -- Skipping external software calculations.")
+        else:
+            for filename, some_class in inps.iteritems():
+                if some_class is not None:
+                    some_class.run(check_tokens=opts.check)
+        data = gather_data(
             commands, inps, opts.directory, opts.ffpath, opts.subnames)
-    if opts.doprint:
-        beautiful_conn(conn)
-    return conn
+    if opts.usedb:
+        conn = as_db(data)
+        if opts.doprint:
+            beautiful_conn(conn)
+        return conn
+    else:
+        return data
 
 def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
     """
     Gathers data from files. Knows what to do based upon dictionary
     `commands`. Uses dictionary `inps` to keep track of files that may
     have been generated. Reads files and stores the data in dictionary
-    `outs` to prevent having to rereading files.
+    `outs` to prevent having to reread files.
 
     Arguments
     ---------
@@ -144,22 +144,19 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
             ff_path=ff_path, directory=directory)
 
     outs = {}
-
-    conn = sqlite3.connect(DATABASE_LOC)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.executescript(co.STR_INIT_SQLITE3)
+    data_list = []
 
     for com, groups_filenames in commands.iteritems():
 
-        # ----- REFERENCE DATA FILE -----
-        if com == 'r':
-            for filename in groups_filenames:
-                ref = filetypes.Reference(filename[0])
-                data = ref.get_data()
-                for datum in data:
-                    datum = co.set_data_defaults(datum)
-                    c.execute(co.STR_SQLITE3, datum)
+        # # ----- REFERENCE DATA FILE -----
+        # if com == 'r':
+        #     for filename in groups_filenames:
+        #         ref = filetypes.Reference(filename[0])
+        #         data = ref.get_data()
+        #         for datum in data:
+        #             datum = co.set_data_defaults(datum)
+        #             c.execute(co.STR_SQLITE3, datum)
+
         # ----- JAGUAR ENERGIES -----
         if com in ['je', 'je2', 'jeo']:
             if com == 'je': typ = 'energy_1'
@@ -182,7 +179,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                   'idx_1': idx_1 + 1,
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
-                        c.execute(co.STR_SQLITE3, energy)
+                        data_list.append(energy)
         # ----- JAGUAR CHARGES -----
         if com in ['jq', 'jqh']:
             for comma_sep_names in groups_filenames:
@@ -215,7 +212,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                           'idx_1': i + 1,
                                           'atm_1': atom.index}
                                     dp = co.set_data_defaults(dp)
-                                    c.execute(co.STR_SQLITE3, dp)
+                                    data_list.append(dp)
 
         # ----- MACROMODEL CHARGES -----
         if com in ['mq', 'mqh']:
@@ -242,7 +239,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                           'idx_1': str_num + 1,
                                           'atm_1': atom.index}
                                     dp = co.set_data_defaults(dp)
-                                    c.execute(co.STR_SQLITE3, dp)
+                                    data_list.append(dp)
 
         # ----- MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
@@ -269,7 +266,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                   'idx_1': idx_1 + 1,
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
-                        c.execute(co.STR_SQLITE3, energy)
+                        data_list.append(dp)
 
         # ----- SCHRODINGER STRUCTURES -----
         if com in ['ja', 'jb', 'jt', 'ma', 'mb', 'mt']:
@@ -292,14 +289,11 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     mmo = outs[inps[filename].name_mmo]
                     selected = filetypes.select_structures(
                         mmo.structures, inps[filename]._index_output_mmo, index)
-                    data = []
                     for str_num, struct in selected:
                         temp = struct.select_stuff(
                             typ, com_match=sub_names, com=com,
                             src_1=mmo.filename, idx_1=str_num + 1)
-                        data.extend(temp)
-                    c.executemany(co.STR_SQLITE3, data)
-
+                        data_list.extend(temp)
 
         # ------ GAUSSIAN EIGENMATRIX ------
         if com == 'geigz':
@@ -323,7 +317,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
                     data = [co.set_data_defaults(x) for x in data]
-                    c.executemany(co.STR_SQLITE3, data)
+                    data_list.extend(data)
 
         if com == 'geigz2':
             for group_filenames in groups_filenames:
@@ -361,7 +355,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
                     data = [co.set_data_defaults(x) for x in data]
-                    c.executemany(co.STR_SQLITE3, data)
+                    data_list.extend(data)
 
         # ------ MACROMODEL/GAUSSIAN EIGENMATRIX -----
         if com == 'mgeig':
@@ -401,7 +395,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
                     data = [co.set_data_defaults(x) for x in data]
-                    c.executemany(co.STR_SQLITE3, data)
+                    data_list.extend(data)
 
         # ------ SCHRODINGER EIGENMATRIX ------
         if com in ['jeigz', 'mjeig']:
@@ -453,11 +447,17 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
                     data = [co.set_data_defaults(x) for x in data]
-                    c.executemany(co.STR_SQLITE3, data)
+                    data_list.extend(data)
 
-    c.execute('SELECT Count(*) FROM data')
-    count_data = c.fetchone()
-    logger.log(15, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
+    logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data_list)))
+    return data_list
+
+def as_db(data):
+    conn = sqlite3.connect(DATABASE_LOC)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.executescript(co.STR_INIT_SQLITE3)
+    c.executemany(co.STR_SQLITE3, data)
     conn.commit()
     return conn
 
@@ -628,10 +628,8 @@ def gather_fake_data(commands, inps, directory):
     directory : string
     """
     outs = {}
-    conn = sqlite3.connect(DATABASE_LOC)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.executescript(co.STR_INIT_SQLITE3)
+    data_list = []
+
     for com, groups_filenames in commands.iteritems():
 
         # ----- FAKE JAGUAR ENERGIES -----
@@ -653,7 +651,7 @@ def gather_fake_data(commands, inps, directory):
                                   'idx_1': idx_1 + 1,
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
-                        c.execute(co.STR_SQLITE3, energy)
+                        data_list.append(energy)
 
         # ----- FAKE MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
@@ -681,13 +679,10 @@ def gather_fake_data(commands, inps, directory):
                                   'idx_1': idx_1 + 1,
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
-                        c.execute(co.STR_SQLITE3, energy)
+                        data_list.append(energy)
 
-    c.execute('SELECT Count(*) FROM data')
-    count_data = c.fetchone()
-    logger.log(15, 'TOTAL DATA POINTS: {}'.format(list(count_data)[0]))
-    conn.commit()
-    return conn
+    logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data_list)))
+    return data_list
 
 def return_calculate_parser(add_help=True, parents=None):
     '''
@@ -744,6 +739,9 @@ def return_calculate_parser(add_help=True, parents=None):
         metavar='"Substructure Name OPT"',
         help=("Names of the substructures containing parameters to "
               "optimize in a mm3.fld file."))
+    opts.add_argument(
+        '--usedb', action='store_true',
+        help='Use sqlite3.')
     # ----- DATA TYPES -----
     data_args = parser.add_argument_group("calculate data types")
     data_args.add_argument(
@@ -858,6 +856,16 @@ def return_calculate_parser(add_help=True, parents=None):
         '-jt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar torsions.')
+    # data_args.add_argument(
+    #     '-r', type=str, nargs='+', action='append', default=[],
+    #     metavar='somefilename',
+    #     help=('Reads data from a simple file format. '
+    #           'Column descriptions: 1. value 2. weight '
+    #           '3. command for calculate 4. type (must match '
+    #           'the MacroModel data type) 5. 1st source '
+    #           '6. 2nd source 7. 1st index 8. 2nd index '
+    #           '9. 1st atom 10. 2nd atom 11. 3rd atom '
+    #           '12. 4th atom'))
     return parser
 
 if __name__ == '__main__':
