@@ -30,6 +30,7 @@ LOG_SETTINGS = {
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
                 'calculate': {'level': 20, 'propagate': True},
                 'compare': {'level': 20, 'propagate': True},
+                'constants': {'level': 20, 'propagate': True},
                 'datatypes': {'level': 20,' propagate': True},
                 'filetypes': {'level': 20, 'propagate': True},
                 'gradient': {'level': 20, 'propagate': True},
@@ -39,11 +40,13 @@ LOG_SETTINGS = {
                 'simplex': {'level': 20, 'propagate': True}
                 # 'calculate': {'level': 'NOTSET', 'propagate': True},
                 # 'compare': {'level': 'NOTSET', 'propagate': True},
+                # 'constants': {'level': 'NOTSET', 'propagate': True},
                 # 'datatypes': {'level': 'NOTSET',' propagate': True},
                 # 'filetypes': {'level': 'NOTSET', 'propagate': True},
                 # 'gradient': {'level': 'NOTSET', 'propagate': True},
                 # 'loop': {'level': 'NOTSET', 'propagate': True},
                 # 'opt': {'level': 'NOTSET', 'propagate': True},
+                # 'parameters': {'level': 'NOTSET', 'propagate': True},
                 # 'simplex': {'level': 'NOTSET', 'propagate': True}
                 },
     'root': {
