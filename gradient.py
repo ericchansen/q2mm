@@ -4,6 +4,7 @@ General code related to all optimization techniques.
 """
 import copy
 import collections
+import csv
 import itertools
 import logging
 import logging.config
@@ -80,18 +81,23 @@ class Gradient(opt.Optimizer):
         self.do_svd = True
         # Particular settings for each method.
         self.lstsq_cutoffs = None
-        self.lstsq_radii = [0.1, 1., 5., 10.]
+        # self.lstsq_radii = [0.1, 1., 5., 10.]
+        self.lstsq_radii = [5.]
         self.lagrange_cutoffs = None
-        self.lagrange_factors = [0.01, 0.1, 1., 10.]
         # self.lagrange_factors = [0.01, 0.1, 1., 10.]
-        self.lagrange_radii = [0.1, 1., 5., 10.]
+        # self.lagrange_radii = [0.1, 1., 5., 10.]
+        self.lagrange_factors = [1.]
+        self.lagrange_radii = [5.]
         self.levenberg_cutoffs = None
         # self.levenberg_factors = [0.01, 0.1, 1., 10.]
-        self.levenberg_factors = [0.01, 0.1, 1., 10.]
-        self.levenberg_radii = [0.1, 1., 5., 10.]
+        # self.levenberg_radii = [0.1, 1., 5., 10.]
+        self.levenberg_factors = [1.]
+        self.levenberg_radii = [5.]
         self.newton_cutoffs = None
-        self.newton_radii = [0.1, 1., 5., 10.]
-        self.svd_cutoffs = [0.1, 10.]
+        self.newton_radii = [5.]
+        # self.newton_radii = [0.1, 1., 5., 10.]
+        self.svd_cutoffs = [0.1]
+        # self.svd_cutoffs = [0.1, 10.]
         # self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_factors = None
         self.svd_radii = None
@@ -257,6 +263,229 @@ class Gradient(opt.Optimizer):
                 # datatypes.export_ff(
                 #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 return self.ff
+    def run_low_mem(self):
+        # __init__ of opt.Optimizer ensures we have reference data. Write it
+        # to a file.
+        f = open('par.new.tot', 'w')
+
+        # Maybe keep scores as a list instead of on the parameter object.
+        # scores = []
+
+        # Get label, weight, and value from database connection.
+        # Write to file.
+        # 1 = label
+        # 2 = weight
+        # 3 = reference value
+        csv_writer = csv.writer(f)
+        lbls, whts, r_vals = column_from_conn(self.ref_conn, 'lbl', 'wht', 'val')
+        csv_writer.writerow(lbls)
+        csv_writer.writerow(whts)
+        csv_writer.writerow(r_vals)
+        # Gather the calculated data.    
+        conn = self.ff.conn
+        if conn is None:
+            logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
+            self.ff.export_ff(self.ff.path)
+            conn = calculate.main(self.ff_args)
+            compare.correlate_energies(self.ref_conn, conn)
+            # Save penalty function to list or file.
+            self.ff.score = compare.calculate_score(self.ref_conn, conn)
+
+            # scores.append(compare.calculate_score(
+            #         self.ref_conn, conn))
+
+        # Write the original data to the file.
+        vals = column_from_conn(conn, 'val')
+        csv_writer.writerow(vals)
+        # Setup residual vector.
+        num_d = len(vals)
+        resid = np.empty((num_d, 1), dtype=float)
+        for i in xrange(0, num_d):
+            resid[i, 0] = whts[i] * (r_vals[i] - vals[i])
+        logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
+        logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
+        # For now, doing the old form of differentiation, but may not want to
+        # have this much in memory.
+        ffs = opt.differentiate_ff(self.ff)
+        # Calculate data and score each differentiated FF.
+        for ff in ffs:
+            ff.export_ff(lines=self.ff.lines)
+            logger.log(20, '  -- Calculating {}'.format(ff))
+            conn = calculate.main(self.ff_args)
+            compare.correlate_energies(self.ref_conn, conn)
+            vals = column_from_conn(conn, 'val')
+            csv_writer.writerow(vals)
+            ff.score = compare.calculate_score(self.ref_conn, conn)
+            # scores.append(compare.calculate_score(
+            #         self.ref_conn, conn))
+        f.close()
+        # Setup the Jacobian.
+        num_p = len(self.ff.params)
+        jacob = np.empty((num_d, num_p), dtype=float)
+        with open('par.new.tot', 'r') as f:
+            logger.log(15, 'READING: par.new.tot')
+            f.readline() # Labels.
+            f.readline() # Weights.
+            f.readline() # Reference values.
+            f.readline() # Original values.
+            # This is only for central differentiation.
+            ff_ind = 0
+            while True:
+                l1 = f.readline()
+                l2 = f.readline()
+                if not l2:
+                    break
+                inc_data = map(float, l1.split(','))
+                dec_data = map(float, l2.split(','))
+                for data_ind, (inc_datum, dec_datum) in \
+                        enumerate(itertools.izip(inc_data, dec_data)):
+                    dydp = (inc_datum - dec_datum) / 2
+                    jacob[data_ind, ff_ind] = whts[data_ind] * dydp
+                ff_ind += 1
+        logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
+        ma = jacob.T.dot(jacob)
+        vb = jacob.T.dot(resid)
+        logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
+        logger.log(5, 'A:\n{}'.format(ma))
+        logger.log(5, 'b:\n{}'.format(vb))
+        # The rest here is all old code.
+        if self.do_newton:
+            logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
+            opt.param_derivs(self.ff, ffs)
+            try:
+                changes = do_newton(self.ff.params)
+            except opt.OptError as e:
+                logger.warning(e)
+            else:
+                more_changes = do_checks(
+                    changes, self.newton_radii, self.newton_cutoffs,
+                    method='NR')
+                for key, val in more_changes.iteritems():
+                    opt.pretty_param_changes(
+                        self.ff.params, val, method=key)
+                self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+        if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
+                self.do_svd:
+            if self.do_lstsq:
+                logger.log(20, '~~ LEAST SQUARES ~~'.rjust(79, '~'))
+                changes = do_lstsq(ma, vb)
+                more_changes = do_checks(
+                    changes, self.lstsq_radii, self.lstsq_cutoffs,
+                    method='LSTSQ')
+                for key, val in more_changes.iteritems():
+                    opt.pretty_param_changes(
+                        self.ff.params, val, method=key)
+                self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+            if self.do_lagrange:
+                logger.log(20, '~~ LAGRANGE ~~'.rjust(79, '~'))
+                for factor in sorted(self.lagrange_factors):
+                    logger.log(20, 'FACTOR: {}'.format(factor))
+                    changes = do_lagrange(ma, vb, factor)
+                    more_changes = do_checks(
+                        changes, self.lagrange_radii, self.lagrange_cutoffs,
+                        method='LAGRANGE F{}'.format(factor))
+                    for key, val in more_changes.iteritems():
+                        opt.pretty_param_changes(
+                            self.ff.params, val, method=key)
+                    self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+            if self.do_levenberg:
+                logger.log(20, '~~ LEVENBERG-MARQUARDT ~~'.rjust(79, '~'))
+                for factor in sorted(self.levenberg_factors):
+                    logger.log(20, 'FACTOR: {}'.format(factor))
+                    changes = do_levenberg(ma, vb, factor)
+                    more_changes = do_checks(
+                        changes, self.levenberg_radii, self.levenberg_cutoffs,
+                        method='LM F{}'.format(factor))
+                    for key, val in more_changes.iteritems():
+                        opt.pretty_param_changes(
+                            self.ff.params, val, method=key)
+                    self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+            if self.do_svd:
+                logger.log(
+                    20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
+                mu, vs, mv = do_svd(ma)
+                if self.svd_factors:
+                    for i, factor in enumerate(sorted(self.svd_factors)):
+                        logger.log(
+                            20, ' FACTOR {} '.format(factor).center(79, '-'))
+                        if i != 0:
+                            old_vs = new_vs
+                        changes, new_vs = do_svd_thresholds(
+                            mu, vs, mv, factor, vb)
+                        if i != 0 and np.all(new_vs == old_vs):
+                            logger.log(20,'  -- No change. Skipping.')
+                            continue
+                        more_changes = do_checks(
+                            changes, self.svd_radii, self.svd_cutoffs,
+                            method='SVD F{}'.format(factor))
+                        for key, val in more_changes.iteritems():
+                            opt.pretty_param_changes(
+                                self.ff.params, val, method=key)
+                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+                else:
+                    for i in xrange(0, len(vs)):
+                        logger.log(
+                            20,
+                            ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
+                        changes = do_svd_wo_thresholds(mu, vs, mv, i, vb)
+                        more_changes = do_checks(
+                            changes, self.svd_radii, self.svd_cutoffs,
+                            method='SVD Z{}'.format(i))
+                        for key, val in more_changes.iteritems():
+                            opt.pretty_param_changes(
+                                self.ff.params, val, method=key)
+                        self.new_ffs.extend(gen_ffs(self.ff, more_changes))
+        logger.log(20, '  -- Generated {} trial force field(s).'.format(
+                len(self.new_ffs)))
+        if len(self.new_ffs) == 0:
+            logger.log(
+                20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
+                    79, '~'))
+            logger.log(20, '  -- Restoring original force field.')
+            # datatypes.export_ff(
+            #     self.ff.path, self.ff.params, lines=self.ff.lines)
+            self.ff.export_ff(self.ff.path)
+            return self.ff
+        else:
+            logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
+            opt.score_ffs(
+                self.new_ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
+                restore=False)
+            self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+            ff = self.new_ffs[0]
+            if ff.score < self.ff.score:
+                logger.log(20, '~~ GRADIENT FINISHED WITH IMPROVEMENTS ~~'.rjust(
+                        79, '~'))
+                opt.pretty_ff_results(self.ff, level=20)
+                opt.pretty_ff_results(ff, level=20)
+                self.ff.copy_attributes(ff)
+                if self.restore:
+                    logger.log(20, '  -- Restoring original force field.')
+                    self.ff.export_ff(self.ff.path)
+                    # datatypes.export_ff(
+                    #     self.ff.path, self.ff.params, lines=self.ff.lines)
+                else:
+                    logger.log(20, '  -- Writing best force field from gradient.')
+                    ff.export_ff(ff.path)
+                    # datatypes.export_ff(
+                    #     ff.path, ff.params, lines=ff.lines)
+                return ff
+            else:
+                logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
+                        79, '~'))
+                opt.pretty_ff_results(self.ff, level=20)
+                opt.pretty_ff_results(ff, level=20)
+                logger.log(20, '  -- Restoring original force field.')
+                self.ff.export_ff(self.ff.path)
+                # datatypes.export_ff(
+                #     self.ff.path, self.ff.params, lines=self.ff.lines)
+                return self.ff
+
+        # Differentiate the parameters.
+        # Move the parameter up, then immediately calculate the data points.
+        # Move the parameter down, then immediately calculate the data points.
+        # Save the data points immediately to the file.
+        # Save penalty function to file or append to list.
 
 def mod_v_thresholds(v, f):
     x = np.copy(v)

@@ -58,7 +58,7 @@ class Optimizer(object):
               during the optimization.
 
     Returns
-    -------
+#     -------
     instance of subclass of `datatypes.FF`
         Same subclass as the initial force field. Contains much of the same
         information, except the parameter values are the best ones obtained

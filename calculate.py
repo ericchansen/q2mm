@@ -24,24 +24,24 @@ import constants as co
 import datatypes
 import filetypes
 
-# LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
+## LOCATION OF SQLITE3 DATABASE MUST BE IN MEMORY (FOR NOW AT LEAST)!
 DATABASE_LOC = ':memory:'
 
-# Commands where we need to load the force field.
+## Commands where we need to load the force field.
 COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
-# Commands related to Gaussian.
+## Commands related to Gaussian.
 COM_GAUSSIAN = ['geigz', 'geigz2']
-# Commands related to Jaguar (Schrodinger).
+## Commands related to Jaguar (Schrodinger).
 COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz', 'jq', 'jqh']
-# Commands related to MacroModel (Schrodinger).
+## Commands related to MacroModel (Schrodinger).
 COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
                   'mcs3', 'me', 'me2', 'meo', 'mjeig', 'mgeig',
                   'mq', 'mqh', 'mt']
-# # All other commands.
+## All other commands.
 # COM_OTHER = ['r']
-# All possible commands.
-# COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+## All possible commands.
 COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL
+# COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +109,14 @@ def main(args):
                     some_class.run(check_tokens=opts.check)
         data = gather_data(
             commands, inps, opts.directory, opts.ffpath, opts.subnames)
-    if opts.usedb:
-        conn = as_db(data)
+    if co.SETTINGS['use_sqlite3']:
+        conn = datum_to_sqlite3(data)
         if opts.doprint:
             beautiful_conn(conn)
         return conn
     else:
+        if opts.doprint:
+            beautiful_data(data)
         return data
 
 def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
@@ -134,11 +136,12 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
 
     Returns
     -------
-    connection to sqlite3 database
+    list of Datum
     """
     ff_coms = [x for x in commands if x in COM_LOAD_FF]
     if sub_names is None and ff_coms:
-        logger.log(5, '  -- Must read force field for datatypes {}.'.format(
+        logger.log(5, '  -- Must read FF for datatypes {} if substructure '
+                   'name not supplied.'.format(
                 ', '.join(ff_coms)))
         sub_names = get_sub_names(
             ff_path=ff_path, directory=directory)
@@ -159,9 +162,9 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
 
         # ----- JAGUAR ENERGIES -----
         if com in ['je', 'je2', 'jeo']:
-            if com == 'je': typ = 'energy_1'
-            elif com == 'je2': typ = 'energy_2'
-            elif com == 'jeo': typ = 'energy_opt'
+            if com == 'je': typ = 'energy-1'
+            elif com == 'je2': typ = 'energy-2'
+            elif com == 'jeo': typ = 'energy-opt'
             # Move through files. Grouping matters here. Each group (idx_1)
             # is used to separately calculate relative energies.
             for idx_1, group_filenames in enumerate(groups_filenames):
@@ -171,15 +174,14 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             filetypes.Mae(os.path.join(directory, filename))
                     mae = outs[filename]
                     for str_num, struct in enumerate(mae.structures):
-                        energy = {'val': (struct.props['r_j_Gas_Phase_Energy'] *
-                                          co.HARTREE_TO_KJMOL),
-                                  'com': com,
-                                  'typ': typ,
-                                  'src_1': filename,
-                                  'idx_1': idx_1 + 1,
-                                  'idx_2': str_num + 1}
-                        energy = co.set_data_defaults(energy)
-                        data_list.append(energy)
+                        data_list.append(datatypes.Datum(
+                                val=(struct.props['r_j_Gas_Phase_Energy'] * 
+                                     co.HARTREE_TO_KJMOL),
+                                com=com,
+                                typ=typ,
+                                src_1=filename,
+                                idx_1=idx_1 + 1,
+                                idx_2=str_num + 1))
         # ----- JAGUAR CHARGES -----
         if com in ['jq', 'jqh']:
             for comma_sep_names in groups_filenames:
@@ -205,14 +207,13 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                                 bonded_atom_ind - 
                                                 1].partial_charge
                                 if com == 'jq' or not atom in aliph_hyds:
-                                    dp = {'val': q,
-                                          'com': com,
-                                          'typ': 'charge',
-                                          'src_1': filename,
-                                          'idx_1': i + 1,
-                                          'atm_1': atom.index}
-                                    dp = co.set_data_defaults(dp)
-                                    data_list.append(dp)
+                                    data_list.append(datatypes.Datum(
+                                            val=q,
+                                            com=com,
+                                            typ='charge',
+                                            src_1=filename,
+                                            idx_1=i+1,
+                                            atm_1=atom.index))
 
         # ----- MACROMODEL CHARGES -----
         if com in ['mq', 'mqh']:
@@ -232,20 +233,19 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             if not 'b_q_use_charge' in atom.props or \
                                     atom.props['b_q_use_charge']:
                                 if com == 'mq' or not atom in aliph_hyds:
-                                    dp = {'val': atom.partial_charge,
-                                          'com': com,
-                                          'typ': 'charge',
-                                          'src_1': filename,
-                                          'idx_1': str_num + 1,
-                                          'atm_1': atom.index}
-                                    dp = co.set_data_defaults(dp)
-                                    data_list.append(dp)
-
+                                    data_list.append(datatypes.Datum(
+                                            val=atom.partial_charge,
+                                            com=com,
+                                            typ='charge',
+                                            src_1=filename,
+                                            idx_1=str_num+1,
+                                            atm_1=atom.index))
+ 
         # ----- MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
-            if com == 'me': typ = 'energy_1'
-            elif com == 'me2': typ = 'energy_2'
-            elif com == 'meo': typ = 'energy_opt'
+            if com == 'me': typ = 'energy-1'
+            elif com == 'me2': typ = 'energy-2'
+            elif com == 'meo': typ = 'energy-opt'
             if com in ['me', 'me2']: ind = 'pre'
             elif com == 'meo': ind = 'opt'
             for idx_1, group_filenames in enumerate(groups_filenames):
@@ -259,23 +259,22 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     selected = filetypes.select_structures(
                         mae.structures, inps[filename]._index_output_mae, ind)
                     for str_num, struct in selected:
-                        energy = {'val': struct.props['r_mmod_Potential_Energy-MM3*'],
-                                  'com': com,
-                                  'typ': typ,
-                                  'src_1': inps[filename].name_mae,
-                                  'idx_1': idx_1 + 1,
-                                  'idx_2': str_num + 1}
-                        energy = co.set_data_defaults(energy)
-                        data_list.append(dp)
+                        data_list.append(datatypes.Datum(
+                                val=struct.props['r_mmod_Potential_Energy-MM3*'],
+                                com=com,
+                                typ=typ,
+                                src_1=inps[filename].name_mae,
+                                idx_1=idx_1+1,
+                                idx_2=str_num+1))
 
-        # ----- SCHRODINGER STRUCTURES -----
+        ## ----- SCHRODINGER STRUCTURES -----
         if com in ['ja', 'jb', 'jt', 'ma', 'mb', 'mt']:
             if com in ['ja', 'jb', 'jt']: index = 'pre'
             elif com in ['ma', 'mb', 'mt']: index = 'opt'
             if com in ['ja', 'ma']: typ = 'angles'
             elif com in ['jb', 'mb']: typ = 'bonds'
             elif com in ['jt', 'mt']: typ = 'torsions'
-            # Move through files as you specified them on the command line.
+            ## Move through files as you specified them on the command line.
             for group_filenames in groups_filenames:
                 for filename in group_filenames:
                     # If 1st time accessing file, go ahead and do it. However,
@@ -290,12 +289,14 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     selected = filetypes.select_structures(
                         mmo.structures, inps[filename]._index_output_mmo, index)
                     for str_num, struct in selected:
-                        temp = struct.select_stuff(
-                            typ, com_match=sub_names, com=com,
-                            src_1=mmo.filename, idx_1=str_num + 1)
-                        data_list.extend(temp)
+                        data_list.extend(struct.select_stuff(
+                                typ,
+                                com=com,
+                                com_match=sub_names,
+                                src_1=mmo.filename,
+                                idx_1=str_num + 1))
 
-        # ------ GAUSSIAN EIGENMATRIX ------
+        ## ------ GAUSSIAN EIGENMATRIX ------
         if com == 'geigz':
             for group_filenames in groups_filenames:
                 for name_log in group_filenames:
@@ -307,16 +308,15 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     evals_matrix = np.diag(evals)
                     low_tri_idx = np.tril_indices_from(evals_matrix)
                     lower_tri = evals_matrix[low_tri_idx]
-                    data = [{'val': e,
-                             'com': com,
-                             'typ': 'eig',
-                             'src_1': name_log,
-                             'idx_1': x + 1,
-                             'idx_2': y + 1
-                             }
+                    data = [datatypes.Datum(
+                            val=e,
+                            com=com,
+                            typ='eig',
+                            src_1=name_log,
+                            idx_1=x+1,
+                            idx_2=y+1)
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
-                    data = [co.set_data_defaults(x) for x in data]
                     data_list.extend(data)
 
         if com == 'geigz2':
@@ -344,20 +344,19 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     diagonal_matrix = np.diag(np.diag(hess.hess))
                     low_tri_idx = np.tril_indices_from(diagonal_matrix)
                     lower_tri = diagonal_matrix[low_tri_idx]
-                    data = [{'val': e,
-                             'com': com,
-                             'typ': 'eig',
-                             'src_1': name_log,
-                             'src_2': name_fchk,
-                             'idx_1': x + 1,
-                             'idx_2': y + 1
-                             }
+                    data = [datatypes.Datum(
+                            val=e,
+                            com=com,
+                            typ='eig',
+                            src_1=name_log,
+                            src_2=name_fchk,
+                            idx_1=x+1,
+                            idx_2=y+1)
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
-                    data = [co.set_data_defaults(x) for x in data]
                     data_list.extend(data)
 
-        # ------ MACROMODEL/GAUSSIAN EIGENMATRIX -----
+        ## ------ MACROMODEL/GAUSSIAN EIGENMATRIX -----
         if com == 'mgeig':
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
@@ -376,28 +375,26 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
 
                     hess = datatypes.Hessian()
                     hess.hess = macro_log.hessian
-                    # Eigenvectors should already be mass weighted using
-                    # pHessMan functions.
+                    ## Eigenvectors should already be mass weighted using
+                    ## pHessMan functions.
                     hess.evecs = gau_log.evecs
                     hess.diagonalize()
                     
                     low_tri_idx = np.tril_indices_from(hess.hess)
                     lower_tri = hess.hess[low_tri_idx]
                     
-                    data = [{'val': e,
-                             'com': com,
-                             'typ': 'eig',
-                             'src_1': name_macro_log,
-                             'src_2': name_gau_log,
-                             'idx_1': x + 1,
-                             'idx_2': y + 1
-                             }
+                    data = [datatypes.Datum(
+                            val=e,
+                            com=com,
+                            typ='eig',
+                            src_1=name_macro_log,
+                            src_2=name_gau_log,
+                            idx_1=x+1,
+                            idx_2=y+1)
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
-                    data = [co.set_data_defaults(x) for x in data]
                     data_list.extend(data)
-
-        # ------ SCHRODINGER EIGENMATRIX ------
+        ## ------ SCHRODINGER EIGENMATRIX ------
         if com in ['jeigz', 'mjeig']:
             for group_filenames in groups_filenames:
                 for comma_filenames in group_filenames:
@@ -436,23 +433,37 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         src_1 = name_in
                     elif com == 'mjeig':
                         src_1 = name_mae
-                    data = [{'val': e,
-                             'com': com,
-                             'typ': 'eig',
-                             'src_1': src_1,
-                             'src_2': name_out,
-                             'idx_1': x + 1,
-                             'idx_2': y + 1
-                             }
+                    data = [datatypes.Datum(
+                            val=e,
+                            com=com,
+                            typ='eig',
+                            src_1=src_1,
+                            src_2=name_out,
+                            idx_1=x+1,
+                            idx_2=y+1)
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])]
-                    data = [co.set_data_defaults(x) for x in data]
                     data_list.extend(data)
-
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data_list)))
     return data_list
 
-def as_db(data):
+def datum_to_sqlite3(data):
+    conn = sqlite3.connect(DATABASE_LOC)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.executescript(co.STR_INIT_SQLITE3)
+    for d in data:
+        c.execute(co.STR_SQLITE3,
+                  [None, ## Used for 'id' in sqlite3 table.
+                   d.val, d.wht, d.com, d.typ,
+                   d.src_1, d.src_2,
+                   d.idx_1, d.idx_2,
+                   d.atm_1, d.atm_2, d.atm_3, d.atm_4,
+                   d.lbl])
+    conn.commit()
+    return conn
+
+def dic_to_sqlite3(data):
     conn = sqlite3.connect(DATABASE_LOC)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -520,6 +531,23 @@ def beautiful_conn(conn, log_level=20):
     for row in c.fetchall():
         logger.log(20, '  ' + '{:22s}'.format(get_label(row)) +
                    '  ' + '{:22.4f}'.format(row['val']))
+    logger.log(20, '-' * 50)
+
+def beautiful_data(data, log_level=20):
+    """
+    Logs data as a table.
+
+    Arguments
+    ---------
+    data : list of Datum
+    log_level : int
+            Logging level used.
+    """
+    logger.log(20, '--' + ' LABEL '.center(22, '-') +
+               '--' + ' VALUE '.center(22, '-') + '--')
+    for d in data:
+        logger.log(20, '  ' + '{:22s}'.format(d.lbl) +
+                   '  ' + '{:22.4f}'.format(d.val))
     logger.log(20, '-' * 50)
 
 def beautiful_commands_for_files(commands_for_files, log_level=5):
@@ -629,14 +657,12 @@ def gather_fake_data(commands, inps, directory):
     """
     outs = {}
     data_list = []
-
     for com, groups_filenames in commands.iteritems():
-
-        # ----- FAKE JAGUAR ENERGIES -----
+        ## ----- FAKE JAGUAR ENERGIES -----
         if com in ['je', 'je2', 'jeo']:
-            if com == 'je': typ = 'energy_1'
-            elif com == 'je2': typ = 'energy_2'
-            elif com == 'jeo': typ = 'energy_opt'
+            if com == 'je': typ = 'energy-1'
+            elif com == 'je2': typ = 'energy-2'
+            elif com == 'jeo': typ = 'energy-opt'
             for idx_1, group_filenames in enumerate(groups_filenames):
                 for filename in group_filenames:
                     if filename not in outs:
@@ -652,12 +678,11 @@ def gather_fake_data(commands, inps, directory):
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
                         data_list.append(energy)
-
-        # ----- FAKE MACROMODEL ENERGIES -----
+        ## ----- FAKE MACROMODEL ENERGIES -----
         if com in ['me', 'me2', 'meo']:
-            if com == 'me': typ = 'energy_1'
-            elif com == 'me2': typ = 'energy_2'
-            elif com == 'meo': typ = 'energy_opt'
+            if com == 'me': typ = 'energy-1'
+            elif com == 'me2': typ = 'energy-2'
+            elif com == 'meo': typ = 'energy-opt'
             if com in ['me', 'me2']: ind = 'pre'
             elif com == 'meo': ind = 'opt'
             for idx_1, group_filenames in enumerate(groups_filenames):
@@ -680,7 +705,6 @@ def gather_fake_data(commands, inps, directory):
                                   'idx_2': str_num + 1}
                         energy = co.set_data_defaults(energy)
                         data_list.append(energy)
-
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data_list)))
     return data_list
 
@@ -697,8 +721,8 @@ def return_calculate_parser(add_help=True, parents=None):
               Parent parser incorporated into this parser. Default
               is None.
     '''
-    # Whether or not to add help. You may not want to add help if
-    # these arguments are being used in another, higher level parser.
+    ## Whether or not to add help. You may not want to add help if
+    ## these arguments are being used in another, higher level parser.
     if parents is None: parents = []
     if add_help:
         parser = argparse.ArgumentParser(
@@ -706,7 +730,7 @@ def return_calculate_parser(add_help=True, parents=None):
     else:
         parser = argparse.ArgumentParser(
             add_help=False, parents=parents)
-    # ----- GENERAL OPTIONS -----
+    ## ----- GENERAL OPTIONS -----
     opts = parser.add_argument_group("calculate options")
     opts.add_argument(
         '--directory', '-d', type=str, metavar='somepath', default=os.getcwd(),
@@ -739,10 +763,10 @@ def return_calculate_parser(add_help=True, parents=None):
         metavar='"Substructure Name OPT"',
         help=("Names of the substructures containing parameters to "
               "optimize in a mm3.fld file."))
-    opts.add_argument(
-        '--usedb', action='store_true',
-        help='Use sqlite3.')
-    # ----- DATA TYPES -----
+    # opts.add_argument(
+    #     '--usedb', action='store_true',
+    #     help='Use sqlite3.')
+    ## ----- DATA TYPES -----
     data_args = parser.add_argument_group("calculate data types")
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',

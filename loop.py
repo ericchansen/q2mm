@@ -114,7 +114,8 @@ class Loop(object):
                 grad = gradient.Gradient(
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
                     ref_conn=self.ref_conn)
-                self.ff = grad.run()
+                # self.ff = grad.run()
+                self.ff = grad.run_low_mem()
             if cols[0] == 'SIMP':
                 simp = simplex.Simplex(
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,

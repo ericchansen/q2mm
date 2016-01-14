@@ -1473,13 +1473,22 @@ class Bond(object):
             self.__class__.__name__, '-'.join(
                 map(str, self.atom_nums)), self.value)
     def as_data(self, **kwargs):
-        datum = {'val': self.value, 
-                 'typ': self.__class__.__name__
-                 }
+        datum = datatypes.Datum(val=self.value,
+                                typ=self.__class__.__name__)
+        # for i, atom_num in enumerate(self.atom_nums):
+        #     datum.__dict__.update({'atm_{}'.format(i + 1): atom_num})
         for i, atom_num in enumerate(self.atom_nums):
-            datum.update({'atm_{}'.format(i + 1): atom_num})
-        datum.update(kwargs)
-        datum = co.set_data_defaults(datum)
+            setattr(datum, 'atm_{}'.format(i+1), atom_num)
+        for k, v in kwargs.iteritems():
+            setattr(datum, k, v)
+        # datum.__dict__.update(kwargs)
+        # datum = {'val': self.value, 
+        #          'typ': self.__class__.__name__
+        #          }
+        # for i, atom_num in enumerate(self.atom_nums):
+        #     datum.update({'atm_{}'.format(i + 1): atom_num})
+        # datum.update(kwargs)
+        # datum = co.set_data_defaults(datum)
         return datum
 
 class Angle(Bond):
@@ -1498,64 +1507,64 @@ class Torsion(Bond):
                  ff_row=None):
         super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
 
-class Reference(File):
-    """
-    Basic class for directly inputting reference data.
+# class Reference(File):
+#     """
+#     Basic class for directly inputting reference data.
 
-    File looks as follows.
+#     File looks as follows.
 
-    Each row is a data point. The attributes of the data points
-    are separated by spaces, tabs, whatever Python's built-in
-    string.split() function works on.
+#     Each row is a data point. The attributes of the data points
+#     are separated by spaces, tabs, whatever Python's built-in
+#     string.split() function works on.
 
-    Columns:
-    val - Value
-    wht - Weight
-    typ - Data type (must match the MacroModel type)
-    src_1 - 1st data source
-    src_2 - 2nd data source
-    idx_1 - 1st index
-    idx_2 - 2nd index
-    atm_1 - 1st atom
-    atm_2 - 2nd atom
-    atm_3 - 3rd atom
-    atm_4 - 4th atom
-    """
-    def __init__(self, path):
-        self.path = path
-    def get_data(self):
-        """
-        Returns a list of data points. Each data point is a dictionary.
-        """
-        with open(self.path, 'r') as f:
-            data = []
-            for line in f:
-                line = line.partition('#')[0]
-                cols = line.split()
-                labels = ['val', 'wht', 'com', 'typ', 'src_1', 'src_2', 'idx_1',
-                          'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
-                assert len(labels) == len(cols), \
-                    'Column mismatch in reference data file!'
-                datum = {}
-                for label, col in zip(labels, cols):
-                    datum.update({label: self.interpret_col(col)})
-                data.append(datum)
-        return data
-    def interpret_col(self, col):
-        """
-        How to deal with an individual column.
+#     Columns:
+#     val - Value
+#     wht - Weight
+#     typ - Data type (must match the MacroModel type)
+#     src_1 - 1st data source
+#     src_2 - 2nd data source
+#     idx_1 - 1st index
+#     idx_2 - 2nd index
+#     atm_1 - 1st atom
+#     atm_2 - 2nd atom
+#     atm_3 - 3rd atom
+#     atm_4 - 4th atom
+#     """
+#     def __init__(self, path):
+#         self.path = path
+#     def get_data(self):
+#         """
+#         Returns a list of data points. Each data point is a dictionary.
+#         """
+#         with open(self.path, 'r') as f:
+#             data = []
+#             for line in f:
+#                 line = line.partition('#')[0]
+#                 cols = line.split()
+#                 labels = ['val', 'wht', 'com', 'typ', 'src_1', 'src_2', 'idx_1',
+#                           'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
+#                 assert len(labels) == len(cols), \
+#                     'Column mismatch in reference data file!'
+#                 datum = {}
+#                 for label, col in zip(labels, cols):
+#                     datum.update({label: self.interpret_col(col)})
+#                 data.append(datum)
+#         return data
+#     def interpret_col(self, col):
+#         """
+#         How to deal with an individual column.
 
-        Converts the string "None" to actually being None.
-        Converts floats to floats.
-        Otherwise returns the string.
-        """
-        if col == 'None':
-            return None
-        try:
-            atr = float(col)
-            return atr
-        except ValueError:
-            return col
+#         Converts the string "None" to actually being None.
+#         Converts floats to floats.
+#         Otherwise returns the string.
+#         """
+#         if col == 'None':
+#             return None
+#         try:
+#             atr = float(col)
+#             return atr
+#         except ValueError:
+#             return col
 
 def return_filetypes_parser():
     """

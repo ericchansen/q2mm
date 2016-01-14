@@ -43,8 +43,8 @@ def return_compare_parser():
 
 def zero_energies(conn):
     c = conn.cursor()
-    c.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy_1" OR '
-              'typ = "energy_2" OR typ = "energy_opt"')
+    c.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy-1" OR '
+              'typ = "energy-2" OR typ = "energy-opt"')
     for set_of_energies in c.fetchall():
         c.execute("SELECT MIN(val) FROM data WHERE typ = ? AND idx_1 = ?",
                   (set_of_energies[0], set_of_energies[1]))
@@ -56,8 +56,8 @@ def zero_energies(conn):
 def correlate_energies(ref_conn, cal_conn):
     cr = ref_conn.cursor()
     cc = cal_conn.cursor()
-    cr.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy_1" OR '
-               'typ = "energy_2" OR typ = "energy_opt"')
+    cr.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy-1" OR '
+               'typ = "energy-2" OR typ = "energy-opt"')
     for set_of_energies in cr.fetchall():
         cr.execute('SELECT * FROM data WHERE typ = ? AND idx_1 = ? ORDER BY '
                    'typ, src_1, src_2, idx_1, idx_2',
@@ -189,20 +189,22 @@ def main(args):
         pretty = True
     else:
         pretty = False
-    ref_conn = calculate.main(opts.reference.split())
-    cal_conn = calculate.main(opts.calculate.split())
-    if pretty:
-        score, pretty_str = compare_data(ref_conn, cal_conn, pretty=pretty)
-    else:
-        score = compare_data(ref_conn, cal_conn)
-    if opts.doprint:
-        for line in pretty_str:
-            print(line)
-    if opts.output:
-        with open(opts.output, 'w') as f:
+    if co.SETTINGS['use_sqlite3']:
+        ref_conn = calculate.main(opts.reference.split())
+        cal_conn = calculate.main(opts.calculate.split())
+        if pretty:
+            score, pretty_str = compare_data(ref_conn, cal_conn, pretty=pretty)
+        else:
+            score = compare_data(ref_conn, cal_conn)
+        if opts.doprint:
             for line in pretty_str:
-                f.write(line + '\n')
-    return score
+                print(line)
+        if opts.output:
+            with open(opts.output, 'w') as f:
+                for line in pretty_str:
+                    f.write(line + '\n')
+    else:
+        raise Exception('Woops, not ready yet.')
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)

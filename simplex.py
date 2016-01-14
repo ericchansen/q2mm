@@ -159,6 +159,10 @@ class Simplex(opt.Optimizer):
             conn = calculate.main(self.ff_args)
             inv_ff.score = compare.compare_data(self.ref_conn, conn)
             opt.pretty_ff_results(inv_ff)
+            
+            # HERE
+            sys.exit(0)
+            
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             # datatypes.export_ff(
