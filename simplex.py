@@ -161,7 +161,6 @@ class Simplex(opt.Optimizer):
             opt.pretty_ff_results(inv_ff)
             
             # HERE
-            sys.exit(0)
             
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
