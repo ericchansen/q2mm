@@ -68,6 +68,9 @@ vdwr - van der Waals radius''')
         '--mmo', '-m', type=str, nargs='+',
         help='Read these MacroModel files.')
     par_group.add_argument(
+        '--nozero', action='store_true',
+        help='Exclude any parameters that have values of zero.')
+    par_group.add_argument(
         '--printparams', '-pp', action='store_true',
         help='Print information about the selected parameters.')
     par_group.add_argument(
@@ -237,6 +240,12 @@ def main(args):
         params.extend(trim_params_by_type(ff.params, opts.ptypes))
     if opts.pfile:
         params.extend(trim_params_by_file(ff.params, opts.pfile))
+    if opts.nozero:
+        new_params = []
+        for param in params:
+            if not param.value == 0.:
+                new_params.append(param)
+        params = new_params
     logger.log(20, '  -- Total number of chosen parameters: {}'.format(
             len(params)))
     # Load MacroModel .mmo files if desired.
