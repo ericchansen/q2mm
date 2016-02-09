@@ -5,10 +5,13 @@ General code related to all optimization techniques.
 import copy
 import collections
 import csv
+import glob
 import itertools
 import logging
 import logging.config
 import numpy as np
+import os
+import re
 import sqlite3
 
 import calculate
@@ -68,11 +71,12 @@ class Gradient(opt.Optimizer):
     svd_radii : list or None
     """
     def __init__(self,
+                 direc=None,
                  ff=None, ff_lines=None, ff_args=None,
                  ref_args=None, ref_conn=None,
                  restore=False):
         super(Gradient, self).__init__(
-            ff, ff_lines, ff_args, ref_args, ref_conn, restore)
+            direc, ff, ff_lines, ff_args, ref_args, ref_conn, restore)
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = True
         self.do_lagrange = True
@@ -101,12 +105,14 @@ class Gradient(opt.Optimizer):
         # self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_factors = None
         self.svd_radii = None
+    @property
+    def best_ff(self):
+        return sorted(self.new_ffs, key=lambda x: x.score)[0]
+    @opt.catch_run_errors
     def run(self):
         # Going to need this no matter what.
         if self.ff.conn is None:
             logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
-            # datatypes.export_ff(
-            #     self.ff.path, self.ff.params, lines=self.ff.lines)
             self.ff.export_ff(self.ff.path)
             self.ff.conn = calculate.main(self.ff_args)
             compare.correlate_energies(self.ref_conn, self.ff.conn)
@@ -225,8 +231,6 @@ class Gradient(opt.Optimizer):
                 20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
             logger.log(20, '  -- Restoring original force field.')
-            # datatypes.export_ff(
-            #     self.ff.path, self.ff.params, lines=self.ff.lines)
             self.ff.export_ff(self.ff.path)
             return self.ff
         else:
@@ -245,13 +249,9 @@ class Gradient(opt.Optimizer):
                 if self.restore:
                     logger.log(20, '  -- Restoring original force field.')
                     self.ff.export_ff(self.ff.path)
-                    # datatypes.export_ff(
-                    #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 else:
                     logger.log(20, '  -- Writing best force field from gradient.')
                     ff.export_ff(ff.path)
-                    # datatypes.export_ff(
-                    #     ff.path, ff.params, lines=ff.lines)
                 return ff
             else:
                 logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
@@ -260,16 +260,24 @@ class Gradient(opt.Optimizer):
                 opt.pretty_ff_results(ff, level=20)
                 logger.log(20, '  -- Restoring original force field.')
                 self.ff.export_ff(self.ff.path)
-                # datatypes.export_ff(
-                #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 return self.ff
+    @opt.catch_run_errors
     def run_low_mem(self):
         # __init__ of opt.Optimizer ensures we have reference data. Write it
         # to a file.
-        f = open('par.new.tot', 'w')
+        par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
+        if par_files:
+            par_files.sort()
+            most_recent_par_file = par_files[-1]
+            most_recent_par_file = par_files.split('/')[-1]
+            most_recent_num = most_recent_par_file[9:12]
+            num = int(most_recent_num) + 1
+            par_file = 'par_diff_{:03d}.txt'.format(num)
+        else:
+            par_file = 'par_diff_001.txt'
+        f = open(par_file)
 
         # Maybe keep scores as a list instead of on the parameter object.
-        # scores = []
 
         # Get label, weight, and value from database connection.
         # Write to file.
@@ -290,10 +298,6 @@ class Gradient(opt.Optimizer):
             compare.correlate_energies(self.ref_conn, conn)
             # Save penalty function to list or file.
             self.ff.score = compare.calculate_score(self.ref_conn, conn)
-
-            # scores.append(compare.calculate_score(
-            #         self.ref_conn, conn))
-
         # Write the original data to the file.
         vals = column_from_conn(conn, 'val')
         csv_writer.writerow(vals)
@@ -316,8 +320,6 @@ class Gradient(opt.Optimizer):
             vals = column_from_conn(conn, 'val')
             csv_writer.writerow(vals)
             ff.score = compare.calculate_score(self.ref_conn, conn)
-            # scores.append(compare.calculate_score(
-            #         self.ref_conn, conn))
         f.close()
         # Setup the Jacobian.
         num_p = len(self.ff.params)
@@ -348,7 +350,7 @@ class Gradient(opt.Optimizer):
         logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
         logger.log(5, 'A:\n{}'.format(ma))
         logger.log(5, 'b:\n{}'.format(vb))
-        # The rest here is all old code.
+        # The rest here is all old code from the low memory version.
         if self.do_newton:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
             opt.param_derivs(self.ff, ffs)
@@ -442,8 +444,6 @@ class Gradient(opt.Optimizer):
                 20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
             logger.log(20, '  -- Restoring original force field.')
-            # datatypes.export_ff(
-            #     self.ff.path, self.ff.params, lines=self.ff.lines)
             self.ff.export_ff(self.ff.path)
             return self.ff
         else:
@@ -462,13 +462,9 @@ class Gradient(opt.Optimizer):
                 if self.restore:
                     logger.log(20, '  -- Restoring original force field.')
                     self.ff.export_ff(self.ff.path)
-                    # datatypes.export_ff(
-                    #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 else:
                     logger.log(20, '  -- Writing best force field from gradient.')
                     ff.export_ff(ff.path)
-                    # datatypes.export_ff(
-                    #     ff.path, ff.params, lines=ff.lines)
                 return ff
             else:
                 logger.log(20, '~~ GRADIENT FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
@@ -477,15 +473,7 @@ class Gradient(opt.Optimizer):
                 opt.pretty_ff_results(ff, level=20)
                 logger.log(20, '  -- Restoring original force field.')
                 self.ff.export_ff(self.ff.path)
-                # datatypes.export_ff(
-                #     self.ff.path, self.ff.params, lines=self.ff.lines)
                 return self.ff
-
-        # Differentiate the parameters.
-        # Move the parameter up, then immediately calculate the data points.
-        # Move the parameter down, then immediately calculate the data points.
-        # Save the data points immediately to the file.
-        # Save penalty function to file or append to list.
 
 def mod_v_thresholds(v, f):
     x = np.copy(v)
