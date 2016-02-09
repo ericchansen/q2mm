@@ -26,12 +26,30 @@ class OptError(Exception):
     """
     pass
 
+def catch_run_errors(func):
+    def wrapper(*args, **kwargs):
+        papa_bear = args[0]
+        try:
+            return func(*args, **kwargs)
+        except ParamError as e:
+            logger.log(20, e)
+            if papa_bear.best_ff is None:
+                logger.log(20, '  -- Exiting {} and returning initial FF.'.format(
+                        papa_bear.__class__.__name__.lower()))
+                return papa_bear.ff
+            else:
+                logger.log(20, '  -- Exiting {} and returning best FF.'.format(
+                        papa_bear.__class__.__name__.lower()))
+                return papa_bear.best_ff
+
 class Optimizer(object):
     """
     Base class for all optimization methods.
 
     Parameters
     ----------
+    direc : string
+            Path to directory where intermediate files with be stored.
     ff : instance of subclass of `datatypes.FF`
          Subclass for the force field used to start the optimization.
     ff_lines : list, optional
@@ -58,7 +76,7 @@ class Optimizer(object):
               during the optimization.
 
     Returns
-#     -------
+    -------
     instance of subclass of `datatypes.FF`
         Same subclass as the initial force field. Contains much of the same
         information, except the parameter values are the best ones obtained
@@ -66,11 +84,14 @@ class Optimizer(object):
     
     """
     def __init__(self,
+                 direc=None,
                  ff=None, ff_lines=None, ff_args=None,
                  ref_args=None, ref_conn=None,
                  restore=False):
         logger.log(20, '~~ {} SETUP ~~'.format(
                 self.__class__.__name__.upper()).rjust(79, '~'))
+        self.best_ff = None
+        self.direc = direc
         self.ff = ff
         self.ff_args = ff_args
         self.new_ffs = []
@@ -84,103 +105,21 @@ class Optimizer(object):
         assert self.ref_args or self.ref_conn, \
             'Must provide either arguments to determine reference data or ' + \
             'a connection to the reference database!'
+        # I'm not sure I like this here the more I think about it.
+        # I think I'd rather wrap subclass run commands with doing this
+        # first somehow. I just don't want to gather data until I do
+        # somesubclass.run().
         if self.ref_conn is None:
             logger.log(20, '~~ GATHERING REFERENCE DATA ~~'.rjust(79, '~'))
             self.ref_conn = calculate.main(self.ref_args)
             compare.zero_energies(self.ref_conn)
             compare.import_weights(self.ref_conn)
 
-# Repeats the radius and scaled parameter change calculations.
-def pretty_param_changes(params, changes, method=None, level=20):
-    """
-    Shows some parameter changes.
-    """
-    if logger.getEffectiveLevel() <= level:
-        logger.log(level, ' {} '.format(method).center(79, '='))
-        logger.log(
-            level,
-            '--' + ' PARAMETER '.ljust(34, '-') +
-            '--' + ' UNSCALED CHANGES '.center(19, '-') +
-            '--' + ' CHANGES '.center(18, '-') +
-            '--')
-        for param, change in itertools.izip(params, changes):
-            logger.log(
-                level,
-                '  ' + '{}'.format(param).ljust(34, ' ') +
-                '  ' + '{:7.4f}'.format(change).center(19, ' ') +
-                '  ' + '{:7.4f}'.format(change * param.step).center(18, ' ') +
-                '  ')
-        r = calculate_radius(changes)
-        logger.log(level, 'RADIUS: {}'.format(r))
-        logger.log(level, '=' * 79)
-
 def calculate_radius(changes):
     """
     Returns the radius of parameter change.
     """
     return float(np.sqrt(sum([x**2 for x in changes])))
-        
-def pretty_ff_results(ff, level=15):
-    """
-    Shows a force field's method, parameters, and score.
-
-    Parameters
-    ----------
-    ff : `datatypes.FF` (or subclass)
-    level : int
-    """
-    if logger.getEffectiveLevel() <= level:
-        wrapper = textwrap.TextWrapper(width=79)
-        logger.log(level, ' {} '.format(ff.method).center(79, '-'))
-        logger.log(level, 'SCORE: {}'.format(ff.score))
-        logger.log(level, 'PARAMETERS:')
-        logger.log(level, wrapper.fill(' '.join(map(str, ff.params))))
-        logger.log(level, '-' * 79)
-                
-def pretty_ff_params(ffs, level=20):
-    """
-    Shows parameters from many force fields.
-
-    Parameters
-    ----------
-    ffs : list of `datatypes.FF` (or subclass)
-    level : int
-    """
-    if logger.getEffectiveLevel() <= level:
-        wrapper = textwrap.TextWrapper(width=79, subsequent_indent=' '*29)
-        logger.log(
-            level,
-            '--' + ' PARAMETER '.ljust(25, '-') +
-            '--' + ' VALUES '.ljust(48, '-') +
-            '--')
-        for i in xrange(0, len(ffs[0].params)):
-            wrapper.initial_indent = ' {:25s} '.format(repr(ffs[0].params[i]))
-            all_param_values = [x.params[i].value for x in ffs]
-            all_param_values = ['{:8.4f}'.format(x) for x in all_param_values]
-            logger.log(level, wrapper.fill(' '.join(all_param_values)))
-        logger.log(level, '-' * 79)
-        
-def pretty_derivs(params, level=5):
-    """
-    Displays the parameter derivatives in a pretty fashion.
-
-    Parameters
-    ----------
-    level : int
-            Minimum logging level required for this to display.
-    """
-    if logger.getEffectiveLevel() <= level:
-        logger.log(level,
-                   '--' + ' Parameter '.ljust(33, '-') + 
-                   '--' + ' 1st der. '.center(19, '-') +
-                   '--' + ' 2nd der. '.center(19, '-') + 
-                   '--')
-        for param in params:
-            logger.log(level,
-                       '  ' + '{}'.format(param).ljust(33, ' ') +
-                       '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
-                       '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
-        logger.log(level, '-' * 79)
 
 # It stinks that these two extraction methods rely upon a force field's method
 # string. It would be good to have this whole organization of forward and
@@ -260,9 +199,10 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
     """
     logger.log(20, '  -- Scoring {} force fields.'.format(len(ffs)))
     for ff in ffs:
+        # Look into how export_ff works these days. All these string
+        # copies may not be necessary.
         if ff.path is None:
-            path = parent_ff.path
-            ff.path = parent_ff.path
+            path = ff.path = parent_ff.path
         else:
             path = ff.path
         if not hasattr(ff, 'lines') or ff.lines is None:
@@ -270,7 +210,6 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
         else:
             lines = ff.lines
         ff.export_ff(path, lines=lines)
-        # datatypes.export_ff(path, ff.params, lines=lines)
         conn = calculate.main(ff_args)
         ff.score = compare.compare_data(r_conn, conn)
         pretty_ff_results(ff)
@@ -278,9 +217,6 @@ def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
             ff.conn = conn
     if restore:
         parent_ff.export_ff(parent_ff.path)
-        # datatypes.export_ff(
-        #     parent_ff.path, parent_ff.params, lines=parent_ff.lines)
-
 
 def differentiate_ff(ff, central=True):
     """
@@ -347,12 +283,28 @@ def differentiate_params(params, central=True):
             except datatypes.ParamError as e:
                 logger.warning(e.message)
                 old_step = param.step
-                param.step = param.value * 0.1
+                # New parameter step size modification.
+                # Should prevent problems with parameters trying to go
+                # higher than their allowed range.
+                upper_allowed_range = abs(
+                    param.value - max(param.allowed_range))
+                lower_allowed_range = abs(
+                    param.value - min(param.allowed_range))
+                min_allowed_change = min(
+                    upper_allowed_range, lower_allowed_range)
+                param.step = remaining_allowed_change * 0.1
+                # This was the old method. It worked for preventing parameter
+                # values from going below zero, but didn't work for much else.
+                # param.step = param.value * 0.1
                 logger.warning(
                     '  -- Changed step size of {} from {} to {}.'.format(
                         param, old_step, param.step))
             else:
                 # So much wasted time and memory.
+                # Each of these lists contains one changed parameter. It'd
+                # be nice to just use one list, and modify the necessary
+                # parameter, and then change it back before making the next
+                # modification.
                 param_sets.append(forward_params)
                 if central:
                     param_sets.append(backward_params)
@@ -361,6 +313,92 @@ def differentiate_params(params, central=True):
             len(param_sets)))
     return param_sets
 
+def pretty_derivs(params, level=5):
+    """
+    Displays the parameter derivatives in a pretty fashion.
+
+    Parameters
+    ----------
+    level : int
+            Minimum logging level required for this to display.
+    """
+    if logger.getEffectiveLevel() <= level:
+        logger.log(level,
+                   '--' + ' Parameter '.ljust(33, '-') + 
+                   '--' + ' 1st der. '.center(19, '-') +
+                   '--' + ' 2nd der. '.center(19, '-') + 
+                   '--')
+        for param in params:
+            logger.log(level,
+                       '  ' + '{}'.format(param).ljust(33, ' ') +
+                       '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
+                       '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+        logger.log(level, '-' * 79)
+
+def pretty_ff_params(ffs, level=20):
+    """
+    Shows parameters from many force fields.
+
+    Parameters
+    ----------
+    ffs : list of `datatypes.FF` (or subclass)
+    level : int
+    """
+    if logger.getEffectiveLevel() <= level:
+        wrapper = textwrap.TextWrapper(width=79, subsequent_indent=' '*29)
+        logger.log(
+            level,
+            '--' + ' PARAMETER '.ljust(25, '-') +
+            '--' + ' VALUES '.ljust(48, '-') +
+            '--')
+        for i in xrange(0, len(ffs[0].params)):
+            wrapper.initial_indent = ' {:25s} '.format(repr(ffs[0].params[i]))
+            all_param_values = [x.params[i].value for x in ffs]
+            all_param_values = ['{:8.4f}'.format(x) for x in all_param_values]
+            logger.log(level, wrapper.fill(' '.join(all_param_values)))
+        logger.log(level, '-' * 79)
+        
+# Repeats the radius and scaled parameter change calculations.
+def pretty_ff_results(ff, level=15):
+    """
+    Shows a force field's method, parameters, and score.
+
+    Parameters
+    ----------
+    ff : `datatypes.FF` (or subclass)
+    level : int
+    """
+    if logger.getEffectiveLevel() <= level:
+        wrapper = textwrap.TextWrapper(width=79)
+        logger.log(level, ' {} '.format(ff.method).center(79, '-'))
+        logger.log(level, 'SCORE: {}'.format(ff.score))
+        logger.log(level, 'PARAMETERS:')
+        logger.log(level, wrapper.fill(' '.join(map(str, ff.params))))
+        logger.log(level, '-' * 79)
+                
+def pretty_param_changes(params, changes, method=None, level=20):
+    """
+    Shows some parameter changes.
+    """
+    if logger.getEffectiveLevel() <= level:
+        logger.log(level, ' {} '.format(method).center(79, '='))
+        logger.log(
+            level,
+            '--' + ' PARAMETER '.ljust(34, '-') +
+            '--' + ' UNSCALED CHANGES '.center(19, '-') +
+            '--' + ' CHANGES '.center(18, '-') +
+            '--')
+        for param, change in itertools.izip(params, changes):
+            logger.log(
+                level,
+                '  ' + '{}'.format(param).ljust(34, ' ') +
+                '  ' + '{:7.4f}'.format(change).center(19, ' ') +
+                '  ' + '{:7.4f}'.format(change * param.step).center(18, ' ') +
+                '  ')
+        r = calculate_radius(changes)
+        logger.log(level, 'RADIUS: {}'.format(r))
+        logger.log(level, '=' * 79)
+        
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
 
