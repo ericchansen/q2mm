@@ -152,15 +152,11 @@ class Simplex(opt.Optimizer):
                     2 * inv_val - self.new_ffs[-1].params[i].value)
             # Calculate score for inverted parameters.
             self.ff.export_ff(self.ff.path, params=inv_ff.params)
-            # datatypes.export_ff(
-            #     self.ff.path, inv_ff.params, lines=self.ff.lines)
             conn = calculate.main(self.ff_args)
             inv_ff.score = compare.compare_data(self.ref_conn, conn)
             opt.pretty_ff_results(inv_ff)
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
-            # datatypes.export_ff(
-            #     self.ff.path, ref_ff.params, lines=self.ff.lines)
             conn = calculate.main(self.ff_args)
             ref_ff.score = compare.compare_data(self.ref_conn, conn)
             opt.pretty_ff_results(ref_ff)
@@ -174,8 +170,6 @@ class Simplex(opt.Optimizer):
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
                 self.ff.export_ff(self.ff.path, exp_ff.params)
-                # datatypes.export_ff(
-                #     self.ff.path, exp_ff.params, lines=self.ff.lines)
                 conn = calculate.main(self.ff_args)
                 exp_ff.score = compare.compare_data(self.ref_conn, conn)
                 opt.pretty_ff_results(exp_ff)
@@ -207,8 +201,6 @@ class Simplex(opt.Optimizer):
                              self.new_ffs[-1].params[i].value) / 2)
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(self.ff.path, params=con_ff.params)
-                # datatypes.export_ff(
-                #     self.ff.path, con_ff.params, lines=self.ff.lines)
                 conn = calculate.main(self.ff_args)
                 con_ff.score = compare.compare_data(self.ref_conn, conn)
                 opt.pretty_ff_results(con_ff)
@@ -223,8 +215,6 @@ class Simplex(opt.Optimizer):
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(self.ff.path, params=ff.params)
-                        # datatypes.export_ff(
-                        #     self.ff.path, ff.params, lines=self.ff.lines)
                         conn = calculate.main(self.ff_args)
                         ff.score = compare.compare_data(self.ref_conn, conn)
                         ff.method += ' MC'
