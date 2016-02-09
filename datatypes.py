@@ -118,6 +118,9 @@ class Param(object):
                 "({} <= x <= {})".format(
                     str(self), value, self.allowed_range[0], self.allowed_range[1]))
     
+# Need a general index scheme/method/property to compare the equalness of two
+# parameters, rather than having to rely on some expression that compares
+# mm3_row and mm3_col.
 class ParamMM3(Param):
     '''
     Adds information to Param that is specific to MM3* parameters.
