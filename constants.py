@@ -10,6 +10,8 @@ SETTINGS = {'use_sqlite3': True}
 # ========== LOGGING SETTINGS ==========
 
 # Settings loaded using logging.config.
+# Really, I wish that this could have some directory argument to change the
+# location of root.log. Perhaps something like this can be done with __init__.
 LOG_SETTINGS = {
     'version': 1,
     'disable_existing_loggers': False,
