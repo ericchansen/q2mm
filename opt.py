@@ -31,7 +31,7 @@ def catch_run_errors(func):
         papa_bear = args[0]
         try:
             return func(*args, **kwargs)
-        except (ParamError, ZeroDivisionError) as e:
+        except (datatypes.ParamError, ZeroDivisionError) as e:
             logger.warning(e)
             if papa_bear.best_ff is None:
                 logger.log(20, '  -- Exiting {} and returning initial FF.'.format(
@@ -43,6 +43,7 @@ def catch_run_errors(func):
                         papa_bear.__class__.__name__.lower()))
                 papa_bear.best_ff.export_ff(papa_bear.best_ff.path)
                 return papa_bear.best_ff
+    return wrapper
 
 class Optimizer(object):
     """
@@ -92,7 +93,6 @@ class Optimizer(object):
                  restore=False):
         logger.log(20, '~~ {} SETUP ~~'.format(
                 self.__class__.__name__.upper()).rjust(79, '~'))
-        self.best_ff = None
         self.direc = direc
         self.ff = ff
         self.ff_args = ff_args
