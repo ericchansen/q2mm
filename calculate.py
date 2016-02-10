@@ -30,7 +30,7 @@ DATABASE_LOC = ':memory:'
 ## Commands where we need to load the force field.
 COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 ## Commands related to Gaussian.
-COM_GAUSSIAN = ['ge', 'geigz', 'geigz2']
+COM_GAUSSIAN = ['ge', 'geo', 'geigz', 'geigz2']
 ## Commands related to Jaguar (Schrodinger).
 COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz', 'jq', 'jqh']
 ## Commands related to MacroModel (Schrodinger).
@@ -296,7 +296,9 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                 src_1=mmo.filename,
                                 idx_1=str_num + 1))
 
-        if com == 'ge':
+        if com in ['ge', 'geo']:
+            if com == 'ge': typ = 'energy-1'
+            elif com == 'geo': typ = 'energy-opt'
             for idx_1, group_filenames in enumerate(groups_filenames):
                 for name_log in group_filenames:
                     if name_log not in outs:
@@ -310,7 +312,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         datatypes.Datum(
                             val=energy,
                             com=com,
-                            typ='energy-1',
+                            typ=typ,
                             src_1=name_log,
                             idx_1=idx_1 + 1))
 
@@ -790,6 +792,12 @@ def return_calculate_parser(add_help=True, parents=None):
         '-ge', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies.'))
+    data_args.add_argument(
+        '-geo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energies. Same as -ge, except the files selected '
+              'by this command will have their energies compared to those '
+              'selected by -meo.'))
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
