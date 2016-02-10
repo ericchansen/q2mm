@@ -267,7 +267,9 @@ class GaussLog(File):
             ',(?P<multiplicity>.*?)'
             '\\\\(?P<atoms>.*?)'
             '\\\\\\\\.*?HF=(?P<hf>.*?)'
-            '\\\\NImag=[10]\\\\\\\\(?P<hess>.*?)'
+            '\\\\.*?ZeroPoint=(?P<zp>.*?)'
+            '\\\\.*?Thermal=(?P<thermal>.*?)'
+            '\\\\.*?\\\\NImag=[10]\\\\\\\\(?P<hess>.*?)'
             '\\\\\\\\(?P<evals>.*?)'
             '\\\\\\\\\\\\',
             arch)
@@ -297,8 +299,12 @@ class GaussLog(File):
         hess += np.tril(hess, -1).T
         hess *= co.HESSIAN_CONVERSION
         struct.hess = hess
-        # self._hessian = datatypes.Hessian()
-        # self._hessian.hessian = hess
+
+        # Code to extract energies.
+        # Still not sure exactly what energies we want to use.
+        struct.props['hf'] = float(stuff.group('hf'))
+        struct.props['zp'] = float(stuff.group('zp'))
+        struct.props['thermal'] = float(stuff.group('thermal'))
     def get_most_converged(self, structures=None):
         """
         Used with geometry optimizations that don't succeed. Sometimes

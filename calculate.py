@@ -30,7 +30,7 @@ DATABASE_LOC = ':memory:'
 ## Commands where we need to load the force field.
 COM_LOAD_FF = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 ## Commands related to Gaussian.
-COM_GAUSSIAN = ['geigz', 'geigz2']
+COM_GAUSSIAN = ['ge', 'geigz', 'geigz2']
 ## Commands related to Jaguar (Schrodinger).
 COM_JAGUAR = ['je', 'je2', 'jeo', 'jeigz', 'jq', 'jqh']
 ## Commands related to MacroModel (Schrodinger).
@@ -295,6 +295,24 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                                 com_match=sub_names,
                                 src_1=mmo.filename,
                                 idx_1=str_num + 1))
+
+        if com == 'ge':
+            for idx_1, group_filenames in enumerate(groups_filenames):
+                for name_log in group_filenames:
+                    if name_log not in outs:
+                        outs[name_log] = filetypes.GaussLog(
+                            os.path.join(directory, name_log))
+                    log = outs[name_log]
+                    hf = log.structures[0].props['hf']
+                    zp = log.structures[0].props['zp']
+                    energy = hf + zp
+                    data_list.append(
+                        datatypes.Datum(
+                            val=energy,
+                            com=com,
+                            typ='energy-1',
+                            src_1=name_log,
+                            idx_1=idx_1 + 1))
 
         ## ------ GAUSSIAN EIGENMATRIX ------
         if com == 'geigz':
@@ -768,6 +786,10 @@ def return_calculate_parser(add_help=True, parents=None):
     #     help='Use sqlite3.')
     ## ----- DATA TYPES -----
     data_args = parser.add_argument_group("calculate data types")
+    data_args.add_argument(
+        '-ge', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energies.'))
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
