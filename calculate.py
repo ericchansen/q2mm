@@ -307,7 +307,7 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                     log = outs[name_log]
                     hf = log.structures[0].props['hf']
                     zp = log.structures[0].props['zp']
-                    energy = hf + zp
+                    energy = (hf + zp) * co.HARTREE_TO_KJMOL
                     data_list.append(
                         datatypes.Datum(
                             val=energy,
