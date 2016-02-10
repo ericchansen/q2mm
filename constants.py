@@ -38,7 +38,7 @@ LOG_SETTINGS = {
                 'constants': {'level': 20, 'propagate': True},
                 'datatypes': {'level': 20,' propagate': True},
                 'filetypes': {'level': 20, 'propagate': True},
-                'gradient': {'level': 'NOTSET', 'propagate': True},
+                'gradient': {'level': 20, 'propagate': True},
                 'loop': {'level': 'NOTSET', 'propagate': True},
                 'opt': {'level': 'NOTSET', 'propagate': True},
                 'parameters': {'level': 20, 'propagate': True},
