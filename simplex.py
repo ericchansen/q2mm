@@ -57,11 +57,14 @@ class Simplex(opt.Optimizer):
         self.max_cycles_wo_change = 3
         self.max_params = 10
     @property
-    def best_ff():
-        self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
-        best_ff = self.new_ffs[0]
-        best_ff = restore_simp_ff(best_ff, self.ff)
-        return best_ff
+    def best_ff(self):
+        if self.new_ffs:
+            self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+            best_ff = self.new_ffs[0]
+            best_ff = restore_simp_ff(best_ff, self.ff)
+            return best_ff
+        else:
+            return self.ff
     @opt.catch_run_errors
     def run(self):
         """
