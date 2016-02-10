@@ -269,13 +269,13 @@ class Gradient(opt.Optimizer):
         if par_files:
             par_files.sort()
             most_recent_par_file = par_files[-1]
-            most_recent_par_file = par_files.split('/')[-1]
+            most_recent_par_file = most_recent_par_file.split('/')[-1]
             most_recent_num = most_recent_par_file[9:12]
             num = int(most_recent_num) + 1
             par_file = 'par_diff_{:03d}.txt'.format(num)
         else:
             par_file = 'par_diff_001.txt'
-        f = open(par_file)
+        f = open(os.path.join(self.direc, par_file), 'w')
 
         # Maybe keep scores as a list instead of on the parameter object.
 
@@ -324,7 +324,7 @@ class Gradient(opt.Optimizer):
         # Setup the Jacobian.
         num_p = len(self.ff.params)
         jacob = np.empty((num_d, num_p), dtype=float)
-        with open('par.new.tot', 'r') as f:
+        with open(os.path.join(self.direc, par_file), 'r') as f:
             logger.log(15, 'READING: par.new.tot')
             f.readline() # Labels.
             f.readline() # Weights.
