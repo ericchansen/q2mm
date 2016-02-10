@@ -85,25 +85,25 @@ class Gradient(opt.Optimizer):
         self.do_svd = True
         # Particular settings for each method.
         self.lstsq_cutoffs = None
-        # self.lstsq_radii = [0.1, 1., 5., 10.]
-        self.lstsq_radii = [5.]
+        self.lstsq_radii = [0.1, 1., 5., 10.]
+        # self.lstsq_radii = [5.]
         self.lagrange_cutoffs = None
-        # self.lagrange_factors = [0.01, 0.1, 1., 10.]
-        # self.lagrange_radii = [0.1, 1., 5., 10.]
-        self.lagrange_factors = [1.]
-        self.lagrange_radii = [5.]
+        self.lagrange_factors = [0.01, 0.1, 1., 10.]
+        self.lagrange_radii = [0.1, 1., 5., 10.]
+        # self.lagrange_factors = [1.]
+        # self.lagrange_radii = [5.]
         self.levenberg_cutoffs = None
-        # self.levenberg_factors = [0.01, 0.1, 1., 10.]
-        # self.levenberg_radii = [0.1, 1., 5., 10.]
-        self.levenberg_factors = [1.]
-        self.levenberg_radii = [5.]
+        self.levenberg_factors = [0.01, 0.1, 1., 10.]
+        self.levenberg_radii = [0.1, 1., 5., 10.]
+        # self.levenberg_factors = [1.]
+        # self.levenberg_radii = [5.]
         self.newton_cutoffs = None
-        self.newton_radii = [5.]
-        # self.newton_radii = [0.1, 1., 5., 10.]
-        self.svd_cutoffs = [0.1]
-        # self.svd_cutoffs = [0.1, 10.]
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_factors = None
+        # self.newton_radii = [5.]
+        self.newton_radii = [0.1, 1., 5., 10.]
+        # self.svd_cutoffs = [0.1]
+        self.svd_cutoffs = [0.1, 10.]
+        self.svd_factors = [0.001, 0.01, 0.1, 1.]
+        # self.svd_factors = None
         self.svd_radii = None
     @property
     def best_ff(self):
