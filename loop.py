@@ -50,7 +50,7 @@ class Loop(object):
                 return self.ff
             cols = line.split()
             if cols[0] == 'DIR':
-                cols[1] = self.direc
+                self.direc = cols[1]
             if cols[0] == 'FFLD':
                 # Import FF data.
                 if cols[1] == 'read':
