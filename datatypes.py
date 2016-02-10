@@ -118,6 +118,9 @@ class Param(object):
                 "({} <= x <= {})".format(
                     str(self), value, self.allowed_range[0], self.allowed_range[1]))
     
+# Need a general index scheme/method/property to compare the equalness of two
+# parameters, rather than having to rely on some expression that compares
+# mm3_row and mm3_col.
 class ParamMM3(Param):
     '''
     Adds information to Param that is specific to MM3* parameters.
@@ -133,12 +136,63 @@ class ParamMM3(Param):
         self.mm3_row = mm3_row
         self.mm3_label = mm3_label
     def __repr__(self):
-        return '{}[{}][{},{}]'.format(
-            self.__class__.__name__, self.ptype, self.mm3_row, self.mm3_col)
+        return '{}[{}][{},{}]({})'.format(
+            self.__class__.__name__, self.ptype, self.mm3_row, self.mm3_col,
+            self.value)
     def __str__(self):
         return '{}[{}][{},{}]({})'.format(
             self.__class__.__name__, self.ptype, self.mm3_row, self.mm3_col,
             self.value)
+
+class Datum(object):
+    '''
+    Class for a reference or calculated data point.
+    '''
+    __slots__ = ['_lbl', 'val', 'wht', 'typ', 'com', 'src_1', 'src_2', 'idx_1',
+                 'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
+    def __init__(self, lbl=None, val=None, wht=None, typ=None, com=None,
+                 src_1=None, src_2=None,
+                 idx_1=None, idx_2=None,
+                 atm_1=None, atm_2=None, atm_3=None, atm_4=None):
+        self._lbl  = lbl
+        self.val   = val
+        self.wht   = wht
+        self.typ   = typ
+        self.com   = com
+        self.src_1 = src_1
+        self.src_2 = src_2
+        self.idx_1 = idx_1
+        self.idx_2 = idx_2
+        self.atm_1 = atm_1
+        self.atm_2 = atm_2
+        self.atm_3 = atm_3
+        self.atm_4 = atm_4
+    def __repr__(self):
+        return '{}({:7.4f})'.format(self.lbl, self.val)
+    @property
+    def lbl(self):
+        if self._lbl is None:
+            a = self.typ
+            if self.src_1:
+                b = re.split('[.]+', self.src_1)[0]
+            else:
+                b = None
+            c = '-'.join(map(str, remove_none(
+                        self.idx_1, self.idx_2)))
+            d = '-'.join(map(str, remove_none(
+                        self.atm_1, self.atm_2, self.atm_3, self.atm_4)))
+            abcd = remove_none(a, b, c, d)
+            return '_'.join(abcd)
+        
+def remove_none(*args):
+    return [x for x in args if x is not None]
+
+def datum_sort_key(datum):
+    '''
+    Used as the key to sort a list of Datum instances. This should always ensure
+    that the calculated and reference data points align properly.
+    '''
+    return (datum.dtype, datum.group, lbl_from_source(datum.source), datum.i, datum.j)
 
 class FF(object):
     """
@@ -570,7 +624,7 @@ class MM3(FF):
                     section_vdw = True
                     continue
         logger.log(15, '  -- Read {} parameters.'.format(len(self.params)))
-    def export_ff(self, path, params=None, lines=None):
+    def export_ff(self, path=None, params=None, lines=None):
         """
         Exports the force field to a file, typically mm3.fld.
 
@@ -580,6 +634,8 @@ class MM3(FF):
                File to be written or overwritten.
         params : list of `datatypes.Param` (or subclass)
         """
+        if path is None:
+            path = self.path
         if params is None:
             params = self.params
         if lines is None and self.lines is None:

@@ -4,9 +4,14 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
+# ========== GENERAL SETTINGS ==========
+SETTINGS = {'use_sqlite3': True}
+
 # ========== LOGGING SETTINGS ==========
 
 # Settings loaded using logging.config.
+# Really, I wish that this could have some directory argument to change the
+# location of root.log. Perhaps something like this can be done with __init__.
 LOG_SETTINGS = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -29,21 +34,24 @@ LOG_SETTINGS = {
         },
     'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
                 'calculate': {'level': 20, 'propagate': True},
-                'compare': {'level': 20, 'propagate': True},
+                'compare': {'level': 'NOTSET', 'propagate': True},
+                'constants': {'level': 20, 'propagate': True},
                 'datatypes': {'level': 20,' propagate': True},
                 'filetypes': {'level': 20, 'propagate': True},
                 'gradient': {'level': 20, 'propagate': True},
                 'loop': {'level': 'NOTSET', 'propagate': True},
                 'opt': {'level': 'NOTSET', 'propagate': True},
                 'parameters': {'level': 20, 'propagate': True},
-                'simplex': {'level': 20, 'propagate': True}
+                'simplex': {'level': 'NOTSET', 'propagate': True}
                 # 'calculate': {'level': 'NOTSET', 'propagate': True},
                 # 'compare': {'level': 'NOTSET', 'propagate': True},
+                # 'constants': {'level': 'NOTSET', 'propagate': True},
                 # 'datatypes': {'level': 'NOTSET',' propagate': True},
                 # 'filetypes': {'level': 'NOTSET', 'propagate': True},
                 # 'gradient': {'level': 'NOTSET', 'propagate': True},
                 # 'loop': {'level': 'NOTSET', 'propagate': True},
                 # 'opt': {'level': 'NOTSET', 'propagate': True},
+                # 'parameters': {'level': 'NOTSET', 'propagate': True},
                 # 'simplex': {'level': 'NOTSET', 'propagate': True}
                 },
     'root': {
@@ -89,9 +97,9 @@ WEIGHTS = {'Angle':          2.00,
            'eig_i':          0.00, # Weight of 1st eigenvalue.
            'eig_d':          0.10, # Weight of other eigenvalues.
            'eig_o':          0.05, # Weight of off diagonals in eigenmatrix.
-           'energy_1':      10.00,
-           'energy_2':       1.00,
-           'energy_opt':   125.00,
+           'energy-1':      10.00,
+           'energy-2':       1.00,
+           'energy-opt':   125.00,
            'Torsion':        1.00
            }
 
@@ -101,10 +109,10 @@ WEIGHTS = {'Angle':          2.00,
 STR_INIT_SQLITE3 = """DROP TABLE IF EXISTS data;
 CREATE TABLE data (id INTEGER PRIMARY KEY AUTOINCREMENT, val REAL, wht REAL,
 com TEXT, typ TEXT, src_1 TEXT, src_2 TEXT, idx_1 INTEGER, idx_2 INTEGER,
-atm_1 INTEGER, atm_2 INTEGER, atm_3 INTEGER, atm_4 INTEGER)"""
+atm_1 INTEGER, atm_2 INTEGER, atm_3 INTEGER, atm_4 INTEGER, lbl TEXT)"""
 # String for adding values to database.
 STR_SQLITE3 = ('INSERT INTO data VALUES (:id, :val, :wht, :com, :typ, :src_1, '
-               ':src_2, :idx_1, :idx_2, :atm_1, :atm_2, :atm_3, :atm_4)')
+               ':src_2, :idx_1, :idx_2, :atm_1, :atm_2, :atm_3, :atm_4, :lbl)')
 # These are the columns used in the sqlite3 database.
 DATA_DEFAULTS = {'id': None,
                  'val': None, 'wht': None,

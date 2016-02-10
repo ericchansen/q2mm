@@ -20,6 +20,7 @@ class Loop(object):
     def __init__(self):
         self.convergence = 0.01
         self.cycle_num = 0
+        self.direc = '.'
         self.ff = None
         self.ff_args = None
         self.ff_lines = None
@@ -48,24 +49,23 @@ class Loop(object):
             except StopIteration:
                 return self.ff
             cols = line.split()
+            if cols[0] == 'DIR':
+                self.direc = cols[1]
             if cols[0] == 'FFLD':
                 # Import FF data.
                 if cols[1] == 'read':
-                    self.ff = datatypes.MM3(cols[2])
+                    self.ff = datatypes.MM3(os.path.join(self.direc, cols[2]))
                     self.ff.import_ff()
-                    # self.ff = datatypes.import_ff(cols[2])
                     self.ff.method = 'READ'
-                    with open(cols[2], 'r') as f:
+                    with open(os.path.join(self.direc, cols[2]), 'r') as f:
                         self.ff.lines = f.readlines()
                 # Export FF data.
                 if cols[1] == 'write':
-                    self.ff.export_ff(cols[2])
-                    # datatypes.export_ff(
-                    #     cols[2], self.ff.params, lines=self.ff.lines)
+                    self.ff.export_ff(os.path.join(self.direc, cols[2]))
             # Trim parameters.
             if cols[0] == 'PARM':
                 self.ff.params = parameters.trim_params_by_file(
-                    self.ff.params, cols[1])
+                    self.ff.params, os.path.join(self.direc, cols[1]))
             if cols[0] == 'LOOP':
                 # Read lines that will be looped over.
                 inner_loop_lines = []
@@ -76,6 +76,7 @@ class Loop(object):
                 # Make loop object and populate attributes.
                 loop = Loop()
                 loop.convergence = float(cols[1])
+                loop.direc = self.direc
                 loop.ff = self.ff
                 loop.ff_args = self.ff_args
                 loop.ref_args = self.ref_args
@@ -87,6 +88,8 @@ class Loop(object):
                     score=self.ff.score)
                 # Run inner loop.
                 self.ff = loop.opt_loop()
+            # Note: Probably want to update this to append the directory given
+            #       by the new DIR command.
             if cols[0] == 'RDAT':
                 logger.log(
                     20, '~~ CALCULATING REFERENCE DATA ~~'.rjust(79, '~'))
@@ -101,7 +104,7 @@ class Loop(object):
                 self.ff.conn = calculate.main(self.ff_args)
             if cols[0] == 'COMP':
                 if '-o' in cols:
-                    output_filename = cols[cols.index('-o') + 1]
+                    output_filename = os.path.join(self.direc, cols[cols.index('-o') + 1])
                     self.ff.score, output_string = compare.compare_data(
                         self.ref_conn, self.ff.conn, pretty=True)
                     with open(output_filename, 'w') as f:
@@ -112,11 +115,15 @@ class Loop(object):
                         self.ref_conn, self.ff.conn)
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
+                    direc=self.direc,
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
                     ref_conn=self.ref_conn)
-                self.ff = grad.run()
+                # Temporary change.
+                # self.ff = grad.run()
+                self.ff = grad.run_low_mem()
             if cols[0] == 'SIMP':
                 simp = simplex.Simplex(
+                    direc=self.direc,
                     ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
                     ref_conn=self.ref_conn)
                 self.ff = simp.run()
