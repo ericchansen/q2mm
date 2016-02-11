@@ -294,7 +294,7 @@ def differentiate_params(params, central=True):
                     param.value - min(param.allowed_range))
                 min_allowed_change = min(
                     upper_allowed_range, lower_allowed_range)
-                param.step = remaining_allowed_change * 0.1
+                param.step = min_allowed_change * 0.1
                 # This was the old method. It worked for preventing parameter
                 # values from going below zero, but didn't work for much else.
                 # param.step = param.value * 0.1
