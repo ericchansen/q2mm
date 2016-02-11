@@ -278,7 +278,7 @@ def select_simp_params_on_derivs(params, max_params=10):
 
 def reduce_num_simp_params(ff, ffs, max_params=10):
     logger.log(
-        20, '  -- Reducing number of parameters to {}'.format(self.max_params))
+        20, '  -- Reducing number of parameters to {}'.format(max_params))
     opt.param_derivs(ff, ffs)
     simp_params = select_simp_params_on_derivs(
         ff.params, max_params=max_params)
