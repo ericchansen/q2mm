@@ -198,6 +198,7 @@ def gather_values(mmos):
 
     bond_dic = {}
     angle_dic = {}
+    torsion_dic = {}
     for mmo in mmos:
         for structure in mmo.structures:
             for bond in structure.bonds:
@@ -210,7 +211,12 @@ def gather_values(mmos):
                     angle_dic[angle.ff_row].append(angle.value)
                 else:
                     angle_dic[angle.ff_row] = [angle.value]
-    return bond_dic, angle_dic
+            for torsion in structure.torsions:
+                if torsion.ff_row in torsion_dic:
+                    torsion_dic[torsion.ff_row].append(torsion.value)
+                else:
+                    torsion_dic[torsion.ff_row] = [torsion.value]
+    return bond_dic, angle_dic, torsion_dic
 
 def main(args):
     '''
@@ -253,12 +259,12 @@ def main(args):
         mmos = []
         for filename in opts.mmo:
             mmos.append(filetypes.MacroModel(filename))
-        bond_dic, angle_dic = gather_values(mmos)
+            bond_dic, angle_dic, torsion_dic = gather_values(mmos)
         # Check if the parameter's FF row shows up in the data gathered
         # from the MacroModel .mmo file. Currently only takes into
         # account bonds and angles.
         if opts.check:
-            all_rows = bond_dic.keys() + angle_dic.keys()
+            all_rows = bond_dic.keys() + angle_dic.keys() + torsion_dic.keys()
             for param in params:
                 if not param.mm3_row in all_rows:
                     print("{} doesn't appear to be in use.".format(param))
