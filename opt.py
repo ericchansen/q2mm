@@ -1,4 +1,4 @@
-#!/us/bin/python
+#!/usr/bin/python
 """
 General code related to all optimization techniques.
 """
