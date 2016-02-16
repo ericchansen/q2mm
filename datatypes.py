@@ -175,6 +175,7 @@ class Datum(object):
             a = self.typ
             if self.src_1:
                 b = re.split('[.]+', self.src_1)[0]
+            # Why would it ever not have src_1?
             else:
                 b = None
             c = '-'.join(map(str, remove_none(
@@ -182,17 +183,18 @@ class Datum(object):
             d = '-'.join(map(str, remove_none(
                         self.atm_1, self.atm_2, self.atm_3, self.atm_4)))
             abcd = remove_none(a, b, c, d)
-            return '_'.join(abcd)
+            self._lbl = '_'.join(abcd)
+        return self._lbl
         
 def remove_none(*args):
-    return [x for x in args if x is not None]
+    return [x for x in args if (x is not None and x is not '')]
 
 def datum_sort_key(datum):
     '''
     Used as the key to sort a list of Datum instances. This should always ensure
     that the calculated and reference data points align properly.
     '''
-    return (datum.dtype, datum.group, lbl_from_source(datum.source), datum.i, datum.j)
+    return (datum.typ, datum.src_1, datum.src_2, datum.idx_1, datum.idx_2)
 
 class FF(object):
     """

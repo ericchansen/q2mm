@@ -1362,9 +1362,9 @@ class Structure(object):
     def select_stuff(self, typ, com_match=None, **kwargs):
         """
         Selects bonds, angles, or torsions from the structure and returns them
-        in the format used as data in the sqlite3 database.
+        in the format used as data.
 
-        typ       - 'Bond', 'Angle', or 'Torsion'.
+        typ       - 'bond', 'angle', or 'torsion'.
         com_match - String or None. If None, just returns all of the selected
                     stuff (bonds, angles, or torsions). If a string, selects
                     only those that have this string in their comment.
@@ -1375,12 +1375,9 @@ class Structure(object):
         """
         data = []
         for thing in getattr(self, typ):
-            if (com_match and thing.comment in com_match) or \
+            if (com_match and any(x in thing.comment for x in com_match)) or \
                     com_match is None:
                 datum = thing.as_data(**kwargs)
-                # Done now by thing.as_data.
-                # datum.update(kwargs)
-                # datum = {k: datum.get(k, co.DEFAULTS[k]) for k in co.DEFAULTS}
                 data.append(datum)
         assert data, "No data actually retrieved!"
         return data
@@ -1389,6 +1386,8 @@ class Structure(object):
         Returns the atom numbers of aliphatic hydrogens. These hydrogens
         are always assigned a partial charge of zero in MacroModel
         calculations.
+
+        This should be subclassed into something is MM3* specific.
         """
         aliph_hyds = []
         for atom in self.atoms:
@@ -1403,6 +1402,9 @@ class Structure(object):
 class Atom(object):
     """
     Data class for a single atom.
+
+    Really, some of this atom type stuff should perhaps be in a MM3*
+    specific atom class.
     """
     __slots__ = ['atom_type', 'atom_type_name', 'atomic_num', 'atomic_mass',
                  'bonded_atom_indices', 'coords_type', '_element',
@@ -1445,7 +1447,6 @@ class Atom(object):
     def element(self):
         if self._element is None:
             self._element = co.MASSES.items()[self.atomic_num - 1][0]
-            # self._element = co.ele[self.atomic_num]
         return self._element
     @element.setter
     def element(self, value):
@@ -1479,22 +1480,21 @@ class Bond(object):
             self.__class__.__name__, '-'.join(
                 map(str, self.atom_nums)), self.value)
     def as_data(self, **kwargs):
-        datum = datatypes.Datum(val=self.value,
-                                typ=self.__class__.__name__)
-        # for i, atom_num in enumerate(self.atom_nums):
-        #     datum.__dict__.update({'atm_{}'.format(i + 1): atom_num})
+        # Sort of silly to have all this stuff about angles and 
+        # torsions in here, but they both inherit from this class.
+        # I suppose it'd make more sense to create a structural
+        # element class that these all inherit from.
+        if self.__class__.__name__.lower() == 'bond':
+            typ = 'b'
+        elif self.__class__.__name__.lower() == 'angle':
+            typ = 'a'
+        elif self.__class__.__name__.lower() == 'torsion':
+            typ = 't'
+        datum = datatypes.Datum(val=self.value, typ=typ)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, 'atm_{}'.format(i+1), atom_num)
         for k, v in kwargs.iteritems():
             setattr(datum, k, v)
-        # datum.__dict__.update(kwargs)
-        # datum = {'val': self.value, 
-        #          'typ': self.__class__.__name__
-        #          }
-        # for i, atom_num in enumerate(self.atom_nums):
-        #     datum.update({'atm_{}'.format(i + 1): atom_num})
-        # datum.update(kwargs)
-        # datum = co.set_data_defaults(datum)
         return datum
 
 class Angle(Bond):

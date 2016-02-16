@@ -91,16 +91,15 @@ STEPS = {'ae':      2.0,
 # ========== WEIGHTS ==========
 
 # TO DO: Add units.
-WEIGHTS = {'Angle':          2.00,
-           'charge':        10.00,
-           'Bond':         100.00,
-           'eig_i':          0.00, # Weight of 1st eigenvalue.
-           'eig_d':          0.10, # Weight of other eigenvalues.
-           'eig_o':          0.05, # Weight of off diagonals in eigenmatrix.
-           'energy-1':      10.00,
-           'energy-2':       1.00,
-           'energy-opt':   125.00,
-           'Torsion':        1.00
+WEIGHTS = {'a':          2.00,
+           'q':         10.00,
+           'b':        100.00,
+           'eig_i':      0.00, # Weight of 1st eigenvalue.
+           'eig_d':      0.10, # Weight of other eigenvalues.
+           'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
+           'e':         10.00,
+           'eo':       125.00,
+           't':          1.00
            }
 
 # ========== SQLITE3 DATA ==========
