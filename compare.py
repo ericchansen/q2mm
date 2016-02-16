@@ -111,6 +111,7 @@ def import_weights(data):
             else:
                 datum.wht = co.WEIGHTS[datum.typ]
 
+# Need to add some pretty print outs for this.
 def calculate_score(r_data, c_data):
     score = 0.
     for r_datum, c_datum in izip(r_data, c_data):
