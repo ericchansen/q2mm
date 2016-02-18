@@ -441,6 +441,9 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                         hess.mass_weight_hessian()
                     elif com == 'mjeig':
                         hess = datatypes.Hessian(log, out)
+                        hess.hess = datatypes.check_mm_dummy(
+                            hess.hess,
+                            out.dummy_atom_eigenvector_indices)
                     hess.mass_weight_eigenvectors()
                     hess.diagonalize()
                     if com == 'jeigz':

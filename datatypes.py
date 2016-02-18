@@ -988,12 +988,8 @@ class Hessian(object):
         self.evecs = None
         self.evals = None
         self.hess = None
-        # This check may not be necessary now?
-        if isinstance(args, basestring):
-            self.import_source(args)
-        else:
-            for source in args:
-                self.import_source(source)
+        for source in args:
+            self.import_source(source)
     def diagonalize(self, reverse=False):
         """
         Diagonalizes self.hess using self.evecs. If reverse is True,
@@ -1016,7 +1012,8 @@ class Hessian(object):
         #     changes.extend([np.sqrt(mass)] * 3)
         changes = []
         for atom in self.atoms:
-            changes.extend([np.sqrt(atom.exact_mass)] * 3)
+            if not atom.is_dummy:
+                changes.extend([np.sqrt(atom.exact_mass)] * 3)
         x, y = self.evecs.shape
         for i in xrange(0, x):
             for j in xrange(0, y):
@@ -1029,7 +1026,7 @@ class Hessian(object):
         Mass weights self.hess. If reverse is True, it un-mass weights
         the Hessian.
         """
-        masses = [co.MASSES[x.element] for x in self.atoms]
+        masses = [co.MASSES[x.element] for x in self.atoms if not x.is_dummy]
         changes = []
         for mass in masses:
             changes.extend([1 / np.sqrt(mass)] * 3)
@@ -1060,14 +1057,14 @@ class Hessian(object):
         """
         source - String for a filename or a filetype object.
         """
-        if isinstance(source, basestring):
-            ext = os.path.splitext(source)[1]
-            if ext == '.in':
-                source = filetypes.JaguarIn(source)
-            elif ext == '.out':
-                source = filetypes.JaguarOut(source)
-            elif ext == '.log':
-                source = filetypes.MacroModelLog(source)
+        # if isinstance(source, basestring):
+        #     ext = os.path.splitext(source)[1]
+        #     if ext == '.in':
+        #         source = filetypes.JaguarIn(source)
+        #     elif ext == '.out':
+        #         source = filetypes.JaguarOut(source)
+        #     elif ext == '.log':
+        #         source = filetypes.MacroModelLog(source)
         assert isinstance(source, filetypes.JaguarIn) or \
             isinstance(source, filetypes.JaguarOut) or \
             isinstance(source, filetypes.MacroModelLog), \
@@ -1084,3 +1081,9 @@ class Hessian(object):
             self.atoms = source.structures[0].atoms
             logger.log(10, '  -- Loaded {} atoms from {}.'.format(
                     len(self.atoms), source.path))
+
+def check_mm_dummy(hess, dummy_indices):
+    hess = np.delete(hess, dummy_indices, 0)
+    hess = np.delete(hess, dummy_indices, 1)
+    logger.log(15, 'Created {} Hessian w/o dummy atoms.'.format(hess.shape))
+    return hess
