@@ -174,14 +174,24 @@ def gather_data(commands, inps, directory, ff_path=None, sub_names=None):
                             filetypes.Mae(os.path.join(directory, filename))
                     mae = outs[filename]
                     for str_num, struct in enumerate(mae.structures):
-                        data_list.append(datatypes.Datum(
-                                val=(struct.props['r_j_Gas_Phase_Energy'] * 
-                                     co.HARTREE_TO_KJMOL),
-                                com=com,
-                                typ=typ,
-                                src_1=filename,
-                                idx_1=idx_1 + 1,
-                                idx_2=str_num + 1))
+                        try:
+                            data_list.append(datatypes.Datum(
+                                    val=(struct.props['r_j_Gas_Phase_Energy'] * 
+                                         co.HARTREE_TO_KJMOL),
+                                    com=com,
+                                    typ=typ,
+                                    src_1=filename,
+                                    idx_1=idx_1 + 1,
+                                    idx_2=str_num + 1))
+                        except KeyError:
+                            data_list.append(datatypes.Datum(
+                                    val=(struct.props['r_j_QM_Energy'] * 
+                                         co.HARTREE_TO_KJMOL),
+                                    com=com,
+                                    typ=typ,
+                                    src_1=filename,
+                                    idx_1=idx_1 + 1,
+                                    idx_2=str_num + 1))
         # ----- JAGUAR CHARGES -----
         if com in ['jq', 'jqh']:
             for comma_sep_names in groups_filenames:
