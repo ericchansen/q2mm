@@ -980,11 +980,18 @@ class Mae(SchrodingerFile):
         while len(debg_opts) < 9:
             debg_opts.append(0)
         return debg_opts
-    def write_com(self):
+    def write_com(self, sometext=None):
         """
         Writes the .com file with all the right arguments to generate
         the requested data.
         """
+        # Setup new filename. User can add additional text.
+        if sometext:
+            pieces = self.name_com.split('.')
+            pieces.insert(-1, sometext)
+            self.name_com = '.'.join(pieces)
+        # Even if the command file already exists, we still need to
+        # determine these indices.
         self._index_output_mae = []
         self._index_output_mmo = []
         com_opts = self.get_com_opts()
@@ -1073,10 +1080,16 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
         if com_opts['cs2'] or com_opts['cs3']:
             com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
-        with open(os.path.join(self.directory, self.name_com), 'w') as f:
-            f.write(com)
-        logger.log(5, 'WROTE: {}'.format(
-                os.path.join(self.directory, self.name_com)))
+        # If the file already exists, don't rewrite it.
+        path_com = os.path.join(self.directory, self.name_com)
+        if os.path.exists(path_com):
+            logger.log(5, '  -- {} already exists. Skipping write.'.format(
+                    self.name_com))
+        else:
+            with open(os.path.join(self.directory, self.name_com), 'w') as f:
+                f.write(com)
+            logger.log(5, 'WROTE: {}'.format(
+                    os.path.join(self.name_com)))
     def run(self, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
