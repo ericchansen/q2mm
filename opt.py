@@ -9,7 +9,6 @@ import logging
 import logging.config
 import numpy as np
 import re
-import sqlite3
 import textwrap
 
 import calculate
@@ -58,15 +57,13 @@ class Optimizer(object):
     ff_lines : list, optional
                Obtained from using readlines() on the opened force field. Will
                read these lines from `ff.path` if not provided.
-    ff_args : list
+    args_ff : list
               Arguments for `calculate.main` used to calculate the force field
               data set.
-    ref_args : list
+    args_ref : list
                Arguments for `calculate.main` used to calculate the reference
                data set.
-    ref_conn : sqlite3 database connection, optional
-               Connection to a sqlite3 database stored in memory. Will calculate
-               this data on its own using `ref_args` if not provided.
+    ref_data : list of `datatypes.Datum`
     restore : bool, optional
               If True, will write the initial force field after the optimization
               is complete. If False, will write the best force field from the
@@ -88,137 +85,34 @@ class Optimizer(object):
     """
     def __init__(self,
                  direc=None,
-                 ff=None, ff_lines=None, ff_args=None,
-                 ref_args=None, ref_conn=None,
-                 restore=False):
+                 ff=None,
+                 ff_lines=None,
+                 args_ff=None,
+                 args_ref=None):
+        logger.log(20, '')
         logger.log(20, '~~ {} SETUP ~~'.format(
                 self.__class__.__name__.upper()).rjust(79, '~'))
         self.direc = direc
         self.ff = ff
-        self.ff_args = ff_args
+        self.ff_lines = ff_lines
+        self.args_ff = args_ff
+        self.args_ref = args_ref
         self.new_ffs = []
-        self.ref_args = ref_args
-        self.ref_conn = ref_conn
-        self.restore = restore
-        assert self.ff, \
-            'Must provided initial FF! self.ff: {}'.format(self.ff)
-        assert self.ff_args, \
-            'Must provide arguments for calculating FF data!'
-        assert self.ref_args or self.ref_conn, \
-            'Must provide either arguments to determine reference data or ' + \
-            'a connection to the reference database!'
-        # I'm not sure I like this here the more I think about it.
-        # I think I'd rather wrap subclass run commands with doing this
-        # first somehow. I just don't want to gather data until I do
-        # somesubclass.run().
-        if self.ref_conn is None:
-            logger.log(20, '~~ GATHERING REFERENCE DATA ~~'.rjust(79, '~'))
-            self.ref_conn = calculate.main(self.ref_args)
-            compare.zero_energies(self.ref_conn)
-            compare.import_weights(self.ref_conn)
+        if self.ff_lines is None and self.ff.lines:
+            self.ff_lines = self.ff.lines
+
+def return_ref_data(args_ref):
+    logger.log(20, '~~ GATHERING REFERENCE DATA ~~'.rjust(79, '~'))
+    ref_data = calculate.main(args_ref)
+    compare.zero_energies(ref_data)
+    compare.import_weights(ref_data)
+    return ref_data
 
 def calculate_radius(changes):
     """
     Returns the radius of parameter change.
     """
     return float(np.sqrt(sum([x**2 for x in changes])))
-
-# It stinks that these two extraction methods rely upon a force field's method
-# string. It would be good to have this whole organization of forward and
-# backward differentiated force fields be less arbitrary.
-def extract_ff_by_params(ffs, params):
-    """
-    From the list of provided force fields, returns only those whose
-    methods include one of the parameters in the provided list of
-    parameters. The MM3* row and column, along with some regex, are
-    used to do this.
-
-    Parameters
-    ----------
-    ffs : list of `datatypes.FF` (or subclass)
-    """
-    rows = [x.mm3_row for x in params]
-    cols = [x.mm3_col for x in params]
-    keep = []
-    for ff in ffs:
-        row, col = map(int, re.split('\[|\]', ff.method)[3].split(','))
-        if row in rows and col in cols:
-            keep.append(ff)
-    return keep
-
-def extract_forward(ffs):
-    """
-    Returns the force fields that have been forward differentiated.
-
-    Parameters
-    ----------
-    ffs : list of `datatypes.FF` (or subclass)
-    """
-    return [x for x in ffs if 'forward' in x.method.lower()]
-            
-def param_derivs(ff, ffs):
-    """
-    Calculates the derivatives of parameters with respect to the penalty
-    function and stores them. Note that these derivatives are stored as
-    unitless quantities, as this function doesn't account for the numerical
-    step size.
-
-    Parameters
-    ----------
-    ff : `datatypes.FF`
-         The derivatives are stored in this force field's parameter
-         instances, `datatypes.FF.params`.
-    ffs : list of `datatypes.FF` (or subclass)
-          Central differentiated and scored force fields.
-    """
-    for i in xrange(0, len(ffs), 2):
-        ff.params[i/2].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
-        ff.params[i/2].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
-    pretty_derivs(ff.params)
-
-def score_ffs(ffs, ff_args, r_conn, parent_ff=None, restore=True,
-              store_conn=False):
-    """
-    Score many force fields. Returns nothing but modifies attributes on
-    the input force fields.
-
-    Parameters
-    ----------
-    ffs : list of `datatypes.FF` (or subclass)
-    ff_args : string
-              Arguments for `calculate.main`.
-    r_conn : connection to reference database
-    parent_ff : None or instance of `datatypes.FF` (or subclass)
-                If the force fields in `ffs` are missing attributes (set to
-                None), then it uses the corresponding attributes in
-                `parent_ff`.
-    restore : bool
-              If True, restores the parameters in `parent_ff.params` to
-              `parent_ff.path`.
-    store_conn : bool
-                 If True, stores the calculated data for use later in the
-                 force field's conn attribute, `datatypes.FF.conn`.
-    """
-    logger.log(20, '  -- Scoring {} force fields.'.format(len(ffs)))
-    for ff in ffs:
-        # Look into how export_ff works these days. All these string
-        # copies may not be necessary.
-        if ff.path is None:
-            path = ff.path = parent_ff.path
-        else:
-            path = ff.path
-        if not hasattr(ff, 'lines') or ff.lines is None:
-            lines = parent_ff.lines
-        else:
-            lines = ff.lines
-        ff.export_ff(path, lines=lines)
-        conn = calculate.main(ff_args)
-        ff.score = compare.compare_data(r_conn, conn)
-        pretty_ff_results(ff)
-        if store_conn:
-            ff.conn = conn
-    if restore:
-        parent_ff.export_ff(parent_ff.path)
 
 def differentiate_ff(ff, central=True):
     """
@@ -302,7 +196,6 @@ def differentiate_params(params, central=True):
                     '  -- Changed step size of {} from {} to {}.'.format(
                         param, old_step, param.step))
             else:
-                # So much wasted time and memory.
                 # Each of these lists contains one changed parameter. It'd
                 # be nice to just use one list, and modify the necessary
                 # parameter, and then change it back before making the next
@@ -314,6 +207,42 @@ def differentiate_params(params, central=True):
     logger.log(20, '  -- Generated {} differentiated parameter sets.'.format(
             len(param_sets)))
     return param_sets
+
+def param_derivs(ff, ffs):
+    """
+    Calculates the derivatives of parameters with respect to the penalty
+    function and stores them. Note that these derivatives are stored as
+    unitless quantities, as this function doesn't account for the numerical
+    step size.
+
+    Parameters
+    ----------
+    ff : `datatypes.FF`
+         The derivatives are stored in this force field's parameter
+         instances, `datatypes.FF.params`.
+    ffs : list of `datatypes.FF` (or subclass)
+          Central differentiated and scored force fields.
+    """
+    for i in xrange(0, len(ffs), 2):
+        ff.params[i/2].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
+        ff.params[i/2].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
+    pretty_derivs(ff.params)
+
+def cal_ff(ff, ff_args, parent_ff=None, store_data=False):
+    if ff.path:
+        path = ff.path
+    else:
+        path = ff.path = parent_ff.path
+    if ff.lines:
+        # If I understand Python, then this creates a pointer, not a
+        # copy of the object. Storing the lines from mm3.fld is sort of
+        # big.
+        lines = parent_ff.lines
+    ff.export_ff(path, lines=lines)
+    data = calculate.main(ff_args)
+    if store_data:
+        ff.data = data
+    return data
 
 def pretty_derivs(params, level=5):
     """
@@ -360,8 +289,7 @@ def pretty_ff_params(ffs, level=20):
             logger.log(level, wrapper.fill(' '.join(all_param_values)))
         logger.log(level, '-' * 79)
         
-# Repeats the radius and scaled parameter change calculations.
-def pretty_ff_results(ff, level=15):
+def pretty_ff_results(ff, level=20):
     """
     Shows a force field's method, parameters, and score.
 
@@ -372,24 +300,30 @@ def pretty_ff_results(ff, level=15):
     """
     if logger.getEffectiveLevel() <= level:
         wrapper = textwrap.TextWrapper(width=79)
-        logger.log(level, ' {} '.format(ff.method).center(79, '-'))
+        logger.log(level, ' {} '.format(ff.method).center(79, '='))
         logger.log(level, 'SCORE: {}'.format(ff.score))
         logger.log(level, 'PARAMETERS:')
         logger.log(level, wrapper.fill(' '.join(map(str, ff.params))))
-        logger.log(level, '-' * 79)
-                
+        logger.log(level, '=' * 79)
+        logger.log(level, '')
+
 def pretty_param_changes(params, changes, method=None, level=20):
     """
     Shows some parameter changes.
     """
     if logger.getEffectiveLevel() <= level:
-        logger.log(level, ' {} '.format(method).center(79, '='))
+        if method:
+            logger.log(level, ' {} '.format(method).center(79, '='))
+        else:
+            logger.log(level, '=' * 79)
         logger.log(
             level,
             '--' + ' PARAMETER '.ljust(34, '-') +
             '--' + ' UNSCALED CHANGES '.center(19, '-') +
             '--' + ' CHANGES '.center(18, '-') +
             '--')
+        # This calculation of the real parameter step size is also repeated.
+        # The things I do for a good looking log.
         for param, change in itertools.izip(params, changes):
             logger.log(
                 level,
@@ -397,10 +331,9 @@ def pretty_param_changes(params, changes, method=None, level=20):
                 '  ' + '{:7.4f}'.format(change).center(19, ' ') +
                 '  ' + '{:7.4f}'.format(change * param.step).center(18, ' ') +
                 '  ')
+        # This was probably already calculated before, but I guess it's worth
+        # doing again for simplicity and a nice looking log.
         r = calculate_radius(changes)
         logger.log(level, 'RADIUS: {}'.format(r))
         logger.log(level, '=' * 79)
-        
-if __name__ == '__main__':
-    logging.config.dictConfig(co.LOG_SETTINGS)
-
+        logger.log(level, '')

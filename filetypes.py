@@ -354,7 +354,7 @@ class GaussLog(File):
                 structures_compared, len(self.structures)))
         return best_structure
     def read_any_coords(self, coords_type='both'):
-        logger.log(10, 'READING: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.filename))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -467,7 +467,7 @@ class GaussLog(File):
                       to be overwritten by whatever comes later in the
                       log file.
         """
-        logger.log(10, 'READING: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.filename))
         structures = []
         with open(self.path, 'r') as f:
             section_coords_input = False
@@ -676,7 +676,7 @@ class JaguarIn(SchrodingerFile):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.filename))
             sch_ob = jag_in.read(self.path)
             sch_struct = sch_ob.getStructure()
             structures = [self.conv_sch_str(sch_struct)]
@@ -730,7 +730,7 @@ class JaguarOut(File):
             self.import_file()
         return self._frequencies
     def import_file(self):
-        logger.log(10, 'READING: {}'.format(self.path))
+        logger.log(10, 'READING: {}'.format(self.filename))
         frequencies = []
         force_constants = []
         eigenvectors = []
@@ -841,7 +841,7 @@ class Mae(SchrodingerFile):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.filename))
             sch_structs = list(sch_str.StructureReader(self.path))
             self._structures = [self.conv_sch_str(sch_struct)
                                 for sch_struct in sch_structs]
@@ -1025,8 +1025,9 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
         with open(os.path.join(self.directory, self.name_com), 'w') as f:
             f.write(com)
-        logger.log(5, 'WROTE: {}'.format(
-                os.path.join(self.directory, self.name_com)))
+        # logger.log(5, 'WROTE: {}'.format(
+        #         os.path.join(self.directory, self.name_com)))
+        logger.log(5, 'WROTE: {}'.format(self.name_com))
     def run(self, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
@@ -1130,7 +1131,7 @@ class MacroModelLog(File):
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'READING: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.filename))
             with open(self.path, 'r') as f:
                 lines = f.read()
             num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
@@ -1194,7 +1195,7 @@ class MacroModel(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.path))
+            logger.log(10, 'READING: {}'.format(self.filename))
             self._structures = []
             with open(self.path, 'r') as f:
                 count_current = 0
@@ -1484,6 +1485,8 @@ class Bond(object):
         # torsions in here, but they both inherit from this class.
         # I suppose it'd make more sense to create a structural
         # element class that these all inherit from.
+        # Warning that I recently changed these labels, and that
+        # may have consequences.
         if self.__class__.__name__.lower() == 'bond':
             typ = 'b'
         elif self.__class__.__name__.lower() == 'angle':

@@ -44,6 +44,9 @@ def main(args):
     args : string
            Evaluated using parser returned by return_calculate_parser().
     """
+    logger.log(1, '>>> main <<<')
+    if isinstance(args, basestring):
+        args.split()
     parser = return_calculate_parser()
     opts = parser.parse_args(args)
     # commands looks like:
@@ -89,6 +92,7 @@ def main(args):
                 inps[filename].write_com()
         else:
             inps[filename] = None
+    # Check whether or not to skip MacroModel calculations.
     if opts.norun:
         logger.log(15, "  -- Skipping MacroModel calculations.")
     else:
@@ -96,11 +100,13 @@ def main(args):
             # Works if some class is None too.
             if hasattr(some_class, 'run'):
                 some_class.run(check_tokens=opts.check)
+    # data is a list comprised of datatypes.Datum objects.
     data = collect_data(commands, inps, direc=opts.directory)
     if opts.weight:
         compare.import_weights(data)
     if opts.doprint:
         pretty_data(data, log_level=None)
+    logger.log(1, '>>> data: {}'.format(data))
     return data
 
 def return_calculate_parser(add_help=True, parents=None):
@@ -582,7 +588,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
-    return data
+    return np.array(data)
 
 def sort_commands_by_filename(commands):
     '''
@@ -641,7 +647,7 @@ def read_reference(filename):
                 datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
                 lbl_to_data_attrs(datum, lbl)
                 data.append(datum)
-    return data
+    return np.array(data)
 
 def lbl_to_data_attrs(datum, lbl):
     parts = lbl.split('_')

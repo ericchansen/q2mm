@@ -12,6 +12,7 @@ and :math:`x_c` is the calculated or force field's value for the data point.
 
 '''
 from __future__ import print_function
+from collections import defaultdict
 from itertools import izip
 import argparse
 import logging
@@ -26,11 +27,61 @@ import datatypes
 logger = logging.getLogger(__name__)
 
 def main(args):
+    logger.log(1, '>>> main <<<')
     parser = return_compare_parser()
     opts = parser.parse_args(args)
     r_data = calculate.main(opts.reference.split())
     c_data = calculate.main(opts.calculate.split())
     score = compare_data(r_data, c_data)
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
+    # Pretty readouts.
+    if opts.output:
+        pretty_data_comp(r_data, c_data, output=opts.output)
+    if opts.print:
+        pretty_data_comp(r_data, c_data)
+
+def pretty_data_comp(r_data, c_data, output=None):
+    """
+    Recalculates score along with making a pretty output.
+    """
+    strings = []
+    strings.append('--' + ' Label '.ljust(20, '-') +
+                  '--' + ' Weight '.center(8, '-') + 
+                  '--' + ' R. Value '.center(13, '-') + 
+                  '--' + ' C. Value '.center(13, '-') +
+                  '--' + ' Score '.center(13, '-') + '--')
+    score_typ = defaultdict(float)
+    score_tot = 0.
+    for r, c in izip(r_data, c_data):
+        # Double check data types.
+        if r.typ == 't':
+            diff = abs(r.val - c.val)
+            if diff > 180.:
+                diff = 360. - diff
+        else:
+            diff = r.val - c.val
+        # Calculate score.
+        score = r.wht**2 * diff**2
+        # Update total.
+        score_tot += score
+        # Update dictionary.
+        score_typ[r.typ] += score
+        strings.append('  {:<20}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
+                r.lbl, r.wht, r.val, c.val, score))
+    strings.append('-' * 79)
+    strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
+    strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
+    strings.append('-' * 79)
+    for k, v in score_typ.iteritems():
+        strings.append('{:<20} {:20.4f}'.format(k + ':', v))
+    if output:
+        with open(output, 'w') as f:
+            for line in strings:
+                f.write('{}\n'.format(line))
+    else:
+        for line in strings:
+            print(string)
 
 def return_compare_parser():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -44,29 +95,38 @@ def return_compare_parser():
               'after the 1st quotation mark enclosing the arguments.'))
     parser.add_argument(
         '--output', '-o', type=str, metavar='filename', 
-        help='Write pretty output filename.')
+        help='Write pretty output to filename.')
     parser.add_argument(
         '--print', '-p', action='store_true', dest='doprint',
         help='Print pretty output.')
     return parser
 
-def compare_data(r_data, c_data):
-    r_data = sorted(r_data, key=datatypes.datum_sort_key)
-    c_data = sorted(c_data, key=datatypes.datum_sort_key)
-    r_data = np.array(r_data)
-    c_data = np.array(c_data)
-    zero_energies(r_data)
+def compare_data(r_data, c_data, zero=True):
+    logger.log(1, '>>> compare_data <<<')
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
+    r_data = np.array(sorted(r_data, key=datatypes.datum_sort_key))
+    c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
+    logger.log(1, '>>> sorted(r_data):\n{}'.format(r_data))
+    logger.log(1, '>>> sorted(c_data):\n{}'.format(c_data))
+    if zero:
+        zero_energies(r_data)
     correlate_energies(r_data, c_data)
     import_weights(r_data)
     return calculate_score(r_data, c_data)
 
 def zero_energies(data):
+    logger.log(1, '>>> zero_energies <<<')
     # Go one data type at a time.
     # We do so because the group numbers are only unique within a given data
     # type.
     for energy_type in ['e', 'eo']:
         # Determine the unique group numbers.
         indices = np.where([x.typ == energy_type for x in data])[0]
+        logger.log(1, '>>> indices: {}'.format(indices))
+        logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
+        logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
+                [x.idx_1 for x in data[indices]]))
         unique_group_nums = set([x.idx_1 for x in data[indices]])
         # Loop through the unique group numbers.
         for unique_group_num in unique_group_nums:
@@ -81,6 +141,9 @@ def zero_energies(data):
                 data[ind].val -= zero
 
 def correlate_energies(r_data, c_data):
+    logger.log(1, '>>> correlate_energies <<<')
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
     for energy_type in ['e', 'eo']:
         indices = np.where([x.typ == energy_type for x in r_data])[0]
         unique_group_nums = set([x.idx_1 for x in r_data[indices]])
@@ -128,7 +191,7 @@ def calculate_score(r_data, c_data):
             diff = r_datum.val - c_datum.val
         individual_score = r_datum.wht**2 * diff**2
         score += individual_score
-    logger.log(15, 'SCORE: {}'.format(score))
+    logger.log(5, 'SCORE: {}'.format(score))
     return score
             
 if __name__ == '__main__':

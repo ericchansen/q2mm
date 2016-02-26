@@ -4,11 +4,10 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
-# ========== GENERAL SETTINGS ==========
+# GENERAL SETTINGS
 SETTINGS = {'use_sqlite3': True}
 
-# ========== LOGGING SETTINGS ==========
-
+# LOGGING SETTINGS
 # Settings loaded using logging.config.
 # Really, I wish that this could have some directory argument to change the
 # location of root.log. Perhaps something like this can be done with __init__.
@@ -17,51 +16,52 @@ LOG_SETTINGS = {
     'disable_existing_loggers': False,
     'formatters': {
         'bare': {'format': '%(message)s'},
-        'basic': {'format': '%(name)s - %(message)s'},
-        'simple': {'format': '%(asctime)s:%(name)s:%(levelname)s - %(message)s'}
+        'basic': {'format': '%(name)s %(message)s'},
+        'simple': {'format': '%(asctime)s:%(name)s:%(levelname)s %(message)s'}
         },
     'handlers': {
         'console': {
-            'class': 'logging.StreamHandler', 'formatter': 'bare',
-            'level': 'NOTSET'},
-            # 'class': 'logging.StreamHandler', 'formatter': 'basic',
+            # 'class': 'logging.StreamHandler', 'formatter': 'bare',
             # 'level': 'NOTSET'},
+            'class': 'logging.StreamHandler', 'formatter': 'basic',
+            'level': 'NOTSET'},
         'root_file_handler': {
-            'class': 'logging.FileHandler', 'filename': 'root.log',
-            'formatter': 'bare', 'level': 'NOTSET'}
             # 'class': 'logging.FileHandler', 'filename': 'root.log',
-            # 'formatter': 'basic', 'level': 'NOTSET'}
+            # 'formatter': 'bare', 'level': 'NOTSET'}
+            'class': 'logging.FileHandler', 'filename': 'root.log',
+            'formatter': 'basic', 'level': 'NOTSET'}
         },
-    'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
+    'loggers': {'__main__': {'level': 5, 'propagate': True},
                 'calculate': {'level': 20, 'propagate': True},
-                'compare': {'level': 'NOTSET', 'propagate': True},
+                'compare': {'level': 10, 'propagate': True},
                 'constants': {'level': 20, 'propagate': True},
                 'datatypes': {'level': 20,' propagate': True},
                 'filetypes': {'level': 20, 'propagate': True},
                 'gradient': {'level': 20, 'propagate': True},
-                'loop': {'level': 'NOTSET', 'propagate': True},
-                'opt': {'level': 'NOTSET', 'propagate': True},
+                'loop': {'level': 5, 'propagate': True},
+                'opt': {'level': 5, 'propagate': True},
                 'parameters': {'level': 20, 'propagate': True},
-                'simplex': {'level': 'NOTSET', 'propagate': True}
-                # 'calculate': {'level': 'NOTSET', 'propagate': True},
-                # 'compare': {'level': 'NOTSET', 'propagate': True},
-                # 'constants': {'level': 'NOTSET', 'propagate': True},
-                # 'datatypes': {'level': 'NOTSET',' propagate': True},
-                # 'filetypes': {'level': 'NOTSET', 'propagate': True},
-                # 'gradient': {'level': 'NOTSET', 'propagate': True},
-                # 'loop': {'level': 'NOTSET', 'propagate': True},
-                # 'opt': {'level': 'NOTSET', 'propagate': True},
-                # 'parameters': {'level': 'NOTSET', 'propagate': True},
-                # 'simplex': {'level': 'NOTSET', 'propagate': True}
+                'simplex': {'level': 5, 'propagate': True}
                 },
+    # 'loggers': {'__main__': {'level': 'NOTSET', 'propagate': True},
+    #             'calculate': {'level': 'NOTSET', 'propagate': True},
+    #             'compare': {'level': 'NOTSET', 'propagate': True},
+    #             'constants': {'level': 'NOTSET', 'propagate': True},
+    #             'datatypes': {'level': 'NOTSET',' propagate': True},
+    #             'filetypes': {'level': 'NOTSET', 'propagate': True},
+    #             'gradient': {'level': 'NOTSET', 'propagate': True},
+    #             'loop': {'level': 'NOTSET', 'propagate': True},
+    #             'opt': {'level': 'NOTSET', 'propagate': True},
+    #             'parameters': {'level': 'NOTSET', 'propagate': True},
+    #             'simplex': {'level': 'NOTSET', 'propagate': True}
+    #             },
     'root': {
         'level': 'NOTSET',
         'propagate': True,
         'handlers': ['console', 'root_file_handler']}
     }
 
-# ========== STEPS ==========
-
+# STEPS
 # These are the initial step sizes used in numerical differentiation for all
 # the different parameter types. Floats/integers or strings are accepted.
 #
@@ -75,12 +75,9 @@ LOG_SETTINGS = {
 # percentage of its current value.
 #     x_new = x +/- (x * step)
 STEPS = {'ae':      2.0,
-         # 'af':      '0.1',
          'af':      0.2,
          'be':      0.1,
-         # 'bf':      '0.1',
          'bf':      0.2,
-         # 'df':     '0.01',
          'df':      0.2,
          'imp1':    0.2,
          'imp2':    0.2,
@@ -88,9 +85,7 @@ STEPS = {'ae':      2.0,
          'q':       0.5
          }
 
-# ========== WEIGHTS ==========
-
-# TO DO: Add units.
+# WEIGHTS
 WEIGHTS = {'a':          2.00,
            'q':         10.00,
            'b':        100.00,
@@ -102,32 +97,7 @@ WEIGHTS = {'a':          2.00,
            't':          1.00
            }
 
-# ========== SQLITE3 DATA ==========
-
-# String used to make a table in sqlite3 database.
-STR_INIT_SQLITE3 = """DROP TABLE IF EXISTS data;
-CREATE TABLE data (id INTEGER PRIMARY KEY AUTOINCREMENT, val REAL, wht REAL,
-com TEXT, typ TEXT, src_1 TEXT, src_2 TEXT, idx_1 INTEGER, idx_2 INTEGER,
-atm_1 INTEGER, atm_2 INTEGER, atm_3 INTEGER, atm_4 INTEGER, lbl TEXT)"""
-# String for adding values to database.
-STR_SQLITE3 = ('INSERT INTO data VALUES (:id, :val, :wht, :com, :typ, :src_1, '
-               ':src_2, :idx_1, :idx_2, :atm_1, :atm_2, :atm_3, :atm_4, :lbl)')
-# These are the columns used in the sqlite3 database.
-DATA_DEFAULTS = {'id': None,
-                 'val': None, 'wht': None,
-                 'com': None, 'typ': None,
-                 'src_1': None, 'src_2': None,
-                 'idx_1': None, 'idx_2': None,
-                 'atm_1': None, 'atm_2': None, 'atm_3': None, 'atm_4': None}
-def set_data_defaults(datum):
-    """
-    Add keys and default values (None) to a data point dictionary if
-    they're missing.
-    """
-    return {k: datum.get(k, DATA_DEFAULTS[k]) for k in DATA_DEFAULTS}
-
-# ========== UNIT CONVERSIONS ==========
-
+# UNIT CONVERSIONS
 # Force constants from Jaguar frequency (mdyn A**-1) to au.
 FORCE_CONVERSION = 15.569141
 # Eigenvalues of mass-weighted Hessian to cm**-1.
@@ -147,13 +117,12 @@ BOHR_TO_ANG = 0.5291772086
 # au to mdyn A**-1
 AU_TO_MDYNA = 15.569141 
 
-# ========== COMMON REGEX SYNTAX ==========
-
+# REGEX
+# COMMON
 # Match any float in a string.
 RE_FLOAT = '[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 
-# ========== REGEX FOR .FLD ==========
-
+# MM3.FLD RELATED
 # Match SMARTS notation used by MM3* substructures.
 # More from import_ff could be added here.
 RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
@@ -162,8 +131,7 @@ RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
 # Name of MM3* substructures.
 RE_SUB = '[\w\s\-\.]+'
 
-# ========== REGEX FOR .MMO ==========
-
+# .MMO RELATED
 # Match bonds in lines of a .mmo file.
 RE_BOND = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
                      '\s+\d+\s+({1})\s+(\d+)'.format(RE_FLOAT, RE_SUB))
@@ -176,29 +144,24 @@ RE_TORSION = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
                         '({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(
         RE_FLOAT, RE_SUB))
 
-# ========== VARIABLES FOR RUNNING MACROMODEL ==========
-
+# VARIABLES FOR RUNNING MACROMODEL
 # String format used when writing MacroModel .com files.
 COM_FORM = (' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}'
             '{6:>11.4f}{7:>11.4f}{8:>11.4f}\n')
-
 # When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
 # allocations appear, but these are the 2 we care about.
 LABEL_SUITE = 'SUITE_\w+' # Ex.) SUITE_26NOV2012
 LABEL_MACRO = 'MMOD_MACROMODEL'
-
 # Some regex to pick out the number of available tokens.
 LIC_SUITE = re.compile('(?<!_){}\s+(\d+)\sof\s\d+\s'
                        'tokens\savailable'.format(LABEL_SUITE))
 LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
                        'available'.format(LABEL_MACRO))
-
 # Minimum number of tokens required to run MacrModel calculations.
 MIN_SUITE_TOKENS = 2
 MIN_MACRO_TOKENS = 2
 
-# ========== MASSES ==========
-
+# MASSES
 # Used for mass weighting.
 MASSES = OrderedDict(
     [

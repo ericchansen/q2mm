@@ -1,4 +1,4 @@
-#!/us/bin/python
+#!/usr/bin/python
 """
 General code related to all optimization techniques.
 """
@@ -46,11 +46,12 @@ class Simplex(opt.Optimizer):
     """
     def __init__(self,
                  direc=None,
-                 ff=None, ff_lines=None, ff_args=None,
-                 ref_args=None, ref_conn=None,
-                 restore=False):
+                 ff=None,
+                 ff_lines=None,
+                 args_ff=None,
+                 args_ref=None):
         super(Simplex, self).__init__(
-            direc, ff, ff_lines, ff_args, ref_args, ref_conn, restore)
+            direc, ff, ff_lines, args_ff, args_ref)
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
         self.max_cycles = 10
@@ -58,15 +59,20 @@ class Simplex(opt.Optimizer):
         self.max_params = 10
     @property
     def best_ff(self):
+        # Typically, self.new_ffs would include the original FF, self.ff,
+        # but this can be changed by massive contractions.
         if self.new_ffs:
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
-            best_ff = self.new_ffs[0]
-            best_ff = restore_simp_ff(best_ff, self.ff)
-            return best_ff
+            # I think this is necessary after massive contraction.
+            if self.new_ffs[0].score < self.ff.score:
+                best_ff = self.new_ffs[0]
+                best_ff = restore_simp_ff(best_ff, self.ff)
+            else:
+                return best_ff
         else:
             return self.ff
     @opt.catch_run_errors
-    def run(self):
+    def run(self, r_data=None):
         """
         Once all attributes are setup as you so desire, run this method to
         optimize the parameters.
@@ -76,27 +82,33 @@ class Simplex(opt.Optimizer):
         `datatypes.FF` (or subclass)
             Contains the best parameters.
         """
+        if r_data is None:
+            r_data = opt.return_ref_data(self.args_ref)
         logger.log(20, '~~ SIMPLEX OPTIMIZATION ~~'.rjust(79, '~'))
         # Here we don't actually need the database connection/force field data.
         # We only need the score.
         if self.ff.score is None:
             logger.log(20, '~~ CALCULATING INITIAL FF SCORE ~~'.rjust(79, '~'))
-            self.ff.export_ff(self.ff.path)
+            self.ff.export_ff()
             # I could store this object to prevent on self.ff to prevent garbage
             # collection. Would be nice if simplex was followed by gradient,
             # which needs that information, and if simplex yielded no
             # improvements. At most points in the optimization, this is probably
             # too infrequent for it to be worth the memory, but it might be nice
             # once the parameters are close to convergence.
-            conn = calculate.main(self.ff_args)
-            self.ff.score = compare.compare_data(self.ref_conn, conn)
+            data = calculate.main(self.args_ff)
+            self.ff.score = compare.compare_data(r_data, data, zero=False)
+            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
         else:
             logger.log(15, '  -- Reused existing score and data for initial FF.')
         logger.log(15, 'INIT FF SCORE: {}'.format(self.ff.score))
         ffs = opt.differentiate_ff(self.ff)
-        opt.score_ffs(
-            ffs, self.ff_args, self.ref_conn, parent_ff=self.ff,
-            restore=False)
+        for ff in ffs:
+            ff.export_ff(lines=self.ff_lines)
+            logger.log(20, '  -- Calculating {}.'.format(ff))
+            data = calculate.main(self.args_ff.split())
+            ff.score = compare.compare_data(r_data, data, zero=False)
+            opt.pretty_ff_results(ff)
         if self.max_params and len(self.ff.params) > self.max_params:
             simp_params = reduce_num_simp_params(
                 self.ff, ffs, max_params=self.max_params)
@@ -109,8 +121,8 @@ class Simplex(opt.Optimizer):
         logger.log(20, 'ORDERED FF SCORES:')
         logger.log(20, wrapper.fill('{}'.format(
                 ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
+        # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
-
         # Start the simplex cycles.
         current_cycle = 0
         cycles_wo_change = 0
@@ -159,13 +171,13 @@ class Simplex(opt.Optimizer):
                     2 * inv_val - self.new_ffs[-1].params[i].value)
             # Calculate score for inverted parameters.
             self.ff.export_ff(self.ff.path, params=inv_ff.params)
-            conn = calculate.main(self.ff_args)
-            inv_ff.score = compare.compare_data(self.ref_conn, conn)
+            data = calculate.main(self.args_ff.split())
+            inv_ff.score = compare.compare_data(r_data, data, zero=False)
             opt.pretty_ff_results(inv_ff)
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
-            conn = calculate.main(self.ff_args)
-            ref_ff.score = compare.compare_data(self.ref_conn, conn)
+            data = calculate.main(self.args_ff.split())
+            ref_ff.score = compare.compare_data(r_data, data, zero=False)
             opt.pretty_ff_results(ref_ff)
             if ref_ff.score < self.new_ffs[0].score:
                 logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
@@ -177,8 +189,8 @@ class Simplex(opt.Optimizer):
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
                 self.ff.export_ff(self.ff.path, exp_ff.params)
-                conn = calculate.main(self.ff_args)
-                exp_ff.score = compare.compare_data(self.ref_conn, conn)
+                data = calculate.main(self.args_ff.split())
+                exp_ff.score = compare.compare_data(r_data, data, zero=False)
                 opt.pretty_ff_results(exp_ff)
                 if exp_ff.score < ref_ff.score:
                     self.new_ffs[-1] = exp_ff
@@ -208,8 +220,8 @@ class Simplex(opt.Optimizer):
                              self.new_ffs[-1].params[i].value) / 2)
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(self.ff.path, params=con_ff.params)
-                conn = calculate.main(self.ff_args)
-                con_ff.score = compare.compare_data(self.ref_conn, conn)
+                data = calculate.main(self.args_ff.split())
+                con_ff.score = compare.compare_data(r_data, data, zero=False)
                 opt.pretty_ff_results(con_ff)
                 if con_ff.score < self.new_ffs[-2].score:
                     self.new_ffs[-1] = con_ff
@@ -222,8 +234,8 @@ class Simplex(opt.Optimizer):
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(self.ff.path, params=ff.params)
-                        conn = calculate.main(self.ff_args)
-                        ff.score = compare.compare_data(self.ref_conn, conn)
+                        data = calculate.main(self.args_ff.split())
+                        ff.score = compare.compare_data(r_data, data, zero=False)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
@@ -247,20 +259,10 @@ class Simplex(opt.Optimizer):
         else:
             logger.log(20, '~~ SIMPLEX FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
-        logger.log(20, 'ORIGINAL FF:')
         opt.pretty_ff_results(self.ff, level=20)
-        logger.log(20, 'NEW FF:')
         opt.pretty_ff_results(best_ff, level=20)
-        # Restore original.
-        if self.restore:
-            logger.log(20, '  -- Restoring original force field.')
-            self.ff.export_ff(self.ff.path)
-        # The best force field should be totally okay with doing all of this
-        # now. I guess it does sort suck that I have duplicate data in memory
-        # now. Perhaps I should delete self.ff.
-        else:
-            logger.log(20, '  -- Writing best force field from simplex.')
-            best_ff.export_ff(best_ff.path)
+        logger.log(20, '  -- Writing best force field from simplex.')
+        best_ff.export_ff(best_ff.path)
         return best_ff
 
 def select_simp_params_on_derivs(params, max_params=10):
@@ -312,3 +314,12 @@ def restore_simp_ff(new_ff, old_ff):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
+    # Just for testing.
+    ff = datatypes.MM3('b071/mm3.fld')
+    ff.import_ff()
+    ff.params = parameters.trim_params_by_file(ff.params, 'b071/params.txt')
+    a = Simplex(
+        direc='b071', ff=ff,
+        args_ff=' -d b071 -me X002a.mae X002b.mae -mb X002a.mae',
+        args_ref=' -d b071 -je X002a.mae X002b.mae -jb X002a.mae')
+    a.run()

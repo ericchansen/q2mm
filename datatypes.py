@@ -372,7 +372,7 @@ class MM3(FF):
                     section_sub = False
                     continue
                 if 'OPT' in line and section_vdw:
-                    logger.log(15, '[L{}] Found van der Waals:\n{}'.format(
+                    logger.log(5, '[L{}] Found Van der Waals:\n{}'.format(
                             i + 1, line.strip('\n')))
                     atm = line[2:5]
                     rad = line[5:15]
@@ -633,7 +633,7 @@ class MM3(FF):
         if lines is None and self.lines is None:
             with open(path, 'r') as f:
                 lines = f.readlines()
-            logger.log(10, '  -- Read {} lines from {}.'.format(
+            logger.log(5, '  -- Read {} lines from {}.'.format(
                     len(lines), path))
         else:
             lines = self.lines
