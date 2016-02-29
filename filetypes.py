@@ -1082,7 +1082,7 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
         # If the file already exists, don't rewrite it.
         path_com = os.path.join(self.directory, self.name_com)
-        if os.path.exists(path_com):
+        if sometext and os.path.exists(path_com):
             logger.log(5, '  -- {} already exists. Skipping write.'.format(
                     self.name_com))
         else:
