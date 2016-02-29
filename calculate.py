@@ -89,7 +89,7 @@ def main(args):
                 inps[filename] = filetypes.Mae(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
-                inps[filename].write_com()
+                inps[filename].write_com(sometext=opts.append)
         else:
             inps[filename] = None
     # Check whether or not to skip MacroModel calculations.
@@ -295,16 +295,25 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                             filetypes.Mae(os.path.join(direc, filename))
                     mae = outs[filename]
                     for str_num, struct in enumerate(mae.structures):
-                        e = struct.props['r_j_Gas_Phase_Energy'] * \
-                            co.HARTREE_TO_KJMOL
-                        data.append(datatypes.Datum(
-                                val=e,
-                                com=com,
-                                typ=typ,
-                                src_1=filename,
-                                idx_1=grp_num + 1,
-                                idx_2=str_num + 1))
-        # JAGUAR CHARGES
+                        try:
+                            data_list.append(datatypes.Datum(
+                                    val=(struct.props['r_j_Gas_Phase_Energy'] * 
+                                         co.HARTREE_TO_KJMOL),
+                                    com=com,
+                                    typ=typ,
+                                    src_1=filename,
+                                    idx_1=idx_1 + 1,
+                                    idx_2=str_num + 1))
+                        except KeyError:
+                            data_list.append(datatypes.Datum(
+                                    val=(struct.props['r_j_QM_Energy'] * 
+                                         co.HARTREE_TO_KJMOL),
+                                    com=com,
+                                    typ=typ,
+                                    src_1=filename,
+                                    idx_1=idx_1 + 1,
+                                    idx_2=str_num + 1))
+        # JAGUAR CHARGES 
         if com in ['jq', 'jqh']:
             for group_filenames in groups_filenames:
                 for filename in group_filenames:
@@ -567,6 +576,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     # We have to mass weight the Jaguar Hessian.
                     if com == 'jeigz':
                         hess.mass_weight_hessian()
+                    elif com == 'mjeig':
+                        hess = datatypes.Hessian(log, out)
+                        hess.hess = datatypes.check_mm_dummy(
+                            hess.hess,
+                            out.dummy_atom_eigenvector_indices)
                     hess.mass_weight_eigenvectors()
                     hess.diagonalize()
                     if com == 'jeigz':

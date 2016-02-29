@@ -644,16 +644,22 @@ class JaguarIn(SchrodingerFile):
         super(JaguarIn, self).__init__(path)
         self._structures = None
         self._hessian = None
+        self._empty_atoms = None
     @property
     def hessian(self):
         if self._hessian is None:
-            num_atoms = len(self.structures[0].atoms)
-            assert num_atoms != 0, \
+            num  = len(self.structures[0].atoms) + len(self._empty_atoms)
+            logger.log(5,
+                       '  -- {} has {} atoms and {} dummy atoms.'.format(
+                    self.filename,
+                    len(self.structures[0].atoms),
+                    len(self._empty_atoms)))
+            assert num != 0, \
                 'Zero atoms found when loading Hessian from {}!'.format(
                 self.path)
-            hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(5, '  -- Created {} Hessian matrix.'.format(
-                    hessian.shape))
+            hessian = np.zeros([num * 3, num * 3], dtype=float)
+            logger.log(5, '  -- Created {} Hessian matrix (including dummy '
+                       'atoms).'.format(hessian.shape))
             with open(self.path, 'r') as f:
                 section_hess = False
                 for line in f:
@@ -671,6 +677,18 @@ class JaguarIn(SchrodingerFile):
                                     float(hess_ele)
                     if '&hess' in line:
                         section_hess = True
+            # Figure out the indices of the dummy atoms.
+            dummy_indices = []
+            for atom in self._empty_atoms:
+                index = atom.index - 1
+                dummy_indices.append(index)
+                dummy_indices.append(index + 1)
+                dummy_indices.append(index + 2)
+            # Delete these rows and columns.
+            hessian = np.delete(hessian, dummy_indices, 0)
+            hessian = np.delete(hessian, dummy_indices, 1)
+            logger.log(5, '  -- Created {} Hessian matrix (w/o dummy '
+                       'atoms).'.format(hessian.shape))
             self._hessian = hessian * co.HESSIAN_CONVERSION
         return self._hessian
     @property
@@ -695,6 +713,7 @@ class JaguarIn(SchrodingerFile):
                 if empty_atoms:
                     logger.log(5, 'Structure {}: {} empty atoms '
                                'removed.'.format(i + 1, len(empty_atoms)))
+            self._empty_atoms = empty_atoms
             self._structures = structures
         return self._structures
 
@@ -708,6 +727,7 @@ class JaguarOut(File):
         self._eigenvalues = None
         self._eigenvectors = None
         self._frequencies = None
+        self._dummy_atom_eigenvector_indices = None
         # self._force_constants = None
     @property
     def structures(self):
@@ -729,6 +749,11 @@ class JaguarOut(File):
         if self._frequencies is None:
             self.import_file()
         return self._frequencies
+    @property
+    def dummy_atom_eigenvector_indices(self):
+        if self._dummy_atom_eigenvector_indices is None:
+            self.import_file()
+        return self._dummy_atom_eigenvector_indices
     def import_file(self):
         logger.log(10, 'READING: {}'.format(self.filename))
         frequencies = []
@@ -794,11 +819,36 @@ class JaguarOut(File):
                         force_constants.extend(map(float, cols[2:]))
                         section_eigenvectors = True
                         temp_eigenvectors = [[]]
-                if 'IR intensities in' in line:
+                if 'normal modes in' in line:
                     section_eigenvalues = True
         eigenvalues = [- fc / co.FORCE_CONVERSION if f < 0 else
                          fc / co.FORCE_CONVERSION
                          for fc, f in zip(force_constants, frequencies)]
+        # Remove eigenvector components related to dummy atoms.
+        # Find the index of the atoms that are dummies.
+        dummy_atom_indices = []
+        for i, atom in enumerate(structures[-1].atoms):
+            if atom.is_dummy:
+                dummy_atom_indices.append(i)
+        logger.log(10, '  -- Located {} dummy atoms.'.format(len(dummy_atom_indices)))
+        # Correlate those indices to the rows in the cartesian eigenvector.
+        dummy_atom_eigenvector_indices = []
+        for dummy_atom_index in dummy_atom_indices:
+            start = dummy_atom_index * 3
+            dummy_atom_eigenvector_indices.append(start)
+            dummy_atom_eigenvector_indices.append(start + 1)
+            dummy_atom_eigenvector_indices.append(start + 2)
+        new_eigenvectors = []
+        # Create new eigenvectors without the rows corresponding to the
+        # dummy atoms.
+        for eigenvector in eigenvectors:
+            new_eigenvectors.append([])
+            for i, eigenvector_row in enumerate(eigenvector):
+                if i not in dummy_atom_eigenvector_indices:
+                    new_eigenvectors[-1].append(eigenvector_row)
+        # Replace old eigenvectors with new where dummy atoms aren't included.
+        eigenvectors = np.array(new_eigenvectors)
+        self._dummy_atom_eigenvector_indices = dummy_atom_eigenvector_indices
         self._structures = structures
         self._eigenvalues = np.array(eigenvalues)
         self._eigenvectors = np.array(eigenvectors)
@@ -812,7 +862,7 @@ class JaguarOut(File):
                 len(self.eigenvalues)))
         logger.log(5, '  -- Read {} eigenvectors.'.format(
                 self.eigenvectors.shape))
-        num_atoms = len(structures[-1].atoms)
+        # num_atoms = len(structures[-1].atoms)
         # logger.log(5,
         #            '  -- ({}, {}) eigenvectors expected for linear '
         #            'molecule.'.format(
@@ -930,11 +980,18 @@ class Mae(SchrodingerFile):
         while len(debg_opts) < 9:
             debg_opts.append(0)
         return debg_opts
-    def write_com(self):
+    def write_com(self, sometext=None):
         """
         Writes the .com file with all the right arguments to generate
         the requested data.
         """
+        # Setup new filename. User can add additional text.
+        if sometext:
+            pieces = self.name_com.split('.')
+            pieces.insert(-1, sometext)
+            self.name_com = '.'.join(pieces)
+        # Even if the command file already exists, we still need to
+        # determine these indices.
         self._index_output_mae = []
         self._index_output_mmo = []
         com_opts = self.get_com_opts()
@@ -1023,11 +1080,23 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
         if com_opts['cs2'] or com_opts['cs3']:
             com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
+<<<<<<< HEAD
         with open(os.path.join(self.directory, self.name_com), 'w') as f:
             f.write(com)
         # logger.log(5, 'WROTE: {}'.format(
         #         os.path.join(self.directory, self.name_com)))
         logger.log(5, 'WROTE: {}'.format(self.name_com))
+        # If the file already exists, don't rewrite it.
+        path_com = os.path.join(self.directory, self.name_com)
+        if os.path.exists(path_com):
+            logger.log(5, '  -- {} already exists. Skipping write.'.format(
+                    self.name_com))
+        else:
+            with open(os.path.join(self.directory, self.name_com), 'w') as f:
+                f.write(com)
+            logger.log(5, 'WROTE: {}'.format(
+                    os.path.join(self.name_com)))
+
     def run(self, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
@@ -1136,8 +1205,9 @@ class MacroModelLog(File):
                 lines = f.read()
             num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
             logger.log(5, '  -- Read {} atoms.'.format(num_atoms))
+
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(5, '  -- Read {} Hessian matrix.'.format(hessian.shape))
+            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
             words = lines.split()
             section_hessian = False
             start_row = False
@@ -1176,13 +1246,16 @@ class MacroModelLog(File):
                     start_row = False
                     start_col = True
                     continue
-                if section_hessian and start_col and '.' not in word:
+                if section_hessian and start_col and '.' not in word and \
+                        word != 'NaN':
                     col_nums.append(int(word))
                     continue
-                if section_hessian and start_col and '.' in word:
+                if section_hessian and start_col and '.' in word or \
+                        word == 'NaN':
                     elements.append(float(word))
                     continue
             self._hessian = hessian
+            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
         return self._hessian
 
 class MacroModel(File):
@@ -1433,6 +1506,9 @@ class Atom(object):
             self.y = coords[1]
             self.z = coords[2]
         self.props = {}
+    def __repr__(self):
+        return '{}[{},{},{}]'.format(
+            self.element, self.x, self.y, self.z)
     @property
     def coords(self):
         return [self.x, self.y, self.z]
@@ -1460,9 +1536,15 @@ class Atom(object):
     @exact_mass.setter
     def exact_mass(self, value):
         self._exact_mass = value
-    def __repr__(self):
-        return '{}[{},{},{}]'.format(
-            self.element, self.x, self.y, self.z)
+    # I have no idea if these atom types are actually correct.
+    @property
+    def is_dummy(self):
+        if self.atom_type in [61] or \
+                self.atom_type_name in ['Du'] or \
+                self.element in ['X']:
+            return True
+        else:
+            return False
 
 class Bond(object):
     """
@@ -1515,65 +1597,6 @@ class Torsion(Bond):
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
         super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
-
-# class Reference(File):
-#     """
-#     Basic class for directly inputting reference data.
-
-#     File looks as follows.
-
-#     Each row is a data point. The attributes of the data points
-#     are separated by spaces, tabs, whatever Python's built-in
-#     string.split() function works on.
-
-#     Columns:
-#     val - Value
-#     wht - Weight
-#     typ - Data type (must match the MacroModel type)
-#     src_1 - 1st data source
-#     src_2 - 2nd data source
-#     idx_1 - 1st index
-#     idx_2 - 2nd index
-#     atm_1 - 1st atom
-#     atm_2 - 2nd atom
-#     atm_3 - 3rd atom
-#     atm_4 - 4th atom
-#     """
-#     def __init__(self, path):
-#         self.path = path
-#     def get_data(self):
-#         """
-#         Returns a list of data points. Each data point is a dictionary.
-#         """
-#         with open(self.path, 'r') as f:
-#             data = []
-#             for line in f:
-#                 line = line.partition('#')[0]
-#                 cols = line.split()
-#                 labels = ['val', 'wht', 'com', 'typ', 'src_1', 'src_2', 'idx_1',
-#                           'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
-#                 assert len(labels) == len(cols), \
-#                     'Column mismatch in reference data file!'
-#                 datum = {}
-#                 for label, col in zip(labels, cols):
-#                     datum.update({label: self.interpret_col(col)})
-#                 data.append(datum)
-#         return data
-#     def interpret_col(self, col):
-#         """
-#         How to deal with an individual column.
-
-#         Converts the string "None" to actually being None.
-#         Converts floats to floats.
-#         Otherwise returns the string.
-#         """
-#         if col == 'None':
-#             return None
-#         try:
-#             atr = float(col)
-#             return atr
-#         except ValueError:
-#             return col
 
 def return_filetypes_parser():
     """
