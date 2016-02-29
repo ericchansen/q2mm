@@ -89,7 +89,6 @@ class Optimizer(object):
                  ff_lines=None,
                  args_ff=None,
                  args_ref=None):
-        logger.log(20, '')
         logger.log(20, '~~ {} SETUP ~~'.format(
                 self.__class__.__name__.upper()).rjust(79, '~'))
         self.direc = direc
