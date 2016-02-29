@@ -568,14 +568,13 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                         outs[name_out] = filetypes.JaguarOut(os.path.join(
                                 direc, name_out))
                     out = outs[name_out]
-                    # This datatype can handle taking 
                     hess = datatypes.Hessian(other, out)
                     # We have to mass weight the Jaguar Hessian.
                     if com == 'jeigz':
                         hess.mass_weight_hessian()
+                    # Check for dummy atoms.
                     elif com == 'mjeig':
-                        hess = datatypes.Hessian(log, out)
-                        hess.hess = datatypes.check_mm_dummy(
+                         hess.hess = datatypes.check_mm_dummy(
                             hess.hess,
                             out.dummy_atom_eigenvector_indices)
                     hess.mass_weight_eigenvectors()
