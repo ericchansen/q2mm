@@ -1080,12 +1080,6 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
         if com_opts['cs2'] or com_opts['cs3']:
             com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
-<<<<<<< HEAD
-        with open(os.path.join(self.directory, self.name_com), 'w') as f:
-            f.write(com)
-        # logger.log(5, 'WROTE: {}'.format(
-        #         os.path.join(self.directory, self.name_com)))
-        logger.log(5, 'WROTE: {}'.format(self.name_com))
         # If the file already exists, don't rewrite it.
         path_com = os.path.join(self.directory, self.name_com)
         if os.path.exists(path_com):
