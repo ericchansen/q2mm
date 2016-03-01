@@ -316,7 +316,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 for filename in group_filenames:
                     if filename not in outs:
                         outs[filename] = filetypes.Mae(os.path.join(
-                                directory, filename))
+                                direc, filename))
                     mae = outs[filename]
                     for i, structure in enumerate(mae.structures):
                         if com == 'jqh':
@@ -437,7 +437,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 for name_log in group_filenames:
                     if name_log not in outs:
                         outs[name_log] = filetypes.GaussLog(
-                            os.path.join(directory, name_log))
+                            os.path.join(direc, name_log))
                     log = outs[name_log]
                     # Right now we're using the electronic energy plus
                     # the zero point correction.
@@ -457,7 +457,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 for name_log in group_filenames:
                     if name_log not in outs:
                         outs[name_log] = filetypes.GaussLog(
-                            os.path.join(directory, name_log))
+                            os.path.join(direc, name_log))
                     log = outs[name_log]
                     evals = log.evals * co.HESSIAN_CONVERSION
                     evals_matrix = np.diag(evals)
@@ -479,11 +479,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     name_log, name_fchk = comma_filenames.split(',')
                     if name_log not in outs:
                         outs[name_log] = filetypes.GaussLog(
-                            os.path.join(directory, name_log))
+                            os.path.join(direc, name_log))
                     log = outs[name_log]
                     if name_fchk not in outs:
                         outs[name_fchk] = filetypes.GaussFormChk(
-                            os.path.join(directory, name_fchk))
+                            os.path.join(direc, name_fchk))
                     fchk = outs[name_fchk]
                     # I dislike how the Hessian is handled.
                     hess = datatypes.Hessian()
@@ -520,7 +520,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     macro_log = outs[name_macro_log]
                     if name_gau_log not in outs:
                         outs[name_gau_log] = filetypes.GaussLog(
-                            os.path.join(directory, name_gau_log))
+                            os.path.join(direc, name_gau_log))
                     gau_log = outs[name_gau_log]
                     # Change how Hessian is handled.
                     hess = datatypes.Hessian()
