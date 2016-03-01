@@ -139,7 +139,7 @@ class Loop(object):
                     ff=self.ff,
                     ff_lines=self.ff.lines,
                     args_ff=self.args_ff)
-                self.ff = simp.run(ref_data=self.ref_data)
+                self.ff = simp.run(r_data=self.ref_data)
         
 def read_loop_input(filename):
     with open(filename, 'r') as f:

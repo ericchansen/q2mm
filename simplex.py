@@ -106,7 +106,7 @@ class Simplex(opt.Optimizer):
         for ff in ffs:
             ff.export_ff(lines=self.ff_lines)
             logger.log(20, '  -- Calculating {}.'.format(ff))
-            data = calculate.main(self.args_ff.split())
+            data = calculate.main(self.args_ff)
             ff.score = compare.compare_data(r_data, data, zero=False)
             opt.pretty_ff_results(ff)
         if self.max_params and len(self.ff.params) > self.max_params:
@@ -171,12 +171,12 @@ class Simplex(opt.Optimizer):
                     2 * inv_val - self.new_ffs[-1].params[i].value)
             # Calculate score for inverted parameters.
             self.ff.export_ff(self.ff.path, params=inv_ff.params)
-            data = calculate.main(self.args_ff.split())
+            data = calculate.main(self.args_ff)
             inv_ff.score = compare.compare_data(r_data, data, zero=False)
             opt.pretty_ff_results(inv_ff)
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
-            data = calculate.main(self.args_ff.split())
+            data = calculate.main(self.args_ff)
             ref_ff.score = compare.compare_data(r_data, data, zero=False)
             opt.pretty_ff_results(ref_ff)
             if ref_ff.score < self.new_ffs[0].score:
@@ -189,7 +189,7 @@ class Simplex(opt.Optimizer):
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
                 self.ff.export_ff(self.ff.path, exp_ff.params)
-                data = calculate.main(self.args_ff.split())
+                data = calculate.main(self.args_ff)
                 exp_ff.score = compare.compare_data(r_data, data, zero=False)
                 opt.pretty_ff_results(exp_ff)
                 if exp_ff.score < ref_ff.score:
@@ -220,7 +220,7 @@ class Simplex(opt.Optimizer):
                              self.new_ffs[-1].params[i].value) / 2)
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(self.ff.path, params=con_ff.params)
-                data = calculate.main(self.args_ff.split())
+                data = calculate.main(self.args_ff)
                 con_ff.score = compare.compare_data(r_data, data, zero=False)
                 opt.pretty_ff_results(con_ff)
                 if con_ff.score < self.new_ffs[-2].score:
@@ -234,7 +234,7 @@ class Simplex(opt.Optimizer):
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(self.ff.path, params=ff.params)
-                        data = calculate.main(self.args_ff.split())
+                        data = calculate.main(self.args_ff)
                         ff.score = compare.compare_data(r_data, data, zero=False)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
