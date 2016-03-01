@@ -165,7 +165,7 @@ def pretty_loop_summary(cycle_num, score, change):
     logger.log(20, ' Cycle {} Summary '.format(
             cycle_num).center(50, '-'))
     logger.log(20, '| PF Score: {:36.15f} |'.format(score))
-    logger.log(20, '| % change: {:36.15f} |'.format(change))
+    logger.log(20, '| % change: {:36.15f} |'.format(change * 100))
     logger.log(20, '-' * 50)
 
 def main(args):
