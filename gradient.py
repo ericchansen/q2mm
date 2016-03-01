@@ -322,7 +322,9 @@ def cleanup(ffs, ff, changes):
         for method, change in changes:
             opt.pretty_param_changes(
                 ff.params, change, method)
-            ffs.append(return_ff(ff, change, method))
+            new_ff = return_ff(ff, change, method)
+            if new_ff:
+                ffs.append(new_ff)
     else:
         logger.warning(
             '  -- No changes generated! It may be wise to ensure this '
@@ -476,6 +478,9 @@ def do_svd_wo_thresholds(mu, vs, mv, vb):
     return all_changes
 
 def return_ff(orig_ff, changes, method):
+    """
+    Returns None if ParamError is raised.
+    """
     new_ff = orig_ff.__class__()
     new_ff.method = method
     new_ff.params = copy.deepcopy(orig_ff.params)
