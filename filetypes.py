@@ -34,6 +34,7 @@ import constants as co
 import datatypes
 
 logger = logging.getLogger(__name__)
+# Print out full matrices rather than having Numpy truncate them.
 np.set_printoptions(threshold=np.nan)
 
 class File(object):
@@ -41,11 +42,24 @@ class File(object):
     Base for every other filetype class.
     """
     def __init__(self, path):
+        self._lines = None
         self.path = os.path.abspath(path)
         # self.path = path
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
         # self.name = os.path.splitext(self.filename)[0]
+    @property
+    def lines(self):
+        if self._lines is None:
+            with open(self.path, 'r') as f:
+                self._lines = f.readlines()
+        return self._lines
+    def write(self, path, lines=None):
+        if lines is None:
+            lines = self.lines
+        with open(path, 'w') as f:
+            for line in lines:
+                f.write(line)
         
 class GaussFormChk(File):
     """
@@ -645,6 +659,7 @@ class JaguarIn(SchrodingerFile):
         self._structures = None
         self._hessian = None
         self._empty_atoms = None
+        self._lines = None
     @property
     def hessian(self):
         if self._hessian is None:
@@ -716,7 +731,30 @@ class JaguarIn(SchrodingerFile):
             self._empty_atoms = empty_atoms
             self._structures = structures
         return self._structures
+    def gen_lines(self):
+        """
+        Attempts to figure out the lines of itself.
 
+        Since it'd be difficult, the written version will be missing much
+        of the data in the original. Maybe there's something in the 
+        Schrodinger API for that.
+
+        However, I do want this to include the ability to write out an
+        atomic section with the ESP data that we'd want.
+        """
+        lines = []
+        mae_name = None
+        lines.append('MAEFILE: {}'.format(mae_name))
+        lines.append('&gen')
+        lines.append('&')
+        lines.append('&zmat')
+        # Just use the 1st structure. I don't imagine a Jaguar input file
+        # ever containing more than one structure.
+        struct = self.structures[0]
+        lines.extend(struct.format_coords(format='gauss'))
+        lines.append('&')
+        return lines
+        
 class JaguarOut(File):
     """
     Used to retrieve data from Schrodinger Jaguar .out files.
@@ -978,6 +1016,12 @@ class Mae(SchrodingerFile):
         com_opts = self.get_com_opts()
         debg_opts = self.get_debg_opts(com_opts)
         com = '{}\n{}\n'.format(self.filename, self.name_mae)
+        # Is this right? It seems to work, but looking back at this,
+        # I'm not sure why we wouldn't always want to control using
+        # MMOD. Also, that 2nd argument of MMOD only affects the color
+        # of atoms. I don't think this needs to be included. At some
+        # point, I am going to remove it and test everything to make
+        # sure it's not essential.
         if debg_opts:
             com += co.COM_FORM.format(*debg_opts)
         else:
@@ -1335,6 +1379,11 @@ class Structure(object):
         """
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
+
+        latex  - Makes a LaTeX table.
+        gauss  - Makes output that matches Gaussian's .com filse.
+        jaguar - Just like Gaussian, but include the atom number after the
+                 element name in the left column.
         """
         # Formatted for LaTeX.
         if format == 'latex':
@@ -1534,15 +1583,23 @@ def return_filetypes_parser():
     parser.add_argument(
         '-i', '--input', type=str, 
         help='Input filename.')
+    parser.add_argument(
+        '-o', '--output', type=str,
+        help='Output filename.')
+    parser.add_argument(
+        '-p', '--print', action='store_true',
+        help='Print coordinates for each structure.')
     return parser
 
-def import_filetype(filename):
+def detect_filetype(filename):
     path = os.path.abspath(filename)
     ext = os.path.splitext(path)[1]
     if ext == '.mae':
         file_ob = Mae(path)
     elif ext == '.log':
         file_ob = GaussLog(path)
+    elif ext == '.in':
+        file_ob = JaguarIn(path)
     else:
         raise Exception('Filetype not recognized.')
     return file_ob
@@ -1550,17 +1607,20 @@ def import_filetype(filename):
 def main(args):
     parser = return_filetypes_parser()
     opts = parser.parse_args(args)
-    file_ob = import_filetype(opts.input)
-    if hasattr(file_ob, 'structures'):
-        for i, structure in enumerate(file_ob.structures):
-            print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
-            output = structure.format_coords(format='gauss')
-            for line in output:
-                print(line)
-    if hasattr(file_ob, 'evals'):
-        print(file_ob.evals)
-    if hasattr(file_ob, 'evecs'):
-        print(file_ob.evecs)
+    file_ob = detect_filetype(opts.input)
+    if opts.print:
+        if hasattr(file_ob, 'structures'):
+            for i, structure in enumerate(file_ob.structures):
+                print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
+                output = structure.format_coords(format='gauss')
+                for line in output:
+                    print(line)
+        if hasattr(file_ob, 'evals'):
+            print(file_ob.evals)
+        if hasattr(file_ob, 'evecs'):
+            print(file_ob.evecs)
+    if opts.output:
+        file_ob.write(opts.output)
 
 if __name__ == '__main__':
     import argparse
