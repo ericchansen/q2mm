@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# Still need to add functions to make pretty print statements and logs.
 '''
 compare
 -------
@@ -16,12 +17,71 @@ from itertools import izip
 import argparse
 import logging
 import logging.config
+import numpy as np
 import sys
 
 import calculate
 import constants as co
+import datatypes
 
 logger = logging.getLogger(__name__)
+
+def main(args):
+    logger.log(1, '>>> main <<<')
+    parser = return_compare_parser()
+    opts = parser.parse_args(args)
+    r_data = calculate.main(opts.reference.split())
+    c_data = calculate.main(opts.calculate.split())
+    score = compare_data(r_data, c_data)
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
+    # Pretty readouts.
+    if opts.output:
+        pretty_data_comp(r_data, c_data, output=opts.output)
+    if opts.print:
+        pretty_data_comp(r_data, c_data)
+
+def pretty_data_comp(r_data, c_data, output=None):
+    """
+    Recalculates score along with making a pretty output.
+    """
+    strings = []
+    strings.append('--' + ' Label '.ljust(20, '-') +
+                  '--' + ' Weight '.center(8, '-') + 
+                  '--' + ' R. Value '.center(13, '-') + 
+                  '--' + ' C. Value '.center(13, '-') +
+                  '--' + ' Score '.center(13, '-') + '--')
+    score_typ = defaultdict(float)
+    score_tot = 0.
+    for r, c in izip(r_data, c_data):
+        # Double check data types.
+        if r.typ == 't':
+            diff = abs(r.val - c.val)
+            if diff > 180.:
+                diff = 360. - diff
+        else:
+            diff = r.val - c.val
+        # Calculate score.
+        score = r.wht**2 * diff**2
+        # Update total.
+        score_tot += score
+        # Update dictionary.
+        score_typ[r.typ] += score
+        strings.append('  {:<20}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
+                r.lbl, r.wht, r.val, c.val, score))
+    strings.append('-' * 79)
+    strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
+    strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
+    strings.append('-' * 79)
+    for k, v in score_typ.iteritems():
+        strings.append('{:<20} {:20.4f}'.format(k + ':', v))
+    if output:
+        with open(output, 'w') as f:
+            for line in strings:
+                f.write('{}\n'.format(line))
+    else:
+        for line in strings:
+            print(string)
 
 def return_compare_parser():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -35,177 +95,105 @@ def return_compare_parser():
               'after the 1st quotation mark enclosing the arguments.'))
     parser.add_argument(
         '--output', '-o', type=str, metavar='filename', 
-        help='Write pretty output filename.')
+        help='Write pretty output to filename.')
     parser.add_argument(
         '--print', '-p', action='store_true', dest='doprint',
         help='Print pretty output.')
     return parser
 
-def zero_energies(conn):
-    c = conn.cursor()
-    c.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy-1" OR '
-              'typ = "energy-2" OR typ = "energy-opt"')
-    for set_of_energies in c.fetchall():
-        c.execute("SELECT MIN(val) FROM data WHERE typ = ? AND idx_1 = ?",
-                  (set_of_energies[0], set_of_energies[1]))
-        zero = c.fetchone()[0]
-        c.execute("UPDATE data SET val = val - ? WHERE typ = ? AND idx_1 = ?",
-                  (zero, set_of_energies[0], set_of_energies[1]))
-    conn.commit()
+def compare_data(r_data, c_data, zero=True):
+    logger.log(1, '>>> compare_data <<<')
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
+    r_data = np.array(sorted(r_data, key=datatypes.datum_sort_key))
+    c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
+    logger.log(1, '>>> sorted(r_data):\n{}'.format(r_data))
+    logger.log(1, '>>> sorted(c_data):\n{}'.format(c_data))
+    if zero:
+        zero_energies(r_data)
+    correlate_energies(r_data, c_data)
+    import_weights(r_data)
+    return calculate_score(r_data, c_data)
 
-def correlate_energies(ref_conn, cal_conn):
-    cr = ref_conn.cursor()
-    cc = cal_conn.cursor()
-    cr.execute('SELECT DISTINCT typ, idx_1 FROM data WHERE typ = "energy-1" OR '
-               'typ = "energy-2" OR typ = "energy-opt"')
-    for set_of_energies in cr.fetchall():
-        cr.execute('SELECT * FROM data WHERE typ = ? AND idx_1 = ? ORDER BY '
-                   'typ, src_1, src_2, idx_1, idx_2',
-                   (set_of_energies[0], set_of_energies[1]))
-        r_rows = cr.fetchall()
-        r_zero, zero_idx = min((row['val'], idx) for idx, row in enumerate(r_rows))
-        cc.execute('SELECT * FROM data WHERE typ = ? AND idx_1 = ? ORDER BY '
-                   'typ, src_1, src_2, idx_1, idx_2',
-                   (set_of_energies[0], set_of_energies[1]))
-        c_rows = cc.fetchall()
-        c_zero = c_rows[zero_idx]['val']
-        cc.execute('UPDATE data SET val = val - ? WHERE typ = ? and idx_1 = ?',
-                   (c_zero, set_of_energies[0], set_of_energies[1]))
-    cal_conn.commit()
+def zero_energies(data):
+    logger.log(1, '>>> zero_energies <<<')
+    # Go one data type at a time.
+    # We do so because the group numbers are only unique within a given data
+    # type.
+    for energy_type in ['e', 'eo']:
+        # Determine the unique group numbers.
+        indices = np.where([x.typ == energy_type for x in data])[0]
+        logger.log(1, '>>> indices: {}'.format(indices))
+        logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
+        logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
+                [x.idx_1 for x in data[indices]]))
+        unique_group_nums = set([x.idx_1 for x in data[indices]])
+        # Loop through the unique group numbers.
+        for unique_group_num in unique_group_nums:
+            # Pick out all data points that are unique to this data type
+            # and group number.
+            more_indices = np.where(
+                [x.typ == energy_type and x.idx_1 == unique_group_num
+                 for x in data])[0]
+            # Find the zero for this grouping.
+            zero = min([x.val for x in data[more_indices]])
+            for ind in more_indices:
+                data[ind].val -= zero
 
-def import_weights(conn):
-    c = conn.cursor()
-    c.execute('SELECT DISTINCT typ FROM data')
-    for typ in c.fetchall():
-        # Will need to include similar code for Hessian and perhaps other
-        # matrix data types.
-        if typ[0] == 'eig':
-            c.execute('UPDATE data set wht = ? WHERE typ = ? AND idx_1 != idx_2',
-                      (co.WEIGHTS['eig_o'], typ[0]))
-            c.execute(('UPDATE data set wht = ? WHERE typ = ? AND idx_1 = idx_2 '
-                       'AND idx_1 != 1'),
-                      (co.WEIGHTS['eig_d'], typ[0]))
-            c.execute(('UPDATE data set wht = ? WHERE typ = ? AND idx_1 = 1 AND '
-                      'idx_2 = 1'),
-                      (co.WEIGHTS['eig_i'], typ[0]))
-        else:
-            c.execute('UPDATE data SET wht = ? WHERE typ = ?',
-                      (co.WEIGHTS[typ[0]], typ[0]))
-    conn.commit()
+def correlate_energies(r_data, c_data):
+    logger.log(1, '>>> correlate_energies <<<')
+    logger.log(1, '>>> r_data:\n{}'.format(r_data))
+    logger.log(1, '>>> c_data:\n{}'.format(c_data))
+    for energy_type in ['e', 'eo']:
+        indices = np.where([x.typ == energy_type for x in r_data])[0]
+        unique_group_nums = set([x.idx_1 for x in r_data[indices]])
+        for unique_group_num in unique_group_nums:
+            more_indices = np.where(
+                [x.typ == energy_type and x.idx_1 == unique_group_num
+                 for x in r_data])[0]
+            zero, zero_ind = min((x.val, i) for i, x in enumerate(r_data[more_indices]))
+            zero_ind = more_indices[zero_ind]
+            # Wow, that was a lot of work to get the index of the zero.
+            # Now, we need to get that same sub list, and update the calculated
+            # data. As long as they are sorted the same, the indices should
+            # match up.
+            zero = c_data[zero_ind].val
+            for ind in more_indices:
+                c_data[ind].val -= zero
 
-def compare_data(ref_conn, cal_conn, check_data=True, pretty=False):
-    zero_energies(ref_conn)
-    correlate_energies(ref_conn, cal_conn)
-    import_weights(ref_conn)
-    if pretty:
-        score, pretty_str = calculate_score(
-            ref_conn, cal_conn, check_data=check_data, pretty=pretty)
-    else:
-        score = calculate_score(ref_conn, cal_conn, check_data=check_data,
-                                pretty=pretty)
-    logger.log(10, 'SCORE: {}'.format(score))
-    if pretty:
-        return score, pretty_str
-    else:
-        return score
+def import_weights(data):
+    for datum in data:
+        if datum.wht is None:
+            if datum.typ == 'eig':
+                if datum.idx_1 == datum.idx_2 == 1:
+                    datum.wht = co.WEIGHTS['eig_i']
+                elif datum.idx_1 == datum.idx_2:
+                    datum.wht = co.WEIGHTS['eig_d']
+                elif datum.idx_1 != datum.idx_2:
+                    datum.wht = co.WEIGHTS['eig_o']
+            else:
+                datum.wht = co.WEIGHTS[datum.typ]
 
-def cursor_iter(cursor, arraysize=1000):
-    while True:
-        results = cursor.fetchmany(arraysize)
-        if not results:
-            break
-        for result in results:
-            yield result
-
-def calculate_score(ref_conn, cal_conn, check_data=True, pretty=False):
-    cr = ref_conn.cursor()
-    cc = cal_conn.cursor()
-    cr.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
-               'idx_2, atm_1, atm_2, atm_3, atm_4')
-    cc.execute('SELECT * FROM data ORDER BY typ, src_1, src_2, idx_1, '
-               'idx_2, atm_1, atm_2, atm_3, atm_4')
+# Need to add some pretty print outs for this.
+def calculate_score(r_data, c_data):
     score = 0.
-    # Keeps track of contributions to objective function from particular data
-    # types.
-    if pretty:
-        counter = defaultdict(float)
-        pretty_str = pretty_data_comp(start=True)
-    # Could do in smaller chunks if memory becomes an issue.
-    # for r_row, c_row in izip(cr.fetchall(), cc.fetchall()):
-    for r_row, c_row in izip(cursor_iter(cr), cursor_iter(cc)):
-        if check_data:
-            if not r_row['typ'] == c_row['typ'] and \
-                    not r_row['idx_1'] == c_row['idx_1'] and \
-                    not r_row['idx_2'] == c_row['idx_2'] and \
-                    not r_row['atm_1'] == c_row['atm_1'] and \
-                    not r_row['atm_2'] == c_row['atm_2'] and \
-                    not r_row['atm_3'] == c_row['atm_3'] and \
-                    not r_row['atm_4'] == c_row['atm_4']:
-                raise Exception("Data isn't aligned!")
-        # Need to make sure that the difference between -179 and 179 is 2, not
-        # 358 when we're talking about torsions.
-        if r_row['typ'] == 'Torsion':
-            diff = abs(r_row['val'] - c_row['val'])
+    for r_datum, c_datum in izip(r_data, c_data):
+        # Perhaps add a checking option here to ensure all the attributes
+        # of each data point match up.
+        # When we're talking about torsions, need to make sure that the
+        # difference between -179 and 179 is 2, not 358.
+        if r_datum.typ == 't':
+            diff = abs(r_datum.val - c_datum.val)
             if diff > 180.:
                 diff = 360. - diff
-        # Standard case. Just look at the difference.
+        # Simpler for other data types.
         else:
-            diff = r_row['val'] - c_row['val']
-        individual_score = r_row['wht']**2 * diff**2
+            diff = r_datum.val - c_datum.val
+        individual_score = r_datum.wht**2 * diff**2
         score += individual_score
-        if pretty:
-            counter[r_row['typ']] += individual_score
-            pretty_str.extend(pretty_data_comp(r_row, c_row, individual_score))
-    if pretty:
-        pretty_str.extend(pretty_data_comp(end=counter))
-        return score, pretty_str
-    else:
-        return score
-
-def pretty_data_comp(r_row=None, c_row=None, score=None, start=None, end=None):
-    string = []
-    if start:
-        string.append('--' + ' Label '.ljust(20, '-') +
-                      '--' + ' Weight '.center(8, '-') + 
-                      '--' + ' R. Value '.center(13, '-') + 
-                      '--' + ' C. Value '.center(13, '-') +
-                      '--' + ' Score '.center(13, '-') + '--')
-    elif end:
-        string.append('-' * 79)
-        total_score = sum((end[k] for k in end))
-        string.append('{:<20}  {:20.4f}'.format('Total:', total_score))
-        for k, v in end.iteritems():
-            string.append('{:<20}  {:20.4f}'.format(k + ':', v))
-    else:
-        label = calculate.get_label(r_row)
-        string.append('  {:<20}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
-            label, r_row['wht'], r_row['val'], c_row['val'], score))
-    return string
-    
-def main(args):
-    parser = return_compare_parser()
-    opts = parser.parse_args(args)
-    if opts.doprint or opts.output:
-        pretty = True
-    else:
-        pretty = False
-    if co.SETTINGS['use_sqlite3']:
-        ref_conn = calculate.main(opts.reference.split())
-        cal_conn = calculate.main(opts.calculate.split())
-        if pretty:
-            score, pretty_str = compare_data(ref_conn, cal_conn, pretty=pretty)
-        else:
-            score = compare_data(ref_conn, cal_conn)
-        if opts.doprint:
-            for line in pretty_str:
-                print(line)
-        if opts.output:
-            with open(opts.output, 'w') as f:
-                for line in pretty_str:
-                    f.write(line + '\n')
-    else:
-        raise Exception('Woops, not ready yet.')
-
+    logger.log(5, 'SCORE: {}'.format(score))
+    return score
+            
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     main(sys.argv[1:])

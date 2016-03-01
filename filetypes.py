@@ -34,6 +34,7 @@ import constants as co
 import datatypes
 
 logger = logging.getLogger(__name__)
+# Print out full matrices rather than having Numpy truncate them.
 np.set_printoptions(threshold=np.nan)
 
 class File(object):
@@ -41,11 +42,24 @@ class File(object):
     Base for every other filetype class.
     """
     def __init__(self, path):
+        self._lines = None
         self.path = os.path.abspath(path)
         # self.path = path
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
         # self.name = os.path.splitext(self.filename)[0]
+    @property
+    def lines(self):
+        if self._lines is None:
+            with open(self.path, 'r') as f:
+                self._lines = f.readlines()
+        return self._lines
+    def write(self, path, lines=None):
+        if lines is None:
+            lines = self.lines
+        with open(path, 'w') as f:
+            for line in lines:
+                f.write(line)
         
 class GaussFormChk(File):
     """
@@ -645,6 +659,7 @@ class JaguarIn(SchrodingerFile):
         self._structures = None
         self._hessian = None
         self._empty_atoms = None
+        self._lines = None
     @property
     def hessian(self):
         if self._hessian is None:
@@ -716,7 +731,30 @@ class JaguarIn(SchrodingerFile):
             self._empty_atoms = empty_atoms
             self._structures = structures
         return self._structures
+    def gen_lines(self):
+        """
+        Attempts to figure out the lines of itself.
 
+        Since it'd be difficult, the written version will be missing much
+        of the data in the original. Maybe there's something in the 
+        Schrodinger API for that.
+
+        However, I do want this to include the ability to write out an
+        atomic section with the ESP data that we'd want.
+        """
+        lines = []
+        mae_name = None
+        lines.append('MAEFILE: {}'.format(mae_name))
+        lines.append('&gen')
+        lines.append('&')
+        lines.append('&zmat')
+        # Just use the 1st structure. I don't imagine a Jaguar input file
+        # ever containing more than one structure.
+        struct = self.structures[0]
+        lines.extend(struct.format_coords(format='gauss'))
+        lines.append('&')
+        return lines
+        
 class JaguarOut(File):
     """
     Used to retrieve data from Schrodinger Jaguar .out files.
@@ -909,9 +947,6 @@ class Mae(SchrodingerFile):
         dictionary of options used when writing a .com file
         """
         com_opts = {
-            'cs1': False,
-            'cs2': False,
-            'cs3': False,
             'freq': False,
             'opt': False,
             'opt_mmo': False,
@@ -943,19 +978,6 @@ class Mae(SchrodingerFile):
             com_opts['opt'] = True
         if any(x in ['mt', 'jt'] for x in self.commands):
             com_opts['tors'] = True
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands) and \
-                any(x for x in com_opts.itervalues()):
-            raise Exception(
-                "Conformational search methods must be used alone!\n"
-                "FILENAME: {}\n"
-                "COMMANDS: {}\n".format(
-                    self.path, ' '.join(commands)))
-        if 'mcs' in self.commands:
-            com_opts['cs1'] = True
-        elif 'mcs2' in self.commands:
-            com_opts['cs2'] = True
-        elif 'mcs3' in self.commands:
-            com_opts['cs3'] = True
         return com_opts
     def get_debg_opts(self, com_opts):
         """
@@ -967,10 +989,7 @@ class Mae(SchrodingerFile):
         list of integers
         """
         debg_opts = []
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            return None
-        else:
-            debg_opts.append(57)
+        debg_opts.append(57)
         if com_opts['tors']:
             debg_opts.append(56)
         if com_opts['freq']:
@@ -997,25 +1016,23 @@ class Mae(SchrodingerFile):
         com_opts = self.get_com_opts()
         debg_opts = self.get_debg_opts(com_opts)
         com = '{}\n{}\n'.format(self.filename, self.name_mae)
+        # Is this right? It seems to work, but looking back at this,
+        # I'm not sure why we wouldn't always want to control using
+        # MMOD. Also, that 2nd argument of MMOD only affects the color
+        # of atoms. I don't think this needs to be included. At some
+        # point, I am going to remove it and test everything to make
+        # sure it's not essential.
         if debg_opts:
             com += co.COM_FORM.format(*debg_opts)
         else:
             com += co.COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-        # May want to turn off arg2 (continuum solvent).
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('FFLD', 2, 1, 0, 0, 0, 0, 0, 0)
-        else:
-            com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
-        # Also may want to turn off these cutoffs.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('BDCO', 0, 0, 0, 0, 41.5692, 99999, 0, 0)
+        # May want to turn on/off arg2 (continuum solvent).
+        com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
+        # Also may want to turn on/off cutoffs using BDCO.
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-        else:
-            com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+        com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
         if com_opts['sp'] or com_opts['sp_mmo']:
             com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
             self._index_output_mmo.append('pre')
@@ -1041,48 +1058,9 @@ class Mae(SchrodingerFile):
             self._index_output_mmo.append('opt')
         if com_opts['strs']:
             com += co.COM_FORM.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('CRMS', 0, 0, 0, 0, 0, 0.25, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
-        if com_opts['cs2']:
-            com += co.COM_FORM.format('LMCS', 10000, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs3']:
-            com += co.COM_FORM.format('LMCS', 4000, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
-        # if com_opts['cs2'] or com_opts['cs3']:
-        #     com += co.COM_FORM.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
-            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
-            com += co.COM_FORM.format('DEMX', 0, 166, 0, 0, 50, 100, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
-            com += co.COM_FORM.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
-        # I don't think MSYM does anything when all arguments are set to zero.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs2']:
-            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
-        # I'm not sure if this does anything either.
-        if com_opts['cs3']:
-            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('AUTO', 0, 2, 1, 1, 0, -1, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
         # If the file already exists, don't rewrite it.
         path_com = os.path.join(self.directory, self.name_com)
-        if os.path.exists(path_com):
+        if sometext and os.path.exists(path_com):
             logger.log(5, '  -- {} already exists. Skipping write.'.format(
                     self.name_com))
         else:
@@ -1090,6 +1068,7 @@ class Mae(SchrodingerFile):
                 f.write(com)
             logger.log(5, 'WROTE: {}'.format(
                     os.path.join(self.name_com)))
+
     def run(self, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
@@ -1400,6 +1379,11 @@ class Structure(object):
         """
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
+
+        latex  - Makes a LaTeX table.
+        gauss  - Makes output that matches Gaussian's .com filse.
+        jaguar - Just like Gaussian, but include the atom number after the
+                 element name in the left column.
         """
         # Formatted for LaTeX.
         if format == 'latex':
@@ -1429,9 +1413,9 @@ class Structure(object):
     def select_stuff(self, typ, com_match=None, **kwargs):
         """
         Selects bonds, angles, or torsions from the structure and returns them
-        in the format used as data in the sqlite3 database.
+        in the format used as data.
 
-        typ       - 'Bond', 'Angle', or 'Torsion'.
+        typ       - 'bond', 'angle', or 'torsion'.
         com_match - String or None. If None, just returns all of the selected
                     stuff (bonds, angles, or torsions). If a string, selects
                     only those that have this string in their comment.
@@ -1442,12 +1426,9 @@ class Structure(object):
         """
         data = []
         for thing in getattr(self, typ):
-            if (com_match and thing.comment in com_match) or \
+            if (com_match and any(x in thing.comment for x in com_match)) or \
                     com_match is None:
                 datum = thing.as_data(**kwargs)
-                # Done now by thing.as_data.
-                # datum.update(kwargs)
-                # datum = {k: datum.get(k, co.DEFAULTS[k]) for k in co.DEFAULTS}
                 data.append(datum)
         assert data, "No data actually retrieved!"
         return data
@@ -1456,6 +1437,8 @@ class Structure(object):
         Returns the atom numbers of aliphatic hydrogens. These hydrogens
         are always assigned a partial charge of zero in MacroModel
         calculations.
+
+        This should be subclassed into something is MM3* specific.
         """
         aliph_hyds = []
         for atom in self.atoms:
@@ -1470,6 +1453,9 @@ class Structure(object):
 class Atom(object):
     """
     Data class for a single atom.
+
+    Really, some of this atom type stuff should perhaps be in a MM3*
+    specific atom class.
     """
     __slots__ = ['atom_type', 'atom_type_name', 'atomic_num', 'atomic_mass',
                  'bonded_atom_indices', 'coords_type', '_element',
@@ -1515,7 +1501,6 @@ class Atom(object):
     def element(self):
         if self._element is None:
             self._element = co.MASSES.items()[self.atomic_num - 1][0]
-            # self._element = co.ele[self.atomic_num]
         return self._element
     @element.setter
     def element(self, value):
@@ -1555,22 +1540,23 @@ class Bond(object):
             self.__class__.__name__, '-'.join(
                 map(str, self.atom_nums)), self.value)
     def as_data(self, **kwargs):
-        datum = datatypes.Datum(val=self.value,
-                                typ=self.__class__.__name__)
-        # for i, atom_num in enumerate(self.atom_nums):
-        #     datum.__dict__.update({'atm_{}'.format(i + 1): atom_num})
+        # Sort of silly to have all this stuff about angles and 
+        # torsions in here, but they both inherit from this class.
+        # I suppose it'd make more sense to create a structural
+        # element class that these all inherit from.
+        # Warning that I recently changed these labels, and that
+        # may have consequences.
+        if self.__class__.__name__.lower() == 'bond':
+            typ = 'b'
+        elif self.__class__.__name__.lower() == 'angle':
+            typ = 'a'
+        elif self.__class__.__name__.lower() == 'torsion':
+            typ = 't'
+        datum = datatypes.Datum(val=self.value, typ=typ)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, 'atm_{}'.format(i+1), atom_num)
         for k, v in kwargs.iteritems():
             setattr(datum, k, v)
-        # datum.__dict__.update(kwargs)
-        # datum = {'val': self.value, 
-        #          'typ': self.__class__.__name__
-        #          }
-        # for i, atom_num in enumerate(self.atom_nums):
-        #     datum.update({'atm_{}'.format(i + 1): atom_num})
-        # datum.update(kwargs)
-        # datum = co.set_data_defaults(datum)
         return datum
 
 class Angle(Bond):
@@ -1597,15 +1583,23 @@ def return_filetypes_parser():
     parser.add_argument(
         '-i', '--input', type=str, 
         help='Input filename.')
+    parser.add_argument(
+        '-o', '--output', type=str,
+        help='Output filename.')
+    parser.add_argument(
+        '-p', '--print', action='store_true',
+        help='Print coordinates for each structure.')
     return parser
 
-def import_filetype(filename):
+def detect_filetype(filename):
     path = os.path.abspath(filename)
     ext = os.path.splitext(path)[1]
     if ext == '.mae':
         file_ob = Mae(path)
     elif ext == '.log':
         file_ob = GaussLog(path)
+    elif ext == '.in':
+        file_ob = JaguarIn(path)
     else:
         raise Exception('Filetype not recognized.')
     return file_ob
@@ -1613,17 +1607,20 @@ def import_filetype(filename):
 def main(args):
     parser = return_filetypes_parser()
     opts = parser.parse_args(args)
-    file_ob = import_filetype(opts.input)
-    if hasattr(file_ob, 'structures'):
-        for i, structure in enumerate(file_ob.structures):
-            print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
-            output = structure.format_coords(format='gauss')
-            for line in output:
-                print(line)
-    if hasattr(file_ob, 'evals'):
-        print(file_ob.evals)
-    if hasattr(file_ob, 'evecs'):
-        print(file_ob.evecs)
+    file_ob = detect_filetype(opts.input)
+    if opts.print:
+        if hasattr(file_ob, 'structures'):
+            for i, structure in enumerate(file_ob.structures):
+                print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
+                output = structure.format_coords(format='gauss')
+                for line in output:
+                    print(line)
+        if hasattr(file_ob, 'evals'):
+            print(file_ob.evals)
+        if hasattr(file_ob, 'evecs'):
+            print(file_ob.evecs)
+    if opts.output:
+        file_ob.write(opts.output)
 
 if __name__ == '__main__':
     import argparse

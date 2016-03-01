@@ -23,11 +23,11 @@ class Loop(object):
         self.cycle_num = 0
         self.direc = '.'
         self.ff = None
-        self.ff_args = None
         self.ff_lines = None
+        self.args_ff = None
+        self.args_ref = None
         self.loop_lines = None
-        self.ref_args = None
-        self.ref_conn = None
+        self.ref_data = None
     def opt_loop(self):
         change = None
         last_score = None
@@ -79,6 +79,7 @@ class Loop(object):
                     self.ff.export_ff(os.path.join(self.direc, cols[2]))
             # Trim parameters.
             if cols[0] == 'PARM':
+                logger.log(20, '~~ SELECTING PARAMETERS ~~'.rjust(79, '~'))
                 self.ff.params = parameters.trim_params_by_file(
                     self.ff.params, os.path.join(self.direc, cols[1]))
             if cols[0] == 'LOOP':
@@ -93,9 +94,9 @@ class Loop(object):
                 loop.convergence = float(cols[1])
                 loop.direc = self.direc
                 loop.ff = self.ff
-                loop.ff_args = self.ff_args
-                loop.ref_args = self.ref_args
-                loop.ref_conn = self.ref_conn
+                loop.args_ff = self.args_ff
+                loop.args_ref = self.args_ref
+                loop.ref_data = self.ref_data
                 loop.loop_lines = inner_loop_lines
                 # Log commands.
                 pretty_loop_input(
@@ -109,39 +110,36 @@ class Loop(object):
                 logger.log(
                     20, '~~ CALCULATING REFERENCE DATA ~~'.rjust(79, '~'))
                 if len(cols) > 1:
-                    self.ref_args = ' '.join(cols[1:]).split()
-                self.ref_conn = calculate.main(self.ref_args)
+                    self.args_ref = ' '.join(cols[1:]).split()
+                self.ref_data = calculate.main(self.args_ref)
             if cols[0] == 'CDAT':
                 logger.log(
                     20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
                 if len(cols) > 1:
-                    self.ff_args = ' '.join(cols[1:]).split()
-                self.ff.conn = calculate.main(self.ff_args)
+                    self.args_ff = ' '.join(cols[1:]).split()
+                self.ff.data = calculate.main(self.args_ff)
             if cols[0] == 'COMP':
+                self.ff.score = compare.compare_data(
+                    self.ref_data, self.ff.data)
                 if '-o' in cols:
-                    output_filename = os.path.join(self.direc, cols[cols.index('-o') + 1])
-                    self.ff.score, output_string = compare.compare_data(
-                        self.ref_conn, self.ff.conn, pretty=True)
-                    with open(output_filename, 'w') as f:
-                        for output_line in output_string:
-                            f.write(output_line+ '\n')
-                else:
-                    self.ff.score = compare.compare_data(
-                        self.ref_conn, self.ff.conn)
+                    compare.pretty_data_comp(
+                        self.ref_data,
+                        self.ff.data,
+                        os.path.join(self.direc, cols[cols.index('-o') + 1]))
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
                     direc=self.direc,
-                    ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
-                    ref_conn=self.ref_conn)
-                # Temporary change.
-                # self.ff = grad.run()
-                self.ff = grad.run_low_mem()
+                    ff=self.ff,
+                    ff_lines=self.ff.lines,
+                    args_ff=self.args_ff)
+                self.ff = grad.run(ref_data=self.ref_data)
             if cols[0] == 'SIMP':
                 simp = simplex.Simplex(
                     direc=self.direc,
-                    ff=self.ff, ff_args=self.ff_args, ff_lines=self.ff.lines,
-                    ref_conn=self.ref_conn)
-                self.ff = simp.run()
+                    ff=self.ff,
+                    ff_lines=self.ff.lines,
+                    args_ff=self.args_ff)
+                self.ff = simp.run(ref_data=self.ref_data)
         
 def read_loop_input(filename):
     with open(filename, 'r') as f:
@@ -159,6 +157,7 @@ def pretty_loop_input(lines, name='Q2MM', score=None):
     if score is not None:
         logger.log(20, 'SCORE: {}'.format(score))
     logger.log(20, '=' * 79)
+    logger.log(20, '')
     return lines
 
 def pretty_loop_summary(cycle_num, score, change):
