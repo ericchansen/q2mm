@@ -318,10 +318,15 @@ def check_radius(par_rad, max_rad):
         return 1
                 
 def cleanup(ffs, ff, changes):
-    for method, change in changes:
-        opt.pretty_param_changes(
-            ff.params, change, method)
-        ffs.append(return_ff(ff, change, method))
+    if changes:
+        for method, change in changes:
+            opt.pretty_param_changes(
+                ff.params, change, method)
+            ffs.append(return_ff(ff, change, method))
+    else:
+        logger.warning(
+            '  -- No changes generated! It may be wise to ensure this '
+            'parameter has an effect on the objective function!')
 
 def do_method(func):
     def wrapper(*args, **kwargs):
