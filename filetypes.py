@@ -909,9 +909,6 @@ class Mae(SchrodingerFile):
         dictionary of options used when writing a .com file
         """
         com_opts = {
-            'cs1': False,
-            'cs2': False,
-            'cs3': False,
             'freq': False,
             'opt': False,
             'opt_mmo': False,
@@ -943,19 +940,6 @@ class Mae(SchrodingerFile):
             com_opts['opt'] = True
         if any(x in ['mt', 'jt'] for x in self.commands):
             com_opts['tors'] = True
-        if any(x in ['mcs', 'mcs2', 'mcs3'] for x in self.commands) and \
-                any(x for x in com_opts.itervalues()):
-            raise Exception(
-                "Conformational search methods must be used alone!\n"
-                "FILENAME: {}\n"
-                "COMMANDS: {}\n".format(
-                    self.path, ' '.join(commands)))
-        if 'mcs' in self.commands:
-            com_opts['cs1'] = True
-        elif 'mcs2' in self.commands:
-            com_opts['cs2'] = True
-        elif 'mcs3' in self.commands:
-            com_opts['cs3'] = True
         return com_opts
     def get_debg_opts(self, com_opts):
         """
@@ -967,10 +951,7 @@ class Mae(SchrodingerFile):
         list of integers
         """
         debg_opts = []
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            return None
-        else:
-            debg_opts.append(57)
+        debg_opts.append(57)
         if com_opts['tors']:
             debg_opts.append(56)
         if com_opts['freq']:
@@ -1001,21 +982,13 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format(*debg_opts)
         else:
             com += co.COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
-        # May want to turn off arg2 (continuum solvent).
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('FFLD', 2, 1, 0, 0, 0, 0, 0, 0)
-        else:
-            com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
-        # Also may want to turn off these cutoffs.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('BDCO', 0, 0, 0, 0, 41.5692, 99999, 0, 0)
+        # May want to turn on/off arg2 (continuum solvent).
+        com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
+        # Also may want to turn on/off cutoffs using BDCO.
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('READ', 0, 0, 0, 0, 0, 0, 0, 0)
-        else:
-            com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+        com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
         if com_opts['sp'] or com_opts['sp_mmo']:
             com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
             self._index_output_mmo.append('pre')
@@ -1041,45 +1014,6 @@ class Mae(SchrodingerFile):
             self._index_output_mmo.append('opt')
         if com_opts['strs']:
             com += co.COM_FORM.format('END', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('CRMS', 0, 0, 0, 0, 0, 0.25, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MCMM', 10000, 0, 0, 0, 0, 0.25, 0, 0)
-        if com_opts['cs2']:
-            com += co.COM_FORM.format('LMCS', 10000, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs3']:
-            com += co.COM_FORM.format('LMCS', 4000, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('NANT', 0, 0, 0, 0, 0, 0, 0, 0)
-        # if com_opts['cs2'] or com_opts['cs3']:
-        #     com += co.COM_FORM.format('MCNV', 1, 5, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MCSS', 2, 0, 0, 0, 50, 0, 0, 0)
-            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0, 0, 0, 0)
-            com += co.COM_FORM.format('DEMX', 0, 166, 0, 0, 50, 100, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MCOP', 1, 0, 0, 0, 0.5, 0, 0, 0)
-            com += co.COM_FORM.format('DEMX', 0, 833, 0, 0, 50, 100, 0, 0)
-        # I don't think MSYM does anything when all arguments are set to zero.
-        if com_opts['cs1'] or com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MSYM', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs2']:
-            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 400, 0, 0, 0)
-        # I'm not sure if this does anything either.
-        if com_opts['cs3']:
-            com += co.COM_FORM.format('AUOP', 0, 0, 0, 0, 0, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('AUTO', 0, 2, 1, 1, 0, -1, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('AUTO', 0, 3, 1, 2, 1, 1, 4, 3)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.5, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('CONV', 2, 0, 0, 0, 0.05, 0, 0, 0)
-        if com_opts['cs1']:
-            com += co.COM_FORM.format('MINI', 9, 0, 500, 0, 0, 0, 0, 0)
-        if com_opts['cs2'] or com_opts['cs3']:
-            com += co.COM_FORM.format('MINI', 1, 0, 2500, 0, 0.05, 0, 0, 0)
         # If the file already exists, don't rewrite it.
         path_com = os.path.join(self.directory, self.name_com)
         if sometext and os.path.exists(path_com):
