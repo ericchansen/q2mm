@@ -97,7 +97,7 @@ def return_compare_parser():
         '--output', '-o', type=str, metavar='filename', 
         help='Write pretty output to filename.')
     parser.add_argument(
-        '--print', '-p', action='store_true', dest='doprint',
+        '--print', '-p', action='store_true', dest='print',
         help='Print pretty output.')
     return parser
 
