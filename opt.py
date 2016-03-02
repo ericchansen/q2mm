@@ -207,6 +207,28 @@ def differentiate_params(params, central=True):
             len(param_sets)))
     return param_sets
 
+# It stinks that these two extraction methods rely upon a force field's method
+# string. It would be good to have this whole organization of forward and
+# backward differentiated force fields be less arbitrary.
+def extract_ff_by_params(ffs, params):
+    """
+    From the list of provided force fields, returns only those whose
+    methods include one of the parameters in the provided list of
+    parameters. The MM3* row and column, along with some regex, are
+    used to do this.
+    Parameters
+    ----------
+    ffs : list of `datatypes.FF` (or subclass)
+    """
+    rows = [x.mm3_row for x in params]
+    cols = [x.mm3_col for x in params]
+    keep = []
+    for ff in ffs:
+        row, col = map(int, re.split('\[|\]', ff.method)[3].split(','))
+        if row in rows and col in cols:
+            keep.append(ff)
+    return keep
+
 def extract_forward(ffs):
     """
     Returns the force fields that have been forward differentiated.
