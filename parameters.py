@@ -287,7 +287,7 @@ def main(args):
                 if param.ptype in ['be', 'ae'] and param.mm3_row in angle_avg:
                     param.value = angle_avg[param.mm3_row]
             # Export the updated parameters.
-            datatypes.export_ff(opts.average, params)
+            ff.export_ff(opts.average, params)
     # Print the parameters.
     if opts.printparams:
         for param in params:
