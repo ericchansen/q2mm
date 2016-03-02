@@ -164,7 +164,8 @@ def read_param_file(filename):
     temp_params = []
     with open(filename, 'r') as f:
         for line in f:
-            line = line.partition('#')[0]
+            line = line.partition('#')[0] # Ignore everything after a pound.
+            line = line.partition('!')[0] # ! counts as comments too.
             cols = line.split()
             if cols:
                 mm3_row, mm3_col = int(cols[0]), int(cols[1])
