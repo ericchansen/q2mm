@@ -207,6 +207,16 @@ def differentiate_params(params, central=True):
             len(param_sets)))
     return param_sets
 
+def extract_forward(ffs):
+    """
+    Returns the force fields that have been forward differentiated.
+
+    Parameters
+    ----------
+    ffs : list of `datatypes.FF` (or subclass)
+    """
+    return [x for x in ffs if 'forward' in x.method.lower()]
+            
 def param_derivs(ff, ffs):
     """
     Calculates the derivatives of parameters with respect to the penalty
