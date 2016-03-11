@@ -663,7 +663,7 @@ class JaguarIn(SchrodingerFile):
     @property
     def hessian(self):
         if self._hessian is None:
-            num  = len(self.structures[0].atoms) + len(self._empty_atoms)
+            num = len(self.structures[0].atoms) + len(self._empty_atoms)
             logger.log(5,
                        '  -- {} has {} atoms and {} dummy atoms.'.format(
                     self.filename,
@@ -692,19 +692,28 @@ class JaguarIn(SchrodingerFile):
                                     float(hess_ele)
                     if '&hess' in line:
                         section_hess = True
+            for atom in self._empty_atoms:
+                logger.log(1, '>>> _empty_atom {}: {}'.format(atom.index, atom))
             # Figure out the indices of the dummy atoms.
             dummy_indices = []
             for atom in self._empty_atoms:
-                index = atom.index - 1
+                logger.log(1, '>>> atom.index: {}'.format(atom.index))
+                index = (atom.index - 1) * 3
                 dummy_indices.append(index)
                 dummy_indices.append(index + 1)
                 dummy_indices.append(index + 2)
+            logger.log(1, '>>> dummy_indices: {}'.format(dummy_indices))
             # Delete these rows and columns.
+            np.set_printoptions(linewidth=100000)
+            logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
+            logger.log(1, '>>> hessian:\n{}'.format(hessian))
             hessian = np.delete(hessian, dummy_indices, 0)
             hessian = np.delete(hessian, dummy_indices, 1)
+            logger.log(1, '>>> hessian:\n{}'.format(hessian))
             logger.log(5, '  -- Created {} Hessian matrix (w/o dummy '
                        'atoms).'.format(hessian.shape))
             self._hessian = hessian * co.HESSIAN_CONVERSION
+            logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
         return self._hessian
     @property
     def structures(self):
@@ -721,6 +730,7 @@ class JaguarIn(SchrodingerFile):
             for i, structure in enumerate(structures): 
                 empty_atoms = []
                 for atom in structure.atoms:
+                    logger.log(1, '>>> atom {}: {}'.format(atom.index, atom))
                     if atom.element == '':
                         empty_atoms.append(atom)
                 for atom in empty_atoms:
@@ -1047,7 +1057,6 @@ class Mae(SchrodingerFile):
         if com_opts['opt']:
             # Commented line was used in code from Per-Ola/Elaine.
             # com += co.COM_FORM.format('MINI', 9, 0, 50, 0, 0, 0, 0, 0)
-
             # TNCG has more risk of not converging, and may print NaN instead
             # of coordinates and forces to output.
             # arg1: 1 = PRCG, 9 = TNCG
