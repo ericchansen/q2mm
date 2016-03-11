@@ -763,14 +763,6 @@ class Hessian(object):
         """
         source - String for a filename or a filetype object.
         """
-        # if isinstance(source, basestring):
-        #     ext = os.path.splitext(source)[1]
-        #     if ext == '.in':
-        #         source = filetypes.JaguarIn(source)
-        #     elif ext == '.out':
-        #         source = filetypes.JaguarOut(source)
-        #     elif ext == '.log':
-        #         source = filetypes.MacroModelLog(source)
         assert isinstance(source, filetypes.JaguarIn) or \
             isinstance(source, filetypes.JaguarOut) or \
             isinstance(source, filetypes.MacroModelLog), \
