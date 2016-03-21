@@ -46,7 +46,7 @@ def pretty_data_comp(r_data, c_data, output=None):
     Recalculates score along with making a pretty output.
     """
     strings = []
-    strings.append('--' + ' Label '.ljust(20, '-') +
+    strings.append('--' + ' Label '.ljust(30, '-') +
                   '--' + ' Weight '.center(8, '-') + 
                   '--' + ' R. Value '.center(13, '-') + 
                   '--' + ' C. Value '.center(13, '-') +
@@ -69,7 +69,7 @@ def pretty_data_comp(r_data, c_data, output=None):
         score_typ[r.typ] += score
         strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
                 r.lbl, r.wht, r.val, c.val, score))
-    strings.append('-' * 79)
+    strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
     strings.append('-' * 79)
