@@ -5,7 +5,7 @@ compare
 -------
 Contains code necessary to evaluate the objective function,
 
-.. math:: \chi^2 = w^2 (x_r^2 - x_c^2)
+.. math:: \chi^2 = w^2 (x_r - x_c)^2
 
 where :math:`w` is a weight, :math:`x_r` is the reference data point's value,
 and :math:`x_c` is the calculated or force field's value for the data point.
@@ -46,7 +46,7 @@ def pretty_data_comp(r_data, c_data, output=None):
     Recalculates score along with making a pretty output.
     """
     strings = []
-    strings.append('--' + ' Label '.ljust(20, '-') +
+    strings.append('--' + ' Label '.ljust(30, '-') +
                   '--' + ' Weight '.center(8, '-') + 
                   '--' + ' R. Value '.center(13, '-') + 
                   '--' + ' C. Value '.center(13, '-') +
@@ -67,9 +67,9 @@ def pretty_data_comp(r_data, c_data, output=None):
         score_tot += score
         # Update dictionary.
         score_typ[r.typ] += score
-        strings.append('  {:<20}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
+        strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
                 r.lbl, r.wht, r.val, c.val, score))
-    strings.append('-' * 79)
+    strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
     strings.append('-' * 79)
@@ -81,7 +81,7 @@ def pretty_data_comp(r_data, c_data, output=None):
                 f.write('{}\n'.format(line))
     else:
         for line in strings:
-            print(string)
+            print(line)
 
 def return_compare_parser():
     parser = argparse.ArgumentParser(description=__doc__)
