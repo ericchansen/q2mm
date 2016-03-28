@@ -968,7 +968,7 @@ class Mae(SchrodingerFile):
             com_opts['strs'] = True
         if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
+        if any(x in ['me', 'mea', 'mq', 'mqh'] for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
         if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
@@ -981,7 +981,7 @@ class Mae(SchrodingerFile):
                         self.path, ' '.join(commands)))
             else:
                 com_opts['freq'] = True
-        if any(x in ['ma', 'mb', 'meo', 'mt'] for x in self.commands):
+        if any(x in ['ma', 'mb', 'meo', 'meao', 'mt'] for x in self.commands):
             com_opts['opt'] = True
             com_opts['opt_mmo'] = True
         elif any(x in ['ma', 'mb', 'mt'] for x in self.commands):
