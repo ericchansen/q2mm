@@ -2,7 +2,8 @@
 #  J. Am. Chem. Soc. 2009, 131, 410-411.
 #  This is the mm3* FF substructure for use of rhodium catalyzed hydrogenations of enamides.
 #  Simply just copy/paste (starting at "C  Structure OPT") at the bottom of a mm3* file.
-#  Atom types P1 and P2 were copied from the existing atom type P0. Like wise, H6 and H7 were
+#  In addition the VdW section and the Atom type file must also be modified to reflect additional
+#  changes. Atom types P1 and P2 were copied from the existing atom type P0. Like wise, H6 and H7 were
 #  copied from existing atom type H1. Z0 is also altered to reflect a charge of +1 in the VdW section.
 
 
