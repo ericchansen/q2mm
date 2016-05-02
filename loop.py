@@ -9,6 +9,7 @@ import sys
 
 import calculate
 import constants as co
+import numpy as np
 import compare
 import datatypes
 import gradient
@@ -112,12 +113,14 @@ class Loop(object):
                 if len(cols) > 1:
                     self.args_ref = ' '.join(cols[1:]).split()
                 self.ref_data = calculate.main(self.args_ref)
+                self.ref_data = np.array(sorted(self.ref_data, key=datatypes.datum_sort_key))
             if cols[0] == 'CDAT':
                 logger.log(
                     20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
                 if len(cols) > 1:
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
+                self.ff.data = np.array(sorted(self.ff.data, key=datatypes.datum_sort_key))
             if cols[0] == 'COMP':
                 self.ff.score = compare.compare_data(
                     self.ref_data, self.ff.data)
