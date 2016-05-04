@@ -1107,11 +1107,15 @@ class Mae(SchrodingerFile):
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
+        licenses_available = False
         if check_tokens is True:
             logger.log(5, "  -- Checking Schrodinger tokens.")
             while True:
                 token_string = sp.check_output(
                     '$SCHRODINGER/utilities/licutil -available', shell=True)
+                if 'SUITE' not in token_string:
+                    licenses_available = True
+                    break
                 suite_tokens = re.search(co.LIC_SUITE, token_string)
                 macro_tokens = re.search(co.LIC_MACRO, token_string)
                 if not suite_tokens or not macro_tokens:
@@ -1123,10 +1127,7 @@ class Mae(SchrodingerFile):
                 macro_tokens = int(macro_tokens.group(1))
                 if suite_tokens > co.MIN_SUITE_TOKENS and \
                         macro_tokens > co.MIN_MACRO_TOKENS:
-                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
-                    sp.check_output(
-                        'bmin -WAIT {}'.format(
-                            os.path.splitext(self.name_com)[0]), shell=True)
+                    licenses_available = True
                     break
                 else:
                     if max_timeout is not None and \
@@ -1143,9 +1144,11 @@ class Mae(SchrodingerFile):
                     current_timeout += timeout
                     time.sleep(timeout)
         else:
-                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
-                    sp.check_output(
-                        'bmin -WAIT {}'.format(
+            licenses_available = True
+        if licenses_available:
+            logger.log(5, 'RUNNING: {}'.format(self.name_com))
+            sp.check_output(
+                'bmin -WAIT {}'.format(
                             os.path.splitext(self.name_com)[0]), shell=True)
         os.chdir(current_directory)
 

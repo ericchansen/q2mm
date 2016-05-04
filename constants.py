@@ -92,8 +92,10 @@ WEIGHTS = {'a':          2.00,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
            'eig_d':      0.10, # Weight of other eigenvalues.
            'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
-           'e':         10.00,
-           'eo':       125.00,
+           'e':         50.00,
+           'eo':        50.00,
+           'ea':        50.00,
+           'eao':       50.00,
            't':          1.00
            }
 
