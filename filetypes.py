@@ -22,6 +22,7 @@ import itertools
 import logging
 import mmap
 import numpy as np
+import math
 import os
 import re
 import subprocess as sp
@@ -968,7 +969,7 @@ class Mae(SchrodingerFile):
             com_opts['strs'] = True
         if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'me2', 'mq', 'mqh'] for x in self.commands):
+        if any(x in ['me', 'mea', 'mq', 'mqh'] for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
         if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
@@ -981,7 +982,7 @@ class Mae(SchrodingerFile):
                         self.path, ' '.join(commands)))
             else:
                 com_opts['freq'] = True
-        if any(x in ['ma', 'mb', 'meo', 'mt'] for x in self.commands):
+        if any(x in ['ma', 'mb', 'meo', 'meao', 'mt'] for x in self.commands):
             com_opts['opt'] = True
             com_opts['opt_mmo'] = True
         elif any(x in ['ma', 'mb', 'mt'] for x in self.commands):
@@ -1000,8 +1001,9 @@ class Mae(SchrodingerFile):
         """
         debg_opts = []
         debg_opts.append(57)
-        if com_opts['tors']:
-            debg_opts.append(56)
+        # Leads to problems when an angle inside a torsion is ~ 0 or 180.
+        # if com_opts['tors']:
+        #     debg_opts.append(56)
         if com_opts['freq']:
             debg_opts.extend((210, 211))
         debg_opts.sort()
@@ -1043,14 +1045,22 @@ class Mae(SchrodingerFile):
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
         com += co.COM_FORM.format('READ', -1, 0, 0, 0, 0, 0, 0, 0)
+        if com_opts['sp'] or com_opts['sp_mmo'] or com_opts['freq']:
+            com += co.COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+            # self._index_output_mae.append('stupid_extra_structure')
+            self._index_output_mae.append('pre')
         if com_opts['sp'] or com_opts['sp_mmo']:
             com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
             self._index_output_mmo.append('pre')
-            com += co.COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mae.append('pre')
+            # Replaced by using a pointless MINI statement. For whatever
+            # reason, that causes the .mmo file to be written without
+            # needing this WRIT statement.
+            # com += co.COM_FORM.format('WRIT', 0, 0, 0, 0, 0, 0, 0, 0)
+            # self._index_output_mae.append('pre')
         if com_opts['freq']:
-            com += co.COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
-            self._index_output_mae.append('stupid_extra_structure')
+            # Now the WRIT is handled above.
+            # com += co.COM_FORM.format('MINI', 9, 0, 0, 0, 0, 0, 0, 0)
+            # self._index_output_mae.append('stupid_extra_structure')
             # What does arg1 as 3 even do?
             com += co.COM_FORM.format('RRHO', 3, 0, 0, 0, 0, 0, 0, 0)
             self._index_output_mae.append('hess')
@@ -1366,6 +1376,43 @@ def select_structures(structures, indices, label):
                 selected.append((str_num, struct))
         return selected
 
+def geo_from_points(*args):
+    x1 = args[0][0]
+    y1 = args[0][1]
+    z1 = args[0][2]
+    x2 = args[1][0]
+    y2 = args[1][1]
+    z2 = args[1][2]
+    if len(args) == 2:
+        bond = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+        return float(bond)
+    x3 = args[2][0]
+    y3 = args[2][1]
+    z3 = args[2][2]
+    if len(args) == 3:
+        dist_21 = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
+        dist_23 = math.sqrt((x2 - x3)**2 + (y2 - y3)**2 + (z2 - z3)**2)
+        dist_13 = math.sqrt((x1 - x3)**2 + (y1 - y3)**2 + (z1 - z3)**2)
+        angle = math.acos((dist_21**2 + dist_23**2 - dist_13**2)/(2*dist_21*dist_23))
+        angle = math.degrees(angle)
+        return float(angle)
+    x4 = args[3][0]
+    y4 = args[3][1]
+    z4 = args[3][2]
+    if len(args) == 4:
+        vect_21 = [x2 - x1, y2 - y1, z2 - z1]
+        vect_32 = [x3 - x2, y3 - y2, z3 - z2]
+        vect_43 = [x4 - x3, y4 - y3, z4 - z3]
+        x_ab = np.cross(vect_21,vect_32)
+        x_bc = np.cross(vect_32,vect_43)
+        norm_ab = x_ab/(math.sqrt(x_ab[0]**2 + x_ab[1]**2 + x_ab[2]**2))
+        norm_bc = x_bc/(math.sqrt(x_bc[0]**2 + x_bc[1]**2 + x_bc[2]**2))
+        mag_ab = math.sqrt(norm_ab[0]**2 + norm_ab[1]**2 + norm_ab[2]**2)
+        mag_bc = math.sqrt(norm_bc[0]**2 + norm_bc[1]**2 + norm_bc[2]**2)
+        angle = math.acos(np.dot(norm_ab, norm_bc)/(mag_ab * mag_bc))
+        torsion = angle * (180/math.pi)
+        return torsion
+
 class Structure(object):
     """
     Data for a single structure/conformer/snapshot.
@@ -1434,11 +1481,45 @@ class Structure(object):
                     directly depend on our parameters.
         """
         data = []
+        logger.log(1, '>>> typ: {}'.format(typ))
         for thing in getattr(self, typ):
             if (com_match and any(x in thing.comment for x in com_match)) or \
                     com_match is None:
                 datum = thing.as_data(**kwargs)
-                data.append(datum)
+                # If it's a torsion we have problems.
+                # Have to check whether an angle inside the torsion is near 0 or 180.
+                if typ == 'torsions':
+                    atom_nums = [datum.atm_1, datum.atm_2, datum.atm_3, datum.atm_4]
+                    angle_atoms_1 = [atom_nums[0], atom_nums[1], atom_nums[2]]
+                    angle_atoms_2 = [atom_nums[1], atom_nums[2], atom_nums[3]]
+                    for angle in self.angles:
+                        if set(angle.atom_nums) == set(angle_atoms_1):
+                            angle_1 = angle.value
+                            break
+                    for angle in self.angles:
+                        if set(angle.atom_nums) == set(angle_atoms_2):
+                            angle_2 = angle.value
+                            break
+                    logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
+                    logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(angle_1, angle_2))
+                    if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
+                            -5. < angle_2 < 5. or 175. < angle_2 < 185.:
+                        logger.log(1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
+                        pass
+                    else:
+                        data.append(datum)
+                    # atom_coords = [x.coords for x in atoms]
+                    # tor_1 = geo_from_points(atom_coords[0], atom_coords[1], atom_coords[2])
+                    # tor_2 = geo_from_points(atom_coords[1], atom_coords[2], atom_coords[3])
+                    # logger.log(1, '>>> tor_1: {} / tor_2: {}'.format(tor_1, tor_2))
+                    # if -5. < tor_1 < 5. or 175. < tor_1 < 185. or \
+                    #         -5. < tor_2 < 5. or 175. < tor_2 < 185.:
+                    #     logger.log(1, '>>> tor_1 or tor_2 is too close to 0 or 180!')
+                    #     pass
+                    # else:
+                    #     data.append(datum)
+                else:
+                    data.append(datum)
         assert data, "No data actually retrieved!"
         return data
     def get_aliph_hyds(self):
@@ -1598,6 +1679,9 @@ def return_filetypes_parser():
     parser.add_argument(
         '-p', '--print', action='store_true',
         help='Print coordinates for each structure.')
+    parser.add_argument(
+        '-n', '--num', type=int,
+        help='Number of structures to display.')
     return parser
 
 def detect_filetype(filename):
@@ -1624,6 +1708,8 @@ def main(args):
                 output = structure.format_coords(format='gauss')
                 for line in output:
                     print(line)
+                if opts.num and i+1 == opts.num:
+                    break
         if hasattr(file_ob, 'evals'):
             print(file_ob.evals)
         if hasattr(file_ob, 'evecs'):
