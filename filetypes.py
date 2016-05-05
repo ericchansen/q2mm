@@ -284,7 +284,7 @@ class GaussLog(File):
             '\\\\\\\\.*?HF=(?P<hf>.*?)'
             '\\\\.*?ZeroPoint=(?P<zp>.*?)'
             '\\\\.*?Thermal=(?P<thermal>.*?)'
-            '\\\\.*?\\\\NImag=[0-9]\\\\\\\\(?P<hess>.*?)'
+            '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
             '\\\\\\\\(?P<evals>.*?)'
             '\\\\\\\\\\\\',
             arch)
