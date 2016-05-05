@@ -1,19 +1,26 @@
 """
-Extracts QM data from reference files or calculates FF data.
+Extracts data from reference files or calculates FF data.
 
 Takes a sequence of keywords corresponding to various
 datatypes (ex. mb = MacroModel bond lengths) followed by filenames,
-and extracts that particular data type from the file. Note that the
-order of filenames is important.
+and extracts that particular data type from the file.
+
+Note that the order of filenames IS IMPORTANT!
+
+Used to manage calls to MacroModel but that is now done in the
+Mae class inside filetypes. I'm still debating if that should be
+there or here. Will see how this framework translates into
+Amber and then decide.
 """
 import argparse
-import itertools
 import logging
 import logging.config
 import numpy as np
 import os
 import sys
-import textwrap
+
+from itertools import chain, izip
+from textwrap import TextWrapper
 
 import constants as co
 import compare
@@ -29,8 +36,8 @@ COM_GAUSSIAN   = ['ge', 'geo', 'geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['je', 'jeo', 'jea', 'jeao', 'jeigz', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
-COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
-                  'mcs3', 'me', 'meo', 'mea', 'meao', 'mjeig', 'mgeig',
+COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 
+                  'me', 'meo', 'mea', 'meao', 'mjeig', 'mgeig',
                   'mq', 'mqh', 'mt']
 # All other commands.
 COM_OTHER = ['r']
@@ -41,10 +48,11 @@ def main(args):
     """
     Arguments
     ---------
-    args : string
-           Evaluated using parser returned by return_calculate_parser().
+    args : string or list of strings
+           Evaluated using parser returned by return_calculate_parser(). If
+           it's a string, it will be converted into a list of strings.
     """
-    logger.log(1, '>>> main <<<')
+    # Should be a list of strings for use by argparse. Ensure that's the case.
     if isinstance(args, basestring):
         args.split()
     parser = return_calculate_parser()
@@ -100,13 +108,15 @@ def main(args):
             # Works if some class is None too.
             if hasattr(some_class, 'run'):
                 some_class.run(check_tokens=opts.check)
-    # data is a list comprised of datatypes.Datum objects.
+    # This is a list comprised of datatypes.Datum objects.
+    # If we remove/with sorting removed, the Datum class is less
+    # useful. We may want to reduce this to a N x 3 matrix or
+    # 3 vectors (labels, weights, values).
     data = collect_data(commands, inps, direc=opts.directory)
     if opts.weight:
         compare.import_weights(data)
     if opts.doprint:
         pretty_data(data, log_level=None)
-    logger.log(1, '>>> data: {}'.format(data))
     return data
 
 def return_calculate_parser(add_help=True, parents=None):
@@ -122,9 +132,11 @@ def return_calculate_parser(add_help=True, parents=None):
               Parent parser incorporated into this parser. Default
               is None.
     '''
-    # Whether or not to add help. You may not want to add help if
-    # these arguments are being used in another, higher level parser.
+    # Whether or not to add parents parsers. Not sure if/where this may be used
+    # anymore.
     if parents is None: parents = []
+    # Whether or not to add help. You may not want to add help if these
+    # arguments are being used in another, higher level parser.
     if add_help:
         parser = argparse.ArgumentParser(
             description=__doc__, parents=parents)
@@ -289,9 +301,12 @@ def return_calculate_parser(add_help=True, parents=None):
     data_args.add_argument(
         '-r', type=str, nargs='+', action='append',
         default=[], metavar='somename.txt',
-        help='Read reference data from file.')
+        help=('Read reference data from file. The reference file should '
+              '3 space or tab separated columns. Column 1 is the labels, '
+              'column 2 is the weights and column 3 is the values.'))
     return parser
 
+# Must be rewritten to go in a particular order of data types every time.
 def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     # outs looks like:
     # {'filename1': <some class for filename1>,
@@ -495,7 +510,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                                 src_1=name_log,
                                 idx_1=x+1,
                                 idx_2=y+1)
-                                 for e, x, y in itertools.izip(
+                                 for e, x, y in izip(
                                 lower_tri, low_tri_idx[0], low_tri_idx[1])])
         # Kept this bit for legacy.
         if com == 'geigz2':
@@ -529,7 +544,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                                 src_2=name_fchk,
                                 idx_1=x+1,
                                 idx_2=y+1)
-                                 for e, x, y in itertools.izip(
+                                 for e, x, y in izip(
                                 lower_tri, low_tri_idx[0], low_tri_idx[1])])
         # MacroModel eigenmatrix for Gaussian QM data.
         if com == 'mgeig':
@@ -563,7 +578,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                                 src_2=name_gau_log,
                                 idx_1=x+1,
                                 idx_2=y+1)
-                                 for e, x, y in itertools.izip(
+                                 for e, x, y in izip(
                                 lower_tri, low_tri_idx[0], low_tri_idx[1])])
         # Schrodinger eigenmatrix
         if com in ['jeigz', 'mjeig']:
@@ -620,7 +635,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                             src_2=name_out,
                             idx_1=x+1,
                             idx_2=y+1)
-                            for e, x, y in itertools.izip(
+                            for e, x, y in izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     # We have to do this before we make it into a NumPy array.
@@ -659,8 +674,7 @@ def sort_commands_by_filename(commands):
     '''
     sorted_commands = {}
     for command, groups_filenames in commands.iteritems():
-        for comma_separated in itertools.chain.from_iterable(
-            groups_filenames):
+        for comma_separated in chain.from_iterable(groups_filenames):
             for filename in comma_separated.split(','):
                 if filename in sorted_commands:
                     sorted_commands[filename].append(command)
@@ -668,6 +682,8 @@ def sort_commands_by_filename(commands):
                     sorted_commands[filename] = [command]
     return sorted_commands
             
+# Will also have to be updated. Maybe the Datum class too and how it responds
+# to assigning labels.
 def read_reference(filename):
     data = []
     with open(filename, 'r') as f:
@@ -687,6 +703,7 @@ def read_reference(filename):
     data = data.sort(key=datatypes.datum_sort_key)
     return np.array(data)
 
+# Shouldn't be necessary anymore.
 def lbl_to_data_attrs(datum, lbl):
     parts = lbl.split('_')
     datum.typ = parts[0]
@@ -703,6 +720,11 @@ def lbl_to_data_attrs(datum, lbl):
     if len(idxs) == 2:
         datum.idx_2 == int(idxs[1])
 
+# Right now, this only looks good if the logger doesn't append each log
+# message with something (module, date/time, etc.).
+# It would be great if this output looked good regardless of the settings
+# used for the logger.
+# That goes for all of these pretty output functions that use TextWrapper.
 def pretty_commands_for_files(commands_for_files, log_level=5):
     """
     Logs the .mae commands dictionary, or the all of the commands
@@ -714,7 +736,7 @@ def pretty_commands_for_files(commands_for_files, log_level=5):
     log_level : int
     """
     if logger.getEffectiveLevel() <= log_level:
-        foobar = textwrap.TextWrapper(
+        foobar = TextWrapper(
             width=48, subsequent_indent=' '*26)
         logger.log(
             log_level,
@@ -737,7 +759,7 @@ def pretty_all_commands(commands, log_level=5):
     log_level : int
     """
     if logger.getEffectiveLevel() <= log_level:
-        foobar = textwrap.TextWrapper(width=48, subsequent_indent=' '*24)
+        foobar = TextWrapper(width=48, subsequent_indent=' '*24)
         logger.log(
             log_level,
             '--' + ' COMMAND '.center(9, '-') +
@@ -763,19 +785,15 @@ def pretty_data(data, log_level=20):
     ---------
     data : list of Datum
     log_level : int
-            Logging level used.
     """
-    if data[0].wht:
+    if not data[0].wht:
+        compare.import_weights(data)
+    if log_level:
         string = ('--' + ' LABEL '.center(22, '-') +
                   '--' + ' WEIGHT '.center(22, '-') +
-                  '--' + ' VALUE '.center(22, '-') + '--')
-    else:
-        string = ('--' + ' LABEL '.center(22, '-') +
-                  '--' + ' VALUE '.center(22, '-') + '--')
-    if log_level:
+                  '--' + ' VALUE '.center(22, '-') +
+                  '--')
         logger.log(log_level, string)
-    else:
-        print(string)
     for d in data:
         if d.wht:
             string = ('  ' + '{:22s}'.format(d.lbl) +
