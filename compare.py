@@ -33,27 +33,28 @@ def main(args):
     r_data = calculate.main(opts.reference.split())
     c_data = calculate.main(opts.calculate.split())
     score = compare_data(r_data, c_data)
-    logger.log(1, '>>> r_data:\n{}'.format(r_data))
-    logger.log(1, '>>> c_data:\n{}'.format(c_data))
     # Pretty readouts.
     if opts.output:
         pretty_data_comp(r_data, c_data, output=opts.output)
     if opts.print:
         pretty_data_comp(r_data, c_data)
+    logger.log(1, '>>> score: {}'.format(score))
 
 def pretty_data_comp(r_data, c_data, output=None):
     """
     Recalculates score along with making a pretty output.
     """
+    logger.log(1, '>>> pretty_data_comp <<<')
     strings = []
     strings.append('--' + ' Label '.ljust(30, '-') +
-                  '--' + ' Weight '.center(8, '-') + 
-                  '--' + ' R. Value '.center(13, '-') + 
-                  '--' + ' C. Value '.center(13, '-') +
-                  '--' + ' Score '.center(13, '-') + '--')
+                   '--' + ' Weight '.center(8, '-') + 
+                   '--' + ' R. Value '.center(13, '-') + 
+                   '--' + ' C. Value '.center(13, '-') +
+                   '--' + ' Score '.center(13, '-') + '--')
     score_typ = defaultdict(float)
     score_tot = 0.
     for r, c in izip(r_data, c_data):
+        logger.log(1, '>>> {} {}'.format(r, c))
         # Double check data types.
         if r.typ == 't':
             diff = abs(r.val - c.val)
@@ -103,12 +104,8 @@ def return_compare_parser():
 
 def compare_data(r_data, c_data, zero=True):
     logger.log(1, '>>> compare_data <<<')
-    logger.log(1, '>>> r_data:\n{}'.format(r_data))
-    logger.log(1, '>>> c_data:\n{}'.format(c_data))
-    r_data = np.array(sorted(r_data, key=datatypes.datum_sort_key))
-    c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
-    logger.log(1, '>>> sorted(r_data):\n{}'.format(r_data))
-    logger.log(1, '>>> sorted(c_data):\n{}'.format(c_data))
+    # r_data = np.array(sorted(r_data, key=datatypes.datum_sort_key))
+    # c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
     if zero:
         zero_energies(r_data)
     correlate_energies(r_data, c_data)
@@ -123,10 +120,10 @@ def zero_energies(data):
     for energy_type in ['e', 'eo']:
         # Determine the unique group numbers.
         indices = np.where([x.typ == energy_type for x in data])[0]
-        logger.log(1, '>>> indices: {}'.format(indices))
-        logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
-        logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
-                [x.idx_1 for x in data[indices]]))
+        # logger.log(1, '>>> indices: {}'.format(indices))
+        # logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
+        # logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
+        #         [x.idx_1 for x in data[indices]]))
         unique_group_nums = set([x.idx_1 for x in data[indices]])
         # Loop through the unique group numbers.
         for unique_group_num in unique_group_nums:
@@ -142,24 +139,45 @@ def zero_energies(data):
 
 def correlate_energies(r_data, c_data):
     logger.log(1, '>>> correlate_energies <<<')
-    logger.log(1, '>>> r_data:\n{}'.format(r_data))
-    logger.log(1, '>>> c_data:\n{}'.format(c_data))
-    for energy_type in ['e', 'eo']:
-        indices = np.where([x.typ == energy_type for x in r_data])[0]
-        unique_group_nums = set([x.idx_1 for x in r_data[indices]])
-        for unique_group_num in unique_group_nums:
-            more_indices = np.where(
-                [x.typ == energy_type and x.idx_1 == unique_group_num
-                 for x in r_data])[0]
-            zero, zero_ind = min((x.val, i) for i, x in enumerate(r_data[more_indices]))
-            zero_ind = more_indices[zero_ind]
+    for indices in select_group_of_energies(r_data):
+        # logger.log(1, '>>> indices:\n{}'.format(indices))
+        # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
+        #         r_data[indices[0]].typ))
+        if r_data[indices[0]].typ in ['e', 'eo']:
+            zero, zero_ind = min(
+                (x.val, i) for i, x in enumerate(r_data[indices]))
+            zero_ind = indices[zero_ind]
             # Wow, that was a lot of work to get the index of the zero.
             # Now, we need to get that same sub list, and update the calculated
             # data. As long as they are sorted the same, the indices should
             # match up.
             zero = c_data[zero_ind].val
-            for ind in more_indices:
+            for ind in indices:
                 c_data[ind].val -= zero
+        elif r_data[indices[0]].typ in ['ea', 'eao']:
+            avg = sum([x.val for x in r_data[indices]])/len(r_data[indices])
+            for ind in indices:
+                r_data[ind].val -= avg
+            avg = sum([x.val for x in c_data[indices]])/len(c_data[indices])
+            for ind in indices:
+                c_data[ind].val -= avg
+
+def select_group_of_energies(data):
+    """
+    Used to get the indices (numpy.array) for a single group of energies.
+    """
+    for energy_type in ['e', 'eo', 'ea', 'eao']:
+        # Get all energy indices.
+        indices = np.where([x.typ == energy_type for x in data])[0]
+        # Get the unique group numbers.
+        unique_group_nums = set([x.idx_1 for x in data[indices]])
+        for unique_group_num in unique_group_nums:
+            # Get all the indicies for the given energy type and for a single
+            # group.
+            more_indices = np.where(
+                [x.typ == energy_type and x.idx_1 == unique_group_num
+                 for x in data])[0]
+            yield more_indices
 
 def import_weights(data):
     for datum in data:
@@ -176,8 +194,10 @@ def import_weights(data):
 
 # Need to add some pretty print outs for this.
 def calculate_score(r_data, c_data):
+    logger.log(1, '>>> calculate_score <<<')
     score = 0.
     for r_datum, c_datum in izip(r_data, c_data):
+        logger.log(1, '>>> {} {}'.format(r_datum, c_datum))
         # Perhaps add a checking option here to ensure all the attributes
         # of each data point match up.
         # When we're talking about torsions, need to make sure that the

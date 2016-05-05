@@ -27,10 +27,10 @@ COM_LOAD_FF    = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 # Commands related to Gaussian.
 COM_GAUSSIAN   = ['ge', 'geo', 'geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR     = ['je', 'jeo', 'jeigz', 'jq', 'jqh']
+COM_JAGUAR     = ['je', 'jeo', 'jea', 'jeao', 'jeigz', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
 COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 'mcs', 'mcs2',
-                  'mcs3', 'me', 'meo', 'mjeig', 'mgeig',
+                  'mcs3', 'me', 'meo', 'mea', 'meao', 'mjeig', 'mgeig',
                   'mq', 'mqh', 'mt']
 # All other commands.
 COM_OTHER = ['r']
@@ -207,6 +207,16 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='MacroModel energies (post-FF optimization).')
     data_args.add_argument(
+        '-mea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (pre-FF optimization). Energies will be '
+        'relative to the average energy.')
+    data_args.add_argument(
+        '-meao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (post-FF optimization). Energies will be '
+        'relative to the average energy.')
+    data_args.add_argument(
         '-mjeig', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae,somename.out',
         help='MacroModel eigenmatrix (all elements). Uses Jaguar '
@@ -247,6 +257,17 @@ def return_calculate_parser(add_help=True, parents=None):
               'by this command will have their energies compared to those '
               'selected by -meo.'))
     data_args.add_argument(
+        '-jea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Everything will be relative to the average '
+              'energy.'))
+    data_args.add_argument(
+        '-jeao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Same as -jea, except the files selected '
+              'by this command will have their energies compared to those '
+              'selected by -meao.'))
+    data_args.add_argument(
         '-jeigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.in,somename.out',
         help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
@@ -286,9 +307,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 for filename in group_filenames:
                     data.extend(read_reference(os.path.join(direc, filename)))
         # JAGUAR ENERGIES
-        if com in ['je', 'je2', 'jeo']:
+        if com in ['je', 'jeo', 'jea', 'jeao']:
             if com == 'je': typ = 'e'
             elif com == 'jeo': typ = 'eo'
+            elif com == 'jea': typ = 'ea'
+            elif com == 'jeao': typ = 'eao'
             # Move through files. Grouping matters here. Each group (idx_1)
             # is used to separately calculate relative energies.
             for grp_num, group_filenames in enumerate(groups_filenames):
@@ -380,9 +403,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                                             idx_1=str_num + 1,
                                             atm_1=atom.index))
         # MACROMODEL ENERGIES
-        if com in ['me', 'me2', 'meo']:
+        if com in ['me', 'meo', 'mea', 'meao']:
             if com == 'me': typ, ind = 'e', 'pre'
             elif com == 'meo': typ, ind = 'eo', 'opt'
+            elif com == 'mea': typ, ind = 'ea', 'pre'
+            elif com == 'meao': typ, ind = 'eao', 'opt'
             for grp_num, group_filenames in enumerate(groups_filenames):
                 for filename in group_filenames:
                     if inps[filename].name_mae not in outs:
@@ -598,7 +623,9 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                             for e, x, y in itertools.izip(
                             lower_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
-    return np.array(data)
+    # We have to do this before we make it into a NumPy array.
+    data.sort(key=datatypes.datum_sort_key)
+    return np.array(data, dtype=datatypes.Datum)
 
 def sort_commands_by_filename(commands):
     '''
@@ -657,6 +684,7 @@ def read_reference(filename):
                 datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
                 lbl_to_data_attrs(datum, lbl)
                 data.append(datum)
+    data = data.sort(key=datatypes.datum_sort_key)
     return np.array(data)
 
 def lbl_to_data_attrs(datum, lbl):
