@@ -469,7 +469,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     hf = log.structures[0].props['hf']
                     zp = log.structures[0].props['zp']
                     energy = (hf + zp) * co.HARTREE_TO_KJMOL
-                    data_list.append(
+                    data.append(
                         datatypes.Datum(
                             val=energy,
                             com=com,
