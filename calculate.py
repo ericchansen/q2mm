@@ -19,6 +19,11 @@ import numpy as np
 import os
 import sys
 
+# I don't really want to import all of chain if possible. I only want
+# chain.from_iterable.
+# chain.from_iterable flattens a list of lists similar to:
+#   [child for parent in grandparent for child in parent]
+# However, I think chain.from_iterable works on any number of nested lists.
 from itertools import chain, izip
 from textwrap import TextWrapper
 
@@ -57,6 +62,8 @@ def main(args):
         args.split()
     parser = return_calculate_parser()
     opts = parser.parse_args(args)
+    # This makes a dictionary that only contains the arguments related to
+    # extracting data from everything in the argparse dictionary, opts.
     # commands looks like:
     # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], 
     #         ['b1.01.mae', 'b2.01.mae']],
@@ -65,7 +72,13 @@ def main(args):
     # }
     commands = {key: value for key, value in opts.__dict__.iteritems() if key
                 in COM_ALL and value}
+    # Add in the empty commands. I'd rather not do this, but it makes later
+    # coding when collecting data easier.
+    for command in COM_ALL:
+        if command not in commands:
+            commands.update({command: []})
     pretty_all_commands(commands)
+    # This groups all of the data type commands associated with one file.
     # commands_for_filenames looks like:
     # {'a1.01.mae': ['me', 'mb'],
     #  'a1.01.in': ['jeig'],
@@ -79,6 +92,9 @@ def main(args):
     # }
     commands_for_filenames = sort_commands_by_filename(commands)
     pretty_commands_for_files(commands_for_filenames)
+    # This dictionary associates the filename that the user supplied with
+    # the command file that has to be used to execute some backend software
+    # calculate in order to retrieve the data that the user requested.
     # inps looks like:
     # {'a1.01.mae': <__main__.Mae object at 0x1110e10>,
     #  'a1.01.in': None,
@@ -91,30 +107,41 @@ def main(args):
     #  'b2.01.mae': <__main__.Mae object at 0x1353e11>,
     # }
     inps = {}
+    # This generates any of the necessary command files. It uses
+    # commands_for_filenames, which contains all of the data types associated
+    # with the given file.
     for filename, commands_for_filename in commands_for_filenames.iteritems():
+        # These next two if statements will break down what command files
+        # have to be written by the backend software package.
         if any(x in COM_MACROMODEL for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.mae':
                 inps[filename] = filetypes.Mae(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
+        # In this case, no command files have to be written.
         else:
             inps[filename] = None
-    # Check whether or not to skip MacroModel calculations.
+    # Check whether or not to skip calculations.
     if opts.norun:
-        logger.log(15, "  -- Skipping MacroModel calculations.")
+        logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.iteritems():
             # Works if some class is None too.
             if hasattr(some_class, 'run'):
+                # Ideally this can be the same for each software backend,
+                # but that means we're going to have to make some changes
+                # so that this token argument is handled properly.
                 some_class.run(check_tokens=opts.check)
     # This is a list comprised of datatypes.Datum objects.
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
     data = collect_data(commands, inps, direc=opts.directory)
+    # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
+    # Optional printing or logging of data.
     if opts.doprint:
         pretty_data(data, log_level=None)
     return data
@@ -306,6 +333,41 @@ def return_calculate_parser(add_help=True, parents=None):
               'column 2 is the weights and column 3 is the values.'))
     return parser
 
+def check_outs(filename, outs, classtype, direc):
+    if filename not in outs:
+        outs[filename] = \
+            classtype(os.path.join(direc, filename))
+    return outs[filename]
+
+def collect_reference(path):
+    """
+    Reads the data inside a reference data text file.
+
+    This must have 3 columns:
+      1. Labels
+      2. Weights
+      3. Values
+    """
+    data = []
+    with open(path, 'r') as f:
+        for i, line in enumerate(f):
+            # Skip certain lines.
+            if line[0] in ['-', '#']:
+                continue
+            # if line.startswith('-'):
+            #     continue
+            # Remove everything following a # in a line.
+            line = line.partition('#')[0]
+            cols = line.split()
+            # There should always be 3 columns.
+            assert len(cols) == 3, \
+                'Error reading line {} from {}: {}'.format(
+                i, path, line)
+            lbl, wht, val = cols
+            datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
+            data.append(datum)
+    return np.array(data)
+
 # Must be rewritten to go in a particular order of data types every time.
 def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     # outs looks like:
@@ -314,332 +376,66 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     #  'filename3': <some class for filename3>
     # }
     outs = {}
+    # List of Datum objects.
     data = []
-    for com, groups_filenames in coms.iteritems():
-        # REFERENCE FILE
-        if com == 'r':
-            for group_filenames in groups_filenames:
-                for filename in group_filenames:
-                    data.extend(read_reference(os.path.join(direc, filename)))
-        # JAGUAR ENERGIES
-        if com in ['je', 'jeo', 'jea', 'jeao']:
-            if com == 'je': typ = 'e'
-            elif com == 'jeo': typ = 'eo'
-            elif com == 'jea': typ = 'ea'
-            elif com == 'jeao': typ = 'eao'
-            # Move through files. Grouping matters here. Each group (idx_1)
-            # is used to separately calculate relative energies.
-            for grp_num, group_filenames in enumerate(groups_filenames):
-                for filename in group_filenames:
-                    if filename not in outs:
-                        outs[filename] = \
-                            filetypes.Mae(os.path.join(direc, filename))
-                    mae = outs[filename]
-                    for str_num, struct in enumerate(mae.structures):
-                        try:
-                            e = struct.props['r_j_Gas_Phase_Energy']
-                        except KeyError:
-                            e = struct.props['r_j_QM_Energy']
-                        e *= co.HARTREE_TO_KJMOL
-                        data.append(datatypes.Datum(
-                                val=e,
-                                com=com,
-                                typ=typ,
-                                src_1=filename,
-                                idx_1=grp_num + 1,
-                                idx_2=str_num + 1))
-        # JAGUAR CHARGES 
-        if com in ['jq', 'jqh']:
-            for group_filenames in groups_filenames:
-                for filename in group_filenames:
-                    if filename not in outs:
-                        outs[filename] = filetypes.Mae(os.path.join(
-                                direc, filename))
-                    mae = outs[filename]
-                    for i, structure in enumerate(mae.structures):
-                        if com == 'jqh':
-                            aliph_hyds = structure.get_aliph_hyds()
-                            aliph_hyds_inds = [x.index for x in aliph_hyds]
-                        for atom in structure.atoms:
-                            # If it doesn't have the property b_q_use_charge,
-                            # use it.
-                            # If b_q_use_charge is 1, use it. If it's 0, don't
-                            # use it.
-                            if not 'b_q_use_charge' in atom.props or \
-                                    atom.props['b_q_use_charge']:
-                                q = atom.partial_charge
-                                # If we're summing hydrogens into heavy atoms,
-                                # start adding in those hydrogens.
-                                if com == 'jqh':
-                                    for bonded_atom_ind in \
-                                            atom.bonded_atom_indices:
-                                        if bonded_atom_ind in aliph_hyds_inds:
-                                            q += structure.atoms[
-                                                bonded_atom_ind - 
-                                                1].partial_charge
-                                if com == 'jq' or not atom in aliph_hyds:
-                                    data.append(datatypes.Datum(
-                                            val=q,
-                                            com=com,
-                                            typ='q',
-                                            src_1=filename,
-                                            idx_1=i+1,
-                                            atm_1=atom.index))
-        # MACROMODEL CHARGES
-        if com in ['mq', 'mqh']:
-            for group_filenames in groups_filenames:
-                for filename in group_filenames:
-                    # Get the corresponding output file for the given input.
-                    mae = inps[filename].name_mae
-                    if mae not in outs:
-                        outs[mae] = filetypes.Mae(
-                            os.path.join(inps[filename].directory, mae))
-                    mae = outs[mae]
-                    # Pick out the right structures. Sometimes our .com files
-                    # generate many structures in a .mae, not all of which
-                    # apply to this command.
-                    structures = filetypes.select_structures(
-                        mae.structures, inps[filename]._index_output_mae, 'pre')
-                    for str_num, structure in structures:
-                        if com == 'mqh':
-                            aliph_hyds = structure.get_aliph_hyds()
-                        for atom in structure.atoms:
-                            if not 'b_q_use_charge' in atom.props or \
-                                    atom.props['b_q_use_charge']:
-                                # MacroModel by default makes the partial charge
-                                # of aliphatic hydrogens zero, so we don't have
-                                # to do any summation.
-                                if com == 'mq' or not atom in aliph_hyds:
-                                    data.append(datatypes.Datum(
-                                            val=atom.partial_charge,
-                                            com=com,
-                                            typ='q',
-                                            src_1=filename,
-                                            idx_1=str_num + 1,
-                                            atm_1=atom.index))
-        # MACROMODEL ENERGIES
-        if com in ['me', 'meo', 'mea', 'meao']:
-            if com == 'me': typ, ind = 'e', 'pre'
-            elif com == 'meo': typ, ind = 'eo', 'opt'
-            elif com == 'mea': typ, ind = 'ea', 'pre'
-            elif com == 'meao': typ, ind = 'eao', 'opt'
-            for grp_num, group_filenames in enumerate(groups_filenames):
-                for filename in group_filenames:
-                    if inps[filename].name_mae not in outs:
-                        outs[inps[filename].name_mae] = \
-                                 filetypes.Mae(os.path.join(
-                                    inps[filename].directory,
-                                    inps[filename].name_mae))
-                    mae = outs[inps[filename].name_mae]
-                    selected = filetypes.select_structures(
-                        mae.structures, inps[filename]._index_output_mae, ind)
-                    for str_num, struct in selected:
-                        data.append(datatypes.Datum(
-                                val=struct.props['r_mmod_Potential_Energy-MM3*'],
-                                com=com,
-                                typ=typ,
-                                src_1=inps[filename].name_mae,
-                                idx_1=grp_num + 1,
-                                idx_2=str_num + 1))
-        # SCHRODINGER STRUCTURES
-        if com in ['ja', 'jb', 'jt', 'ma', 'mb', 'mt']:
-            if com in ['ja', 'jb', 'jt']: index = 'pre'
-            elif com in ['ma', 'mb', 'mt']: index = 'opt'
-            if com in ['ja', 'ma']: typ = 'angles'
-            elif com in ['jb', 'mb']: typ = 'bonds'
-            elif com in ['jt', 'mt']: typ = 'torsions'
-            # Move through files as you specified them on the command line.
-            for group_filenames in groups_filenames:
-                for filename in group_filenames:
-                    # If 1st time accessing file, go ahead and do it. However,
-                    # if you've already accessed it's data, don't read it again.
-                    # Look it up in the dictionary instead.
-                    if inps[filename].name_mmo not in outs:
-                        outs[inps[filename].name_mmo] = \
-                            filetypes.MacroModel(os.path.join(
-                                inps[filename].directory,
-                                inps[filename].name_mmo))
-                    mmo = outs[inps[filename].name_mmo]
-                    selected = filetypes.select_structures(
-                        mmo.structures, inps[filename]._index_output_mmo, index)
-                    for str_num, struct in selected:
-                        data.extend(struct.select_stuff(
-                                typ,
-                                com=com,
-                                com_match=sub_names,
-                                src_1=mmo.filename,
-                                idx_1=str_num + 1))
-        # GAUSSIAN ENERGIES
-        if com in ['ge', 'geo']:
-            if com == 'ge': typ = 'e'
-            elif com == 'geo': typ = 'eo'
-            for grp_num, group_filenames in enumerate(groups_filenames):
-                for name_log in group_filenames:
-                    if name_log not in outs:
-                        outs[name_log] = filetypes.GaussLog(
-                            os.path.join(direc, name_log))
-                    log = outs[name_log]
-                    # Right now we're using the electronic energy plus
-                    # the zero point correction.
-                    hf = log.structures[0].props['hf']
-                    zp = log.structures[0].props['zp']
-                    energy = (hf + zp) * co.HARTREE_TO_KJMOL
-                    data.append(
-                        datatypes.Datum(
-                            val=energy,
-                            com=com,
-                            typ=typ,
-                            src_1=name_log,
-                            idx_1=grp_num + 1))
-        # GAUSSIAN EIGENMATRIX
-        if com == 'geigz':
-            for group_filenames in groups_filenames:
-                for name_log in group_filenames:
-                    if name_log not in outs:
-                        outs[name_log] = filetypes.GaussLog(
-                            os.path.join(direc, name_log))
-                    log = outs[name_log]
-                    evals = log.evals * co.HESSIAN_CONVERSION
-                    evals_matrix = np.diag(evals)
-                    low_tri_idx = np.tril_indices_from(evals_matrix)
-                    lower_tri = evals_matrix[low_tri_idx]
-                    data.extend([datatypes.Datum(
-                                val=e,
-                                com=com,
-                                typ='eig',
-                                src_1=name_log,
-                                idx_1=x+1,
-                                idx_2=y+1)
-                                 for e, x, y in izip(
-                                lower_tri, low_tri_idx[0], low_tri_idx[1])])
-        # Kept this bit for legacy.
-        if com == 'geigz2':
-            for group_filenames in groups_filenames:
-                for comma_filenames in group_filenames:
-                    name_log, name_fchk = comma_filenames.split(',')
-                    if name_log not in outs:
-                        outs[name_log] = filetypes.GaussLog(
-                            os.path.join(direc, name_log))
-                    log = outs[name_log]
-                    if name_fchk not in outs:
-                        outs[name_fchk] = filetypes.GaussFormChk(
-                            os.path.join(direc, name_fchk))
-                    fchk = outs[name_fchk]
-                    # I dislike how the Hessian is handled.
-                    hess = datatypes.Hessian()
-                    hess.hess = fchk.hess
-                    hess.evecs = log.evecs
-                    hess.atoms = fchk.atoms
-                    hess.mass_weight_hessian()
-                    hess.diagonalize()
-                    # hess.mass_weight_eigenvectors()
-                    diagonal_matrix = np.diag(np.diag(hess.hess))
-                    low_tri_idx = np.tril_indices_from(diagonal_matrix)
-                    lower_tri = diagonal_matrix[low_tri_idx]
-                    data.extend([datatypes.Datum(
-                                val=e,
-                                com=com,
-                                typ='eig',
-                                src_1=name_log,
-                                src_2=name_fchk,
-                                idx_1=x+1,
-                                idx_2=y+1)
-                                 for e, x, y in izip(
-                                lower_tri, low_tri_idx[0], low_tri_idx[1])])
-        # MacroModel eigenmatrix for Gaussian QM data.
-        if com == 'mgeig':
-            for group_filenames in groups_filenames:
-                for comma_filenames in group_filenames:
-                    name_mae, name_gau_log = comma_filenames.split(',')
-                    # Get the output log filename.
-                    name_macro_log = inps[name_mae].name_log
-                    if name_macro_log not in outs:
-                        outs[name_macro_log] = filetypes.MacroModelLog(
-                            os.path.join(inps[name_mae].directory,
-                                         inps[name_mae].name_log))
-                    macro_log = outs[name_macro_log]
-                    if name_gau_log not in outs:
-                        outs[name_gau_log] = filetypes.GaussLog(
-                            os.path.join(direc, name_gau_log))
-                    gau_log = outs[name_gau_log]
-                    # Change how Hessian is handled.
-                    hess = datatypes.Hessian()
-                    hess.hess = macro_log.hessian
-                    # Eigenvectors should already be mass weighted.
-                    hess.evecs = gau_log.evecs
-                    hess.diagonalize()
-                    low_tri_idx = np.tril_indices_from(hess.hess)
-                    lower_tri = hess.hess[low_tri_idx]
-                    data.extend([datatypes.Datum(
-                                val=e,
-                                com=com,
-                                typ='eig',
-                                src_1=name_macro_log,
-                                src_2=name_gau_log,
-                                idx_1=x+1,
-                                idx_2=y+1)
-                                 for e, x, y in izip(
-                                lower_tri, low_tri_idx[0], low_tri_idx[1])])
-        # Schrodinger eigenmatrix
-        if com in ['jeigz', 'mjeig']:
-            for group_filenames in groups_filenames:
-                for comma_filenames in group_filenames:
-                    name_other, name_out = comma_filenames.split(',')
-                    # For MacroModel, name_other is a .mae.
-                    if com == 'mjeig':
-                        # Get the .log for that .mae.
-                        name_log = inps[name_other].name_log
-                        if name_other not in outs:
-                            outs[name_log] = filetypes.MacroModelLog(
-                                os.path.join(inps[name_other].directory,
-                                             inps[name_other].name_log))
-                        # Here, other is the MacroModel .log.
-                        other = outs[name_log]
-                    # For Jaguar, name_other is a .in.
-                    elif com == 'jeigz':
-                        # Use the .in directly.
-                        if name_other not in outs:
-                            outs[name_other] = filetypes.JaguarIn(
-                                os.path.join(direc, name_other))
-                        # Here, other is the Jaguar .in.
-                        other = outs[name_other]
-                    # Both use the .out file, name_out.
-                    if name_out not in outs:
-                        outs[name_out] = filetypes.JaguarOut(os.path.join(
-                                direc, name_out))
-                    out = outs[name_out]
-                    hess = datatypes.Hessian(other, out)
-                    # We have to mass weight the Jaguar Hessian.
-                    if com == 'jeigz':
-                        hess.mass_weight_hessian()
-                    # Check for dummy atoms.
-                    elif com == 'mjeig':
-                         hess.hess = datatypes.check_mm_dummy(
-                            hess.hess,
-                            out.dummy_atom_eigenvector_indices)
-                    hess.mass_weight_eigenvectors()
-                    hess.diagonalize()
-                    if com == 'jeigz':
-                        # Funny way to set all elements besides the diagonal
-                        # to zero.
-                        diagonal_matrix = np.diag(np.diag(hess.hess))
-                    else:
-                        diagonal_matrix = hess.hess
-                    low_tri_idx = np.tril_indices_from(diagonal_matrix)
-                    lower_tri = diagonal_matrix[low_tri_idx]
-                    data.extend([datatypes.Datum(
-                            val=e,
-                            com=com,
-                            typ='eig',
-                            src_1=name_other,
-                            src_2=name_out,
-                            idx_1=x+1,
-                            idx_2=y+1)
-                            for e, x, y in izip(
-                            lower_tri, low_tri_idx[0], low_tri_idx[1])])
+    # REFERENCE DATA TEXT FILES
+    # No grouping is necessary for this data type, so flatten the list of
+    # lists.
+    filenames = chain.from_iterable(coms['r'])
+    for filename in filenames:
+        # Unlike most datatypes, these Datum only get the attributes _lbl,
+        # val and wht. This is to ensure that making and working with these
+        # reference text files isn't too cumbersome.
+        data.extend(collect_reference(os.path.join(direc, filename)))
+    # JAGUAR ENERGIES
+    filenames_s = coms['je']
+    # idx_1 is the number used to group sets of relative energies.
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae = check_outs(filename, outs, filetypes.Mae, direc)
+            # idx_2 corresponds to the structure inside the file in case the
+            # .mae files contains multiple structures.
+            for idx_2, structure in enumerate(mae.structures):
+                try:
+                    energy = structure.props['r_j_Gas_Phase_Energy']
+                except KeyError:
+                    energy = structure.props['r_j_QM_Energy']
+                energy *= co.HARTREE_TO_KJMOL
+                temp.append(datatypes.Datum(
+                        val=energy,
+                        com='je',
+                        typ='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        # For this data type, we set everything relative.
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
+    # MACROMODEL ENERGIES
+    filenames_s = coms['me']
+    ind = 'pre'
+    for idx_1, filenames in enumerate(filenames_s):
+        for filename in filenames:
+            mae_name = inps[filename].name_mae
+            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            indices = inps[filename]._index_output_mae
+            # This is list of sets. The 1st value in the set corresponds to the
+            # number of the structure. The 2nd value is the structure class.
+            selected_structures = filetypes.select_structures(
+                mae.structures, indices, ind)
+            print(selected_structures)
+            for idx_2, structure in selected_structures:
+                data.append(datatypes.Datum(
+                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
+                        com='me',
+                        typ='e',
+                        src_1=inps[filename].name_mae,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
-    # We have to do this before we make it into a NumPy array.
-    data.sort(key=datatypes.datum_sort_key)
     return np.array(data, dtype=datatypes.Datum)
 
 def sort_commands_by_filename(commands):
@@ -704,21 +500,21 @@ def read_reference(filename):
     return np.array(data)
 
 # Shouldn't be necessary anymore.
-def lbl_to_data_attrs(datum, lbl):
-    parts = lbl.split('_')
-    datum.typ = parts[0]
-    if len(parts) == 3:
-        idxs = parts[-1]
-    if len(parts) == 4:
-        idxs = parts[-2]
-        atm_nums = parts[-1]
-        atm_nums = atm_nums.split('-')
-        for i, atm_num in enumerate(atm_nums):
-            setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
-    idxs = idxs.split('-')
-    datum.idx_1 = int(idxs[0])
-    if len(idxs) == 2:
-        datum.idx_2 == int(idxs[1])
+# def lbl_to_data_attrs(datum, lbl):
+#     parts = lbl.split('_')
+#     datum.typ = parts[0]
+#     if len(parts) == 3:
+#         idxs = parts[-1]
+#     if len(parts) == 4:
+#         idxs = parts[-2]
+#         atm_nums = parts[-1]
+#         atm_nums = atm_nums.split('-')
+#         for i, atm_num in enumerate(atm_nums):
+#             setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
+#     idxs = idxs.split('-')
+#     datum.idx_1 = int(idxs[0])
+#     if len(idxs) == 2:
+#         datum.idx_2 == int(idxs[1])
 
 # Right now, this only looks good if the logger doesn't append each log
 # message with something (module, date/time, etc.).
