@@ -78,7 +78,7 @@ def pretty_data_comp(r_data, c_data, output=None):
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
-    strings.append('-' * 79)
+    strings.append('-' * 89)
     for k, v in score_typ.iteritems():
         strings.append('{:<20} {:20.4f}'.format(k + ':', v))
     if output:
@@ -211,7 +211,7 @@ def select_group_of_energies(data):
     """
     Used to get the indices (numpy.array) for a single group of energies.
     """
-    for energy_type in ['e', 'eo', 'ea', 'eao']:
+    for energy_type in ['e', 'eo']:
         # Get all energy indices.
         indices = np.where([x.typ == energy_type for x in data])[0]
         # Get the unique group numbers.

@@ -426,7 +426,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             # number of the structure. The 2nd value is the structure class.
             selected_structures = filetypes.select_structures(
                 mae.structures, indices, ind)
-            print(selected_structures)
             for idx_2, structure in selected_structures:
                 data.append(datatypes.Datum(
                         val=structure.props['r_mmod_Potential_Energy-MM3*'],
@@ -435,6 +434,153 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
                         idx_2=idx_2 + 1))
+    # JAGUAR AVERAGE ENERGIES
+    filenames_s = coms['jea']
+    # idx_1 is the number used to group sets of relative energies.
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae = check_outs(filename, outs, filetypes.Mae, direc)
+            # idx_2 corresponds to the structure inside the file in case the
+            # .mae files contains multiple structures.
+            for idx_2, structure in enumerate(mae.structures):
+                try:
+                    energy = structure.props['r_j_Gas_Phase_Energy']
+                except KeyError:
+                    energy = structure.props['r_j_QM_Energy']
+                energy *= co.HARTREE_TO_KJMOL
+                temp.append(datatypes.Datum(
+                        val=energy,
+                        com='jea',
+                        typ='ea',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        # For this data type, we set everything relative.
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # MACROMODEL AVERAGE ENERGIES
+    filenames_s = coms['mea']
+    ind = 'pre'
+    # idx_1 is the number used to group sets of relative energies.
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae_name = inps[filename].name_mae
+            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            indices = inps[filename]._index_output_mae
+            # This is list of sets. The 1st value in the set corresponds to the
+            # number of the structure. The 2nd value is the structure class.
+            selected_structures = filetypes.select_structures(
+                mae.structures, indices, ind)
+            for idx_2, structure in selected_structures:
+                temp.append(datatypes.Datum(
+                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
+                        com='mea',
+                        typ='ea',
+                        src_1=inps[filename].name_mae,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # JAGUAR ENERGIES COMPARED TO OPTIMIZED MM
+    filenames_s = coms['jeo']
+    # idx_1 is the number used to group sets of relative energies.
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae = check_outs(filename, outs, filetypes.Mae, direc)
+            # idx_2 corresponds to the structure inside the file in case the
+            # .mae files contains multiple structures.
+            for idx_2, structure in enumerate(mae.structures):
+                try:
+                    energy = structure.props['r_j_Gas_Phase_Energy']
+                except KeyError:
+                    energy = structure.props['r_j_QM_Energy']
+                energy *= co.HARTREE_TO_KJMOL
+                temp.append(datatypes.Datum(
+                        val=energy,
+                        com='jeo',
+                        typ='eo',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        # For this data type, we set everything relative.
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
+    # MACROMODEL OPTIMIZED ENERGIES
+    filenames_s = coms['meo']    
+    ind = 'opt'
+    for idx_1, filenames in enumerate(filenames_s):
+        for filename in filenames:
+            mae_name = inps[filename].name_mae
+            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            indices = inps[filename]._index_output_mae
+            selected_structures = filetypes.select_structures(
+                mae.structures, indices, ind)
+            for idx_2, structure in selected_structures:
+                data.append(datatypes.Datum(
+                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
+                        com='meo',
+                        typ='eo',
+                        src_1=inps[filename].name_mae,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+    # JAGUAR ENERGIES RELATIVE TO AVERAGE COMPARED TO OPTIMIZED MM
+    filenames_s = coms['jeao']
+    # idx_1 is the number used to group sets of relative energies.
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae = check_outs(filename, outs, filetypes.Mae, direc)
+            # idx_2 corresponds to the structure inside the file in case the
+            # .mae files contains multiple structures.
+            for idx_2, structure in enumerate(mae.structures):
+                try:
+                    energy = structure.props['r_j_Gas_Phase_Energy']
+                except KeyError:
+                    energy = structure.props['r_j_QM_Energy']
+                energy *= co.HARTREE_TO_KJMOL
+                temp.append(datatypes.Datum(
+                        val=energy,
+                        com='jeao',
+                        typ='eao',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # MACROMODEL OPTIMIZED ENERGIES RELATIVE TO AVERAGE
+    filenames_s = coms['meao']    
+    ind = 'opt'
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            mae_name = inps[filename].name_mae
+            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            indices = inps[filename]._index_output_mae
+            selected_structures = filetypes.select_structures(
+                mae.structures, indices, ind)
+            for idx_2, structure in selected_structures:
+                temp.append(datatypes.Datum(
+                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
+                        com='meao',
+                        typ='eao',
+                        src_1=inps[filename].name_mae,
+                        idx_1=idx_1 + 1,
+                        idx_2=idx_2 + 1))
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
