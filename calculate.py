@@ -453,8 +453,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     ind = 'pre'
     for idx_1, filenames in enumerate(filenames_s):
         for filename in filenames:
-            mae_name = inps[filename].name_mae
-            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            name_mae = inps[filename].name_mae
+            mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
             # This is list of sets. The 1st value in the set corresponds to the
             # number of the structure. The 2nd value is the structure class.
@@ -524,8 +524,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            mae_name = inps[filename].name_mae
-            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            name_mae = inps[filename].name_mae
+            mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
             # This is list of sets. The 1st value in the set corresponds to the
             # number of the structure. The 2nd value is the structure class.
@@ -597,8 +597,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     ind = 'opt'
     for idx_1, filenames in enumerate(filenames_s):
         for filename in filenames:
-            mae_name = inps[filename].name_mae
-            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            name_mae = inps[filename].name_mae
+            mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
             selected_structures = filetypes.select_structures(
                 mae.structures, indices, ind)
@@ -664,8 +664,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            mae_name = inps[filename].name_mae
-            mae = check_outs(mae_name, outs, filetypes.Mae, direc)
+            name_mae = inps[filename].name_mae
+            mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
             selected_structures = filetypes.select_structures(
                 mae.structures, indices, ind)
@@ -682,8 +682,66 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
+    # JAGUAR BONDS
+    filenames = chain.from_iterable(coms['jb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+    # MACROMODEL BONDS
+    filenames = chain.from_iterable(coms['mb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'mb', 'opt', 'bonds'))
+    # JAGUAR ANGLES
+    filenames = chain.from_iterable(coms['ja'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'ja', 'pre', 'angles'))
+    # MACROMODEL BONDS
+    filenames = chain.from_iterable(coms['ma'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'ma', 'opt', 'angles'))
+    # JAGUAR BONDS
+    filenames = chain.from_iterable(coms['jt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'jt', 'pre', 'torsions'))
+    # MACROMODEL BONDS
+    filenames = chain.from_iterable(coms['mt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_mae(
+                filename, inps, outs, direc, sub_names, 'mt', 'opt', 'torsions'))
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
+
+def collect_structural_data_from_mae(
+    name_mae, inps, outs, direc, sub_names, com, ind, typ):
+    """
+    Repeated code used to extract structural data from .mae files (through
+    the generation of .mmo files).
+
+    Would be nice to reduce the number of arguments. The problem here is in
+    carrying through data for the generation of the Datum object.
+
+    Not going to write a pretty __doc__ for this since I want to make so
+    many changes. These changes will likely go along with modifications
+    to the classes inside filetypes.
+    """
+    data = []
+    name_mmo = inps[name_mae].name_mmo
+    indices = inps[name_mae]._index_output_mmo
+    mmo = check_outs(name_mmo, outs, filetypes.MacroModel, direc)
+    selected_structures = filetypes.select_structures(
+        mmo.structures, indices, ind)
+    for idx_1, structure in selected_structures:
+        data.extend(structure.select_stuff(
+                typ,
+                com=com,
+                com_match=sub_names,
+                src_1=mmo.filename,
+                idx_1=idx_1 + 1))
+    return data
 
 def sort_commands_by_filename(commands):
     '''

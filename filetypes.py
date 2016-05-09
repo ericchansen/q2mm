@@ -1503,11 +1503,29 @@ class Structure(object):
                         if set(angle.atom_nums) == set(angle_atoms_2):
                             angle_2 = angle.value
                             break
-                    logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
-                    logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(angle_1, angle_2))
+                    try:
+                        logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
+                        logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(
+                                angle_1, angle_2))
+                    except UnboundLocalError:
+                        logger.error('>>> atom_nums: {}'.format(atom_nums))
+                        logger.error(
+                            '>>> angle_atoms_1: {}'.format(angle_atoms_1))
+                        logger.error(
+                            '>>> angle_atoms_2: {}'.format(angle_atoms_2))
+                        if 'angle_1' not in locals():
+                            logger.error("Can't identify angle_1!")
+                        else:
+                            logger.error(">>> angle_1: {}".format(angle_1))
+                        if 'angle_2' not in locals():
+                            logger.error("Can't identify angle_2!")
+                        else:
+                            logger.error(">>> angle_2: {}".format(angle_2))
+                        raise
                     if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
                             -5. < angle_2 < 5. or 175. < angle_2 < 185.:
-                        logger.log(1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
+                        logger.log(
+                            1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
                         pass
                     else:
                         data.append(datum)
