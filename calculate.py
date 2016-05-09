@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Commands where we need to load the force field.
 COM_LOAD_FF    = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
 # Commands related to Gaussian.
-COM_GAUSSIAN   = ['ge', 'geo', 'geigz', 'geigz2']
+COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao', 'geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['je', 'jeo', 'jea', 'jeao', 'jeigz', 'jq', 'jqh']
 # Commands related to MacroModel (Schrodinger).
@@ -212,11 +212,23 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.log',
         help=('Gaussian energies.'))
     data_args.add_argument(
+        '-gea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energies. Energies will be relative to the average '
+              'energy within this data type.'))
+    data_args.add_argument(
         '-geo', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies. Same as -ge, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo.'))
+    data_args.add_argument(
+        '-geao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energies. Same as -ge, except the files selected '
+              'by this command will have their energies compared to those '
+              'selected by -meo. Energies will be relative to the average '
+              'energy within this data type.'))
     data_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
@@ -242,14 +254,14 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='MacroModel energies (pre-FF optimization).')
     data_args.add_argument(
-        '-meo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (post-FF optimization).')
-    data_args.add_argument(
         '-mea', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='MacroModel energies (pre-FF optimization). Energies will be '
         'relative to the average energy.')
+    data_args.add_argument(
+        '-meo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (post-FF optimization).')
     data_args.add_argument(
         '-meao', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -290,16 +302,16 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='Jaguar energies.')
     data_args.add_argument(
+        '-jea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Everything will be relative to the average '
+              'energy.'))
+    data_args.add_argument(
         '-jeo', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help=('Jaguar energies. Same as -je, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo.'))
-    data_args.add_argument(
-        '-jea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Everything will be relative to the average '
-              'energy.'))
     data_args.add_argument(
         '-jeao', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
@@ -414,6 +426,28 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
+    # GAUSSIAN ENERGIES
+    filename_s = coms['ge']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            # Revisit how structures are stored in GaussLog when you have time.
+            hf = log.structures[0].props['hf']
+            zp = log.structures[0].props['zp']
+            energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # We don't use idx_2 since we assume there is only one structure
+            # in a Gaussian .log. I think that's always the case.
+            temp.append(datatypes.Datum(
+                    val=energy,
+                    com='ge',
+                    typ='e',
+                    src_1=filename,
+                    idx_1=idx_1 + 1))
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
     # MACROMODEL ENERGIES
     filenames_s = coms['me']
     ind = 'pre'
@@ -457,6 +491,28 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                         idx_1=idx_1 + 1,
                         idx_2=idx_2 + 1))
         # For this data type, we set everything relative.
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # GAUSSIAN AVERAGE ENERGIES
+    filename_s = coms['gea']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            # Revisit how structures are stored in GaussLog when you have time.
+            hf = log.structures[0].props['hf']
+            zp = log.structures[0].props['zp']
+            energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # We don't use idx_2 since we assume there is only one structure
+            # in a Gaussian .log. I think that's always the case.
+            temp.append(datatypes.Datum(
+                    val=energy,
+                    com='gea',
+                    typ='ea',
+                    src_1=filename,
+                    idx_1=idx_1 + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
@@ -514,6 +570,28 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
+    # GAUSSIAN ENERGIES RELATIVE TO OPTIMIZED MM
+    filename_s = coms['geo']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            # Revisit how structures are stored in GaussLog when you have time.
+            hf = log.structures[0].props['hf']
+            zp = log.structures[0].props['zp']
+            energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # We don't use idx_2 since we assume there is only one structure
+            # in a Gaussian .log. I think that's always the case.
+            temp.append(datatypes.Datum(
+                    val=energy,
+                    com='geo',
+                    typ='eo',
+                    src_1=filename,
+                    idx_1=idx_1 + 1))
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
     # MACROMODEL OPTIMIZED ENERGIES
     filenames_s = coms['meo']    
     ind = 'opt'
@@ -558,8 +636,30 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
+    # GAUSSIAN AVERAGE ENERGIES RELATIVE TO OPTIMIZED MM
+    filename_s = coms['geao']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            # Revisit how structures are stored in GaussLog when you have time.
+            hf = log.structures[0].props['hf']
+            zp = log.structures[0].props['zp']
+            energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # We don't use idx_2 since we assume there is only one structure
+            # in a Gaussian .log. I think that's always the case.
+            temp.append(datatypes.Datum(
+                    val=energy,
+                    com='geao',
+                    typ='eao',
+                    src_1=filename,
+                    idx_1=idx_1 + 1))
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
     # MACROMODEL OPTIMIZED ENERGIES RELATIVE TO AVERAGE
-    filenames_s = coms['meao']    
+    filenames_s = coms['meao']
     ind = 'opt'
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -569,6 +669,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             indices = inps[filename]._index_output_mae
             selected_structures = filetypes.select_structures(
                 mae.structures, indices, ind)
+            print(selected_structures)
             for idx_2, structure in selected_structures:
                 temp.append(datatypes.Datum(
                         val=structure.props['r_mmod_Potential_Energy-MM3*'],
