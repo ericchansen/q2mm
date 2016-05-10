@@ -35,15 +35,24 @@ import filetypes
 logger = logging.getLogger(__name__)
 
 # Commands where we need to load the force field.
-COM_LOAD_FF    = ['ma', 'mb', 'mt', 'ja', 'jb', 'jt']
+COM_LOAD_FF    = ['ma', 'mb', 'mt',
+                  'ja', 'jb', 'jt']
 # Commands related to Gaussian.
-COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao', 'geigz', 'geigz2']
+COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao',
+                  'geigz', 'geigz2']
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR     = ['je', 'jeo', 'jea', 'jeao', 'jeigz', 'jq', 'jqh']
+COM_JAGUAR     = ['jq', 'jqh', 'jqa',
+                  'je', 'jeo', 'jea', 'jeao',
+                  'jeigz']
 # Commands related to MacroModel (Schrodinger).
-COM_MACROMODEL = ['ja', 'jb', 'jt', 'ma', 'mb', 
-                  'me', 'meo', 'mea', 'meao', 'mjeig', 'mgeig',
-                  'mq', 'mqh', 'mt']
+# Seems odd that the Jaguar geometry datatypes are in here, but we
+# do a MacroModel calculation to get the data in an easy form to
+# extract.
+COM_MACROMODEL = ['ja', 'jb', 'jt',
+                  'mq', 'mqh', 'mqa',
+                  'ma', 'mb', 'mt',
+                  'me', 'meo', 'mea', 'meao',
+                  'mjeig', 'mgeig']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
@@ -205,147 +214,170 @@ def return_calculate_parser(add_help=True, parents=None):
     opts.add_argument(
         '--weight', '-w', action='store_true',
         help='Add weights to data points.')
-    # DATA TYPES
-    data_args = parser.add_argument_group("calculate data types")
-    data_args.add_argument(
+    # GAUSSIAN OPTIONS
+    gau_args = parser.add_argument_group("gaussian reference data types")
+    gau_args.add_argument(
         '-ge', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies.'))
-    data_args.add_argument(
+    gau_args.add_argument(
         '-gea', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies. Energies will be relative to the average '
               'energy within this data type.'))
-    data_args.add_argument(
+    gau_args.add_argument(
         '-geo', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies. Same as -ge, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo.'))
-    data_args.add_argument(
+    gau_args.add_argument(
         '-geao', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies. Same as -ge, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo. Energies will be relative to the average '
               'energy within this data type.'))
-    data_args.add_argument(
+    gau_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
               'all off-diagonal elements. Uses only the .log for '
               'the eigenvalues and eigenvectors.'))
-    data_args.add_argument(
+    gau_args.add_argument(
         '-geigz2', type=str, nargs='+', action='append',
         default=[], metavar='somename.log,somename.fchk',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
               'all off-diagonal elements. Uses the .log for '
               'eigenvectors and .fchk for Hessian.'))
-    data_args.add_argument(
-        '-ma', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel angles (post-FF optimization).')
-    data_args.add_argument(
-        '-mb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel bond lengths (post-FF optimization).')
-    data_args.add_argument(
-        '-me', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (pre-FF optimization).')
-    data_args.add_argument(
-        '-mea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (pre-FF optimization). Energies will be '
-        'relative to the average energy.')
-    data_args.add_argument(
-        '-meo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (post-FF optimization).')
-    data_args.add_argument(
-        '-meao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (post-FF optimization). Energies will be '
-        'relative to the average energy.')
-    data_args.add_argument(
-        '-mjeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.out',
-        help='MacroModel eigenmatrix (all elements). Uses Jaguar '
-        'eigenvectors.')
-    data_args.add_argument(
-        '-mgeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.out',
-        help='MacroModel eigenmatrix (all elements). Uses Gaussian '
-        'eigenvectors.')
-    data_args.add_argument(
-        '-mq', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel charges.')
-    data_args.add_argument(
-        '-mqh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel charges (excludes aliphatic hydrogens).')
-    data_args.add_argument(
-        '-mt', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel torsions (post-FF optimization).')
-    data_args.add_argument(
-        '-ja', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar angles.')
-    data_args.add_argument(
-        '-jb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar bond lengths.')
-    data_args.add_argument(
-        '-je', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar energies.')
-    data_args.add_argument(
-        '-jea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Everything will be relative to the average '
-              'energy.'))
-    data_args.add_argument(
-        '-jeo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Same as -je, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meo.'))
-    data_args.add_argument(
-        '-jeao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Same as -jea, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meao.'))
-    data_args.add_argument(
-        '-jeigz', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in,somename.out',
-        help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
-              'all off-diagonal elements.'))
-    data_args.add_argument(
+    # JAGUAR OPTIONS
+    jag_args = parser.add_argument_group("jaguar reference data types")
+    jag_args.add_argument(
         '-jq', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar partial charges.')
-    data_args.add_argument(
+    jag_args.add_argument(
         '-jqh', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help=('Jaguar partial charges (excludes aliphatic hydrogens). '
               'Sums aliphatic hydrogen charges into their bonded sp3 '
               'carbon.'))
-    data_args.add_argument(
+    jag_args.add_argument(
+        '-jqa', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar partial charges. Sums the partial charge of all singly '
+              'bonded hydrogens into its connected atom.'))
+    jag_args.add_argument(
+        '-je', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='Jaguar energies.')
+    jag_args.add_argument(
+        '-jea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Everything will be relative to the average '
+              'energy.'))
+    jag_args.add_argument(
+        '-jeo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Same as -je, except the files selected '
+              'by this command will have their energies compared to those '
+              'selected by -meo.'))
+    jag_args.add_argument(
+        '-jeao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('Jaguar energies. Same as -jea, except the files selected '
+              'by this command will have their energies compared to those '
+              'selected by -meao.'))
+    jag_args.add_argument(
+        '-ja', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='Jaguar angles.')
+    jag_args.add_argument(
+        '-jb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='Jaguar bond lengths.')
+    jag_args.add_argument(
         '-jt', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='Jaguar torsions.')
-    data_args.add_argument(
+    jag_args.add_argument(
+        '-jeigz', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in,somename.out',
+        help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
+              'all off-diagonal elements.'))
+    # ADDITIONAL REFERENCE OPTIONS
+    ref_args = parser.add_argument_group("other reference data types")
+    ref_args.add_argument(
         '-r', type=str, nargs='+', action='append',
         default=[], metavar='somename.txt',
         help=('Read reference data from file. The reference file should '
               '3 space or tab separated columns. Column 1 is the labels, '
               'column 2 is the weights and column 3 is the values.'))
+    # MACROMODEL OPTIONS
+    mm_args = parser.add_argument_group("macromodel data types")
+    mm_args.add_argument(
+        '-mq', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel charges.')
+    mm_args.add_argument(
+        '-mqh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel charges (excludes aliphatic hydrogens).')
+    jag_args.add_argument(
+        '-mqa', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help=('MacroModel partial charges. Sums the partial charge of all '
+              'singly bonded hydrogens into its connected atom.'))
+    mm_args.add_argument(
+        '-me', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (pre-FF optimization).')
+    mm_args.add_argument(
+        '-mea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (pre-FF optimization). Energies will be '
+        'relative to the average energy.')
+    mm_args.add_argument(
+        '-meo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (post-FF optimization).')
+    mm_args.add_argument(
+        '-meao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel energies (post-FF optimization). Energies will be '
+        'relative to the average energy.')
+    mm_args.add_argument(
+        '-mb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel bond lengths (post-FF optimization).')
+    mm_args.add_argument(
+        '-ma', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel angles (post-FF optimization).')
+    mm_args.add_argument(
+        '-mt', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel torsions (post-FF optimization).')
+    mm_args.add_argument(
+        '-mjeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae,somename.out',
+        help='MacroModel eigenmatrix (all elements). Uses Jaguar '
+        'eigenvectors.')
+    mm_args.add_argument(
+        '-mgeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae,somename.out',
+        help='MacroModel eigenmatrix (all elements). Uses Gaussian '
+        'eigenvectors.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
+    """
+    Reads a file if necessary. Checks the output dictionary first in
+    case the file has already been loaded.
+
+    Could work on easing the use of this by somehow reducing number of
+    arguments required.
+    """
     if filename not in outs:
         outs[filename] = \
             classtype(os.path.join(direc, filename))
@@ -712,6 +744,145 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'mt', 'opt', 'torsions'))
+    # JAGUAR CHARGES
+    filenames = chain.from_iterable(coms['jq'])
+    for filename in filenames:
+        mae = check_outs(filename, outs, filetypes.Mae, direc)
+        for idx_1, structure in enumerate(mae.structures):
+            for atom in structure.atoms:
+                # If it doesn't have the property b_q_use_charge,
+                # use it.
+                # If b_q_use_charge is 1, use it. If it's 0, don't
+                # use it.
+                if not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']:
+                    data.append(datatypes.Datum(
+                            val=atom.partial_charge,
+                            com='jq',
+                            typ='q',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
+    # MACROMODEL CHARGES
+    filenames = chain.from_iterable(coms['mq'])
+    for filename in filenames:
+        name_mae = inps[filename].name_mae
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        # Pick out the right structures. Sometimes our .com files
+        # generate many structures in a .mae, not all of which
+        # apply to this command.
+        structures = filetypes.select_structures(
+            mae.structures, inps[filename]._index_output_mae, 'pre')
+        for idx_1, structure in structures:
+            for atom in structure.atoms:
+                if not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']:
+                    data.append(datatypes.Datum(
+                            val=atom.partial_charge,
+                            com='mq',
+                            typ='q',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
+    # JAGUAR CHARGES EXCLUDING ALIPHATIC HYDROGENS
+    filenames = chain.from_iterable(coms['jqh'])
+    for filename in filenames:
+        mae = check_outs(filename, outs, filetypes.Mae, direc)
+        for idx_1, structure in enumerate(mae.structures):
+            for atom in structure.atoms:
+                aliph_hyds = structure.get_aliph_hyds()
+                # If it doesn't have the property b_q_use_charge,
+                # use it.
+                # If b_q_use_charge is 1, use it. If it's 0, don't
+                # use it.
+                if (not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']) and \
+                        not atom in aliph_hyds:
+                    data.append(datatypes.Datum(
+                            val=atom.partial_charge,
+                            com='jqh',
+                            typ='qh',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
+    # MACROMODEL CHARGES EXCLUDING ALIPHATIC HYDROGENS
+    filenames = chain.from_iterable(coms['mqh'])
+    for filename in filenames:
+        name_mae = inps[filename].name_mae
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        # Pick out the right structures. Sometimes our .com files
+        # generate many structures in a .mae, not all of which
+        # apply to this command.
+        structures = filetypes.select_structures(
+            mae.structures, inps[filename]._index_output_mae, 'pre')
+        for idx_1, structure in structures:
+            aliph_hyds = structure.get_aliph_hyds()
+            for atom in structure.atoms:
+                if (not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']) and \
+                        atom not in aliph_hyds:
+                    data.append(datatypes.Datum(
+                            val=atom.partial_charge,
+                            com='mqh',
+                            typ='qh',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
+    # JAGUAR CHARGES EXCLUDING ALL SINGLE BONDED HYDROGENS
+    filenames = chain.from_iterable(coms['jqa'])
+    for filename in filenames:
+        mae = check_outs(filename, outs, filetypes.Mae, direc)
+        for idx_1, structure in enumerate(mae.structures):
+            hyds = structure.get_hyds()
+            for atom in structure.atoms:
+                # Check if we want to use this charge and ensure it's not a
+                # hydrogen.
+                if (not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']) and \
+                        atom not in hyds:
+                    charge = atom.partial_charge
+                    # Check if it's bonded to a hydrogen.
+                    for bonded_atom_index in atom.bonded_atom_indices:
+                        bonded_atom = structure.atoms[bonded_atom_index - 1]
+                        if bonded_atom in hyds: 
+                            if len(bonded_atom.bonded_atom_indices) < 2:
+                                charge += bonded_atom.partial_charge
+                    data.append(datatypes.Datum(
+                            val=charge,
+                            com='jqa',
+                            typ='qa',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
+    # MACROMODEL CHARGES EXCLUDING ALL SINGLE BONDED HYDROGENS
+    filenames = chain.from_iterable(coms['mqa'])
+    for filename in filenames:
+        name_mae = inps[filename].name_mae
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        # Pick out the right structures. Sometimes our .com files
+        # generate many structures in a .mae, not all of which
+        # apply to this command.
+        structures = filetypes.select_structures(
+            mae.structures, inps[filename]._index_output_mae, 'pre')
+        for idx_1, structure in structures:
+            hyds = structure.get_hyds()
+            for atom in structure.atoms:
+                if (not 'b_q_use_charge' in atom.props or \
+                        atom.props['b_q_use_charge']) and \
+                        atom not in hyds:
+                    charge = atom.partial_charge
+                    for bonded_atom_index in atom.bonded_atom_indices:
+                        bonded_atom = structure.atoms[bonded_atom_index - 1]
+                        if bonded_atom in hyds: 
+                            if not len(bonded_atom.bonded_atom_indices) < 2:
+                                charge += bonded_atom.partial_charge
+                    data.append(datatypes.Datum(
+                            val=charge,
+                            com='mqa',
+                            typ='qa',
+                            src_1=filename,
+                            idx_1=idx_1 + 1,
+                            atm_1=atom.index))
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 

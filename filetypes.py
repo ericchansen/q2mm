@@ -967,9 +967,9 @@ class Mae(SchrodingerFile):
             'tors': False}
         if len(self.structures) > 1:
             com_opts['strs'] = True
-        if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
+        if any(x in ['jb', 'ja', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'mea', 'mq', 'mqh'] for x in self.commands):
+        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa'] for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
         if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
@@ -982,10 +982,10 @@ class Mae(SchrodingerFile):
                         self.path, ' '.join(commands)))
             else:
                 com_opts['freq'] = True
-        if any(x in ['ma', 'mb', 'meo', 'meao', 'mt'] for x in self.commands):
+        if any(x in ['mb', 'ma', 'mt', 'meo', 'meao'] for x in self.commands):
             com_opts['opt'] = True
             com_opts['opt_mmo'] = True
-        elif any(x in ['ma', 'mb', 'mt'] for x in self.commands):
+        elif any(x in ['mb', 'ma', 'mt'] for x in self.commands):
             com_opts['opt'] = True
         if any(x in ['mt', 'jt'] for x in self.commands):
             com_opts['tors'] = True
@@ -1560,6 +1560,21 @@ class Structure(object):
                         aliph_hyds.append(atom)
         logger.log(5, '  -- {} aliphatic hydrogen(s).'.format(len(aliph_hyds)))
         return aliph_hyds
+    def get_hyds(self):
+        """
+        Returns the atom numbers of any default MacroModel type hydrogens.
+
+        This should be subclassed into something is MM3* specific.
+        """
+        hyds = []
+        for atom in self.atoms:
+            if 40 < atom.atom_type < 49:
+                for bonded_atom_index in atom.bonded_atom_indices:
+                    bonded_atom = self.atoms[bonded_atom_index - 1]
+                    if bonded_atom.atom_type == 3:
+                        hyds.append(atom)
+        logger.log(5, '  -- {} hydrogen(s).'.format(len(hyds)))
+        return hyds
 
 class Atom(object):
     """

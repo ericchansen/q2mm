@@ -87,16 +87,18 @@ STEPS = {'ae':      2.0,
 
 # WEIGHTS
 WEIGHTS = {'a':          2.00,
-           'q':         10.00,
            'b':        100.00,
+           't':          1.00,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
            'eig_d':      0.10, # Weight of other eigenvalues.
            'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
            'e':         50.00,
-           'eo':        50.00,
            'ea':        50.00,
+           'eo':        50.00,
            'eao':       50.00,
-           't':          1.00
+           'q':         10.00,
+           'qh':        10.00,
+           'qa':        10.00
            }
 
 # UNIT CONVERSIONS
