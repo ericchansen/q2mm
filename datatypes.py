@@ -685,6 +685,25 @@ def match_mm3_improper(mm3_label):
     """Matches MM3* label for improper torsions."""
     return re.match('[\sa-z]5', mm3_label)
 
+def mass_weight_hessian(hess, atoms, reverse=False):
+    """
+    Mass weights hess. If reverse is True, it un-mass weights
+    the Hessian.
+    """
+    masses = [co.MASSES[x.element] for x in atoms if not x.is_dummy]
+    changes = []
+    for mass in masses:
+        changes.extend([1 / np.sqrt(mass)] * 3)
+    x, y = hess.shape
+    for i in xrange(0, x):
+        for j in xrange(0, y):
+            if reverse:
+                hess[i, j] = \
+                    hess[i, j] / changes[i] / changes[j]
+            else:
+                hess[i, j] = \
+                    hess[i, j] * changes[i] * changes[j]
+
 class Hessian(object):
     """
     Contains methods to manipulate a certesian Hessian matrix.

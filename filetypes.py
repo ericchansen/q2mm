@@ -663,6 +663,11 @@ class JaguarIn(SchrodingerFile):
         self._lines = None
     @property
     def hessian(self):
+        """
+        Reads the Hessian from a Jaguar .in.
+
+        Automatically removes Hessian elements corresponding to dummy atoms.
+        """
         if self._hessian is None:
             num = len(self.structures[0].atoms) + len(self._empty_atoms)
             logger.log(5,
@@ -705,7 +710,6 @@ class JaguarIn(SchrodingerFile):
                 dummy_indices.append(index + 2)
             logger.log(1, '>>> dummy_indices: {}'.format(dummy_indices))
             # Delete these rows and columns.
-            np.set_printoptions(linewidth=100000)
             logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
             logger.log(1, '>>> hessian:\n{}'.format(hessian))
             hessian = np.delete(hessian, dummy_indices, 0)

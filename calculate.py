@@ -43,7 +43,7 @@ COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao',
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['jq', 'jqh', 'jqa',
                   'je', 'jeo', 'jea', 'jeao',
-                  'jeigz']
+                  'jh', 'jeigz']
 # Commands related to MacroModel (Schrodinger).
 # Seems odd that the Jaguar geometry datatypes are in here, but we
 # do a MacroModel calculation to get the data in an easy form to
@@ -301,6 +301,10 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='Jaguar torsions.')
     jag_args.add_argument(
+        '-jh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Jaguar Hessian.')
+    jag_args.add_argument(
         '-jeigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.in,somename.out',
         help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
@@ -368,6 +372,10 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae,somename.out',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
+    mm_args.add_argument(
+        '-mh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel Hessian.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -883,8 +891,28 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                             src_1=filename,
                             idx_1=idx_1 + 1,
                             atm_1=atom.index))
+    # JAGUAR HESSIAN
+    filenames = chain.from_iterable(coms['jh'])
+    for filename in filenames:
+        jin = check_outs(filename, outs, filetypes.JaguarIn, direc)
+        hess = jin.hessian
+        datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
+        low_tri_idx = np.tril_indices_from(hess)
+        low_tri = hess[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='jh',
+                    typ='h',
+                    src_1=jin.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                    for e, x, y in izip(
+                        low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # MACROMODEL HESSIAN
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
+
+
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
