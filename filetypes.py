@@ -1474,12 +1474,23 @@ class Structure(object):
                 output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
                         ele, atom.x, atom.y, atom.z))
             return output
-    def select_stuff(self, typ, com_match=None, **kwargs):
+    def select_stuff(self, typ, com_match=None):
+        """
+        A much simpler version of select_data. It would be nice if select_data
+        was a wrapper around this function.
+        """
+        stuff = []
+        for thing in getattr(self, typ):
+            if (com_match and any(x in thing.comment for x in com_match)) or \
+                    com_match is None:
+                stuff.append(thing)
+        return stuff
+    def select_data(self, typ, com_match=None, **kwargs):
         """
         Selects bonds, angles, or torsions from the structure and returns them
         in the format used as data.
 
-        typ       - 'bond', 'angle', or 'torsion'.
+        typ       - 'bonds', 'angles', or 'torsions'.
         com_match - String or None. If None, just returns all of the selected
                     stuff (bonds, angles, or torsions). If a string, selects
                     only those that have this string in their comment.

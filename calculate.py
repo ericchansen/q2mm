@@ -1063,7 +1063,7 @@ def collect_structural_data_from_mae(
     selected_structures = filetypes.select_structures(
         mmo.structures, indices, ind)
     for idx_1, structure in selected_structures:
-        data.extend(structure.select_stuff(
+        data.extend(structure.select_data(
                 typ,
                 com=com,
                 com_match=sub_names,

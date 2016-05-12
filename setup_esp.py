@@ -24,6 +24,11 @@ def return_parser():
     parser.add_argument(
         '--output', '-o', type=str,
         help='Name of new .in file.')
+    parser.add_argument(
+        '--subnames', '-s', type=str, nargs='+', default=['OPT'],
+        metavar='"Substructure Name OPT"',
+        help=("Names of the substructures containing parameters to "
+              "optimize in a mm3.fld file."))
     return parser
 
 def main(args):
@@ -38,7 +43,8 @@ def main(args):
     # This structure should only contain bonds that are particular to our
     # substructure.
     str_mmo = mmo.structures[0]
-    substr_atoms = atom_nums_from_bonds(str_mmo.bonds)
+    substr_bonds = str_mmo.select_stuff('bonds', com_match=opts.subnames)
+    substr_atoms = atom_nums_from_bonds(substr_bonds)
     # Now that we have the atoms in the substructure, we need to select
     # every other atom and get those MM charges.
     non_substr_atoms = []
