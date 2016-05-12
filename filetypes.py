@@ -143,6 +143,7 @@ class GaussLog(File):
             # self.read_out()
             self.read_archive()
         return self._structures
+    # Needs work.
     def read_out(self):
         """
         Read force constant and eigenvector data from a frequency
@@ -251,6 +252,8 @@ class GaussLog(File):
                 evec[i] *= weird_x
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
+    # May want to move some attributes assigned to the structure class onto
+    # this filetype class.
     def read_archive(self):
         """
         Only reads last archive found in the Gaussian .log file.
@@ -271,8 +274,6 @@ class GaussLog(File):
             open(self.path, 'r').read())[-1]
         logger.log(5, '  -- Located last archive.')
         arch = arch.replace('\n ', '')
-        # Watch out with NImag. Sometimes equals 1, sometimes 0,
-        # anything else?
         stuff = re.search(
             '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
             '\\\\(?P<date>.*?)'
@@ -314,7 +315,6 @@ class GaussLog(File):
         hess += np.tril(hess, -1).T
         hess *= co.HESSIAN_CONVERSION
         struct.hess = hess
-
         # Code to extract energies.
         # Still not sure exactly what energies we want to use.
         struct.props['hf'] = float(stuff.group('hf'))

@@ -39,7 +39,7 @@ COM_LOAD_FF    = ['ma', 'mb', 'mt',
                   'ja', 'jb', 'jt']
 # Commands related to Gaussian.
 COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao',
-                  'geigz', 'geigz2']
+                  'gh', 'geigz']
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['jq', 'jqh', 'jqa',
                   'je', 'jeo', 'jea', 'jeao',
@@ -239,17 +239,15 @@ def return_calculate_parser(add_help=True, parents=None):
               'selected by -meo. Energies will be relative to the average '
               'energy within this data type.'))
     gau_args.add_argument(
+        '-gh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Gaussian Hessian extracted from a .log archive.')
+    gau_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
               'all off-diagonal elements. Uses only the .log for '
               'the eigenvalues and eigenvectors.'))
-    gau_args.add_argument(
-        '-geigz2', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log,somename.fchk',
-        help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
-              'all off-diagonal elements. Uses the .log for '
-              'eigenvectors and .fchk for Hessian.'))
     # JAGUAR OPTIONS
     jag_args = parser.add_argument_group("jaguar reference data types")
     jag_args.add_argument(
@@ -363,6 +361,10 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae',
         help='MacroModel torsions (post-FF optimization).')
     mm_args.add_argument(
+        '-mh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae',
+        help='MacroModel Hessian.')
+    mm_args.add_argument(
         '-mjeig', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae,somename.out',
         help='MacroModel eigenmatrix (all elements). Uses Jaguar '
@@ -372,10 +374,6 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae,somename.out',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
-    mm_args.add_argument(
-        '-mh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel Hessian.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -908,6 +906,24 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # GAUSSIAN HESSIAN
+    filenames = chain.from_iterable(coms['gh'])
+    for filename in filenames:
+        log = check_outs(filename, outs, filetypes.GaussLog, direc)
+        log.read_archive()
+        # For now, the Hessian is stored on the structures inside the filetype.
+        hess = log.structures[0].hess
+        low_tri_idx = np.tril_indices_from(hess)
+        low_tri = hess[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='gh',
+                    typ='h',
+                    src_1=log.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     # MACROMODEL HESSIAN
     filenames = chain.from_iterable(coms['mh'])
     for filename in filenames:
@@ -957,7 +973,24 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-    # MACROMODEL EIGENMATRIX
+    # GAUSSIAN EIGENMATRIX
+    filenames = chain.from_iterable(coms['geigz'])
+    for filename in filenames:
+        log = check_outs(filename, outs, filetypes.GaussLog, direc)
+        evals = log.evals * co.HESSIAN_CONVERSION
+        eigenmatrix = np.diag(evals)
+        low_tri_idx = np.tril_indices_from(eigenmatrix)
+        low_tri = eigenmatrix[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='geigz',
+                    typ='eig',
+                    src_1=log.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # MACROMODEL EIGENMATRIX USING JAGUAR EIGENVECTORS
     filenames = chain.from_iterable(coms['mjeig'])
     for comma_sep_filenames in filenames:
         name_mae, name_out = comma_sep_filenames.split(',')
@@ -984,8 +1017,31 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # MACROMODEL EIGENMATRIX USING GAUSSIAN EIGENVECTORS
+    filenames = chain.from_iterable(coms['mgeig'])
+    for comma_filenames in filenames:
+        name_mae, name_gau_log = comma_filenames.split(',')
+        name_mae_log = inps[name_mae].name_log
+        mae_log = check_outs(name_mae_log, outs, filetypes.MacroModelLog, direc)
+        gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
+        hess = mae_log.hessian
+        evec = gau_log.evecs
+        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        low_tri_idx = np.tril_indices_from(eigenmatrix)
+        low_tri = eigenmatrix[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='mgeig',
+                    typ='eig',
+                    src_1=name_mae,
+                    src_2=name_gau_log,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
+
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
