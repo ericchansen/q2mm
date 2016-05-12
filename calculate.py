@@ -932,6 +932,58 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # JAGUAR EIGENMATRIX
+    filenames = chain.from_iterable(coms['jeigz'])
+    for comma_sep_filenames in filenames:
+        name_log, name_out = comma_sep_filenames.split(',')
+        jin = check_outs(name_log, outs, filetypes.JaguarIn, direc)
+        out = check_outs(name_out, outs, filetypes.JaguarOut, direc)
+        hess = jin.hessian
+        evec = out.eigenvectors
+        datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
+        datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
+        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        # Funny way to make off-diagonal elements zero.
+        eigenmatrix = np.diag(np.diag(eigenmatrix))
+        low_tri_idx = np.tril_indices_from(eigenmatrix)
+        low_tri = eigenmatrix[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='jeigz',
+                    typ='eig',
+                    src_1=jin.filename,
+                    src_2=out.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # MACROMODEL EIGENMATRIX
+    filenames = chain.from_iterable(coms['mjeig'])
+    for comma_sep_filenames in filenames:
+        name_mae, name_out = comma_sep_filenames.split(',')
+        name_log = inps[name_mae].name_log
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        log = check_outs(name_log, outs, filetypes.MacroModelLog, direc)
+        out = check_outs(name_out, outs, filetypes.JaguarOut, direc)
+        hess = log.hessian
+        dummies = mae.structures[0].get_dummy_atom_indices()
+        hess_dummies = datatypes.get_dummy_hessian_indices(dummies)
+        hess = datatypes.check_mm_dummy(hess, hess_dummies)
+        evec = out.eigenvectors
+        datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
+        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        low_tri_idx = np.tril_indices_from(eigenmatrix)
+        low_tri = eigenmatrix[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='mjeig',
+                    typ='eig',
+                    src_1=mae.filename,
+                    src_2=out.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
@@ -1107,6 +1159,7 @@ def pretty_data(data, log_level=20):
     data : list of Datum
     log_level : int
     """
+    # Really, this should check every data point instead of only the 1st.
     if not data[0].wht:
         compare.import_weights(data)
     if log_level:
@@ -1116,7 +1169,7 @@ def pretty_data(data, log_level=20):
                   '--')
         logger.log(log_level, string)
     for d in data:
-        if d.wht:
+        if d.wht or d.wht == 0:
             string = ('  ' + '{:22s}'.format(d.lbl) +
                       '  ' + '{:22.4f}'.format(d.wht) + 
                       '  ' + '{:22.4f}'.format(d.val))

@@ -687,7 +687,7 @@ def match_mm3_improper(mm3_label):
 
 def mass_weight_hessian(hess, atoms, reverse=False):
     """
-    Mass weights hess. If reverse is True, it un-mass weights
+    Mass weights Hessian. If reverse is True, it un-mass weights
     the Hessian.
     """
     masses = [co.MASSES[x.element] for x in atoms if not x.is_dummy]
@@ -703,6 +703,23 @@ def mass_weight_hessian(hess, atoms, reverse=False):
             else:
                 hess[i, j] = \
                     hess[i, j] * changes[i] * changes[j]
+
+def mass_weight_eigenvectors(evecs, atoms, reverse=False):
+    """
+    Mass weights eigenvectors. If reverse is True, it un-mass weights
+    the eigenvectors.
+    """
+    changes = []
+    for atom in atoms:
+        if not atom.is_dummy:
+            changes.extend([np.sqrt(atom.exact_mass)] * 3)
+    x, y = evecs.shape
+    for i in xrange(0, x):
+        for j in xrange(0, y):
+            if reverse:
+                evecs[i, j] /= changes[j]
+            else:
+                evecs[i, j] *= changes[j]
 
 class Hessian(object):
     """
@@ -821,6 +838,20 @@ def check_mm_dummy(hess, dummy_indices):
     return hess
 
 def get_dummy_hessian_indices(dummy_indices):
+    """
+    Takes a list of indices for the dummy atoms and returns another list of
+    integers corresponding to the rows of the eigenvectors to remove
+    for those those dummy atoms.
+    
+    Arguments
+    ---------
+    dummy_indices : list of integers
+                    Indices for the dummy atoms.
+                    
+    Returns
+    -------
+    list of integers
+    """
     hess_dummy_indices = []
     for index in dummy_indices:
         hess_index = (index - 1) * 3
