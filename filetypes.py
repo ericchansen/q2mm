@@ -976,7 +976,7 @@ class Mae(SchrodingerFile):
         if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa'] for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
-        if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
+        if any(x in ['mh', 'meig', 'mjeig', 'mgeig'] for x in self.commands):
             if com_opts['strs']:
                 raise Exception(
                     "Can't obtain the Hessian from a Maestro file "
@@ -1383,6 +1383,7 @@ def select_structures(structures, indices, label):
                 selected.append((str_num, struct))
         return selected
 
+# This could use some documentation. Looks pretty though.
 def geo_from_points(*args):
     x1 = args[0][0]
     y1 = args[0][1]
@@ -1579,6 +1580,20 @@ class Structure(object):
                         hyds.append(atom)
         logger.log(5, '  -- {} hydrogen(s).'.format(len(hyds)))
         return hyds
+    def get_dummy_atom_indices(self):
+        """
+        Returns a list of integers where each integer corresponds to an atom
+        that is a dummy atom.
+
+        Returns
+        -------
+        list of integers
+        """
+        dummies = []
+        for atom in self.atoms:
+            if atom.is_dummy:
+                dummies.append(atom.index)
+        return dummies
 
 class Atom(object):
     """
@@ -1644,11 +1659,23 @@ class Atom(object):
     def exact_mass(self, value):
         self._exact_mass = value
     # I have no idea if these atom types are actually correct.
+    # Really, the user should specify custom atom types, such as dummies, in a
+    # configuration file somewhere.
     @property
     def is_dummy(self):
-        if self.atom_type in [61] or \
-                self.atom_type_name in ['Du'] or \
-                self.element in ['X']:
+        """
+        Return True if self is a dummy atom, else return False.
+
+        Returns
+        -------
+        bool
+        """
+        # I think 61 is the default dummy atom type in a Schrodinger atom.typ
+        # file.
+        if self.atom_type == 61 or \
+                self.atom_type_name == 'Du' or \
+                self.element == 'X' or \
+                self.atomic_num == 0:
             return True
         else:
             return False

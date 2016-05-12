@@ -800,7 +800,31 @@ class Hessian(object):
                     len(self.atoms), source.path))
 
 def check_mm_dummy(hess, dummy_indices):
+    """
+    Removes dummy atom rows and columns from the Hessian based upon
+    dummy_indices.
+
+    Arguments
+    ---------
+    hess : np.matrix
+    dummy_indices : list of integers
+                    Integers correspond to the indices to be removed from the
+                    np.matrix of the Hessian.
+
+    Returns
+    -------
+    np.matrix
+    """
     hess = np.delete(hess, dummy_indices, 0)
     hess = np.delete(hess, dummy_indices, 1)
     logger.log(15, 'Created {} Hessian w/o dummy atoms.'.format(hess.shape))
     return hess
+
+def get_dummy_hessian_indices(dummy_indices):
+    hess_dummy_indices = []
+    for index in dummy_indices:
+        hess_index = (index - 1) * 3
+        hess_dummy_indices.append(hess_index)
+        hess_dummy_indices.append(hess_index + 1)
+        hess_dummy_indices.append(hess_index + 2)
+    return hess_dummy_indices

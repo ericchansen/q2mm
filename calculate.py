@@ -52,7 +52,7 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'mq', 'mqh', 'mqa',
                   'ma', 'mb', 'mt',
                   'me', 'meo', 'mea', 'meao',
-                  'mjeig', 'mgeig']
+                  'mh', 'mjeig', 'mgeig']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
@@ -327,7 +327,7 @@ def return_calculate_parser(add_help=True, parents=None):
         '-mqh', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help='MacroModel charges (excludes aliphatic hydrogens).')
-    jag_args.add_argument(
+    mm_args.add_argument(
         '-mqa', type=str, nargs='+', action='append',
         default=[], metavar='somename.mae',
         help=('MacroModel partial charges. Sums the partial charge of all '
@@ -906,13 +906,34 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                     src_1=jin.filename,
                     idx_1=x + 1,
                     idx_2=y + 1)
-                    for e, x, y in izip(
-                        low_tri, low_tri_idx[0], low_tri_idx[1])])
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     # MACROMODEL HESSIAN
+    filenames = chain.from_iterable(coms['mh'])
+    for filename in filenames:
+        # Get the .log for the .mae.
+        name_log = inps[filename].name_log
+        # Used to get dummy atoms.
+        mae = check_outs(filename, outs, filetypes.Mae, direc)
+        # Used to get the Hessian.
+        log = check_outs(name_log, outs, filetypes.MacroModelLog, direc)
+        hess = log.hessian
+        dummies = mae.structures[0].get_dummy_atom_indices()
+        hess_dummies = datatypes.get_dummy_hessian_indices(dummies)
+        hess = datatypes.check_mm_dummy(hess, hess_dummies)
+        low_tri_idx = np.tril_indices_from(hess)
+        low_tri = hess[low_tri_idx]
+        data.extend([datatypes.Datum(
+                    val=e,
+                    com='mh',
+                    typ='h',
+                    src_1=mae.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1)
+                     for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
-
-
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
