@@ -721,100 +721,20 @@ def mass_weight_eigenvectors(evecs, atoms, reverse=False):
             else:
                 evecs[i, j] *= changes[j]
 
-class Hessian(object):
+def replace_minimum(array, value=1):
     """
-    Contains methods to manipulate a certesian Hessian matrix.
+    Replace the minimum vallue in an arbitrary NumPy array. Historically,
+    the replace value is either 1 or co.HESSIAN_CONVERSION.
     """
-    def __init__(self, *args):
-        self.atoms = None
-        self.evecs = None
-        self.evals = None
-        self.hess = None
-        for source in args:
-            self.import_source(source)
-    def diagonalize(self, reverse=False):
-        """
-        Diagonalizes self.hess using self.evecs. If reverse is True,
-        it un-diagonalizes self.hess.
-        """
-        if reverse:
-            self.hess = np.dot(np.dot(
-                    self.evecs.T, self.hess), self.evecs)
-        else:
-            self.hess = np.dot(np.dot(
-                    self.evecs, self.hess), self.evecs.T)
-    def mass_weight_eigenvectors(self, reverse=False):
-        """
-        Mass weights self.evecs. If reverse is True, it un-mass weights
-        the eigenvectors.
-        """
-        # masses = [co.MASSES[x.element] for x in self.atoms]
-        # changes = []
-        # for mass in masses:
-        #     changes.extend([np.sqrt(mass)] * 3)
-        changes = []
-        for atom in self.atoms:
-            if not atom.is_dummy:
-                changes.extend([np.sqrt(atom.exact_mass)] * 3)
-        x, y = self.evecs.shape
-        for i in xrange(0, x):
-            for j in xrange(0, y):
-                if reverse:
-                    self.evecs[i, j] /= changes[j]
-                else:
-                    self.evecs[i, j] *= changes[j]
-    def mass_weight_hessian(self, reverse=False):
-        """
-        Mass weights self.hess. If reverse is True, it un-mass weights
-        the Hessian.
-        """
-        masses = [co.MASSES[x.element] for x in self.atoms if not x.is_dummy]
-        changes = []
-        for mass in masses:
-            changes.extend([1 / np.sqrt(mass)] * 3)
-        x, y = self.hess.shape
-        for i in xrange(0, x):
-            for j in xrange(0, y):
-                if reverse:
-                    self.hess[i, j] = \
-                        self.hess[i, j] / changes[i] / changes[j]
-                else:
-                    self.hess[i, j] = \
-                        self.hess[i, j] * changes[i] * changes[j]
-    def replace_minimum(self, array, value=1):
-        """
-        Replace the minimum vallue in an arbitrary NumPy array. Typically
-        the replace value is either 1 or co.HESSIAN_CONVERSION.
-        """
-        minimum = array.min()
-        minimum_index = np.where(array == minimum)
-        assert minimum < 0, 'Minimum of array is not negative!'
-        # It would be better to address this in a different way. This particular
-        # data structure just isn't what we want.
-        array.setflags(write=True)
-        # Sometimes we use 1, but sometimes we use co.HESSIAN_CONVERSION.
-        array[minimum_index] = value
-        logger.log(10, '  -- Replaced minimum in array with {}.'.format(value))
-    def import_source(self, source):
-        """
-        source - String for a filename or a filetype object.
-        """
-        assert isinstance(source, filetypes.JaguarIn) or \
-            isinstance(source, filetypes.JaguarOut) or \
-            isinstance(source, filetypes.MacroModelLog), \
-            'Must provide an instance of a class that has Hessian data!'
-        if hasattr(source, 'hessian') and source.hessian is not None:
-            self.hess = source.hessian
-            logger.log(10, '  -- Loaded {} Hessian from {}.'.format(
-                    self.hess.shape, source.path))
-        if hasattr(source, 'eigenvectors') and source.eigenvectors is not None:
-            self.evecs = source.eigenvectors
-            logger.log(10, '  -- Loaded {} eigenvectors from {}.'.format(
-                    self.evecs.shape, source.path))
-        if hasattr(source, 'structures') and source.structures is not None:
-            self.atoms = source.structures[0].atoms
-            logger.log(10, '  -- Loaded {} atoms from {}.'.format(
-                    len(self.atoms), source.path))
+    minimum = array.min()
+    minimum_index = np.where(array == minimum)
+    assert minimum < 0, 'Minimum of array is not negative!'
+    # It would be better to address this in a different way. This particular
+    # data structure just isn't what we want.
+    array.setflags(write=True)
+    # Sometimes we use 1, but sometimes we use co.HESSIAN_CONVERSION.
+    array[minimum_index] = value
+    logger.log(10, '  -- Replaced minimum in array with {}.'.format(value))
 
 def check_mm_dummy(hess, dummy_indices):
     """
