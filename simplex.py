@@ -97,7 +97,7 @@ class Simplex(opt.Optimizer):
             # too infrequent for it to be worth the memory, but it might be nice
             # once the parameters are close to convergence.
             data = calculate.main(self.args_ff)
-            self.ff.score = compare.compare_data(r_data, data, zero=False)
+            self.ff.score = compare.compare_data(r_data, data)
             logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
         else:
             logger.log(15, '  -- Reused existing score and data for initial FF.')
@@ -107,7 +107,7 @@ class Simplex(opt.Optimizer):
             ff.export_ff(lines=self.ff_lines)
             logger.log(20, '  -- Calculating {}.'.format(ff))
             data = calculate.main(self.args_ff)
-            ff.score = compare.compare_data(r_data, data, zero=False)
+            ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(ff)
         if self.max_params and len(self.ff.params) > self.max_params:
             simp_params = reduce_num_simp_params(
@@ -172,12 +172,12 @@ class Simplex(opt.Optimizer):
             # Calculate score for inverted parameters.
             self.ff.export_ff(self.ff.path, params=inv_ff.params)
             data = calculate.main(self.args_ff)
-            inv_ff.score = compare.compare_data(r_data, data, zero=False)
+            inv_ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(inv_ff)
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             data = calculate.main(self.args_ff)
-            ref_ff.score = compare.compare_data(r_data, data, zero=False)
+            ref_ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(ref_ff)
             if ref_ff.score < self.new_ffs[0].score:
                 logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
@@ -190,7 +190,7 @@ class Simplex(opt.Optimizer):
                         2 * self.new_ffs[-1].params[i].value)
                 self.ff.export_ff(self.ff.path, exp_ff.params)
                 data = calculate.main(self.args_ff)
-                exp_ff.score = compare.compare_data(r_data, data, zero=False)
+                exp_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(exp_ff)
                 if exp_ff.score < ref_ff.score:
                     self.new_ffs[-1] = exp_ff
@@ -221,7 +221,7 @@ class Simplex(opt.Optimizer):
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(self.ff.path, params=con_ff.params)
                 data = calculate.main(self.args_ff)
-                con_ff.score = compare.compare_data(r_data, data, zero=False)
+                con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
                 if con_ff.score < self.new_ffs[-2].score:
                     self.new_ffs[-1] = con_ff
@@ -235,7 +235,7 @@ class Simplex(opt.Optimizer):
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(self.ff.path, params=ff.params)
                         data = calculate.main(self.args_ff)
-                        ff.score = compare.compare_data(r_data, data, zero=False)
+                        ff.score = compare.compare_data(r_data, data)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:

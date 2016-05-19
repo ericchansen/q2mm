@@ -240,7 +240,8 @@ class Gradient(opt.Optimizer):
             logger.log(20, '~~ EVALUATING TRIAL FF(S) ~~'.rjust(79, '~'))
             for ff in self.new_ffs:
                 data = opt.cal_ff(ff, self.args_ff, parent_ff=self.ff)
-                ff.score = compare.compare_data(ref_data, data, zero=False)
+                # Shouldn't need to zero anymore.
+                ff.score = compare.compare_data(ref_data, data)
                 opt.pretty_ff_results(ff)
             self.new_ffs = sorted(
                 self.new_ffs, key=lambda x: x.score)
