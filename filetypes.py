@@ -1439,7 +1439,7 @@ class Structure(object):
         Returns atomic coordinates as a list of lists.
         """
         return [atom.coords for atom in self.atoms]
-    def format_coords(self, format='latex'):
+    def format_coords(self, format='latex', indices_use_charge=None):
         """
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
@@ -1471,8 +1471,35 @@ class Structure(object):
                     ele = co.MASSES.items()[atom.atomic_num - 1][0]
                 else:
                     ele = atom.element
+                # Used only for a problem Eric experienced.
+                # if ele == '': ele = 'Pd'
+                if indices_use_charge:
+                    if atom.index in indices_use_charge:
+                        output.append(
+                            ' {0:s}--{1:.5f}{2:>16.6f}{3:16.6f}'
+                            '{4:16.6f}'.format(
+                                ele, atom.partial_charge, atom.x,
+                                atom.y, atom.z))
+                    else:
+                        output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
+                                ele, atom.x, atom.y, atom.z))
+                else:
+                    output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
+                            ele, atom.x, atom.y, atom.z))
+            return output
+        # Formatted for Jaguar.
+        elif format == 'jaguar':
+            output = []
+            for i, atom in enumerate(self.atoms):
+                if atom.element is None:
+                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
+                else:
+                    ele = atom.element
+                # Used only for a problem Eric experienced.
+                # if ele == '': ele = 'Pd'
+                label = '{}{}'.format(ele, atom.index)
                 output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                        ele, atom.x, atom.y, atom.z))
+                        label, atom.x, atom.y, atom.z))
             return output
     def select_stuff(self, typ, com_match=None):
         """
