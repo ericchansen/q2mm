@@ -707,7 +707,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             indices = inps[filename]._index_output_mae
             selected_structures = filetypes.select_structures(
                 mae.structures, indices, ind)
-            print(selected_structures)
             for idx_2, structure in selected_structures:
                 temp.append(datatypes.Datum(
                         val=structure.props['r_mmod_Potential_Energy-MM3*'],
