@@ -1126,7 +1126,8 @@ class Mae(SchrodingerFile):
                     raise Exception(
                         'The command "$SCHRODINGER/utilities/licutil '
                         '-available" is not working with the current '
-                        'regex in calculate.py.')
+                        'regex in calculate.py.\nOUTPUT:\n{}'.format(
+                            token_string))
                 suite_tokens = int(suite_tokens.group(1))
                 macro_tokens = int(macro_tokens.group(1))
                 if suite_tokens > co.MIN_SUITE_TOKENS and \
