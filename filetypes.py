@@ -218,7 +218,7 @@ class GaussLog(File):
                     weird_nel = 0
                     weird_cl = len(cols)
                     while len(cols) == weird_cl:
-                        if 'Haromic' in line:
+                        if 'Harmonic' in line:
                             break
                         if weird_hp_mode:
                             cols = cols[1:]
