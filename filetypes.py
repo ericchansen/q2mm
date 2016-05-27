@@ -1711,7 +1711,10 @@ class Atom(object):
         """
         # I think 61 is the default dummy atom type in a Schrodinger atom.typ
         # file.
-        if self.atom_type == 61 or \
+        # Okay, so maybe it's not. Anyway, Tony added an atom type 205 for
+        # dummies. It'd be really great if we all used the same atom.typ file
+        # someday.
+        if self.atom_type in [61, 205] or \
                 self.atom_type_name == 'Du' or \
                 self.element == 'X' or \
                 self.atomic_num == 0:
