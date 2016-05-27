@@ -1021,9 +1021,13 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     for comma_filenames in filenames:
         name_mae, name_gau_log = comma_filenames.split(',')
         name_mae_log = inps[name_mae].name_log
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         mae_log = check_outs(name_mae_log, outs, filetypes.MacroModelLog, direc)
         gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
         hess = mae_log.hessian
+        dummies = mae.structures[0].get_dummy_atom_indices()
+        hess_dummies = datatypes.get_dummy_hessian_indices(dummies)
+        hess = datatypes.check_mm_dummy(hess, hess_dummies)
         evec = gau_log.evecs
         eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
