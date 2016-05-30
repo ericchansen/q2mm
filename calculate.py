@@ -371,7 +371,7 @@ def return_calculate_parser(add_help=True, parents=None):
         'eigenvectors.')
     mm_args.add_argument(
         '-mgeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.out',
+        default=[], metavar='somename.mae,somename.log',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
     return parser
