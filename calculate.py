@@ -950,14 +950,22 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     # JAGUAR EIGENMATRIX
     filenames = chain.from_iterable(coms['jeigz'])
     for comma_sep_filenames in filenames:
-        name_log, name_out = comma_sep_filenames.split(',')
-        jin = check_outs(name_log, outs, filetypes.JaguarIn, direc)
+        name_in, name_out = comma_sep_filenames.split(',')
+        jin = check_outs(name_in, outs, filetypes.JaguarIn, direc)
         out = check_outs(name_out, outs, filetypes.JaguarOut, direc)
         hess = jin.hessian
         evec = out.eigenvectors
         datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
         datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
-        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        try:
+            eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        except ValueError:
+            logger.warning('Matrices not aligned!')
+            logger.warning('Hessian retrieved from {}: {}'.format(
+                    name_in, hess.shape))
+            logger.warning('Eigenvectors retrieved from {}: {}'.format(
+                    name_out, evec.shape))
+            raise
         # Funny way to make off-diagonal elements zero.
         eigenmatrix = np.diag(np.diag(eigenmatrix))
         low_tri_idx = np.tril_indices_from(eigenmatrix)
@@ -1003,7 +1011,15 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         hess = datatypes.check_mm_dummy(hess, hess_dummies)
         evec = out.eigenvectors
         datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
-        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        try:
+            eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        except ValueError:
+            logger.warning('Matrices not aligned!')
+            logger.warning('Hessian retrieved from {}: {}'.format(
+                    log.filename, hess.shape))
+            logger.warning('Eigenvectors retrieved from {}: {}'.format(
+                    name_out, evec.shape))
+            raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1029,7 +1045,15 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         hess_dummies = datatypes.get_dummy_hessian_indices(dummies)
         hess = datatypes.check_mm_dummy(hess, hess_dummies)
         evec = gau_log.evecs
-        eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        try:
+            eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        except ValueError:
+            logger.warning('Matrices not aligned!')
+            logger.warning('Hessian retrieved from {}: {}'.format(
+                    name_mae_log, hess.shape))
+            logger.warning('Eigenvectors retrieved from {}: {}'.format(
+                    name_gau_log, evec.shape))
+            raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
         data.extend([datatypes.Datum(
