@@ -79,14 +79,14 @@ class Gradient(opt.Optimizer):
             direc, ff, ff_lines, args_ff, args_ref)
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = True
-        self.do_lagrange = True
-        self.do_levenberg = True
+        self.do_lagrange = False
+        self.do_levenberg = False
         self.do_newton = True
-        self.do_svd = True
+        self.do_svd = False
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
-        self.lstsq_radii = [0.1, 1., 5., 10.]
+        self.lstsq_radii = None
         # LAGRANGE
         self.lagrange_factors = [0.01, 0.1, 1., 10.]
         self.lagrange_cutoffs = None
@@ -97,7 +97,7 @@ class Gradient(opt.Optimizer):
         self.levenberg_radii = [0.1, 1., 5., 10.]
         # NEWTON-RAPHSON
         self.newton_cutoffs = None
-        self.newton_radii = [0.1, 1., 5., 10.]
+        self.newton_radii = None
         # SVD
         # self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_factors = None
@@ -253,11 +253,23 @@ class Gradient(opt.Optimizer):
                         79, '~'))
                 opt.pretty_ff_results(self.ff, level=20)
                 opt.pretty_ff_results(ff, level=20)
+                # Copy parameter derivatives from original FF to save time in 
+                # case we move onto simplex immediately after this.
+                copy_derivs(self.ff, ff)
             else:
                 ff = self.ff
         else:
             ff = self.ff
         return ff
+
+def copy_derivs(new_ff, old_ff):
+    num_params = len(new_ff.params)
+    assert num_params == len(old_ff.params)
+    for i in xrange(0, num_params):
+        new_ff.params[i].d1 = old_ff.params[i].d1
+        new_ff.params[i].d2 = old_ff.params[i].d2
+    logger.log(20, '  -- Copied parameter derivatives from {} to {}.'.format(
+            old_ff, new_ff))
 
 def check(changes, max_radii, cutoffs):
     new_changes = []
