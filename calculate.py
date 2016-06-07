@@ -471,8 +471,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
             # Revisit how structures are stored in GaussLog when you have time.
-            hf = log.structures[0].props['hf']
-            zp = log.structures[0].props['zp']
+            hf = float(log.structures[0].props['HF'])
+            zp = float(log.structures[0].props['ZeroPoint'])
             energy = (hf + zp) * co.HARTREE_TO_KJMOL
             # We don't use idx_2 since we assume there is only one structure
             # in a Gaussian .log. I think that's always the case.
@@ -540,8 +540,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
             # Revisit how structures are stored in GaussLog when you have time.
-            hf = log.structures[0].props['hf']
-            zp = log.structures[0].props['zp']
+            hf = float(log.structures[0].props['HF'])
+            zp = float(log.structures[0].props['ZeroPoint'])
             energy = (hf + zp) * co.HARTREE_TO_KJMOL
             # We don't use idx_2 since we assume there is only one structure
             # in a Gaussian .log. I think that's always the case.
@@ -615,8 +615,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
             # Revisit how structures are stored in GaussLog when you have time.
-            hf = log.structures[0].props['hf']
-            zp = log.structures[0].props['zp']
+            hf = float(log.structures[0].props['HF'])
+            zp = float(log.structures[0].props['ZeroPoint'])
             energy = (hf + zp) * co.HARTREE_TO_KJMOL
             # We don't use idx_2 since we assume there is only one structure
             # in a Gaussian .log. I think that's always the case.
@@ -681,8 +681,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
             # Revisit how structures are stored in GaussLog when you have time.
-            hf = log.structures[0].props['hf']
-            zp = log.structures[0].props['zp']
+            hf = float(log.structures[0].props['HF'])
+            zp = float(log.structures[0].props['ZeroPoint'])
             energy = (hf + zp) * co.HARTREE_TO_KJMOL
             # We don't use idx_2 since we assume there is only one structure
             # in a Gaussian .log. I think that's always the case.

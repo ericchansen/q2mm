@@ -260,66 +260,149 @@ class GaussLog(File):
         """
         logger.log(5, 'READING: {}'.format(self.filename))
         struct = Structure()
-        # Some more manual trimming.
-        # lines = open(self.path, 'r').readlines()
-        # for i, line in enumerate(lines):
-        #     if '1\\1\\' in line:
-        #         last_arch_start = i
-        # lines = ''.join(lines[last_arch_start:])
-        # arch = re.findall(
-        #     '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
-        #     lines)[0]
+        self._structures = [struct]
         arch = re.findall(
             '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
             open(self.path, 'r').read())[-1]
         logger.log(5, '  -- Located last archive.')
+        # Make it into one string.
         arch = arch.replace('\n ', '')
+        # Separate it by Gaussian's section divider.
+        arch = arch.split('\\\\')
+        # SECTION 0
+        # General job information.
+        arch_general = arch[0]
         stuff = re.search(
             '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
             '\\\\(?P<date>.*?)'
-            '\\\\.*?\\\\\\\\(?P<com>.*?)'
-            '\\\\\\\\(?P<filename>.*?)'
-            '\\\\\\\\(?P<charge>.*?)'
+            '\\\\.*?',
+            arch_general)
+        struct.props['user'] = stuff.group('user')
+        struct.props['date'] = stuff.group('date')
+        # SECTION 1
+        # The commands you wrote.
+        arch_commands = arch[1]
+        # SECTION 2
+        # The comment line.
+        arch_comment = arch[2]
+        # SECTION 3
+        # Actually has charge, multiplicity and coords.
+        arch_coords = arch[3]
+        stuff = re.search(
+            '(?P<charge>.*?)'
             ',(?P<multiplicity>.*?)'
-            '\\\\(?P<atoms>.*?)'
-            '\\\\\\\\.*?HF=(?P<hf>.*?)'
-            '\\\\.*?ZeroPoint=(?P<zp>.*?)'
-            '\\\\.*?Thermal=(?P<thermal>.*?)'
-            '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
-            '\\\\\\\\(?P<evals>.*?)'
-            '\\\\\\\\\\\\',
-            arch)
-        logger.log(5, '  -- Read archive.')
+            '\\\\(?P<atoms>.*)',
+            arch_coords)
+        struct.props['charge'] = stuff.group('charge')
+        struct.props['multiplicity'] = stuff.group('multiplicity')
+        # We want to do more fancy stuff with the atoms than simply add to
+        # the properties dictionary.
         atoms = stuff.group('atoms')
         atoms = atoms.split('\\')
         for atom in atoms:
-            ele, x, y, z = atom.split(',')
+            stuff = atom.split(',')
+            # An atom typically looks like this:
+            #    C,0.1135,0.13135,0.63463
+            if len(stuff) == 4:
+                ele, x, y, z = stuff
+            # But sometimes they look like this (notice the extra zero):
+            #    C,0,0.1135,0.13135,0.63463
+            # I'm not sure what that extra zero is for. Anyway, ignore
+            # that extra whatever if it's there.
+            elif len(stuff) == 5:
+                ele, x, y, z = stuff[0], stuff[2], stuff[3], stuff[4]
+            # And this would be really bad. Haven't seen anything else like
+            # this yet.
+            else:
+                logger.warning(
+                    'Not sure how to read coordinates from Gaussian acrhive!')
+                raise Exception(
+                    'Not sure how to read coordinates from Gaussian archive!')
             struct.atoms.append(
                 Atom(element=ele, x=float(x), y=float(y), z=float(z)))
         logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
-        self._structures = [struct]
-        hess_tri = stuff.group('hess')
-        hess_tri = hess_tri.split(',')
-        logger.log(
-            5,
-            '  -- Read {} Hessian elements in lower triangular '
-            'form.'.format(len(hess_tri)))
-        hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-        logger.log(
-            5, '  -- Created {} Hessian matrix.'.format(hess.shape))
-        # Code for if it was in upper triangle, but it's not.
-        # hess[np.triu_indices_from(hess)] = hess_tri
-        # hess += np.triu(hess, -1).T
-        # Lower triangle code.
-        hess[np.tril_indices_from(hess)] = hess_tri
-        hess += np.tril(hess, -1).T
-        hess *= co.HESSIAN_CONVERSION
-        struct.hess = hess
-        # Code to extract energies.
-        # Still not sure exactly what energies we want to use.
-        struct.props['hf'] = float(stuff.group('hf'))
-        struct.props['zp'] = float(stuff.group('zp'))
-        struct.props['thermal'] = float(stuff.group('thermal'))
+        # SECTION 4
+        # All sorts of information here. This area looks like:
+        #     prop1=value1\prop2=value2\prop3=value3
+        arch_info = arch[4]
+        arch_info = arch_info.split('\\')
+        for thing in arch_info:
+            prop_name, prop_value = thing.split('=')
+            struct.props[prop_name] = prop_value
+        # SECTION 5
+        # The Hessian. Only exists if you did a frequency calculation.
+        # Appears in lower triangular form.
+        if not arch[5] == '@':
+            hess_tri = arch[5]
+            hess_tri = hess_tri.split(',')
+            logger.log(
+                5,
+                '  -- Read {} Hessian elements in lower triangular '
+                'form.'.format(len(hess_tri)))
+            hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+            logger.log(
+                5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+            # Code for if it was in upper triangle (it's not).
+            # hess[np.triu_indices_from(hess)] = hess_tri
+            # hess += np.triu(hess, -1).T
+            # Lower triangle code.
+            hess[np.tril_indices_from(hess)] = hess_tri
+            hess += np.tril(hess, -1).T
+            hess *= co.HESSIAN_CONVERSION
+            struct.hess = hess
+            # SECTION 6
+            # Not sure what this is.
+
+        # stuff = re.search(
+        #     '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
+        #     '\\\\(?P<date>.*?)'
+        #     '\\\\.*?\\\\\\\\(?P<com>.*?)'
+        #     '\\\\\\\\(?P<filename>.*?)'
+        #     '\\\\\\\\(?P<charge>.*?)'
+        #     ',(?P<multiplicity>.*?)'
+        #     '\\\\(?P<atoms>.*?)'
+        #     # This marks the end of what always shows up.
+        #     '\\\\\\\\'
+        #     # This stuff sometimes shows up.
+        #     # And it breaks if it doesn't show up.
+        #     '.*?HF=(?P<hf>.*?)'
+        #     '\\\\.*?ZeroPoint=(?P<zp>.*?)'
+        #     '\\\\.*?Thermal=(?P<thermal>.*?)'
+        #     '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
+        #     '\\\\\\\\(?P<evals>.*?)'
+        #     '\\\\\\\\\\\\',
+        #     arch)
+        # logger.log(5, '  -- Read archive.')
+        # atoms = stuff.group('atoms')
+        # atoms = atoms.split('\\')
+        # for atom in atoms:
+        #     ele, x, y, z = atom.split(',')
+        #     struct.atoms.append(
+        #         Atom(element=ele, x=float(x), y=float(y), z=float(z)))
+        # logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
+        # self._structures = [struct]
+        # hess_tri = stuff.group('hess')
+        # hess_tri = hess_tri.split(',')
+        # logger.log(
+        #     5,
+        #     '  -- Read {} Hessian elements in lower triangular '
+        #     'form.'.format(len(hess_tri)))
+        # hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+        # logger.log(
+        #     5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+        # # Code for if it was in upper triangle, but it's not.
+        # # hess[np.triu_indices_from(hess)] = hess_tri
+        # # hess += np.triu(hess, -1).T
+        # # Lower triangle code.
+        # hess[np.tril_indices_from(hess)] = hess_tri
+        # hess += np.tril(hess, -1).T
+        # hess *= co.HESSIAN_CONVERSION
+        # struct.hess = hess
+        # # Code to extract energies.
+        # # Still not sure exactly what energies we want to use.
+        # struct.props['hf'] = float(stuff.group('hf'))
+        # struct.props['zp'] = float(stuff.group('zp'))
+        # struct.props['thermal'] = float(stuff.group('thermal'))
     def get_most_converged(self, structures=None):
         """
         Used with geometry optimizations that don't succeed. Sometimes
@@ -619,6 +702,34 @@ class GaussLog(File):
                                        'section.'.format(i+1))
         return structures
                             
+def conv_sch_str(sch_struct):
+    """
+    Converts a schrodinger.structure object to my own structure object.
+    Sort of pointless. Probably remove soon.
+    """
+    my_struct = Structure()
+    my_struct.props.update(sch_struct.property)
+    for sch_atom in sch_struct.atom:
+        my_atom = Atom()
+        my_struct.atoms.append(my_atom)
+        my_atom.atom_type = sch_atom.atom_type
+        my_atom.atom_type_name = sch_atom.atom_type_name
+        my_atom.atomic_num = sch_atom.atomic_number
+        my_atom.bonded_atom_indices = \
+            [x.index for x in sch_atom.bonded_atoms]
+        my_atom.element = sch_atom.element
+        my_atom.index = sch_atom.index
+        my_atom.partial_charge = sch_atom.partial_charge
+        my_atom.x, my_atom.y, my_atom.z = sch_atom.x, sch_atom.y, sch_atom.z
+        my_atom.props.update(sch_atom.property)
+    for sch_bond in sch_struct.bond:
+        my_bond = Bond()
+        my_struct.bonds.append(my_bond)
+        my_bond.atom_nums = [sch_bond.atom1, sch_bond.atom2]
+        my_bond.order = sch_bond.order
+        my_bond.value = sch_bond.length
+    return my_struct
+    
 class SchrodingerFile(File):
     """
     Parent class used for all Schrodinger files.
