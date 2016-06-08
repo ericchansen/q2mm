@@ -127,7 +127,7 @@ class Loop(object):
                         self.ref_data,
                         self.ff.data,
                         os.path.join(self.direc, cols[cols.index('-o') + 1]))
-                else:
+                if '-p' in cols:
                     compare.pretty_data_comp(
                         self.ref_data,
                         self.ff.data)
