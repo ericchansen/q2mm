@@ -54,9 +54,9 @@ class Simplex(opt.Optimizer):
             direc, ff, ff_lines, args_ff, args_ref)
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
-        self.max_cycles = 10
+        self.max_cycles = 2
         self.max_cycles_wo_change = 3
-        self.max_params = 10
+        self.max_params = 2
     @property
     def best_ff(self):
         # Typically, self.new_ffs would include the original FF, self.ff,
@@ -97,26 +97,59 @@ class Simplex(opt.Optimizer):
             # too infrequent for it to be worth the memory, but it might be nice
             # once the parameters are close to convergence.
             data = calculate.main(self.args_ff)
-            self.ff.score = compare.compare_data(r_data, data, zero=False)
+            self.ff.score = compare.compare_data(r_data, data)
             logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
         else:
             logger.log(15, '  -- Reused existing score and data for initial FF.')
         logger.log(15, 'INIT FF SCORE: {}'.format(self.ff.score))
-        ffs = opt.differentiate_ff(self.ff)
-        for ff in ffs:
-            ff.export_ff(lines=self.ff_lines)
-            logger.log(20, '  -- Calculating {}.'.format(ff))
-            data = calculate.main(self.args_ff)
-            ff.score = compare.compare_data(r_data, data, zero=False)
-            opt.pretty_ff_results(ff)
         if self.max_params and len(self.ff.params) > self.max_params:
-            simp_params = reduce_num_simp_params(
-                self.ff, ffs, max_params=self.max_params)
-            self.new_ffs = reduce_num_simp_ffs(
-                ffs, simp_params)
+            if self.ff.params[0].d1:
+                logger.log(15, '  -- Reusing existing parameter derivatives.')
+                # Don't score so this really doesn't take much time.
+                ffs = opt.differentiate_ff(self.ff, central=False)
+            else:
+                logger.log(15, '  -- Calculating new parameter derivatives.')
+                ffs = opt.differentiate_ff(self.ff, central=True)
+                # We have to score to get the derivatives.
+                for ff in ffs:
+                    ff.export_ff(lines=self.ff_lines)
+                    logger.log(20, '  -- Calculating {}.'.format(ff))
+                    data = calculate.main(self.args_ff)
+                    ff.score = compare.compare_data(r_data, data)
+                    opt.pretty_ff_results(ff)
+                opt.param_derivs(self.ff, ffs)
+                # Only keep the forward differentiated FFs.
+                ffs = opt.extract_forward(ffs)
+            params = select_simp_params_on_derivs(
+                self.ff.params, max_params=self.max_params)
+            self.new_ffs = opt.extract_ff_by_params(ffs, params)
+            # Reduce number of parameters.
+            # Will need an option that's not MM3* specific.
+            ff_rows = [x.mm3_row for x in params]
+            ff_cols = [x.mm3_col for x in params]
+            for ff in self.new_ffs:
+                new_params = []
+                for param in ff.params:
+                    if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
+                        new_params.append(param)
+                ff.params = new_params
         else:
-            self.new_ffs = ffs
-        self.new_ffs = sorted(self.new_ffs + [self.ff], key=lambda x: x.score)
+            self.new_ffs = opt.differentiate_ff(self.ff, central=False)
+        # Double check and make sure they're all scored.
+        for ff in self.new_ffs:
+            if ff.score is None:
+                ff.export_ff(lines=self.ff_lines)
+                logger.log(20, '  -- Calculating {}.'.format(ff))
+                data = calculate.main(self.args_ff)
+                ff.score = compare.compare_data(r_data, data)
+                opt.pretty_ff_results(ff)
+        ff_copy = copy.deepcopy(self.ff)
+        new_params = []
+        for param in ff.params:
+            if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
+                new_params.append(param)
+        ff_copy.params = new_params
+        self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         wrapper = textwrap.TextWrapper(width=79)
         logger.log(20, 'ORDERED FF SCORES:')
         logger.log(20, wrapper.fill('{}'.format(
@@ -172,12 +205,12 @@ class Simplex(opt.Optimizer):
             # Calculate score for inverted parameters.
             self.ff.export_ff(self.ff.path, params=inv_ff.params)
             data = calculate.main(self.args_ff)
-            inv_ff.score = compare.compare_data(r_data, data, zero=False)
+            inv_ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(inv_ff)
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             data = calculate.main(self.args_ff)
-            ref_ff.score = compare.compare_data(r_data, data, zero=False)
+            ref_ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(ref_ff)
             if ref_ff.score < self.new_ffs[0].score:
                 logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
@@ -190,7 +223,7 @@ class Simplex(opt.Optimizer):
                         2 * self.new_ffs[-1].params[i].value)
                 self.ff.export_ff(self.ff.path, exp_ff.params)
                 data = calculate.main(self.args_ff)
-                exp_ff.score = compare.compare_data(r_data, data, zero=False)
+                exp_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(exp_ff)
                 if exp_ff.score < ref_ff.score:
                     self.new_ffs[-1] = exp_ff
@@ -221,7 +254,7 @@ class Simplex(opt.Optimizer):
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(self.ff.path, params=con_ff.params)
                 data = calculate.main(self.args_ff)
-                con_ff.score = compare.compare_data(r_data, data, zero=False)
+                con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
                 if con_ff.score < self.new_ffs[-2].score:
                     self.new_ffs[-1] = con_ff
@@ -235,7 +268,7 @@ class Simplex(opt.Optimizer):
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(self.ff.path, params=ff.params)
                         data = calculate.main(self.args_ff)
-                        ff.score = compare.compare_data(r_data, data, zero=False)
+                        ff.score = compare.compare_data(r_data, data)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
@@ -299,6 +332,8 @@ def restore_simp_ff(new_ff, old_ff):
     """
     old_ff.copy_attributes(new_ff)
     if len(old_ff.params) > len(new_ff.params):
+        logger.log(15, '  -- Restoring {} parameters to new FF.'.format(
+                len(old_ff.params) - len(new_ff.params)))
         # Backup new parameters.
         new_params = copy.deepcopy(new_ff.params)
         # Copy over all old parameters.

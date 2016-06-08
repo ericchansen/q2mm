@@ -75,10 +75,10 @@ LOG_SETTINGS = {
 # percentage of its current value.
 #     x_new = x +/- (x * step)
 STEPS = {'ae':      2.0,
-         'af':      0.2,
+         'af':      0.1,
          'be':      0.1,
-         'bf':      0.2,
-         'df':      0.2,
+         'bf':      0.1,
+         'df':      0.1,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,
@@ -87,16 +87,19 @@ STEPS = {'ae':      2.0,
 
 # WEIGHTS
 WEIGHTS = {'a':          2.00,
-           'q':         10.00,
            'b':        100.00,
+           't':          1.00,
+           'h':          1.00,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
            'eig_d':      0.10, # Weight of other eigenvalues.
            'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
-           'e':         50.00,
-           'eo':        50.00,
-           'ea':        50.00,
-           'eao':       50.00,
-           't':          1.00
+           'e':         20.00,
+           'eo':       100.00,
+           'ea':        20.00,
+           'eao':      100.00,
+           'q':         10.00,
+           'qh':        10.00,
+           'qa':        10.00
            }
 
 # UNIT CONVERSIONS
@@ -131,7 +134,7 @@ RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
 # Possible symbols used to split atoms in SMARTS notation.
 RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
 # Name of MM3* substructures.
-RE_SUB = '[\w\s\-\.]+'
+RE_SUB = '[\w\s\-\.\*\(\)\%\=]+'
 
 # .MMO RELATED
 # Match bonds in lines of a .mmo file.

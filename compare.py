@@ -27,13 +27,14 @@ import datatypes
 logger = logging.getLogger(__name__)
 
 def main(args):
-    logger.log(1, '>>> main <<<')
     parser = return_compare_parser()
     opts = parser.parse_args(args)
     r_data = calculate.main(opts.reference.split())
     c_data = calculate.main(opts.calculate.split())
     score = compare_data(r_data, c_data)
-    # Pretty readouts.
+    # Pretty readouts. Maybe opts.output could have 3 values:
+    # True, False or None
+    # Then I wouldn't need 2 if statements here.
     if opts.output:
         pretty_data_comp(r_data, c_data, output=opts.output)
     if opts.print:
@@ -43,8 +44,10 @@ def main(args):
 def pretty_data_comp(r_data, c_data, output=None):
     """
     Recalculates score along with making a pretty output.
+    
+    Can't rely upon reference Datum attributes anymore due to how reference
+    data files are implemented.
     """
-    logger.log(1, '>>> pretty_data_comp <<<')
     strings = []
     strings.append('--' + ' Label '.ljust(30, '-') +
                    '--' + ' Weight '.center(8, '-') + 
@@ -56,7 +59,9 @@ def pretty_data_comp(r_data, c_data, output=None):
     for r, c in izip(r_data, c_data):
         logger.log(1, '>>> {} {}'.format(r, c))
         # Double check data types.
-        if r.typ == 't':
+        # Had to change to check from the FF data type because reference data
+        # files may be missing this information.
+        if c.typ == 't':
             diff = abs(r.val - c.val)
             if diff > 180.:
                 diff = 360. - diff
@@ -67,13 +72,13 @@ def pretty_data_comp(r_data, c_data, output=None):
         # Update total.
         score_tot += score
         # Update dictionary.
-        score_typ[r.typ] += score
+        score_typ[c.typ] += score
         strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
-                r.lbl, r.wht, r.val, c.val, score))
+                c.lbl, r.wht, r.val, c.val, score))
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
-    strings.append('-' * 79)
+    strings.append('-' * 89)
     for k, v in score_typ.iteritems():
         strings.append('{:<20} {:20.4f}'.format(k + ':', v))
     if output:
@@ -85,6 +90,9 @@ def pretty_data_comp(r_data, c_data, output=None):
             print(line)
 
 def return_compare_parser():
+    """
+    Arguments parser for compare.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--calculate', '-c', type=str, metavar = '" commands for calculate.py"',
@@ -102,71 +110,108 @@ def return_compare_parser():
         help='Print pretty output.')
     return parser
 
-def compare_data(r_data, c_data, zero=True):
-    logger.log(1, '>>> compare_data <<<')
+# Shouldn't need to zero anymore. Commented out.
+# def compare_data(r_data, c_data, zero=True):
+
+def compare_data(r_data, c_data):
+    """
+    Calculates the objective function score after ensuring the energies are
+    set properly and that the weights are all imported.
+    """
     # r_data = np.array(sorted(r_data, key=datatypes.datum_sort_key))
     # c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
-    if zero:
-        zero_energies(r_data)
+    # if zero:
+    #     zero_energies(r_data)
     correlate_energies(r_data, c_data)
     import_weights(r_data)
     return calculate_score(r_data, c_data)
 
-def zero_energies(data):
-    logger.log(1, '>>> zero_energies <<<')
-    # Go one data type at a time.
-    # We do so because the group numbers are only unique within a given data
-    # type.
-    for energy_type in ['e', 'eo']:
-        # Determine the unique group numbers.
-        indices = np.where([x.typ == energy_type for x in data])[0]
-        # logger.log(1, '>>> indices: {}'.format(indices))
-        # logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
-        # logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
-        #         [x.idx_1 for x in data[indices]]))
-        unique_group_nums = set([x.idx_1 for x in data[indices]])
-        # Loop through the unique group numbers.
-        for unique_group_num in unique_group_nums:
-            # Pick out all data points that are unique to this data type
-            # and group number.
-            more_indices = np.where(
-                [x.typ == energy_type and x.idx_1 == unique_group_num
-                 for x in data])[0]
-            # Find the zero for this grouping.
-            zero = min([x.val for x in data[more_indices]])
-            for ind in more_indices:
-                data[ind].val -= zero
+# Energies should be zeroed inside calculate now.
+# def zero_energies(data):
+#     logger.log(1, '>>> zero_energies <<<')
+#     # Go one data type at a time.
+#     # We do so because the group numbers are only unique within a given data
+#     # type.
+#     for energy_type in ['e', 'eo']:
+#         # Determine the unique group numbers.
+#         indices = np.where([x.typ == energy_type for x in data])[0]
+#         # logger.log(1, '>>> indices: {}'.format(indices))
+#         # logger.log(1, '>>> data[indices]: {}'.format(data[indices]))
+#         # logger.log(1, '>>> [x.idx_1 for x in data[indices]]: {}'.format(
+#         #         [x.idx_1 for x in data[indices]]))
+#         unique_group_nums = set([x.idx_1 for x in data[indices]])
+#         # Loop through the unique group numbers.
+#         for unique_group_num in unique_group_nums:
+#             # Pick out all data points that are unique to this data type
+#             # and group number.
+#             more_indices = np.where(
+#                 [x.typ == energy_type and x.idx_1 == unique_group_num
+#                  for x in data])[0]
+#             # Find the zero for this grouping.
+#             zero = min([x.val for x in data[more_indices]])
+#             for ind in more_indices:
+#                 data[ind].val -= zero
 
 def correlate_energies(r_data, c_data):
+    """
+    Finds the indices corresponding to groups of energies from the FF data set.
+    Uses those same indices to locate the matching energies in the reference
+    data set.
+
+    THIS MEANS THAT THE TWO DATA SETS MUST BE ALIGNED PROPERLY!
+
+    Determines the minimum energy in the reference data set, and sets that to
+    zero in the FF data set.
+    """
     logger.log(1, '>>> correlate_energies <<<')
-    for indices in select_group_of_energies(r_data):
+    for indices in select_group_of_energies(c_data):
         # logger.log(1, '>>> indices:\n{}'.format(indices))
         # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
-        #         r_data[indices[0]].typ))
-        if r_data[indices[0]].typ in ['e', 'eo']:
-            zero, zero_ind = min(
-                (x.val, i) for i, x in enumerate(r_data[indices]))
-            zero_ind = indices[zero_ind]
-            # Wow, that was a lot of work to get the index of the zero.
-            # Now, we need to get that same sub list, and update the calculated
-            # data. As long as they are sorted the same, the indices should
-            # match up.
-            zero = c_data[zero_ind].val
-            for ind in indices:
-                c_data[ind].val -= zero
-        elif r_data[indices[0]].typ in ['ea', 'eao']:
-            avg = sum([x.val for x in r_data[indices]])/len(r_data[indices])
-            for ind in indices:
-                r_data[ind].val -= avg
-            avg = sum([x.val for x in c_data[indices]])/len(c_data[indices])
-            for ind in indices:
-                c_data[ind].val -= avg
+        #         c_data[indices[0]].typ))
+        # Search based on FF data because the reference data may be read from
+        # a file and lack some of these fields.
+        zero, zero_ind = min(
+            (x.val, i) for i, x in enumerate(r_data[indices]))
+        zero_ind = indices[zero_ind]
+        # Wow, that was a lot of work to get the index of the zero.
+        # Now, we need to get that same sub list, and update the calculated
+        # data. As long as they are sorted the same, the indices should
+        # match up.
+        zero = c_data[zero_ind].val
+        for ind in indices:
+            c_data[ind].val -= zero
+
+# This is outdated now. Most of this is handled inside calculate.
+# def correlate_energies(r_data, c_data):
+#     logger.log(1, '>>> correlate_energies <<<')
+#     for indices in select_group_of_energies(r_data):
+#         # logger.log(1, '>>> indices:\n{}'.format(indices))
+#         # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
+#         #         r_data[indices[0]].typ))
+#         if r_data[indices[0]].typ in ['e', 'eo']:
+#             zero, zero_ind = min(
+#                 (x.val, i) for i, x in enumerate(r_data[indices]))
+#             zero_ind = indices[zero_ind]
+#             # Wow, that was a lot of work to get the index of the zero.
+#             # Now, we need to get that same sub list, and update the calculated
+#             # data. As long as they are sorted the same, the indices should
+#             # match up.
+#             zero = c_data[zero_ind].val
+#             for ind in indices:
+#                 c_data[ind].val -= zero
+#         elif r_data[indices[0]].typ in ['ea', 'eao']:
+#             avg = sum([x.val for x in r_data[indices]])/len(r_data[indices])
+#             for ind in indices:
+#                 r_data[ind].val -= avg
+#             avg = sum([x.val for x in c_data[indices]])/len(c_data[indices])
+#             for ind in indices:
+#                 c_data[ind].val -= avg
 
 def select_group_of_energies(data):
     """
     Used to get the indices (numpy.array) for a single group of energies.
     """
-    for energy_type in ['e', 'eo', 'ea', 'eao']:
+    for energy_type in ['e', 'eo']:
         # Get all energy indices.
         indices = np.where([x.typ == energy_type for x in data])[0]
         # Get the unique group numbers.
@@ -180,6 +225,10 @@ def select_group_of_energies(data):
             yield more_indices
 
 def import_weights(data):
+    """
+    Imports weights for various data types. Only imports if there isn't
+    already an existing value set.
+    """
     for datum in data:
         if datum.wht is None:
             if datum.typ == 'eig':
@@ -194,7 +243,9 @@ def import_weights(data):
 
 # Need to add some pretty print outs for this.
 def calculate_score(r_data, c_data):
-    logger.log(1, '>>> calculate_score <<<')
+    """
+    Calculates the objective function score.
+    """
     score = 0.
     for r_datum, c_datum in izip(r_data, c_data):
         logger.log(1, '>>> {} {}'.format(r_datum, c_datum))

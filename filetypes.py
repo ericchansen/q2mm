@@ -143,6 +143,7 @@ class GaussLog(File):
             # self.read_out()
             self.read_archive()
         return self._structures
+    # Needs work.
     def read_out(self):
         """
         Read force constant and eigenvector data from a frequency
@@ -218,7 +219,7 @@ class GaussLog(File):
                     weird_nel = 0
                     weird_cl = len(cols)
                     while len(cols) == weird_cl:
-                        if 'Haromic' in line:
+                        if 'Harmonic' in line:
                             break
                         if weird_hp_mode:
                             cols = cols[1:]
@@ -251,75 +252,157 @@ class GaussLog(File):
                 evec[i] *= weird_x
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
+    # May want to move some attributes assigned to the structure class onto
+    # this filetype class.
     def read_archive(self):
         """
         Only reads last archive found in the Gaussian .log file.
         """
         logger.log(5, 'READING: {}'.format(self.filename))
         struct = Structure()
-        # Some more manual trimming.
-        # lines = open(self.path, 'r').readlines()
-        # for i, line in enumerate(lines):
-        #     if '1\\1\\' in line:
-        #         last_arch_start = i
-        # lines = ''.join(lines[last_arch_start:])
-        # arch = re.findall(
-        #     '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
-        #     lines)[0]
+        self._structures = [struct]
         arch = re.findall(
             '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
             open(self.path, 'r').read())[-1]
         logger.log(5, '  -- Located last archive.')
+        # Make it into one string.
         arch = arch.replace('\n ', '')
-        # Watch out with NImag. Sometimes equals 1, sometimes 0,
-        # anything else?
+        # Separate it by Gaussian's section divider.
+        arch = arch.split('\\\\')
+        # SECTION 0
+        # General job information.
+        arch_general = arch[0]
         stuff = re.search(
             '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
             '\\\\(?P<date>.*?)'
-            '\\\\.*?\\\\\\\\(?P<com>.*?)'
-            '\\\\\\\\(?P<filename>.*?)'
-            '\\\\\\\\(?P<charge>.*?)'
+            '\\\\.*?',
+            arch_general)
+        struct.props['user'] = stuff.group('user')
+        struct.props['date'] = stuff.group('date')
+        # SECTION 1
+        # The commands you wrote.
+        arch_commands = arch[1]
+        # SECTION 2
+        # The comment line.
+        arch_comment = arch[2]
+        # SECTION 3
+        # Actually has charge, multiplicity and coords.
+        arch_coords = arch[3]
+        stuff = re.search(
+            '(?P<charge>.*?)'
             ',(?P<multiplicity>.*?)'
-            '\\\\(?P<atoms>.*?)'
-            '\\\\\\\\.*?HF=(?P<hf>.*?)'
-            '\\\\.*?ZeroPoint=(?P<zp>.*?)'
-            '\\\\.*?Thermal=(?P<thermal>.*?)'
-            '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
-            '\\\\\\\\(?P<evals>.*?)'
-            '\\\\\\\\\\\\',
-            arch)
-        logger.log(5, '  -- Read archive.')
+            '\\\\(?P<atoms>.*)',
+            arch_coords)
+        struct.props['charge'] = stuff.group('charge')
+        struct.props['multiplicity'] = stuff.group('multiplicity')
+        # We want to do more fancy stuff with the atoms than simply add to
+        # the properties dictionary.
         atoms = stuff.group('atoms')
         atoms = atoms.split('\\')
         for atom in atoms:
-            ele, x, y, z = atom.split(',')
+            stuff = atom.split(',')
+            # An atom typically looks like this:
+            #    C,0.1135,0.13135,0.63463
+            if len(stuff) == 4:
+                ele, x, y, z = stuff
+            # But sometimes they look like this (notice the extra zero):
+            #    C,0,0.1135,0.13135,0.63463
+            # I'm not sure what that extra zero is for. Anyway, ignore
+            # that extra whatever if it's there.
+            elif len(stuff) == 5:
+                ele, x, y, z = stuff[0], stuff[2], stuff[3], stuff[4]
+            # And this would be really bad. Haven't seen anything else like
+            # this yet.
+            else:
+                logger.warning(
+                    'Not sure how to read coordinates from Gaussian acrhive!')
+                raise Exception(
+                    'Not sure how to read coordinates from Gaussian archive!')
             struct.atoms.append(
                 Atom(element=ele, x=float(x), y=float(y), z=float(z)))
         logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
-        self._structures = [struct]
-        hess_tri = stuff.group('hess')
-        hess_tri = hess_tri.split(',')
-        logger.log(
-            5,
-            '  -- Read {} Hessian elements in lower triangular '
-            'form.'.format(len(hess_tri)))
-        hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-        logger.log(
-            5, '  -- Created {} Hessian matrix.'.format(hess.shape))
-        # Code for if it was in upper triangle, but it's not.
-        # hess[np.triu_indices_from(hess)] = hess_tri
-        # hess += np.triu(hess, -1).T
-        # Lower triangle code.
-        hess[np.tril_indices_from(hess)] = hess_tri
-        hess += np.tril(hess, -1).T
-        hess *= co.HESSIAN_CONVERSION
-        struct.hess = hess
+        # SECTION 4
+        # All sorts of information here. This area looks like:
+        #     prop1=value1\prop2=value2\prop3=value3
+        arch_info = arch[4]
+        arch_info = arch_info.split('\\')
+        for thing in arch_info:
+            prop_name, prop_value = thing.split('=')
+            struct.props[prop_name] = prop_value
+        # SECTION 5
+        # The Hessian. Only exists if you did a frequency calculation.
+        # Appears in lower triangular form.
+        if not arch[5] == '@':
+            hess_tri = arch[5]
+            hess_tri = hess_tri.split(',')
+            logger.log(
+                5,
+                '  -- Read {} Hessian elements in lower triangular '
+                'form.'.format(len(hess_tri)))
+            hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+            logger.log(
+                5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+            # Code for if it was in upper triangle (it's not).
+            # hess[np.triu_indices_from(hess)] = hess_tri
+            # hess += np.triu(hess, -1).T
+            # Lower triangle code.
+            hess[np.tril_indices_from(hess)] = hess_tri
+            hess += np.tril(hess, -1).T
+            hess *= co.HESSIAN_CONVERSION
+            struct.hess = hess
+            # SECTION 6
+            # Not sure what this is.
 
-        # Code to extract energies.
-        # Still not sure exactly what energies we want to use.
-        struct.props['hf'] = float(stuff.group('hf'))
-        struct.props['zp'] = float(stuff.group('zp'))
-        struct.props['thermal'] = float(stuff.group('thermal'))
+        # stuff = re.search(
+        #     '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
+        #     '\\\\(?P<date>.*?)'
+        #     '\\\\.*?\\\\\\\\(?P<com>.*?)'
+        #     '\\\\\\\\(?P<filename>.*?)'
+        #     '\\\\\\\\(?P<charge>.*?)'
+        #     ',(?P<multiplicity>.*?)'
+        #     '\\\\(?P<atoms>.*?)'
+        #     # This marks the end of what always shows up.
+        #     '\\\\\\\\'
+        #     # This stuff sometimes shows up.
+        #     # And it breaks if it doesn't show up.
+        #     '.*?HF=(?P<hf>.*?)'
+        #     '\\\\.*?ZeroPoint=(?P<zp>.*?)'
+        #     '\\\\.*?Thermal=(?P<thermal>.*?)'
+        #     '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
+        #     '\\\\\\\\(?P<evals>.*?)'
+        #     '\\\\\\\\\\\\',
+        #     arch)
+        # logger.log(5, '  -- Read archive.')
+        # atoms = stuff.group('atoms')
+        # atoms = atoms.split('\\')
+        # for atom in atoms:
+        #     ele, x, y, z = atom.split(',')
+        #     struct.atoms.append(
+        #         Atom(element=ele, x=float(x), y=float(y), z=float(z)))
+        # logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
+        # self._structures = [struct]
+        # hess_tri = stuff.group('hess')
+        # hess_tri = hess_tri.split(',')
+        # logger.log(
+        #     5,
+        #     '  -- Read {} Hessian elements in lower triangular '
+        #     'form.'.format(len(hess_tri)))
+        # hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
+        # logger.log(
+        #     5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+        # # Code for if it was in upper triangle, but it's not.
+        # # hess[np.triu_indices_from(hess)] = hess_tri
+        # # hess += np.triu(hess, -1).T
+        # # Lower triangle code.
+        # hess[np.tril_indices_from(hess)] = hess_tri
+        # hess += np.tril(hess, -1).T
+        # hess *= co.HESSIAN_CONVERSION
+        # struct.hess = hess
+        # # Code to extract energies.
+        # # Still not sure exactly what energies we want to use.
+        # struct.props['hf'] = float(stuff.group('hf'))
+        # struct.props['zp'] = float(stuff.group('zp'))
+        # struct.props['thermal'] = float(stuff.group('thermal'))
     def get_most_converged(self, structures=None):
         """
         Used with geometry optimizations that don't succeed. Sometimes
@@ -619,6 +702,34 @@ class GaussLog(File):
                                        'section.'.format(i+1))
         return structures
                             
+def conv_sch_str(sch_struct):
+    """
+    Converts a schrodinger.structure object to my own structure object.
+    Sort of pointless. Probably remove soon.
+    """
+    my_struct = Structure()
+    my_struct.props.update(sch_struct.property)
+    for sch_atom in sch_struct.atom:
+        my_atom = Atom()
+        my_struct.atoms.append(my_atom)
+        my_atom.atom_type = sch_atom.atom_type
+        my_atom.atom_type_name = sch_atom.atom_type_name
+        my_atom.atomic_num = sch_atom.atomic_number
+        my_atom.bonded_atom_indices = \
+            [x.index for x in sch_atom.bonded_atoms]
+        my_atom.element = sch_atom.element
+        my_atom.index = sch_atom.index
+        my_atom.partial_charge = sch_atom.partial_charge
+        my_atom.x, my_atom.y, my_atom.z = sch_atom.x, sch_atom.y, sch_atom.z
+        my_atom.props.update(sch_atom.property)
+    for sch_bond in sch_struct.bond:
+        my_bond = Bond()
+        my_struct.bonds.append(my_bond)
+        my_bond.atom_nums = [sch_bond.atom1, sch_bond.atom2]
+        my_bond.order = sch_bond.order
+        my_bond.value = sch_bond.length
+    return my_struct
+    
 class SchrodingerFile(File):
     """
     Parent class used for all Schrodinger files.
@@ -663,6 +774,11 @@ class JaguarIn(SchrodingerFile):
         self._lines = None
     @property
     def hessian(self):
+        """
+        Reads the Hessian from a Jaguar .in.
+
+        Automatically removes Hessian elements corresponding to dummy atoms.
+        """
         if self._hessian is None:
             num = len(self.structures[0].atoms) + len(self._empty_atoms)
             logger.log(5,
@@ -705,7 +821,6 @@ class JaguarIn(SchrodingerFile):
                 dummy_indices.append(index + 2)
             logger.log(1, '>>> dummy_indices: {}'.format(dummy_indices))
             # Delete these rows and columns.
-            np.set_printoptions(linewidth=100000)
             logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
             logger.log(1, '>>> hessian:\n{}'.format(hessian))
             hessian = np.delete(hessian, dummy_indices, 0)
@@ -967,12 +1082,12 @@ class Mae(SchrodingerFile):
             'tors': False}
         if len(self.structures) > 1:
             com_opts['strs'] = True
-        if any(x in ['ja', 'jb', 'jt'] for x in self.commands):
+        if any(x in ['jb', 'ja', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'mea', 'mq', 'mqh'] for x in self.commands):
+        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa'] for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
-        if any(x in ['meig', 'mjeig', 'mgeig', 'mh'] for x in self.commands):
+        if any(x in ['mh', 'meig', 'mjeig', 'mgeig'] for x in self.commands):
             if com_opts['strs']:
                 raise Exception(
                     "Can't obtain the Hessian from a Maestro file "
@@ -982,10 +1097,10 @@ class Mae(SchrodingerFile):
                         self.path, ' '.join(commands)))
             else:
                 com_opts['freq'] = True
-        if any(x in ['ma', 'mb', 'meo', 'meao', 'mt'] for x in self.commands):
+        if any(x in ['mb', 'ma', 'mt', 'meo', 'meao'] for x in self.commands):
             com_opts['opt'] = True
             com_opts['opt_mmo'] = True
-        elif any(x in ['ma', 'mb', 'mt'] for x in self.commands):
+        elif any(x in ['mb', 'ma', 'mt'] for x in self.commands):
             com_opts['opt'] = True
         if any(x in ['mt', 'jt'] for x in self.commands):
             com_opts['tors'] = True
@@ -1122,7 +1237,8 @@ class Mae(SchrodingerFile):
                     raise Exception(
                         'The command "$SCHRODINGER/utilities/licutil '
                         '-available" is not working with the current '
-                        'regex in calculate.py.')
+                        'regex in calculate.py.\nOUTPUT:\n{}'.format(
+                            token_string))
                 suite_tokens = int(suite_tokens.group(1))
                 macro_tokens = int(macro_tokens.group(1))
                 if suite_tokens > co.MIN_SUITE_TOKENS and \
@@ -1379,6 +1495,7 @@ def select_structures(structures, indices, label):
                 selected.append((str_num, struct))
         return selected
 
+# This could use some documentation. Looks pretty though.
 def geo_from_points(*args):
     x1 = args[0][0]
     y1 = args[0][1]
@@ -1434,7 +1551,7 @@ class Structure(object):
         Returns atomic coordinates as a list of lists.
         """
         return [atom.coords for atom in self.atoms]
-    def format_coords(self, format='latex'):
+    def format_coords(self, format='latex', indices_use_charge=None):
         """
         Returns a list of strings/lines to easily generate coordinates
         in various formats.
@@ -1466,15 +1583,53 @@ class Structure(object):
                     ele = co.MASSES.items()[atom.atomic_num - 1][0]
                 else:
                     ele = atom.element
-                output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                        ele, atom.x, atom.y, atom.z))
+                # Used only for a problem Eric experienced.
+                # if ele == '': ele = 'Pd'
+                if indices_use_charge:
+                    if atom.index in indices_use_charge:
+                        output.append(
+                            ' {0:s}--{1:.5f}{2:>16.6f}{3:16.6f}'
+                            '{4:16.6f}'.format(
+                                ele, atom.partial_charge, atom.x,
+                                atom.y, atom.z))
+                    else:
+                        output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
+                                ele, atom.x, atom.y, atom.z))
+                else:
+                    output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
+                            ele, atom.x, atom.y, atom.z))
             return output
-    def select_stuff(self, typ, com_match=None, **kwargs):
+        # Formatted for Jaguar.
+        elif format == 'jaguar':
+            output = []
+            for i, atom in enumerate(self.atoms):
+                if atom.element is None:
+                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
+                else:
+                    ele = atom.element
+                # Used only for a problem Eric experienced.
+                # if ele == '': ele = 'Pd'
+                label = '{}{}'.format(ele, atom.index)
+                output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
+                        label, atom.x, atom.y, atom.z))
+            return output
+    def select_stuff(self, typ, com_match=None):
+        """
+        A much simpler version of select_data. It would be nice if select_data
+        was a wrapper around this function.
+        """
+        stuff = []
+        for thing in getattr(self, typ):
+            if (com_match and any(x in thing.comment for x in com_match)) or \
+                    com_match is None:
+                stuff.append(thing)
+        return stuff
+    def select_data(self, typ, com_match=None, **kwargs):
         """
         Selects bonds, angles, or torsions from the structure and returns them
         in the format used as data.
 
-        typ       - 'bond', 'angle', or 'torsion'.
+        typ       - 'bonds', 'angles', or 'torsions'.
         com_match - String or None. If None, just returns all of the selected
                     stuff (bonds, angles, or torsions). If a string, selects
                     only those that have this string in their comment.
@@ -1503,11 +1658,29 @@ class Structure(object):
                         if set(angle.atom_nums) == set(angle_atoms_2):
                             angle_2 = angle.value
                             break
-                    logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
-                    logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(angle_1, angle_2))
+                    try:
+                        logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
+                        logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(
+                                angle_1, angle_2))
+                    except UnboundLocalError:
+                        logger.error('>>> atom_nums: {}'.format(atom_nums))
+                        logger.error(
+                            '>>> angle_atoms_1: {}'.format(angle_atoms_1))
+                        logger.error(
+                            '>>> angle_atoms_2: {}'.format(angle_atoms_2))
+                        if 'angle_1' not in locals():
+                            logger.error("Can't identify angle_1!")
+                        else:
+                            logger.error(">>> angle_1: {}".format(angle_1))
+                        if 'angle_2' not in locals():
+                            logger.error("Can't identify angle_2!")
+                        else:
+                            logger.error(">>> angle_2: {}".format(angle_2))
+                        raise
                     if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
                             -5. < angle_2 < 5. or 175. < angle_2 < 185.:
-                        logger.log(1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
+                        logger.log(
+                            1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
                         pass
                     else:
                         data.append(datum)
@@ -1542,6 +1715,37 @@ class Structure(object):
                         aliph_hyds.append(atom)
         logger.log(5, '  -- {} aliphatic hydrogen(s).'.format(len(aliph_hyds)))
         return aliph_hyds
+    def get_hyds(self):
+        """
+        Returns the atom numbers of any default MacroModel type hydrogens.
+
+        This should be subclassed into something is MM3* specific.
+        """
+        hyds = []
+        for atom in self.atoms:
+            if 40 < atom.atom_type < 49:
+                for bonded_atom_index in atom.bonded_atom_indices:
+                    bonded_atom = self.atoms[bonded_atom_index - 1]
+                    if bonded_atom.atom_type == 3:
+                        hyds.append(atom)
+        logger.log(5, '  -- {} hydrogen(s).'.format(len(hyds)))
+        return hyds
+    def get_dummy_atom_indices(self):
+        """
+        Returns a list of integers where each integer corresponds to an atom
+        that is a dummy atom.
+
+        Returns
+        -------
+        list of integers
+        """
+        dummies = []
+        for atom in self.atoms:
+            if atom.is_dummy:
+                logger.log(
+                    10,'  -- Identified {} as a dummy atom.'.format(atom))
+                dummies.append(atom.index)
+        return dummies
 
 class Atom(object):
     """
@@ -1577,8 +1781,8 @@ class Atom(object):
             self.z = coords[2]
         self.props = {}
     def __repr__(self):
-        return '{}[{},{},{}]'.format(
-            self.element, self.x, self.y, self.z)
+            return '{}[{},{},{}]'.format(
+                self.atom_type_name, self.x, self.y, self.z)
     @property
     def coords(self):
         return [self.x, self.y, self.z]
@@ -1607,11 +1811,26 @@ class Atom(object):
     def exact_mass(self, value):
         self._exact_mass = value
     # I have no idea if these atom types are actually correct.
+    # Really, the user should specify custom atom types, such as dummies, in a
+    # configuration file somewhere.
     @property
     def is_dummy(self):
-        if self.atom_type in [61] or \
-                self.atom_type_name in ['Du'] or \
-                self.element in ['X']:
+        """
+        Return True if self is a dummy atom, else return False.
+
+        Returns
+        -------
+        bool
+        """
+        # I think 61 is the default dummy atom type in a Schrodinger atom.typ
+        # file.
+        # Okay, so maybe it's not. Anyway, Tony added an atom type 205 for
+        # dummies. It'd be really great if we all used the same atom.typ file
+        # someday.
+        # Could add in a check for the atom_type number. I removed it.
+        if self.atom_type_name == 'Du' or \
+                self.element == 'X' or \
+                self.atomic_num == -2:
             return True
         else:
             return False
