@@ -113,14 +113,12 @@ class Loop(object):
                 if len(cols) > 1:
                     self.args_ref = ' '.join(cols[1:]).split()
                 self.ref_data = calculate.main(self.args_ref)
-                self.ref_data = np.array(sorted(self.ref_data, key=datatypes.datum_sort_key))
             if cols[0] == 'CDAT':
                 logger.log(
                     20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
                 if len(cols) > 1:
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
-                self.ff.data = np.array(sorted(self.ff.data, key=datatypes.datum_sort_key))
             if cols[0] == 'COMP':
                 self.ff.score = compare.compare_data(
                     self.ref_data, self.ff.data)
@@ -129,6 +127,10 @@ class Loop(object):
                         self.ref_data,
                         self.ff.data,
                         os.path.join(self.direc, cols[cols.index('-o') + 1]))
+                if '-p' in cols:
+                    compare.pretty_data_comp(
+                        self.ref_data,
+                        self.ff.data)
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
                     direc=self.direc,
@@ -143,6 +145,9 @@ class Loop(object):
                     ff_lines=self.ff.lines,
                     args_ff=self.args_ff)
                 self.ff = simp.run(r_data=self.ref_data)
+            if cols[0] == 'WGHT':
+                data_type = cols[1]
+                co.WEIGHTS[data_type] = float(cols[2])
         
 def read_loop_input(filename):
     with open(filename, 'r') as f:
