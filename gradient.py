@@ -79,10 +79,10 @@ class Gradient(opt.Optimizer):
             direc, ff, ff_lines, args_ff, args_ref)
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = True
-        self.do_lagrange = False
-        self.do_levenberg = False
+        self.do_lagrange = True
+        self.do_levenberg = True
         self.do_newton = True
-        self.do_svd = False
+        self.do_svd = True
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
@@ -99,8 +99,7 @@ class Gradient(opt.Optimizer):
         self.newton_cutoffs = None
         self.newton_radii = None
         # SVD
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_factors = None
+        self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_cutoffs = [0.1, 10.]
         self.svd_radii = None
     # Don't worry that self.ff isn't included in self.new_ffs.
