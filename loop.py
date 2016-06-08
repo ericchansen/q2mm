@@ -9,6 +9,7 @@ import sys
 
 import calculate
 import constants as co
+import numpy as np
 import compare
 import datatypes
 import gradient
@@ -126,6 +127,10 @@ class Loop(object):
                         self.ref_data,
                         self.ff.data,
                         os.path.join(self.direc, cols[cols.index('-o') + 1]))
+                if '-p' in cols:
+                    compare.pretty_data_comp(
+                        self.ref_data,
+                        self.ff.data)
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
                     direc=self.direc,
@@ -140,6 +145,9 @@ class Loop(object):
                     ff_lines=self.ff.lines,
                     args_ff=self.args_ff)
                 self.ff = simp.run(r_data=self.ref_data)
+            if cols[0] == 'WGHT':
+                data_type = cols[1]
+                co.WEIGHTS[data_type] = float(cols[2])
         
 def read_loop_input(filename):
     with open(filename, 'r') as f:
