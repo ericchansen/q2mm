@@ -291,13 +291,16 @@ def main(args):
     # Print the parameters.
     if opts.printparams:
         for param in params:
-            # if param.ptype in ['df', 'q']:
-            if param.allowed_range:
-                print('{} {} {} {}'.format(
-                        param.mm3_row, param.mm3_col, param.allowed_range[0],
-                        param.allowed_range[1]))
+            if param.value == 0:
+                pass
             else:
-                print('{} {}'.format(param.mm3_row, param.mm3_col))
+                # if param.ptype in ['df', 'q']:
+                if param.allowed_range:
+                    print('{} {} {} {}'.format(
+                            param.mm3_row, param.mm3_col, param.allowed_range[0],
+                            param.allowed_range[1]))
+                else:
+                    print('{} {}'.format(param.mm3_row, param.mm3_col))
     ff.params = params
     return ff
                     
