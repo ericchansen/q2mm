@@ -339,7 +339,7 @@ def restore_simp_ff(new_ff, old_ff):
         # Copy over all old parameters.
         new_ff.params = copy.deepcopy(old_ff.params)
         # Replace the old with the new.
-        for o, param_o in enumerate(old_ff.params):
+        for i, param_o in enumerate(old_ff.params):
             for param_n in new_params:
                 # Should replace this with a general index scheme.
                 if param_o.mm3_row == param_n.mm3_row and \
