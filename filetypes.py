@@ -1203,7 +1203,7 @@ class Mae(SchrodingerFile):
             logger.log(5, 'WROTE: {}'.format(
                     os.path.join(self.name_com)))
 
-    def run(self, max_timeout=None, timeout=10, check_tokens=True):
+    def run(self, max_fails=5, max_timeout=None, timeout=10, check_tokens=True):
         """
         Runs MacroModel .com files. This has to be more complicated than a
         simple subprocess command due to problems with Schrodinger tokens.
@@ -1215,6 +1215,8 @@ class Mae(SchrodingerFile):
         max_timeout : int
                       Maximum number of attempts to look for Schrodinger
                       license tokens before giving up.
+        max_fails : int
+                    Maximum number of times the job can fail.
         timeout : float
                   Time waited in between lookups of Schrodinger license
                   tokens.
@@ -1222,6 +1224,7 @@ class Mae(SchrodingerFile):
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
+        current_fails = 0
         licenses_available = False
         if check_tokens is True:
             logger.log(5, "  -- Checking Schrodinger tokens.")
@@ -1262,10 +1265,21 @@ class Mae(SchrodingerFile):
         else:
             licenses_available = True
         if licenses_available:
-            logger.log(5, 'RUNNING: {}'.format(self.name_com))
-            sp.check_output(
-                'bmin -WAIT {}'.format(
+            while True:
+                try:
+                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
+                    sp.check_output(
+                        'bmin -WAIT {}'.format(
                             os.path.splitext(self.name_com)[0]), shell=True)
+                    break
+                except sp.CalledProcessError:
+                    logger.warning('Call to MacroModel failed and I have no '
+                                   'idea why!')
+                    current_fails += 1
+                    if current_fails < max_fails:
+                        continue
+                    else:
+                        raise
         os.chdir(current_directory)
 
 def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
