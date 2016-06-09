@@ -112,7 +112,7 @@ class Loop(object):
                     20, '~~ CALCULATING REFERENCE DATA ~~'.rjust(79, '~'))
                 if len(cols) > 1:
                     self.args_ref = ' '.join(cols[1:]).split()
-                self.ref_data = calculate.main(self.args_ref)
+                self.ref_data = opt.return_ref_data(self.args_ref)
             if cols[0] == 'CDAT':
                 logger.log(
                     20, '~~ CALCULATING FF DATA ~~'.rjust(79, '~'))
