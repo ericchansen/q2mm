@@ -1277,6 +1277,7 @@ class Mae(SchrodingerFile):
                                    'idea why!')
                     current_fails += 1
                     if current_fails < max_fails:
+                        time.sleep(timeout)
                         continue
                     else:
                         raise
