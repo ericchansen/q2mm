@@ -99,8 +99,7 @@ class Gradient(opt.Optimizer):
         self.newton_cutoffs = None
         self.newton_radii = None
         # SVD
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_factors = None
+        self.svd_factors = [0.001, 0.01, 0.1, 1.]
         self.svd_cutoffs = [0.1, 10.]
         self.svd_radii = None
     # Don't worry that self.ff isn't included in self.new_ffs.
