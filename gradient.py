@@ -79,10 +79,10 @@ class Gradient(opt.Optimizer):
             direc, ff, ff_lines, args_ff, args_ref)
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = True
-        self.do_lagrange = False
-        self.do_levenberg = False
+        self.do_lagrange = True
+        self.do_levenberg = True
         self.do_newton = True
-        self.do_svd = False
+        self.do_svd = True
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
@@ -288,6 +288,8 @@ def check(changes, max_radii, cutoffs):
         elif cutoffs:
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
+        else:
+            new_changes.append(changes)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
