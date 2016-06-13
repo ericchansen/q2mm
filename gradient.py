@@ -287,6 +287,8 @@ def check(changes, max_radii, cutoffs):
         elif cutoffs:
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
+        else:
+            new_changes.append(changes)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
