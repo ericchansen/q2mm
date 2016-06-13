@@ -103,7 +103,6 @@ class Optimizer(object):
 def return_ref_data(args_ref):
     logger.log(20, '~~ GATHERING REFERENCE DATA ~~'.rjust(79, '~'))
     ref_data = calculate.main(args_ref)
-    compare.zero_energies(ref_data)
     compare.import_weights(ref_data)
     return ref_data
 
@@ -255,6 +254,7 @@ def param_derivs(ff, ffs):
           Central differentiated and scored force fields.
     """
     for i in xrange(0, len(ffs), 2):
+        logger.log(1, '>>> ffs[i].score: {}'.format(ffs[i].score))
         ff.params[i/2].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
         ff.params[i/2].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
     pretty_derivs(ff.params)
