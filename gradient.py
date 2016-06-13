@@ -297,7 +297,7 @@ def check(changes, max_radii, cutoffs):
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
         else:
-            new_changes.append(changes)
+            new_changes.append(change)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
@@ -341,6 +341,7 @@ def check_radius(par_rad, max_rad):
         return 1
                 
 def cleanup(ffs, ff, changes):
+    logger.log(1, '>>> changes: {}'.format(changes))
     if changes:
         for method, change in changes:
             opt.pretty_param_changes(
@@ -582,13 +583,13 @@ def update_params(params, changes):
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     # This stuff is just for testing.
-    ff = datatypes.MM3('b107_test/mm3.fld')
+    ff = datatypes.MM3('b107/mm3.fld')
     ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b107_test/params.txt')
+    ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
     a = Gradient(
-        direc='b107_test', ff=ff,
-        args_ff=' -d b107_test -mb X001_E1.mae'.split(),
-        args_ref=' -d b107_test -jb X001_E1.mae'.split())
+        direc='b107', ff=ff,
+        args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+        args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
     a.run()
     # a.run(restart='par_diff_003.txt')
 
