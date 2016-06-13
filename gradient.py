@@ -300,7 +300,7 @@ def check(changes, max_radii, cutoffs):
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
         else:
-            new_changes.append(changes)
+            new_changes.append(change)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
@@ -344,6 +344,7 @@ def check_radius(par_rad, max_rad):
         return 1
                 
 def cleanup(ffs, ff, changes):
+    logger.log(1, '>>> changes: {}'.format(changes))
     if changes:
         for method, change in changes:
             opt.pretty_param_changes(
