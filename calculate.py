@@ -470,26 +470,60 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = log.structures[0].props['HF']
-            zp = log.structures[0].props['ZeroPoint']
-            if ',' in hf:
-                hfs = map(float, hf.split(','))
-                zps = map(float, zp.split(','))
-            else:
-                hfs = [float(hf)]
-                zps = [float(zp)]
-            es = []
-            for hf, zp in izip(hfs, zps):
-                es = (hf + zp) * co.HARTREE_TO_KJMOL
-            for i, e in enumerate(es):
+            # This will be a list of lists. For example, let's say that
+            # co.GAUSSIAN_ENERGIES is ['HF', 'ZeroPoint'], then
+            # the 1st list in things_to_add would be the HF energies
+            # and the 2nd list would be the ZP energies.
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                # Deal with multiple structures by checking for this
+                # split here.
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            # Initialize list of zeros. Python syntax looks funny sometimes.
+            # The length of the things_to_add sublists should always be the
+            # same if you're doing it right. I suppose you could add some
+            # sort of assert here.
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
                         val=e,
                         com='ge',
-                        type='e',
+                        typ='e',
                         src_1=filename,
                         idx_1=idx_1 + 1,
                         idx_2=i + 1))
+            
+            # # This works when HF and ZeroPoint are used. Had to make it more
+            # # general.
+            # # Revisit how structures are stored in GaussLog when you have time.
+            # hf = log.structures[0].props['HF']
+            # zp = log.structures[0].props['ZeroPoint']
+            # if ',' in hf:
+            #     hfs = map(float, hf.split(','))
+            #     zps = map(float, zp.split(','))
+            # else:
+            #     hfs = [float(hf)]
+            #     zps = [float(zp)]
+            # es = []
+            # for hf, zp in izip(hfs, zps):
+            #     es = (hf + zp) * co.HARTREE_TO_KJMOL
+            # for i, e in enumerate(es):
+            #     temp.append(datatypes.Datum(
+            #             val=e,
+            #             com='ge',
+            #             typ='e',
+            #             src_1=filename,
+            #             idx_1=idx_1 + 1,
+            #             idx_2=i + 1))
 
             # Here's the old code from before we supported multiple energies.
             # I think it's helpful history for new coders trying to understand
