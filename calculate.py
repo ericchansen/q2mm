@@ -471,17 +471,43 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
             # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='ge',
-                    typ='e',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            hf = log.structures[0].props['HF']
+            zp = log.structures[0].props['ZeroPoint']
+            if ',' in hf:
+                hfs = map(float, hf.split(','))
+                zps = map(float, zp.split(','))
+            else:
+                hfs = [float(hf)]
+                zps = [float(zp)]
+            es = []
+            for hf, zp in izip(hfs, zps):
+                es = (hf + zp) * co.HARTREE_TO_KJMOL
+            for i, e in enumerate(es):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge',
+                        type='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
+
+            # Here's the old code from before we supported multiple energies.
+            # I think it's helpful history for new coders trying to understand
+            # how to write in new datatypes. Notice how the new code utilizes
+            # idx_2.
+
+            # hf = float(log.structures[0].props['HF'])
+            # zp = float(log.structures[0].props['ZeroPoint'])
+            # energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # # We don't use idx_2 since we assume there is only one structure
+            # # in a Gaussian .log. I think that's always the case.
+            # temp.append(datatypes.Datum(
+            #         val=energy,
+            #         com='ge',
+            #         typ='e',
+            #         src_1=filename,
+            #         idx_1=idx_1 + 1))
+
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
