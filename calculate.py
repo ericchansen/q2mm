@@ -652,7 +652,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
                         val=e,
-                        com='ge',
+                        com='gea',
                         typ='e',
                         src_1=filename,
                         idx_1=idx_1 + 1,
@@ -736,7 +736,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
                         val=e,
-                        com='ge',
+                        com='geo',
                         typ='e',
                         src_1=filename,
                         idx_1=idx_1 + 1,
@@ -811,7 +811,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
                         val=e,
-                        com='ge',
+                        com='geao',
                         typ='e',
                         src_1=filename,
                         idx_1=idx_1 + 1,
