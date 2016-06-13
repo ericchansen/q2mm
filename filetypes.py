@@ -261,8 +261,19 @@ class GaussLog(File):
         logger.log(5, 'READING: {}'.format(self.filename))
         struct = Structure()
         self._structures = [struct]
+        # Matches everything in between the start and end.
+        # (?s)  - Flag for re.compile which says that . matches all.
+        # \\\\  - One single \
+        # Start - " 1\1\".
+        # End   - Some number of \ followed by @. Not sure how many \ there
+        #         are, so this matches as many as possible. Also, this could
+        #         get separated by a line break (which would also include
+        #         adding in a space since that's how Gaussian starts new lines
+        #         in the archive).
+        # We pull out the last one [-1] in case there are multiple archives
+        # in a file.
         arch = re.findall(
-            '(\s1\\\\1\\\\(?s).*?[\\\\]+@)', 
+            '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)', 
             open(self.path, 'r').read())[-1]
         logger.log(5, '  -- Located last archive.')
         # Make it into one string.
