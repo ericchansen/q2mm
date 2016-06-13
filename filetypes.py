@@ -280,9 +280,12 @@ class GaussLog(File):
         arch = arch.replace('\n ', '')
         # Separate it by Gaussian's section divider.
         arch = arch.split('\\\\')
+        # Helps us iterate over sections of the archive.
+        section_counter = 0
         # SECTION 0
         # General job information.
-        arch_general = arch[0]
+        arch_general = arch[section_counter]
+        section_counter += 1
         stuff = re.search(
             '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
             '\\\\(?P<date>.*?)'
@@ -292,13 +295,16 @@ class GaussLog(File):
         struct.props['date'] = stuff.group('date')
         # SECTION 1
         # The commands you wrote.
-        arch_commands = arch[1]
+        arch_commands = arch[section_counter]
+        section_counter += 1
         # SECTION 2
         # The comment line.
-        arch_comment = arch[2]
+        arch_comment = arch[section_counter]
+        section_counter += 1
         # SECTION 3
         # Actually has charge, multiplicity and coords.
-        arch_coords = arch[3]
+        arch_coords = arch[section_counter]
+        section_counter +=1
         stuff = re.search(
             '(?P<charge>.*?)'
             ',(?P<multiplicity>.*?)'
@@ -310,6 +316,9 @@ class GaussLog(File):
         # the properties dictionary.
         atoms = stuff.group('atoms')
         atoms = atoms.split('\\')
+        # Z-matrix coordinates adds another section. We need to be aware of 
+        # this.
+        probably_z_matrix = False
         for atom in atoms:
             stuff = atom.split(',')
             # An atom typically looks like this:
@@ -324,18 +333,26 @@ class GaussLog(File):
                 ele, x, y, z = stuff[0], stuff[2], stuff[3], stuff[4]
             # And this would be really bad. Haven't seen anything else like
             # this yet.
+            # 160613 - So, not sure when I wrote that comment, but something
+            # like this definitely happens when using scans and z-matrices.
+            # I'm going to ignore grabbing any atoms in this case.
             else:
                 logger.warning(
                     'Not sure how to read coordinates from Gaussian acrhive!')
-                raise Exception(
-                    'Not sure how to read coordinates from Gaussian archive!')
+                probably_z_matrix = True
+                section_counter += 1
+                # Let's have it stop looping over atoms, but not fail anymore.
+                break
+                # raise Exception(
+                #     'Not sure how to read coordinates from Gaussian archive!')
             struct.atoms.append(
                 Atom(element=ele, x=float(x), y=float(y), z=float(z)))
-        logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
+        logger.log(20, '  -- Read {} atoms.'.format(len(struct.atoms)))
         # SECTION 4
         # All sorts of information here. This area looks like:
         #     prop1=value1\prop2=value2\prop3=value3
-        arch_info = arch[4]
+        arch_info = arch[section_counter]
+        section_counter += 1
         arch_info = arch_info.split('\\')
         for thing in arch_info:
             prop_name, prop_value = thing.split('=')
@@ -343,8 +360,8 @@ class GaussLog(File):
         # SECTION 5
         # The Hessian. Only exists if you did a frequency calculation.
         # Appears in lower triangular form.
-        if not arch[5] == '@':
-            hess_tri = arch[5]
+        if not arch[section_counter] == '@':
+            hess_tri = arch[section_counter]
             hess_tri = hess_tri.split(',')
             logger.log(
                 5,
