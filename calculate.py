@@ -474,14 +474,43 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             # co.GAUSSIAN_ENERGIES is ['HF', 'ZeroPoint'], then
             # the 1st list in things_to_add would be the HF energies
             # and the 2nd list would be the ZP energies.
+            #
+            # Consider if you had ['HF', 'ZeroPoint'] as co.GAUSSIAN_ENERGIES
+            # and your archive had this:
+            #     HF=0.634,0.2352\ZeroPoint=0.01234,0.0164
+            # The resulting things_to_add would be:
+            #     things_to_add = [[0.634, 0.2352],
+            #                     [0.01234, 0.0164]]
             things_to_add = []
+            # Remember, thing_label is whatever you specified in
+            # co.GAUSSIAN_ENERGIES.
             for thing_label in co.GAUSSIAN_ENERGIES:
+                # Consider if your Gaussian log archive has the following:
+                #     HF=0.234,0.1234,0.5732
+                # Then, if co.GAUSSIAN_ENERGIES includes 'HF', then that
+                # particular thing, or sublist that goes into things_to_add,
+                # would look like:
+                #     thing = ['0.234', '0.1234', '0.5732']
+                # Here's another example. Consider if your archive has the
+                # property "stupidproperty":
+                #     stupidproperty=can,i,be,more,clear
+                # Then this particular sublist, named thing, would be
+                #     thing = ['can', 'i', 'be', 'more', 'clear']
+                # Lastly, consider if you have this:
+                #     ZeroPoint=0.12341
+                # Then thing would be this:
+                #     thing = ['0.12341']
                 thing = log.structures[0].props[thing_label]
                 # Deal with multiple structures by checking for this
                 # split here.
                 if ',' in thing:
+                    # Note that the "stupidproperty" example would fail here
+                    # because its elements can not be converted to floats.
                     thing = map(float, thing.split(','))
+                    # Here, thing might look like:
+                    #    thing = [0.1235235, 0.2352, 0.352345]
                 else:
+                    # Here it would be a list with only one element.
                     thing = [float(thing)]
                 things_to_add.append(thing)
             # Initialize list of zeros. Python syntax looks funny sometimes.
@@ -489,7 +518,15 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             # same if you're doing it right. I suppose you could add some
             # sort of assert here.
             energies = [0.] * len(things_to_add[0])
+            # In this case, consider the earlier example where:
+            #    things_to_add = [[0.634, 0.2352],
+            #                     [0.01234, 0.0164]]
+            # Here, the first thing_group would be [0.634, 0.2352] and the
+            # second thing_group would be [0.01234, 0.0164].
             for thing_group in things_to_add:
+                # After the loop through the 1st thing_group, we would have
+                # energies = [0.634, 0.2352]. After the 2nd thing_group, we
+                # would have energies = [0.634 + 0.01234, 0.2352 + 0.0164].
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing 
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
