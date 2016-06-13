@@ -599,18 +599,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='gea',
-                    typ='ea',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge',
+                        typ='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
@@ -674,18 +683,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='geo',
-                    typ='eo',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge',
+                        typ='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
@@ -740,18 +758,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='geao',
-                    typ='eao',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge',
+                        typ='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
