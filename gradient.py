@@ -99,8 +99,10 @@ class Gradient(opt.Optimizer):
         self.newton_cutoffs = None
         self.newton_radii = None
         # SVD
-        self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_cutoffs = [0.1, 10.]
+        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
+        # self.svd_cutoffs = [0.1, 10.]
+        self.svd_factors = None
+        self.svd_cutoffs = None
         self.svd_radii = None
     # Don't worry that self.ff isn't included in self.new_ffs.
     # opt.catch_run_errors will know what to do if self.new_ffs
@@ -221,7 +223,8 @@ class Gradient(opt.Optimizer):
                 cleanup(self.new_ffs, self.ff, changes)
         if self.do_svd:
             logger.log(20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
-            mu, vs, mv = return_svd(ma)
+            # J = UsV
+            mu, vs, mv = return_svd(jacob)
             if self.svd_factors:
                 changes = do_svd_w_thresholds(mu, vs, mv, vb, self.svd_factors,
                                               radii=self.svd_radii,
@@ -467,9 +470,10 @@ def do_svd_w_thresholds(mu, vs, mv, vb, factors):
         if np.all(vs == np.zeros(vs.shape)):
             logger.log(10, '  -- Vector is all zeros. Breaking.')
             break
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+        changes = mv.T.dot(vs.dot(mu.T.dot(vb)))
         logger.log(1, '>>> changes:\n{}'.format(changes))
         all_changes.append(('SVD T{}'.format(factor), changes))
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
@@ -574,11 +578,11 @@ def update_params(params, changes):
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     # This stuff is just for testing.
-    ff = datatypes.MM3('b071/mm3.fld')
+    ff = datatypes.MM3('b107/mm3.fld')
     ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b071/params.txt')
+    ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
     a = Gradient(
-        direc='b071', ff=ff,
-        args_ff=' -d b071 -me X002a.mae X002b.mae -mb X002a.mae',
-        args_ref=' -d b071 -je X002a.mae X002b.mae -jb X002a.mae')
+        direc='b107', ff=ff,
+        args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+        args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
     a.run()
