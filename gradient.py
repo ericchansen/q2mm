@@ -198,8 +198,8 @@ class Gradient(opt.Optimizer):
             vb = jacob.T.dot(resid)
             # We need these for most optimization methods.
             logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
-            logger.log(5, 'A:\n{}'.format(ma))
-            logger.log(5, 'b:\n{}'.format(vb))
+            # logger.log(5, 'A:\n{}'.format(ma))
+            # logger.log(5, 'b:\n{}'.format(vb))
         # Start coming up with new parameter sets.
         if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
@@ -232,18 +232,18 @@ class Gradient(opt.Optimizer):
                 cleanup(self.new_ffs, self.ff, changes)
         if self.do_svd:
             logger.log(20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
-            # J = UsV
-            mu, vs, mv = return_svd(jacob)
+            # J = U . s . VT
+            mu, vs, mvt = return_svd(jacob)
             logger.log(1, '>>> mu.shape: {}'.format(mu.shape))
             logger.log(1, '>>> vs.shape: {}'.format(vs.shape))
-            logger.log(1, '>>> mv.shape: {}'.format(mv.shape))
+            logger.log(1, '>>> mvt.shape: {}'.format(mvt.shape))
             logger.log(1, '>>> vb.shape: {}'.format(vb.shape))
             if self.svd_factors:
-                changes = do_svd_w_thresholds(mu, vs, mv, resid, self.svd_factors,
+                changes = do_svd_w_thresholds(mu, vs, mvt, resid, self.svd_factors,
                                               radii=self.svd_radii,
                                               cutoffs=self.svd_cutoffs)
             else:
-                changes = do_svd_wo_thresholds(mu, vs, mv, resid,
+                changes = do_svd_wo_thresholds(mu, vs, mvt, resid,
                                                radii=self.svd_radii,
                                                cutoffs=self.svd_cutoffs)
             cleanup(self.new_ffs, self.ff, changes)
@@ -460,28 +460,41 @@ def do_newton(params):
     return [('NR', changes)]
 
 @do_method
-def do_svd_w_thresholds(mu, vs, mv, resid, factors):
+def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
     logger.log(1, '>>> do_svd_w_thresholds <<<')
-    factors.sort()
+    factors.sort(reverse=True)
     all_changes = []
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    msi = np.linalg.inv(ms)
+
+    logger.log(10, ' NO FACTORS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+
     for i, factor in enumerate(factors):
         logger.log(10, ' FACTOR: {} '.format(factor).center(79, '-'))
-        old_vs = copy.deepcopy(vs)
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+        old_msi = copy.deepcopy(msi)
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         for i in xrange(0, len(vs)):
-            if vs[i] < factor:
-                vs[i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+            if msi[i, i] > factor:
+                msi[i, i] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         # Start checking after the first factor.
         # If there's no change in the vector, skip to next higher factor.
-        if i != 0 and np.all(vs == old_vs):
+        if i != 0 and np.all(msi == old_msi):
             logger.log(10, '  -- No change with factor {}. Skipping.'.format(
                     factor))
             continue
         # If the vector is all zeros, quit.
-        if np.all(vs == np.zeros(vs.shape)):
+        if np.all(msi == np.zeros(msi.shape)):
             logger.log(10, '  -- Vector is all zeros. Breaking.')
             break
 
@@ -489,17 +502,15 @@ def do_svd_w_thresholds(mu, vs, mv, resid, factors):
         # reform = mu.dot(np.diag(vs)).dot(mv)
         # logger.log(1, '>>> reform:\n{}'.format(reform))
         # changes = solver(reform, vb)
-
         # For full SVD.
         # m = mu.shape[0]
         # n = mv.shape[0]
         # ms = np.zeros((m, n), dtype=float)
         # ms[:n, :n] = np.diag(vs)
-
         # For reduced SVD.
-        ms = np.diag(vs)
+        # ms = np.diag(vs)
         
-        changes = mv.T.dot(ms.dot(mu.T.dot(resid)))
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
         # We need this to be shaped like a list so transpose the parameter
         # changes.
         changes = changes.flatten()
@@ -509,35 +520,49 @@ def do_svd_w_thresholds(mu, vs, mv, resid, factors):
     return all_changes
 
 @do_method
-def do_svd_wo_thresholds(mu, vs, mv, resid):
+def do_svd_wo_thresholds(mu, vs, mvt, resid):
     logger.log(1, '>>> do_svd_wo_thresholds <<<')
     all_changes = []
     logger.log(1, '>>> vs:\n{}'.format(vs))
-    for i in xrange(0, len(vs)):
-        logger.log(10, ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
-        vs[-i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    msi = np.linalg.inv(ms)
+
+    logger.log(10, ' ZEROED 0 ELEMENTS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+    all_changes.append(('SVD Z0', changes))
+
+    for i in xrange(0, len(vs) - 1):
+        logger.log(10, ' ZEROED {} ELEMENTS '.format(i + 1).center(79, '-'))
+        # We are zeroing the largest values.
+        msi[-(i + 1), -(i + 1)] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
 
         # Old code.
         # reform = mu.dot(np.diag(vs)).dot(mv)
         # logger.log(1, '>>> reform:\n{}'.format(reform))
         # changes = solver(reform, vb)
-
         # For full SVD.
         # m = mu.shape[0]
         # n = mv.shape[0]
         # ms = np.zeros((m, n), dtype=float)
         # ms[:n, :n] = np.diag(vs)
-        
         # For reduced SVD.
-        ms = np.diag(vs)
+        # ms = np.diag(vs)
         
-        changes = mv.T.dot(ms.dot(mu.T.dot(resid)))
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
         # We need this to be shaped like a list so transpose the parameter
         # changes.
         changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
-        all_changes.append(('SVD Z{}'.format(i), changes))
+        all_changes.append(('SVD Z{}'.format(i + 1), changes))
+
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
 
@@ -578,21 +603,30 @@ def return_jacobian(jacob, par_file):
             ff_ind += 1
     return jacob
 
-def return_svd(ma):
+def return_svd(matrix, check=False):
     """
     Parameters
     ----------
-    ma : NumPy matrix
+    matrix : NumPy matrix
+    check : bool
     """
     # Reduced SVD.
-    mu, vs, mv = np.linalg.svd(ma, full_matrices=False)
+    mu, vs, mvt = np.linalg.svd(matrix, full_matrices=False)
+    if check:
+        # Reform the matrix.
+        reform = mu.dot(np.diag(vs).dot(mvt))
+        same = np.allclose(matrix, reform)
+        if not same:
+            raise Exception(
+                'Reformed matrix from SVD is not equivalent to original '
+                'matrix!\nORIGINAL:\n{}\nREFORM:\n{}'.format(matrix, reform))
     # Full SVD.
-    # mu, vs, mv = np.linalg.svd(ma, full_matrices=True)
-    logger.log(1, ' MATRIX A DECOMPOSITION '.center(79, '-'))
-    logger.log(1, 'U:\n{}'.format(mu))
-    logger.log(1, 's:\n{}'.format(vs))
-    logger.log(1, 'V:\n{}'.format(mv))
-    return mu, vs, mv
+    # mu, vs, mvt = np.linalg.svd(ma, full_matrices=True)
+    # logger.log(1, ' SVD DECOMPOSITION '.center(79, '-'))
+    # logger.log(1, 'U:\n{}'.format(mu))
+    # logger.log(1, 's:\n{}'.format(vs))
+    # logger.log(1, 'VT:\n{}'.format(mvt))
+    return mu, vs, mvt
 
 def solver(ma, vb):
     """
