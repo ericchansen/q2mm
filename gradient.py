@@ -78,10 +78,10 @@ class Gradient(opt.Optimizer):
         super(Gradient, self).__init__(
             direc, ff, ff_lines, args_ff, args_ref)
         # Whether or not to generate parameters with these methods.
-        self.do_lstsq = True
-        self.do_lagrange = True
-        self.do_levenberg = True
-        self.do_newton = True
+        self.do_lstsq = False
+        self.do_lagrange = False
+        self.do_levenberg = False
+        self.do_newton = False
         self.do_svd = True
         # Particular settings for each method.
         # LEAST SQUARES
@@ -100,8 +100,8 @@ class Gradient(opt.Optimizer):
         self.newton_radii = None
         # SVD
         # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        # self.svd_cutoffs = [0.1, 10.]
         self.svd_factors = None
+        # self.svd_cutoffs = [0.1, 10.]
         self.svd_cutoffs = None
         self.svd_radii = None
     # Don't worry that self.ff isn't included in self.new_ffs.
@@ -234,12 +234,16 @@ class Gradient(opt.Optimizer):
             logger.log(20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
             # J = UsV
             mu, vs, mv = return_svd(jacob)
+            logger.log(1, '>>> mu.shape: {}'.format(mu.shape))
+            logger.log(1, '>>> vs.shape: {}'.format(vs.shape))
+            logger.log(1, '>>> mv.shape: {}'.format(mv.shape))
+            logger.log(1, '>>> vb.shape: {}'.format(vb.shape))
             if self.svd_factors:
-                changes = do_svd_w_thresholds(mu, vs, mv, vb, self.svd_factors,
+                changes = do_svd_w_thresholds(mu, vs, mv, resid, self.svd_factors,
                                               radii=self.svd_radii,
                                               cutoffs=self.svd_cutoffs)
             else:
-                changes = do_svd_wo_thresholds(mu, vs, mv, vb,
+                changes = do_svd_wo_thresholds(mu, vs, mv, resid,
                                                radii=self.svd_radii,
                                                cutoffs=self.svd_cutoffs)
             cleanup(self.new_ffs, self.ff, changes)
@@ -359,8 +363,8 @@ def cleanup(ffs, ff, changes):
 
 def do_method(func):
     def wrapper(*args, **kwargs):
-        logger.log(1, '>>> args: {}'.format(args))
-        logger.log(1, '>>> kwargs: {}'.format(kwargs))
+        # logger.log(1, '>>> args: {}'.format(args))
+        # logger.log(1, '>>> kwargs: {}'.format(kwargs))
         try:
             changes = func(*args)
         except opt.OptError as e:
@@ -456,7 +460,7 @@ def do_newton(params):
     return [('NR', changes)]
 
 @do_method
-def do_svd_w_thresholds(mu, vs, mv, vb, factors):
+def do_svd_w_thresholds(mu, vs, mv, resid, factors):
     logger.log(1, '>>> do_svd_w_thresholds <<<')
     factors.sort()
     all_changes = []
@@ -480,26 +484,58 @@ def do_svd_w_thresholds(mu, vs, mv, vb, factors):
         if np.all(vs == np.zeros(vs.shape)):
             logger.log(10, '  -- Vector is all zeros. Breaking.')
             break
+
+        # Old code.
         # reform = mu.dot(np.diag(vs)).dot(mv)
         # logger.log(1, '>>> reform:\n{}'.format(reform))
         # changes = solver(reform, vb)
-        changes = mv.T.dot(vs.dot(mu.T.dot(vb)))
+
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+
+        # For reduced SVD.
+        ms = np.diag(vs)
+        
+        changes = mv.T.dot(ms.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
         all_changes.append(('SVD T{}'.format(factor), changes))
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
 
 @do_method
-def do_svd_wo_thresholds(mu, vs, mv, vb):
+def do_svd_wo_thresholds(mu, vs, mv, resid):
     logger.log(1, '>>> do_svd_wo_thresholds <<<')
     all_changes = []
+    logger.log(1, '>>> vs:\n{}'.format(vs))
     for i in xrange(0, len(vs)):
         logger.log(10, ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
         vs[-i] = 0.
         logger.log(1, '>>> vs:\n{}'.format(vs))
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+
+        # Old code.
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+        
+        # For reduced SVD.
+        ms = np.diag(vs)
+        
+        changes = mv.T.dot(ms.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
         all_changes.append(('SVD Z{}'.format(i), changes))
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
@@ -548,11 +584,14 @@ def return_svd(ma):
     ----------
     ma : NumPy matrix
     """
-    mu, vs, mv = np.linalg.svd(ma)
-    logger.log(5, ' MATRIX A DECOMPOSITION '.center(79, '-'))
-    logger.log(5, 'U:\n{}'.format(mu))
-    logger.log(5, 's:\n{}'.format(vs))
-    logger.log(5, 'V:\n{}'.format(mv))
+    # Reduced SVD.
+    mu, vs, mv = np.linalg.svd(ma, full_matrices=False)
+    # Full SVD.
+    # mu, vs, mv = np.linalg.svd(ma, full_matrices=True)
+    logger.log(1, ' MATRIX A DECOMPOSITION '.center(79, '-'))
+    logger.log(1, 'U:\n{}'.format(mu))
+    logger.log(1, 's:\n{}'.format(vs))
+    logger.log(1, 'V:\n{}'.format(mv))
     return mu, vs, mv
 
 def solver(ma, vb):
@@ -586,16 +625,23 @@ def update_params(params, changes):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
-    # This stuff is just for testing.
-    ff = datatypes.MM3('b107/mm3.fld')
+    # This stuff is for testing.
+    # ff = datatypes.MM3('b107/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
+    # a = Gradient(
+    #     direc='b107', ff=ff,
+    #     args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+    #     args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
+    # a.run()
+    # a.run(restart='par_diff_011.txt')
+    ff = datatypes.MM3('b000/mm3.fld')
     ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
+    ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
     a = Gradient(
-        direc='b107', ff=ff,
-        args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
-        args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
-    a.run()
-    # a.run(restart='par_diff_003.txt')
-
-
+        direc='b000', ff=ff,
+        args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
+        args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
+    a.run(restart='par_diff_001.txt')
+    # a.run()
 
