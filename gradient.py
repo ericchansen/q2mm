@@ -99,8 +99,8 @@ class Gradient(opt.Optimizer):
         self.newton_cutoffs = None
         self.newton_radii = None
         # SVD
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_factors = None
+        self.svd_factors = [0.001, 0.01, 0.1, 1.]
+        # self.svd_factors = None
         # self.svd_cutoffs = [0.1, 10.]
         self.svd_cutoffs = None
         self.svd_radii = None
@@ -465,11 +465,16 @@ def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
     factors.sort(reverse=True)
     all_changes = []
 
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
     # For reduced SVD.
     # The largest values come 1st in this array.
-    ms = np.diag(vs)
+    # ms = np.diag(vs)
     # When we invert it, the smallest values come 1st.
-    msi = np.linalg.inv(ms)
+    # msi = np.linalg.inv(ms)
 
     logger.log(10, ' NO FACTORS '.center(79, '-'))
     logger.log(1, '>>> msi:\n{}'.format(msi))
@@ -490,7 +495,7 @@ def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
         # Start checking after the first factor.
         # If there's no change in the vector, skip to next higher factor.
         if i != 0 and np.all(msi == old_msi):
-            logger.log(10, '  -- No change with factor {}. Skipping.'.format(
+            logger.warning('  -- No change with factor {}. Skipping.'.format(
                     factor))
             continue
         # If the vector is all zeros, quit.
@@ -525,11 +530,17 @@ def do_svd_wo_thresholds(mu, vs, mvt, resid):
     all_changes = []
     logger.log(1, '>>> vs:\n{}'.format(vs))
 
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
     # For reduced SVD.
     # The largest values come 1st in this array.
-    ms = np.diag(vs)
+    # ms = np.diag(vs)
     # When we invert it, the smallest values come 1st.
-    msi = np.linalg.inv(ms)
+    # msi = np.linalg.inv(ms)
+
 
     logger.log(10, ' ZEROED 0 ELEMENTS '.center(79, '-'))
     logger.log(1, '>>> msi:\n{}'.format(msi))
@@ -539,10 +550,17 @@ def do_svd_wo_thresholds(mu, vs, mvt, resid):
     all_changes.append(('SVD Z0', changes))
 
     for i in xrange(0, len(vs) - 1):
+        # Save a copy to check whether or not anything actually changes after
+        # zeroing.
+        old_msi = copy.deepcopy(msi)
         logger.log(10, ' ZEROED {} ELEMENTS '.format(i + 1).center(79, '-'))
         # We are zeroing the largest values.
         msi[-(i + 1), -(i + 1)] = 0.
         logger.log(1, '>>> msi:\n{}'.format(msi))
+        if np.allclose(msi, old_msi):
+            logger.warning('  -- No change with zeroing {} elements. '
+                           'Skipping'.format(i + 1))
+            continue
 
         # Old code.
         # reform = mu.dot(np.diag(vs)).dot(mv)
@@ -565,6 +583,30 @@ def do_svd_wo_thresholds(mu, vs, mvt, resid):
 
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
+
+def invert_vector(vector, threshold=0.0001):
+    """
+    Inverts a vector. If the absolute value of an element in the vector is
+    below the threshold, then it replaces the value with zero rather than
+    inverting it.
+
+    Arguments
+    ---------
+    vector : np.array
+    threshold : float
+
+    Returns
+    -------
+    np.array
+    """
+    new_vector = np.empty(vector.shape, dtype=float)
+    for i, x in enumerate(vector):
+        if abs(x) < threshold:
+            new_x = 0.
+        else:
+            new_x = 1. / x
+        new_vector[i] = new_x
+    return new_vector
 
 def return_ff(orig_ff, changes, method):
     """
