@@ -907,6 +907,10 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         jin = check_outs(filename, outs, filetypes.JaguarIn, direc)
         hess = jin.hessian
         datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
+        if invert:
+            evals, evecs = np.linalg.eigh(hess)
+            datatypes.replace_minimum(evals, value=invert)
+            hess = evecs.dot(np.diag(evals).dot(evecs.T))
         datatypes.replace_minimum(hess, value=invert)
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
@@ -926,7 +930,14 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         log.read_archive()
         # For now, the Hessian is stored on the structures inside the filetype.
         hess = log.structures[0].hess
-        datatypes.replace_minimum(hess, value=invert)
+        if invert:
+            # Faster to use scipy.linalg.eig or scipy.linalg.eigsh (even
+            # faster).
+            evals, evecs = np.linalg.eigh(hess)
+            # Returns True.
+            # print(np.allclose(evecs.dot(np.diag(evals).dot(evecs.T)), hess))
+            datatypes.replace_minimum(evals, value=invert)
+            hess = evecs.dot(np.diag(evals).dot(evecs.T))
         # Oh crap, just realized this probably needs to be mass weighted.
         # WARNING: This option may need to be mass weighted!
         low_tri_idx = np.tril_indices_from(hess)
@@ -974,7 +985,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         evec = out.eigenvectors
         datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
         datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
-        datatypes.replace_minimum(hess, value=invert)
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
@@ -984,8 +994,16 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             logger.warning('Eigenvectors retrieved from {}: {}'.format(
                     name_out, evec.shape))
             raise
+
         # Funny way to make off-diagonal elements zero.
-        eigenmatrix = np.diag(np.diag(eigenmatrix))
+        # eigenmatrix = np.diag(np.diag(eigenmatrix))
+
+        # Take diagonal into one dimensional array.
+        eigenmatrix = np.diag(eigenmatrix)
+        if invert:
+            datatypes.replace_minimum(eigenmatrix, value=invert)
+        # Turn back into a full matrix.
+        eigenmatrix = np.diag(eigenmatrix)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1003,7 +1021,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         log = check_outs(filename, outs, filetypes.GaussLog, direc)
         evals = log.evals * co.HESSIAN_CONVERSION
-        datatypes.replace_minimum(evals, value=invert)
+        if invert:
+            datatypes.replace_minimum(evals, value=invert)
         eigenmatrix = np.diag(evals)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
@@ -1030,7 +1049,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         hess = datatypes.check_mm_dummy(hess, hess_dummies)
         evec = out.eigenvectors
         datatypes.mass_weight_eigenvectors(evec, out.structures[0].atoms)
-        datatypes.replace_minimum(hess, value=invert)
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
@@ -1065,7 +1083,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         hess_dummies = datatypes.get_dummy_hessian_indices(dummies)
         hess = datatypes.check_mm_dummy(hess, hess_dummies)
         evec = gau_log.evecs
-        datatypes.replace_minimum(hess, value=invert)
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:

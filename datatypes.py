@@ -734,6 +734,8 @@ def replace_minimum(array, value=1):
     array.setflags(write=True)
     # Sometimes we use 1, but sometimes we use co.HESSIAN_CONVERSION.
     array[minimum_index] = value
+    logger.log(1, '>>> minimum_index: {}'.format(minimum_index))
+    logger.log(1, '>>> array:\n{}'.format(array))
     logger.log(10, '  -- Replaced minimum in array with {}.'.format(value))
 
 def check_mm_dummy(hess, dummy_indices):
