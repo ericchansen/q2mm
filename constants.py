@@ -4,8 +4,8 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
-# GENERAL SETTINGS
-SETTINGS = {'use_sqlite3': True}
+GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
+# GAUSSIAN_ENERGIES = ['HF']
 
 # LOGGING SETTINGS
 # Settings loaded using logging.config.
