@@ -146,7 +146,8 @@ def main(args):
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
-    data = collect_data(commands, inps, direc=opts.directory)
+    data = collect_data(commands, inps, direc=opts.directory,
+                        invert=opts.invert)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
@@ -197,6 +198,11 @@ def return_calculate_parser(add_help=True, parents=None):
         '--ffpath', '-f', type=str, metavar='somepath',
         help=("Path to force field. Only necessary for certain data types "
               "if you don't provide the substructure name."))
+    opts.add_argument(
+        '--invert', '-i', type=float, metavar='somefloat',
+        help=("This option will invert the smallest eigenvalue to be whatever "
+              "value is specified by this argument whenever a Hessian is "
+              "read."))
     opts.add_argument(
         '--nocheck', '-nc', action='store_false', dest='check', default=True,
         help=("By default, Q2MM checks whether MacroModel tokens are "
@@ -419,7 +425,14 @@ def collect_reference(path):
     return np.array(data)
 
 # Must be rewritten to go in a particular order of data types every time.
-def collect_data(coms, inps, direc='.', sub_names=['OPT']):
+def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
+    """
+    Arguments
+    ---------
+    invert : None or float
+             If given, will modify the smallest value of the Hessian to
+             this value.
+    """
     # outs looks like:
     # {'filename1': <some class for filename1>,
     #  'filename2': <some class for filename2>,
@@ -1018,6 +1031,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         jin = check_outs(filename, outs, filetypes.JaguarIn, direc)
         hess = jin.hessian
         datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
+        if invert:
+            evals, evecs = np.linalg.eigh(hess)
+            datatypes.replace_minimum(evals, value=invert)
+            hess = evecs.dot(np.diag(evals).dot(evecs.T))
+        datatypes.replace_minimum(hess, value=invert)
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1036,6 +1054,16 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
         log.read_archive()
         # For now, the Hessian is stored on the structures inside the filetype.
         hess = log.structures[0].hess
+        if invert:
+            # Faster to use scipy.linalg.eig or scipy.linalg.eigsh (even
+            # faster).
+            evals, evecs = np.linalg.eigh(hess)
+            # Returns True.
+            # print(np.allclose(evecs.dot(np.diag(evals).dot(evecs.T)), hess))
+            datatypes.replace_minimum(evals, value=invert)
+            hess = evecs.dot(np.diag(evals).dot(evecs.T))
+        # Oh crap, just realized this probably needs to be mass weighted.
+        # WARNING: This option may need to be mass weighted!
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1090,8 +1118,16 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
             logger.warning('Eigenvectors retrieved from {}: {}'.format(
                     name_out, evec.shape))
             raise
+
         # Funny way to make off-diagonal elements zero.
-        eigenmatrix = np.diag(np.diag(eigenmatrix))
+        # eigenmatrix = np.diag(np.diag(eigenmatrix))
+
+        # Take diagonal into one dimensional array.
+        eigenmatrix = np.diag(eigenmatrix)
+        if invert:
+            datatypes.replace_minimum(eigenmatrix, value=invert)
+        # Turn back into a full matrix.
+        eigenmatrix = np.diag(eigenmatrix)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1109,6 +1145,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     for filename in filenames:
         log = check_outs(filename, outs, filetypes.GaussLog, direc)
         evals = log.evals * co.HESSIAN_CONVERSION
+        if invert:
+            datatypes.replace_minimum(evals, value=invert)
         eigenmatrix = np.diag(evals)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
