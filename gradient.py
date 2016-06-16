@@ -77,32 +77,36 @@ class Gradient(opt.Optimizer):
                  args_ref=None):
         super(Gradient, self).__init__(
             direc, ff, ff_lines, args_ff, args_ref)
+        # The current defaults err on the side of simplicity, so these are
+        # likely more ideal for smaller parameter sets. For larger parameter
+        # sets, central differentiation will take longer, and so you you will
+        # likely want to try more trial FFs per iteration. This would mean
+        # adding more max radii (ex. lagrange_radii) or more factors (ex.
+        # svd_factors).
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = False
-        self.do_lagrange = False
+        self.do_lagrange = True
         self.do_levenberg = False
-        self.do_newton = False
+        self.do_newton = True
         self.do_svd = True
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
-        self.lstsq_radii = None
+        self.lstsq_radii = [1., 10.]
         # LAGRANGE
         self.lagrange_factors = [0.01, 0.1, 1., 10.]
         self.lagrange_cutoffs = None
-        self.lagrange_radii = [0.1, 1., 5., 10.]
+        self.lagrange_radii = [0.1, 10.]
         # LEVENBERG-MARQUARDT
         self.levenberg_factors = [0.01, 0.1, 1., 10.]
         self.levenberg_cutoffs = None
-        self.levenberg_radii = [0.1, 1., 5., 10.]
+        self.levenberg_radii = [0.1, 10.]
         # NEWTON-RAPHSON
         self.newton_cutoffs = None
-        self.newton_radii = None
+        self.newton_radii = [1., 10.]
         # SVD
-        self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        # self.svd_factors = None
-        # self.svd_cutoffs = [0.1, 10.]
-        self.svd_cutoffs = None
+        self.svd_factors = [0.5, 1., 10., 100.]
+        self.svd_cutoffs = [0.1, 10.]
         self.svd_radii = None
     # Don't worry that self.ff isn't included in self.new_ffs.
     # opt.catch_run_errors will know what to do if self.new_ffs
