@@ -109,7 +109,7 @@ class Gradient(opt.Optimizer):
     def best_ff(self):
         return sorted(self.new_ffs, key=lambda x: x.score)[0]
     @opt.catch_run_errors
-    def run(self, ref_data=None):
+    def run(self, ref_data=None, restart=None):
         # We need reference data if you didn't provide it.
         if ref_data is None:
             ref_data = opt.return_ref_data(self.args_ref)
@@ -127,62 +127,71 @@ class Gradient(opt.Optimizer):
         if self.ff.score is None:
             # Already zeroed reference and correlated the energies.
             self.ff.score = compare.calculate_score(ref_data, self.ff.data)
-            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.fscore))
+            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
         logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
         # We need a file to hold the differentiated parameter data.
-        par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
-        if par_files:
-            par_files.sort()
-            most_recent_par_file = par_files[-1]
-            most_recent_par_file = most_recent_par_file.split('/')[-1]
-            most_recent_num = most_recent_par_file[9:12]
-            num = int(most_recent_num) + 1
-            par_file = 'par_diff_{:03d}.txt'.format(num)
+        logger.log(20, '~~ CENTRAL DIFFERENTIATION ~~'.rjust(79, '~'))
+        if restart:
+            par_file = restart
+            logger.log(20, '  -- Restarting gradient from central '
+                       'differentiation file {}.'.format(par_file))
         else:
-            par_file = 'par_diff_001.txt'
-        f = open(os.path.join(self.direc, par_file), 'w')
-        csv_writer = csv.writer(f)
-        # Row 1 - Labels
-        # Row 2 - Weights
-        # Row 3 - Reference data values
-        # Row 4 - Initial FF data values
-        csv_writer.writerow([x.lbl for x in ref_data])
-        csv_writer.writerow([x.wht for x in ref_data])
-        csv_writer.writerow([x.val for x in ref_data])
-        csv_writer.writerow([x.val for x in self.ff.data])
-        logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
-        # Setup the residual vector.
-        # Perhaps move this closer to the Jacobian section.
-        num_d = len(ref_data)
-        resid = np.empty((num_d, 1), dtype=float)
-        for i in xrange(0, num_d):
-            resid[i, 0] = ref_data[i].wht * (ref_data[i].val - self.ff.data[i].val)
-        logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
-        logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
-        # Save many FFs, each with their own parameter sets.
-        ffs = opt.differentiate_ff(self.ff)
-        logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
-        for ff in ffs:
-            ff.export_ff(lines=self.ff.lines)
-            logger.log(20, '  -- Calculating {}.'.format(ff))
-            data = calculate.main(self.args_ff)
-            compare.correlate_energies(ref_data, data)
-            ff.score = compare.calculate_score(ref_data, data)
-            opt.pretty_ff_results(ff)
-            # Write the data rather than storing it in memory. For large parameter
-            # sets, this could consume GBs of memory otherwise!
-            csv_writer.writerow([x.val for x in data])
-        f.close()
+            par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
+            if par_files:
+                par_files.sort()
+                most_recent_par_file = par_files[-1]
+                most_recent_par_file = most_recent_par_file.split('/')[-1]
+                most_recent_num = most_recent_par_file[9:12]
+                num = int(most_recent_num) + 1
+                par_file = 'par_diff_{:03d}.txt'.format(num)
+            else:
+                par_file = 'par_diff_001.txt'
+            logger.log(20, '  -- Generating central differentiation '
+                       'file {}.'.format(par_file))
+            f = open(os.path.join(self.direc, par_file), 'w')
+            csv_writer = csv.writer(f)
+            # Row 1 - Labels
+            # Row 2 - Weights
+            # Row 3 - Reference data values
+            # Row 4 - Initial FF data values
+            csv_writer.writerow([x.lbl for x in ref_data])
+            csv_writer.writerow([x.wht for x in ref_data])
+            csv_writer.writerow([x.val for x in ref_data])
+            csv_writer.writerow([x.val for x in self.ff.data])
+            logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
+            # Save many FFs, each with their own parameter sets.
+            ffs = opt.differentiate_ff(self.ff)
+            logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
+            for ff in ffs:
+                ff.export_ff(lines=self.ff.lines)
+                logger.log(20, '  -- Calculating {}.'.format(ff))
+                data = calculate.main(self.args_ff)
+                compare.correlate_energies(ref_data, data)
+                ff.score = compare.calculate_score(ref_data, data)
+                opt.pretty_ff_results(ff)
+                # Write the data rather than storing it in memory. For large parameter
+                # sets, this could consume GBs of memory otherwise!
+                csv_writer.writerow([x.val for x in data])
+            f.close()
         # Calculate the Jacobian, residual vector, matrix A and vector b.
         # These aren't needed if you're only doing Newton-Raphson.
         if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
                 self.do_svd:
             logger.log(20, '~~ JACOBIAN AND RESIDUAL VECTOR ~~'.rjust(79, '~'))
+            # Setup the residual vector.
+            num_d = len(ref_data)
+            resid = np.empty((num_d, 1), dtype=float)
+            for i in xrange(0, num_d):
+                resid[i, 0] = ref_data[i].wht * (ref_data[i].val - self.ff.data[i].val)
+            # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
+            logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
             # Setup the Jacobian.
             num_p = len(self.ff.params)
             # Maybe should be a part of the Jacobian function.
             jacob = np.empty((num_d, num_p), dtype=float)
             jacob = return_jacobian(jacob, os.path.join(self.direc, par_file))
+            # logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
+            logger.log(20, '  -- Formed {} Jacobian.'.format(jacob.shape))
             ma = jacob.T.dot(jacob)
             vb = jacob.T.dot(resid)
             # We need these for most optimization methods.
@@ -190,7 +199,7 @@ class Gradient(opt.Optimizer):
             logger.log(5, 'A:\n{}'.format(ma))
             logger.log(5, 'b:\n{}'.format(vb))
         # Start coming up with new parameter sets.
-        if self.do_newton:
+        if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
             # Make sure we have derivative information.
             if self.ff.params[0].d1 is None:
@@ -288,7 +297,7 @@ def check(changes, max_radii, cutoffs):
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
         else:
-            new_changes.append(changes)
+            new_changes.append(change)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
@@ -332,6 +341,7 @@ def check_radius(par_rad, max_rad):
         return 1
                 
 def cleanup(ffs, ff, changes):
+    logger.log(1, '>>> changes: {}'.format(changes))
     if changes:
         for method, change in changes:
             opt.pretty_param_changes(
@@ -507,7 +517,7 @@ def return_ff(orig_ff, changes, method):
 
 def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
-        logger.log(15, 'READING: par.new.tot')
+        logger.log(15, 'READING: {}'.format(par_file))
         f.readline() # Labels.
         whts = map(float, f.readline().split(',')) # Weights.
         f.readline() # Reference values.
@@ -526,7 +536,6 @@ def return_jacobian(jacob, par_file):
                 dydp = (inc_datum - dec_datum) / 2
                 jacob[data_ind, ff_ind] = whts[data_ind] * dydp
             ff_ind += 1
-    logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
     return jacob
 
 def return_svd(ma):
@@ -574,11 +583,15 @@ def update_params(params, changes):
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     # This stuff is just for testing.
-    ff = datatypes.MM3('b071/mm3.fld')
+    ff = datatypes.MM3('b107/mm3.fld')
     ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b071/params.txt')
+    ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
     a = Gradient(
-        direc='b071', ff=ff,
-        args_ff=' -d b071 -me X002a.mae X002b.mae -mb X002a.mae',
-        args_ref=' -d b071 -je X002a.mae X002b.mae -jb X002a.mae')
+        direc='b107', ff=ff,
+        args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+        args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
     a.run()
+    # a.run(restart='par_diff_003.txt')
+
+
+
