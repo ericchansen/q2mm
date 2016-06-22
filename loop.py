@@ -13,6 +13,7 @@ import numpy as np
 import compare
 import datatypes
 import gradient
+import opt
 import parameters
 import simplex
 
