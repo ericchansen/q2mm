@@ -653,7 +653,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 temp.append(datatypes.Datum(
                         val=e,
                         com='gea',
-                        typ='e',
+                        typ='ea',
                         src_1=filename,
                         idx_1=idx_1 + 1,
                         idx_2=i + 1))
@@ -737,7 +737,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 temp.append(datatypes.Datum(
                         val=e,
                         com='geo',
-                        typ='e',
+                        typ='eo',
                         src_1=filename,
                         idx_1=idx_1 + 1,
                         idx_2=i + 1))
@@ -812,7 +812,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
                 temp.append(datatypes.Datum(
                         val=e,
                         com='geao',
-                        typ='e',
+                        typ='eao',
                         src_1=filename,
                         idx_1=idx_1 + 1,
                         idx_2=i + 1))
