@@ -638,8 +638,19 @@ class MM3(FF):
         else:
             lines = self.lines
         for param in params:
+            logger.log(1, '>>> param: {} param.value: {}'.format(
+                    param, param.value))
             line = lines[param.mm3_row - 1]
-            if param.mm3_col == 1:
+            # There are some problems with this. Probably an optimization
+            # technique gave you these crazy parameter values. Ideally, this
+            # entire trial FF should be discarded.
+            # Someday export_ff should raise an exception when these values
+            # get too rediculous, and this exception should be handled by the
+            # optimization techniques appropriately.
+            if abs(param.value) > 100.:
+                logger.warning(
+                    'Value of {} is too high! Skipping write.'.format(param))
+            elif param.mm3_col == 1:
                 lines[param.mm3_row - 1] = (line[:P_1_START] +
                                             '{:10.4f}'.format(param.value) +
                                             line[P_1_END:])

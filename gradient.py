@@ -202,8 +202,8 @@ class Gradient(opt.Optimizer):
             vb = jacob.T.dot(resid)
             # We need these for most optimization methods.
             logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
-            logger.log(5, 'A:\n{}'.format(ma))
-            logger.log(5, 'b:\n{}'.format(vb))
+            # logger.log(5, 'A:\n{}'.format(ma))
+            # logger.log(5, 'b:\n{}'.format(vb))
         # Start coming up with new parameter sets.
         if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
@@ -236,13 +236,18 @@ class Gradient(opt.Optimizer):
                 cleanup(self.new_ffs, self.ff, changes)
         if self.do_svd:
             logger.log(20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
-            mu, vs, mv = return_svd(ma)
+            # J = U . s . VT
+            mu, vs, mvt = return_svd(jacob)
+            logger.log(1, '>>> mu.shape: {}'.format(mu.shape))
+            logger.log(1, '>>> vs.shape: {}'.format(vs.shape))
+            logger.log(1, '>>> mvt.shape: {}'.format(mvt.shape))
+            logger.log(1, '>>> vb.shape: {}'.format(vb.shape))
             if self.svd_factors:
-                changes = do_svd_w_thresholds(mu, vs, mv, vb, self.svd_factors,
+                changes = do_svd_w_thresholds(mu, vs, mvt, resid, self.svd_factors,
                                               radii=self.svd_radii,
                                               cutoffs=self.svd_cutoffs)
             else:
-                changes = do_svd_wo_thresholds(mu, vs, mv, vb,
+                changes = do_svd_wo_thresholds(mu, vs, mvt, resid,
                                                radii=self.svd_radii,
                                                cutoffs=self.svd_cutoffs)
             cleanup(self.new_ffs, self.ff, changes)
@@ -362,8 +367,8 @@ def cleanup(ffs, ff, changes):
 
 def do_method(func):
     def wrapper(*args, **kwargs):
-        logger.log(1, '>>> args: {}'.format(args))
-        logger.log(1, '>>> kwargs: {}'.format(kwargs))
+        # logger.log(1, '>>> args: {}'.format(args))
+        # logger.log(1, '>>> kwargs: {}'.format(kwargs))
         try:
             changes = func(*args)
         except opt.OptError as e:
@@ -459,53 +464,153 @@ def do_newton(params):
     return [('NR', changes)]
 
 @do_method
-def do_svd_w_thresholds(mu, vs, mv, vb, factors):
+def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
     logger.log(1, '>>> do_svd_w_thresholds <<<')
-    factors.sort()
+    factors.sort(reverse=True)
     all_changes = []
+
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    # ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    # msi = np.linalg.inv(ms)
+
+    logger.log(10, ' NO FACTORS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+
     for i, factor in enumerate(factors):
         logger.log(10, ' FACTOR: {} '.format(factor).center(79, '-'))
-        old_vs = copy.deepcopy(vs)
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+        old_msi = copy.deepcopy(msi)
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         for i in xrange(0, len(vs)):
-            if vs[i] < factor:
-                vs[i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+            if msi[i, i] > factor:
+                msi[i, i] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         # Start checking after the first factor.
         # If there's no change in the vector, skip to next higher factor.
-        if i != 0 and np.all(vs == old_vs):
-            logger.log(10, '  -- No change with factor {}. Skipping.'.format(
+        if i != 0 and np.all(msi == old_msi):
+            logger.warning('  -- No change with factor {}. Skipping.'.format(
                     factor))
             continue
         # If the vector is all zeros, quit.
-        if np.all(vs == np.zeros(vs.shape)):
+        if np.all(msi == np.zeros(msi.shape)):
             logger.log(10, '  -- Vector is all zeros. Breaking.')
             break
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+
+        # Old code.
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+        # For reduced SVD.
+        # ms = np.diag(vs)
+        
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
         all_changes.append(('SVD T{}'.format(factor), changes))
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
 
 @do_method
-def do_svd_wo_thresholds(mu, vs, mv, vb):
+def do_svd_wo_thresholds(mu, vs, mvt, resid):
     logger.log(1, '>>> do_svd_wo_thresholds <<<')
     all_changes = []
-    for i in xrange(0, len(vs)):
-        logger.log(10, ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
-        vs[-i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+    logger.log(1, '>>> vs:\n{}'.format(vs))
+
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    # ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    # msi = np.linalg.inv(ms)
+
+
+    logger.log(10, ' ZEROED 0 ELEMENTS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+    all_changes.append(('SVD Z0', changes))
+
+    for i in xrange(0, len(vs) - 1):
+        # Save a copy to check whether or not anything actually changes after
+        # zeroing.
+        old_msi = copy.deepcopy(msi)
+        logger.log(10, ' ZEROED {} ELEMENTS '.format(i + 1).center(79, '-'))
+        # We are zeroing the largest values.
+        msi[-(i + 1), -(i + 1)] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        if np.allclose(msi, old_msi):
+            logger.warning('  -- No change with zeroing {} elements. '
+                           'Skipping'.format(i + 1))
+            continue
+
+        # Old code.
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+        # For reduced SVD.
+        # ms = np.diag(vs)
+        
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
-        all_changes.append(('SVD Z{}'.format(i), changes))
+        all_changes.append(('SVD Z{}'.format(i + 1), changes))
+
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
+
+def invert_vector(vector, threshold=0.0001):
+    """
+    Inverts a vector. If the absolute value of an element in the vector is
+    below the threshold, then it replaces the value with zero rather than
+    inverting it.
+
+    Arguments
+    ---------
+    vector : np.array
+    threshold : float
+
+    Returns
+    -------
+    np.array
+    """
+    new_vector = np.empty(vector.shape, dtype=float)
+    for i, x in enumerate(vector):
+        if abs(x) < threshold:
+            new_x = 0.
+        else:
+            new_x = 1. / x
+        new_vector[i] = new_x
+    return new_vector
 
 def return_ff(orig_ff, changes, method):
     """
@@ -544,18 +649,30 @@ def return_jacobian(jacob, par_file):
             ff_ind += 1
     return jacob
 
-def return_svd(ma):
+def return_svd(matrix, check=False):
     """
     Parameters
     ----------
-    ma : NumPy matrix
+    matrix : NumPy matrix
+    check : bool
     """
-    mu, vs, mv = np.linalg.svd(ma)
-    logger.log(5, ' MATRIX A DECOMPOSITION '.center(79, '-'))
-    logger.log(5, 'U:\n{}'.format(mu))
-    logger.log(5, 's:\n{}'.format(vs))
-    logger.log(5, 'V:\n{}'.format(mv))
-    return mu, vs, mv
+    # Reduced SVD.
+    mu, vs, mvt = np.linalg.svd(matrix, full_matrices=False)
+    if check:
+        # Reform the matrix.
+        reform = mu.dot(np.diag(vs).dot(mvt))
+        same = np.allclose(matrix, reform)
+        if not same:
+            raise Exception(
+                'Reformed matrix from SVD is not equivalent to original '
+                'matrix!\nORIGINAL:\n{}\nREFORM:\n{}'.format(matrix, reform))
+    # Full SVD.
+    # mu, vs, mvt = np.linalg.svd(ma, full_matrices=True)
+    # logger.log(1, ' SVD DECOMPOSITION '.center(79, '-'))
+    # logger.log(1, 'U:\n{}'.format(mu))
+    # logger.log(1, 's:\n{}'.format(vs))
+    # logger.log(1, 'VT:\n{}'.format(mvt))
+    return mu, vs, mvt
 
 def solver(ma, vb):
     """
@@ -588,16 +705,23 @@ def update_params(params, changes):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
-    # This stuff is just for testing.
-    ff = datatypes.MM3('b107/mm3.fld')
+    # This stuff is for testing.
+    # ff = datatypes.MM3('b107/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
+    # a = Gradient(
+    #     direc='b107', ff=ff,
+    #     args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+    #     args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
+    # a.run()
+    # a.run(restart='par_diff_011.txt')
+    ff = datatypes.MM3('b000/mm3.fld')
     ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
+    ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
     a = Gradient(
-        direc='b107', ff=ff,
-        args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
-        args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
-    a.run()
-    # a.run(restart='par_diff_003.txt')
-
-
+        direc='b000', ff=ff,
+        args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
+        args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
+    a.run(restart='par_diff_001.txt')
+    # a.run()
 
