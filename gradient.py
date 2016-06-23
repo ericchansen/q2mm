@@ -208,8 +208,9 @@ class Gradient(opt.Optimizer):
         if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
             # Make sure we have derivative information.
-            if self.ff.params[0].d1 is None:
-                opt.param_derivs(self.ff, ffs)
+            # Just kidding, we should calculate new parameter derivatives every
+            # time. It doesn't take very long anyway.
+            opt.param_derivs(self.ff, ffs)
             changes = do_newton(self.ff.params,
                                 radii=self.newton_radii,
                                 cutoffs=self.newton_cutoffs)
