@@ -3,14 +3,14 @@ import glob
 import itertools
 import logging
 import logging.config
+import numpy as np
 import os
 import random
 import sys
 
 import calculate
-import constants as co
-import numpy as np
 import compare
+import constants as co
 import datatypes
 import gradient
 import opt
