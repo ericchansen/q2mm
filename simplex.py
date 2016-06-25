@@ -56,7 +56,7 @@ class Simplex(opt.Optimizer):
         self.do_weighted_reflection = True
         self.max_cycles = 2
         self.max_cycles_wo_change = 3
-        self.max_params = 2
+        self.max_params = 5
     @property
     def best_ff(self):
         # Typically, self.new_ffs would include the original FF, self.ff,
@@ -102,31 +102,44 @@ class Simplex(opt.Optimizer):
         else:
             logger.log(15, '  -- Reused existing score and data for initial FF.')
         logger.log(15, 'INIT FF SCORE: {}'.format(self.ff.score))
+        # Will be used later to reduce number of parameters.
+        # Will need an option that's not MM3* specific in the future.
+        ff_rows = [x.mm3_row for x in params]
+        ff_cols = [x.mm3_col for x in params]
         if self.max_params and len(self.ff.params) > self.max_params:
             if self.ff.params[0].d1:
                 logger.log(15, '  -- Reusing existing parameter derivatives.')
-                # Don't score so this really doesn't take much time.
+                # Don't score so this really doesn't take much time. We're just
+                # generating the forward differentiated parameter set for all
+                # the parameters.
                 ffs = opt.differentiate_ff(self.ff, central=False)
             else:
                 logger.log(15, '  -- Calculating new parameter derivatives.')
+                # Do central differentiation so we can calculate derivatives.
+                # Another option would be to write code to determine
+                # derivatives only from forward differentiation. The accuracy
+                # vs. efficiency is probably if we did that.
                 ffs = opt.differentiate_ff(self.ff, central=True)
                 # We have to score to get the derivatives.
                 for ff in ffs:
+                    # Score the FFs.
                     ff.export_ff(lines=self.ff_lines)
                     logger.log(20, '  -- Calculating {}.'.format(ff))
                     data = calculate.main(self.args_ff)
                     ff.score = compare.compare_data(r_data, data)
                     opt.pretty_ff_results(ff)
+                # Add the derivatives to your original FF.
                 opt.param_derivs(self.ff, ffs)
                 # Only keep the forward differentiated FFs.
                 ffs = opt.extract_forward(ffs)
+            # This sorts the parameters based upon their 2nd derivative.
+            # It keeps the ones with lowest 2nd derivatives.
             params = select_simp_params_on_derivs(
                 self.ff.params, max_params=self.max_params)
+            # From the entire list of forward differentiated FFs, pick
+            # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
             # Reduce number of parameters.
-            # Will need an option that's not MM3* specific.
-            ff_rows = [x.mm3_row for x in params]
-            ff_cols = [x.mm3_col for x in params]
             for ff in self.new_ffs:
                 new_params = []
                 for param in ff.params:
@@ -134,6 +147,8 @@ class Simplex(opt.Optimizer):
                         new_params.append(param)
                 ff.params = new_params
         else:
+            # In this case it's simple. Just forward differentiate each
+            # parameter.
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
@@ -143,12 +158,14 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
+        # Make a copy of your original FF that has less parameters.
         ff_copy = copy.deepcopy(self.ff)
         new_params = []
         for param in ff.params:
             if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
                 new_params.append(param)
         ff_copy.params = new_params
+        # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         wrapper = textwrap.TextWrapper(width=79)
         logger.log(20, 'ORDERED FF SCORES:')
