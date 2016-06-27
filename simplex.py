@@ -64,11 +64,13 @@ class Simplex(opt.Optimizer):
         if self.new_ffs:
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             # I think this is necessary after massive contraction.
+            # Massive contraction can potentially make eveything worse.
             if self.new_ffs[0].score < self.ff.score:
                 best_ff = self.new_ffs[0]
                 best_ff = restore_simp_ff(best_ff, self.ff)
-            else:
                 return best_ff
+            else:
+                return self.ff
         else:
             return self.ff
     @opt.catch_run_errors
