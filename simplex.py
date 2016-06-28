@@ -133,6 +133,8 @@ class Simplex(opt.Optimizer):
                 opt.param_derivs(self.ff, ffs)
                 # Only keep the forward differentiated FFs.
                 ffs = opt.extract_forward(ffs)
+                logger.log(5, '  -- Keeping {} forward differentiated '
+                           'FFs.'.format(len(ffs)))
             # This sorts the parameters based upon their 2nd derivative.
             # It keeps the ones with lowest 2nd derivatives.
             params = select_simp_params_on_derivs(
@@ -140,6 +142,8 @@ class Simplex(opt.Optimizer):
             # From the entire list of forward differentiated FFs, pick
             # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
+            logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
+            sys.exit('ERIC SAID SO!')
             # Reduce number of parameters.
             # Will need an option that's not MM3* specific in the future.
             ff_rows = [x.mm3_row for x in params]
@@ -161,6 +165,8 @@ class Simplex(opt.Optimizer):
             # In this case it's simple. Just forward differentiate each
             # parameter.
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
+            logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
+            sys.exit('ERIC SAID SO!')
             # Still make that FF copy.
             ff_copy = copy.deepcopy(self.ff)
         # Double check and make sure they're all scored.
@@ -173,7 +179,8 @@ class Simplex(opt.Optimizer):
                 opt.pretty_ff_results(ff)
         # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
-        # Allow 3 cycles w/o change for each parameter present
+        # Allow 3 cycles w/o change for each parameter present. Remember that
+        # the initial FF was added here, hence the minus one.
         self._max_cycles_wo_change = 3 * (len(self.new_ffs) - 1)
         wrapper = textwrap.TextWrapper(width=79)
         # Shows all FFs parameters.
