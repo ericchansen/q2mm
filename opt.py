@@ -30,7 +30,7 @@ def catch_run_errors(func):
         papa_bear = args[0]
         try:
             return func(*args, **kwargs)
-        except (datatypes.ParamError, ZeroDivisionError) as e:
+        except (ZeroDivisionError, OptError, datatypes.ParamError) as e:
             logger.warning(e)
             if papa_bear.best_ff is None:
                 logger.log(20, '  -- Exiting {} and returning initial FF.'.format(
