@@ -66,8 +66,8 @@ class Simplex(opt.Optimizer):
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             # I think this is necessary after massive contraction.
             # Massive contraction can potentially make eveything worse.
-# No, it can't!!! The best FF is always retained! /Per-Ola
-
+            # No, it can't!!! The best FF is always retained! /Per-Ola
+            # Yep, he's right. /Eric
             if self.new_ffs[0].score < self.ff.score:
                 best_ff = self.new_ffs[0]
                 best_ff = restore_simp_ff(best_ff, self.ff)
@@ -188,9 +188,9 @@ class Simplex(opt.Optimizer):
             best_ff = self.new_ffs[0]
             logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
-	    logger.log(20, 'ORDERED FF SCORES:')
-	    logger.log(20, wrapper.fill('{}'.format(
-		    ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
+        logger.log(20, 'ORDERED FF SCORES:')
+        logger.log(20, wrapper.fill('{}'.format(' '.join('{:15.4f}'.format(
+                            x.score) for x in self.new_ffs))))
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'
@@ -209,11 +209,11 @@ class Simplex(opt.Optimizer):
                 break
             for i in xrange(0, len(best_ff.params)):
                 if self.do_weighted_reflection:
-		    inv_val = (
-			sum([x.params[i].value *
-			     (x.score - self.new_ffs[-1].score)
-			     for x in self.new_ffs[:-1]])
-			/ score_diff_sum)
+            inv_val = (
+            sum([x.params[i].value *
+                 (x.score - self.new_ffs[-1].score)
+                 for x in self.new_ffs[:-1]])
+            / score_diff_sum)
                 else:
                     inv_val = (
                         sum([x.params[i].value for x in self.new_ffs[:-1]])
