@@ -296,7 +296,9 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
-                if con_ff.score < self.new_ffs[-1].score:
+                # This change was made to reflect the 1998 Q2MM publication.
+                # if con_ff.score < self.new_ffs[-1].score:
+                if con_ff.score < self.new_ffs[-2].score:
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
                     logger.log(
