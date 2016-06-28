@@ -52,10 +52,10 @@ class Simplex(opt.Optimizer):
                  args_ref=None):
         super(Simplex, self).__init__(
             direc, ff, ff_lines, args_ff, args_ref)
+        self._max_cycles_wo_change = None
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
         self.max_cycles = 100
-        self.max_cycles_wo_change = 3
         self.max_params = 10
     @property
     def best_ff(self):
@@ -173,7 +173,7 @@ class Simplex(opt.Optimizer):
         # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         # Allow 3 cycles w/o change for each parameter present
-        self.max_cycles_wo_change = 3*(len(self.new_ffs)-1)
+        self._max_cycles_wo_change = 3 * (len(self.new_ffs) - 1)
         wrapper = textwrap.TextWrapper(width=79)
         # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
