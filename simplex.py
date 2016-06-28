@@ -54,7 +54,7 @@ class Simplex(opt.Optimizer):
             direc, ff, ff_lines, args_ff, args_ref)
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
-        self.max_cycles = 10
+        self.max_cycles = 100
         self.max_cycles_wo_change = 3
         self.max_params = 10
     @property
@@ -170,6 +170,8 @@ class Simplex(opt.Optimizer):
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
+        # Allow 3 cycles w/o change for each parameter present
+        self.max_cycles_wo_change = 3*(len(self.new_ffs)-1)
         wrapper = textwrap.TextWrapper(width=79)
         # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
@@ -195,25 +197,20 @@ class Simplex(opt.Optimizer):
             ref_ff = self.ff.__class__()
             ref_ff.method = 'REFLECTION'
             ref_ff.params = copy.deepcopy(best_ff.params)
+            # Need score difference sum for weighted inversion. If zero, should break
+            score_diff_sum=sum([x.score - self.new_ffs[-1].score
+                                 for x in self.new_ffs[:-1]])
+            if score_diff_sum==0.:
+                logger.warning(
+                    'No difference between force field scores, breaking.')
+                break
             for i in xrange(0, len(best_ff.params)):
                 if self.do_weighted_reflection:
-                    try:
-                        inv_val = (
-                            sum([x.params[i].value *
-                                 (x.score - self.new_ffs[-1].score)
-                                 for x in self.new_ffs[:-1]])
-                            / 
-                            sum([x.score - self.new_ffs[-1].score
-                                 for x in self.new_ffs[:-1]]))
-                    except ZeroDivisionError:
-                        logger.warning(
-                            'Attempted to divide by zero while calculating the '
-                            'weighted simplex inversion point. All penalty '
-                            'function scores for the trial force fields are '
-                            'numerically equivalent.')
-                        # Breaking should just exit the while loop. Should still
-                        # give you the best force field determined thus far.
-                        break
+		    inv_val = (
+			sum([x.params[i].value *
+			     (x.score - self.new_ffs[-1].score)
+			     for x in self.new_ffs[:-1]])
+			/ score_diff_sum)
                 else:
                     inv_val = (
                         sum([x.params[i].value for x in self.new_ffs[:-1]])
@@ -222,11 +219,7 @@ class Simplex(opt.Optimizer):
                 inv_ff.params[i].value = inv_val
                 ref_ff.params[i].value = (
                     2 * inv_val - self.new_ffs[-1].params[i].value)
-            # Calculate score for inverted parameters.
-            self.ff.export_ff(self.ff.path, params=inv_ff.params)
-            data = calculate.main(self.args_ff)
-            inv_ff.score = compare.compare_data(r_data, data)
-            opt.pretty_ff_results(inv_ff)
+            # The inversion point does not need to be scored
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             data = calculate.main(self.args_ff)
@@ -276,7 +269,7 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
-                if con_ff.score < self.new_ffs[-2].score:
+                if con_ff.score < self.new_ffs[-1].score:
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
                     logger.log(
@@ -298,8 +291,8 @@ class Simplex(opt.Optimizer):
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without change.'.format(
-                        cycles_wo_change))
+                logger.log(20, '  -- {} cycles without change, out of {} allowed.'.format(
+                        cycles_wo_change, self.max_cycles_wo_change))
             best_ff = self.new_ffs[0]
             logger.log(20, 'BEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
