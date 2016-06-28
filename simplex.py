@@ -188,9 +188,9 @@ class Simplex(opt.Optimizer):
             best_ff = self.new_ffs[0]
             logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
-        logger.log(20, 'ORDERED FF SCORES:')
-        logger.log(20, wrapper.fill('{}'.format(' '.join('{:15.4f}'.format(
-                            x.score) for x in self.new_ffs))))
+            logger.log(20, 'ORDERED FF SCORES:')
+            logger.log(20, wrapper.fill('{}'.format(
+                    ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'
