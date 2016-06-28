@@ -291,7 +291,7 @@ class Simplex(opt.Optimizer):
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without change, out of {} allowed.'.format(
+                logger.log(20, '  -- {} cycles without improvement, out of {} allowed.'.format(
                         cycles_wo_change, self.max_cycles_wo_change))
             best_ff = self.new_ffs[0]
             logger.log(20, 'BEST:')
