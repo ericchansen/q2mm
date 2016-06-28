@@ -161,7 +161,6 @@ class Simplex(opt.Optimizer):
             # Still make that FF copy.
             ff_copy = copy.deepcopy(self.ff)
         # Add your copy of the orignal to FF to the forward differentiated FFs.
-        self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
             if ff.score is None:
@@ -170,10 +169,8 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
+        self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         wrapper = textwrap.TextWrapper(width=79)
-        logger.log(20, 'ORDERED FF SCORES:')
-        logger.log(20, wrapper.fill('{}'.format(
-                ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
         # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
         # Start the simplex cycles.
@@ -186,6 +183,9 @@ class Simplex(opt.Optimizer):
             best_ff = self.new_ffs[0]
             logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
+	    logger.log(20, 'ORDERED FF SCORES:')
+	    logger.log(20, wrapper.fill('{}'.format(
+		    ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'
