@@ -200,20 +200,44 @@ class Simplex(opt.Optimizer):
             ref_ff = self.ff.__class__()
             ref_ff.method = 'REFLECTION'
             ref_ff.params = copy.deepcopy(best_ff.params)
-            # Need score difference sum for weighted inversion. If zero, should break
-            score_diff_sum=sum([x.score - self.new_ffs[-1].score
-                                 for x in self.new_ffs[:-1]])
-            if score_diff_sum==0.:
+            # Need score difference sum for weighted inversion.
+            # If zero, should break.
+            score_diff_sum = sum([x.score - self.new_ffs[-1].score
+                                  for x in self.new_ffs[:-1]])
+            if score_diff_sum == 0.:
                 logger.warning(
-                    'No difference between force field scores, breaking.')
-                break
+                    'No difference between force field scores. '
+                    'Exiting simplex.')
+                # Maybe excessive to repeat message, but better safe than
+                # sorry.
+                # We want to raise opt.OptError such that opt.catch_run_errors
+                # will write the best FF obtained thus far.
+                raise opt.OptError(
+                    'No difference between force field scores. '
+                    'Exiting simplex.')
             for i in xrange(0, len(best_ff.params)):
                 if self.do_weighted_reflection:
-            inv_val = (
-            sum([x.params[i].value *
-                 (x.score - self.new_ffs[-1].score)
-                 for x in self.new_ffs[:-1]])
-            / score_diff_sum)
+                    try:
+                        inv_val = (
+                            sum([x.params[i].value *
+                                 (x.score - self.new_ffs[-1].score)
+                                 for x in self.new_ffs[:-1]])
+                            / 
+                            sum([x.score - self.new_ffs[-1].score
+                                 for x in self.new_ffs[:-1]]))
+                    except ZeroDivisionError:
+                        logger.warning(
+                            'Attempted to divide by zero while calculating the '
+                            'weighted simplex inversion point. All penalty '
+                            'function scores for the trial force fields are '
+                            'numerically equivalent.')
+                        # This needs to be a raise. opt.catch_run_errors will
+                        # catch this exception, and make sure to write the best
+                        # FF obtained up until this point.
+                        # Also, since this is now raise, rather than break, it
+                        # should exit the simplex while loop. Really, it should
+                        # exit simplex entirely.
+                        raise
                 else:
                     inv_val = (
                         sum([x.params[i].value for x in self.new_ffs[:-1]])
@@ -222,7 +246,7 @@ class Simplex(opt.Optimizer):
                 inv_ff.params[i].value = inv_val
                 ref_ff.params[i].value = (
                     2 * inv_val - self.new_ffs[-1].params[i].value)
-            # The inversion point does not need to be scored
+            # The inversion point does not need to be scored.
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             data = calculate.main(self.args_ff)
