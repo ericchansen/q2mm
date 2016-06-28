@@ -647,7 +647,7 @@ class MM3(FF):
             # Someday export_ff should raise an exception when these values
             # get too rediculous, and this exception should be handled by the
             # optimization techniques appropriately.
-            if abs(param.value) > 100.:
+            if abs(param.value) > 999.:
                 logger.warning(
                     'Value of {} is too high! Skipping write.'.format(param))
             elif param.mm3_col == 1:

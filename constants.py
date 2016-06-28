@@ -74,15 +74,15 @@ LOG_SETTINGS = {
 # quotes), the new parameter value will be decremented or incremented by a
 # percentage of its current value.
 #     x_new = x +/- (x * step)
-STEPS = {'ae':      2.0,
+STEPS = {'ae':      1.0,
          'af':      0.1,
-         'be':      0.1,
+         'be':      0.02,
          'bf':      0.1,
          'df':      0.1,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,
-         'q':       0.5
+         'q':       0.1
          }
 
 # WEIGHTS

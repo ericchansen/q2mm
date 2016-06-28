@@ -28,6 +28,10 @@ class Simplex(opt.Optimizer):
 
     Attributes
     ----------
+    _max_cycles_wo_change : int
+                            End the simplex optimization early if there have
+                            been this many consecutive simplex steps without
+                            improvement in the objective function.
     do_massive_contraction : bool
                              If True, allows massive contractions to be
                              performed, contracting all parameters at once.
@@ -37,10 +41,7 @@ class Simplex(opt.Optimizer):
                              reflection point.
     max_cycles : int
                  Maximum number of simplex cycles.
-    max_cycles_wo_change : int
-                           End the simplex optimization early if there have
-                           been this many consecutive simplex steps without
-                           improvement in the objective function.
+
     max_params : int
                  Maximum number of parameters used in a single simplex cycle.
     """
@@ -52,11 +53,11 @@ class Simplex(opt.Optimizer):
                  args_ref=None):
         super(Simplex, self).__init__(
             direc, ff, ff_lines, args_ff, args_ref)
+        self._max_cycles_wo_change = None
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
-        self.max_cycles = 2
-        self.max_cycles_wo_change = 3
-        self.max_params = 2
+        self.max_cycles = 100
+        self.max_params = 10
     @property
     def best_ff(self):
         # Typically, self.new_ffs would include the original FF, self.ff,
@@ -64,11 +65,15 @@ class Simplex(opt.Optimizer):
         if self.new_ffs:
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             # I think this is necessary after massive contraction.
+            # Massive contraction can potentially make eveything worse.
+            # No, it can't!!! The best FF is always retained! /Per-Ola
+            # Yep, he's right. /Eric
             if self.new_ffs[0].score < self.ff.score:
                 best_ff = self.new_ffs[0]
                 best_ff = restore_simp_ff(best_ff, self.ff)
-            else:
                 return best_ff
+            else:
+                return self.ff
         else:
             return self.ff
     @opt.catch_run_errors
@@ -105,26 +110,38 @@ class Simplex(opt.Optimizer):
         if self.max_params and len(self.ff.params) > self.max_params:
             if self.ff.params[0].d1:
                 logger.log(15, '  -- Reusing existing parameter derivatives.')
-                # Don't score so this really doesn't take much time.
+                # Don't score so this really doesn't take much time. We're just
+                # generating the forward differentiated parameter set for all
+                # the parameters.
                 ffs = opt.differentiate_ff(self.ff, central=False)
             else:
                 logger.log(15, '  -- Calculating new parameter derivatives.')
+                # Do central differentiation so we can calculate derivatives.
+                # Another option would be to write code to determine
+                # derivatives only from forward differentiation. The accuracy
+                # vs. efficiency is probably if we did that.
                 ffs = opt.differentiate_ff(self.ff, central=True)
                 # We have to score to get the derivatives.
                 for ff in ffs:
+                    # Score the FFs.
                     ff.export_ff(lines=self.ff_lines)
                     logger.log(20, '  -- Calculating {}.'.format(ff))
                     data = calculate.main(self.args_ff)
                     ff.score = compare.compare_data(r_data, data)
                     opt.pretty_ff_results(ff)
+                # Add the derivatives to your original FF.
                 opt.param_derivs(self.ff, ffs)
                 # Only keep the forward differentiated FFs.
                 ffs = opt.extract_forward(ffs)
+            # This sorts the parameters based upon their 2nd derivative.
+            # It keeps the ones with lowest 2nd derivatives.
             params = select_simp_params_on_derivs(
                 self.ff.params, max_params=self.max_params)
+            # From the entire list of forward differentiated FFs, pick
+            # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
             # Reduce number of parameters.
-            # Will need an option that's not MM3* specific.
+            # Will need an option that's not MM3* specific in the future.
             ff_rows = [x.mm3_row for x in params]
             ff_cols = [x.mm3_col for x in params]
             for ff in self.new_ffs:
@@ -133,8 +150,19 @@ class Simplex(opt.Optimizer):
                     if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
                         new_params.append(param)
                 ff.params = new_params
+            # Make a copy of your original FF that has less parameters.
+            ff_copy = copy.deepcopy(self.ff)
+            new_params = []
+            for param in ff.params:
+                if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
+                    new_params.append(param)
+            ff_copy.params = new_params
         else:
+            # In this case it's simple. Just forward differentiate each
+            # parameter.
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
+            # Still make that FF copy.
+            ff_copy = copy.deepcopy(self.ff)
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
             if ff.score is None:
@@ -143,29 +171,26 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
-        ff_copy = copy.deepcopy(self.ff)
-        new_params = []
-        for param in ff.params:
-            if param.mm3_row in ff_rows and param.mm3_col in ff_cols:
-                new_params.append(param)
-        ff_copy.params = new_params
+        # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
+        # Allow 3 cycles w/o change for each parameter present
+        self._max_cycles_wo_change = 3 * (len(self.new_ffs) - 1)
         wrapper = textwrap.TextWrapper(width=79)
-        logger.log(20, 'ORDERED FF SCORES:')
-        logger.log(20, wrapper.fill('{}'.format(
-                ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
         # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
         # Start the simplex cycles.
         current_cycle = 0
         cycles_wo_change = 0
         while current_cycle < self.max_cycles \
-                and cycles_wo_change < self.max_cycles_wo_change:
+                and cycles_wo_change < self._max_cycles_wo_change:
             current_cycle += 1
             last_best = self.new_ffs[0].score
             best_ff = self.new_ffs[0]
             logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
+        logger.log(20, 'ORDERED FF SCORES:')
+        logger.log(20, wrapper.fill('{}'.format(' '.join('{:15.4f}'.format(
+                            x.score) for x in self.new_ffs))))
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'
@@ -175,6 +200,21 @@ class Simplex(opt.Optimizer):
             ref_ff = self.ff.__class__()
             ref_ff.method = 'REFLECTION'
             ref_ff.params = copy.deepcopy(best_ff.params)
+            # Need score difference sum for weighted inversion.
+            # If zero, should break.
+            score_diff_sum = sum([x.score - self.new_ffs[-1].score
+                                  for x in self.new_ffs[:-1]])
+            if score_diff_sum == 0.:
+                logger.warning(
+                    'No difference between force field scores. '
+                    'Exiting simplex.')
+                # Maybe excessive to repeat message, but better safe than
+                # sorry.
+                # We want to raise opt.OptError such that opt.catch_run_errors
+                # will write the best FF obtained thus far.
+                raise opt.OptError(
+                    'No difference between force field scores. '
+                    'Exiting simplex.')
             for i in xrange(0, len(best_ff.params)):
                 if self.do_weighted_reflection:
                     try:
@@ -191,9 +231,13 @@ class Simplex(opt.Optimizer):
                             'weighted simplex inversion point. All penalty '
                             'function scores for the trial force fields are '
                             'numerically equivalent.')
-                        # Breaking should just exit the while loop. Should still
-                        # give you the best force field determined thus far.
-                        break
+                        # This needs to be a raise. opt.catch_run_errors will
+                        # catch this exception, and make sure to write the best
+                        # FF obtained up until this point.
+                        # Also, since this is now raise, rather than break, it
+                        # should exit the simplex while loop. Really, it should
+                        # exit simplex entirely.
+                        raise
                 else:
                     inv_val = (
                         sum([x.params[i].value for x in self.new_ffs[:-1]])
@@ -202,11 +246,7 @@ class Simplex(opt.Optimizer):
                 inv_ff.params[i].value = inv_val
                 ref_ff.params[i].value = (
                     2 * inv_val - self.new_ffs[-1].params[i].value)
-            # Calculate score for inverted parameters.
-            self.ff.export_ff(self.ff.path, params=inv_ff.params)
-            data = calculate.main(self.args_ff)
-            inv_ff.score = compare.compare_data(r_data, data)
-            opt.pretty_ff_results(inv_ff)
+            # The inversion point does not need to be scored.
             # Calculate score for reflected parameters.
             self.ff.export_ff(self.ff.path, params=ref_ff.params)
             data = calculate.main(self.args_ff)
@@ -256,6 +296,8 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
+                # This change was made to reflect the 1998 Q2MM publication.
+                # if con_ff.score < self.new_ffs[-1].score:
                 if con_ff.score < self.new_ffs[-2].score:
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
@@ -278,8 +320,8 @@ class Simplex(opt.Optimizer):
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without change.'.format(
-                        cycles_wo_change))
+                logger.log(20, '  -- {} cycles without improvement, out of {} allowed.'.format(
+                        cycles_wo_change, self._max_cycles_wo_change))
             best_ff = self.new_ffs[0]
             logger.log(20, 'BEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
