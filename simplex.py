@@ -162,7 +162,6 @@ class Simplex(opt.Optimizer):
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
             # Still make that FF copy.
             ff_copy = copy.deepcopy(self.ff)
-        # Add your copy of the orignal to FF to the forward differentiated FFs.
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
             if ff.score is None:
@@ -171,6 +170,7 @@ class Simplex(opt.Optimizer):
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
+        # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         # Allow 3 cycles w/o change for each parameter present
         self.max_cycles_wo_change = 3*(len(self.new_ffs)-1)
