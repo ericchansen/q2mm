@@ -143,7 +143,6 @@ class Simplex(opt.Optimizer):
             # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
             logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
-            sys.exit('ERIC SAID SO!')
             # Reduce number of parameters.
             # Will need an option that's not MM3* specific in the future.
             ff_rows = [x.mm3_row for x in params]
@@ -166,7 +165,6 @@ class Simplex(opt.Optimizer):
             # parameter.
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
             logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
-            sys.exit('ERIC SAID SO!')
             # Still make that FF copy.
             ff_copy = copy.deepcopy(self.ff)
         # Double check and make sure they're all scored.
