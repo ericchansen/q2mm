@@ -28,6 +28,10 @@ class Simplex(opt.Optimizer):
 
     Attributes
     ----------
+    _max_cycles_wo_change : int
+                            End the simplex optimization early if there have
+                            been this many consecutive simplex steps without
+                            improvement in the objective function.
     do_massive_contraction : bool
                              If True, allows massive contractions to be
                              performed, contracting all parameters at once.
@@ -37,10 +41,7 @@ class Simplex(opt.Optimizer):
                              reflection point.
     max_cycles : int
                  Maximum number of simplex cycles.
-    max_cycles_wo_change : int
-                           End the simplex optimization early if there have
-                           been this many consecutive simplex steps without
-                           improvement in the objective function.
+
     max_params : int
                  Maximum number of parameters used in a single simplex cycle.
     """
@@ -181,7 +182,7 @@ class Simplex(opt.Optimizer):
         current_cycle = 0
         cycles_wo_change = 0
         while current_cycle < self.max_cycles \
-                and cycles_wo_change < self.max_cycles_wo_change:
+                and cycles_wo_change < self._max_cycles_wo_change:
             current_cycle += 1
             last_best = self.new_ffs[0].score
             best_ff = self.new_ffs[0]
@@ -294,7 +295,7 @@ class Simplex(opt.Optimizer):
             else:
                 cycles_wo_change += 1
                 logger.log(20, '  -- {} cycles without improvement, out of {} allowed.'.format(
-                        cycles_wo_change, self.max_cycles_wo_change))
+                        cycles_wo_change, self._max_cycles_wo_change))
             best_ff = self.new_ffs[0]
             logger.log(20, 'BEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
