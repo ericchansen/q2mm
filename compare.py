@@ -216,11 +216,20 @@ def select_group_of_energies(data):
 
 def import_weights(data):
     """
-    Imports weights for various data types. Only imports if there isn't
-    already an existing value set.
+    Imports weights for various data types.
+
+    Weights can be set in constants.WEIGHTS.
+
+    Checks whether the 1st data point has a weight. If it does, it assumes that
+    all other data points also already have weights. Operates in this fashion in
+    order to save time.
+
+    There is a commented method below that checks each data point individually.
     """
-    for datum in data:
-        if datum.wht is None:
+    # Check if the 1st data point has a weight. If it does, assume all others do
+    # as well.
+    if data[0].wht is None:
+        for datum in data:
             if datum.typ == 'eig':
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
@@ -231,29 +240,43 @@ def import_weights(data):
             else:
                 datum.wht = co.WEIGHTS[datum.typ]
 
-# Need to add some pretty print outs for this.
+    # Check each data point individually for weights.
+    # for datum in data:
+    #     if datum.wht is None:
+    #         if datum.typ == 'eig':
+    #             if datum.idx_1 == datum.idx_2 == 1:
+    #                 datum.wht = co.WEIGHTS['eig_i']
+    #             elif datum.idx_1 == datum.idx_2:
+    #                 datum.wht = co.WEIGHTS['eig_d']
+    #             elif datum.idx_1 != datum.idx_2:
+    #                 datum.wht = co.WEIGHTS['eig_o']
+    #         else:
+    #             datum.wht = co.WEIGHTS[datum.typ]
+
 def calculate_score(r_data, c_data):
     """
     Calculates the objective function score.
     """
-    score = 0.
+    score_tot = 0.
     for r_datum, c_datum in izip(r_data, c_data):
-        logger.log(1, '>>> {} {}'.format(r_datum, c_datum))
-        # Perhaps add a checking option here to ensure all the attributes
-        # of each data point match up.
-        # When we're talking about torsions, need to make sure that the
-        # difference between -179 and 179 is 2, not 358.
+        # Could add a check here to assure that the data points are aligned.
+        # Ex.) assert r_datum.ind_1 == c_datum.ind_1, 'Oh no!'
+        
+        # For torsions, ensure the difference between -179 and 179 is 2, not
+        # 358.
         if r_datum.typ == 't':
             diff = abs(r_datum.val - c_datum.val)
             if diff > 180.:
                 diff = 360. - diff
-        # Simpler for other data types.
         else:
             diff = r_datum.val - c_datum.val
-        individual_score = r_datum.wht**2 * diff**2
-        score += individual_score
-    logger.log(5, 'SCORE: {}'.format(score))
-    return score
+
+        score_ind = r_datum.wht**2 * diff**2
+        score_tot += score_ind
+        logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
+
+    logger.log(5, 'SCORE: {}'.format(score_tot))
+    return score_tot
             
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
