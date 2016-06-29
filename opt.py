@@ -139,9 +139,14 @@ def differentiate_ff(ff, central=True):
         new_ff.params = param_set
         new_ff.path = ff.path
         if central and i % 2 == 1:
+            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
             new_ff.method = 'BACKWARD {}'.format(param_set[int(np.floor(i/2.))])
         else:
-            new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
+            if central:
+                new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+            else:
+                new_ff.method = 'FORWARD {}'.format(param_set[i])
         ffs.append(new_ff)
     return ffs
 
@@ -198,9 +203,8 @@ def differentiate_params(params, central=True):
                         param, old_step, param.step))
             else:
                 # Each of these lists contains one changed parameter. It'd
-                # be nice to just use one list, and modify the necessary
-                # parameter, and then change it back before making the next
-                # modification.
+                # be nice to just use one list, modify the necessary parameter,
+                # and then change it back before making the next modification.
                 param_sets.append(forward_params)
                 if central:
                     param_sets.append(backward_params)
@@ -229,6 +233,8 @@ def extract_ff_by_params(ffs, params):
         row, col = map(int, re.split('\[|\]', ff.method)[3].split(','))
         if row in rows and col in cols:
             keep.append(ff)
+    logger.log(20, 'KEEPING FFS FOR SIMPLEX:\n{}'.format(
+            ' '.join([str(x) for x in keep])))
     return keep
 
 def extract_forward(ffs):
@@ -334,6 +340,7 @@ def pretty_ff_results(ff, level=20):
     """
     if logger.getEffectiveLevel() <= level:
         wrapper = textwrap.TextWrapper(width=79)
+        logger.log(level, '')
         logger.log(level, ' {} '.format(ff.method).center(79, '='))
         logger.log(level, 'SCORE: {}'.format(ff.score))
         logger.log(level, 'PARAMETERS:')

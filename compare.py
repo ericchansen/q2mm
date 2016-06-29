@@ -57,7 +57,7 @@ def pretty_data_comp(r_data, c_data, output=None):
     score_typ = defaultdict(float)
     score_tot = 0.
     for r, c in izip(r_data, c_data):
-        logger.log(1, '>>> {} {}'.format(r, c))
+        # logger.log(1, '>>> {} {}'.format(r, c))
         # Double check data types.
         # Had to change to check from the FF data type because reference data
         # files may be missing this information.
@@ -161,7 +161,6 @@ def correlate_energies(r_data, c_data):
     Determines the minimum energy in the reference data set, and sets that to
     zero in the FF data set.
     """
-    logger.log(1, '>>> correlate_energies <<<')
     for indices in select_group_of_energies(c_data):
         # Search based on FF data because the reference data may be read from
         # a file and lack some of the necessary attributes.
@@ -273,7 +272,7 @@ def calculate_score(r_data, c_data):
 
         score_ind = r_datum.wht**2 * diff**2
         score_tot += score_ind
-        logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
+        # logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
 
     logger.log(5, 'SCORE: {}'.format(score_tot))
     return score_tot

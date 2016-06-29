@@ -108,6 +108,9 @@ class Simplex(opt.Optimizer):
         opt.pretty_ff_results(self.ff, level=20)
 
         if self.max_params and len(self.ff.params) > self.max_params:
+            logger.log(20, '  -- More parameters than the maximum allowed.')
+            logger.log(5, 'CURRENT PARAMS: {}'.format(len(self.ff.params)))
+            logger.log(5, 'MAX PARAMS: {}'.format(self.max_params))
             # Here we select the parameters that have the lowest 2nd
             # derivatives.
 
@@ -141,14 +144,18 @@ class Simplex(opt.Optimizer):
                 ffs = opt.extract_forward(ffs)
                 logger.log(5, '  -- Keeping {} forward differentiated '
                            'FFs.'.format(len(ffs)))
+
             # This sorts the parameters based upon their 2nd derivative.
             # It keeps the ones with lowest 2nd derivatives.
+
+            # SCHEDULED FOR CHANGES. NOT A GOOD SORTING CRITERION.
             params = select_simp_params_on_derivs(
                 self.ff.params, max_params=self.max_params)
             # From the entire list of forward differentiated FFs, pick
             # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
             logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
+
             # Reduce number of parameters.
             # Will need an option that's not MM3* specific in the future.
             ff_rows = [x.mm3_row for x in params]
@@ -356,6 +363,8 @@ class Simplex(opt.Optimizer):
         best_ff.export_ff(best_ff.path)
         return best_ff
 
+# Sorting based upon the 2nd derivative isn't such a good criterion. This should
+# be updated soon.
 def select_simp_params_on_derivs(params, max_params=10):
     """
     Sorts parameter sets from lowest to highest second
@@ -367,20 +376,24 @@ def select_simp_params_on_derivs(params, max_params=10):
     """
     keep = sorted(params, key=lambda x: x.d2)
     keep = params[:max_params]
+    logger.log(20, 'KEEPING PARAMS FOR SIMPLEX:\n{}'.format(
+            ' '.join([str(x) for x in keep])))
     return keep
 
-def reduce_num_simp_params(ff, ffs, max_params=10):
-    logger.log(
-        20, '  -- Reducing number of parameters to {}'.format(max_params))
-    opt.param_derivs(ff, ffs)
-    simp_params = select_simp_params_on_derivs(
-        ff.params, max_params=max_params)
-    return simp_params
+# I also don't think this is used anymore.
+# def reduce_num_simp_params(ff, ffs, max_params=10):
+#     logger.log(
+#         20, '  -- Reducing number of parameters to {}'.format(max_params))
+#     opt.param_derivs(ff, ffs)
+#     simp_params = select_simp_params_on_derivs(
+#         ff.params, max_params=max_params)
+#     return simp_params
     
-def reduce_num_simp_ffs(ffs, params):
-    simp_ffs = opt.extract_forward(ffs)
-    simp_ffs = opt.extract_ff_by_params(ffs, params)
-    return simp_ffs
+# I don't think this is used anymore. Potentially delete.
+# def reduce_num_simp_ffs(ffs, params):
+#     simp_ffs = opt.extract_forward(ffs)
+#     simp_ffs = opt.extract_ff_by_params(ffs, params)
+#     return simp_ffs
 
 def restore_simp_ff(new_ff, old_ff):
     """
