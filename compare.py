@@ -110,9 +110,6 @@ def return_compare_parser():
         help='Print pretty output.')
     return parser
 
-# Shouldn't need to zero anymore. Commented out.
-# def compare_data(r_data, c_data, zero=True):
-
 def compare_data(r_data, c_data):
     """
     Calculates the objective function score after ensuring the energies are
@@ -127,6 +124,7 @@ def compare_data(r_data, c_data):
     return calculate_score(r_data, c_data)
 
 # Energies should be zeroed inside calculate now.
+# Save this in case that ever changes.
 # def zero_energies(data):
 #     logger.log(1, '>>> zero_energies <<<')
 #     # Go one data type at a time.
@@ -165,15 +163,11 @@ def correlate_energies(r_data, c_data):
     """
     logger.log(1, '>>> correlate_energies <<<')
     for indices in select_group_of_energies(c_data):
-        # logger.log(1, '>>> indices:\n{}'.format(indices))
-        # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
-        #         c_data[indices[0]].typ))
         # Search based on FF data because the reference data may be read from
-        # a file and lack some of these fields.
+        # a file and lack some of the necessary attributes.
         zero, zero_ind = min(
             (x.val, i) for i, x in enumerate(r_data[indices]))
         zero_ind = indices[zero_ind]
-        # Wow, that was a lot of work to get the index of the zero.
         # Now, we need to get that same sub list, and update the calculated
         # data. As long as they are sorted the same, the indices should
         # match up.
@@ -182,20 +176,16 @@ def correlate_energies(r_data, c_data):
             c_data[ind].val -= zero
 
 # This is outdated now. Most of this is handled inside calculate.
+# 6/29/16 - Actually, now this should be unnecessary simply because the new
+#           method requires that reference and FF data are aligned. That being
+#           said, this is probably worth saving anyway.
 # def correlate_energies(r_data, c_data):
 #     logger.log(1, '>>> correlate_energies <<<')
 #     for indices in select_group_of_energies(r_data):
-#         # logger.log(1, '>>> indices:\n{}'.format(indices))
-#         # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
-#         #         r_data[indices[0]].typ))
 #         if r_data[indices[0]].typ in ['e', 'eo']:
 #             zero, zero_ind = min(
 #                 (x.val, i) for i, x in enumerate(r_data[indices]))
 #             zero_ind = indices[zero_ind]
-#             # Wow, that was a lot of work to get the index of the zero.
-#             # Now, we need to get that same sub list, and update the calculated
-#             # data. As long as they are sorted the same, the indices should
-#             # match up.
 #             zero = c_data[zero_ind].val
 #             for ind in indices:
 #                 c_data[ind].val -= zero

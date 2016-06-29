@@ -97,6 +97,9 @@ class Optimizer(object):
         self.args_ff = args_ff
         self.args_ref = args_ref
         self.new_ffs = []
+        # We should do away with the ff_lines attribute.
+        # It's specific to MM3*. This sort of stuff should be
+        # encapsulated in export_ff and import_ff type functions.
         if self.ff_lines is None and self.ff.lines:
             self.ff_lines = self.ff.lines
 

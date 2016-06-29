@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-General code related to all optimization techniques.
+Simplex optimization.
 """
 import copy
 import collections
@@ -89,41 +89,47 @@ class Simplex(opt.Optimizer):
         """
         if r_data is None:
             r_data = opt.return_ref_data(self.args_ref)
-        logger.log(20, '~~ SIMPLEX OPTIMIZATION ~~'.rjust(79, '~'))
-        # Here we don't actually need the database connection/force field data.
-        # We only need the score.
+
         if self.ff.score is None:
             logger.log(20, '~~ CALCULATING INITIAL FF SCORE ~~'.rjust(79, '~'))
             self.ff.export_ff()
-            # I could store this object to prevent on self.ff to prevent garbage
-            # collection. Would be nice if simplex was followed by gradient,
-            # which needs that information, and if simplex yielded no
-            # improvements. At most points in the optimization, this is probably
-            # too infrequent for it to be worth the memory, but it might be nice
-            # once the parameters are close to convergence.
+            # Could store data on self.ff.data if we wanted. Not necessary for
+            # simplex. If simplex yielded no improvements, it would return this
+            # FF, and then we might want the data such taht we don't have to
+            # recalculate it in gradient. Let's hope simplex generally yields
+            # improvements.
             data = calculate.main(self.args_ff)
             self.ff.score = compare.compare_data(r_data, data)
-            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
         else:
-            logger.log(15, '  -- Reused existing score and data for initial FF.')
-        logger.log(15, 'INIT FF SCORE: {}'.format(self.ff.score))
+            logger.log(20, '  -- Reused existing score and data for initial FF.')
+
+        logger.log(20, '~~ SIMPLEX OPTIMIZATION ~~'.rjust(79, '~'))
+        logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
+        opt.pretty_ff_results(self.ff, level=20)
+
         if self.max_params and len(self.ff.params) > self.max_params:
+            # Here we select the parameters that have the lowest 2nd
+            # derivatives.
+
+            # THIS IS SCHEDULED FOR CHANGING. THIS IS ACTUALLY NOT A GOOD
+            # CRITERION FOR PARAMETER SELECTION.
             if self.ff.params[0].d1:
                 logger.log(15, '  -- Reusing existing parameter derivatives.')
-                # Don't score so this really doesn't take much time. We're just
-                # generating the forward differentiated parameter set for all
-                # the parameters.
+                # Differentiate all parameters forward. Yes, I know this is
+                # counter-intuitive because we are going to only use subset of
+                # the forward differentiated FFs. However, this is very
+                # computationally inexpensive because we're not scoring them
+                # now. We will remove the forward differentiated FFs we don't
+                # want before scoring.
                 ffs = opt.differentiate_ff(self.ff, central=False)
             else:
                 logger.log(15, '  -- Calculating new parameter derivatives.')
                 # Do central differentiation so we can calculate derivatives.
                 # Another option would be to write code to determine
-                # derivatives only from forward differentiation. The accuracy
-                # vs. efficiency is probably if we did that.
+                # derivatives only from forward differentiation.
                 ffs = opt.differentiate_ff(self.ff, central=True)
                 # We have to score to get the derivatives.
                 for ff in ffs:
-                    # Score the FFs.
                     ff.export_ff(lines=self.ff_lines)
                     logger.log(20, '  -- Calculating {}.'.format(ff))
                     data = calculate.main(self.args_ff)
@@ -196,6 +202,28 @@ class Simplex(opt.Optimizer):
             logger.log(20, 'ORDERED FF SCORES:')
             logger.log(20, wrapper.fill('{}'.format(
                     ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
+
+            # !!! FOR TESTING !!!
+
+            # Write the best and worst FFs to some other directory. Then
+            # write the worst FF to optimization working directory. Then
+            # raise opt.OptError. The worst FF should be overwritten by
+            # the best FF afterwards.
+
+            # if current_cycle == 5:
+            #     self.new_ffs[-1].export_ff(
+            #         path='ref_methanol_flds/mm3_worst.fld',
+            #         lines=self.ff.lines)
+            #     self.new_ffs[0].export_ff(
+            #         path='ref_methanol_flds/mm3_best.fld',
+            #         lines=self.ff.lines)
+            #     self.new_ffs[-1].export_ff(
+            #         path='ref_methanol/mm3.fld',
+            #         lines=self.ff.lines)
+            #     raise opt.OptError
+
+            # !!! END TESTING !!!
+
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'

@@ -1,4 +1,4 @@
-#!/us/bin/python
+#!/usr/bin/python
 """
 General code related to all optimization techniques.
 """
@@ -83,12 +83,14 @@ class Gradient(opt.Optimizer):
         # likely want to try more trial FFs per iteration. This would mean
         # adding more max radii (ex. lagrange_radii) or more factors (ex.
         # svd_factors).
+
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = False
         self.do_lagrange = True
         self.do_levenberg = False
         self.do_newton = True
         self.do_svd = True
+
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
@@ -108,40 +110,54 @@ class Gradient(opt.Optimizer):
         self.svd_factors = [0.001, 0.01, 0.1, 1., 10.]
         self.svd_cutoffs = [0.1, 10.]
         self.svd_radii = None
+
     # Don't worry that self.ff isn't included in self.new_ffs.
     # opt.catch_run_errors will know what to do if self.new_ffs
     # is None.
     @property
     def best_ff(self):
         return sorted(self.new_ffs, key=lambda x: x.score)[0]
+
     @opt.catch_run_errors
     def run(self, ref_data=None, restart=None):
+        """
+        Runs the gradient optimization.
+
+        Ensure that the attributes in __init__ are set as you desire before
+        using this function.
+
+        Returns
+        -------
+        `datatypes.FF` (or subclass)
+            Contains the best parameters.
+        """
         # We need reference data if you didn't provide it.
         if ref_data is None:
             ref_data = opt.return_ref_data(self.args_ref)
+
         # We need the initial FF data.
         if self.ff.data is None:
             logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
-            # Check whether this is efficient with the ff_lines.
+            # Is opt.Optimizer.ff_lines used anymore?
             self.ff.export_ff()
             self.ff.data = calculate.main(self.args_ff)
-            # We could do this, but the zeroing of energies has already been
-            # done.
-            # self.ff.score = compare.compare_data(ref_data, self.ff.data)
-            # So instead we do this.
+            # Not 100% sure if this is necessary, but it certainly doesn't hurt.
             compare.correlate_energies(ref_data, self.ff.data)
         if self.ff.score is None:
             # Already zeroed reference and correlated the energies.
             self.ff.score = compare.calculate_score(ref_data, self.ff.data)
-            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.score))
+
         logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
-        # We need a file to hold the differentiated parameter data.
+        logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
+        opt.pretty_ff_results(self.ff, level=20)
+
         logger.log(20, '~~ CENTRAL DIFFERENTIATION ~~'.rjust(79, '~'))
         if restart:
             par_file = restart
             logger.log(20, '  -- Restarting gradient from central '
                        'differentiation file {}.'.format(par_file))
         else:
+            # We need a file to hold the differentiated parameter data.
             par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
             if par_files:
                 par_files.sort()
@@ -172,8 +188,7 @@ class Gradient(opt.Optimizer):
                 ff.export_ff(lines=self.ff.lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
-                compare.correlate_energies(ref_data, data)
-                ff.score = compare.calculate_score(ref_data, data)
+                ff.score = compare.compare_data(ref_data, data)
                 opt.pretty_ff_results(ff)
                 # Write the data rather than storing it in memory. For large parameter
                 # sets, this could consume GBs of memory otherwise!
