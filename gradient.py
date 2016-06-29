@@ -179,6 +179,16 @@ class Gradient(opt.Optimizer):
                 # sets, this could consume GBs of memory otherwise!
                 csv_writer.writerow([x.val for x in data])
             f.close()
+
+            # Make sure we have derivative information. Used for NR.
+            #
+            # The derivatives are useful for checking up on the progress of the
+            # optimization and for deciding which parameters to use in a
+            # subsequent simplex optimization.
+            #
+            # Still need a way to do this with the resatrt file.
+            opt.param_derivs(self.ff, ffs)
+
         # Calculate the Jacobian, residual vector, matrix A and vector b.
         # These aren't needed if you're only doing Newton-Raphson.
         if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
@@ -207,10 +217,7 @@ class Gradient(opt.Optimizer):
         # Start coming up with new parameter sets.
         if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
-            # Make sure we have derivative information.
-            # Just kidding, we should calculate new parameter derivatives every
-            # time. It doesn't take very long anyway.
-            opt.param_derivs(self.ff, ffs)
+            # Moved the derivative section outside of here.
             changes = do_newton(self.ff.params,
                                 radii=self.newton_radii,
                                 cutoffs=self.newton_cutoffs)
@@ -393,6 +400,7 @@ def do_lagrange(ma, vb, factor):
     """
     mac = copy.deepcopy(ma)
     ind = np.diag_indices_from(mac)
+    logger.log(5, 'A:\n{}'.format(mac))
     mac[ind] = mac[ind] + factor
     logger.log(5, 'A:\n{}'.format(mac))
     changes = solver(mac, vb)
@@ -706,7 +714,9 @@ def update_params(params, changes):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
-    # This stuff is for testing.
+
+    # !!! START TESTING SECTION !!!
+
     # ff = datatypes.MM3('b107/mm3.fld')
     # ff.import_ff()
     # ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
@@ -716,13 +726,24 @@ if __name__ == '__main__':
     #     args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
     # a.run()
     # a.run(restart='par_diff_011.txt')
-    ff = datatypes.MM3('b000/mm3.fld')
-    ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
-    a = Gradient(
-        direc='b000', ff=ff,
-        args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
-        args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
-    a.run(restart='par_diff_001.txt')
+
+    # ff = datatypes.MM3('b000/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
+    # a = Gradient(
+    #     direc='b000', ff=ff,
+    #     args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
+    #     args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
+    # a.run(restart='par_diff_001.txt')
     # a.run()
 
+    # ff = datatypes.MM3('ref_methanol/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'ref_methanol/params.txt')
+    # a = Gradient(
+    #     direc='ref_methanol', ff=ff,
+    #     args_ff=' -d ref_methanol -mb methanol.mae'.split(),
+    #     args_ref=' -d ref_methanol -jb methanol.mae'.split())
+    # a.run(restart='par_diff_001.txt')
+
+    # !!! END TESTING SECTION !!!
