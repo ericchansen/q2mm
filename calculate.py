@@ -1340,6 +1340,7 @@ def pretty_all_commands(commands, log_level=5):
     """
     if logger.getEffectiveLevel() <= log_level:
         foobar = TextWrapper(width=48, subsequent_indent=' '*24)
+        logger.log(log_level, '')
         logger.log(
             log_level,
             '--' + ' COMMAND '.center(9, '-') +

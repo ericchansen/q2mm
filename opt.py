@@ -340,7 +340,6 @@ def pretty_ff_results(ff, level=20):
     """
     if logger.getEffectiveLevel() <= level:
         wrapper = textwrap.TextWrapper(width=79)
-        logger.log(level, '')
         logger.log(level, ' {} '.format(ff.method).center(79, '='))
         logger.log(level, 'SCORE: {}'.format(ff.score))
         logger.log(level, 'PARAMETERS:')

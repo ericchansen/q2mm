@@ -343,10 +343,10 @@ class Simplex(opt.Optimizer):
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without improvement, out of {} allowed.'.format(
+                logger.log(20, '  -- {} cycles without improvement out of {} allowed.'.format(
                         cycles_wo_change, self._max_cycles_wo_change))
             best_ff = self.new_ffs[0]
-            logger.log(20, 'BEST:')
+            logger.log(20, '\nBEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
             logger.log(20, '~~ END SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))

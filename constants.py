@@ -21,15 +21,15 @@ LOG_SETTINGS = {
         },
     'handlers': {
         'console': {
-            # 'class': 'logging.StreamHandler', 'formatter': 'bare',
-            # 'level': 'NOTSET'},
-            'class': 'logging.StreamHandler', 'formatter': 'basic',
+            'class': 'logging.StreamHandler', 'formatter': 'bare',
             'level': 'NOTSET'},
+            # 'class': 'logging.StreamHandler', 'formatter': 'basic',
+            # 'level': 'NOTSET'},
         'root_file_handler': {
-            # 'class': 'logging.FileHandler', 'filename': 'root.log',
-            # 'formatter': 'bare', 'level': 'NOTSET'}
             'class': 'logging.FileHandler', 'filename': 'root.log',
-            'formatter': 'basic', 'level': 'NOTSET'}
+            'formatter': 'bare', 'level': 'NOTSET'}
+            # 'class': 'logging.FileHandler', 'filename': 'root.log',
+            # 'formatter': 'basic', 'level': 'NOTSET'}
         },
     'loggers': {'__main__': {'level': 5, 'propagate': True},
                 'calculate': {'level': 20, 'propagate': True},
