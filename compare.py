@@ -57,7 +57,7 @@ def pretty_data_comp(r_data, c_data, output=None):
     score_typ = defaultdict(float)
     score_tot = 0.
     for r, c in izip(r_data, c_data):
-        logger.log(1, '>>> {} {}'.format(r, c))
+        # logger.log(1, '>>> {} {}'.format(r, c))
         # Double check data types.
         # Had to change to check from the FF data type because reference data
         # files may be missing this information.
@@ -110,9 +110,6 @@ def return_compare_parser():
         help='Print pretty output.')
     return parser
 
-# Shouldn't need to zero anymore. Commented out.
-# def compare_data(r_data, c_data, zero=True):
-
 def compare_data(r_data, c_data):
     """
     Calculates the objective function score after ensuring the energies are
@@ -127,6 +124,7 @@ def compare_data(r_data, c_data):
     return calculate_score(r_data, c_data)
 
 # Energies should be zeroed inside calculate now.
+# Save this in case that ever changes.
 # def zero_energies(data):
 #     logger.log(1, '>>> zero_energies <<<')
 #     # Go one data type at a time.
@@ -163,17 +161,12 @@ def correlate_energies(r_data, c_data):
     Determines the minimum energy in the reference data set, and sets that to
     zero in the FF data set.
     """
-    logger.log(1, '>>> correlate_energies <<<')
     for indices in select_group_of_energies(c_data):
-        # logger.log(1, '>>> indices:\n{}'.format(indices))
-        # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
-        #         c_data[indices[0]].typ))
         # Search based on FF data because the reference data may be read from
-        # a file and lack some of these fields.
+        # a file and lack some of the necessary attributes.
         zero, zero_ind = min(
             (x.val, i) for i, x in enumerate(r_data[indices]))
         zero_ind = indices[zero_ind]
-        # Wow, that was a lot of work to get the index of the zero.
         # Now, we need to get that same sub list, and update the calculated
         # data. As long as they are sorted the same, the indices should
         # match up.
@@ -182,20 +175,16 @@ def correlate_energies(r_data, c_data):
             c_data[ind].val -= zero
 
 # This is outdated now. Most of this is handled inside calculate.
+# 6/29/16 - Actually, now this should be unnecessary simply because the new
+#           method requires that reference and FF data are aligned. That being
+#           said, this is probably worth saving anyway.
 # def correlate_energies(r_data, c_data):
 #     logger.log(1, '>>> correlate_energies <<<')
 #     for indices in select_group_of_energies(r_data):
-#         # logger.log(1, '>>> indices:\n{}'.format(indices))
-#         # logger.log(1, '>>> r_data[indices[0]].typ:\n{}'.format(
-#         #         r_data[indices[0]].typ))
 #         if r_data[indices[0]].typ in ['e', 'eo']:
 #             zero, zero_ind = min(
 #                 (x.val, i) for i, x in enumerate(r_data[indices]))
 #             zero_ind = indices[zero_ind]
-#             # Wow, that was a lot of work to get the index of the zero.
-#             # Now, we need to get that same sub list, and update the calculated
-#             # data. As long as they are sorted the same, the indices should
-#             # match up.
 #             zero = c_data[zero_ind].val
 #             for ind in indices:
 #                 c_data[ind].val -= zero
@@ -226,11 +215,20 @@ def select_group_of_energies(data):
 
 def import_weights(data):
     """
-    Imports weights for various data types. Only imports if there isn't
-    already an existing value set.
+    Imports weights for various data types.
+
+    Weights can be set in constants.WEIGHTS.
+
+    Checks whether the 1st data point has a weight. If it does, it assumes that
+    all other data points also already have weights. Operates in this fashion in
+    order to save time.
+
+    There is a commented method below that checks each data point individually.
     """
-    for datum in data:
-        if datum.wht is None:
+    # Check if the 1st data point has a weight. If it does, assume all others do
+    # as well.
+    if data[0].wht is None:
+        for datum in data:
             if datum.typ == 'eig':
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
@@ -241,29 +239,43 @@ def import_weights(data):
             else:
                 datum.wht = co.WEIGHTS[datum.typ]
 
-# Need to add some pretty print outs for this.
+    # Check each data point individually for weights.
+    # for datum in data:
+    #     if datum.wht is None:
+    #         if datum.typ == 'eig':
+    #             if datum.idx_1 == datum.idx_2 == 1:
+    #                 datum.wht = co.WEIGHTS['eig_i']
+    #             elif datum.idx_1 == datum.idx_2:
+    #                 datum.wht = co.WEIGHTS['eig_d']
+    #             elif datum.idx_1 != datum.idx_2:
+    #                 datum.wht = co.WEIGHTS['eig_o']
+    #         else:
+    #             datum.wht = co.WEIGHTS[datum.typ]
+
 def calculate_score(r_data, c_data):
     """
     Calculates the objective function score.
     """
-    score = 0.
+    score_tot = 0.
     for r_datum, c_datum in izip(r_data, c_data):
-        logger.log(1, '>>> {} {}'.format(r_datum, c_datum))
-        # Perhaps add a checking option here to ensure all the attributes
-        # of each data point match up.
-        # When we're talking about torsions, need to make sure that the
-        # difference between -179 and 179 is 2, not 358.
+        # Could add a check here to assure that the data points are aligned.
+        # Ex.) assert r_datum.ind_1 == c_datum.ind_1, 'Oh no!'
+        
+        # For torsions, ensure the difference between -179 and 179 is 2, not
+        # 358.
         if r_datum.typ == 't':
             diff = abs(r_datum.val - c_datum.val)
             if diff > 180.:
                 diff = 360. - diff
-        # Simpler for other data types.
         else:
             diff = r_datum.val - c_datum.val
-        individual_score = r_datum.wht**2 * diff**2
-        score += individual_score
-    logger.log(5, 'SCORE: {}'.format(score))
-    return score
+
+        score_ind = r_datum.wht**2 * diff**2
+        score_tot += score_ind
+        # logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
+
+    logger.log(5, 'SCORE: {}'.format(score_tot))
+    return score_tot
             
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
