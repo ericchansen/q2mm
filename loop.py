@@ -62,6 +62,8 @@ class Loop(object):
             change = (last_score - self.ff.score) / last_score
             pretty_loop_summary(
                 self.cycle_num, self.ff.score, change)
+            # MM3* specific. Will have to be changed soon to allow for expansion
+            # into other FF software packages.
             mm3_files = glob.glob(os.path.join(self.direc, 'mm3_???.fld'))
             if mm3_files:
                 mm3_files.sort()
@@ -70,7 +72,6 @@ class Loop(object):
                 most_recent_num = most_recent_mm3_file[4:7]
                 num = int(most_recent_num) + 1
                 mm3_file = 'mm3_{:03d}.fld'.format(num)
-                self.ff.export_ff(path=mm3_file)
             else:
                 mm3_file = 'mm3_001.fld'
             mm3_file = os.path.join(self.direc, mm3_file)
