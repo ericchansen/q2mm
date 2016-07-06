@@ -203,7 +203,9 @@ def select_group_of_energies(data):
     for energy_type in ['e', 'eo']:
         # Get all energy indices.
         indices = np.where([x.typ == energy_type for x in data])[0]
+        # logger.log(1, '>>> indices: {}'.format(indices))
         # Get the unique group numbers.
+        # logger.log(1, '>>> data: {}'.format(data))
         unique_group_nums = set([x.idx_1 for x in data[indices]])
         for unique_group_num in unique_group_nums:
             # Get all the indicies for the given energy type and for a single
