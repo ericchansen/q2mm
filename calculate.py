@@ -132,7 +132,7 @@ def main(args):
         else:
             inps[filename] = None
     # Check whether or not to skip calculations.
-    if opts.norun:
+    if opts.norun or opts.fake:
         logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.iteritems():
@@ -146,7 +146,10 @@ def main(args):
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
-    data = collect_data(commands, inps, direc=opts.directory)
+    if opts.fake:
+        data = collect_data_fake(commands, inps, direc=opts.directory)
+    else:
+        data = collect_data(commands, inps, direc=opts.directory)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
@@ -193,6 +196,9 @@ def return_calculate_parser(add_help=True, parents=None):
     opts.add_argument(
         '--doprint', '-p', action='store_true',
         help=("Logs data. Can generate extensive log files."))
+    opts.add_argument(
+        '--fake', action='store_true',
+        help=("Generate fake data sets. Used to expedite testing."))
     opts.add_argument(
         '--ffpath', '-f', type=str, metavar='somepath',
         help=("Path to force field. Only necessary for certain data types "
@@ -1193,6 +1199,38 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT']):
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
+def collect_data_fake(coms, inps, direc='.', sub_names=['OPT']):
+    """
+    Generates a random data set quickly.
+    """
+    import random
+    data = []
+    filenames = flatten(coms.values())
+    for idx_1, filename in enumerate(filenames):
+        for idx_2 in xrange(5):
+            data.append(datatypes.Datum(
+                    val=random.uniform(0, 10),
+                    com='rand',
+                    typ='a',
+                    src_1=filename,
+                    idx_1=idx_1 + 1,
+                    idx_2=idx_2 + 1))
+    return np.array(data, dtype=datatypes.Datum)
+
+def flatten(l):
+    """
+    Simple means to flatten an irregular list of lists.
+
+    http://stackoverflow.com/questions/2158395/
+        flatten-an-irregular-list-of-lists-in-python
+    """
+    import collections
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el, basestring):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
