@@ -132,7 +132,7 @@ def main(args):
         else:
             inps[filename] = None
     # Check whether or not to skip calculations.
-    if opts.norun:
+    if opts.norun or opts.fake:
         logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.iteritems():
@@ -148,6 +148,10 @@ def main(args):
     # 3 vectors (labels, weights, values).
     data = collect_data(commands, inps, direc=opts.directory,
                         invert=opts.invert)
+    if opts.fake:
+        data = collect_data_fake(commands, inps, direc=opts.directory)
+    else:
+        data = collect_data(commands, inps, direc=opts.directory)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
@@ -194,6 +198,9 @@ def return_calculate_parser(add_help=True, parents=None):
     opts.add_argument(
         '--doprint', '-p', action='store_true',
         help=("Logs data. Can generate extensive log files."))
+    opts.add_argument(
+        '--fake', action='store_true',
+        help=("Generate fake data sets. Used to expedite testing."))
     opts.add_argument(
         '--ffpath', '-f', type=str, metavar='somepath',
         help=("Path to force field. Only necessary for certain data types "
@@ -483,18 +490,115 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='ge',
-                    typ='e',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            # This will be a list of lists. For example, let's say that
+            # co.GAUSSIAN_ENERGIES is ['HF', 'ZeroPoint'], then
+            # the 1st list in things_to_add would be the HF energies
+            # and the 2nd list would be the ZP energies.
+            #
+            # Consider if you had ['HF', 'ZeroPoint'] as co.GAUSSIAN_ENERGIES
+            # and your archive had this:
+            #     HF=0.634,0.2352\ZeroPoint=0.01234,0.0164
+            # The resulting things_to_add would be:
+            #     things_to_add = [[0.634, 0.2352],
+            #                     [0.01234, 0.0164]]
+            things_to_add = []
+            # Remember, thing_label is whatever you specified in
+            # co.GAUSSIAN_ENERGIES.
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                # Consider if your Gaussian log archive has the following:
+                #     HF=0.234,0.1234,0.5732
+                # Then, if co.GAUSSIAN_ENERGIES includes 'HF', then that
+                # particular thing, or sublist that goes into things_to_add,
+                # would look like:
+                #     thing = ['0.234', '0.1234', '0.5732']
+                # Here's another example. Consider if your archive has the
+                # property "stupidproperty":
+                #     stupidproperty=can,i,be,more,clear
+                # Then this particular sublist, named thing, would be
+                #     thing = ['can', 'i', 'be', 'more', 'clear']
+                # Lastly, consider if you have this:
+                #     ZeroPoint=0.12341
+                # Then thing would be this:
+                #     thing = ['0.12341']
+                thing = log.structures[0].props[thing_label]
+                # Deal with multiple structures by checking for this
+                # split here.
+                if ',' in thing:
+                    # Note that the "stupidproperty" example would fail here
+                    # because its elements can not be converted to floats.
+                    thing = map(float, thing.split(','))
+                    # Here, thing might look like:
+                    #    thing = [0.1235235, 0.2352, 0.352345]
+                else:
+                    # Here it would be a list with only one element.
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            # Initialize list of zeros. Python syntax looks funny sometimes.
+            # The length of the things_to_add sublists should always be the
+            # same if you're doing it right. I suppose you could add some
+            # sort of assert here.
+            energies = [0.] * len(things_to_add[0])
+            # In this case, consider the earlier example where:
+            #    things_to_add = [[0.634, 0.2352],
+            #                     [0.01234, 0.0164]]
+            # Here, the first thing_group would be [0.634, 0.2352] and the
+            # second thing_group would be [0.01234, 0.0164].
+            for thing_group in things_to_add:
+                # After the loop through the 1st thing_group, we would have
+                # energies = [0.634, 0.2352]. After the 2nd thing_group, we
+                # would have energies = [0.634 + 0.01234, 0.2352 + 0.0164].
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge',
+                        typ='e',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
+            
+            # # This works when HF and ZeroPoint are used. Had to make it more
+            # # general.
+            # # Revisit how structures are stored in GaussLog when you have time.
+            # hf = log.structures[0].props['HF']
+            # zp = log.structures[0].props['ZeroPoint']
+            # if ',' in hf:
+            #     hfs = map(float, hf.split(','))
+            #     zps = map(float, zp.split(','))
+            # else:
+            #     hfs = [float(hf)]
+            #     zps = [float(zp)]
+            # es = []
+            # for hf, zp in izip(hfs, zps):
+            #     es = (hf + zp) * co.HARTREE_TO_KJMOL
+            # for i, e in enumerate(es):
+            #     temp.append(datatypes.Datum(
+            #             val=e,
+            #             com='ge',
+            #             typ='e',
+            #             src_1=filename,
+            #             idx_1=idx_1 + 1,
+            #             idx_2=i + 1))
+
+            # Here's the old code from before we supported multiple energies.
+            # I think it's helpful history for new coders trying to understand
+            # how to write in new datatypes. Notice how the new code utilizes
+            # idx_2.
+
+            # hf = float(log.structures[0].props['HF'])
+            # zp = float(log.structures[0].props['ZeroPoint'])
+            # energy = (hf + zp) * co.HARTREE_TO_KJMOL
+            # # We don't use idx_2 since we assume there is only one structure
+            # # in a Gaussian .log. I think that's always the case.
+            # temp.append(datatypes.Datum(
+            #         val=energy,
+            #         com='ge',
+            #         typ='e',
+            #         src_1=filename,
+            #         idx_1=idx_1 + 1))
+
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
@@ -552,18 +656,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='gea',
-                    typ='ea',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='gea',
+                        typ='ea',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
@@ -627,18 +740,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='geo',
-                    typ='eo',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='geo',
+                        typ='eo',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
@@ -693,18 +815,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         temp = []
         for filename in filenames:
             log = check_outs(filename, outs, filetypes.GaussLog, direc)
-            # Revisit how structures are stored in GaussLog when you have time.
-            hf = float(log.structures[0].props['HF'])
-            zp = float(log.structures[0].props['ZeroPoint'])
-            energy = (hf + zp) * co.HARTREE_TO_KJMOL
-            # We don't use idx_2 since we assume there is only one structure
-            # in a Gaussian .log. I think that's always the case.
-            temp.append(datatypes.Datum(
-                    val=energy,
-                    com='geao',
-                    typ='eao',
-                    src_1=filename,
-                    idx_1=idx_1 + 1))
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = map(float, thing.split(','))
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing 
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='geao',
+                        typ='eao',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
@@ -1107,6 +1238,38 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
+def collect_data_fake(coms, inps, direc='.', sub_names=['OPT']):
+    """
+    Generates a random data set quickly.
+    """
+    import random
+    data = []
+    filenames = flatten(coms.values())
+    for idx_1, filename in enumerate(filenames):
+        for idx_2 in xrange(5):
+            data.append(datatypes.Datum(
+                    val=random.uniform(0, 10),
+                    com='rand',
+                    typ='a',
+                    src_1=filename,
+                    idx_1=idx_1 + 1,
+                    idx_2=idx_2 + 1))
+    return np.array(data, dtype=datatypes.Datum)
+
+def flatten(l):
+    """
+    Simple means to flatten an irregular list of lists.
+
+    http://stackoverflow.com/questions/2158395/
+        flatten-an-irregular-list-of-lists-in-python
+    """
+    import collections
+    for el in l:
+        if isinstance(el, collections.Iterable) and not isinstance(el, basestring):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
@@ -1254,6 +1417,7 @@ def pretty_all_commands(commands, log_level=5):
     """
     if logger.getEffectiveLevel() <= log_level:
         foobar = TextWrapper(width=48, subsequent_indent=' '*24)
+        logger.log(log_level, '')
         logger.log(
             log_level,
             '--' + ' COMMAND '.center(9, '-') +

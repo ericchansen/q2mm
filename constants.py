@@ -4,8 +4,8 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
-# GENERAL SETTINGS
-SETTINGS = {'use_sqlite3': True}
+GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
+# GAUSSIAN_ENERGIES = ['HF']
 
 # LOGGING SETTINGS
 # Settings loaded using logging.config.
@@ -21,15 +21,15 @@ LOG_SETTINGS = {
         },
     'handlers': {
         'console': {
-            # 'class': 'logging.StreamHandler', 'formatter': 'bare',
-            # 'level': 'NOTSET'},
-            'class': 'logging.StreamHandler', 'formatter': 'basic',
+            'class': 'logging.StreamHandler', 'formatter': 'bare',
             'level': 'NOTSET'},
+            # 'class': 'logging.StreamHandler', 'formatter': 'basic',
+            # 'level': 'NOTSET'},
         'root_file_handler': {
-            # 'class': 'logging.FileHandler', 'filename': 'root.log',
-            # 'formatter': 'bare', 'level': 'NOTSET'}
             'class': 'logging.FileHandler', 'filename': 'root.log',
-            'formatter': 'basic', 'level': 'NOTSET'}
+            'formatter': 'bare', 'level': 'NOTSET'}
+            # 'class': 'logging.FileHandler', 'filename': 'root.log',
+            # 'formatter': 'basic', 'level': 'NOTSET'}
         },
     'loggers': {'__main__': {'level': 5, 'propagate': True},
                 'calculate': {'level': 20, 'propagate': True},
@@ -74,15 +74,15 @@ LOG_SETTINGS = {
 # quotes), the new parameter value will be decremented or incremented by a
 # percentage of its current value.
 #     x_new = x +/- (x * step)
-STEPS = {'ae':      2.0,
+STEPS = {'ae':      1.0,
          'af':      0.1,
-         'be':      0.1,
+         'be':      0.02,
          'bf':      0.1,
          'df':      0.1,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,
-         'q':       0.5
+         'q':       0.1
          }
 
 # WEIGHTS
