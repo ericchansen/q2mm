@@ -143,14 +143,10 @@ class GaussLog(File):
             # self.read_out()
             self.read_archive()
         return self._structures
-    # Needs work.
     def read_out(self):
         """
         Read force constant and eigenvector data from a frequency
         calculation.
-
-        This function is more or less a direct copy of someone else's
-        code (Elaine?), so I'm not sure how it works.
         """
         logger.log(5, 'READING: {}'.format(self.filename))
         self._evals = []
@@ -197,7 +193,9 @@ class GaussLog(File):
                     cols = line.split()
                     cols = cols[2:]
                     # Values inside line "Frequencies --- xxxx.xxxx xxxx.xxxx"
-                    logger.log(1, '>>> 199 cols: {}'.format(cols))
+                    # For "hpmodes" option, there are 5 of these frequencies.
+                    # Without "hpmodes", there are 3.
+                    # logger.log(1, '>>> 199 cols: {}'.format(cols))
                     # weird_nfc is a list the same length as cols.
                     # Has 1. or -1. depending on the sign of cols.
                     for freq in map(float, cols):
@@ -208,43 +206,46 @@ class GaussLog(File):
                         # LoL len(weird_nvec) == len(cols) ???
                         weird_nvec.append([])
                         weird_ne += 1
-                    logger.log(1, '>>> 211 len(weird_nvec): {}'.format(
+                    # logger.log(1, '>>> 211 len(weird_nvec): {}'.format(
                             len(weird_nvec)))
                     line = fi.next()
                     cols = line.split()
-                    logger.log(1, '>>> 209 weird_nfc: {}'.format(weird_nfc))
+                    # logger.log(1, '>>> 209 weird_nfc: {}'.format(weird_nfc))
                     # cols is the reduced masses
-                    logger.log(1, '>>> 216 cols: {}'.format(cols))
+                    # logger.log(1, '>>> 216 cols: {}'.format(cols))
                     for i in  range(len(weird_nfc)):
                         # +/- 1 / reduced mass
                         weird_nfc[i] = weird_nfc[i] / float(cols[i+3])
-                    logger.log(1, '>>> 212 weird_nfc: {}'.format(weird_nfc))
+                    # logger.log(1, '>>> 212 weird_nfc: {}'.format(weird_nfc))
                     line = fi.next()
                     cols = line.split()
                     # cols is the force constants
                     # co.AU_TO_MDYNA = 15.569141
                     for i in range(len(weird_nfc)):
                         weird_nfc[i] *= float(cols[i+3]) / co.AU_TO_MDYNA
-                    logger.log(1, '>>> 217 weird_nfc: {}'.format(weird_nfc))
+                    # logger.log(1, '>>> 217 weird_nfc: {}'.format(weird_nfc))
                     fi.next()
                     line = fi.next()
 
                     # Force constants are calculated above as follows:
                     #    a = +/- 1 depending on the sign of the frequency
                     #    b = a / reduced mass (obtained from the Gaussian log)
-                    #    c = b * force constant * conversion factor (force
+                    #    c = b * force constant / conversion factor (force
                     #         (constant obtained from Gaussian log) (conversion
-                    #         (factor is inside constants module)
+                    #         factor is inside constants module)
 
                     # "Coord" seems to only appear when the keyword
                     # "freq=hpmodes" is used.
-                    # "IRC Coupling" corresponds to "freq=projected".
                     if 'Coord' in line:
                         weird_hp_mode = True
                     line = fi.next()
+                    # Using the option "freq=projected" seems to add this line.
+                    if 'IRC Coupling' in line:
+                        line = fi.next()
                     cols = line.split()
                     weird_nel = 0
                     weird_cl = len(cols)
+                    # logger.log(1, '>>> 248 weird_cl: {}'.format(weird_cl))
                     while len(cols) == weird_cl:
                         if 'Harmonic' in line:
                             break
@@ -254,21 +255,25 @@ class GaussLog(File):
                         else:
                             weird_nel += 3
                         # cols corresponds to line(s) (maybe only 1st line)
-                        # under section "Coord Atom Element:".
-                        logger.log(1, '>>> 245 cols: {}'.format(cols))
+                        # under section "Coord Atom Element:" (at least for
+                        # "hpmodes").
+                        # logger.log(1, '>>> 245 cols: {}'.format(cols))
+
                         # Just the square root of the mass from co.MASSES.
                         # co.MASSES currently has the average mass.
                         # Gaussian may use the mass of the most abundant
                         # isotope. This may be a problem.
+                        
                         weird_m = np.sqrt(co.MASSES.items()[int(cols[1]) - 1][1])
-                        logger.log(1, '>>> 247 co.MASSES.items()[int(cols[1]) '
-                                   '- 1]: {}'.format(
-                                co.MASSES.items()[int(cols[1]) - 1]))
-                        logger.log(1, '>>> 249 weird_m: {}'.format(weird_m))
+                        # logger.log(1, '>>> 247 co.MASSES.items()[int(cols[1]) '
+                        #            '- 1]: {}'.format(
+                        #         co.MASSES.items()[int(cols[1]) - 1]))
+                        # logger.log(1, '>>> 249 weird_m: {}'.format(weird_m))
+
                         cols = cols[2:]
                         # cols corresponds to the same line still, but without
                         # the atom elements. True for files with "hpmodes".
-                        logger.log(1, '>>> 251 cols: {}'.format(cols))
+                        # logger.log(1, '>>> 251 cols: {}'.format(cols))
 
                         # This loop expands the LoL as so.
                         # Iteration 1:
@@ -282,7 +287,7 @@ class GaussLog(File):
                         # Elements of weird_nvec are simply the data under
                         # "Coord Atom Element" multiplied by the square root
                         # of the weight.
-                        for i in range(len(weird_nvec)):
+.                        for i in range(len(weird_nvec)):
                             if weird_hp_mode:
                                 # weird_nvec is a LoL. Length of sublist is
                                 # equal to # of columns in section "Coord Atom
@@ -306,10 +311,13 @@ class GaussLog(File):
                         # Just the finalized version of what's described above.
                         # logger.log(1, '>>> 244 weird_nvec: {}'.format(weird_nvec))
                         line = fi.next()
+                        # This part occurs multiple times.
+                        if 'IRC Coupling' in line:
+                            line = fi.next()
                         cols = line.split()
-                    logger.log(1, '>>> 297 weird_nvec: {}'.format(weird_nvec))
-                    logger.log(1, '>>> 300 len(weird_nvec): {}'.format(
-                            len(weird_nvec)))
+                    # logger.log(1, '>>> 297 weird_nvec: {}'.format(weird_nvec))
+                    # logger.log(1, '>>> 300 len(weird_nvec): {}'.format(
+                    #         len(weird_nvec)))
                     # For "hpmodes", the length of weird_nvec should always be
                     # 5 by now.
                     # The length of self._evals increases by 5 each time until
@@ -320,16 +328,16 @@ class GaussLog(File):
                     for i in range(len(weird_nvec)):
                         self._evals.append(weird_nfc[i])
                         self._evecs.append(weird_nvec[i])
-                    logger.log(1, '>>> 305 self._evals: {}'.format(self._evals))
-                    logger.log(1, '>>> 306 len(self._evals): {}'.format(
-                            len(self._evals)))
-                    logger.log(1, '>>> 308 self._evecs: {}'.format(self._evecs))
-                    logger.log(1, '>>> 309 len(self._evecs): {}'.format(
-                            len(self._evecs)))
+                    # logger.log(1, '>>> 305 self._evals: {}'.format(self._evals))
+                    # logger.log(1, '>>> 306 len(self._evals): {}'.format(
+                    #         len(self._evals)))
+                    # logger.log(1, '>>> 308 self._evecs: {}'.format(self._evecs))
+                    # logger.log(1, '>>> 309 len(self._evecs): {}'.format(
+                    #         len(self._evecs)))
                     if 'Harmonic' in line:
                         break
-        logger.log(1, '>>> 330 self._evecs: {}'.format(self._evecs))
-        logger.log(1, '>>> 314 len(self._evecs): {}'.format(len(self._evecs)))
+        # logger.log(1, '>>> 330 self._evecs: {}'.format(self._evecs))
+        # logger.log(1, '>>> 314 len(self._evecs): {}'.format(len(self._evecs)))
         for evec in self._evecs:
             # evec is a single eigenvector.
             # ss is the sum of squares for each element in an eigenvector.
@@ -340,13 +348,13 @@ class GaussLog(File):
             # Now x is the inverse of the square root of the sum of squares
             # for an individual eigenvector.
             weird_x = 1 / np.sqrt(weird_ss)
-            logger.log(1, '>>> 342 weird_x: {}'.format(weird_x))
+            # logger.log(1, '>>> 342 weird_x: {}'.format(weird_x))
             for i in range(len(evec)):
-                logger.log(1, '>>> 344 evec[i]: {}'.format(evec[i]))
+                # logger.log(1, '>>> 344 evec[i]: {}'.format(evec[i]))
                 evec[i] *= weird_x
-                logger.log(1, '>>> 346 evec[i]: {}'.format(evec[i]))
+                # logger.log(1, '>>> 346 evec[i]: {}'.format(evec[i]))
                 
-        logger.log(1, '>>> 345 self._evecs: {}'.format(self._evecs))
+        # logger.log(1, '>>> 345 self._evecs: {}'.format(self._evecs))
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
         logger.log(1, '>>> self._evals: {}'.format(self._evals))
