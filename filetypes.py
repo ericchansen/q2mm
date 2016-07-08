@@ -152,26 +152,33 @@ class GaussLog(File):
         self._evals = []
         self._evecs = []
         self._structures = []
-        weird_nfc = []
-        weird_nvec = []
-        weird_ne = 0
+        force_constants = []
+        evecs = []
         with open(self.path, 'r') as f:
+            # The keyword "harmonic" shows up before the section we're
+            # interested in. It can show up multiple times depending on the
+            # options in the Gaussian .com file.
             past_first_harm = False
-            weird_hp_mode = False
-            fi = iter(f)
+            # High precision mode, turned on by including "freq=hpmodes" in the
+            # Gaussian .com file.
+            hpmodes = False
+            file_iterator = iter(f)
+            # This while loop breaks when the end of the file is reached, or
+            # if the high quality modes have been read already.
             while True:
                 try:
-                    line = fi.next()
-                    print(line)
+                    line = file_iterator.next()
                 except:
+                    # End of file.
                     break
+                # Gathering some geometric information.
                 if 'orientation:' in line:
                     self._structures.append(Structure())
-                    fi.next()
-                    fi.next()
-                    fi.next()
-                    fi.next()
-                    line = fi.next()
+                    file_iterator.next()
+                    file_iterator.next()
+                    file_iterator.next()
+                    file_iterator.next()
+                    line = file_iterator.next()
                     while not '---' in line:
                         cols = line.split()
                         self._structures[-1].atoms.append(
@@ -179,182 +186,167 @@ class GaussLog(File):
                                  x=float(cols[3]),
                                  y=float(cols[4]),
                                  z=float(cols[5])))
-                        line = fi.next()
+                        line = file_iterator.next()
                     logger.log(5, '  -- Found {} atoms.'.format(
                             len(self._structures[-1].atoms)))
+
                 elif 'Harmonic' in line:
+                    # The high quality eigenvectors come before the low quality
+                    # ones. If you see "Harmonic" again, it means you're at the
+                    # low quality ones now, so break.
                     if past_first_harm:
                         break
                     else:
                         past_first_harm = True
                 elif 'Frequencies' in line:
-                    del(weird_nfc[:])
-                    del(weird_nvec[:])
-                    cols = line.split()
-                    cols = cols[2:]
-                    # Values inside line "Frequencies --- xxxx.xxxx xxxx.xxxx"
+                    # We're going to keep reusing these.
+                    # We accumulate sets of eigevectors and eigenvalues, add
+                    # them to self._evecs and self._evals, and then reuse this
+                    # for the next set.
+                    del(force_constants[:])
+                    del(evecs[:])
+                    # Values inside line look like:
+                    #     "Frequencies --- xxxx.xxxx xxxx.xxxx"
+                    # That's why we remove the 1st two columns. This is
+                    # consistent with and without "hpmodes".
                     # For "hpmodes" option, there are 5 of these frequencies.
                     # Without "hpmodes", there are 3.
-                    # logger.log(1, '>>> 199 cols: {}'.format(cols))
-                    # weird_nfc is a list the same length as cols.
-                    # Has 1. or -1. depending on the sign of cols.
-                    for freq in map(float, cols):
-                        if freq < 0.:
-                            weird_nfc.append(-1.)
+                    # Thus the eigenvectors and eigenvalues will come in sets of
+                    # either 5 or 3.
+                    cols = line.split()
+                    for frequency in map(float, cols[2:]):
+                        # Has 1. or -1. depending on the sign of the frequency.
+                        if frequency < 0.:
+                            force_constants.append(-1.)
                         else:
-                            weird_nfc.append(1.)
-                        # LoL len(weird_nvec) == len(cols) ???
-                        weird_nvec.append([])
-                        weird_ne += 1
-                    # logger.log(1, '>>> 211 len(weird_nvec): {}'.format(
-                            len(weird_nvec)))
-                    line = fi.next()
-                    cols = line.split()
-                    # logger.log(1, '>>> 209 weird_nfc: {}'.format(weird_nfc))
-                    # cols is the reduced masses
-                    # logger.log(1, '>>> 216 cols: {}'.format(cols))
-                    for i in  range(len(weird_nfc)):
-                        # +/- 1 / reduced mass
-                        weird_nfc[i] = weird_nfc[i] / float(cols[i+3])
-                    # logger.log(1, '>>> 212 weird_nfc: {}'.format(weird_nfc))
-                    line = fi.next()
-                    cols = line.split()
-                    # cols is the force constants
-                    # co.AU_TO_MDYNA = 15.569141
-                    for i in range(len(weird_nfc)):
-                        weird_nfc[i] *= float(cols[i+3]) / co.AU_TO_MDYNA
-                    # logger.log(1, '>>> 217 weird_nfc: {}'.format(weird_nfc))
-                    fi.next()
-                    line = fi.next()
+                            force_constants.append(1.)
+                        # For now this is empty, but we will add to it soon.
+                        evecs.append([])
 
-                    # Force constants are calculated above as follows:
+                    # Moving on to the reduced masses.
+                    line = file_iterator.next()
+                    cols = line.split()
+                    # Again, trim the "Reduced masses ---".
+                    # It's "Red. masses --" for without "hpmodes".
+                    for i, mass in enumerate(map(float, cols[3:])):
+                        # +/- 1 / reduced mass
+                        force_constants[i] = force_constants[i] / mass
+
+                    # Now we are on the line with the force constants.
+                    line = file_iterator.next()
+                    cols = line.split()
+                    # Trim "Force constants ---". It's "Frc consts --" without
+                    # "hpmodes".
+                    for i, force_constant in enumerate(map(float, cols[3:])):
+                        # co.AU_TO_MDYNA = 15.569141
+                        force_constants[i] *= force_constant / co.AU_TO_MDYNA
+
+                    # Force constants were calculated above as follows:
                     #    a = +/- 1 depending on the sign of the frequency
                     #    b = a / reduced mass (obtained from the Gaussian log)
                     #    c = b * force constant / conversion factor (force
                     #         (constant obtained from Gaussian log) (conversion
                     #         factor is inside constants module)
 
-                    # "Coord" seems to only appear when the keyword
-                    # "freq=hpmodes" is used.
+                    # Skip the IR intensities.
+                    file_iterator.next()
+                    # This is different depending on whether you use "hpmodes".
+                    line = file_iterator.next()
+                    # "Coord" seems to only appear when the "hpmodes" is used.
                     if 'Coord' in line:
-                        weird_hp_mode = True
-                    line = fi.next()
-                    # Using the option "freq=projected" seems to add this line.
+                        hpmodes = True
+                    # This is different depending on whether you use
+                    # "freq=projected".
+                    line = file_iterator.next()
+                    # The "projected" keyword seems to add "IRC Coupling".
                     if 'IRC Coupling' in line:
-                        line = fi.next()
+                        line = file_iterator.next()
+
+                    # We're on to the eigenvectors.
+                    # Until the end of this section containing the eigenvectors,
+                    # the number of columns remains constant. When that changes,
+                    # we know we're to the next set of frequencies, force
+                    # constants and eigenvectors.
                     cols = line.split()
-                    weird_nel = 0
-                    weird_cl = len(cols)
-                    # logger.log(1, '>>> 248 weird_cl: {}'.format(weird_cl))
-                    while len(cols) == weird_cl:
+                    cols_len = len(cols)
+
+                    while len(cols) == cols_len:
+                        # This will come after all the eigenvectors have been
+                        # read. We can break out then.
                         if 'Harmonic' in line:
                             break
-                        if weird_hp_mode:
+                        # If "hpmodes" is used, you have an extra column here
+                        # that is simply an index.
+                        if hpmodes:
                             cols = cols[1:]
-                            weird_nel += 1
-                        else:
-                            weird_nel += 3
                         # cols corresponds to line(s) (maybe only 1st line)
                         # under section "Coord Atom Element:" (at least for
                         # "hpmodes").
-                        # logger.log(1, '>>> 245 cols: {}'.format(cols))
 
                         # Just the square root of the mass from co.MASSES.
                         # co.MASSES currently has the average mass.
                         # Gaussian may use the mass of the most abundant
                         # isotope. This may be a problem.
-                        
-                        weird_m = np.sqrt(co.MASSES.items()[int(cols[1]) - 1][1])
-                        # logger.log(1, '>>> 247 co.MASSES.items()[int(cols[1]) '
-                        #            '- 1]: {}'.format(
-                        #         co.MASSES.items()[int(cols[1]) - 1]))
-                        # logger.log(1, '>>> 249 weird_m: {}'.format(weird_m))
+                        mass_sqrt = np.sqrt(co.MASSES.items()[int(cols[1]) - 1][1])
 
                         cols = cols[2:]
-                        # cols corresponds to the same line still, but without
-                        # the atom elements. True for files with "hpmodes".
-                        # logger.log(1, '>>> 251 cols: {}'.format(cols))
+                        # This corresponds to the same line still, but without
+                        # the atom elements.
 
-                        # This loop expands the LoL as so.
+                        # This loop expands the LoL, evecs, as so.
                         # Iteration 1:
                         # [[x], [x], [x], [x], [x]]
                         # Iteration 2:
-                        # [[x, x], [x, x], [x, x], [x, x]]
+                        # [[x, x], [x, x], [x, x], [x, x], [x, x]]
                         # ... etc. until the length of the sublist is equal to
-                        # the number of atoms.
-                        # It goes through this multiple times (???).
+                        # the number of atoms. Remember, for low precision
+                        # eigenvectors it only adds in sets of 3, not 5.
                         
-                        # Elements of weird_nvec are simply the data under
+                        # Elements of evecs are simply the data under
                         # "Coord Atom Element" multiplied by the square root
                         # of the weight.
-.                        for i in range(len(weird_nvec)):
-                            if weird_hp_mode:
-                                # weird_nvec is a LoL. Length of sublist is
+                        for i in range(len(evecs)):
+                            if hpmodes:
+                                # evecs is a LoL. Length of sublist is
                                 # equal to # of columns in section "Coord Atom
                                 # Element" minus 3, for the 1st 3 columns
                                 # (index, atom index, atomic number).
-                                weird_a = cols.pop(0)
-                                # logger.log(1, '>>> 255 weird_a: {}'.format(weird_a))
-                                weird_nvec[i].append(float(weird_a) * weird_m)
-                                # logger.log(1, '>>> 257 len(weird_nvec[i]): '
-                                #            '{}'.format(
-                                #         len(weird_nvec[i])))
-                                # logger.log(1, '>>> 259 weird_nvec[i]: {}'.format(
-                                #         weird_nvec[i]))
-                                # logger.log(1, '>>> 280 weird_nvec: {}'.format(
-                                #         weird_nvec))
+                                evecs[i].append(float(cols[i]) * mass_sqrt)
                             else:
-                                # Not sure about this scenario yet.
-                                for j in range(3):
-                                    weird_a = cols.pop(0)
-                                    weird_nvec[i].append(float(weird_a) * weird_m)
-                        # Just the finalized version of what's described above.
-                        # logger.log(1, '>>> 244 weird_nvec: {}'.format(weird_nvec))
-                        line = fi.next()
-                        # This part occurs multiple times.
-                        if 'IRC Coupling' in line:
-                            line = fi.next()
+                                # This is fow low precision eigenvectors. It's a
+                                # funny way to go in sets of 3. Take a look at
+                                # your low precision Gaussian log and it will
+                                # make more sense.
+                                for useless in range(3):
+                                    x = float(cols.pop(0))
+                                    evecs[i].append(x * mass_sqrt)
+                        line = file_iterator.next()
                         cols = line.split()
-                    # logger.log(1, '>>> 297 weird_nvec: {}'.format(weird_nvec))
-                    # logger.log(1, '>>> 300 len(weird_nvec): {}'.format(
-                    #         len(weird_nvec)))
-                    # For "hpmodes", the length of weird_nvec should always be
-                    # 5 by now.
-                    # The length of self._evals increases by 5 each time until
-                    # the very last one. System with 225 atoms had 219. Check.
 
-                    # 3N - 6 for non-linear and 3N - 5 for linear. Same goes for
-                    # self._evecs.
-                    for i in range(len(weird_nvec)):
-                        self._evals.append(weird_nfc[i])
-                        self._evecs.append(weird_nvec[i])
-                    # logger.log(1, '>>> 305 self._evals: {}'.format(self._evals))
-                    # logger.log(1, '>>> 306 len(self._evals): {}'.format(
-                    #         len(self._evals)))
-                    # logger.log(1, '>>> 308 self._evecs: {}'.format(self._evecs))
-                    # logger.log(1, '>>> 309 len(self._evecs): {}'.format(
-                    #         len(self._evecs)))
+                    # Here the overall number of eigenvalues and eigenvectors is
+                    # increased by 5 (high precision) or 3 (low precision). The
+                    # total number goes to 3N - 6 for non-linear and 3N - 5 for
+                    # linear. Same goes for self._evecs.
+                    for i in range(len(evecs)):
+                        self._evals.append(force_constants[i])
+                        self._evecs.append(evecs[i])
+                    # We know we're done if this is in the line.
                     if 'Harmonic' in line:
                         break
-        # logger.log(1, '>>> 330 self._evecs: {}'.format(self._evecs))
-        # logger.log(1, '>>> 314 len(self._evecs): {}'.format(len(self._evecs)))
         for evec in self._evecs:
-            # evec is a single eigenvector.
-            # ss is the sum of squares for each element in an eigenvector.
-            weird_ss = 0.
-            # x is an element of that single eigenvector.
-            for weird_x in evec:
-                weird_ss += weird_x * weird_x
+            # Each evec is a single eigenvector.
+            # Add up the sum of squares over an eigenvector.
+            sum_of_squares = 0.
+            # Appropriately named, element is an element of that single
+            # eigenvector.
+            for element in evec:
+                sum_of_squares += element * element
             # Now x is the inverse of the square root of the sum of squares
             # for an individual eigenvector.
-            weird_x = 1 / np.sqrt(weird_ss)
-            # logger.log(1, '>>> 342 weird_x: {}'.format(weird_x))
+            element = 1 / np.sqrt(sum_of_squares)
             for i in range(len(evec)):
-                # logger.log(1, '>>> 344 evec[i]: {}'.format(evec[i]))
-                evec[i] *= weird_x
-                # logger.log(1, '>>> 346 evec[i]: {}'.format(evec[i]))
-                
-        # logger.log(1, '>>> 345 self._evecs: {}'.format(self._evecs))
+                evec[i] *= element
+
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
         logger.log(1, '>>> self._evals: {}'.format(self._evals))
