@@ -322,6 +322,7 @@ class Simplex(opt.Optimizer):
                 # This change was made to reflect the 1998 Q2MM publication.
                 # if con_ff.score < self.new_ffs[-1].score:
                 if con_ff.score < self.new_ffs[-2].score:
+                    logger.log(20, '  -- Contraction succeeded.')
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
                     logger.log(
@@ -337,13 +338,17 @@ class Simplex(opt.Optimizer):
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
-                    logger.log(20, '  -- Contraction failed.')
+                    logger.log(
+                        20, '  -- Contraction failed. Keeping parmaeters '
+                        'anyway.')
+                    self.new_ffs[-1] = con_ff
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             if self.new_ffs[0].score < last_best:
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without improvement out of {} allowed.'.format(
+                logger.log(20, '  -- {} cycles without improvement out of {} '
+                           'allowed.'.format(
                         cycles_wo_change, self._max_cycles_wo_change))
             best_ff = self.new_ffs[0]
             logger.log(20, '\nBEST:')
