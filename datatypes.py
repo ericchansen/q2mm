@@ -625,17 +625,15 @@ class MM3(FF):
         path : string
                File to be written or overwritten.
         params : list of `datatypes.Param` (or subclass)
+        lines : list of strings
+                This is what is generated when you read mm3.fld using
+                readlines().
         """
         if path is None:
             path = self.path
         if params is None:
             params = self.params
-        if lines is None and self.lines is None:
-            with open(path, 'r') as f:
-                lines = f.readlines()
-            logger.log(5, '  -- Read {} lines from {}.'.format(
-                    len(lines), path))
-        else:
+        if lines is None:
             lines = self.lines
         for param in params:
             logger.log(1, '>>> param: {} param.value: {}'.format(
@@ -647,7 +645,7 @@ class MM3(FF):
             # Someday export_ff should raise an exception when these values
             # get too rediculous, and this exception should be handled by the
             # optimization techniques appropriately.
-            if abs(param.value) > 100.:
+            if abs(param.value) > 999.:
                 logger.warning(
                     'Value of {} is too high! Skipping write.'.format(param))
             elif param.mm3_col == 1:
