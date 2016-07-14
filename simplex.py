@@ -259,7 +259,9 @@ class Simplex(opt.Optimizer):
             for i in xrange(0, len(best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
-                        sum([x.params[i].value * score_diff_sum])
+                        sum([x.params[i].value * 
+                             (x.score - self.new_ffs[-1].score)
+                             for x in self.new_ffs[:-1]])
                         / score_diff_sum)
                 else:
                     inv_val = (
