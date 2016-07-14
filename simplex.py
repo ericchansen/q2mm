@@ -243,7 +243,9 @@ class Simplex(opt.Optimizer):
             for i in xrange(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
-                        sum([x.params[i].value * score_diff_sum])
+                        sum([x.params[i].value * 
+                             (x.score - self.new_ffs[-1].score)
+                             for x in self.new_ffs[:-1]])
                         / score_diff_sum)
                 else:
                     inv_val = (
@@ -306,6 +308,7 @@ class Simplex(opt.Optimizer):
                 # This change was made to reflect the 1998 Q2MM publication.
                 # if con_ff.score < self.new_ffs[-1].score:
                 if con_ff.score < self.new_ffs[-2].score:
+                    logger.log(20, '  -- Contraction succeeded.')
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
                     logger.log(
@@ -321,8 +324,10 @@ class Simplex(opt.Optimizer):
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
-                    logger.log(20, '  -- Contraction failed.')
-
+                    logger.log(
+                        20, '  -- Contraction failed. Keeping parmaeters '
+                        'anyway.')
+                    self.new_ffs[-1] = con_ff
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             # Keep track of the number of cycles without change. If there's
             # improvement, reset the counter.
