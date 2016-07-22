@@ -1,4 +1,4 @@
-#!/us/bin/python
+#!/usr/bin/python
 """
 General code related to all optimization techniques.
 """
@@ -77,125 +77,162 @@ class Gradient(opt.Optimizer):
                  args_ref=None):
         super(Gradient, self).__init__(
             direc, ff, ff_lines, args_ff, args_ref)
+        # The current defaults err on the side of simplicity, so these are
+        # likely more ideal for smaller parameter sets. For larger parameter
+        # sets, central differentiation will take longer, and so you you will
+        # likely want to try more trial FFs per iteration. This would mean
+        # adding more max radii (ex. lagrange_radii) or more factors (ex.
+        # svd_factors).
+
         # Whether or not to generate parameters with these methods.
-        self.do_lstsq = True
-        self.do_lagrange = False
+        self.do_lstsq = False
+        self.do_lagrange = True
         self.do_levenberg = False
         self.do_newton = True
-        self.do_svd = False
+        self.do_svd = True
+
         # Particular settings for each method.
         # LEAST SQUARES
         self.lstsq_cutoffs = None
-        self.lstsq_radii = None
+        self.lstsq_radii = [1., 10.]
         # LAGRANGE
         self.lagrange_factors = [0.01, 0.1, 1., 10.]
         self.lagrange_cutoffs = None
-        self.lagrange_radii = [0.1, 1., 5., 10.]
+        self.lagrange_radii = [0.1, 10.]
         # LEVENBERG-MARQUARDT
         self.levenberg_factors = [0.01, 0.1, 1., 10.]
         self.levenberg_cutoffs = None
-        self.levenberg_radii = [0.1, 1., 5., 10.]
+        self.levenberg_radii = [0.1, 10.]
         # NEWTON-RAPHSON
         self.newton_cutoffs = None
-        self.newton_radii = None
+        self.newton_radii = [1., 10.]
         # SVD
-        # self.svd_factors = [0.001, 0.01, 0.1, 1.]
-        self.svd_factors = None
+        self.svd_factors = [0.001, 0.01, 0.1, 1., 10.]
         self.svd_cutoffs = [0.1, 10.]
         self.svd_radii = None
+
     # Don't worry that self.ff isn't included in self.new_ffs.
     # opt.catch_run_errors will know what to do if self.new_ffs
     # is None.
     @property
     def best_ff(self):
         return sorted(self.new_ffs, key=lambda x: x.score)[0]
+
     @opt.catch_run_errors
-    def run(self, ref_data=None):
+    def run(self, ref_data=None, restart=None):
+        """
+        Runs the gradient optimization.
+
+        Ensure that the attributes in __init__ are set as you desire before
+        using this function.
+
+        Returns
+        -------
+        `datatypes.FF` (or subclass)
+            Contains the best parameters.
+        """
         # We need reference data if you didn't provide it.
         if ref_data is None:
             ref_data = opt.return_ref_data(self.args_ref)
+
         # We need the initial FF data.
         if self.ff.data is None:
             logger.log(20, '~~ GATHERING INITIAL FF DATA ~~'.rjust(79, '~'))
-            # Check whether this is efficient with the ff_lines.
+            # Is opt.Optimizer.ff_lines used anymore?
             self.ff.export_ff()
             self.ff.data = calculate.main(self.args_ff)
-            # We could do this, but the zeroing of energies has already been
-            # done.
-            # self.ff.score = compare.compare_data(ref_data, self.ff.data)
-            # So instead we do this.
+            # Not 100% sure if this is necessary, but it certainly doesn't hurt.
             compare.correlate_energies(ref_data, self.ff.data)
         if self.ff.score is None:
             # Already zeroed reference and correlated the energies.
             self.ff.score = compare.calculate_score(ref_data, self.ff.data)
-            logger.log(20, 'INITIAL FF SCORE: {}'.format(self.ff.fscore))
+
         logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
-        # We need a file to hold the differentiated parameter data.
-        par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
-        if par_files:
-            par_files.sort()
-            most_recent_par_file = par_files[-1]
-            most_recent_par_file = most_recent_par_file.split('/')[-1]
-            most_recent_num = most_recent_par_file[9:12]
-            num = int(most_recent_num) + 1
-            par_file = 'par_diff_{:03d}.txt'.format(num)
+        logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
+        opt.pretty_ff_results(self.ff, level=20)
+
+        logger.log(20, '~~ CENTRAL DIFFERENTIATION ~~'.rjust(79, '~'))
+        if restart:
+            par_file = restart
+            logger.log(20, '  -- Restarting gradient from central '
+                       'differentiation file {}.'.format(par_file))
         else:
-            par_file = 'par_diff_001.txt'
-        f = open(os.path.join(self.direc, par_file), 'w')
-        csv_writer = csv.writer(f)
-        # Row 1 - Labels
-        # Row 2 - Weights
-        # Row 3 - Reference data values
-        # Row 4 - Initial FF data values
-        csv_writer.writerow([x.lbl for x in ref_data])
-        csv_writer.writerow([x.wht for x in ref_data])
-        csv_writer.writerow([x.val for x in ref_data])
-        csv_writer.writerow([x.val for x in self.ff.data])
-        logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
-        # Setup the residual vector.
-        # Perhaps move this closer to the Jacobian section.
-        num_d = len(ref_data)
-        resid = np.empty((num_d, 1), dtype=float)
-        for i in xrange(0, num_d):
-            resid[i, 0] = ref_data[i].wht * (ref_data[i].val - self.ff.data[i].val)
-        logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
-        logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
-        # Save many FFs, each with their own parameter sets.
-        ffs = opt.differentiate_ff(self.ff)
-        logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
-        for ff in ffs:
-            ff.export_ff(lines=self.ff.lines)
-            logger.log(20, '  -- Calculating {}.'.format(ff))
-            data = calculate.main(self.args_ff)
-            compare.correlate_energies(ref_data, data)
-            ff.score = compare.calculate_score(ref_data, data)
-            opt.pretty_ff_results(ff)
-            # Write the data rather than storing it in memory. For large parameter
-            # sets, this could consume GBs of memory otherwise!
-            csv_writer.writerow([x.val for x in data])
-        f.close()
+            # We need a file to hold the differentiated parameter data.
+            par_files = glob.glob(os.path.join(self.direc, 'par_diff_???.txt'))
+            if par_files:
+                par_files.sort()
+                most_recent_par_file = par_files[-1]
+                most_recent_par_file = most_recent_par_file.split('/')[-1]
+                most_recent_num = most_recent_par_file[9:12]
+                num = int(most_recent_num) + 1
+                par_file = 'par_diff_{:03d}.txt'.format(num)
+            else:
+                par_file = 'par_diff_001.txt'
+            logger.log(20, '  -- Generating central differentiation '
+                       'file {}.'.format(par_file))
+            f = open(os.path.join(self.direc, par_file), 'w')
+            csv_writer = csv.writer(f)
+            # Row 1 - Labels
+            # Row 2 - Weights
+            # Row 3 - Reference data values
+            # Row 4 - Initial FF data values
+            csv_writer.writerow([x.lbl for x in ref_data])
+            csv_writer.writerow([x.wht for x in ref_data])
+            csv_writer.writerow([x.val for x in ref_data])
+            csv_writer.writerow([x.val for x in self.ff.data])
+            logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
+            # Save many FFs, each with their own parameter sets.
+            ffs = opt.differentiate_ff(self.ff)
+            logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
+            for ff in ffs:
+                ff.export_ff(lines=self.ff.lines)
+                logger.log(20, '  -- Calculating {}.'.format(ff))
+                data = calculate.main(self.args_ff)
+                ff.score = compare.compare_data(ref_data, data)
+                opt.pretty_ff_results(ff)
+                # Write the data rather than storing it in memory. For large parameter
+                # sets, this could consume GBs of memory otherwise!
+                csv_writer.writerow([x.val for x in data])
+            f.close()
+
+            # Make sure we have derivative information. Used for NR.
+            #
+            # The derivatives are useful for checking up on the progress of the
+            # optimization and for deciding which parameters to use in a
+            # subsequent simplex optimization.
+            #
+            # Still need a way to do this with the resatrt file.
+            opt.param_derivs(self.ff, ffs)
+
         # Calculate the Jacobian, residual vector, matrix A and vector b.
         # These aren't needed if you're only doing Newton-Raphson.
         if self.do_lstsq or self.do_lagrange or self.do_levenberg or \
                 self.do_svd:
             logger.log(20, '~~ JACOBIAN AND RESIDUAL VECTOR ~~'.rjust(79, '~'))
+            # Setup the residual vector.
+            num_d = len(ref_data)
+            resid = np.empty((num_d, 1), dtype=float)
+            for i in xrange(0, num_d):
+                resid[i, 0] = ref_data[i].wht * (ref_data[i].val - self.ff.data[i].val)
+            # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
+            logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
             # Setup the Jacobian.
             num_p = len(self.ff.params)
             # Maybe should be a part of the Jacobian function.
             jacob = np.empty((num_d, num_p), dtype=float)
             jacob = return_jacobian(jacob, os.path.join(self.direc, par_file))
+            # logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
+            logger.log(20, '  -- Formed {} Jacobian.'.format(jacob.shape))
             ma = jacob.T.dot(jacob)
             vb = jacob.T.dot(resid)
             # We need these for most optimization methods.
             logger.log(5, ' MATRIX A AND VECTOR B '.center(79, '-'))
-            logger.log(5, 'A:\n{}'.format(ma))
-            logger.log(5, 'b:\n{}'.format(vb))
+            # logger.log(5, 'A:\n{}'.format(ma))
+            # logger.log(5, 'b:\n{}'.format(vb))
         # Start coming up with new parameter sets.
-        if self.do_newton:
+        if self.do_newton and not restart:
             logger.log(20, '~~ NEWTON-RAPHSON ~~'.rjust(79, '~'))
-            # Make sure we have derivative information.
-            if self.ff.params[0].d1 is None:
-                opt.param_derivs(self.ff, ffs)
+            # Moved the derivative section outside of here.
             changes = do_newton(self.ff.params,
                                 radii=self.newton_radii,
                                 cutoffs=self.newton_cutoffs)
@@ -222,13 +259,18 @@ class Gradient(opt.Optimizer):
                 cleanup(self.new_ffs, self.ff, changes)
         if self.do_svd:
             logger.log(20, '~~ SINGULAR VALUE DECOMPOSITION ~~'.rjust(79, '~'))
-            mu, vs, mv = return_svd(ma)
+            # J = U . s . VT
+            mu, vs, mvt = return_svd(jacob)
+            logger.log(1, '>>> mu.shape: {}'.format(mu.shape))
+            logger.log(1, '>>> vs.shape: {}'.format(vs.shape))
+            logger.log(1, '>>> mvt.shape: {}'.format(mvt.shape))
+            logger.log(1, '>>> vb.shape: {}'.format(vb.shape))
             if self.svd_factors:
-                changes = do_svd_w_thresholds(mu, vs, mv, vb, self.svd_factors,
+                changes = do_svd_w_thresholds(mu, vs, mvt, resid, self.svd_factors,
                                               radii=self.svd_radii,
                                               cutoffs=self.svd_cutoffs)
             else:
-                changes = do_svd_wo_thresholds(mu, vs, mv, vb,
+                changes = do_svd_wo_thresholds(mu, vs, mvt, resid,
                                                radii=self.svd_radii,
                                                cutoffs=self.svd_cutoffs)
             cleanup(self.new_ffs, self.ff, changes)
@@ -288,6 +330,8 @@ def check(changes, max_radii, cutoffs):
         elif cutoffs:
             if check_cutoffs(radius, cutoffs):
                 new_changes.append(change)
+        else:
+            new_changes.append(change)
     return new_changes
 
 def check_cutoffs(par_rad, cutoffs):
@@ -331,6 +375,7 @@ def check_radius(par_rad, max_rad):
         return 1
                 
 def cleanup(ffs, ff, changes):
+    logger.log(1, '>>> changes: {}'.format(changes))
     if changes:
         for method, change in changes:
             opt.pretty_param_changes(
@@ -345,8 +390,8 @@ def cleanup(ffs, ff, changes):
 
 def do_method(func):
     def wrapper(*args, **kwargs):
-        logger.log(1, '>>> args: {}'.format(args))
-        logger.log(1, '>>> kwargs: {}'.format(kwargs))
+        # logger.log(1, '>>> args: {}'.format(args))
+        # logger.log(1, '>>> kwargs: {}'.format(kwargs))
         try:
             changes = func(*args)
         except opt.OptError as e:
@@ -370,6 +415,7 @@ def do_lagrange(ma, vb, factor):
     """
     mac = copy.deepcopy(ma)
     ind = np.diag_indices_from(mac)
+    logger.log(5, 'A:\n{}'.format(mac))
     mac[ind] = mac[ind] + factor
     logger.log(5, 'A:\n{}'.format(mac))
     changes = solver(mac, vb)
@@ -442,53 +488,153 @@ def do_newton(params):
     return [('NR', changes)]
 
 @do_method
-def do_svd_w_thresholds(mu, vs, mv, vb, factors):
+def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
     logger.log(1, '>>> do_svd_w_thresholds <<<')
-    factors.sort()
+    factors.sort(reverse=True)
     all_changes = []
+
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    # ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    # msi = np.linalg.inv(ms)
+
+    logger.log(10, ' NO FACTORS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+
     for i, factor in enumerate(factors):
         logger.log(10, ' FACTOR: {} '.format(factor).center(79, '-'))
-        old_vs = copy.deepcopy(vs)
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+        old_msi = copy.deepcopy(msi)
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         for i in xrange(0, len(vs)):
-            if vs[i] < factor:
-                vs[i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        logger.log(1, '>>> old_vs:\n{}'.format(old_vs))
+            if msi[i, i] > factor:
+                msi[i, i] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
         # Start checking after the first factor.
         # If there's no change in the vector, skip to next higher factor.
-        if i != 0 and np.all(vs == old_vs):
-            logger.log(10, '  -- No change with factor {}. Skipping.'.format(
+        if i != 0 and np.all(msi == old_msi):
+            logger.warning('  -- No change with factor {}. Skipping.'.format(
                     factor))
             continue
         # If the vector is all zeros, quit.
-        if np.all(vs == np.zeros(vs.shape)):
+        if np.all(msi == np.zeros(msi.shape)):
             logger.log(10, '  -- Vector is all zeros. Breaking.')
             break
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+
+        # Old code.
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+        # For reduced SVD.
+        # ms = np.diag(vs)
+        
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
         all_changes.append(('SVD T{}'.format(factor), changes))
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
 
 @do_method
-def do_svd_wo_thresholds(mu, vs, mv, vb):
+def do_svd_wo_thresholds(mu, vs, mvt, resid):
     logger.log(1, '>>> do_svd_wo_thresholds <<<')
     all_changes = []
-    for i in xrange(0, len(vs)):
-        logger.log(10, ' ZEROED {} ELEMENTS '.format(i).center(79, '-'))
-        vs[-i] = 0.
-        logger.log(1, '>>> vs:\n{}'.format(vs))
-        reform = mu.dot(np.diag(vs)).dot(mv)
-        logger.log(1, '>>> reform:\n{}'.format(reform))
-        changes = solver(reform, vb)
+    logger.log(1, '>>> vs:\n{}'.format(vs))
+
+    # The largest values come 1st in the array vs.
+    # When we invert it, the smallest values come 1st.
+    vsi = invert_vector(vs)
+    msi = np.diag(vsi)
+
+    # For reduced SVD.
+    # The largest values come 1st in this array.
+    # ms = np.diag(vs)
+    # When we invert it, the smallest values come 1st.
+    # msi = np.linalg.inv(ms)
+
+
+    logger.log(10, ' ZEROED 0 ELEMENTS '.center(79, '-'))
+    logger.log(1, '>>> msi:\n{}'.format(msi))
+    changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+    changes = changes.flatten()
+    logger.log(1, '>>> changes:\n{}'.format(changes))
+    all_changes.append(('SVD Z0', changes))
+
+    for i in xrange(0, len(vs) - 1):
+        # Save a copy to check whether or not anything actually changes after
+        # zeroing.
+        old_msi = copy.deepcopy(msi)
+        logger.log(10, ' ZEROED {} ELEMENTS '.format(i + 1).center(79, '-'))
+        # We are zeroing the largest values.
+        msi[-(i + 1), -(i + 1)] = 0.
+        logger.log(1, '>>> msi:\n{}'.format(msi))
+        if np.allclose(msi, old_msi):
+            logger.warning('  -- No change with zeroing {} elements. '
+                           'Skipping'.format(i + 1))
+            continue
+
+        # Old code.
+        # reform = mu.dot(np.diag(vs)).dot(mv)
+        # logger.log(1, '>>> reform:\n{}'.format(reform))
+        # changes = solver(reform, vb)
+        # For full SVD.
+        # m = mu.shape[0]
+        # n = mv.shape[0]
+        # ms = np.zeros((m, n), dtype=float)
+        # ms[:n, :n] = np.diag(vs)
+        # For reduced SVD.
+        # ms = np.diag(vs)
+        
+        changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
+        # We need this to be shaped like a list so transpose the parameter
+        # changes.
+        changes = changes.flatten()
         logger.log(1, '>>> changes:\n{}'.format(changes))
-        all_changes.append(('SVD Z{}'.format(i), changes))
+        all_changes.append(('SVD Z{}'.format(i + 1), changes))
+
     logger.log(1, '>>> all_changes:\n{}'.format(all_changes))
     return all_changes
+
+def invert_vector(vector, threshold=0.0001):
+    """
+    Inverts a vector. If the absolute value of an element in the vector is
+    below the threshold, then it replaces the value with zero rather than
+    inverting it.
+
+    Arguments
+    ---------
+    vector : np.array
+    threshold : float
+
+    Returns
+    -------
+    np.array
+    """
+    new_vector = np.empty(vector.shape, dtype=float)
+    for i, x in enumerate(vector):
+        if abs(x) < threshold:
+            new_x = 0.
+        else:
+            new_x = 1. / x
+        new_vector[i] = new_x
+    return new_vector
 
 def return_ff(orig_ff, changes, method):
     """
@@ -506,7 +652,7 @@ def return_ff(orig_ff, changes, method):
 
 def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
-        logger.log(15, 'READING: par.new.tot')
+        logger.log(15, 'READING: {}'.format(par_file))
         f.readline() # Labels.
         whts = map(float, f.readline().split(',')) # Weights.
         f.readline() # Reference values.
@@ -525,21 +671,32 @@ def return_jacobian(jacob, par_file):
                 dydp = (inc_datum - dec_datum) / 2
                 jacob[data_ind, ff_ind] = whts[data_ind] * dydp
             ff_ind += 1
-    logger.log(5, 'JACOBIAN:\n{}'.format(jacob))
     return jacob
 
-def return_svd(ma):
+def return_svd(matrix, check=False):
     """
     Parameters
     ----------
-    ma : NumPy matrix
+    matrix : NumPy matrix
+    check : bool
     """
-    mu, vs, mv = np.linalg.svd(ma)
-    logger.log(5, ' MATRIX A DECOMPOSITION '.center(79, '-'))
-    logger.log(5, 'U:\n{}'.format(mu))
-    logger.log(5, 's:\n{}'.format(vs))
-    logger.log(5, 'V:\n{}'.format(mv))
-    return mu, vs, mv
+    # Reduced SVD.
+    mu, vs, mvt = np.linalg.svd(matrix, full_matrices=False)
+    if check:
+        # Reform the matrix.
+        reform = mu.dot(np.diag(vs).dot(mvt))
+        same = np.allclose(matrix, reform)
+        if not same:
+            raise Exception(
+                'Reformed matrix from SVD is not equivalent to original '
+                'matrix!\nORIGINAL:\n{}\nREFORM:\n{}'.format(matrix, reform))
+    # Full SVD.
+    # mu, vs, mvt = np.linalg.svd(ma, full_matrices=True)
+    # logger.log(1, ' SVD DECOMPOSITION '.center(79, '-'))
+    # logger.log(1, 'U:\n{}'.format(mu))
+    # logger.log(1, 's:\n{}'.format(vs))
+    # logger.log(1, 'VT:\n{}'.format(mvt))
+    return mu, vs, mvt
 
 def solver(ma, vb):
     """
@@ -572,12 +729,36 @@ def update_params(params, changes):
 
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
-    # This stuff is just for testing.
-    ff = datatypes.MM3('b071/mm3.fld')
-    ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b071/params.txt')
-    a = Gradient(
-        direc='b071', ff=ff,
-        args_ff=' -d b071 -me X002a.mae X002b.mae -mb X002a.mae',
-        args_ref=' -d b071 -je X002a.mae X002b.mae -jb X002a.mae')
-    a.run()
+
+    # !!! START TESTING SECTION !!!
+
+    # ff = datatypes.MM3('b107/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
+    # a = Gradient(
+    #     direc='b107', ff=ff,
+    #     args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
+    #     args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
+    # a.run()
+    # a.run(restart='par_diff_011.txt')
+
+    # ff = datatypes.MM3('b000/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
+    # a = Gradient(
+    #     direc='b000', ff=ff,
+    #     args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
+    #     args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
+    # a.run(restart='par_diff_001.txt')
+    # a.run()
+
+    # ff = datatypes.MM3('ref_methanol/mm3.fld')
+    # ff.import_ff()
+    # ff.params = parameters.trim_params_by_file(ff.params, 'ref_methanol/params.txt')
+    # a = Gradient(
+    #     direc='ref_methanol', ff=ff,
+    #     args_ff=' -d ref_methanol -mb methanol.mae'.split(),
+    #     args_ref=' -d ref_methanol -jb methanol.mae'.split())
+    # a.run(restart='par_diff_001.txt')
+
+    # !!! END TESTING SECTION !!!

@@ -30,7 +30,7 @@ def catch_run_errors(func):
         papa_bear = args[0]
         try:
             return func(*args, **kwargs)
-        except (datatypes.ParamError, ZeroDivisionError) as e:
+        except (ZeroDivisionError, OptError, datatypes.ParamError) as e:
             logger.warning(e)
             if papa_bear.best_ff is None:
                 logger.log(20, '  -- Exiting {} and returning initial FF.'.format(
@@ -97,13 +97,15 @@ class Optimizer(object):
         self.args_ff = args_ff
         self.args_ref = args_ref
         self.new_ffs = []
+        # We should do away with the ff_lines attribute.
+        # It's specific to MM3*. This sort of stuff should be
+        # encapsulated in export_ff and import_ff type functions.
         if self.ff_lines is None and self.ff.lines:
             self.ff_lines = self.ff.lines
 
 def return_ref_data(args_ref):
     logger.log(20, '~~ GATHERING REFERENCE DATA ~~'.rjust(79, '~'))
     ref_data = calculate.main(args_ref)
-    compare.zero_energies(ref_data)
     compare.import_weights(ref_data)
     return ref_data
 
@@ -137,9 +139,14 @@ def differentiate_ff(ff, central=True):
         new_ff.params = param_set
         new_ff.path = ff.path
         if central and i % 2 == 1:
+            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
             new_ff.method = 'BACKWARD {}'.format(param_set[int(np.floor(i/2.))])
         else:
-            new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
+            if central:
+                new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+            else:
+                new_ff.method = 'FORWARD {}'.format(param_set[i])
         ffs.append(new_ff)
     return ffs
 
@@ -196,9 +203,8 @@ def differentiate_params(params, central=True):
                         param, old_step, param.step))
             else:
                 # Each of these lists contains one changed parameter. It'd
-                # be nice to just use one list, and modify the necessary
-                # parameter, and then change it back before making the next
-                # modification.
+                # be nice to just use one list, modify the necessary parameter,
+                # and then change it back before making the next modification.
                 param_sets.append(forward_params)
                 if central:
                     param_sets.append(backward_params)
@@ -227,6 +233,8 @@ def extract_ff_by_params(ffs, params):
         row, col = map(int, re.split('\[|\]', ff.method)[3].split(','))
         if row in rows and col in cols:
             keep.append(ff)
+    logger.log(20, 'KEEPING FFS FOR SIMPLEX:\n{}'.format(
+            ' '.join([str(x) for x in keep])))
     return keep
 
 def extract_forward(ffs):
@@ -255,6 +263,7 @@ def param_derivs(ff, ffs):
           Central differentiated and scored force fields.
     """
     for i in xrange(0, len(ffs), 2):
+        logger.log(1, '>>> ffs[i].score: {}'.format(ffs[i].score))
         ff.params[i/2].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
         ff.params[i/2].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
     pretty_derivs(ff.params)
