@@ -1909,7 +1909,7 @@ def return_filetypes_parser():
 def detect_filetype(filename):
     path = os.path.abspath(filename)
     ext = os.path.splitext(path)[1]
-    if ext == '.mae':
+    if ext == '.mae' or ext =='.maegz':
         file_ob = Mae(path)
     elif ext == '.log':
         file_ob = GaussLog(path)
