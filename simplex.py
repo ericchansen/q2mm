@@ -107,6 +107,7 @@ class Simplex(opt.Optimizer):
         logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
         opt.pretty_ff_results(self.ff, level=20)
 
+        # Here's what we do if there are too many parameters.
         if self.max_params and len(self.ff.params) > self.max_params:
             logger.log(20, '  -- More parameters than the maximum allowed.')
             logger.log(5, 'CURRENT PARAMS: {}'.format(len(self.ff.params)))
@@ -133,7 +134,7 @@ class Simplex(opt.Optimizer):
                 ffs = opt.differentiate_ff(self.ff, central=True)
                 # We have to score to get the derivatives.
                 for ff in ffs:
-                    ff.export_ff(lines=self.ff_lines)
+                    ff.export_ff(path=self.ff.path, lines=self.ff_lines)
                     logger.log(20, '  -- Calculating {}.'.format(ff))
                     data = calculate.main(self.args_ff)
                     ff.score = compare.compare_data(r_data, data)
@@ -183,11 +184,12 @@ class Simplex(opt.Optimizer):
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
             if ff.score is None:
-                ff.export_ff(lines=self.ff_lines)
+                ff.export_ff(path=self.ff.path, lines=self.ff_lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(ff)
+
         # Add your copy of the orignal to FF to the forward differentiated FFs.
         self.new_ffs = sorted(self.new_ffs + [ff_copy], key=lambda x: x.score)
         # Allow 3 cycles w/o change for each parameter present. Remember that
@@ -196,50 +198,32 @@ class Simplex(opt.Optimizer):
         wrapper = textwrap.TextWrapper(width=79)
         # Shows all FFs parameters.
         opt.pretty_ff_params(self.new_ffs)
+
         # Start the simplex cycles.
         current_cycle = 0
         cycles_wo_change = 0
         while current_cycle < self.max_cycles \
                 and cycles_wo_change < self._max_cycles_wo_change:
             current_cycle += 1
-            last_best = self.new_ffs[0].score
-            best_ff = self.new_ffs[0]
+
+            # Save the last best in case some accidental sort goes on.
+            # Plus it makes reading the code a litle easier.
+            last_best_ff = copy.deepcopy(self.new_ffs[0])
             logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
             logger.log(20, 'ORDERED FF SCORES:')
             logger.log(20, wrapper.fill('{}'.format(
                     ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
 
-            # !!! FOR TESTING !!!
-
-            # Write the best and worst FFs to some other directory. Then
-            # write the worst FF to optimization working directory. Then
-            # raise opt.OptError. The worst FF should be overwritten by
-            # the best FF afterwards.
-
-            # if current_cycle == 5:
-            #     self.new_ffs[-1].export_ff(
-            #         path='ref_methanol_flds/mm3_worst.fld',
-            #         lines=self.ff.lines)
-            #     self.new_ffs[0].export_ff(
-            #         path='ref_methanol_flds/mm3_best.fld',
-            #         lines=self.ff.lines)
-            #     self.new_ffs[-1].export_ff(
-            #         path='ref_methanol/mm3.fld',
-            #         lines=self.ff.lines)
-            #     raise opt.OptError
-
-            # !!! END TESTING !!!
-
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
                 inv_ff.method = 'WEIGHTED INVERSION'
             else:
                 inv_ff.method = 'INVERSION'
-            inv_ff.params = copy.deepcopy(best_ff.params)
+            inv_ff.params = copy.deepcopy(last_best_ff.params)
             ref_ff = self.ff.__class__()
             ref_ff.method = 'REFLECTION'
-            ref_ff.params = copy.deepcopy(best_ff.params)
+            ref_ff.params = copy.deepcopy(last_best_ff.params)
             # Need score difference sum for weighted inversion.
             # Calculate this value before going into loop.
             if self.do_weighted_reflection:
@@ -256,7 +240,7 @@ class Simplex(opt.Optimizer):
                     raise opt.OptError(
                         'No difference between force field scores. '
                         'Exiting simplex.')
-            for i in xrange(0, len(best_ff.params)):
+            for i in xrange(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
                         sum([x.params[i].value * 
@@ -273,20 +257,20 @@ class Simplex(opt.Optimizer):
                     2 * inv_val - self.new_ffs[-1].params[i].value)
             # The inversion point does not need to be scored.
             # Calculate score for reflected parameters.
-            self.ff.export_ff(self.ff.path, params=ref_ff.params)
+            ref_ff.export_ff(path=self.ff.path, lines=self.ff.lines)
             data = calculate.main(self.args_ff)
             ref_ff.score = compare.compare_data(r_data, data)
             opt.pretty_ff_results(ref_ff)
-            if ref_ff.score < self.new_ffs[0].score:
+            if ref_ff.score < last_best_ff.score:
                 logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
                 exp_ff = self.ff.__class__()
                 exp_ff.method = 'EXPANSION'
-                exp_ff.params = copy.deepcopy(best_ff.params)
-                for i in xrange(0, len(self.new_ffs[0].params)):
+                exp_ff.params = copy.deepcopy(last_best_ff.params)
+                for i in xrange(0, len(last_best_ff.params)):
                     exp_ff.params[i].value = (
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
-                self.ff.export_ff(self.ff.path, exp_ff.params)
+                exp_ff.export_ff(path=self.ff.path, lines=self.ff.lines)
                 data = calculate.main(self.args_ff)
                 exp_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(exp_ff)
@@ -306,8 +290,8 @@ class Simplex(opt.Optimizer):
                 logger.log(20, '~~ ATTEMPTING CONTRACTION ~~'.rjust(79, '~'))
                 con_ff = self.ff.__class__()
                 con_ff.method = 'CONTRACTION'
-                con_ff.params = copy.deepcopy(best_ff.params)
-                for i in xrange(0, len(best_ff.params)):
+                con_ff.params = copy.deepcopy(last_best_ff.params)
+                for i in xrange(0, len(last_best_ff.params)):
                     if ref_ff.score > self.new_ffs[-1].score:
                         con_val = (
                             (inv_ff.params[i].value +
@@ -317,7 +301,7 @@ class Simplex(opt.Optimizer):
                             (3 * inv_ff.params[i].value -
                              self.new_ffs[-1].params[i].value) / 2)
                     con_ff.params[i].value = con_val
-                self.ff.export_ff(self.ff.path, params=con_ff.params)
+                self.ff.export_ff(params=con_ff.params)
                 data = calculate.main(self.args_ff)
                 con_ff.score = compare.compare_data(r_data, data)
                 opt.pretty_ff_results(con_ff)
@@ -330,33 +314,36 @@ class Simplex(opt.Optimizer):
                     logger.log(
                         20, '~~ DOING MASSIVE CONTRACTION ~~'.rjust(79, '~'))
                     for ff_num, ff in enumerate(self.new_ffs[1:]):
-                        for i in xrange(0, len(best_ff.params)):
+                        for i in xrange(0, len(last_best_ff.params)):
                             ff.params[i].value = (
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)
-                        self.ff.export_ff(self.ff.path, params=ff.params)
+                        self.ff.export_ff(params=ff.params)
                         data = calculate.main(self.args_ff)
                         ff.score = compare.compare_data(r_data, data)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
-                    logger.log(
-                        20, '  -- Contraction failed. Keeping parmaeters '
-                        'anyway.')
-                    self.new_ffs[-1] = con_ff
+                    logger.log(20, '  -- Contraction failed.')
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
-            if self.new_ffs[0].score < last_best:
+            # Keep track of the number of cycles without change. If there's
+            # improvement, reset the counter.
+            if self.new_ffs[0].score < last_best_ff.score:
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
                 logger.log(20, '  -- {} cycles without improvement out of {} '
                            'allowed.'.format(
                         cycles_wo_change, self._max_cycles_wo_change))
-            best_ff = self.new_ffs[0]
-            logger.log(20, '\nBEST:')
+            logger.log(20, 'BEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
             logger.log(20, '~~ END SIMPLEX CYCLE {} ~~'.format(
                     current_cycle).rjust(79, '~'))
+
+        # This sort is likely unnecessary because it should be done at the end
+        # of the last loop cycle, but I put it here just in case.
+        self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
+        best_ff = self.new_ffs[0]
         if best_ff.score < self.ff.score:
             logger.log(20, '~~ SIMPLEX FINISHED WITH IMPROVEMENTS ~~'.rjust(
                     79, '~'))
@@ -364,6 +351,9 @@ class Simplex(opt.Optimizer):
         else:
             logger.log(20, '~~ SIMPLEX FINISHED WITHOUT IMPROVEMENTS ~~'.rjust(
                     79, '~'))
+            # This restores the inital parameters, so no need to use
+            # restore_simp_ff here.
+            best_ff = self.ff
         opt.pretty_ff_results(self.ff, level=20)
         opt.pretty_ff_results(best_ff, level=20)
         logger.log(20, '  -- Writing best force field from simplex.')
