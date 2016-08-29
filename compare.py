@@ -119,6 +119,8 @@ def compare_data(r_data, c_data):
     # c_data = np.array(sorted(c_data, key=datatypes.datum_sort_key))
     # if zero:
     #     zero_energies(r_data)
+    assert len(r_data) == len(c_data), \
+        "Length of reference data and FF data doesn't match!"
     correlate_energies(r_data, c_data)
     import_weights(r_data)
     return calculate_score(r_data, c_data)

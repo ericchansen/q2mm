@@ -1819,7 +1819,8 @@ class Structure(object):
                             logger.error("Can't identify angle_2!")
                         else:
                             logger.error(">>> angle_2: {}".format(angle_2))
-                        raise
+                        logger.warning('WARNING: Using torsion anyway!')
+                        data.append(datum)
                     if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
                             -5. < angle_2 < 5. or 175. < angle_2 < 185.:
                         logger.log(
