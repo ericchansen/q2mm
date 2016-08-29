@@ -146,12 +146,12 @@ def main(args):
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
-    data = collect_data(commands, inps, direc=opts.directory,
-                        invert=opts.invert)
     if opts.fake:
-        data = collect_data_fake(commands, inps, direc=opts.directory)
+        data = collect_data_fake(commands, inps, direc=opts.directory,
+                                 invert=opts.invert)
     else:
-        data = collect_data(commands, inps, direc=opts.directory)
+        data = collect_data(commands, inps, direc=opts.directory,
+                            invert=opts.invert)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
