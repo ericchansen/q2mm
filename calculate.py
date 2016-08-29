@@ -246,7 +246,7 @@ def return_calculate_parser(add_help=True, parents=None):
               'energy within this data type.'))
     gau_args.add_argument(
         '-gh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
+        default=[], metavar='somename.log',
         help='Gaussian Hessian extracted from a .log archive.')
     gau_args.add_argument(
         '-geigz', type=str, nargs='+', action='append',
