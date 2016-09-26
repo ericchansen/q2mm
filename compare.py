@@ -267,7 +267,7 @@ def calculate_score(r_data, c_data):
         
         # For torsions, ensure the difference between -179 and 179 is 2, not
         # 358.
-        if r_datum.typ == 't':
+        if c_datum.typ == 't':
             diff = abs(r_datum.val - c_datum.val)
             if diff > 180.:
                 diff = 360. - diff
