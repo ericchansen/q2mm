@@ -50,14 +50,16 @@ class Param(object):
     value : float
             Value of the parameter.
     """
-    __slots__ = ['_allowed_range', 'd1', 'd2', '_step', 'ptype', '_value']
+    __slots__ = ['_allowed_range', '_step', '_value', 'd1', 'd2', 'ptype',
+                 'simp_var']
     def __init__(self, d1=None, d2=None, ptype=None, value=None):
         self._allowed_range = None
+        self._step = None 
+        self._value = None
         self.d1 = d1
         self.d2 = d2
-        self._step = None 
         self.ptype = ptype
-        self._value = None
+        self.simp_var = None
         self.value = value
     def __repr__(self):
         return '{}[{}]({:7.4f})'.format(
@@ -743,6 +745,8 @@ def replace_minimum(array, value=1):
     array.setflags(write=True)
     # Sometimes we use 1, but sometimes we use co.HESSIAN_CONVERSION.
     array[minimum_index] = value
+    logger.log(1, '>>> minimum_index: {}'.format(minimum_index))
+    logger.log(1, '>>> array:\n{}'.format(array))
     logger.log(10, '  -- Replaced minimum in array with {}.'.format(value))
 
 def check_mm_dummy(hess, dummy_indices):

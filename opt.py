@@ -301,10 +301,18 @@ def pretty_derivs(params, level=5):
                    '--' + ' 2nd der. '.center(19, '-') + 
                    '--')
         for param in params:
-            logger.log(level,
-                       '  ' + '{}'.format(param).ljust(33, ' ') +
-                       '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
-                       '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+            # This try/except is used to catch instances where the 1st or 2nd
+            # derivative is None.
+            try:
+                logger.log(level,
+                           '  ' + '{}'.format(param).ljust(33, ' ') +
+                           '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
+                           '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+            except ValueError:
+                logger.log(level, 
+                           '  ' + '{}'.format(param).ljust(33, ' ') +
+                           '  ' + 'None'.ljust(19, ' ') +
+                           '  ' + 'None'.ljust(19, ' '))
         logger.log(level, '-' * 79)
 
 def pretty_ff_params(ffs, level=20):

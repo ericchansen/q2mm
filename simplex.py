@@ -57,7 +57,7 @@ class Simplex(opt.Optimizer):
         self.do_massive_contraction = True
         self.do_weighted_reflection = True
         self.max_cycles = 100
-        self.max_params = 10
+        self.max_params = 3
     @property
     def best_ff(self):
         # Typically, self.new_ffs would include the original FF, self.ff,
@@ -115,18 +115,11 @@ class Simplex(opt.Optimizer):
             # Here we select the parameters that have the lowest 2nd
             # derivatives.
 
-            # THIS IS SCHEDULED FOR CHANGING. THIS IS ACTUALLY NOT A GOOD
-            # CRITERION FOR PARAMETER SELECTION.
-            if self.ff.params[0].d1:
-                logger.log(15, '  -- Reusing existing parameter derivatives.')
-                # Differentiate all parameters forward. Yes, I know this is
-                # counter-intuitive because we are going to only use subset of
-                # the forward differentiated FFs. However, this is very
-                # computationally inexpensive because we're not scoring them
-                # now. We will remove the forward differentiated FFs we don't
-                # want before scoring.
-                ffs = opt.differentiate_ff(self.ff, central=False)
-            else:
+            # Could fail when simplex finds improvements but restores other 
+            # parameters.
+            # if self.ff.params[0].d1:
+
+            if None in [x.d1 for x in self.ff.params]:
                 logger.log(15, '  -- Calculating new parameter derivatives.')
                 # Do central differentiation so we can calculate derivatives.
                 # Another option would be to write code to determine
@@ -145,6 +138,15 @@ class Simplex(opt.Optimizer):
                 ffs = opt.extract_forward(ffs)
                 logger.log(5, '  -- Keeping {} forward differentiated '
                            'FFs.'.format(len(ffs)))
+            else:
+                logger.log(15, '  -- Reusing existing parameter derivatives.')
+                # Differentiate all parameters forward. Yes, I know this is
+                # counter-intuitive because we are going to only use subset of
+                # the forward differentiated FFs. However, this is very
+                # computationally inexpensive because we're not scoring them
+                # now. We will remove the forward differentiated FFs we don't
+                # want before scoring.
+                ffs = opt.differentiate_ff(self.ff, central=False)
 
             # This sorts the parameters based upon their 2nd derivative.
             # It keeps the ones with lowest 2nd derivatives.
@@ -243,7 +245,9 @@ class Simplex(opt.Optimizer):
             for i in xrange(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
-                        sum([x.params[i].value * score_diff_sum])
+                        sum([x.params[i].value * 
+                             (x.score - self.new_ffs[-1].score)
+                             for x in self.new_ffs[:-1]])
                         / score_diff_sum)
                 else:
                     inv_val = (
@@ -306,6 +310,7 @@ class Simplex(opt.Optimizer):
                 # This change was made to reflect the 1998 Q2MM publication.
                 # if con_ff.score < self.new_ffs[-1].score:
                 if con_ff.score < self.new_ffs[-2].score:
+                    logger.log(20, '  -- Contraction succeeded.')
                     self.new_ffs[-1] = con_ff
                 elif self.do_massive_contraction:
                     logger.log(
@@ -321,8 +326,10 @@ class Simplex(opt.Optimizer):
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:
-                    logger.log(20, '  -- Contraction failed.')
-
+                    logger.log(
+                        20, '  -- Contraction failed. Keeping parmaeters '
+                        'anyway.')
+                    self.new_ffs[-1] = con_ff
             self.new_ffs = sorted(self.new_ffs, key=lambda x: x.score)
             # Keep track of the number of cycles without change. If there's
             # improvement, reset the counter.
@@ -358,6 +365,16 @@ class Simplex(opt.Optimizer):
         best_ff.export_ff(best_ff.path)
         return best_ff
 
+def calc_simp_var(params):
+    """
+    Simplex variable is calculated: (2nd der.) / (1st der.)**2
+    """
+    logger.log(1, '>>> params: {}'.format(params))
+    logger.log(1, '>>> 1st ders.: {}'.format([x.d1 for x in params]))
+    logger.log(1, '>>> 2nd ders.: {}'.format([x.d2 for x in params]))
+    for param in params:
+        param.simp_var = param.d2 / param.d1**2.
+
 # Sorting based upon the 2nd derivative isn't such a good criterion. This should
 # be updated soon.
 def select_simp_params_on_derivs(params, max_params=10):
@@ -369,8 +386,20 @@ def select_simp_params_on_derivs(params, max_params=10):
     ----------
     params : list of subclasses of `datatypes.Param`
     """
-    keep = sorted(params, key=lambda x: x.d2)
-    keep = params[:max_params]
+    calc_simp_var(params)
+    keep = sorted(params, key=lambda x: x.simp_var)
+    logger.log(1, '>>> x.simp_var: {}'.format([x.simp_var for x in keep]))
+
+    # Eliminate all where simp_var is greater than 1. This means that the
+    # correct value is bracketed by the differentiation, so gradient
+    # optimization should work.
+    # keep = [x for x in keep if x.simp_var < 1.]
+
+    # Old sorting method.
+    # keep = sorted(params, key=lambda x: x.d2)
+
+    keep = keep[:max_params]
+    logger.log(1, '>>> x.simp_var: {}'.format([x.simp_var for x in keep]))
     logger.log(20, 'KEEPING PARAMS FOR SIMPLEX:\n{}'.format(
             ' '.join([str(x) for x in keep])))
     return keep
@@ -400,6 +429,18 @@ def restore_simp_ff(new_ff, old_ff):
     if len(old_ff.params) > len(new_ff.params):
         logger.log(15, '  -- Restoring {} parameters to new FF.'.format(
                 len(old_ff.params) - len(new_ff.params)))
+
+        logger.log(1, '>>> old_ff.params:')
+        logger.log(1, old_ff.params)
+        logger.log(1, [x.d1 for x in old_ff.params])
+        logger.log(1, [x.d2 for x in old_ff.params])
+        opt.pretty_derivs(old_ff.params, level=1)
+        logger.log(1, '>>> new_ff.params:')
+        logger.log(1, new_ff.params)
+        logger.log(1, [x.d1 for x in new_ff.params])
+        logger.log(1, [x.d2 for x in new_ff.params])
+        opt.pretty_derivs(new_ff.params, level=1)
+
         # Backup new parameters.
         new_params = copy.deepcopy(new_ff.params)
         # Copy over all old parameters.
