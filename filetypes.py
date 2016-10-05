@@ -346,7 +346,6 @@ class GaussLog(File):
             element = 1 / np.sqrt(sum_of_squares)
             for i in range(len(evec)):
                 evec[i] *= element
-
         self._evals = np.array(self._evals)
         self._evecs = np.array(self._evecs)
         logger.log(1, '>>> self._evals: {}'.format(self._evals))
@@ -1113,9 +1112,20 @@ class JaguarOut(File):
                         temp_eigenvectors = [[]]
                 if 'normal modes in' in line:
                     section_eigenvalues = True
+        logger.log(1, '>>> len(frequencies): {}'.format(len(frequencies)))
+        logger.log(1, '>>> frequencies:\n{}'.format(frequencies))
+        # logger.log(1, '>>> frequencies:\n{}'.format(
+        #         [x / co.FORCE_CONVERSION for x in frequencies]))
+        # logger.log(1, '>>> frequencies:\n{}'.format(
+        #         [x * 4.55633e-6 for x in frequencies]))
+        # logger.log(1, '>>> frequencies:\n{}'.format(
+        #         [x * 1.23981e-4 for x in frequencies]))
+        # logger.log(1, '>>> frequencies:\n{}'.format(
+        #         [x / 219474.6305 for x in frequencies]))
         eigenvalues = [- fc / co.FORCE_CONVERSION if f < 0 else
                          fc / co.FORCE_CONVERSION
                          for fc, f in zip(force_constants, frequencies)]
+        logger.log(1, '>>> eigenvalues:\n{}'.format(eigenvalues))
         # Remove eigenvector components related to dummy atoms.
         # Find the index of the atoms that are dummies.
         dummy_atom_indices = []
@@ -2058,6 +2068,8 @@ def detect_filetype(filename):
         file_ob = GaussLog(path)
     elif ext == '.in':
         file_ob = JaguarIn(path)
+    elif ext == '.out':
+        file_ob = JaguarOut(path)
     else:
         raise Exception('Filetype not recognized.')
     return file_ob
