@@ -50,14 +50,16 @@ class Param(object):
     value : float
             Value of the parameter.
     """
-    __slots__ = ['_allowed_range', 'd1', 'd2', '_step', 'ptype', '_value']
+    __slots__ = ['_allowed_range', '_step', '_value', 'd1', 'd2', 'ptype',
+                 'simp_var']
     def __init__(self, d1=None, d2=None, ptype=None, value=None):
         self._allowed_range = None
+        self._step = None 
+        self._value = None
         self.d1 = d1
         self.d2 = d2
-        self._step = None 
         self.ptype = ptype
-        self._value = None
+        self.simp_var = None
         self.value = value
     def __repr__(self):
         return '{}[{}]({:7.4f})'.format(

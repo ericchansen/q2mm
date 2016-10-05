@@ -31,14 +31,15 @@ def catch_run_errors(func):
         try:
             return func(*args, **kwargs)
         except (ZeroDivisionError, OptError, datatypes.ParamError) as e:
+            logger.warning('opt.catch_run_errors caught an error!')
             logger.warning(e)
             if papa_bear.best_ff is None:
-                logger.log(20, '  -- Exiting {} and returning initial FF.'.format(
+                logger.warning('Exiting {} and returning initial FF.'.format(
                         papa_bear.__class__.__name__.lower()))
                 papa_bear.ff.export_ff(papa_bear.ff.path)
                 return papa_bear.ff
             else:
-                logger.log(20, '  -- Exiting {} and returning best FF.'.format(
+                logger.warning('Exiting {} and returning best FF.'.format(
                         papa_bear.__class__.__name__.lower()))
                 papa_bear.best_ff.export_ff(papa_bear.best_ff.path)
                 return papa_bear.best_ff
@@ -300,10 +301,18 @@ def pretty_derivs(params, level=5):
                    '--' + ' 2nd der. '.center(19, '-') + 
                    '--')
         for param in params:
-            logger.log(level,
-                       '  ' + '{}'.format(param).ljust(33, ' ') +
-                       '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
-                       '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+            # This try/except is used to catch instances where the 1st or 2nd
+            # derivative is None.
+            try:
+                logger.log(level,
+                           '  ' + '{}'.format(param).ljust(33, ' ') +
+                           '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
+                           '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+            except ValueError:
+                logger.log(level, 
+                           '  ' + '{}'.format(param).ljust(33, ' ') +
+                           '  ' + 'None'.ljust(19, ' ') +
+                           '  ' + 'None'.ljust(19, ' '))
         logger.log(level, '-' * 79)
 
 def pretty_ff_params(ffs, level=20):
