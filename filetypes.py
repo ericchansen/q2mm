@@ -17,6 +17,7 @@ Note that the atom.typ must be located with your structure files, else the
 Schrodinger jobs will fail.
 """
 from __future__ import print_function
+from argparse import RawTextHelpFormatter
 from string import digits
 import itertools
 import logging
@@ -2045,7 +2046,8 @@ def return_filetypes_parser():
     """
     Returns an argument parser for filetypes module.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=RawTextHelpFormatter)
     parser.add_argument(
         '-i', '--input', type=str, 
         help='Input filename.')
