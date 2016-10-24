@@ -190,7 +190,6 @@ class GaussLog(File):
                         line = file_iterator.next()
                     logger.log(5, '  -- Found {} atoms.'.format(
                             len(self._structures[-1].atoms)))
-
                 elif 'Harmonic' in line:
                     # The high quality eigenvectors come before the low quality
                     # ones. If you see "Harmonic" again, it means you're at the
@@ -372,10 +371,14 @@ class GaussLog(File):
         #         in the archive).
         # We pull out the last one [-1] in case there are multiple archives
         # in a file.
-        arch = re.findall(
-            '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)', 
-            open(self.path, 'r').read())[-1]
-        logger.log(5, '  -- Located last archive.')
+        try:
+            arch = re.findall(
+                '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)', 
+                open(self.path, 'r').read())[-1]
+            logger.log(5, '  -- Located last archive.')
+        except IndexError:
+            logger.warning("  -- Couldn't locate archive.")
+            raise
         # Make it into one string.
         arch = arch.replace('\n ', '')
         # Separate it by Gaussian's section divider.
@@ -2069,6 +2072,11 @@ def detect_filetype(filename):
         file_ob = Mae(path)
     elif ext == '.log':
         file_ob = GaussLog(path)
+        file_ob.read_out()
+        # try:
+        #     file_ob.read_archive()
+        # except IndexError:
+        #     pass
     elif ext == '.in':
         file_ob = JaguarIn(path)
     elif ext == '.out':
@@ -2090,9 +2098,11 @@ def main(args):
                     print(line)
                 if opts.num and i+1 == opts.num:
                     break
-        if hasattr(file_ob, 'evals'):
+        if hasattr(file_ob, 'evals') and file_ob.evals:
+            print('EIGENVALUES:')
             print(file_ob.evals)
-        if hasattr(file_ob, 'evecs'):
+        if hasattr(file_ob, 'evecs') and file_ob.evecs:
+            print('EIGENVECTORS:')
             print(file_ob.evecs)
     if opts.output:
         file_ob.write(opts.output)
