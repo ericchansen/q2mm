@@ -1198,7 +1198,12 @@ class Mae(SchrodingerFile):
     def structures(self):
         if self._structures is None:
             logger.log(10, 'READING: {}'.format(self.filename))
-            sch_structs = list(sch_str.StructureReader(self.path))
+            # It would be great if we could leave this as an iter.
+            try:
+                sch_structs = list(sch_str.StructureReader(self.path))
+            except:
+                logger.warning('Error reading {}.'.format(self.path))
+                raise
             self._structures = [self.conv_sch_str(sch_struct)
                                 for sch_struct in sch_structs]
             logger.log(5, '  -- Imported {} structure(s).'.format(
