@@ -5,9 +5,11 @@ Helps with merging Schrodinger structures.
 Still need to add superposition.
 """
 import argparse
+from copy import deepcopy
 import sys
 
 from schrodinger import structure as sch_struct
+from schrodinger.structutils import rmsd as sch_rmsd
 
 # Not specified via the command line.
 # Should be commented for general use.
@@ -77,6 +79,11 @@ def return_parser():
         '--bonds', '-b', nargs='+', type=str,
         help='Bonds to form. Ex.) 1-2 will form a bond between input atom 1 and '
         'merge atom 2.')
+    parser.add_argument(
+        '--superimpose', '-s', nargs='+', type=str,
+        help='Superimpose atoms in the input structure with the merged '
+        'structure. Ex.) 1-2 will superimpose atoms 1 and 2. Schrodinger '
+        'requires at least 3 atom pairs.')
     return parser
 
 # Uses Schrodinger's deleteAtoms function.
@@ -94,8 +101,10 @@ def main(args):
     # opts.remove_from_merge = REMOVE_FROM_MERGE
     # opts.bonds = BONDS
     
-    opts.remove_from_input.sort()
-    opts.remove_from_merge.sort()
+    if opts.remove_from_input:
+        opts.remove_from_input.sort()
+    if opts.remove_from_merge:
+        opts.remove_from_merge.sort()
 
     reader_input = sch_struct.StructureReader(opts.input)
     reader_merge = sch_struct.StructureReader(opts.merge)
@@ -104,11 +113,23 @@ def main(args):
     # Currently only designed to merge one structure.
     # In other words, no 2D combination arrays (although going that step
     # further wouldn't be challenging).
-    structure_merge = list(reader_merge)[0]
-    structure_merge.deleteAtoms(opts.remove_from_merge)
+    structure_merge_orig = list(reader_merge)[0]
+    # structure_merge.deleteAtoms(opts.remove_from_merge)
+    # Moved this to make merging easier.
+    
+    if opts.superimpose:
+        # Figure out superimpose atoms.
+        superimpose_atoms_merge = []
+        superimpose_atoms_input = []
+        for superimpose_atoms in opts.superimpose:
+            atom_input, atom_merge = map(int, superimpose_atoms.split('-'))
+            superimpose_atoms_input.append(atom_input)
+            superimpose_atoms_merge.append(atom_merge)
 
     # Work on input structures.
     for i, structure in enumerate(reader_input):
+        # Refresh structure.
+        structure_merge = deepcopy(structure_merge_orig)
 
         # It's ugly to do this inside of the loop, but I want to access the
         # structures inside reader_input.
@@ -131,6 +152,15 @@ def main(args):
                 atom_merge_new.append(
                     atom_merge - atoms_less_than + len(structure.atom) \
                         - len(opts.remove_from_input))
+
+        if opts.superimpose:
+            # Superposition before deletion. Should be easier.
+            sch_rmsd.superimpose(
+                structure_merge, superimpose_atoms_merge,
+                structure, superimpose_atoms_input)
+
+        # Moved to after superimpose.
+        structure_merge.deleteAtoms(opts.remove_from_merge)
 
         # May want to comment out.
         for prop in PROPERTIES_TO_REMOVE:
