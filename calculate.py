@@ -73,6 +73,10 @@ def main(args):
     opts = parser.parse_args(args)
     # This makes a dictionary that only contains the arguments related to
     # extracting data from everything in the argparse dictionary, opts.
+    # Given that the user supplies:
+    # python calculate.py -me a1.01.mae a2.01.mae a3.01.mae -me b1.01.mae
+    #    b2.01.mae -mb a1.01.mae b1.01.mae -jeig a1.01.in,a1.out
+    #    b1.01.in,b1.out
     # commands looks like:
     # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], 
     #         ['b1.01.mae', 'b2.01.mae']],
