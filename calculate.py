@@ -942,8 +942,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         mae = check_outs(filename, outs, filetypes.Mae, direc)
         for idx_1, structure in enumerate(mae.structures):
+            aliph_hyds = structure.get_aliph_hyds()
             for atom in structure.atoms:
-                aliph_hyds = structure.get_aliph_hyds()
                 # If it doesn't have the property b_q_use_charge,
                 # use it.
                 # If b_q_use_charge is 1, use it. If it's 0, don't
@@ -951,8 +951,14 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 if (not 'b_q_use_charge' in atom.props or \
                         atom.props['b_q_use_charge']) and \
                         not atom in aliph_hyds:
+                    charge = atom.partial_charge
+                    if atom.atom_type == 3:
+                        for bonded_atom_index in atom.bonded_atom_indices:
+                            bonded_atom = structure.atoms[bonded_atom_index - 1]
+                            if bonded_atom in aliph_hyds:
+                                charge += bonded_atom.partial_charge
                     data.append(datatypes.Datum(
-                            val=atom.partial_charge,
+                            val=charge,
                             com='jqh',
                             typ='qh',
                             src_1=filename,

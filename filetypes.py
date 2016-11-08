@@ -1888,9 +1888,7 @@ class Structure(object):
         for atom in self.atoms:
             if 40 < atom.atom_type < 49:
                 for bonded_atom_index in atom.bonded_atom_indices:
-                    bonded_atom = self.atoms[bonded_atom_index - 1]
-                    if bonded_atom.atom_type == 3:
-                        hyds.append(atom)
+                    hyds.append(atom)
         logger.log(5, '  -- {} hydrogen(s).'.format(len(hyds)))
         return hyds
     def get_dummy_atom_indices(self):
