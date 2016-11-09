@@ -980,7 +980,23 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 if (not 'b_q_use_charge' in atom.props or \
                         atom.props['b_q_use_charge']) and \
                         atom not in aliph_hyds:
+
+                    # Since the charge is always zero AS FAR AS I KNOW, this
+                    # whole recalculation of the charge is totally unnecessary.
+                    # However, I want users to be aware that if a situation
+                    # arises that goes beyond something I experienced,
+                    # uncommenting this section, thereby making it more like the
+                    # code for -jqh, should solve the problem.
+
+                    # charge = atom.partial_charge
+                    # if atom.atom_type == 3:
+                    #     for bonded_atom_index in atom.bonded_atom_indices:
+                    #         bonded_atom = structure.atoms[bonded_atom_index - 1]
+                    #         if bonded_atom in aliph_hyds:
+                    #             charge += bonded_atom.partial_charge
+                    
                     data.append(datatypes.Datum(
+                            # val=charge,
                             val=atom.partial_charge,
                             com='mqh',
                             typ='qh',
