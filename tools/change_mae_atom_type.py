@@ -2,17 +2,25 @@
 """
 Change all of atom type ATOM_X to ATOM_Y.
 """
+import os
+from schrodinger import structure
 
 ATOM_X = 62
 ATOM_Y = 204
 
 INPUT_FILE = "c1r2s_004.mae"
-OUTPUT_FILE = "c1r2s_004.out.mae"
+OUTPUT_FILE = "c1r2s_004.mae"
 
-from schrodinger import structure
+if INPUT_FILE == OUTPUT_FILE:
+    print('Warning: INPUT_FILE ({}) == OUTPUT_FILE ({})'.format(
+            INPUT_FILE, OUTPUT_FILE))
+    print('Using a file called TEMP in current dir.')
 
 reader = structure.StructureReader(INPUT_FILE)
-writer = structure.StructureWriter(OUTPUT_FILE)
+if INPUT_FILE == OUTPUT_FILE:
+    writer = structure.StructureWriter('TEMP')
+else:
+    writer = structure.StructureWriter(OUTPUT_FILE)
 
 for structure in reader:
     for atom in structure.atom:
@@ -22,3 +30,6 @@ for structure in reader:
 
 reader.close()
 writer.close()
+
+if INPUT_FILE == OUTPUT_FILE:
+    os.rename('TEMP', OUTPUT_FILE)
