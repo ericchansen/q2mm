@@ -12,13 +12,13 @@ INPUT_FILE = "c1r2s_004.mae"
 OUTPUT_FILE = "c1r2s_004.mae"
 
 if INPUT_FILE == OUTPUT_FILE:
-    print('Warning: INPUT_FILE ({}) == OUTPUT_FILE ({})'.format(
+    print('Warning: INPUT_FILE ({}) == OUTPUT_FILE ({}).'.format(
             INPUT_FILE, OUTPUT_FILE))
-    print('Using a file called TEMP in current dir.')
+    print('Using a file called TEMP.mae in current dir.')
 
 reader = structure.StructureReader(INPUT_FILE)
 if INPUT_FILE == OUTPUT_FILE:
-    writer = structure.StructureWriter('TEMP')
+    writer = structure.StructureWriter('TEMP.mae')
 else:
     writer = structure.StructureWriter(OUTPUT_FILE)
 
@@ -32,4 +32,4 @@ reader.close()
 writer.close()
 
 if INPUT_FILE == OUTPUT_FILE:
-    os.rename('TEMP', OUTPUT_FILE)
+    os.rename('TEMP.mae', OUTPUT_FILE)
