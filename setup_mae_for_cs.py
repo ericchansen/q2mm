@@ -10,8 +10,9 @@ The original plan:
 
 However, I don't know how to get the results from AUTO from the command line.
 """
+import argparse
+import os
 import sys
-
 from schrodinger import structure as sch_struct
 
 def read_com(filename):
@@ -41,20 +42,24 @@ def read_com(filename):
     comp = filter(lambda x: x != 0, comp)
     return comp, tors
 
-def add_to_mae(filename, comp, tors):
+def add_to_mae(filename, output, comp, tors):
     """
     Adds properties to atoms and bonds in a .mae file. The properties it adds
     were extracted from 
 
     Arguments
     ---------
+    filename = string
+               Name of input .mae file.
+    output = string
+             Name of output .mae file.
     comp = list of integers
            Atom numbers for COMP atoms.
     tors = list of tuples of length 2
            Each tuple is atoms assigned to a TORS command.
     """
     structure_reader = sch_struct.StructureReader(filename)
-    structure_writer = sch_struct.StructureWriter('TEST.mae')
+    structure_writer = sch_struct.StructureWriter('TEMP.mae')
     tors_set = [set(x) for x in tors]
     for structure in structure_reader:
 
@@ -97,7 +102,7 @@ def add_to_mae(filename, comp, tors):
     # are defined in the .mae. If you want a more complete solution, see how
     # .mae files were read in the oldest version of filetypes.py on my GitHub.
     new_lines = []
-    with open('TEST.mae', 'r') as f:
+    with open('TEMP.mae', 'r') as f:
         bond_section = False
         bond_colon_pos = None
         for i, line in enumerate(f):
@@ -130,14 +135,32 @@ def add_to_mae(filename, comp, tors):
                 bond_colon_pos = i
 
             new_lines.append(line)
+    os.remove('TEMP.mae')
 
     new_lines.insert(bond_colon_pos, '  b_cs_tors\n')
-    with open('TEST_OUT.mae', 'w') as f:
+    with open(output, 'w') as f:
         f.writelines(new_lines)
 
+def return_parser():
+    parser = argparse.ArgumentParser(
+        description='Adds information related to conformational searches to '
+        'Maestro files.')
+    parser.add_argument(
+        'com', type=str,
+        help='MacroModel .com file from which to get the conformational search '
+        'options.')
+    parser.add_argument(
+        'mae', type=str,
+        help='MacroModel .mae file to add properties to.')
+    parser.add_argument(
+        'out', type=str, nargs='?', default=None,
+        help='Name of MacroModel .mae output file.')
+    return parser
+
 if __name__ == '__main__':
-    # Add usage with argparse later.
-    # sys.argv[1] = .com
-    comp, tors = read_com(sys.argv[1])
-    # sys.argv[2] = .mae
-    add_to_mae(sys.argv[2], comp, tors)
+    parser = return_parser()
+    opts = parser.parse_args(sys.argv[1:])
+    if opts.out is None:
+        opts.out = opts.mae
+    comp, tors = read_com(opts.com)
+    add_to_mae(opts.mae, opts.out, comp, tors)
