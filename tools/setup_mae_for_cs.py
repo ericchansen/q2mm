@@ -111,9 +111,9 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
                     bond.property['i_cs_rca4_2'] = rca4_list[0]
                     break
         for bond in structure.bond:
-            if not 'b_cs_rca4_1' in bond.property:
+            if not 'i_cs_rca4_1' in bond.property:
                 bond.property['i_cs_rca4_1'] = 0
-            if not 'b_cs_rca4_2' in bond.property:
+            if not 'i_cs_rca4_2' in bond.property:
                 bond.property['i_cs_rca4_2'] = 0
 
         structure_writer.append(structure)
