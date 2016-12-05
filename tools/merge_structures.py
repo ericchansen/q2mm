@@ -147,8 +147,11 @@ def main(args):
                     x < atom_input for x in opts.remove_from_input)
                 atom_input_new.append(atom_input - atoms_less_than)
                 # For the merge structure.
-                atoms_less_than = sum(
-                    x < atom_merge for x in opts.remove_from_merge)
+                if opts.remove_from_merge:
+                    atoms_less_than = sum(
+                        x < atom_merge for x in opts.remove_from_merge)
+                else:
+                    atoms_less_than = 0
                 atom_merge_new.append(
                     atom_merge - atoms_less_than + len(structure.atom) \
                         - len(opts.remove_from_input))
@@ -160,13 +163,15 @@ def main(args):
                 structure, superimpose_atoms_input)
 
         # Moved to after superimpose.
-        structure_merge.deleteAtoms(opts.remove_from_merge)
+        if opts.remove_from_merge:
+            structure_merge.deleteAtoms(opts.remove_from_merge)
 
         # May want to comment out.
         for prop in PROPERTIES_TO_REMOVE:
             structure.property.pop(prop, None)
         structure.deleteAtoms(opts.remove_from_input)
         structure_new = structure.merge(structure_merge, copy_props=True)
+
         for x, y in zip(atom_input_new, atom_merge_new):
             # Default is to form a single bond. Could make this more fancy
             # later by expanding the argument parsing.
