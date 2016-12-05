@@ -63,7 +63,9 @@ def add_to_mae(filename, output, comp, tors, rca4):
     """
     structure_reader = sch_struct.StructureReader(filename)
     structure_writer = sch_struct.StructureWriter('TEMP.mae')
+
     tors_set = [set(x) for x in tors]
+
     for structure in structure_reader:
 
         # Copy over which atoms should go with COMP.
@@ -74,15 +76,40 @@ def add_to_mae(filename, output, comp, tors, rca4):
                 atom.property['b_cs_comp'] = 0
 
         for bond in structure.bond:
+            # I'm assuming the set method is faster? Need to run tests.
+            # Order doesn't matter, so sets work here.
+            # if (bond.atom1.index, bond.atom2.index) in tors or \
+            #         (bond.atom2.index, bond.atom1.index) in tors:
+            #     bond.property['b_cs_tors'] = 1
+            # else:
+            #     bond.property['b_cs_tors'] = 0
             if set((bond.atom1.index, bond.atom2.index)) in tors_set:
                 bond.property['b_cs_tors'] = 1
             else:
                 bond.property['b_cs_tors'] = 0
+        
+        for rca4_list in rca4:
+            for bond in structure.bond:
+                if (bond.atom1.index, bond.atom2.index) == rca4_list[1:3]:
+                    bond.property['b_cs_rca4_1'] = rca4_list[0]
+                    bond.property['b_cs_rca4_2'] = rca4_list[3]
+                    break
+                elif (bond.atom2.index, bond.atom1.index) == rca4_list[1:3]:
+                    bond.property['b_cs_rca4_1'] = rca4_list[3]
+                    bond.property['b_cs_rca4_2'] = rca4_list[0]
+                    break
+        for bond in structure.bond:
+            if not 'b_cs_rca4_1' in bond.property:
+                bond.property['b_cs_rca4_1'] = 0
+            if not 'b_cs_rca4_2' in bond.property:
+                bond.property['b_cs_rca4_2'] = 0
 
         structure_writer.append(structure)
 
     structure_writer.close()
     structure_reader.close()
+
+    os.rename('TEMP.mae', opts.out)
 
 def return_parser():
     parser = argparse.ArgumentParser(
