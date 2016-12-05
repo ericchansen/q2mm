@@ -227,3 +227,19 @@ COMP -o opt_end.txt
 ```
 
 Compare the reference and force field data for the optimized force field. Write the data and scores out to somedir/opt_end.txt. At this point, it would be wise to examine mm3.fld. Check that the parameters seem reasonable, and cross-check them with the backed up original parameters.
+
+## Setting up substrates or ligands for conformational searches
+
+Use Schrodinger to automatically generate a .com and .mae file for the ligand and substrate separately.
+
+Currently the ligand also contains the reaction template. However, it'd be better for these to be separate in the future, when the same ligands will be applied to study many different reactions.
+
+```
+python tools/setup_mae_for_cs.py input.com input.mae output.mae
+```
+
+This command copies the TORS, RCA4, COMP and CHIG attributes from the .com file to the .mae file. COMP and CHIG are stored on Schrodinger `atom.property`. COMP is `b_cs_comp` and CHIG is `b_cs_chig`. They are simply 0 if you don't want to use them as a COMP or CHIG atom and are 1 if you do want to use them as a COMP or CHIG atom.
+
+TORS and RCA4 are stored on Schrodinger `bond.property`. TORS is `b_cs_tors`. It's 1 if you want to rotate about that bond or 0 if you don't. Schrodinger stores TORS as only 2 atoms.
+
+RCA4 is slightly more complicated. Schrodinger stores RCA4 as 4 atoms. In other words, we use the middle 2 atoms of the torsion to identify the bond. `i_cs_rca4_1` and `i_cs_rca4_2` identify the two end atoms.
