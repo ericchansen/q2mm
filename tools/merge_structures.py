@@ -114,8 +114,6 @@ def main(args):
     # In other words, no 2D combination arrays (although going that step
     # further wouldn't be challenging).
     structure_merge_orig = list(reader_merge)[0]
-    # structure_merge.deleteAtoms(opts.remove_from_merge)
-    # Moved this to make merging easier.
     
     if opts.superimpose:
         # Figure out superimpose atoms.
@@ -171,6 +169,11 @@ def main(args):
             structure.property.pop(prop, None)
         structure.deleteAtoms(opts.remove_from_input)
         structure_new = structure.merge(structure_merge, copy_props=True)
+
+        for bond in structure_new.bond:
+            # print(dir(bond))
+            # print(bond.__dict__)
+            print(bond.property)
 
         for x, y in zip(atom_input_new, atom_merge_new):
             # Default is to form a single bond. Could make this more fancy
