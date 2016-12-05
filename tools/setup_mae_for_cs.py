@@ -95,7 +95,11 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
                 bond.property['b_cs_tors'] = 1
             else:
                 bond.property['b_cs_tors'] = 0
-        
+
+        # I thought that looping over rca4 would take less time than looping
+        # over the bonds. I may be wrong. Someone should test this. The downside
+        # is that I have to loop over all the bonds once at the end to set all
+        # the 0's. I think this still is faster?
         for rca4_list in rca4:
             for bond in structure.bond:
                 if (bond.atom1.index, bond.atom2.index) == rca4_list[1:3]:
