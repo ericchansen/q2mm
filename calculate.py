@@ -53,10 +53,15 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'ma', 'mb', 'mt',
                   'me', 'meo', 'mea', 'meao',
                   'mh', 'mjeig', 'mgeig']
+# Commands related to Tinker.
+COM_TINKER     = ['tq', 'tqh', 'tqa', 'ta',
+                  'tao', 'tb', 'tbo', 'tt',
+                  'tto', 'te', 'teo', 'tea',
+                  'teao', 'th', 'tjeigz', 'tgeig']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
-COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + COM_OTHER
 
 def main(args):
     """
@@ -128,6 +133,23 @@ def main(args):
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
+#Tinker Code
+#
+                
+        elif any(x in COM_TINKER for x in commands_for_filename):
+            print('tinker part in calculate')
+            if os.path.splitext(filename)[1] == '.xyz':
+                # Becomes and instance of the tinker class
+                inps[filename] = filetypes.Tinker_xyz(
+                    os.path.join(opts.directory, filename))
+                # grabs the commands that are needed commands_for_filename
+                inps[filename].commands = commands_for_filename
+                # writes the command file. This would be *q2mm.com and for
+                # macromodel files
+#                inps[filename].write_com(sometext=opts.append)
+                
+#
+#
         # In this case, no command files have to be written.
         else:
             inps[filename] = None
@@ -387,6 +409,77 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae,somename.log',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
+    # TINKER OPTIONS
+    tin_args = parser.add_argument_group("tinker data types")
+    tin_args.add_argument(
+        '-tq', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker charges.')
+    tin_args.add_argument(
+        '-tqh', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker charges (excludes aliphatic hydrogens).')
+    tin_args.add_argument(
+        '-tqa', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help=('Tinker partial charges. Sums the partial charge of all '
+              'singly bonded hydrogens into its connected atom.'))
+    tin_args.add_argument(
+        '-te', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (pre-FF optimization). Energies will be '
+        'relative to the average energy.')
+    tin_args.add_argument(
+        '-teo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (post-FF optimization).')
+    tin_args.add_argument(
+        '-teao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (post-FF optimization). Energies will be '
+        'relative to the average energy.')
+    tin_args.add_argument(
+        '-tb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker bond lengths (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tbo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker bond lengths (post-FF optimization).')
+    tin_args.add_argument(
+        '-ta', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker angles (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker angles (post-FF optimization).')
+    tin_args.add_argument(
+        '-tt', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tink torsions (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tto', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tink torsions (post-FF optimization).')
+    tin_args.add_argument(
+        '-th', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker Hessian.')
+    tin_args.add_argument(
+        '-tjeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz,somename.out',
+        help='Tinker eigenmatrix (all elements). Uses Jaguar '
+        'eigenvectors.')
+    tin_args.add_argument(
+        '-tgeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz,somename.log',
+        help='Tinker eigenmatrix (all elements). Uses Gaussian '
+        'eigenvectors.') 
     return parser
 
 def check_outs(filename, outs, classtype, direc):

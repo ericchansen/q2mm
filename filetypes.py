@@ -61,7 +61,55 @@ class File(object):
         with open(path, 'w') as f:
             for line in lines:
                 f.write(line)
-        
+
+class Tinker_xyz(File):
+    def __init__(self, path):
+        super(Tinker_xyz, self).__init__(path)
+        self._index_output_log = None
+        self._structures = None
+        self.commands = None
+        self.name = os.path.splitext(self.filename)[0]
+       	self.name_key = self.name + '.q2mm.key'
+    	self.name_log = self.name + '.q2mm.log'
+        print('did init')
+    @property
+    def structures(self):
+        pass 
+    def get_com_opts(self):
+        com_opts = {'freq': False,
+                    'opt': False,
+                    'sp': False,
+                    'tors': False}
+        if any(x in ['tb', 'ta', 'tt', 'te', 'tea'] for x in self.commands):
+            com_opts['sp'] = True
+        if any(x in ['tbo','tao','tto','teo','teao'] for x in self.commands):
+            com_opts['opt'] = True
+        if any(x in ['th', 'tjeig', 'tgeig'] for x in self.commands):
+            com_opts['freq'] = True
+        if any(x in ['tt', 'tto'] for x in self.commands):
+            com_opts['tors'] = True
+        print('did get_com_opts')
+        return com_opts
+    def run(self,check_tokens=False):
+        self._index_output_log = []
+        com_opts = self.get_com_opts()
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        print("doing run")
+        print('analyze {}.xyz -k {} M,D,P All > {}'.format(self.name,
+             self.name_key, self.name_log))
+        print(self.name, self.name_key, self.name_log)
+        if com_opts['sp']:
+            sp.check_output(
+                'analyze {}.xyz -k {} M,D,P All > {}'.format(self.name,
+                self.name_key, self.name_log), shell=True)
+        if com_opts['opt']:
+            pass
+        if com_opts['freq']:
+            pass
+        os.chdir(current_directory)
+                 
+
 class GaussFormChk(File):
     """
     Used to retrieve data from Gaussian formatted checkpoint files.
@@ -1359,6 +1407,7 @@ class Mae(SchrodingerFile):
                   Time waited in between lookups of Schrodinger license
                   tokens.
         """
+        print("Run " + str(self.filename) + " with commands:" + str(self.commands))
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
