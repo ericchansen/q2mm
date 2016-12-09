@@ -122,7 +122,6 @@ if __name__ == '__main__':
                                 print('{} + {} + {} = {}'.format(
                                         file_rxn, file_sub, file_lig,
                                         len(structs_rxn_sub_lig)))
-
                                
                                 structures.extend(structs_rxn_sub_lig)
                                 
@@ -130,6 +129,46 @@ if __name__ == '__main__':
                 reader_sub.close()
         reader_rxn.close()
         
+    for file_rxn in opts.reaction:
+        print('Reading {}.'.format(file_rxn))
+        reader_rxn = sch_struct.StructureReader(file_rxn)
+        for struct_rxn in reader_rxn:
+            
+            for coords in struct_rxn.getXYZ(copy=False):
+                coords[0] = -coords[0]
+
+            for file_sub in opts.substrate:
+                print('Reading {}.'.format(file_sub))
+                reader_sub = sch_struct.StructureReader(file_sub)
+                for struct_sub in reader_sub:
+                    
+                    structs_rxn_sub = combine(
+                        struct_rxn.property['s_cs_smiles_substrate'],
+                        struct_rxn,
+                        struct_sub)
+                    print('{} + {} = {}'.format(
+                            file_rxn, file_sub, len(structs_rxn_sub)))
+
+                    for file_lig in opts.ligand:
+                        print('Reading {}.'.format(file_lig))
+                        reader_lig = sch_struct.StructureReader(file_lig)
+                        for struct_lig in reader_lig:
+
+                            for struct_rxn_sub in structs_rxn_sub:
+                                structs_rxn_sub_lig = combine(
+                                    struct_rxn.property['s_cs_smiles_ligand'],
+                                    struct_rxn_sub,
+                                    struct_lig)
+                                print('{} + {} + {} = {}'.format(
+                                        file_rxn, file_sub, file_lig,
+                                        len(structs_rxn_sub_lig)))
+                               
+                                structures.extend(structs_rxn_sub_lig)
+                                
+                        reader_lig.close()
+                reader_sub.close()
+        reader_rxn.close()
+
     print('Generated {} structures.'.format(len(structures)))
     structure_writer = sch_struct.StructureWriter(opts.output)
     for structure in structures:
