@@ -2,17 +2,20 @@
 """
 Automates conformational searching.
 """
+import argparse
+import sys
+from itertools import izip_longest
+
 import schrodinger.application.macromodel.utils as mmodutils
 import schrodinger.job.jobcontrol as jc
+from schrodinger import structure as sch_struct
 
-INPUT_STRUCTURE_FILE = 'c1r2s_004.mae'
-OUTPUT_STRUCTURE_FILE = 'c1r2s_004.cs.mae'
-COM_FILE = 'c1r2s_004.cs.com'
-
-
-# INPUT_STRUCTURE_FILE = 'A1-R.mae'
-# OUTPUT_STRUCTURE_FILE = 'A1-R.cs.mae'
-# COM_FILE = 'A1-R.cs.com'
+def grouper(n, iterable, fillvalue=0.):
+    """
+    grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx
+    """
+    args = [iter(iterable)] * n
+    return izip_longest(fillvalue=fillvalue, *args)
 
 class MyComUtil(mmodutils.ComUtil):
     def my_mcmm(self, mae_file=None, com_file=None, out_file=None):
@@ -22,6 +25,67 @@ class MyComUtil(mmodutils.ComUtil):
         Uses custom attributes inside of the mae_file to determine certain
         settings.
         """
+        # Setup the COMP, CHIG, TORS and RCA4 commands.
+        com_setup.COMP.clear()
+        # com_setup.CHIG.clear()
+        # com_setup.TORS.clear()
+        # com_setup.RCA4.clear()
+        indices_comp = []
+        indices_chig = []
+        indices_tors = []
+        indices_rca4 = []
+        reader = sch_struct.StructureReader(mae_file)
+        for structure in reader:
+            for atom in structure.atom:
+                if atom.property['b_cs_comp']:
+                    indices_comp.append(atom.index)
+                if atom.property['b_cs_chig']:
+                    indices_chig.append(atom.index)
+            for bond in structure.bond:
+                if bond.property['b_cs_tors']:
+                    indices_tors.append((bond.atom1.index, bond.atom2.index))
+                if bond.property['i_cs_rca4_1']:
+                    indices_rca4.append((
+                            bond.property['i_cs_rca4_1'],
+                            bond.atom1.index,
+                            bond.atom2.index,
+                            bond.property['i_cs_rca4_2']
+                            ))
+        reader.close()
+        for count_comp, args in enumerate(grouper(4, indices_comp)):
+            com_setup.setOpcdArgs(
+                opcd='COMP',
+                arg1=args[0],
+                arg2=args[1],
+                arg3=args[2],
+                arg4=args[3]
+                )
+        for count_chig, args in enumerate(grouper(4, indices_chig)):
+            com_setup.setOpcdArgs(
+                opcd='CHIG',
+                arg1=args[0],
+                arg2=args[1],
+                arg3=args[2],
+                arg4=args[3]
+                )
+        for count_tors, args in enumerate(indices_tors):
+            com_setup.setOpcdArgs(
+                opcd='TORS',
+                arg1=args[0],
+                arg2=args[1],
+                arg6=180.
+                )
+        for count_rca4, args in enumerate(indices_rca4):
+            com_setup.setOpcdArgs(
+                opcd='RCA4',
+                arg1=args[0],
+                arg2=args[1],
+                arg3=args[2],
+                arg4=args[3],
+                arg5=0.5,
+                arg6=2.5
+                )
+
         com_setup.DEBG.clear()
         com_setup.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
         com_setup.SEED.clear()
@@ -35,7 +99,8 @@ class MyComUtil(mmodutils.ComUtil):
         com_setup.CRMS.clear()
         com_setup.setOpcdArgs(opcd='CRMS', arg6=0.5)
         com_setup.MCMM.clear()
-        com_setup.setOpcdArgs(opcd='MCMM', arg1=10000)
+        # 3**N where N = number of bonds rotated
+        com_setup.setOpcdArgs(opcd='MCMM', arg1=len(indices_tors)**3)
         com_setup.NANT.clear()
         com_setup.MCNV.clear()
         com_setup.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
@@ -71,16 +136,18 @@ class MyComUtil(mmodutils.ComUtil):
             'MCNV',
             'MCSS',
             'MCOP',
-            'DEMX',
-            'COMP',
-            'MSYM',
-            'CHIG',
-            'AUOP',
-            'TORS',
-            'RCA4',
-            'CONV',
-            'MINI'
+            'DEMX'
             ]
+        com_args.extend(['COMP'] * (count_comp + 1))
+        com_args.append('MSYM')
+        com_args.extend(['CHIG'] * (count_chig + 1))
+        # Used to have AUOP here.
+        com_args.extend(['TORS'] * (count_tors + 1))
+        com_args.extend(['RCA4'] * (count_rca4 + 1))
+        com_args.extend([
+                'CONV',
+                'MINI'
+                ])
         return self.writeComFile(com_args)
 
 def main_old():
@@ -201,10 +268,19 @@ def main_old():
 
     # output_structure_file = job.StructureOutputFile
 
+def return_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('input', type=str)
+    parser.add_argument('com', type=str)
+    parser.add_argument('output', type=str)
+    return parser
+
 if __name__ == '__main__':
+    parser = return_parser()
+    opts = parser.parse_args(sys.argv[1:])
     com_setup = MyComUtil()
     com_setup.my_mcmm(
-        mae_file=INPUT_STRUCTURE_FILE,
-        com_file=COM_FILE,
-        out_file=OUTPUT_STRUCTURE_FILE)
+        mae_file=opts.input,
+        com_file=opts.com,
+        out_file=opts.output)
     
