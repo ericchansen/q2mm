@@ -8,10 +8,12 @@ f_m_ct {
  s_m_title
  s_m_entry_name
  i_m_ct_format
+ b_cs_c2
  :::
  binap 
   binap 
   2
+  1
  m_atom[79] { 
   # First column is atom index #
   i_m_mmod_type
