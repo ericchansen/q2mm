@@ -8,10 +8,12 @@ f_m_ct {
  s_m_title
  s_m_entry_name
  i_m_ct_format
+ b_cs_c2
  :::
  O=C(O)C(=C)NC(=O)C 
   O=C(O)C(=C)NC(=O)C 
   2
+  0
  m_atom[16] { 
   # First column is atom index #
   i_m_mmod_type

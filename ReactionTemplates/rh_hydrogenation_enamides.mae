@@ -8,14 +8,16 @@ f_m_ct {
  s_m_title
  s_m_entry_name
  i_m_ct_format
- s_cs_smiles_1
- s_cs_smiles_2
+ s_cs_smiles_substrate
+ s_cs_smiles_ligand
+ b_cs_c2
  :::
  rh_hydrogenation_enamides 
   rh_hydrogenation_enamides 
   2
-  x
-  x
+  O=C-N-C=C
+  P-[Rh]-P
+  0
  m_atom[10] { 
   # First column is atom index #
   i_m_mmod_type
