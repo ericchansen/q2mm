@@ -5,28 +5,36 @@ import sys
 from schrodinger import structure as sch_struct
 from schrodinger.structutils import analyze, rmsd
 
-SYS_ARGV = ' -a LigandLibrary/binap.mae LigandLibrary/binap_b.mae -b Substrates/*.mae'.split()
-SMARTS = 'C=C_[Rh+]_O'
-
 def get_smarts_atoms(smarts, structure):
-    # unique_sets should be True if the molecule is C2 symmetric.
+    # Not sure if I want this here or as an argument.
     if structure.property['b_cs_c2']:
         something = analyze.evaluate_smarts(structure, smarts, unique_sets=True)
     else:
         something = analyze.evaluate_smarts(structure, smarts, unique_sets=False)
-    print(something)
     return something
 
-def combine(smarts, base, other):
-    base_atoms = get_smarts_atoms(smarts, base)
-    other_atoms = get_smarts_atoms(smarts, other)
-    structure_writer = sch_struct.StructureWriter('TEST.mae')
-    for base_atoms_set in base_atoms:
-        for other_atoms_set in other_atoms:
-            rmsd.superimpose(base, base_atoms_set, other, other_atoms_set)
-            new_structure = merge_and_reform_bonds(base, base_atoms_set, other, other_atoms_set)
-            structure_writer.append(new_structure)
-    structure_writer.close()
+def combine(smarts, dad, mom):
+    """
+    When properties are passed on to the children, dad's properties are saved
+    over mom's (like how we pass down last names).
+
+    Arguments
+    ---------
+    smarts : str
+    dad : Schrodinger structure
+    mom : Schrodinger structure
+    """
+    dad_atoms = get_smarts_atoms(smarts, dad)
+    mom_atoms = get_smarts_atoms(smarts, mom)
+    combined_structures = []
+    for dad_atoms_set in dad_atoms:
+        for mom_atoms_set in mom_atoms:
+            rmsd.superimpose(dad, dad_atoms_set, mom, mom_atoms_set)
+            combined_structure = merge_and_reform_bonds(
+                dad, dad_atoms_set,
+                mom, mom_atoms_set)
+            combined_structures.append(combined_structure)
+    return combined_structures
 
 def merge_and_reform_bonds(a, a_common_atoms, b, b_common_atoms):
     len_atoms = len(a.atom)
@@ -72,33 +80,60 @@ def merge_and_reform_bonds(a, a_common_atoms, b, b_common_atoms):
 
 def return_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-a', '--group_a', nargs='+')
-    parser.add_argument('-b', '--group_b', nargs='+')
+    parser.add_argument('-r', '--reaction', type=str, nargs='+')
+    parser.add_argument('-s', '--substrate', type=str, nargs='+')
+    parser.add_argument('-l', '--ligand', type=str, nargs='+')
+    parser.add_argument('-o', '--output', type=str)
     return parser
 
 if __name__ == '__main__':
-    # parser = return_parser()
-    # opts = parser.parse_args(sys.argv[1:])
-    # print(opts)
+    parser = return_parser()
+    opts = parser.parse_args(sys.argv[1:])
+    print(opts)
 
-    # Read in reaction template.
-    # Assume only one per file.
-    structure_reader = sch_struct.StructureReader('ReactionTemplates/rh_hydrogenation_enamides.mae')
-    base = structure_reader.next()
-    structure_reader.close()
+    structures = []
+    for file_rxn in opts.reaction:
+        print('Reading {}.'.format(file_rxn))
+        reader_rxn = sch_struct.StructureReader(file_rxn)
+        for struct_rxn in reader_rxn:
 
-    # Assuming one ligand. Not wise.
-    # structure_reader = sch_struct.StructureReader('LigandLibrary/binap_mod.mae')
-    structure_reader = sch_struct.StructureReader('LigandLibrary/binap.mae')
-    ligand = structure_reader.next()
-    structure_reader.close()
+            for file_sub in opts.substrate:
+                print('Reading {}.'.format(file_sub))
+                reader_sub = sch_struct.StructureReader(file_sub)
+                for struct_sub in reader_sub:
+                    
+                    structs_rxn_sub = combine(
+                        struct_rxn.property['s_cs_smiles_substrate'],
+                        struct_rxn,
+                        struct_sub)
+                    print('{} + {} = {}'.format(
+                            file_rxn, file_sub, len(structs_rxn_sub)))
 
-    # Example SMARTS for matching the substrate to the base.
-    get_smarts_atoms('O=C-N-C=C', base)
-    # Example SMARTS for matching the ligand to the base.
-    get_smarts_atoms('P-[Rh]-P', base)
-    # Checking to make sure it works with the ligand too.
-    get_smarts_atoms('P-[Rh]-P', ligand)
-    
-    combine('P-[Rh]-P', base, ligand)
+                    for file_lig in opts.ligand:
+                        print('Reading {}.'.format(file_lig))
+                        reader_lig = sch_struct.StructureReader(file_lig)
+                        for struct_lig in reader_lig:
+
+                            for struct_rxn_sub in structs_rxn_sub:
+                                structs_rxn_sub_lig = combine(
+                                    struct_rxn.property['s_cs_smiles_ligand'],
+                                    struct_rxn_sub,
+                                    struct_lig)
+                                print('{} + {} + {} = {}'.format(
+                                        file_rxn, file_sub, file_lig,
+                                        len(structs_rxn_sub_lig)))
+
+                               
+                                structures.extend(structs_rxn_sub_lig)
+                                
+                        reader_lig.close()
+                reader_sub.close()
+        reader_rxn.close()
+        
+    print('Generated {} structures.'.format(len(structures)))
+    structure_writer = sch_struct.StructureWriter(opts.output)
+    for structure in structures:
+        structure_writer.append(structure)
+    structure_writer.close()
+
     
