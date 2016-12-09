@@ -133,7 +133,14 @@ if __name__ == '__main__':
         print('Reading {}.'.format(file_rxn))
         reader_rxn = sch_struct.StructureReader(file_rxn)
         for struct_rxn in reader_rxn:
-            
+
+            if struct_rxn.property['s_cs_stereochemistry'] == 'r':
+                struct_rxn.property['s_cs_stereochemistry'] = 's'
+            elif struct_rxn.property['s_cs_stereochemistry'] == 's':
+                struct_rxn.property['s_cs_stereochemistry'] = 'r'
+            else:
+                raise ValueError('s_cs_stereochemistry must be "r" or "s".')
+                
             for coords in struct_rxn.getXYZ(copy=False):
                 coords[0] = -coords[0]
 
