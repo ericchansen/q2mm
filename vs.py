@@ -1,22 +1,26 @@
 #!/usr/bin/python
 import argparse
+import os
 import sys
 
 from schrodinger import structure as sch_struct
 from schrodinger.structutils import analyze, rmsd
 
-def get_smarts_atoms(smarts, structure):
+def get_smarts_atoms(smarts, structure, unique_sets=True):
     # Not sure if I want this here or as an argument.
-    if structure.property['b_cs_c2']:
-        something = analyze.evaluate_smarts(structure, smarts, unique_sets=True)
+    if unique_sets:
+        something = analyze.evaluate_smarts(
+            structure, smarts, unique_sets=unique_sets)
     else:
-        something = analyze.evaluate_smarts(structure, smarts, unique_sets=False)
+        something = analyze.evaluate_smarts(
+            structure, smarts, unique_sets=unique_sets)
     return something
 
 def combine(smarts, dad, mom):
     """
     When properties are passed on to the children, dad's properties are saved
-    over mom's (like how we pass down last names).
+    over mom's (like how we pass down last names) (because we're patriarchal
+    fucks).
 
     Arguments
     ---------
@@ -25,7 +29,7 @@ def combine(smarts, dad, mom):
     mom : Schrodinger structure
     """
     dad_atoms = get_smarts_atoms(smarts, dad)
-    mom_atoms = get_smarts_atoms(smarts, mom)
+    mom_atoms = get_smarts_atoms(smarts, mom, unique_sets=mom.property['b_cs_c2'])
     combined_structures = []
     for dad_atoms_set in dad_atoms:
         for mom_atoms_set in mom_atoms:
@@ -39,12 +43,15 @@ def combine(smarts, dad, mom):
 def merge_and_reform_bonds(a, a_common_atoms, b, b_common_atoms):
     len_atoms = len(a.atom)
     len_common_atoms = len(a_common_atoms)
+    # These are the same atoms as b_common_atoms, but with their new indices in
+    # the merged structure.
     merge_common_atoms = [x + len_atoms for x in b_common_atoms]
     merge = a.merge(b, copy_props=True)
     for merge_common_atom in merge_common_atoms:
         for b_bond in merge.atom[merge_common_atom].bond:
             identifier = [b_bond.atom1.index, b_bond.atom2.index]
             # Have to check for backwards too!
+            # Hold up. Is this already accounted for?
             if not any(identifier == merge_common_atoms[i:i+2] \
                        for i in xrange(len(merge_common_atoms) - 1)):
                 merge_index = merge_common_atoms.index(b_bond.atom1.index)
@@ -76,14 +83,28 @@ def merge_and_reform_bonds(a, a_common_atoms, b, b_common_atoms):
                         atom_ind_1, atom_ind_2).property['i_cs_rca4_2'] = \
                         rca4_2
     merge.deleteAtoms(merge_common_atoms)
+    merge.property['s_m_title'] += '-' + b.property['s_m_title']
+    merge.property['s_m_entry_name'] += '-' + b.property['s_m_entry_name']
     return merge
 
 def return_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--reaction', type=str, nargs='+')
-    parser.add_argument('-s', '--substrate', type=str, nargs='+')
-    parser.add_argument('-l', '--ligand', type=str, nargs='+')
-    parser.add_argument('-o', '--output', type=str)
+    parser.add_argument(
+        '-r', '--reaction', type=str, nargs='+',
+        help='Starting structure. Contains information for connecting other '
+        'structures in its Schrodinger .mae properties.')
+    parser.add_argument(
+        '-s', '--substrate', type=str, nargs='+',
+        help='First structure(s) added to reaction.')
+    parser.add_argument(
+        '-l', '--ligand', type=str, nargs='+',
+        help='Second structure(s) added to reaction.')
+    parser.add_argument(
+        '-o', '--output', type=str,
+        help='Write all output structures to one file.')
+    parser.add_argument(
+        '-d', '--directory', type=str,
+        help='Write all output structures individually to this directory.')
     return parser
 
 if __name__ == '__main__':
@@ -122,13 +143,14 @@ if __name__ == '__main__':
                                 print('{} + {} + {} = {}'.format(
                                         file_rxn, file_sub, file_lig,
                                         len(structs_rxn_sub_lig)))
-                               
-                                structures.extend(structs_rxn_sub_lig)
                                 
+                                structures.extend(structs_rxn_sub_lig)
                         reader_lig.close()
                 reader_sub.close()
         reader_rxn.close()
-        
+
+    # Probably a more efficient way to do this than to repeat the above section.
+    # This sure is easy though.
     for file_rxn in opts.reaction:
         print('Reading {}.'.format(file_rxn))
         reader_rxn = sch_struct.StructureReader(file_rxn)
@@ -177,9 +199,23 @@ if __name__ == '__main__':
         reader_rxn.close()
 
     print('Generated {} structures.'.format(len(structures)))
-    structure_writer = sch_struct.StructureWriter(opts.output)
-    for structure in structures:
-        structure_writer.append(structure)
-    structure_writer.close()
 
-    
+    if opts.output:
+        structure_writer = sch_struct.StructureWriter(opts.output)
+        for structure in structures:
+            structure_writer.append(structure)
+        structure_writer.close()
+    if opts.directory:
+        for structure in structures:
+            structure_writer = sch_struct.StructureWriter(
+                os.path.join(
+                    opts.directory, 
+                    structure.property['s_m_title'] +
+                    '-' +
+                    structure.property['s_cs_stereochemistry'] +
+                    '.mae'
+                    )
+                )
+            structure_writer.append(structure)
+            structure_writer.close()
+            
