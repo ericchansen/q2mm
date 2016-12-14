@@ -1,0 +1,6 @@
+1856 3 -inf inf
+1857 3 -inf inf
+1858 3 -inf inf
+1859 3 -inf inf
+1917 3 -inf inf
+1925 3 -inf inf
