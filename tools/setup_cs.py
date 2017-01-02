@@ -1,6 +1,34 @@
  #!/usr/bin/python
 """
-Automates conformational searching.
+Takes .mae structure files and generates .com files for conformational searches.
+
+The .mae files must contain several properties on the atoms and bonds. These
+properties can be manually entered and read from the .mae. They can also be
+accessed using Schrodinger's structure module. The properties are named
+following standard Schrodinger naming practices.
+
+Atomic Properties
+-----------------
+b_cs_chig - True (1) if the atom is a chiral center.
+b_cs_comp - True (1) if the atom should be used for comparisons to determine
+            whether structures are duplicates.
+
+Bond Properties
+---------------
+b_cs_tors   - True (1) if the bond should be rotated.
+i_cs_rca4_1 - This and i_cs_rca4_2 are used together and  indicate  where the
+              conformational search method should make ring breaks.
+
+              In MacroModel, ring breaks are specified by providing the atom
+              numbers for the 4 atoms in a torsion. The two middle atoms are
+              described by the existing Maestro properties i_m_from and
+              i_m_to. The two ending atoms are described using i_cs_rca4_1
+              (which is the atom connected to i_m_from) and i_cs_rca4_2 (which
+              is the atom connected to i_m_to).
+
+              If both i_cs_rca4_1 and i_cs_rca4_2 are 0, then a ring break isn't
+              made across this bond.
+i_cs_rca4_2 - See i_cs_rca4_1.
 """
 import argparse
 import sys
@@ -150,11 +178,139 @@ class MyComUtil(mmodutils.ComUtil):
                 ])
         return self.writeComFile(com_args)
 
+def main_old():
+    """
+    Depreciated.
+
+    Example of how I started working out this code.
+    """
+    com_setup = mmodutils.ComUtil()
+
+    # This argument doesn't work. I can set it to use mm3.fld later on using the
+    # operation code dictionary. Something like com_setup.FFLD[1] = 2.
+    # com_setup = mmodutils.ComUtil('mm3.fld')
+
+    # Maybe try this. Nope still doesn't work.
+    # The docs say "Subclass of ComUtil with defaults that are closer to the
+    # current Maestro version."
+    # com_setup = mmodutils.ComUtilAppSci('mm3.fld')
+
+    # Why did we ever use this?
+    # com_setup.mmod = True
+    # com_setup.MMOD.clear()
+    # com_setup.setOpcdArgs(opcd='MMOD', arg2=1)
+
+    com_setup.DEBG.clear()
+    com_setup.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+    com_setup.SEED.clear()
+    com_setup.setOpcdArgs(opcd='SEED', arg1=40000)
+    # Change FF.
+    # com_setup.FFLD[1] = 2
+    # com_setup.FFLD[2] = 1
+    # com_setup.FFLD[5] = 1
+    # Another way.
+    com_setup.FFLD.clear()
+    com_setup.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+    com_setup.EXNB.clear()
+    com_setup.BDCO.clear()
+    com_setup.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
+    com_setup.READ.clear()
+    com_setup.CRMS.clear()
+    com_setup.setOpcdArgs(opcd='CRMS', arg6=0.5)
+    com_setup.MCMM.clear()
+    com_setup.setOpcdArgs(opcd='MCMM', arg1=10000)
+    com_setup.NANT.clear()
+    com_setup.MCNV.clear()
+    com_setup.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
+    com_setup.MCSS.clear()
+    com_setup.setOpcdArgs(opcd='MCSS', arg1=2, arg5=50.0)
+    com_setup.MCOP.clear()
+    com_setup.setOpcdArgs(opcd='MCOP', arg1=1, arg4=0.5)
+    com_setup.DEMX.clear()
+    com_setup.setOpcdArgs(opcd='DEMX', arg2=1000, arg5=50, arg6=100)
+    com_setup.MSYM.clear()
+    com_setup.AUOP.clear()
+    com_setup.CONV.clear()
+    com_setup.setOpcdArgs('CONV', arg1=2, arg5=0.05)
+    com_setup.MINI.clear()
+    com_setup.setOpcdArgs('MINI', arg1=1, arg3=2500)
+    # Specific to the input file.
+    # COMP # Comparison atoms
+    # CHIG # Chirality
+    # TORS # Torsions # Sets of 2
+    # RCA4 # Ring closure atoms # Sets of 4
+
+    # Example of how to get a formatted string of codes.
+    # cats = com_setup.getOpcdArgs(opcd='AUTO')
+    # print(cats)
+
+    # Another way to do this. Just returns the string. Doesn't seem necessary for
+    # us.
+    # com_file = com_setup.mcmm(
+    #     INPUT_STRUCTURE_FILE, com_file=COM_FILE, out_file=OUTPUT_STRUCTURE_FILE)
+
+    # Turns out this isn't good enough. I want more control of the commands.
+    # com_setup.mcmm(
+    #     INPUT_STRUCTURE_FILE, com_file=COM_FILE, out_file=OUTPUT_STRUCTURE_FILE)
+    # with open(COM_FILE, 'r') as f:
+    #     print(f.read())
+
+    com_args = [
+        COM_FILE,
+        INPUT_STRUCTURE_FILE,
+        OUTPUT_STRUCTURE_FILE,
+        'MMOD',
+        'DEBG',
+        'SEED',
+        'FFLD',
+        'EXNB',
+        'BDCO',
+        'READ',
+        'CRMS',
+        'MCMM',
+        'NANT',
+        'MCNV',
+        'MCSS',
+        'MCOP',
+        'DEMX',
+        'COMP',
+        'MSYM',
+        'CHIG',
+        'AUOP',
+        'TORS',
+        'RCA4',
+        'CONV',
+        'MINI'
+        ]
+
+    com_setup.writeComFile(com_args)
+    with open(COM_FILE, 'r') as f:
+        print(f.read())
+
+    # Returns ['bmin', '-INTERVAL', '5', COM_FILE].
+    # cmd_args = com_setup.getLaunchCommand(COM_FILE)
+    # job = jc.launch_job(cmd_args)
+    # job.wait()
+    # print('MCMM Job Status: {}'.format(job.Status))
+
+    # output_structure_file = job.StructureOutputFile
+
 def return_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('input', type=str)
-    parser.add_argument('com', type=str)
-    parser.add_argument('output', type=str)
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        'input', type=str,
+        help="Name of .mae file that you'd like to generate a conformational "
+        "search .com file for. Must contain the properties as described in the "
+        "__doc__ and description for proper functioning.")
+    parser.add_argument(
+        'com', type=str,
+        help="Name for the .com file you'd like to generate.")
+    parser.add_argument(
+        'output', type=str,
+        help="Name for the output .mae file generated by the conformational "
+        "search.")
     return parser
 
 if __name__ == '__main__':

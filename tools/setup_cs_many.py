@@ -1,6 +1,34 @@
  #!/usr/bin/python
 """
-Automates conformational searching.
+Takes .mae structure files and generates .com files for conformational searches.
+
+The .mae files must contain several properties on the atoms and bonds. These
+properties can be manually entered and read from the .mae. They can also be
+accessed using Schrodinger's structure module. The properties are named
+following standard Schrodinger naming practices.
+
+Atomic Properties
+-----------------
+b_cs_chig - True (1) if the atom is a chiral center.
+b_cs_comp - True (1) if the atom should be used for comparisons to determine
+            whether structures are duplicates.
+
+Bond Properties
+---------------
+b_cs_tors   - True (1) if the bond should be rotated.
+i_cs_rca4_1 - This and i_cs_rca4_2 are used together and  indicate  where the
+              conformational search method should make ring breaks.
+
+              In MacroModel, ring breaks are specified by providing the atom
+              numbers for the 4 atoms in a torsion. The two middle atoms are
+              described by the existing Maestro properties i_m_from and
+              i_m_to. The two ending atoms are described using i_cs_rca4_1
+              (which is the atom connected to i_m_from) and i_cs_rca4_2 (which
+              is the atom connected to i_m_to).
+
+              If both i_cs_rca4_1 and i_cs_rca4_2 are 0, then a ring break isn't
+              made across this bond.
+i_cs_rca4_2 - See i_cs_rca4_1.
 """
 import argparse
 import os
@@ -160,8 +188,15 @@ class MyComUtil(mmodutils.ComUtil):
         return self.writeComFile(com_args)
 
 def return_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('input', type=str, nargs='+')
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        'input', type=str, nargs='+',
+        help="Name of the .mae file(s) that you'd like to generate .com "
+        "conformational search files for. Must contain the properties "
+        "described in the __doc__/description for proper functioning. The "
+        "resulting .com and .mae file will append \"_cs_\" to the name.")
     return parser
 
 if __name__ == '__main__':

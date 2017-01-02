@@ -1,4 +1,32 @@
 #!/usr/bin/python
+"""
+Takes .mae structure files and merges them.
+
+The initial file, the reaction template, contains information pertinent to
+merging. This information is stored as structure properties (using Schrodinger's
+structure module). The information can also be manually read and entered by
+editing the .mae file.
+
+Structure Properties
+--------------------
+s_cs_smiles_substrate - SMILES used to pick out the matching atoms on the
+                        reaction template and substrate.
+s_cs_smiles_ligand    - SMILES used to pick out the matching atoms on the
+                        reaction template and ligand.
+b_cs_c2               - Inappropriately named.
+
+                        SMILES can often be matched in two directions, say atoms
+                        1-2-3 or 3-2-1 (ex. P-[Rh]-P is a palindrome).
+
+                        If this is False (0), it merges the structures using
+                        both palindromes. If it's True (1), it only uses
+                        whichever direction it matches first.
+s_cs_stereochemistry  - Inadequate for all situations we would like to apply
+                        this code to.
+
+                        Stereochemistry of the product that results from the
+                        conformation in the reaction template.
+"""
 import argparse
 import os
 import sys
@@ -19,8 +47,7 @@ def get_smarts_atoms(smarts, structure, unique_sets=True):
 def combine(smarts, dad, mom):
     """
     When properties are passed on to the children, dad's properties are saved
-    over mom's (like how we pass down last names) (because we're patriarchal
-    fucks).
+    over mom's (like how we pass down last names).
 
     Arguments
     ---------
@@ -88,7 +115,9 @@ def merge_and_reform_bonds(a, a_common_atoms, b, b_common_atoms):
     return merge
 
 def return_parser():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         '-r', '--reaction', type=str, nargs='+',
         help='Starting structure. Contains information for connecting other '
