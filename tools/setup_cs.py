@@ -128,7 +128,10 @@ class MyComUtil(mmodutils.ComUtil):
         com_setup.setOpcdArgs(opcd='CRMS', arg6=0.5)
         com_setup.MCMM.clear()
         # 3**N where N = number of bonds rotated
-        com_setup.setOpcdArgs(opcd='MCMM', arg1=len(indices_tors)**3)
+        if 3**len(indices_tors) > 50000:
+            com_setup.setOpcdArgs(opcd='MCMM', arg1=50000)
+        else:
+            com_setup.setOpcdArgs(opcd='MCMM', arg1=3**len(indices_tors))
         com_setup.NANT.clear()
         com_setup.MCNV.clear()
         com_setup.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
