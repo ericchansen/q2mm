@@ -121,7 +121,7 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
     structure_writer.close()
     structure_reader.close()
 
-    os.rename('TEMP.mae', opts.out)
+    os.rename('TEMP.mae', output)
 
 def return_parser():
     parser = argparse.ArgumentParser(
