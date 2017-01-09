@@ -31,7 +31,8 @@ PROPERTIES_TO_REMOVE = \
     'r_mmod_Torsional_Energy-MM3*',
     'r_mmod_Improper_Torsional_Energy-MM3*',
     'r_mmod_Van_der_Waal_Energy-MM3*',
-    'r_mmod_Electrostatic_Energy-MM3*'
+    'r_mmod_Electrostatic_Energy-MM3*',
+    'r_j_Gas_Phase_Energy'
     ]
 
 ATOM_PROPERTIES_TO_REMOVE = \
@@ -63,6 +64,11 @@ for filename in sys.argv[1:]:
                 del structure.property[prop]
             except KeyError:
                 pass
+        # Change the name too. Why not.
+        structure.property['s_m_title'] = \
+            structure.property['s_m_entry_name'] = \
+                os.path.splitext(
+                    os.path.basename(filename))[0]
         for atom in structure.atom:
             for prop in ATOM_PROPERTIES_TO_REMOVE:
                 try:
