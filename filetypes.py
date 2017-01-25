@@ -71,10 +71,26 @@ class Tinker_xyz(File):
         self.name = os.path.splitext(self.filename)[0]
        	self.name_key = self.name + '.q2mm.key'
     	self.name_log = self.name + '.q2mm.log'
-        print('did init')
+        self.name_xyz = self.name + '.q2mm.xyz'
+        self.name_hes = self.name + '.q2mm.hes'
     @property
     def structures(self):
-        pass 
+        if self._structures is None: 
+            struct = Structure()
+            self._structures = [struct]
+            with open(self.filename, 'r') as f:
+                f = f.split()
+                for line in f:
+                    line = line.split()
+                    if len(line) == 2:
+                        struct.props['total atoms'] = line[0]
+                        struct.props['title'] = line[1]
+                    if len(line) > 2:
+                        indx, ele, x, y, z, at, bonded_atom = line[0], line[1], 
+                        line[2], line[3], line[4], line[5], line[6:].split()
+                        struct.atoms.append(Atom(index=indx, element=ele, 
+                            x=float(x), y=float(y), z=float(z), atom_type=at,
+                            bonded_atom_indices=bonded_atom))
     def get_com_opts(self):
         com_opts = {'freq': False,
                     'opt': False,
@@ -84,29 +100,40 @@ class Tinker_xyz(File):
             com_opts['sp'] = True
         if any(x in ['tbo','tao','tto','teo','teao'] for x in self.commands):
             com_opts['opt'] = True
+            com_opts['sp'] = True
         if any(x in ['th', 'tjeig', 'tgeig'] for x in self.commands):
             com_opts['freq'] = True
+            com_opts['opt'] = True
+            com_opts['sp'] = True
         if any(x in ['tt', 'tto'] for x in self.commands):
             com_opts['tors'] = True
-        print('did get_com_opts')
         return com_opts
     def run(self,check_tokens=False):
         self._index_output_log = []
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
         os.chdir(self.directory)
-        print("doing run")
-        print('analyze {}.xyz -k {} M,D,P All > {}'.format(self.name,
-             self.name_key, self.name_log))
-        print(self.name, self.name_key, self.name_log)
+        if os.path.isfile(self.name_log):
+            os.remove(self.name_log)
+        if os.path.isfile(self.name_xyz):
+            os.remove(self.name_xyz)
+        if os.path.isfile(self.name_hes):
+            os.remove(self.name_hes)
         if com_opts['sp']:
             sp.check_output(
-                'analyze {}.xyz -k {} M,D,P All > {}'.format(self.name,
+                'analyze {}.xyz -k {} D >& {} &'.format(self.name,
                 self.name_key, self.name_log), shell=True)
         if com_opts['opt']:
-            pass
+            sp.check_output(
+                'minimize {}.xyz -k {} 0.01 {} >> {}'.format(self.name,
+                self.name_key, self.name_xyz, self.name_log), shell=True)
+            sp.check_output(
+                'analyze {} -k {} D >>& {} &'.format(self.name_xyz,
+                self.name_key, self.name_log), shell=True)
         if com_opts['freq']:
-            pass
+            sp.check_output(
+                'testhess {} -k {} y n {} >>& {} &'.format(self.name_xyz,
+                self.name_key, self.name_hes, self.name_log), shell=True)
         os.chdir(current_directory)
                  
 
