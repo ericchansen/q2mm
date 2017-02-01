@@ -112,14 +112,20 @@ class Param(object):
         """
         When you try to give the parameter a value, make sure that's okay.
         """
-        if self.allowed_range[0] <= value <= self.allowed_range[1]:
+        if self.value_in_range(value):
             self._value = value
+    def value_in_range(self, value):
+        if self.allowed_range[0] <= value <= self.allowed_range[1]:
+            return True
         else:
             raise ParamError(
                 "{} isn't allowed to have a value of {}! "
                 "({} <= x <= {})".format(
-                    str(self), value, self.allowed_range[0], self.allowed_range[1]))
-    
+                    str(self),
+                    value,
+                    self.allowed_range[0],
+                    self.allowed_range[1]))
+
 # Need a general index scheme/method/property to compare the equalness of two
 # parameters, rather than having to rely on some expression that compares
 # mm3_row and mm3_col.
@@ -131,12 +137,12 @@ class ParamMM3(Param):
     def __init__(self, atom_labels=None, atom_types=None, mm3_col=None,
                  mm3_row=None, mm3_label=None,
                  d1=None, d2=None, ptype=None, value=None):
-        super(ParamMM3, self).__init__(ptype=ptype, value=value)
         self.atom_labels = atom_labels
         self.atom_types = atom_types
         self.mm3_col = mm3_col
         self.mm3_row = mm3_row
         self.mm3_label = mm3_label
+        super(ParamMM3, self).__init__(ptype=ptype, value=value)
     def __repr__(self):
         return '{}[{}][{},{}]({})'.format(
             self.__class__.__name__, self.ptype, self.mm3_row, self.mm3_col,

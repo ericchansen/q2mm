@@ -109,6 +109,7 @@ def trim_params_by_file(params, filename):
                     param.mm3_col == temp_param[1]:
                 # Update the allow negative information.
                 param._allowed_range = temp_param[2]
+                param.value_in_range(param.value)
                 chosen_params.append(param)
     logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
             len(chosen_params)))
