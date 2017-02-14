@@ -1,11 +1,10 @@
 #!/usr/bin/python
 """
-Takes .mae structure files and merges them.
+Takes *.mae structure files and merges them.
 
-The initial file, the reaction template, contains information pertinent to
-merging. This information is stored as structure properties (using Schrodinger's
-structure module). The information can also be manually read and entered by
-editing the .mae file.
+The subsequent files contain information pertinent to merging. This information
+is stored as Schrodinger structure properties and is described below. This
+information is manually entered by editing the *.mae files.
 
 Structure Properties
 --------------------
@@ -58,10 +57,32 @@ def return_parser():
          'will use schrodinger.structutils.analyze.evaluate_substructure.')
     return parser
 
-def get_atom_numbers_from(structure,
-                          pattern,
-                          first_match_only=True,
-                          use_substructure=False):
+def get_atom_numbers_from_structure_with_pattern(structure,
+                                                 pattern,
+                                                 first_match_only=False,
+                                                 use_substructure=False):
+    """
+    Gets the atom indices inside a structure that match a pattern.
+
+    Takes care of two subtle intricacies.
+
+    1. Schrodinger has two methods to match atoms inside of a structure. The
+       argument `use_substructure` selects whether to use
+       `schrodinger.structutils.analyze.evaluate_substructure` or
+       `schrodinger.structutils.analyze.evaluate_smarts`. One or the other may
+        be more convenient for your system.
+
+    2. The pattern may match multiple times in a structure. The argument
+       `first_match_only` chooses whether to use all of the matches or just the
+       first one.
+
+    Arguments
+    ---------
+    structure : Schrodinger structure object
+    pattern : string
+    first_match_only : bool
+    use_substructure : bool
+    """
     if use_substructure:
         return analyze.evaluate_substructure(structure,
                                              pattern,
@@ -71,32 +92,64 @@ def get_atom_numbers_from(structure,
                                        pattern,
                                        unique_sets=first_match_only)
 
-def get_overlapping_atoms(dad, mom):
-    patterns = list(search_dic_keys(mom.property, 'smiles'))
-    print(' * SMARTS: {}'.format(patterns))
+def get_overlapping_atoms_in_both(struct_1, struct_2):
+    """
+    Uses properties stored inside the 2nd structure to locate a set or sets of
+    matching atoms inside both structures.
+
+    This will use all patterns that are located. As long as the structure
+    property contains the string "pattern", it will attempt to locate those
+    atoms. As an example, I frequently employ `s_cs_pattern`, although this
+    could be extended to `s_cs_pattern_1`, `s_cs_pattern_2`, etc.
+
+    Arguments
+    ---------
+    struct_1 : Schrodinger structure object
+    struct_2 : Schrodinger structure object
+    """
+    patterns = list(search_dic_keys(struct_2.property, 'pattern'))
+    print(' * PATTERN: {}'.format(patterns))
     for pattern in patterns:
         print('   * CHECKING: {}'.format(pattern))
-        match_dad = analyze.evaluate_smarts(
-            dad, pattern, unique_sets=True)
-        if match_dad:
-            print('     * FOUND IN: {}'.format(dad._getTitle()))
-            match_mom = analyze.evaluate_smarts(
-                mom, pattern, unique_sets=True)
-            if match_mom:
-                print('     * FOUND IN: {}'.format(mom._getTitle()))
+        match_struct_1 = get_atom_numbers_from_structure_with_pattern(
+            struct_1,
+            pattern,
+            first_match_only=struct_1.property.get(
+                'b_cs_first_match_only', False),
+            use_substructure=struct_1.property.get(
+                'b_cs_use_substructure', False))
+        if match_struct_1:
+            print('     * FOUND IN: {}'.format(struct_1._getTitle()))
+            match_struct_2 = get_atom_numbers_from_structure_with_pattern(
+                struct_2,
+                pattern,
+                first_match_only=struct_2.property.get(
+                    'b_cs_first_match_only', False),
+                use_substructure=struct_2.property.get(
+                    'b_cs_use_substructure', False))
+            if match_struct_2:
+                print('     * FOUND IN: {}'.format(struct_2._getTitle()))
             break
         else:
-            print('     * COULDN\'T FIND IN: {}'.format(mom._getTitle()))
+            print('     * COULDN\'T FIND IN: {}'.format(struct_2._getTitle()))
             continue
-    # WILL HAVE TO REPEAT THIS FOR EVALUATE SUBSTRUCTURE!
-    return match_dad, match_mom
+    return match_struct_1, match_struct_2
 
 def search_dic_keys(dic, lookup):
+    """
+    Takes a string, looks up all the dictionary keys that contain that string
+    and returns the corresponding value.
+
+    Arguments
+    ---------
+    dic : dictionary
+    lookup : string
+    """
     for key, value in dic.iteritems():
         if lookup in key:
             yield value
 
-def merge(struct_1, match_1, struct_2, match_2):
+def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     """
     Combines two structures.
 
@@ -186,37 +239,8 @@ def merge(struct_1, match_1, struct_2, match_2):
         '-' + struct_2.property['s_m_entry_name']
     return merge
 
-if __name__ == '__main__':
-    parser = return_parser()
-    opts = parser.parse_args(sys.argv[1:])
-
-    # Temporarily read the structures one at a time.
-    sch_reader = sch_struct.StructureReader(opts.group[0][0])
-    struct_1 = sch_reader.next()
-    sch_reader.close()
-
-    sch_reader = sch_struct.StructureReader(opts.group[1][0])
-    struct_2 = sch_reader.next()
-    sch_reader.close()
-
-    # Determine the structures that overlap.
-    match_1, match_2 = get_overlapping_atoms(struct_1, struct_2)
-    # WILL HAVE TO EXPAND FOR MULTIPLE MATCHES?
-    match_1 = match_1[0]
-    match_2 = match_2[0]
-    print(' * ALIGNING:')
-    print('   * {:<30} {} {}'.format(
-        struct_1._getTitle(),
-        match_1,
-        [struct_1.atom[x].atom_type_name for x in match_1]))
-    print('   * {:<30} {} {}'.format(
-        struct_2._getTitle(),
-        match_2,
-        [struct_2.atom[x].atom_type_name for x in match_2]))
-    # Overlay the matching atoms.
-    rmsd.superimpose(struct_1, match_1, struct_2, match_2)
-    merge = merge(struct_1, match_1, struct_2, match_2)
-
+def copy_rca4(
+        merge, struct_1, match_1, struct_2, match_2):
     # Deal with RCA4. It can be done independently of all the merges. How nice!
     rca4s = []
     for bond in struct_2.bond:
@@ -281,33 +305,66 @@ if __name__ == '__main__':
             bond.atom2.atom_type_name,
             merge.atom[bond.property['i_cs_rca4_2']].index,
             merge.atom[bond.property['i_cs_rca4_2']].atom_type_name))
+    return merge
 
-        # It turns out that the properties for bond 1-2 are stored to the same
-        # object as 2-1. Therefore, the RCA4 will only align for the former way
-        # of designating the bond.
+def merge_in_all_ways(struct_1, struct_2):
+    merges = []
+    # Determine the structures that overlap.
+    match_1s, match_2s = get_overlapping_atoms_in_both(struct_1, struct_2)
+    print('MATCHES FROM STRUCTURE 1: {}'.format(match_1s))
+    print('MATCHES FROM STRUCTURE 2: {}'.format(match_2s))
+    for match_1 in match_1s:
+        for match_2 in match_2s:
+            print('-' * 80)
+            print(' * ALIGNING:')
+            print('   * {:<30} {} {}'.format(
+                struct_1._getTitle(),
+                match_1,
+                [struct_1.atom[x].atom_type_name for x in match_1]))
+            print('   * {:<30} {} {}'.format(
+                struct_2._getTitle(),
+                match_2,
+                [struct_2.atom[x].atom_type_name for x in match_2]))
+            # Overlay the matching atoms.
+            rmsd.superimpose(struct_1, match_1, struct_2, match_2)
+            merge = merge_structures_from_matching_atoms(
+                struct_1, match_1, struct_2, match_2)
+            merge = copy_rca4(merge, struct_1, match_1, struct_2, match_2)
+            merges.append(merge)
+    return merges
 
-        # bond = merge.getBond(rca4[2], rca4[1])
-        # print('   * BOND:     {:>4}    {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-        #     bond.property['i_cs_rca4_1'],
-        #     bond.atom1.index,
-        #     bond.atom1.atom_type_name,
-        #     bond.atom2.index,
-        #     bond.atom2.atom_type_name,
-        #     bond.property['i_cs_rca4_2']))
-        # bond.property['i_cs_rca4_1'] = rca4[3]
-        # bond.property['i_cs_rca4_2'] = rca4[0]
-        # print('     * UPDATE: '
-        #       '{:>4}/{:2} {:>4}/{:2} {:>4}/{:2} {:>4}/{:2}'.format(
-        #     merge.atom[bond.property['i_cs_rca4_1']].index,
-        #     merge.atom[bond.property['i_cs_rca4_1']].atom_type_name,
-        #     bond.atom1.index,
-        #     bond.atom1.atom_type_name,
-        #     bond.atom2.index,
-        #     bond.atom2.atom_type_name,
-        #     merge.atom[bond.property['i_cs_rca4_2']].index,
-        #     merge.atom[bond.property['i_cs_rca4_2']].atom_type_name))
+def merge_many_files(structures, filenames):
+    new_structures = []
+    for filename in filenames:
+        sch_reader = sch_struct.StructureReader(filename)
+        for read_structure in sch_reader:
+            for old_structure in structures:
+                merges = merge_in_all_ways(old_structure, read_structure)
+                new_structures.extend(merges)
+    return new_structures
 
-    # We're done! Hooray!
-    structure_writer = sch_struct.StructureWriter('cats.mae')
-    structure_writer.append(merge)
-    structure_writer.close()
+def main(opts):
+    # Load 1st group.
+    filenames = opts.group[0]
+    structures = []
+    for filename in filenames:
+        sch_reader = sch_struct.StructureReader(filename)
+        structures.extend(list(sch_reader))
+        sch_reader.close()
+    # Now continually merge the other groups.
+    for filenames in opts.group[1:]:
+        structures = merge_many_files(structures, filenames)
+
+    # Write merged structures.
+    # To a single file.
+    if opts.output:
+        sch_writer = sch_struct.StructureWriter(opts.output)
+        sch_writer.extend(structures)
+        sch_writer.close()
+    # To a directory.
+    return structures
+
+if __name__ == '__main__':
+    parser = return_parser()
+    opts = parser.parse_args(sys.argv[1:])
+    main(opts)
