@@ -1,11 +1,15 @@
  #!/usr/bin/python
+# -*- coding: utf-8 -*-
 """
-Takes .mae structure files and generates .com files for conformational searches.
+Takes *.mae structure files and generates *.com files for
+conformational searches.
 
-The .mae files must contain several properties on the atoms and bonds. These
-properties can be manually entered and read from the .mae. They can also be
-accessed using Schrodinger's structure module. The properties are named
-following standard Schrodinger naming practices.
+The *.mae files must contain several properties on the atoms and bonds. These
+properties can be manually entered into the *.mae. They can also be
+accessed using Schrödinger's structure module. Lastly, the script
+`setup_mae_from_com.py` can assist in setting up these properties.
+
+The properties are named following standard Schrödinger naming practices.
 
 Atomic Properties
 -----------------
@@ -28,20 +32,39 @@ i_cs_rca4_1 - This and i_cs_rca4_2 are used together and  indicate  where the
 
               If both i_cs_rca4_1 and i_cs_rca4_2 are 0, then a ring break isn't
               made across this bond.
+
+              IMPORTANT NOTE TO AVOID CONFUSION:
+              By default, Schrödinger writes *.mae files with bonds listed in
+              both directions, i.e. 1-2 and 2-1. However, the bond properties
+              for 1-2 and 2-1 MUST BE THE SAME. Therefore, these RCA4
+              properties are setup to only read properly for the bond with
+              the lowest atom number first. In this case, 1-2.
 i_cs_rca4_2 - See i_cs_rca4_1.
 """
 import argparse
-import os
 import sys
 from itertools import izip_longest
 
 import schrodinger.application.macromodel.utils as mmodutils
-import schrodinger.job.jobcontrol as jc
 from schrodinger import structure as sch_struct
 
 def grouper(n, iterable, fillvalue=0.):
     """
+    Returns list of lists from a single list.
+
+    Usage
+    -----
     grouper(3, 'ABCDEFG', 'x') --> ABC DEF Gxx
+
+    Arguments
+    ---------
+    n : integer
+        Length of sub list.
+    iterable : iterable
+    fillvalue : anything
+                Fills up last sub list if iterable is not divisible by n
+                without a remainder.
+
     """
     args = [iter(iterable)] * n
     return izip_longest(fillvalue=fillvalue, *args)
@@ -49,16 +72,16 @@ def grouper(n, iterable, fillvalue=0.):
 class MyComUtil(mmodutils.ComUtil):
     def my_mcmm(self, mae_file=None, com_file=None, out_file=None):
         """
-        Modified version of the the mcmm.
+        Modified version of the the Schrödinger mcmm.
 
         Uses custom attributes inside of the mae_file to determine certain
         settings.
         """
         # Setup the COMP, CHIG, TORS and RCA4 commands.
-        com_setup.COMP.clear()
-        # com_setup.CHIG.clear()
-        # com_setup.TORS.clear()
-        # com_setup.RCA4.clear()
+        self.COMP.clear()
+        # self.CHIG.clear()
+        # self.TORS.clear()
+        # self.RCA4.clear()
         indices_comp = []
         indices_chig = []
         indices_tors = []
@@ -81,35 +104,31 @@ class MyComUtil(mmodutils.ComUtil):
                             bond.property['i_cs_rca4_2']
                             ))
         reader.close()
-        count_comp = 0
         for count_comp, args in enumerate(grouper(4, indices_comp)):
-            com_setup.setOpcdArgs(
+            self.setOpcdArgs(
                 opcd='COMP',
                 arg1=args[0],
                 arg2=args[1],
                 arg3=args[2],
                 arg4=args[3]
                 )
-        count_chig = 0
         for count_chig, args in enumerate(grouper(4, indices_chig)):
-            com_setup.setOpcdArgs(
+            self.setOpcdArgs(
                 opcd='CHIG',
                 arg1=args[0],
                 arg2=args[1],
                 arg3=args[2],
                 arg4=args[3]
                 )
-        count_tors = 0
         for count_tors, args in enumerate(indices_tors):
-            com_setup.setOpcdArgs(
+            self.setOpcdArgs(
                 opcd='TORS',
                 arg1=args[0],
                 arg2=args[1],
                 arg6=180.
                 )
-        count_rca4 = 0
         for count_rca4, args in enumerate(indices_rca4):
-            com_setup.setOpcdArgs(
+            self.setOpcdArgs(
                 opcd='RCA4',
                 arg1=args[0],
                 arg2=args[1],
@@ -119,40 +138,41 @@ class MyComUtil(mmodutils.ComUtil):
                 arg6=2.5
                 )
 
-        com_setup.DEBG.clear()
-        com_setup.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
-        com_setup.SEED.clear()
-        com_setup.setOpcdArgs(opcd='SEED', arg1=40000)
-        com_setup.FFLD.clear()
-        com_setup.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
-        com_setup.EXNB.clear()
-        com_setup.BDCO.clear()
-        com_setup.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
-        com_setup.READ.clear()
-        com_setup.CRMS.clear()
-        com_setup.setOpcdArgs(opcd='CRMS', arg6=0.5)
-        com_setup.MCMM.clear()
+        self.DEBG.clear()
+        self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+        self.SEED.clear()
+        self.setOpcdArgs(opcd='SEED', arg1=40000)
+        self.FFLD.clear()
+        self.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+        self.EXNB.clear()
+        self.BDCO.clear()
+        self.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
+        self.READ.clear()
+        self.CRMS.clear()
+        self.setOpcdArgs(opcd='CRMS', arg6=0.5)
+        self.MCMM.clear()
         # 3**N where N = number of bonds rotated
         # Maxes out at 50,000.
         nsteps = 3**len(indices_tors)
+        # nsteps = 50
         if nsteps > 50000:
             nsteps = 50000
-        com_setup.setOpcdArgs(opcd='MCMM', arg1=nsteps)
-        com_setup.NANT.clear()
-        com_setup.MCNV.clear()
-        com_setup.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
-        com_setup.MCSS.clear()
-        com_setup.setOpcdArgs(opcd='MCSS', arg1=2, arg5=50.0)
-        com_setup.MCOP.clear()
-        com_setup.setOpcdArgs(opcd='MCOP', arg1=1, arg4=0.5)
-        com_setup.DEMX.clear()
-        com_setup.setOpcdArgs(opcd='DEMX', arg2=1000, arg5=50, arg6=100)
-        com_setup.MSYM.clear()
-        com_setup.AUOP.clear()
-        com_setup.CONV.clear()
-        com_setup.setOpcdArgs('CONV', arg1=2, arg5=0.05)
-        com_setup.MINI.clear()
-        com_setup.setOpcdArgs('MINI', arg1=1, arg3=2500)
+        self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
+        self.NANT.clear()
+        self.MCNV.clear()
+        self.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
+        self.MCSS.clear()
+        self.setOpcdArgs(opcd='MCSS', arg1=2, arg5=50.0)
+        self.MCOP.clear()
+        self.setOpcdArgs(opcd='MCOP', arg1=1, arg4=0.5)
+        self.DEMX.clear()
+        self.setOpcdArgs(opcd='DEMX', arg2=1000, arg5=50, arg6=100)
+        self.MSYM.clear()
+        self.AUOP.clear()
+        self.CONV.clear()
+        self.setOpcdArgs('CONV', arg1=2, arg5=0.05)
+        self.MINI.clear()
+        self.setOpcdArgs('MINI', arg1=1, arg3=2500)
         # Honestly, not sure why K Shawn Watts initializes this as an empty
         # list, but I suppose I will do it too just in case.
         com_args = []
@@ -186,33 +206,74 @@ class MyComUtil(mmodutils.ComUtil):
                 'MINI'
                 ])
         return self.writeComFile(com_args)
+    def my_mini(self, mae_file=None, com_file=None, out_file=None):
+        """
+        Modified version of the the Schrödinger mini.
+        """
+        self.DEBG.clear()
+        self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+        self.SEED.clear()
+        self.setOpcdArgs(opcd='SEED', arg1=40000)
+        self.FFLD.clear()
+        self.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+        self.EXNB.clear()
+        self.BDCO.clear()
+        self.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
+        self.READ.clear()
+        self.CONV.clear()
+        self.setOpcdArgs('CONV', arg1=2, arg5=0.05)
+        self.MINI.clear()
+        self.setOpcdArgs('MINI', arg1=1, arg3=2500)
+        # Honestly, not sure why K Shawn Watts initializes this as an empty
+        # list, but I suppose I will do it too just in case.
+        com_args = []
+        com_args = [
+            com_file,
+            mae_file,
+            out_file,
+            'MMOD',
+            'DEBG',
+            'SEED',
+            'FFLD',
+            'EXNB',
+            'BDCO',
+            'CRMS',
+            'BGIN',
+            'READ',
+            'CONV',
+            'MINI',
+            'END']
+        return self.writeComFile(com_args)
 
 def return_parser():
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        'input', type=str, nargs='+',
-        help="Name of the .mae file(s) that you'd like to generate .com "
-        "conformational search files for. Must contain the properties "
-        "described in the __doc__/description for proper functioning. The "
-        "resulting .com and .mae file will append \"_cs_\" to the name.")
+        'input', type=str,
+        help="Name of *.mae file that you'd like to generate a conformational "
+        "search *.com file for. Must contain the properties as described in "
+        "the __doc__ and description for proper functioning.")
+    parser.add_argument(
+        'com', type=str,
+        help="Name for the *.com file you'd like to generate.")
+    parser.add_argument(
+        'output', type=str,
+        help="Name for the output *.mae file generated by the conformational "
+        "search.")
     return parser
+
+def main(opts):
+    """
+    Main for setup_com_from_mae. See module __doc__.
+    """
+    com_setup = MyComUtil()
+    com_setup.my_mcmm(
+        mae_file=opts.input,
+        com_file=opts.com,
+        out_file=opts.output)
 
 if __name__ == '__main__':
     parser = return_parser()
     opts = parser.parse_args(sys.argv[1:])
-
-    for file_input in opts.input:
-        com_setup = MyComUtil()
-
-        name, ext = os.path.splitext(file_input)
-        file_com = name + '_cs.com'
-        file_mae = name + '_cs.mae'
-
-        com_setup.my_mcmm(
-            mae_file=file_input,
-            com_file=file_com,
-            out_file=file_mae
-            )
-    
+    main(opts)

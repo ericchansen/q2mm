@@ -1,39 +1,41 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 """
 Takes *.mae structure files and merges them.
 
-The subsequent files contain information pertinent to merging. This information
-is stored as Schrodinger structure properties and is described below. This
+The input *.mae files contain information pertinent to merging. This information
+is stored as Schrödinger structure properties and is described below. This
 information is manually entered by editing the *.mae files.
 
 Structure Properties
 --------------------
-s_cs_smiles_substrate - SMILES used to pick out the matching atoms on the
-                        reaction template and substrate.
-s_cs_smiles_ligand    - SMILES used to pick out the matching atoms on the
-                        reaction template and ligand.
-b_cs_c2               - Inappropriately named.
+s_cs_pattern           - SMILES used to pick out the matching atoms. This will
+                         actually accept any property containing "pattern".
+b_cs_first_match_only  - SMILES can often be matched in two directions, say
+                         atoms 1-2-3 or 3-2-1 (ex. P-[Rh]-P is a palindrome).
 
-                        SMILES can often be matched in two directions, say atoms
-                        1-2-3 or 3-2-1 (ex. P-[Rh]-P is a palindrome).
-
-                        If this is False (0), it merges the structures using
-                        both palindromes. If it's True (1), it only uses
-                        whichever direction it matches first.
-s_cs_stereochemistry  - Inadequate for all situations we would like to apply
-                        this code to.
-
-                        Stereochemistry of the product that results from the
-                        conformation in the reaction template.
+                         If this is false (0), it merges the structures using
+                         both palindromes. If it's true (1), it only uses
+                         whichever direction it matches first.
+b_cs_substructure      - If true, use `evaluate_substructure` to find atom
+                         indices from the pattern, else use `evaluate_smarts`.
+b_cs_both_enantionmers - If true, will also use the other enantiomer of this
+                         structure. It does this by simply inverting all of the
+                         x coordinates for the atoms.
 """
 import argparse
+import copy
 import itertools
+import os
 import sys
 
 from schrodinger import structure as sch_struct
 from schrodinger.structutils import analyze, rmsd
 
 def return_parser():
+    """
+    Parser for merge.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -50,11 +52,17 @@ def return_parser():
         type=str,
         help='Write all output structures individually to this directory.')
     parser.add_argument(
-        '--substructure',
+        '-m', '--mini',
         action='store_true',
-        help='By default, use schrodinger.structutils.analyze.evaluate_smarts '
-        'to determine overlapping atoms. If this option is used, instead it '
-         'will use schrodinger.structutils.analyze.evaluate_substructure.')
+        help='Attempt to minimize merged structures using MacroModel and '
+        'MM3*.')
+    # This is handled by properties inside the *.mae files.
+    # parser.add_argument(
+    #     '--substructure',
+    #     action='store_true',
+    #     help='By default, use schrodinger.structutils.analyze.evaluate_smarts '
+    #     'to determine overlapping atoms. If this option is used, instead it '
+    #     'will use schrodinger.structutils.analyze.evaluate_substructure.')
     return parser
 
 def get_atom_numbers_from_structure_with_pattern(structure,
@@ -66,7 +74,7 @@ def get_atom_numbers_from_structure_with_pattern(structure,
 
     Takes care of two subtle intricacies.
 
-    1. Schrodinger has two methods to match atoms inside of a structure. The
+    1. Schrödinger has two methods to match atoms inside of a structure. The
        argument `use_substructure` selects whether to use
        `schrodinger.structutils.analyze.evaluate_substructure` or
        `schrodinger.structutils.analyze.evaluate_smarts`. One or the other may
@@ -78,10 +86,14 @@ def get_atom_numbers_from_structure_with_pattern(structure,
 
     Arguments
     ---------
-    structure : Schrodinger structure object
+    structure : Schrödinger structure object
     pattern : string
     first_match_only : bool
     use_substructure : bool
+
+    Returns
+    -------
+    list of integers
     """
     if use_substructure:
         return analyze.evaluate_substructure(structure,
@@ -104,8 +116,8 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
 
     Arguments
     ---------
-    struct_1 : Schrodinger structure object
-    struct_2 : Schrodinger structure object
+    struct_1 : Schrödinger structure object
+    struct_2 : Schrödinger structure object
     """
     patterns = list(search_dic_keys(struct_2.property, 'pattern'))
     print(' * PATTERN: {}'.format(patterns))
@@ -157,12 +169,16 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     Arguments
     ---------
-    struct_1 : Schrodinger structure
+    struct_1 : Schrödinger structure
     match_1 : list of integers
               Atom indices for the superimposed atoms in struct_1
-    struct_2 : Schrodinger structure
+    struct_2 : Schrödinger structure
     match_2 : list of integers
               Atom indices for the superimposed atoms in struct_2
+
+    Returns
+    -------
+    Schrödinger structure
     """
     merge = struct_1.merge(struct_2, copy_props=True)
 
@@ -225,22 +241,43 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                 atom1.addBond(atom2.index, merge_bond.order)
                 bond = merge.getBond(atom1, atom2)
 
-            # print('OLD PROPS: {}'.format(bond.property))
             for k, v in merge_bond.property.iteritems():
                 if k not in bond.property or not bond.property[k]:
                     bond.property.update({k: v})
-            # print('NEW PROPS: {}'.format(bond.property))
 
     # Delete duplicate atoms once you copied all the data.
     merge.deleteAtoms(common_atoms_2)
+    merge = add_rca4(merge, struct_1, match_1, struct_2, match_2)
 
-    merge.property['s_m_title'] += '-' + struct_2.property['s_m_title']
+    merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
     merge.property['s_m_entry_name'] += \
-        '-' + struct_2.property['s_m_entry_name']
+        '_' + struct_2.property['s_m_entry_name']
+
     return merge
 
-def copy_rca4(
-        merge, struct_1, match_1, struct_2, match_2):
+def add_rca4(merge, struct_1, match_1, struct_2, match_2):
+    """
+    Takes the RCA4 properties from two structures and properly combines them
+    into the merged structures.
+
+    RCA4 properties are stored in Schrödinger bond properties:
+     * i_cs_rca4_1
+     * i_cs_rca4_2
+
+    Arguments
+    ---------
+    merge : Schrödinger structure object
+            This is the result of merging struct_1 and struct_2 using match_1
+            and match_2 as patterns.
+    struct_1 : Schrödinger structure object
+    match_1 : string
+    struct_2 : Schrödinger structure object
+    match_2 : string
+
+    Returns
+    -------
+    merge : Updated bonds with new RCA4 properties
+    """
     # Deal with RCA4. It can be done independently of all the merges. How nice!
     rca4s = []
     for bond in struct_2.bond:
@@ -307,8 +344,23 @@ def copy_rca4(
             merge.atom[bond.property['i_cs_rca4_2']].atom_type_name))
     return merge
 
-def merge_in_all_ways(struct_1, struct_2):
-    merges = []
+def merge(struct_1, struct_2):
+    """
+    Takes two Schrödinger structures and combines them.
+
+    Uses structure properties containing the string "pattern" to determine which
+    atoms to overlap. If there are multiple pattern matches, it will try to use
+    all of them.
+
+    Arguments
+    ---------
+    struct_1 : Schrödinger structure object
+    struct_2 : Schrödinger structure object
+
+    Yields
+    ------
+    Schrödinger structure objects
+    """
     # Determine the structures that overlap.
     match_1s, match_2s = get_overlapping_atoms_in_both(struct_1, struct_2)
     print('MATCHES FROM STRUCTURE 1: {}'.format(match_1s))
@@ -325,46 +377,158 @@ def merge_in_all_ways(struct_1, struct_2):
                 struct_2._getTitle(),
                 match_2,
                 [struct_2.atom[x].atom_type_name for x in match_2]))
-            # Overlay the matching atoms.
             rmsd.superimpose(struct_1, match_1, struct_2, match_2)
-            merge = merge_structures_from_matching_atoms(
+            yield merge_structures_from_matching_atoms(
                 struct_1, match_1, struct_2, match_2)
-            merge = copy_rca4(merge, struct_1, match_1, struct_2, match_2)
-            merges.append(merge)
-    return merges
 
-def merge_many_files(structures, filenames):
-    new_structures = []
-    for filename in filenames:
+def load_enantiomers(structure):
+    """
+    Generator to yield both enantiomers of a structure.
+
+    Yields both enantiomers depending on the property b_cs_both_enantiomers.
+
+    Enantiomers are generated by inversing the x coordinate of every atom.
+
+    b_cs_both_enantiomers
+     * True  - Yield input structure and enantiomer
+     * False - Yield input structure
+
+    Arguments
+    ---------
+    structure : Schrödinger structure object
+
+    Yields
+    ------
+    Schrödinger structure objects
+    """
+    yield structure
+    if structure.property.get('b_cs_both_enantiomers', False):
+        print('LOADING OTHER ENANTIOMER: {}'.format(
+            structure.property['s_m_title']))
+        other_enantiomer = copy.deepcopy(structure)
+        for coords in other_enantiomer.getXYZ(copy=False):
+            coords[0] = -coords[0]
+        yield other_enantiomer
+
+def merge_many_structures(structures_1, structures_2):
+    structures = []
+    for structure_1 in structures_1:
+        for structure_2 in structures_2:
+            for structure in merge(structure_1, structure_2):
+                yield structure
+
+def merge_many_filenames(list_of_lists):
+    """
+    Returns merged structures for a list of lists of filenames.
+
+    Arguments
+    ---------
+    list_of_lists : list of lists of filenames of *.mae
+    """
+    # Setup list for first group of filenames/structures.
+    structures = []
+    for filename in list_of_lists[0]:
         sch_reader = sch_struct.StructureReader(filename)
-        for read_structure in sch_reader:
-            for old_structure in structures:
-                merges = merge_in_all_ways(old_structure, read_structure)
-                new_structures.extend(merges)
-    return new_structures
+        for structure in sch_reader:
+            for enantiomer in load_enantiomers(structure):
+                structures.append(enantiomer)
+        sch_reader.close()
+
+    # Iterate over groups of filenames/structures.
+    for filenames in list_of_lists[1:]:
+        new_structures = []
+        for filename in filenames:
+            sch_reader = sch_struct.StructureReader(filename)
+            for structure in sch_reader:
+                for enantiomer in load_enantiomers(structure):
+                    new_structures.append(enantiomer)
+            sch_reader.close()
+
+        # Update existing list of structures after combining with the new
+        # structures.
+        structures = merge_many_structures(structures, new_structures)
+    return list(structures)
+
+def add_chirality(structure):
+    """
+    Uses Schrödinger's utilities to assign chirality to atoms, and then adds
+    that information to the title and entry name of structures.
+    """
+    chirality_dic = analyze.get_chiral_atoms(structure)
+    string = '_'
+    for key, value in chirality_dic.iteritems():
+        string += '{}{}'.format(key, value.lower())
+    structure.property['s_m_title'] += string
+    structure.property['s_m_entry_name'] += string
+    return structure
 
 def main(opts):
-    # Load 1st group.
-    filenames = opts.group[0]
-    structures = []
-    for filename in filenames:
-        sch_reader = sch_struct.StructureReader(filename)
-        structures.extend(list(sch_reader))
-        sch_reader.close()
-    # Now continually merge the other groups.
-    for filenames in opts.group[1:]:
-        structures = merge_many_files(structures, filenames)
+    """
+    Main for merge.
+    """
+    structures = merge_many_filenames(opts.group)
+    print('-' * 50)
+    print('NUM. RESULTING STRUCTURES: {}'.format(len(structures)))
 
-    # Write merged structures.
-    # To a single file.
+    if opts.mini:
+        print(' - ATTEMPTING MINIMIZATION')
+
+        import schrodinger.application.macromodel.utils as mmodutils
+        import schrodinger.job.jobcontrol as jobcontrol
+        from setup_com_from_mae import MyComUtil
+
+        sch_writer = sch_struct.StructureWriter('TEMP.mae')
+        sch_writer.extend(structures)
+        sch_writer.close()
+        # Setup the minimization.
+        com_setup = MyComUtil()
+        com_setup.my_mini(
+            mae_file='TEMP.mae',
+            com_file='TEMP.com',
+            out_file='TEMP_OUT.mae')
+        command = ['bmin', '-WAIT', 'TEMP']
+        # Run the minimization.
+        job = jobcontrol.launch_job(command)
+        job.wait()
+        # Read the minimized structures.
+        sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
+        structures = []
+        for structure in sch_reader:
+            structures.append(add_chirality(structure))
+        sch_reader.close()
+        # Remove temporary files.
+        os.remove('TEMP.mae')
+        os.remove('TEMP.com')
+        os.remove('TEMP_OUT.mae')
+        os.remove('TEMP.log')
+    else:
+        new_structures = []
+        for structure in structures:
+            new_structures.append(add_chirality(structure))
+        structures = new_structures
+
+    # Write structures to a single file.
     if opts.output:
+        print('OUTPUT FILE: {}'.format(opts.output))
         sch_writer = sch_struct.StructureWriter(opts.output)
         sch_writer.extend(structures)
         sch_writer.close()
-    # To a directory.
+    # Write structures to a directory.
+    if opts.directory:
+        print('OUTPUT DIRECTORY: {}'.format(opts.directory))
+        for structure in structures:
+            sch_writer = sch_struct.StructureWriter(
+                os.path.join(
+                    opts.directory,
+                    structure.property['s_m_title'] + '.mae'
+                    )
+                )
+            sch_writer.append(structure)
+            sch_writer.close()
+
     return structures
 
 if __name__ == '__main__':
     parser = return_parser()
     opts = parser.parse_args(sys.argv[1:])
-    main(opts)
+    structures = main(opts)
