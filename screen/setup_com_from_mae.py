@@ -89,6 +89,13 @@ class MyComUtil(mmodutils.ComUtil):
         reader = sch_struct.StructureReader(mae_file)
         for structure in reader:
             for atom in structure.atom:
+                try:
+                    atom.property['b_cs_comp']
+                    atom.property['b_cs_chig']
+                except KeyError as e:
+                    print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
+                        structure.property['s_m_title']))
+                    raise e
                 if atom.property['b_cs_comp']:
                     indices_comp.append(atom.index)
                 if atom.property['b_cs_chig']:
@@ -104,6 +111,7 @@ class MyComUtil(mmodutils.ComUtil):
                             bond.property['i_cs_rca4_2']
                             ))
         reader.close()
+        count_comp = 0
         for count_comp, args in enumerate(grouper(4, indices_comp)):
             self.setOpcdArgs(
                 opcd='COMP',
@@ -112,6 +120,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg3=args[2],
                 arg4=args[3]
                 )
+        count_chig = 0
         for count_chig, args in enumerate(grouper(4, indices_chig)):
             self.setOpcdArgs(
                 opcd='CHIG',
@@ -120,6 +129,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg3=args[2],
                 arg4=args[3]
                 )
+        count_tors = 0
         for count_tors, args in enumerate(indices_tors):
             self.setOpcdArgs(
                 opcd='TORS',
@@ -127,6 +137,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg2=args[1],
                 arg6=180.
                 )
+        count_rca4 = 0
         for count_rca4, args in enumerate(indices_rca4):
             self.setOpcdArgs(
                 opcd='RCA4',
@@ -153,8 +164,8 @@ class MyComUtil(mmodutils.ComUtil):
         self.MCMM.clear()
         # 3**N where N = number of bonds rotated
         # Maxes out at 50,000.
-        nsteps = 3**len(indices_tors)
-        # nsteps = 50
+        # nsteps = 3**len(indices_tors)
+        nsteps = 50
         if nsteps > 50000:
             nsteps = 50000
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)

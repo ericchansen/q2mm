@@ -145,6 +145,14 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
         else:
             print('     * COULDN\'T FIND IN: {}'.format(struct_2._getTitle()))
             continue
+    try:
+        match_struct_1
+        match_struct_2
+    except UnboundLocalError as e:
+        print('ERROR: {} {}'.format(
+            struct_1.property['s_m_title'],
+            struct_2.property['s_m_title']))
+        raise e
     return match_struct_1, match_struct_2
 
 def search_dic_keys(dic, lookup):
@@ -281,6 +289,12 @@ def add_rca4(merge, struct_1, match_1, struct_2, match_2):
     # Deal with RCA4. It can be done independently of all the merges. How nice!
     rca4s = []
     for bond in struct_2.bond:
+        try:
+            bond.property['i_cs_rca4_1']
+            bond.property['i_cs_rca4_1']
+        except KeyError as e:
+            print('ERROR! NO RCA4: {}'.format(struct_2.property['s_m_title']))
+            raise e
         if bond.property['i_cs_rca4_1']:
             rca4 = [bond.property['i_cs_rca4_1'],
                     bond.atom1.index,
