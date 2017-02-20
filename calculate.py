@@ -137,7 +137,6 @@ def main(args):
 #
                 
         elif any(x in COM_TINKER for x in commands_for_filename):
-            print('tinker part in calculate')
             if os.path.splitext(filename)[1] == '.xyz':
                 # Becomes and instance of the tinker class
                 inps[filename] = filetypes.Tinker_xyz(
@@ -172,6 +171,9 @@ def main(args):
         data = collect_data_fake(commands, inps, direc=opts.directory,
                                  invert=opts.invert)
     else:
+#Added by Tony #commands is a dictionary of lists: {com1:['test2.xyz','file2']}
+#Added by Tony #inps is a dictionary of objects: {'test2.xyz':Tinker_class_ob}
+#Addded by Tony
         data = collect_data(commands, inps, direc=opts.directory,
                             invert=opts.invert)
     # Adds weights to the data points in the data list.
@@ -961,6 +963,37 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+#Added by Tony # Tinker bonds
+    filenames = chain.from_iterable(coms['tb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'tb', 'pre', 'bonds'))
+
+    filenames = chain.from_iterable(coms['ta'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'ta', 'pre', 'angles'))
+    
+    filenames = chain.from_iterable(coms['tt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'tt', 'pre', 'torsions'))
+
+    filenames = chain.from_iterable(coms['tbo'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'tbo', 'opt', 'bonds'))
+
+    filenames = chain.from_iterable(coms['tao'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'tao', 'opt', 'angles'))
+    
+    filenames = chain.from_iterable(coms['tto'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, direc, 'tto', 'opt', 'torsions'))
+
     # MACROMODEL BONDS
     filenames = chain.from_iterable(coms['mb'])
     for filename in filenames:
@@ -1380,6 +1413,9 @@ def collect_structural_data_from_mae(
     data = []
     name_mmo = inps[name_mae].name_mmo
     indices = inps[name_mae]._index_output_mmo
+#added by tony
+#the indices is jsut a list for the calculation done. 'pre' or 'opt'
+
     mmo = check_outs(name_mmo, outs, filetypes.MacroModel, direc)
     selected_structures = filetypes.select_structures(
         mmo.structures, indices, ind)
@@ -1391,6 +1427,22 @@ def collect_structural_data_from_mae(
                 src_1=mmo.filename,
                 idx_1=idx_1 + 1))
     return data
+
+#Added by Tony
+def collect_structural_data_from_tinker_log(
+#Probably want to use check_outs function at somepoint
+    name_xyz, inps, direc, com, ind, typ):
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_log = inps[name_xyz].name_log
+    xyz_structure = inps[name_xyz].structures
+    log_structure = inps[name_xyz].log.structures
+    struct = log_structure[select_struct[ind]]
+    data.extend(struct.select_data(
+        typ,
+        com=com,
+        src_1=name_log))
+    return(data)
 
 def sort_commands_by_filename(commands):
     '''

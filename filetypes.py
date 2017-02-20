@@ -62,6 +62,88 @@ class File(object):
             for line in lines:
                 f.write(line)
 
+class Tinker_log(File):
+    def __init__(self, path):
+        super(Tinker_log, self).__init__(path)
+        self._structures = None
+        self.name = None 
+    @property
+    def structures(self):
+        if self._structures == None:
+            self._structures = []
+            with open(self.path, 'r') as f:
+                sections = {'sp':1, 'minimization':2, 'hessian':2} 
+                count_previous = 0
+                calc_section = 'sp'
+                for line in f:
+                    count_current = sections[calc_section]
+                    if count_current != count_previous:
+                        current_structure = Structure()
+                        self._structures.append(current_structure)
+                        count_previous += 1
+                    section = None
+                    if "END OF SINGLE POINT" in line:
+                        calc_section = 'minimization'
+                    if 'END OF OPTIMIZED SINGLE POINT' in line:
+                        calc_section = 'hessian'
+                    if 'Bond' in line:
+                        bond = self.read_line_for_bond(line)
+                        if bond is not None:
+                            current_structure.bonds.append(bond)
+                    if 'Angle' in line:
+                        angle = self.read_line_for_angle(line)
+                        if angle is not None:
+                            current_structure.angles.append(angle)
+                    if 'Torsion' in line:
+                        torsion = self.read_line_for_torsion(line)
+                        if torsion is not None:
+                            current_structure.torsions.append(torsion)
+                    if 'Total Potential Energy' in line:
+                        energy = self.read_line_for_energy(line)
+                        if energy is not None:
+                            current_structure.props['energy']=energy
+                    if "END OF CALCULATION" in line and \
+                        calc_section != 'hessian':
+                        last_ind = len(self._structures) - 1                
+                        self._structures.remove(self._structures[last_ind])
+        return self._structures
+
+    def read_line_for_bond(self, line):
+        match = re.compile('Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3)])
+            value = float(match.group(6))
+            return Bond(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_angle(self, line):
+        match = re.compile('Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3),
+                match.group(5)])
+            value = float(match.group(8))
+            return Angle(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_torsion(self, line):
+        match = re.compile('Torsion\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '(\d+)-(\w+)\s+(\d+)-(\w+)\s+({0})\s+({0})'.format(
+                co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3),
+                match.group(5), match.group(7)])
+            value = float(match.group(9))
+            return Angle(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_energy(self, line):
+        pass
+
 class Tinker_xyz(File):
     def __init__(self, path):
         super(Tinker_xyz, self).__init__(path)
@@ -73,24 +155,26 @@ class Tinker_xyz(File):
     	self.name_log = self.name + '.q2mm.log'
         self.name_xyz = self.name + '.q2mm.xyz'
         self.name_hes = self.name + '.q2mm.hes'
+        self.log = None
     @property
     def structures(self):
         if self._structures is None: 
             struct = Structure()
             self._structures = [struct]
             with open(self.filename, 'r') as f:
-                f = f.split()
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
                         struct.props['total atoms'] = line[0]
                         struct.props['title'] = line[1]
                     if len(line) > 2:
-                        indx, ele, x, y, z, at, bonded_atom = line[0], line[1], 
-                        line[2], line[3], line[4], line[5], line[6:].split()
+                        indx, ele, x, y, z, at, bonded_atom = line[0], \
+                            line[1], line[2], line[3], line[4], \
+                            line[5], line[6:]
                         struct.atoms.append(Atom(index=indx, element=ele, 
                             x=float(x), y=float(y), z=float(z), atom_type=at,
                             bonded_atom_indices=bonded_atom))
+            return self._structures
     def get_com_opts(self):
         com_opts = {'freq': False,
                     'opt': False,
@@ -120,22 +204,42 @@ class Tinker_xyz(File):
         if os.path.isfile(self.name_hes):
             os.remove(self.name_hes)
         if com_opts['sp']:
-            sp.check_output(
-                'analyze {}.xyz -k {} D >& {} &'.format(self.name,
-                self.name_key, self.name_log), shell=True)
+            with open(self.name_log, 'w') as f:
+                sp.call(
+                    'analyze {}.xyz -k {} D'.format(self.name,
+                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                f.write("\n=======================\
+                         \n= END OF SINGLE POINT =\
+                         \n=======================\n")
         if com_opts['opt']:
-            sp.check_output(
-                'minimize {}.xyz -k {} 0.01 {} >> {}'.format(self.name,
-                self.name_key, self.name_xyz, self.name_log), shell=True)
-            sp.check_output(
-                'analyze {} -k {} D >>& {} &'.format(self.name_xyz,
-                self.name_key, self.name_log), shell=True)
+            with open(self.name_log, 'a') as f:
+                sp.call(
+                    'minimize {}.xyz -k {} 0.01 {}'.format(self.name,
+                    self.name_key, self.name_xyz), shell=True, stderr=f,
+                    stdin=f, stdout=f)
+                sp.call(
+                    'analyze {} -k {} D'.format(self.name_xyz,
+                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                f.write("\n=================================\
+                         \n= END OF OPTIMIZED SINGLE POINT =\
+                         \n=================================\n")
         if com_opts['freq']:
-            sp.check_output(
-                'testhess {} -k {} y n {} >>& {} &'.format(self.name_xyz,
-                self.name_key, self.name_hes, self.name_log), shell=True)
-        os.chdir(current_directory)
-                 
+            with open(self.name_log, 'a') as f:
+                sp.call(
+                    'testhess {} -k {} y n {}'.format(self.name_xyz,
+                    self.name_key, self.name_hes), shell=True,
+                    stderr=f, stdin=f, stdout=f)
+                f.write("\n==================\
+                         \n= END OF HESSIAN =\
+                         \n==================\n")
+        with open(self.name_log, 'a') as f:
+            f.write("\n======================\
+                     \n= END OF CALCULATION =\
+                     \n======================\n")
+        filename_length = -1 * (len(self.name) + 4)
+        log_path = self.path[:filename_length] + self.name_log
+        self.log = Tinker_log(log_path)
+        os.chdir(current_directory)             
 
 class GaussFormChk(File):
     """
@@ -1615,7 +1719,7 @@ class MacroModel(File):
                 count_structure = 0
                 count_previous = 0
                 section = None
-                for line in f:
+                for i, line in enumerate(f):
                     if 'Input filename' in line:
                         count_input += 1
                     if 'Input Structure Name' in line:
@@ -1627,6 +1731,9 @@ class MacroModel(File):
                     count_current = max(count_input, count_structure)
                     # If these don't match, then we reached the end of a
                     # structure.
+                    if i < 20:
+                        print(i, count_current, count_previous)
+                        print(line)
                     if count_current != count_previous:
                         current_structure = Structure()
                         self._structures.append(current_structure)
