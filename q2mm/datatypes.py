@@ -54,7 +54,7 @@ class Param(object):
                  'simp_var']
     def __init__(self, d1=None, d2=None, ptype=None, value=None):
         self._allowed_range = None
-        self._step = None 
+        self._step = None
         self._value = None
         self.d1 = d1
         self.d2 = d2
@@ -193,7 +193,7 @@ class Datum(object):
             abcd = remove_none(a, b, c, d)
             self._lbl = '_'.join(abcd)
         return self._lbl
-        
+
 def remove_none(*args):
     return [x for x in args if (x is not None and x is not '')]
 
@@ -207,7 +207,7 @@ def datum_sort_key(datum):
 class FF(object):
     """
     Class for any type of force field.
-    
+
     path   - Self explanatory.
     data   - List of Datum objects.
     method - String describing method used to generate this FF.
@@ -251,7 +251,7 @@ class MM3(FF):
                  types.
     lines : list of strings
             Every line from the MM3* force field file.
-    """                  
+    """
     def __init__(self, path=None, data=None, method=None, params=None,
                  score=None):
         super(MM3, self).__init__(path, data, method, params, score)
@@ -781,12 +781,12 @@ def get_dummy_hessian_indices(dummy_indices):
     Takes a list of indices for the dummy atoms and returns another list of
     integers corresponding to the rows of the eigenvectors to remove
     for those those dummy atoms.
-    
+
     Arguments
     ---------
     dummy_indices : list of integers
                     Indices for the dummy atoms.
-                    
+
     Returns
     -------
     list of integers

@@ -170,7 +170,7 @@ class Loop(object):
             if cols[0] == 'WGHT':
                 data_type = cols[1]
                 co.WEIGHTS[data_type] = float(cols[2])
-        
+
 def read_loop_input(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()

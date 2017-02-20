@@ -43,14 +43,14 @@ def main(args):
 def pretty_data_comp(r_data, c_data, output=None):
     """
     Recalculates score along with making a pretty output.
-    
+
     Can't rely upon reference Datum attributes anymore due to how reference
     data files are implemented.
     """
     strings = []
     strings.append('--' + ' Label '.ljust(30, '-') +
-                   '--' + ' Weight '.center(8, '-') + 
-                   '--' + ' R. Value '.center(13, '-') + 
+                   '--' + ' Weight '.center(8, '-') +
+                   '--' + ' R. Value '.center(13, '-') +
                    '--' + ' C. Value '.center(13, '-') +
                    '--' + ' Score '.center(13, '-') + '--')
     score_typ = defaultdict(float)
@@ -102,7 +102,7 @@ def return_compare_parser():
         help=('These commands produce the QM/reference data. Leave one space '
               'after the 1st quotation mark enclosing the arguments.'))
     parser.add_argument(
-        '--output', '-o', type=str, metavar='filename', 
+        '--output', '-o', type=str, metavar='filename',
         help='Write pretty output to filename.')
     parser.add_argument(
         '--print', '-p', action='store_true', dest='print',
@@ -263,7 +263,7 @@ def calculate_score(r_data, c_data):
     for r_datum, c_datum in izip(r_data, c_data):
         # Could add a check here to assure that the data points are aligned.
         # Ex.) assert r_datum.ind_1 == c_datum.ind_1, 'Oh no!'
-        
+
         # For torsions, ensure the difference between -179 and 179 is 2, not
         # 358.
         if c_datum.typ == 't':
@@ -279,7 +279,7 @@ def calculate_score(r_data, c_data):
 
     logger.log(5, 'SCORE: {}'.format(score_tot))
     return score_tot
-            
+
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     main(sys.argv[1:])

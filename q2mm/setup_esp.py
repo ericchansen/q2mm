@@ -207,7 +207,7 @@ def gen_atomic_section(non_substr_atoms):
 
 def atom_nums_from_bonds(bonds):
     """
-    From a list of selected bonds, pick out all the atoms in those 
+    From a list of selected bonds, pick out all the atoms in those
     bonds and put them all into a list.
 
     Returns

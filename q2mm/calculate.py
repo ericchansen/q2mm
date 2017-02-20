@@ -79,7 +79,7 @@ def main(args):
     #    b2.01.mae -mb a1.01.mae b1.01.mae -jeig a1.01.in,a1.out
     #    b1.01.in,b1.out
     # commands looks like:
-    # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], 
+    # {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'],
     #         ['b1.01.mae', 'b2.01.mae']],
     #  'mb': [['a1.01.mae'], ['b1.01.mae']],
     #  'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
@@ -563,10 +563,10 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                         src_1=filename,
                         idx_1=idx_1 + 1,
                         idx_2=i + 1))
-            
-            # # This works when HF and ZeroPoint are used. Had to make it more
-            # # general.
-            # # Revisit how structures are stored in GaussLog when you have time.
+
+            # This works when HF and ZeroPoint are used. Had to make it more
+            # general.
+            # Revisit how structures are stored in GaussLog when you have time.
             # hf = log.structures[0].props['HF']
             # zp = log.structures[0].props['ZeroPoint']
             # if ',' in hf:
@@ -672,7 +672,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             energies = [0.] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
-                    energies[i] += thing 
+                    energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
@@ -756,7 +756,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             energies = [0.] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
-                    energies[i] += thing 
+                    energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
@@ -771,7 +771,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             datum.val -= zero
         data.extend(temp)
     # MACROMODEL OPTIMIZED ENERGIES
-    filenames_s = coms['meo']    
+    filenames_s = coms['meo']
     ind = 'opt'
     for idx_1, filenames in enumerate(filenames_s):
         for filename in filenames:
@@ -831,7 +831,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             energies = [0.] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
-                    energies[i] += thing 
+                    energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
@@ -995,7 +995,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     #         bonded_atom = structure.atoms[bonded_atom_index - 1]
                     #         if bonded_atom in aliph_hyds:
                     #             charge += bonded_atom.partial_charge
-                    
+
                     data.append(datatypes.Datum(
                             # val=charge,
                             val=atom.partial_charge,
@@ -1020,7 +1020,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     # Check if it's bonded to a hydrogen.
                     for bonded_atom_index in atom.bonded_atom_indices:
                         bonded_atom = structure.atoms[bonded_atom_index - 1]
-                        if bonded_atom in hyds: 
+                        if bonded_atom in hyds:
                             if len(bonded_atom.bonded_atom_indices) < 2:
                                 charge += bonded_atom.partial_charge
                     data.append(datatypes.Datum(
@@ -1049,7 +1049,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     charge = atom.partial_charge
                     for bonded_atom_index in atom.bonded_atom_indices:
                         bonded_atom = structure.atoms[bonded_atom_index - 1]
-                        if bonded_atom in hyds: 
+                        if bonded_atom in hyds:
                             if not len(bonded_atom.bonded_atom_indices) < 2:
                                 charge += bonded_atom.partial_charge
                     data.append(datatypes.Datum(
@@ -1334,7 +1334,7 @@ def sort_commands_by_filename(commands):
       'mb': [['a1.01.mae'], ['b1.01.mae']],
       'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
      }
-    
+
     ... and turn it into a dictionary that looks like...
 
     {'a1.01.mae': ['me', 'mb'],
@@ -1365,7 +1365,7 @@ def sort_commands_by_filename(commands):
                 else:
                     sorted_commands[filename] = [command]
     return sorted_commands
-            
+
 # Will also have to be updated. Maybe the Datum class too and how it responds
 # to assigning labels.
 def read_reference(filename):
@@ -1449,7 +1449,7 @@ def pretty_all_commands(commands, log_level=5):
             log_level,
             '--' + ' COMMAND '.center(9, '-') +
             '--' + ' GROUP # '.center(9, '-') +
-            '--' + ' FILENAMES '.center(24, '-') + 
+            '--' + ' FILENAMES '.center(24, '-') +
             '--')
         for command, groups_filenames in commands.iteritems():
             for i, filenames in enumerate(groups_filenames):
@@ -1483,7 +1483,7 @@ def pretty_data(data, log_level=20):
     for d in data:
         if d.wht or d.wht == 0:
             string = ('  ' + '{:22s}'.format(d.lbl) +
-                      '  ' + '{:22.4f}'.format(d.wht) + 
+                      '  ' + '{:22.4f}'.format(d.wht) +
                       '  ' + '{:22.4f}'.format(d.val))
         else:
             string = ('  ' + '{:22s}'.format(d.lbl) +

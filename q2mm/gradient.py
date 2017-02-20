@@ -1,4 +1,3 @@
-#!/usr/bin/python
 import copy
 import collections
 import csv
@@ -180,15 +179,16 @@ class Gradient(opt.Optimizer):
             logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
             # Save many FFs, each with their own parameter sets.
             ffs = opt.differentiate_ff(self.ff)
-            logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(79, '~'))
+            logger.log(20, '~~ SCORING DIFFERENTIATED PARAMETERS ~~'.rjust(
+                79, '~'))
             for ff in ffs:
                 ff.export_ff(lines=self.ff.lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
                 ff.score = compare.compare_data(ref_data, data)
                 opt.pretty_ff_results(ff)
-                # Write the data rather than storing it in memory. For large parameter
-                # sets, this could consume GBs of memory otherwise!
+                # Write the data rather than storing it in memory. For large
+                # parameter sets, this could consume GBs of memory otherwise!
                 csv_writer.writerow([x.val for x in data])
             f.close()
 
@@ -210,9 +210,11 @@ class Gradient(opt.Optimizer):
             num_d = len(ref_data)
             resid = np.empty((num_d, 1), dtype=float)
             for i in xrange(0, num_d):
-                resid[i, 0] = ref_data[i].wht * (ref_data[i].val - self.ff.data[i].val)
+                resid[i, 0] = ref_data[i].wht * \
+                              (ref_data[i].val - self.ff.data[i].val)
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
-            logger.log(20, '  -- Formed {} residual vector.'.format(resid.shape))
+            logger.log(
+                20, '  -- Formed {} residual vector.'.format(resid.shape))
             # Setup the Jacobian.
             num_p = len(self.ff.params)
             # Maybe should be a part of the Jacobian function.
@@ -236,7 +238,7 @@ class Gradient(opt.Optimizer):
             cleanup(self.new_ffs, self.ff, changes)
         if self.do_lstsq:
             logger.log(20, '~~ LEAST SQUARES ~~'.rjust(79, '~'))
-            changes = do_lstsq(ma, vb,                               
+            changes = do_lstsq(ma, vb,
                                radii=self.lstsq_radii,
                                cutoffs=self.lstsq_cutoffs)
             cleanup(self.new_ffs, self.ff, changes)
@@ -292,7 +294,7 @@ class Gradient(opt.Optimizer):
                         79, '~'))
                 opt.pretty_ff_results(self.ff, level=20)
                 opt.pretty_ff_results(ff, level=20)
-                # Copy parameter derivatives from original FF to save time in 
+                # Copy parameter derivatives from original FF to save time in
                 # case we move onto simplex immediately after this.
                 copy_derivs(self.ff, ff)
             else:
@@ -370,7 +372,7 @@ def check_radius(par_rad, max_rad):
         return max_rad / par_rad
     else:
         return 1
-                
+
 def cleanup(ffs, ff, changes):
     logger.log(1, '>>> changes: {}'.format(changes))
     if changes:
@@ -539,7 +541,7 @@ def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
         # ms[:n, :n] = np.diag(vs)
         # For reduced SVD.
         # ms = np.diag(vs)
-        
+
         changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
         # We need this to be shaped like a list so transpose the parameter
         # changes.
@@ -598,7 +600,7 @@ def do_svd_wo_thresholds(mu, vs, mvt, resid):
         # ms[:n, :n] = np.diag(vs)
         # For reduced SVD.
         # ms = np.diag(vs)
-        
+
         changes = mvt.T.dot(msi.dot(mu.T.dot(resid)))
         # We need this to be shaped like a list so transpose the parameter
         # changes.
@@ -645,7 +647,7 @@ def return_ff(orig_ff, changes, method):
     except datatypes.ParamError as e:
         logger.warning(e)
     else:
-        return new_ff 
+        return new_ff
 
 def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
@@ -724,38 +726,3 @@ def update_params(params, changes):
         logger.warning(e.message)
         raise
 
-if __name__ == '__main__':
-    logging.config.dictConfig(co.LOG_SETTINGS)
-
-    # !!! START TESTING SECTION !!!
-
-    # ff = datatypes.MM3('b107/mm3.fld')
-    # ff.import_ff()
-    # ff.params = parameters.trim_params_by_file(ff.params, 'b107/params.txt')
-    # a = Gradient(
-    #     direc='b107', ff=ff,
-    #     args_ff=' -d b107 -me X002a.mae X002b.mae -mb X002a.mae'.split(),
-    #     args_ref=' -d b107 -je X002a.mae X002b.mae -jb X002a.mae'.split())
-    # a.run()
-    # a.run(restart='par_diff_011.txt')
-
-    # ff = datatypes.MM3('b000/mm3.fld')
-    # ff.import_ff()
-    # ff.params = parameters.trim_params_by_file(ff.params, 'b000/params.txt')
-    # a = Gradient(
-    #     direc='b000', ff=ff,
-    #     args_ff=' -d b000 -mq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split(),
-    #     args_ref=' -d b000 -jq H3N_lts_AllylPd_dppe_esp.01.mae H3N_lts_AllylPd_Phox_tP_esp.01.mae'.split())
-    # a.run(restart='par_diff_001.txt')
-    # a.run()
-
-    # ff = datatypes.MM3('ref_methanol/mm3.fld')
-    # ff.import_ff()
-    # ff.params = parameters.trim_params_by_file(ff.params, 'ref_methanol/params.txt')
-    # a = Gradient(
-    #     direc='ref_methanol', ff=ff,
-    #     args_ff=' -d ref_methanol -mb methanol.mae'.split(),
-    #     args_ref=' -d ref_methanol -jb methanol.mae'.split())
-    # a.run(restart='par_diff_001.txt')
-
-    # !!! END TESTING SECTION !!!

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Handles importing data from the various filetypes that Q2MM uses.
 
@@ -62,7 +63,7 @@ class File(object):
         with open(path, 'w') as f:
             for line in lines:
                 f.write(line)
-        
+
 class GaussFormChk(File):
     """
     Used to retrieve data from Gaussian formatted checkpoint files.
@@ -301,7 +302,7 @@ class GaussLog(File):
                         # ... etc. until the length of the sublist is equal to
                         # the number of atoms. Remember, for low precision
                         # eigenvectors it only adds in sets of 3, not 5.
-                        
+
                         # Elements of evecs are simply the data under
                         # "Coord Atom Element" multiplied by the square root
                         # of the weight.
@@ -419,7 +420,7 @@ class GaussLog(File):
         # the properties dictionary.
         atoms = stuff.group('atoms')
         atoms = atoms.split('\\')
-        # Z-matrix coordinates adds another section. We need to be aware of 
+        # Z-matrix coordinates adds another section. We need to be aware of
         # this.
         probably_z_matrix = False
         for atom in atoms:
@@ -809,7 +810,7 @@ class GaussLog(File):
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
-                                if current_atom.atomic_num: 
+                                if current_atom.atomic_num:
                                     assert current_atom.atomic_num == int(
                                         match.group(2)), \
                                         ("[L{}] Atomic numbers don't match "
@@ -832,7 +833,7 @@ class GaussLog(File):
                             logger.log(5, '[L{}] Start standard coordinates '
                                        'section.'.format(i+1))
         return structures
-                            
+
 def conv_sch_str(sch_struct):
     """
     Converts a schrodinger.structure object to my own structure object.
@@ -860,7 +861,7 @@ def conv_sch_str(sch_struct):
         my_bond.order = sch_bond.order
         my_bond.value = sch_bond.length
     return my_struct
-    
+
 class SchrodingerFile(File):
     """
     Parent class used for all Schrodinger files.
@@ -892,7 +893,7 @@ class SchrodingerFile(File):
             my_bond.order = sch_bond.order
             my_bond.value = sch_bond.length
         return my_struct
-    
+
 class JaguarIn(SchrodingerFile):
     """
     Used to retrieve data from Jaguar .in files.
@@ -974,7 +975,7 @@ class JaguarIn(SchrodingerFile):
             # This area is sketch. I added it so I could use Hessian data
             # generated from a Jaguar calculation that had a dummy atom.
             # No gaurantees this will always work.
-            for i, structure in enumerate(structures): 
+            for i, structure in enumerate(structures):
                 empty_atoms = []
                 for atom in structure.atoms:
                     logger.log(1, '>>> atom {}: {}'.format(atom.index, atom))
@@ -993,7 +994,7 @@ class JaguarIn(SchrodingerFile):
         Attempts to figure out the lines of itself.
 
         Since it'd be difficult, the written version will be missing much
-        of the data in the original. Maybe there's something in the 
+        of the data in the original. Maybe there's something in the
         Schrodinger API for that.
 
         However, I do want this to include the ability to write out an
@@ -1011,7 +1012,7 @@ class JaguarIn(SchrodingerFile):
         lines.extend(struct.format_coords(format='gauss'))
         lines.append('&')
         return lines
-        
+
 class JaguarOut(File):
     """
     Used to retrieve data from Schrodinger Jaguar .out files.
@@ -1176,7 +1177,7 @@ class JaguarOut(File):
         # logger.log(5, '  -- ({}, {}) eigenvectors expected for nonlinear '
         #            'molecule.'.format(
         #         num_atoms * 3 - 6, num_atoms * 3))
-        
+
 class Mae(SchrodingerFile):
     """
     Used to retrieve and work with data from Schrodinger .mae files.
@@ -1332,7 +1333,7 @@ class Mae(SchrodingerFile):
             # TNCG has more risk of not converging, and may print NaN instead
             # of coordinates and forces to output.
             # arg1: 1 = PRCG, 9 = TNCG
-            com += co.COM_FORM.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0) 
+            com += co.COM_FORM.format('MINI', 1, 0, 500, 0, 0, 0, 0, 0)
             self._index_output_mae.append('opt')
         if com_opts['opt_mmo']:
             com += co.COM_FORM.format('ELST', 1, 0, 0, 0, 0, 0, 0, 0)
@@ -1356,7 +1357,7 @@ class Mae(SchrodingerFile):
         simple subprocess command due to problems with Schrodinger tokens.
         This script checks the available tokens, and if there's not enough,
         waits to run MacroModel until there are.
- 
+
         Arguments
         ---------
         max_timeout : int
@@ -1461,7 +1462,7 @@ def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
             current_timeout, macro_tokens, suite_tokens))
     if end is True:
         logger.log(level, '-' * 50)
-        
+
 class MacroModelLog(File):
     """
     Used to retrieve data from MacroModel log files.
@@ -1675,7 +1676,8 @@ def geo_from_points(*args):
         dist_21 = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
         dist_23 = math.sqrt((x2 - x3)**2 + (y2 - y3)**2 + (z2 - z3)**2)
         dist_13 = math.sqrt((x1 - x3)**2 + (y1 - y3)**2 + (z1 - z3)**2)
-        angle = math.acos((dist_21**2 + dist_23**2 - dist_13**2)/(2*dist_21*dist_23))
+        angle = math.acos((dist_21**2 + dist_23**2 - dist_13**2) /
+                          (2*dist_21*dist_23))
         angle = math.degrees(angle)
         return float(angle)
     x4 = args[3][0]
@@ -1848,12 +1850,17 @@ class Structure(object):
                     else:
                         data.append(datum)
                     # atom_coords = [x.coords for x in atoms]
-                    # tor_1 = geo_from_points(atom_coords[0], atom_coords[1], atom_coords[2])
-                    # tor_2 = geo_from_points(atom_coords[1], atom_coords[2], atom_coords[3])
-                    # logger.log(1, '>>> tor_1: {} / tor_2: {}'.format(tor_1, tor_2))
+                    # tor_1 = geo_from_points(
+                    #     atom_coords[0], atom_coords[1], atom_coords[2])
+                    # tor_2 = geo_from_points(
+                    #     atom_coords[1], atom_coords[2], atom_coords[3])
+                    # logger.log(1, '>>> tor_1: {} / tor_2: {}'.format(
+                    #     tor_1, tor_2))
                     # if -5. < tor_1 < 5. or 175. < tor_1 < 185. or \
                     #         -5. < tor_2 < 5. or 175. < tor_2 < 185.:
-                    #     logger.log(1, '>>> tor_1 or tor_2 is too close to 0 or 180!')
+                    #     logger.log(
+                    #         1,
+                    #         '>>> tor_1 or tor_2 is too close to 0 or 180!')
                     #     pass
                     # else:
                     #     data.append(datum)
@@ -2013,7 +2020,7 @@ class Bond(object):
             self.__class__.__name__, '-'.join(
                 map(str, self.atom_nums)), self.value)
     def as_data(self, **kwargs):
-        # Sort of silly to have all this stuff about angles and 
+        # Sort of silly to have all this stuff about angles and
         # torsions in here, but they both inherit from this class.
         # I suppose it'd make more sense to create a structural
         # element class that these all inherit from.
@@ -2055,7 +2062,7 @@ def return_filetypes_parser():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=RawTextHelpFormatter)
     parser.add_argument(
-        '-i', '--input', type=str, 
+        '-i', '--input', type=str,
         help='Input filename.')
     parser.add_argument(
         '-o', '--output', type=str,
@@ -2087,7 +2094,7 @@ def detect_filetype(filename):
     else:
         raise Exception('Filetype not recognized.')
     return file_ob
-        
+
 def main(args):
     parser = return_filetypes_parser()
     opts = parser.parse_args(args)

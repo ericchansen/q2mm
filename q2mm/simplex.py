@@ -1,4 +1,3 @@
-#!/usr/bin/python
 """
 Simplex optimization.
 """
@@ -115,7 +114,7 @@ class Simplex(opt.Optimizer):
             # Here we select the parameters that have the lowest 2nd
             # derivatives.
 
-            # Could fail when simplex finds improvements but restores other 
+            # Could fail when simplex finds improvements but restores other
             # parameters.
             # if self.ff.params[0].d1:
 
@@ -245,7 +244,7 @@ class Simplex(opt.Optimizer):
             for i in xrange(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
-                        sum([x.params[i].value * 
+                        sum([x.params[i].value *
                              (x.score - self.new_ffs[-1].score)
                              for x in self.new_ffs[:-1]])
                         / score_diff_sum)
@@ -381,7 +380,7 @@ def select_simp_params_on_derivs(params, max_params=10):
     """
     Sorts parameter sets from lowest to highest second
     derivatives of their score in the objective function.
-    
+
     Parameters
     ----------
     params : list of subclasses of `datatypes.Param`
@@ -403,21 +402,6 @@ def select_simp_params_on_derivs(params, max_params=10):
     logger.log(20, 'KEEPING PARAMS FOR SIMPLEX:\n{}'.format(
             ' '.join([str(x) for x in keep])))
     return keep
-
-# I also don't think this is used anymore.
-# def reduce_num_simp_params(ff, ffs, max_params=10):
-#     logger.log(
-#         20, '  -- Reducing number of parameters to {}'.format(max_params))
-#     opt.param_derivs(ff, ffs)
-#     simp_params = select_simp_params_on_derivs(
-#         ff.params, max_params=max_params)
-#     return simp_params
-    
-# I don't think this is used anymore. Potentially delete.
-# def reduce_num_simp_ffs(ffs, params):
-#     simp_ffs = opt.extract_forward(ffs)
-#     simp_ffs = opt.extract_ff_by_params(ffs, params)
-#     return simp_ffs
 
 def restore_simp_ff(new_ff, old_ff):
     """
@@ -453,15 +437,3 @@ def restore_simp_ff(new_ff, old_ff):
                         param_o.mm3_col == param_n.mm3_col:
                     new_ff.params[i] = copy.deepcopy(param_n)
     return new_ff
-
-if __name__ == '__main__':
-    logging.config.dictConfig(co.LOG_SETTINGS)
-    # Just for testing.
-    ff = datatypes.MM3('b071/mm3.fld')
-    ff.import_ff()
-    ff.params = parameters.trim_params_by_file(ff.params, 'b071/params.txt')
-    a = Simplex(
-        direc='b071', ff=ff,
-        args_ff=' -d b071 -me X002a.mae X002b.mae -mb X002a.mae',
-        args_ref=' -d b071 -je X002a.mae X002b.mae -jb X002a.mae')
-    a.run()

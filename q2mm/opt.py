@@ -1,4 +1,3 @@
-#!/usr/bin/python
 """
 General code related to all optimization techniques.
 """
@@ -82,7 +81,6 @@ class Optimizer(object):
         Same subclass as the initial force field. Contains much of the same
         information, except the parameter values are the best ones obtained
         during the optimization.
-    
     """
     def __init__(self,
                  direc=None,
@@ -247,7 +245,7 @@ def extract_forward(ffs):
     ffs : list of `datatypes.FF` (or subclass)
     """
     return [x for x in ffs if 'forward' in x.method.lower()]
-            
+
 def param_derivs(ff, ffs):
     """
     Calculates the derivatives of parameters with respect to the penalty
@@ -296,9 +294,9 @@ def pretty_derivs(params, level=5):
     """
     if logger.getEffectiveLevel() <= level:
         logger.log(level,
-                   '--' + ' Parameter '.ljust(33, '-') + 
+                   '--' + ' Parameter '.ljust(33, '-') +
                    '--' + ' 1st der. '.center(19, '-') +
-                   '--' + ' 2nd der. '.center(19, '-') + 
+                   '--' + ' 2nd der. '.center(19, '-') +
                    '--')
         for param in params:
             # This try/except is used to catch instances where the 1st or 2nd
@@ -306,10 +304,10 @@ def pretty_derivs(params, level=5):
             try:
                 logger.log(level,
                            '  ' + '{}'.format(param).ljust(33, ' ') +
-                           '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') + 
+                           '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') +
                            '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
             except ValueError:
-                logger.log(level, 
+                logger.log(level,
                            '  ' + '{}'.format(param).ljust(33, ' ') +
                            '  ' + 'None'.ljust(19, ' ') +
                            '  ' + 'None'.ljust(19, ' '))
@@ -337,7 +335,7 @@ def pretty_ff_params(ffs, level=20):
             all_param_values = ['{:8.4f}'.format(x) for x in all_param_values]
             logger.log(level, wrapper.fill(' '.join(all_param_values)))
         logger.log(level, '-' * 79)
-        
+
 def pretty_ff_results(ff, level=20):
     """
     Shows a force field's method, parameters, and score.

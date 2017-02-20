@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 '''
 Selects parameters from force fields.
 
@@ -27,7 +27,7 @@ def return_params_parser(add_help=True):
     parameters.
     '''
     if add_help:
-        description=(__doc__ + 
+        description=(__doc__ +
                      '''
 PTYPES:
 ae   - equilibrium angles
@@ -141,7 +141,7 @@ def read_param_file(filename):
                  Force constants   = 2
 
     neg    - Forces parameter to negative values.
-    pos    - Forces parameter to positive values. 
+    pos    - Forces parameter to positive values.
     both   - Allows negative or positive values.
 
     Example parameter file:
@@ -301,7 +301,7 @@ def main(args):
                 print('{} {}'.format(param.mm3_row, param.mm3_col))
     ff.params = params
     return ff
-                    
+
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     main(sys.argv[1:])
