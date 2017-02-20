@@ -35,11 +35,15 @@ def read_com(filename):
            required for MacroModel conformational searches.
     chig : list of integers
            Atom indices for chiral centers.
+    torc : list of tuples of length 4
+           Each tuple is the indices of 4 atoms used to describe a torsion
+           check.
     """
     comp = [] # Holds the COMP atoms. This is a flat list.
     tors = [] # Holds TORS. List of tuples of length 2.
     rca4 = [] # Holds RCA4. List of tuples of length 4.
     chig = [] # Holds CHIG. Flat list.
+    torc = [] # Holds TORC. List of tuples of length 4.
     with open(filename, 'r') as f:
         for line in f:
             cols = line.split()
@@ -52,16 +56,21 @@ def read_com(filename):
                 if x[2] < x[1]:
                     x.reverse()
                 rca4.append(tuple(x))
+            if cols[0] == 'TORC':
+                x = map(int, cols[1:5])
+                if x[2] < x[1]:
+                    x.reverse()
+                torc.append(tuple(x))
             if cols[0] == 'CHIG':
                 chig.extend(map(int, cols[1:5]))
-    # Remove all extra 0's from comp.
+    # Remove all extra 0's from comp and chig.
     # Up to 4 COMP atoms are given per line. If 3 or less are given on a line,
     # the remaining columns are 0's. Delete those meaningless 0's.
     comp = filter(lambda x: x != 0, comp)
     chig = filter(lambda x: x != 0, chig)
-    return comp, tors, rca4, chig
+    return comp, tors, rca4, chig, torc
 
-def add_to_mae(filename, output, comp, tors, rca4, chig):
+def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
     """
     Adds properties to atoms and bonds in a *.mae file. The properties it adds
     were extracted from MacroModel conformational search *.com files.
@@ -81,6 +90,9 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
                break required for MacroModel conformational searches.
     chig     : list of integers
                Atom indices for chiral centers.
+    torc     : list of tuples of length 4
+               Each tuple is the indices of 4 atoms used to describe a torsion
+               check,
     """
     structure_reader = sch_struct.StructureReader(filename)
     structure_writer = sch_struct.StructureWriter('TEMP.mae')
@@ -135,6 +147,18 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
                       bond.atom2.atom_type_name,
                       bond.property['i_cs_rca4_2']))
 
+        print('SETUP TORC:')
+        for one_torc in torc:
+            bond = structure.getBond(one_torc[1], one_torc[2])
+            bond.property['i_cs_torc_1'] = one_torc[0]
+            bond.property['i_cs_torc_2'] = one_torc[3]
+            print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
+                      bond.property['i_cs_torc_1'],
+                      bond.atom1.index,
+                      bond.atom1.atom_type_name,
+                      bond.atom2.index,
+                      bond.atom2.atom_type_name,
+                      bond.property['i_cs_torc_2']))
         # Set i_cs_rca4_1, i_cs_rca4_2 and b_cs_tors to 0 for all other bonds.
         for bond in structure.bond:
             if not 'i_cs_rca4_1' in bond.property:
@@ -143,6 +167,10 @@ def add_to_mae(filename, output, comp, tors, rca4, chig):
                 bond.property['i_cs_rca4_2'] = 0
             if not 'b_cs_tors' in bond.property:
                 bond.property['b_cs_tors'] = 0
+            if not 'i_cs_torc_1' in bond.property:
+                bond.property['i_cs_torc_1'] = 0
+            if not 'i_cs_torc_2' in bond.property:
+                bond.property['i_cs_torc_2'] = 0
         structure_writer.append(structure)
 
     structure_writer.close()
@@ -175,13 +203,14 @@ def main(com, mae, out=None):
     # Rewrite input *.mae if the output filename isn't provided.
     if not out:
         out = mae
-    comp, tors, rca4, chig = read_com(opts.com)
+    comp, tors, rca4, chig, torc = read_com(opts.com)
     print('READ: {}'.format(opts.com))
     print(' * COMP: {}'.format(comp))
     print(' * TORS: {}'.format(tors))
     print(' * RCA4: {}'.format(rca4))
     print(' * CHIG: {}'.format(chig))
-    add_to_mae(mae, out, comp, tors, rca4, chig)
+    print(' * TORC: {}'.format(torc))
+    add_to_mae(mae, out, comp, tors, rca4, chig, torc)
 
 if __name__ == '__main__':
     parser = return_parser()

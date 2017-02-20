@@ -1,4 +1,4 @@
- #!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 Takes *.mae structure files and generates *.com files for
@@ -20,18 +20,18 @@ b_cs_comp - True (1) if the atom should be used for comparisons to determine
 Bond Properties
 ---------------
 b_cs_tors   - True (1) if the bond should be rotated.
-i_cs_rca4_1 - This and i_cs_rca4_2 are used together and  indicate  where the
+i_cs_rca4_1 - This and `i_cs_rca4_2` are used together and indicate where the
               conformational search method should make ring breaks.
 
               In MacroModel, ring breaks are specified by providing the atom
               numbers for the 4 atoms in a torsion. The two middle atoms are
-              described by the existing Maestro properties i_m_from and
-              i_m_to. The two ending atoms are described using i_cs_rca4_1
-              (which is the atom connected to i_m_from) and i_cs_rca4_2 (which
-              is the atom connected to i_m_to).
+              described by the existing Maestro properties `i_m_from` and
+              `i_m_to`. The two ending atoms are described using `i_cs_rca4_1`
+              (which is the atom connected to `i_m_from`) and `i_cs_rca4_2`
+              (which is the atom connected to `i_m_to`).
 
-              If both i_cs_rca4_1 and i_cs_rca4_2 are 0, then a ring break isn't
-              made across this bond.
+              If both `i_cs_rca4_1` and `i_cs_rca4_2` are 0, then a ring break
+              isn't made across this bond.
 
               IMPORTANT NOTE TO AVOID CONFUSION:
               By default, Schrödinger writes *.mae files with bonds listed in
@@ -39,7 +39,12 @@ i_cs_rca4_1 - This and i_cs_rca4_2 are used together and  indicate  where the
               for 1-2 and 2-1 MUST BE THE SAME. Therefore, these RCA4
               properties are setup to only read properly for the bond with
               the lowest atom number first. In this case, 1-2.
-i_cs_rca4_2 - See i_cs_rca4_1.
+i_cs_rca4_2 - See `i_cs_rca4_1`.
+i_cs_torc_1 - This and `i_cs_torc_2` are used together to indicate where the
+              conformational search method should enforce torsion checks.
+
+              Functions similar to `i_cs_rca4_1` and `i_cs_rca4_2`.
+i_cs_torc_2 - See `i_cs_torc_1`.
 """
 import argparse
 import sys
@@ -86,6 +91,7 @@ class MyComUtil(mmodutils.ComUtil):
         indices_chig = []
         indices_tors = []
         indices_rca4 = []
+        indices_torc = []
         reader = sch_struct.StructureReader(mae_file)
         for structure in reader:
             for atom in structure.atom:
@@ -109,6 +115,13 @@ class MyComUtil(mmodutils.ComUtil):
                             bond.atom1.index,
                             bond.atom2.index,
                             bond.property['i_cs_rca4_2']
+                            ))
+                if bond.property['i_cs_torc_1']:
+                    indices_torc.append((
+                            bond.property['i_cs_torc_1'],
+                            bond.atom1.index,
+                            bond.atom2.index,
+                            bond.property['i_cs_torc_2']
                             ))
         reader.close()
         count_comp = 0
@@ -148,6 +161,17 @@ class MyComUtil(mmodutils.ComUtil):
                 arg5=0.5,
                 arg6=2.5
                 )
+        count_torc = 0
+        for count_rca4, args in enumerate(indices_torc):
+            self.setOpcdArgs(
+                opcd='TORC',
+                arg1=args[0],
+                arg2=args[1],
+                arg3=args[2],
+                arg4=args[3],
+                arg5=90.,
+                arg6=180.
+                )
 
         self.DEBG.clear()
         self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
@@ -164,8 +188,8 @@ class MyComUtil(mmodutils.ComUtil):
         self.MCMM.clear()
         # 3**N where N = number of bonds rotated
         # Maxes out at 50,000.
-        # nsteps = 3**len(indices_tors)
-        nsteps = 50
+        nsteps = 3**len(indices_tors)
+        # nsteps = 50
         if nsteps > 50000:
             nsteps = 50000
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
@@ -211,6 +235,7 @@ class MyComUtil(mmodutils.ComUtil):
         com_args.extend(['CHIG'] * (count_chig + 1))
         # Used to have AUOP here.
         com_args.extend(['TORS'] * (count_tors + 1))
+        com_args.extend(['TORC'] * (count_torc + 1))
         com_args.extend(['RCA4'] * (count_rca4 + 1))
         com_args.extend([
                 'CONV',

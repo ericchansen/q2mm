@@ -255,7 +255,13 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     # Delete duplicate atoms once you copied all the data.
     merge.deleteAtoms(common_atoms_2)
-    merge = add_rca4(merge, struct_1, match_1, struct_2, match_2)
+    merge = add_rca4_torc(merge,
+                          struct_1, match_1,
+                          struct_2, match_2)
+    merge = add_rca4_torc(merge,
+                          struct_1, match_1,
+                          struct_2, match_2,
+                          torc=True)
 
     merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
     merge.property['s_m_entry_name'] += \
@@ -263,14 +269,16 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     return merge
 
-def add_rca4(merge, struct_1, match_1, struct_2, match_2):
+def add_rca4_torc(merge, struct_1, match_1, struct_2, match_2, torc=False):
     """
-    Takes the RCA4 properties from two structures and properly combines them
-    into the merged structures.
+    Takes the RCA4 and TORC properties from two structures and properly combines
+    them into the merged structures.
 
-    RCA4 properties are stored in Schrödinger bond properties:
+    RCA4 and TORC properties are stored in Schrödinger bond properties:
      * i_cs_rca4_1
      * i_cs_rca4_2
+     * i_cs_torc_1
+     * i_cs_torc_2
 
     Arguments
     ---------
@@ -286,38 +294,46 @@ def add_rca4(merge, struct_1, match_1, struct_2, match_2):
     -------
     merge : Updated bonds with new RCA4 properties
     """
-    # Deal with RCA4. It can be done independently of all the merges. How nice!
-    rca4s = []
+    if torc:
+        string = 'TORC'
+        str1 = 'i_cs_torc_1'
+        str2 = 'i_cs_torc_2'
+    else:
+        string = 'RCA4'
+        str1 = 'i_cs_rca4_1'
+        str2 = 'i_cs_rca4_2'
+    lists_of_atoms = []
     for bond in struct_2.bond:
         try:
-            bond.property['i_cs_rca4_1']
-            bond.property['i_cs_rca4_1']
+            bond.property[str1]
+            bond.property[str2]
         except KeyError as e:
-            print('ERROR! NO RCA4: {}'.format(struct_2.property['s_m_title']))
+            print('ERROR! NO {}: {}'.format(
+                string, struct_2.property['s_m_title']))
             raise e
-        if bond.property['i_cs_rca4_1']:
-            rca4 = [bond.property['i_cs_rca4_1'],
-                    bond.atom1.index,
-                    bond.atom2.index,
-                    bond.property['i_cs_rca4_2']]
-            rca4s.append(rca4)
-    print('RCA4:     {}'.format(rca4s))
+        if bond.property[str1]:
+            atoms = [bond.property[str1],
+                     bond.atom1.index,
+                     bond.atom2.index,
+                     bond.property[str2]]
+            lists_of_atoms.append(atoms)
+    print('{}:     {}'.format(string, lists_of_atoms))
 
-    # Now update the RCA4 atom indices to match the structure post merging and
-    # deletion.
+    # Now update the RCA4 and TORC atom indices to match the structure post
+    # merging and deletion.
     # Need this for later.
     num_atoms = len(struct_1.atom)
     new_match_2 = [x + num_atoms for x in match_2]
     # Contains new RCA4 commands.
-    new_rca4s = []
-    for rca4 in rca4s:
-        new_rca4 = []
-        for x in rca4:
+    new_lists_of_atoms = []
+    for atoms in lists_of_atoms:
+        new_atoms = []
+        for x in atoms:
             if x in match_2:
-                # If the RCA4 atom is one of the matching/duplicate/common
+                # If the RCA4/TORC atom is one of the matching/duplicate/common
                 # atoms, it's going to get deleted. This replaces the index of
                 # that atom with the matching atom in the 1st structure.
-                new_rca4.append(match_1[match_2.index(x)])
+                new_atoms.append(match_1[match_2.index(x)])
             else:
                 # The atoms in 2nd structure will always be added after the
                 # atoms in the 1st structure. This adjusts the atom indices
@@ -329,33 +345,33 @@ def add_rca4(merge, struct_1, match_1, struct_2, match_2):
                 atoms_in_str_2_before_this_one = \
                     sum(i < new_index for i in new_match_2)
                 new_index -= atoms_in_str_2_before_this_one
-                new_rca4.append(new_index)
-        new_rca4s.append(new_rca4)
-    print('RCA4 NEW: {}'.format(new_rca4s))
+                new_atoms.append(new_index)
+        new_lists_of_atoms.append(new_atoms)
+    print('{} NEW: {}'.format(string, new_lists_of_atoms))
 
-    print(' * UPDATING RCA4:')
+    print(' * UPDATING {}:'.format(string))
     # Now have to update the bonds RCA4 properties.
-    for rca4 in new_rca4s:
-        bond = merge.getBond(rca4[1], rca4[2])
+    for atoms in new_lists_of_atoms:
+        bond = merge.getBond(atoms[1], atoms[2])
         print('   * BOND:     {:>4}    {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-            bond.property['i_cs_rca4_1'],
+            bond.property[str1],
             bond.atom1.index,
             bond.atom1.atom_type_name,
             bond.atom2.index,
             bond.atom2.atom_type_name,
-            bond.property['i_cs_rca4_2']))
-        bond.property['i_cs_rca4_1'] = rca4[0]
-        bond.property['i_cs_rca4_2'] = rca4[3]
+            bond.property[str2]))
+        bond.property[str1] = rca4[0]
+        bond.property[str2] = rca4[3]
         print('     * UPDATE: '
               '{:>4}/{:2} {:>4}/{:2} {:>4}/{:2} {:>4}/{:2}'.format(
-            merge.atom[bond.property['i_cs_rca4_1']].index,
-            merge.atom[bond.property['i_cs_rca4_1']].atom_type_name,
+            merge.atom[bond.property[str1]].index,
+            merge.atom[bond.property[str1]].atom_type_name,
             bond.atom1.index,
             bond.atom1.atom_type_name,
             bond.atom2.index,
             bond.atom2.atom_type_name,
-            merge.atom[bond.property['i_cs_rca4_2']].index,
-            merge.atom[bond.property['i_cs_rca4_2']].atom_type_name))
+            merge.atom[bond.property[str2]].index,
+            merge.atom[bond.property[str2]].atom_type_name))
     return merge
 
 def merge(struct_1, struct_2):
