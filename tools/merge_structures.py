@@ -23,39 +23,15 @@ PROPERTIES_TO_REMOVE = \
     'i_m_Source_File_Index',
     'i_m_ct_format',
     'i_m_ct_stereo_status',
-    
+
     's_st_Chirality_1',
     's_st_Chirality_2'
     's_st_Chirality_3',
-    
+
     'b_mmod_Minimization_Converged-MM3*',
     'i_mmod_Times_Found-MM3*',
     'r_mmod_RMS_Derivative-MM3*'
     ]
-
-# In case you don't want to use the command line.
-# And for testing.
-# INPUT = 'collection.mae'
-# OUTPUT = 'out.mae'
-# MERGE = 'merge.mae'
-# REMOVE_FROM_INPUT = \
-#     [
-#     15, 16, 56, 17, 22, # Amide backbone
-#     23, 59, # Double bond
-#     28, 44, 45, 46, 47, 48, # Phenyl C
-#     75, 76, 77, 78, 79 # Phenyl H
-#     ]
-# REMOVE_FROM_MERGE = \
-#     [
-#     65, 69, 71, 70, 67, # Phenyl H
-#     61, 62, 64, 68, 66, 63, # Phenyl C
-#     52, 53, 54, 55, # Methyl
-#     ]
-# BONDS = \
-#     [
-#     '18-49', # Connect N-terminus
-#     '14-56' # Connect C-terminus
-#     ]
 
 def return_parser():
     parser = argparse.ArgumentParser(
@@ -92,15 +68,6 @@ def main(args):
     parser = return_parser()
     opts = parser.parse_args(args)
 
-    # Remove. Only for testing. Or if you're too lazy to use the command line,
-    # here's another way to do things.
-    # opts.input = INPUT
-    # opts.output = OUTPUT
-    # opts.merge = MERGE
-    # opts.remove_from_input = REMOVE_FROM_INPUT
-    # opts.remove_from_merge = REMOVE_FROM_MERGE
-    # opts.bonds = BONDS
-    
     if opts.remove_from_input:
         opts.remove_from_input.sort()
     if opts.remove_from_merge:
@@ -114,7 +81,7 @@ def main(args):
     # In other words, no 2D combination arrays (although going that step
     # further wouldn't be challenging).
     structure_merge_orig = list(reader_merge)[0]
-    
+
     if opts.superimpose:
         # Figure out superimpose atoms.
         superimpose_atoms_merge = []

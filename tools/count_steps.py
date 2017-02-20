@@ -5,19 +5,18 @@ import os
 import re
 import sys
 
-RE_INPUT = '\s+Search initialized with\s+(?P<num>\d+)\s+structures from the input structure file'
-RE_TOTAL = '\s+Total number of structures processed =\s+(?P<num>\d+)'
+RE_INPUT = ('\s+Search initialized with\s+(?P<num>\d+)\s+structures from the '
+            'input structure file')
+RE_TOTAL = ('\s+Total number of structures processed =\s+(?P<num>\d+)')
 
 def count_steps(direc):
     filenames = glob.glob(os.path.join(
             direc, '*.log'))
     filenames.sort()
-    # print(filenames)
     mcmm_steps = 0
     lmcs_steps = 0
     lmc2_steps = 0
     for filename in filenames:
-        # print(filename)
         with open(filename, 'r') as f:
             search_type = None
             num_input = None
@@ -26,7 +25,8 @@ def count_steps(direc):
                 if search_type is None:
                     if 'Monte Carlo Multiple Minimum Search requested' in line:
                         search_type = 'MCMM'
-                    if 'Large scale Low-frequency-MODe conformational search.' in line:
+                    if 'Large scale Low-frequency-MODe conformational search.' \
+                       in line:
                         search_type = 'LMC2'
                     if 'Low-frequency-Mode Conformational Search.' in line:
                         search_type = 'LMCS'
@@ -44,7 +44,6 @@ def count_steps(direc):
                 print('Skipping {}.'.format(filename))
                 continue
             steps = num_total - num_input + 1
-            # print(num_total, num_input)
             if search_type == 'MCMM':
                 mcmm_steps += steps
             elif search_type == 'LMC2':
@@ -56,7 +55,7 @@ def count_steps(direc):
 def print_how_to(direc, mcmm_steps, lmcs_steps, lmc2_steps):
     print('{:15.15s} MCMM: {:10d} LMCS: {:10d} LMC2: {:10d}'.format(
             direc, mcmm_steps, lmcs_steps, lmc2_steps))
-    
+
 def main(args):
     parser = argparse.ArgumentParser(
         description='Reads MacroModel conformational search logs and tells you '

@@ -6,7 +6,8 @@ The original plan:
 1. Setup a default MCMM. Not sure how to do this. Essentially I want the results
    of an AUTO command.
 2. Take those results and store them in lists or dictionaries or whatever.
-3. Use Schrodinger's structure to add those properties to the substrate or ligand.
+3. Use Schrodinger's structure to add those properties to the substrate or
+ligand.
 
 However, I don't know how to get the results from AUTO from the command line.
 """
@@ -51,8 +52,8 @@ def read_com(filename):
 
 def add_to_mae(filename, output, comp, tors, rca4, chig):
     """
-    Adds properties to atoms and bonds in a .mae file. The properties it adds
-    were extracted from 
+    Adds properties to atoms and bonds in a *.mae file. The properties it adds
+    were extracted from *.com files.
 
     Arguments
     ---------

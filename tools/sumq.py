@@ -9,7 +9,7 @@ Supported filetypes:
  * Schrodinger .mae files.
  * Gaussian .log files.
 
-For now the options --max_structures and --max_energy only apply to MacroModel 
+For now the options --max_structures and --max_energy only apply to MacroModel
 .log files.
 """
 from __future__ import print_function
@@ -26,10 +26,11 @@ T = 300 # K
 # Beta
 B = 1/(K*T)
 ENERGY_LABEL = 'r_mmod_Potential_Energy-MM3*'
-RE_ENERGY = '(\s|\*)Conformation\s+\d+\s\(\s+(?P<energy>[\d\.\-]+)\s+kJ/mol\) was found\s+(?P<num>[\d]+)'
-HARTREE_TO_KJMOL = 2625.5 # Hartree to kJ mol
+RE_ENERGY = ('(\s|\*)Conformation\s+\d+\s\(\s+(?P<energy>[\d\.\-]+)\s+kJ/mol\) '
+             'was found\s+(?P<num>[\d]+)')
+HARTREE_TO_KJMOL = 2625.5 # Hartree to kJ/mol
 
-def read_energy_from_macro_log(filename, 
+def read_energy_from_macro_log(filename,
                                max_structures=None,
                                max_energy=None):
     energies = []
@@ -102,7 +103,7 @@ def read_energy_from_gau_log(filename):
 def make_relative(energies):
     """
     Makes all energies relative.
-    
+
     Expects a list of lists, flattens it, finds the minimum, makes all energies
     in all lists relative.
     """
@@ -159,7 +160,7 @@ def main(args):
                 e = read_energy_from_mae(filename)
                 group_energies.extend(e)
         energies.append(group_energies)
-        
+
     energies = make_relative(energies)
 
     # Output code.
@@ -185,7 +186,7 @@ def main(args):
 
     print('-' * len(border))
     print('This should equal 1: {}'.format(sum(stuff)))
-    
+
 if __name__ == '__main__':
     args = sys.argv[1:]
     main(args)
