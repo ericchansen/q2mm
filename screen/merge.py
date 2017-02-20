@@ -603,7 +603,6 @@ def main(opts):
     if opts.directory:
         print('OUTPUT DIRECTORY: {}'.format(opts.directory))
         for structure in structures:
-            print('TARDBUTT: {}'.format(structure.property['s_m_title']))
             path = make_unique_filename(
                 os.path.join(
                     opts.directory,
