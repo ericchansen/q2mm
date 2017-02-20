@@ -1,4 +1,4 @@
- #!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
 See __doc__ for setup_com_from_mae.
