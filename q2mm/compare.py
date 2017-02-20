@@ -1,5 +1,4 @@
-#!/usr/bin/python
-# Still need to add functions to make pretty print statements and logs.
+#!/usr/bin/env python
 '''
 compare
 -------

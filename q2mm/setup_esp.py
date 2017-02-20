@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Used to setup ESP calculations.
 
@@ -15,7 +16,6 @@ partial charges at their default MM value.
 This script helps setup those ESP calculations for Jaguar and
 Gaussian.
 """
-#!/usr/bin/python
 from __future__ import print_function
 import argparse
 import copy

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 """
 Adds properties to Maestro atoms and bonds in *.mae files from MacroModel
 conformational search *.com files.

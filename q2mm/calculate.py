@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Extracts data from reference files or calculates FF data.
 
