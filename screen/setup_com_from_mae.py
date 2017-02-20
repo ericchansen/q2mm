@@ -92,48 +92,51 @@ class MyComUtil(mmodutils.ComUtil):
         indices_tors = []
         indices_rca4 = []
         indices_torc = []
+        # Only works with the 1st structure.
         reader = sch_struct.StructureReader(mae_file)
-        for structure in reader:
-            for atom in structure.atom:
-                try:
-                    atom.property['b_cs_comp']
-                    atom.property['b_cs_chig']
-                except KeyError as e:
-                    print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
-                        structure.property['s_m_title']))
-                    raise e
-                if atom.property['b_cs_comp']:
-                    indices_comp.append(atom.index)
-                if atom.property['b_cs_chig']:
-                    indices_chig.append(atom.index)
-            for bond in structure.bond:
-                try:
-                    bond.property['b_cs_tors']
-                    bond.property['i_cs_rca4_1']
-                    bond.property['i_cs_rca4_2']
-                    bond.property['i_cs_torc_1']
-                    bond.property['i_cs_torc_2']
-                except KeyError as e:
-                    print('ERROR! MISSING BOND PROPERTIES: {}'.format(
-                        structure.property['s_m_title']))
-                    raise e
-                if bond.property['b_cs_tors']:
-                    indices_tors.append((bond.atom1.index, bond.atom2.index))
-                if bond.property['i_cs_rca4_1']:
-                    indices_rca4.append((
-                            bond.property['i_cs_rca4_1'],
-                            bond.atom1.index,
-                            bond.atom2.index,
-                            bond.property['i_cs_rca4_2']
-                            ))
-                if bond.property['i_cs_torc_1']:
-                    indices_torc.append((
-                            bond.property['i_cs_torc_1'],
-                            bond.atom1.index,
-                            bond.atom2.index,
-                            bond.property['i_cs_torc_2']
-                            ))
+        structure = reader.next()
         reader.close()
+        print('-' * 50)
+        print('READING: {}'.format(structure.property['s_m_title']))
+        for atom in structure.atom:
+            try:
+                atom.property['b_cs_comp']
+                atom.property['b_cs_chig']
+            except KeyError as e:
+                print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
+                    structure.property['s_m_title']))
+                raise e
+            if atom.property['b_cs_comp']:
+                indices_comp.append(atom.index)
+            if atom.property['b_cs_chig']:
+                indices_chig.append(atom.index)
+        for bond in structure.bond:
+            try:
+                bond.property['b_cs_tors']
+                bond.property['i_cs_rca4_1']
+                bond.property['i_cs_rca4_2']
+                bond.property['i_cs_torc_1']
+                bond.property['i_cs_torc_2']
+            except KeyError as e:
+                print('ERROR! MISSING BOND PROPERTIES: {}'.format(
+                    structure.property['s_m_title']))
+                raise e
+            if bond.property['b_cs_tors']:
+                indices_tors.append((bond.atom1.index, bond.atom2.index))
+            if bond.property['i_cs_rca4_1']:
+                indices_rca4.append((
+                        bond.property['i_cs_rca4_1'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_2']
+                        ))
+            if bond.property['i_cs_torc_1']:
+                indices_torc.append((
+                        bond.property['i_cs_torc_1'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_torc_2']
+                        ))
         print('COMP: {}'.format(indices_comp))
         print('CHIG: {}'.format(indices_chig))
         print('TORS: {}'.format(indices_tors))
@@ -206,8 +209,8 @@ class MyComUtil(mmodutils.ComUtil):
         self.MCMM.clear()
         # 3**N where N = number of bonds rotated
         # Maxes out at 50,000.
-        # nsteps = 3**len(indices_tors)
-        nsteps = 50
+        nsteps = 3**len(indices_tors)
+        # nsteps = 50
         if nsteps > 50000:
             nsteps = 50000
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
