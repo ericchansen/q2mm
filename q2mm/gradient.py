@@ -1,7 +1,4 @@
 #!/usr/bin/python
-"""
-General code related to all optimization techniques.
-"""
 import copy
 import collections
 import csv
