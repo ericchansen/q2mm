@@ -360,8 +360,8 @@ def add_rca4_torc(merge, struct_1, match_1, struct_2, match_2, torc=False):
             bond.atom2.index,
             bond.atom2.atom_type_name,
             bond.property[str2]))
-        bond.property[str1] = rca4[0]
-        bond.property[str2] = rca4[3]
+        bond.property[str1] = atoms[0]
+        bond.property[str2] = atoms[3]
         print('     * UPDATE: '
               '{:>4}/{:2} {:>4}/{:2} {:>4}/{:2} {:>4}/{:2}'.format(
             merge.atom[bond.property[str1]].index,
