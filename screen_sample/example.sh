@@ -1,5 +1,12 @@
 module load schrodinger/2016u3
 
+python ../screen/merge.py -h
+
+rm step-2_mae-automatic/*.mae
+rm step-3_merge-output-in-one.mae
+rm step-3_merge-output/*
+cp mm3.fld atom.typ step-3_merge-output
+rm step-4_conformational-search/*
 
 echo "STEP 1 - MANUALLY ADDING STRUCTURE PROPERTIES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
@@ -27,6 +34,7 @@ echo "STEP 2 - AUTOMATICALLY ADDING ATOM AND BOND PROPERTIES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
 # Setup the atom and bond properties from the *.com files. These *.com files can
 # be setup using the Schrödinger GUI.
+
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/binap.com step-1_mae-manual/binap.mae step-2_mae-automatic/binap.mae
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/binap-b.com step-1_mae-manual/binap-b.mae step-2_mae-automatic/binap-b.mae
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/s1.com step-1_mae-manual/s1.mae step-2_mae-automatic/s1.mae
@@ -36,6 +44,7 @@ echo
 echo "STEP 3 - MERGING STRUCTURES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
 # Merge the structures.
+
 python ../screen/merge.py -g step-2_mae-automatic/rh-hydrogenation-enamides.mae -g step-2_mae-automatic/binap.mae step-2_mae-automatic/binap-b.mae -g step-2_mae-automatic/s1.mae -o step-3_merge-output-in-one.mae -d step-3_merge-output -m
 
 echo
