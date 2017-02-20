@@ -27,6 +27,7 @@ import argparse
 import copy
 import itertools
 import os
+import re
 import sys
 
 from schrodinger import structure as sch_struct
@@ -255,10 +256,10 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     # Delete duplicate atoms once you copied all the data.
     merge.deleteAtoms(common_atoms_2)
-    merge = add_rca4_torc(merge,
+    merge = add_bond_prop(merge,
                           struct_1, match_1,
                           struct_2, match_2)
-    merge = add_rca4_torc(merge,
+    merge = add_bond_prop(merge,
                           struct_1, match_1,
                           struct_2, match_2,
                           torc=True)
@@ -269,7 +270,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     return merge
 
-def add_rca4_torc(merge, struct_1, match_1, struct_2, match_2, torc=False):
+def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
     """
     Takes the RCA4 and TORC properties from two structures and properly combines
     them into the merged structures.
@@ -438,7 +439,8 @@ def load_enantiomers(structure):
         other_enantiomer = copy.deepcopy(structure)
         for coords in other_enantiomer.getXYZ(copy=False):
             coords[0] = -coords[0]
-        yield other_enantiomer
+        structures = mini_structures([other_enantiomer])
+        yield structures[0]
 
 def merge_many_structures(structures_1, structures_2):
     structures = []
@@ -492,6 +494,90 @@ def add_chirality(structure):
     structure.property['s_m_entry_name'] += string
     return structure
 
+def mini_structures(structures):
+    """
+    Takes many structures, minimizes them and returns the minimized structures.
+    It's faster to do multiple structures at once.
+
+    Arguments
+    ---------
+    structure : list of Schrödinger structure
+
+    Returns
+    -------
+    list of Schrödinger structure
+    """
+    import schrodinger.application.macromodel.utils as mmodutils
+    import schrodinger.job.jobcontrol as jobcontrol
+    from setup_com_from_mae import MyComUtil
+    print(' - ATTEMPTING MINIMIZATION')
+    sch_writer = sch_struct.StructureWriter('TEMP.mae')
+    sch_writer.extend(structures)
+    sch_writer.close()
+    # Setup the minimization.
+    com_setup = MyComUtil()
+    com_setup.my_mini(
+        mae_file='TEMP.mae',
+        com_file='TEMP.com',
+        out_file='TEMP_OUT.mae')
+    command = ['bmin', '-WAIT', 'TEMP']
+    # Run the minimization.
+    job = jobcontrol.launch_job(command)
+    job.wait()
+    # Read the minimized structures.
+    sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
+    structures = []
+    for structure in sch_reader:
+        structures.append(structure)
+    sch_reader.close()
+    # Remove temporary files.
+    os.remove('TEMP.mae')
+    os.remove('TEMP.com')
+    os.remove('TEMP_OUT.mae')
+    os.remove('TEMP.log')
+    return structures
+
+def make_unique_filename(path):
+    """
+    I'm proud of myself for this one.
+
+    Arguments
+    ---------
+    path : string
+           Path to some file.
+
+    Returns
+    -------
+    string
+    """
+    # By default, append 3 digits to the end of filenames.
+    len_digits = 3
+    while True:
+        # The path already exists.
+        if os.path.isfile(path):
+            name, ext = os.path.splitext(path)
+            # Does the filename (without the extension) end in digits?
+            m = re.search(r'\d+$', name)
+            if m:
+                # Digits at the end of the file.
+                string = m.group()
+                # Length of this string of digits.
+                len_digits = len(string)
+                # New number.
+                number = int(string) + 1
+                # Remove the existing digits.
+                name = name[:-(len_digits + 1)]
+                # Add on the new number with the same number of digits.
+                name += '_{0:0{1}d}'.format(number, len_digits)
+                path = name + ext
+            else:
+                name += '_{0:0{1}d}'.format(1, len_digits)
+                path = name + ext
+        # Hooray! It's a unique filename!
+        else:
+            break
+    return path
+
 def main(opts):
     """
     Main for merge.
@@ -501,41 +587,11 @@ def main(opts):
     print('NUM. RESULTING STRUCTURES: {}'.format(len(structures)))
 
     if opts.mini:
-        print(' - ATTEMPTING MINIMIZATION')
-
-        import schrodinger.application.macromodel.utils as mmodutils
-        import schrodinger.job.jobcontrol as jobcontrol
-        from setup_com_from_mae import MyComUtil
-
-        sch_writer = sch_struct.StructureWriter('TEMP.mae')
-        sch_writer.extend(structures)
-        sch_writer.close()
-        # Setup the minimization.
-        com_setup = MyComUtil()
-        com_setup.my_mini(
-            mae_file='TEMP.mae',
-            com_file='TEMP.com',
-            out_file='TEMP_OUT.mae')
-        command = ['bmin', '-WAIT', 'TEMP']
-        # Run the minimization.
-        job = jobcontrol.launch_job(command)
-        job.wait()
-        # Read the minimized structures.
-        sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
-        structures = []
-        for structure in sch_reader:
-            structures.append(add_chirality(structure))
-        sch_reader.close()
-        # Remove temporary files.
-        os.remove('TEMP.mae')
-        os.remove('TEMP.com')
-        os.remove('TEMP_OUT.mae')
-        os.remove('TEMP.log')
-    else:
-        new_structures = []
-        for structure in structures:
-            new_structures.append(add_chirality(structure))
-        structures = new_structures
+        structures = mini_structures(structures)
+    new_structures = []
+    for structure in structures:
+        new_structures.append(add_chirality(structure))
+    structures = new_structures
 
     # Write structures to a single file.
     if opts.output:
@@ -547,12 +603,14 @@ def main(opts):
     if opts.directory:
         print('OUTPUT DIRECTORY: {}'.format(opts.directory))
         for structure in structures:
-            sch_writer = sch_struct.StructureWriter(
+            print('TARDBUTT: {}'.format(structure.property['s_m_title']))
+            path = make_unique_filename(
                 os.path.join(
                     opts.directory,
-                    structure.property['s_m_title'] + '.mae'
-                    )
-                )
+                    structure.property['s_m_title'] + '.mae'))
+            filename = os.path.basename(path)
+            print(' * WRITING : {}'.format(filename))
+            sch_writer = sch_struct.StructureWriter(path)
             sch_writer.append(structure)
             sch_writer.close()
 
