@@ -263,10 +263,28 @@ class MyComUtil(mmodutils.ComUtil):
                 'MINI'
                 ])
         return self.writeComFile(com_args)
-    def my_mini(self, mae_file=None, com_file=None, out_file=None):
+    def my_mini(
+        self,
+        mae_file=None,
+        com_file=None,
+        out_file=None,
+        frozen_atoms=None):
         """
         Modified version of the the Schrödinger mini.
         """
+        print('FROZEN ATOMS: {}'.format(frozen_atoms))
+        if not frozen_atoms:
+            frozen_atoms = []
+        self.FXAT.clear()
+        for frozen_atom in frozen_atoms:
+            self.setOpcdArgs(
+                opcd='FXAT',
+                arg1=frozen_atom,
+                arg2=0,
+                arg3=0,
+                arg4=0,
+                arg5=-1
+                )
         self.DEBG.clear()
         self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
         self.SEED.clear()
@@ -296,10 +314,12 @@ class MyComUtil(mmodutils.ComUtil):
             'BDCO',
             'CRMS',
             'BGIN',
-            'READ',
+            'READ']
+        com_args.extend(['FXAT'] * len(frozen_atoms))
+        com_args.extend([
             'CONV',
             'MINI',
-            'END']
+            'END'])
         return self.writeComFile(com_args)
 
 def return_parser():

@@ -57,13 +57,6 @@ def return_parser():
         action='store_true',
         help='Attempt to minimize merged structures using MacroModel and '
         'MM3*.')
-    # This is handled by properties inside the *.mae files.
-    # parser.add_argument(
-    #     '--substructure',
-    #     action='store_true',
-    #     help='By default, use schrodinger.structutils.analyze.evaluate_smarts '
-    #     'to determine overlapping atoms. If this option is used, instead it '
-    #     'will use schrodinger.structutils.analyze.evaluate_substructure.')
     return parser
 
 def get_atom_numbers_from_structure_with_pattern(structure,
@@ -268,6 +261,10 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge.property['s_m_entry_name'] += \
         '_' + struct_2.property['s_m_entry_name']
 
+    # Minimize the structure.
+    # Freeze atoms in struct_1.
+    merge = mini([merge], frozen_atoms=range(1, num_atoms + 1))[0]
+
     return merge
 
 def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
@@ -432,6 +429,7 @@ def load_enantiomers(structure):
     ------
     Schrödinger structure objects
     """
+    # I dunno if I like this style. Seems to work though.
     yield structure
     if structure.property.get('b_cs_both_enantiomers', False):
         print('LOADING OTHER ENANTIOMER: {}'.format(
@@ -439,7 +437,8 @@ def load_enantiomers(structure):
         other_enantiomer = copy.deepcopy(structure)
         for coords in other_enantiomer.getXYZ(copy=False):
             coords[0] = -coords[0]
-        structures = mini_structures([other_enantiomer])
+        # structures = mini([other_enantiomer])
+        structures = [other_enantiomer]
         yield structures[0]
 
 def merge_many_structures(structures_1, structures_2):
@@ -465,6 +464,7 @@ def merge_many_filenames(list_of_lists):
             for enantiomer in load_enantiomers(structure):
                 structures.append(enantiomer)
         sch_reader.close()
+    print('NUM. STRUCTURES: {}'.format(len(structures)))
 
     # Iterate over groups of filenames/structures.
     for filenames in list_of_lists[1:]:
@@ -478,7 +478,9 @@ def merge_many_filenames(list_of_lists):
 
         # Update existing list of structures after combining with the new
         # structures.
-        structures = merge_many_structures(structures, new_structures)
+        structures = list(merge_many_structures(structures, new_structures))
+        structures = mini(structures)
+        print('NUM. STRUCTURES: {}'.format(len(structures)))
     return list(structures)
 
 def add_chirality(structure):
@@ -494,7 +496,7 @@ def add_chirality(structure):
     structure.property['s_m_entry_name'] += string
     return structure
 
-def mini_structures(structures):
+def mini(structures, frozen_atoms=None):
     """
     Takes many structures, minimizes them and returns the minimized structures.
     It's faster to do multiple structures at once.
@@ -519,7 +521,8 @@ def mini_structures(structures):
     com_setup.my_mini(
         mae_file='TEMP.mae',
         com_file='TEMP.com',
-        out_file='TEMP_OUT.mae')
+        out_file='TEMP_OUT.mae',
+        frozen_atoms=frozen_atoms)
     command = ['bmin', '-WAIT', 'TEMP']
     # Run the minimization.
     job = jobcontrol.launch_job(command)
@@ -587,7 +590,7 @@ def main(opts):
     print('NUM. RESULTING STRUCTURES: {}'.format(len(structures)))
 
     if opts.mini:
-        structures = mini_structures(structures)
+        structures = mini(structures)
     new_structures = []
     for structure in structures:
         new_structures.append(add_chirality(structure))
