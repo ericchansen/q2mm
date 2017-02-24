@@ -54,13 +54,13 @@ def main(opts):
                 out_file=name + '_cs.mae'
                 )
         elif opts.jobtype == 'mini':
-            com_setup.my_mcmm(
+            com_setup.my_mini(
                 mae_file=file_input,
                 com_file=name + '_mini.com',
                 out_file=name + '_mini.mae'
                 )
         elif opts.jobtype == 're':
-            com_setup.my_mcmm(
+            com_setup.my_conf_elim(
                 mae_file=file_input,
                 com_file=name + '_re.com',
                 out_file=name + '_re.mae'
