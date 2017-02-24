@@ -74,7 +74,9 @@ def read_energy_from_macro_log(filename,
     return energies
 
 def read_energy_from_mae(filename):
-    sys.path.append('~/q2mm_dev/')
+    path_of_this_file = os.path.dirname(os.path.realpath(__file__))
+    path_of_q2mm = os.path.join(path_of_this_file, '../q2mm')
+    sys.path.append(path_of_q2mm)
     import filetypes
 
     mae = filetypes.Mae(filename)
@@ -85,7 +87,9 @@ def read_energy_from_gau_log(filename):
     """
     Also convert to kJ/mol.
     """
-    sys.path.append('~/q2mm_dev/')
+    path_of_this_file = os.path.dirname(os.path.realpath(__file__))
+    path_of_q2mm = os.path.join(path_of_this_file, '../q2mm')
+    sys.path.append(path_of_q2mm)
     import filetypes
 
     # This is actually a little misleading seeing as these archives only contain
