@@ -262,6 +262,7 @@ class MyComUtil(mmodutils.ComUtil):
                 'CONV',
                 'MINI'
                 ])
+        print('WRITING: {}'.format(com_file))
         return self.writeComFile(com_args)
     def my_conf_elim(
         self,
@@ -296,6 +297,7 @@ class MyComUtil(mmodutils.ComUtil):
             'COMP',
             'MINI',
             'END']
+        print('WRITING: {}'.format(com_file))
         return self.writeComFile(com_args)
     def my_mini(
         self,
@@ -354,6 +356,7 @@ class MyComUtil(mmodutils.ComUtil):
             'CONV',
             'MINI',
             'END'])
+        print('WRITING: {}'.format(com_file))
         return self.writeComFile(com_args)
 
 def return_parser():
