@@ -169,6 +169,11 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     Structures should already be superimposed.
 
+    THIS IS THE HEART OF THIS PYTHON MODULE. DOES SO MUCH STUFF. SUCH WOW.
+
+    If you're smart, it might be nice to encapsulate this a bit more. It may do
+    too much right now, making it cumbersome to manipulate.
+
     Arguments
     ---------
     struct_1 : Schrödinger structure
@@ -214,6 +219,12 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         print(' * NEW ATOM:           {:>4}/{}'.format(
             common_atom_2.index,
             common_atom_2.atom_type_name))
+
+        # Okay, let's try copying the XYZ from common_atom_2 into common_atom_1.
+        common_atom_1.x = common_atom_2.x
+        common_atom_1.y = common_atom_2.y
+        common_atom_1.z = common_atom_2.z
+
         for merge_bond in common_atom_2.bond:
             print('   * BOND:             {:>4}/{} {:>4}/{}'.format(
                 merge_bond.atom1.index, merge_bond.atom1.atom_type_name,
@@ -264,7 +275,6 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     # Minimize the structure.
     # Freeze atoms in struct_1.
     merge = mini([merge], frozen_atoms=range(1, num_atoms + 1))[0]
-
     return merge
 
 def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
