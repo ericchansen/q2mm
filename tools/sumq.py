@@ -19,10 +19,10 @@ import re
 import sys
 
 from itertools import chain
-from math import exp
+from math import exp, log
 
 K = 0.008314459848 # kJ K^-1 mol^-1
-T = 300 # K
+T = 298.15 # K
 # Beta
 B = 1/(K*T)
 ENERGY_LABEL = 'r_mmod_Potential_Energy-MM3*'
@@ -74,6 +74,11 @@ def read_energy_from_macro_log(filename,
     return energies
 
 def read_energy_from_mae(filename):
+    """
+    Reads energies from *.mae files.
+
+    Energies are read and saved as kJ/mol.
+    """
     path_of_this_file = os.path.dirname(os.path.realpath(__file__))
     path_of_q2mm = os.path.join(path_of_this_file, '../q2mm')
     sys.path.append(path_of_q2mm)
@@ -85,7 +90,9 @@ def read_energy_from_mae(filename):
 
 def read_energy_from_gau_log(filename):
     """
-    Also convert to kJ/mol.
+    Reads energies from *.log Gaussian files.
+
+    Also converts Hartrees to kJ/mol for saving.
     """
     path_of_this_file = os.path.dirname(os.path.realpath(__file__))
     path_of_q2mm = os.path.join(path_of_this_file, '../q2mm')
@@ -110,6 +117,10 @@ def make_relative(energies):
 
     Expects a list of lists, flattens it, finds the minimum, makes all energies
     in all lists relative.
+
+    Returns
+    -------
+    list of lists of floats
     """
     zero = min(chain.from_iterable(energies))
     zero_energies = []
@@ -132,6 +143,10 @@ def return_parser():
         '-m', '--max_energy', metavar='f',
         type=float,
         help="Don't read any structures that have a relative energy above f.")
+    parser.add_argument(
+        '-a', '--appendfile', metavar='filename',
+        type=str,
+        help='Also append CSV style output to a file.')
     return parser
 
 def calc_q(energies):
@@ -145,6 +160,9 @@ def main(args):
     parser = return_parser()
     opts = parser.parse_args(args)
 
+    # list of lists
+    # Each sublist contains all the energies for a grouping of
+    # structures/filenames.
     energies = []
     # Get all the partition function values.
     for group in opts.group:
@@ -184,12 +202,27 @@ def main(args):
         dr12 = qs[0] / qs[1]
         dr21 = qs[1] / qs[0]
         de = (dr12 - 1) / (dr12 + 1) * 100
+        dde = K * T * log(qs[0]/qs[1])
         print('% dr/er (Group 1 : Group 2): {}'.format(dr12))
         print('% dr/er (Group 2 : Group 1): {}'.format(dr21))
         print('% de/ee: {}'.format(abs(de)))
+        print('ddE (kJ/mol): {}'.format(abs(dde)))
+
+        if opts.appendfile:
+            with open(opts.appendfile, 'a') as f:
+                names1 = ' '.join(opts.group[0])
+                names2 = ' '.join(opts.group[1])
+                f.write('{},{},{},{},{},{}'.format(
+                    names1,
+                    names2,
+                    dr12,
+                    dr21,
+                    de,
+                    dde))
 
     print('-' * len(border))
     print('This should equal 1: {}'.format(sum(stuff)))
+
 
 if __name__ == '__main__':
     args = sys.argv[1:]
