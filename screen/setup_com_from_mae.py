@@ -45,6 +45,15 @@ i_cs_torc_1 - This and `i_cs_torc_2` are used together to indicate where the
 
               Functions similar to `i_cs_rca4_1` and `i_cs_rca4_2`.
 i_cs_torc_2 - See `i_cs_torc_1`.
+r_cs_torc_5 - Absolute value of the minimum torsional value allowed.
+r_cs_torc_6 - Absolute value of the maximum torsional value allowed.
+
+To enforce a cis bond:
+ * r_cs_torc_5 = 0
+ * r_cs_torc_6 = 90
+To enforce a trans bond:
+ * r_cs_torc_5 = 90
+ * r_cs_torc_6 = 180
 """
 import argparse
 import sys
@@ -52,6 +61,12 @@ from itertools import izip_longest
 
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
+
+ALL_CS_ATOM_PROPERTIES = ['b_cs_chig', 'b_cs_comp']
+ALL_CS_BOND_PROPERTIES = ['b_cs_tors',
+                          'i_cs_rca4_1', 'i_cs_rca4_2',
+                          'i_cs_torc_1', 'i_cs_torc_2',
+                          'r_cs_torc_5', 'r_cs_torc_6']
 
 def grouper(n, iterable, fillvalue=0.):
     """
@@ -99,51 +114,73 @@ class MyComUtil(mmodutils.ComUtil):
         print('-' * 50)
         print('READING: {}'.format(structure.property['s_m_title']))
         for atom in structure.atom:
-            try:
-                atom.property['b_cs_comp']
-                atom.property['b_cs_chig']
-            except KeyError as e:
-                print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
-                    structure.property['s_m_title']))
-                raise e
+            for prop in ALL_CS_ATOM_PROPERTIES:
+                try:
+                    atom.property[prop]
+                except KeyError as e:
+                    print('STRUCTURE: {}'.format(
+                        structure.property['s_m_title']))
+                    print(' - ATOM: {}'.format(atom))
+                    print('   - MISSING: {} (setting to 0)'.format(prop))
+                    atom.property[prop] = 0
+            # try:
+            #     atom.property['b_cs_comp']
+            #     atom.property['b_cs_chig']
+            # except KeyError as e:
+            #     print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
+            #         structure.property['s_m_title']))
+            #     raise e
             if atom.property['b_cs_comp']:
                 indices_comp.append(atom.index)
             if atom.property['b_cs_chig']:
                 indices_chig.append(atom.index)
         for bond in structure.bond:
-            try:
-                bond.property['b_cs_tors']
-                bond.property['i_cs_rca4_1']
-                bond.property['i_cs_rca4_2']
-                bond.property['i_cs_torc_1']
-                bond.property['i_cs_torc_2']
-            except KeyError as e:
-                print('ERROR! MISSING BOND PROPERTIES: {}'.format(
-                    structure.property['s_m_title']))
-                raise e
+            for prop in ALL_CS_BOND_PROPERTIES:
+                try:
+                    bond.property[prop]
+                except KeyError as e:
+                    print('STRUCTURE: {}'.format(
+                        structure.property['s_m_title']))
+                    print(' - BOND: {}'.format(bond))
+                    print('   - MISSING: {} (setting to 0)'.format(prop))
+                    bond.property[prop] = 0
+            # try:
+            #     bond.property['b_cs_tors']
+            #     bond.property['i_cs_rca4_1']
+            #     bond.property['i_cs_rca4_2']
+            #     bond.property['i_cs_torc_1']
+            #     bond.property['i_cs_torc_2']
+            #     bond.property['r_cs_torc_5']
+            #     bond.property['r_cs_torc_6']
+            # except KeyError as e:
+            #     print('ERROR! MISSING BOND PROPERTIES: {}'.format(
+            #         structure.property['s_m_title']))
+            #     raise e
             if bond.property['b_cs_tors']:
                 indices_tors.append((bond.atom1.index, bond.atom2.index))
             if bond.property['i_cs_rca4_1']:
                 indices_rca4.append((
-                        bond.property['i_cs_rca4_1'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_rca4_2']
-                        ))
+                    bond.property['i_cs_rca4_1'],
+                    bond.atom1.index,
+                    bond.atom2.index,
+                    bond.property['i_cs_rca4_2']
+                ))
             if bond.property['i_cs_torc_1']:
                 indices_torc.append((
-                        bond.property['i_cs_torc_1'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_torc_2']
-                        ))
+                    bond.property['i_cs_torc_1'],
+                    bond.atom1.index,
+                    bond.atom2.index,
+                    bond.property['i_cs_torc_2'],
+                    bond.property['r_cs_torc_5'],
+                    bond.property['r_cs_torc_6']
+                ))
         print('COMP: {}'.format(indices_comp))
         print('CHIG: {}'.format(indices_chig))
         print('TORS: {}'.format(indices_tors))
         print('RCA4: {}'.format(indices_rca4))
         print('TORC: {}'.format(indices_torc))
         count_comp = 0
-        for count_comp, args in enumerate(grouper(4, indices_comp)):
+        for count_comp, args in enumerate(grouper(4, indices_comp), 1):
             self.setOpcdArgs(
                 opcd='COMP',
                 arg1=args[0],
@@ -152,7 +189,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg4=args[3]
                 )
         count_chig = 0
-        for count_chig, args in enumerate(grouper(4, indices_chig)):
+        for count_chig, args in enumerate(grouper(4, indices_chig), 1):
             self.setOpcdArgs(
                 opcd='CHIG',
                 arg1=args[0],
@@ -161,7 +198,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg4=args[3]
                 )
         count_tors = 0
-        for count_tors, args in enumerate(indices_tors):
+        for count_tors, args in enumerate(indices_tors, 1):
             self.setOpcdArgs(
                 opcd='TORS',
                 arg1=args[0],
@@ -169,7 +206,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg6=180.
                 )
         count_rca4 = 0
-        for count_rca4, args in enumerate(indices_rca4):
+        for count_rca4, args in enumerate(indices_rca4, 1):
             self.setOpcdArgs(
                 opcd='RCA4',
                 arg1=args[0],
@@ -180,16 +217,18 @@ class MyComUtil(mmodutils.ComUtil):
                 arg6=2.5
                 )
         count_torc = 0
-        for count_torc, args in enumerate(indices_torc):
+        for count_torc, args in enumerate(indices_torc, 1):
             self.setOpcdArgs(
                 opcd='TORC',
                 arg1=args[0],
                 arg2=args[1],
                 arg3=args[2],
                 arg4=args[3],
-                arg5=90.,
-                arg6=180.
+                arg5=args[4],
+                arg6=args[5]
                 )
+        print('NUM. COMP: {}'.format(count_comp))
+        print('NUM. CHIG: {}'.format(count_chig))
         print('NUM. TORS: {}'.format(count_tors))
         print('NUM. RCA4: {}'.format(count_rca4))
         print('NUM. TORC: {}'.format(count_torc))
@@ -209,10 +248,19 @@ class MyComUtil(mmodutils.ComUtil):
         self.MCMM.clear()
         # 3**N where N = number of bonds rotated
         # Maxes out at 50,000.
-        nsteps = 3**len(indices_tors)
-        # nsteps = 50
-        if nsteps > 50000:
-            nsteps = 50000
+
+        # ~*~*~ TESTING ~*~*~
+        # Commented out for testing.
+        # nsteps = 3**len(indices_tors)
+        # if nsteps > 50000:
+        #     nsteps = 50000
+        # ~*~*~ TESTING ~*~*~
+
+        # ~*~*~ TESTING ~*~*~
+        # Makes the tests faster.
+        nsteps = 50
+        # ~*~*~ TESTING ~*~*~
+
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
         self.NANT.clear()
         self.MCNV.clear()
@@ -251,13 +299,13 @@ class MyComUtil(mmodutils.ComUtil):
             'MCOP',
             'DEMX'
             ]
-        com_args.extend(['COMP'] * (count_comp + 1))
+        com_args.extend(['COMP'] * (count_comp))
         com_args.append('MSYM')
-        com_args.extend(['CHIG'] * (count_chig + 1))
+        com_args.extend(['CHIG'] * (count_chig))
         # Used to have AUOP here.
-        com_args.extend(['TORS'] * (count_tors + 1))
-        com_args.extend(['TORC'] * (count_torc + 1))
-        com_args.extend(['RCA4'] * (count_rca4 + 1))
+        com_args.extend(['TORS'] * (count_tors))
+        com_args.extend(['TORC'] * (count_torc))
+        com_args.extend(['RCA4'] * (count_rca4))
         com_args.extend([
                 'CONV',
                 'MINI'
@@ -304,13 +352,17 @@ class MyComUtil(mmodutils.ComUtil):
         mae_file=None,
         com_file=None,
         out_file=None,
-        frozen_atoms=None):
+        frozen_atoms=None,
+        fix_torsions=None):
         """
         Modified version of the the Schrödinger mini.
         """
         print('FROZEN ATOMS: {}'.format(frozen_atoms))
+        print('FIXED TORSIONS: {}'.format(fix_torsions))
         if not frozen_atoms:
             frozen_atoms = []
+        if not fix_torsions:
+            fix_torsions = []
         self.FXAT.clear()
         for frozen_atom in frozen_atoms:
             self.setOpcdArgs(
@@ -321,6 +373,17 @@ class MyComUtil(mmodutils.ComUtil):
                 arg4=0,
                 arg5=-1
                 )
+        self.FXTA.clear()
+        for fix_torsion in fix_torsions:
+            # arg5 is the force constant in kJ/mol.
+            # arg6 > 360 means to keep the current torsion value.
+            self.setOpcdArgs(
+                opcd='FXTA',
+                arg1=fix_torsion[0],
+                arg2=fix_torsion[1],
+                arg3=fix_torsion[2],
+                arg4=fix_torsion[3],
+                arg6=fix_torsion[4])
         self.DEBG.clear()
         self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
         self.SEED.clear()
@@ -352,6 +415,7 @@ class MyComUtil(mmodutils.ComUtil):
             'BGIN',
             'READ']
         com_args.extend(['FXAT'] * len(frozen_atoms))
+        com_args.extend(['FXTA'] * len(fix_torsions))
         com_args.extend([
             'CONV',
             'MINI',

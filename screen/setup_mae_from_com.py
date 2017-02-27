@@ -35,15 +35,16 @@ def read_com(filename):
            required for MacroModel conformational searches.
     chig : list of integers
            Atom indices for chiral centers.
-    torc : list of tuples of length 4
+    torc : list of tuples of length 6
            Each tuple is the indices of 4 atoms used to describe a torsion
-           check.
+           check and 2 real numbers used to describe the abs(min) and abs(max)
+           torsion values.
     """
     comp = [] # Holds the COMP atoms. This is a flat list.
     tors = [] # Holds TORS. List of tuples of length 2.
     rca4 = [] # Holds RCA4. List of tuples of length 4.
     chig = [] # Holds CHIG. Flat list.
-    torc = [] # Holds TORC. List of tuples of length 4.
+    torc = [] # Holds TORC. List of tuples of length 6.
     with open(filename, 'r') as f:
         for line in f:
             cols = line.split()
@@ -60,6 +61,8 @@ def read_com(filename):
                 x = map(int, cols[1:5])
                 if x[2] < x[1]:
                     x.reverse()
+                x.append(float(cols[5]))
+                x.append(float(cols[6]))
                 torc.append(tuple(x))
             if cols[0] == 'CHIG':
                 chig.extend(map(int, cols[1:5]))
@@ -90,9 +93,10 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
                break required for MacroModel conformational searches.
     chig     : list of integers
                Atom indices for chiral centers.
-    torc     : list of tuples of length 4
+    torc     : list of tuples of length 6
                Each tuple is the indices of 4 atoms used to describe a torsion
-               check,
+               check and 2 real numbers used to describe the abs(min) and
+               abs(max) value of a torsion.
     """
     structure_reader = sch_struct.StructureReader(filename)
     structure_writer = sch_struct.StructureWriter('TEMP.mae')
@@ -152,6 +156,10 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
             bond = structure.getBond(one_torc[1], one_torc[2])
             bond.property['i_cs_torc_1'] = one_torc[0]
             bond.property['i_cs_torc_2'] = one_torc[3]
+            bond.property['r_cs_torc_5'] = one_torc[4]
+            bond.property['r_cs_torc_6'] = one_torc[5]
+            # Might be nice to expand this to include the min and max torsion
+            # values.
             print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
                       bond.property['i_cs_torc_1'],
                       bond.atom1.index,
@@ -171,6 +179,10 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
                 bond.property['i_cs_torc_1'] = 0
             if not 'i_cs_torc_2' in bond.property:
                 bond.property['i_cs_torc_2'] = 0
+            if not 'r_cs_torc_5' in bond.property:
+                bond.property['r_cs_torc_5'] = 0
+            if not 'r_cs_torc_6' in bond.property:
+                bond.property['r_cs_torc_6'] = 0
         structure_writer.append(structure)
 
     structure_writer.close()
@@ -203,8 +215,8 @@ def main(com, mae, out=None):
     # Rewrite input *.mae if the output filename isn't provided.
     if not out:
         out = mae
-    comp, tors, rca4, chig, torc = read_com(opts.com)
-    print('READ: {}'.format(opts.com))
+    comp, tors, rca4, chig, torc = read_com(com)
+    print('READ: {}'.format(com))
     print(' * COMP: {}'.format(comp))
     print(' * TORS: {}'.format(tors))
     print(' * RCA4: {}'.format(rca4))
