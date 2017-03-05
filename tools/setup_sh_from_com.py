@@ -17,7 +17,7 @@ EMAIL = "youremail@gmail.com"
 MAIL = "ae"
 QUEUE = "long"
 RETRY = "n"
-SCHRODINGER_TEMP = "~/tmp"
+SCHRODINGER_TEMP = "/yourdir/.schrodtmp"
 
 MACROMODEL_JOB_SCRIPT = \
 """#!/bin/csh
@@ -57,6 +57,7 @@ def return_parser():
 
 def main(opts):
     if opts.one:
+        one_name, one_ext = os.path.splitext(opts.one)
         with open(opts.one, 'w') as f:
             f.write(
                 MACROMODEL_JOB_SCRIPT.format(
@@ -65,7 +66,7 @@ def main(opts):
                     QUEUE,
                     RETRY,
                     time.strftime("%y%m%d%H%M"),
-                    opts.one,
+                    one_name,
                     SCHRODINGER_TEMP,
                     SCHRODINGER_TEMP,
                     SCHRODINGER_TEMP
@@ -77,9 +78,10 @@ def main(opts):
         print('WROTE: {}'.format(opts.one))
         if opts.execute:
             print(' - Attempting execution from {} ...'.format(os.getcwd()))
-            sp.call('csh {}'.format(name + '.sh'), shell=True)
+            sp.call('csh {}'.format(opts.one), shell=True)
         elif opts.submit:
-            sp.call('qsub {}'.format(name + '.sh'), shell=True)
+            print(' - Attempting submission from {} ...'.format(os.getcwd()))
+            sp.call('qsub {}'.format(opts.one), shell=True)
     else:
         for filename in opts.filenames:
             name, ext = os.path.splitext(filename)
