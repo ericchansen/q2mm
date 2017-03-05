@@ -290,6 +290,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                     bond.property.update({k: v})
 
     # ~*~*~ TESTING ~*~*~
+    # This works well.
     fix_torsions = get_torc(struct_1, struct_2, match_1, match_2)
     print('TORSION RESTRAINTS: {}'.format(fix_torsions))
     # ~*~*~ TESTING ~*~*~
@@ -311,12 +312,6 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge.property['s_m_entry_name'] += \
         '_' + struct_2.property['s_m_entry_name']
 
-    # ~*~*~ TESTING ~*~*~
-    w = sch_struct.StructureWriter(make_unique_filename('test_09/a.mae'))
-    w.append(merge)
-    w.close()
-    # ~*~*~ TESTING ~*~*~
-
     # Minimize the structure.
     # Freeze atoms in struct_1.
     # ~*~*~ TESTING ~*~*~
@@ -327,15 +322,8 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         fix_torsions=fix_torsions)[0]
     # ~*~*~ TESTING
 
-    # ~*~*~ TESTING ~*~*~
-    w = sch_struct.StructureWriter(make_unique_filename('test_09/a.mae'))
-    w.append(merge)
-    w.close()
-    # ~*~*~ TESTING ~*~*~
-
     return merge
 
-# ~*~*~ TESTING ~*~*~
 def get_torc(struct_1, struct_2, match_1, match_2):
     num_atoms = len(struct_1.atom)
     new_match_2 = [x + num_atoms for x in match_2]
@@ -368,7 +356,6 @@ def get_torc(struct_1, struct_2, match_1, match_2):
                 new_atoms[3],
                 torsion))
     return fix_torsions
-# ~*~*~ TESTING ~*~*~
 
 def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
     """
