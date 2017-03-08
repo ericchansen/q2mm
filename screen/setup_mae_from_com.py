@@ -154,7 +154,8 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
         print('SETUP TORC:')
         for one_torc in torc:
             bond = structure.getBond(one_torc[1], one_torc[2])
-            if bond.property['i_cs_torc_a1']:
+            if 'i_cs_torc_a1' not in bond.property or \
+               not bond.property['i_cs_torc_a1']:
                 bond.property['i_cs_torc_a1'] = one_torc[0]
                 bond.property['i_cs_torc_a4'] = one_torc[3]
                 bond.property['r_cs_torc_a5'] = one_torc[4]
@@ -190,21 +191,21 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
                 bond.property['i_cs_rca4_2'] = 0
             if not 'b_cs_tors' in bond.property:
                 bond.property['b_cs_tors'] = 0
-            if not 'i_cs_torc_1' in bond.property:
+            if not 'i_cs_torc_a1' in bond.property:
                 bond.property['i_cs_torc_a1'] = 0
-            if not 'i_cs_torc_4' in bond.property:
+            if not 'i_cs_torc_a4' in bond.property:
                 bond.property['i_cs_torc_a4'] = 0
-            if not 'r_cs_torc_5' in bond.property:
+            if not 'r_cs_torc_a5' in bond.property:
                 bond.property['r_cs_torc_a5'] = 0
-            if not 'r_cs_torc_6' in bond.property:
+            if not 'r_cs_torc_a6' in bond.property:
                 bond.property['r_cs_torc_a6'] = 0
-            if not 'i_cs_torc_1' in bond.property:
+            if not 'i_cs_torc_b1' in bond.property:
                 bond.property['i_cs_torc_b1'] = 0
-            if not 'i_cs_torc_4' in bond.property:
+            if not 'i_cs_torc_b4' in bond.property:
                 bond.property['i_cs_torc_b4'] = 0
-            if not 'r_cs_torc_5' in bond.property:
+            if not 'r_cs_torc_b5' in bond.property:
                 bond.property['r_cs_torc_b5'] = 0
-            if not 'r_cs_torc_6' in bond.property:
+            if not 'r_cs_torc_b6' in bond.property:
                 bond.property['r_cs_torc_b6'] = 0
         structure_writer.append(structure)
 
