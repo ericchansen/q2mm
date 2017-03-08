@@ -657,7 +657,7 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     import schrodinger.application.macromodel.utils as mmodutils
     import schrodinger.job.jobcontrol as jobcontrol
     from setup_com_from_mae import MyComUtil
-    print(' - ATTEMPTING MINIMIZATION')
+    print(' - ATTEMPTING MINI')
     sch_writer = sch_struct.StructureWriter('TEMP.mae')
     sch_writer.extend(structures)
     sch_writer.close()
@@ -675,11 +675,15 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     job.wait()
     # Read the minimized structures.
     sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
-    structures = []
+    new_structures = []
     for structure in sch_reader:
-        structures.append(structure)
+        new_structures.append(structure)
     sch_reader.close()
-
+    if len(new_structures) > 0:
+        print(' - MINI SUCCEEDED')
+        structures = new_structures
+    else:
+        print(' - MINI FAILED. CONTINUING W/O MINI')
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')
