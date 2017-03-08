@@ -1,13 +1,5 @@
 module load schrodinger/2016u3
 
-python ../screen/merge.py -h
-
-rm step-2_mae-automatic/*.mae
-rm step-3_merge-output-in-one.mae
-rm step-3_merge-output/*
-cp mm3.fld atom.typ step-3_merge-output
-rm step-4_conformational-search/*
-
 echo "STEP 1 - MANUALLY ADDING STRUCTURE PROPERTIES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
 # The original structures, exported from the Schrödinger GUI,  are in
@@ -32,9 +24,10 @@ echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
 echo
 echo "STEP 2 - AUTOMATICALLY ADDING ATOM AND BOND PROPERTIES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
+# Setup directory.
+rm step-2_mae-automatic/*.mae
 # Setup the atom and bond properties from the *.com files. These *.com files can
 # be setup using the Schrödinger GUI.
-
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/binap.com step-1_mae-manual/binap.mae step-2_mae-automatic/binap.mae
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/binap-b.com step-1_mae-manual/binap-b.mae step-2_mae-automatic/binap-b.mae
 python ../screen/setup_mae_from_com.py step-2_mae-automatic/s1.com step-1_mae-manual/s1.mae step-2_mae-automatic/s1.mae
@@ -43,13 +36,19 @@ python ../screen/setup_mae_from_com.py step-2_mae-automatic/rh-hydrogenation-ena
 echo
 echo "STEP 3 - MERGING STRUCTURES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
+# Setup directory.
+rm step-3_merge-output-in-one.mae
+rm step-3_merge-output/*
+cp mm3.fld atom.typ step-3_merge-output
 # Merge the structures.
-
 python ../screen/merge.py -g step-2_mae-automatic/rh-hydrogenation-enamides.mae -g step-2_mae-automatic/binap.mae step-2_mae-automatic/binap-b.mae -g step-2_mae-automatic/s1.mae -o step-3_merge-output-in-one.mae -d step-3_merge-output -m
 
 echo
 echo "STEP 4 - SETTING UP CONFORMATIONAL SEARCH FILES"
 echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
+# Setup the directory.
+rm step-4_conformational-search/*
+cp mm3.fld atom.typ step-4_conformational-search
 # Setup the new *.com files. I'm going to copy the *.mae files over to a new
 # directory before doing this in order to keep things clear.
 cp step-3_merge-output/* step-4_conformational-search
@@ -59,3 +58,18 @@ python ../../screen/setup_com_from_mae.py rh-hydrogenation-enamides_binap-b_s1_5
 # This sets up all the *.mae files in one directory at the same time.
 python ../../screen/setup_com_from_mae_many.py *.mae
 cd ..
+
+echo "STEP 5 - SETTING UP THE REDUNDANT CONFORMER ELIMINATION"
+echo "NOTE: YOU MUST WAIT FOR STEP 4 TO COMPLETE! THEN UNCOMMENT THIS STEP!"
+echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
+# rm step-5_redundant-conformer-elimination/*
+# cp mm3.fld atom.typ step-5_redundant-conformer-elimination
+# cp step-4_conformational-search/*_cs.mae step-5_redundant-conformer-elimination
+# cd step-5_redundant-conformer-elimination
+# python ../../screen/setup_com_from_mae_many.py *_cs.mae -j re
+# cd ..
+
+echo "STEP 6 - DATA ANALYSIS"
+echo "NOTE: YOU MUST WAIT FOR STEP 5 TO COMPLETE! THEN UNCOMMENT THIS STEP!"
+echo "~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~"
+# python ../tools/many_sumq.py step-5_redundant-conformer-elimination re.log step-6_data-analysis.csv

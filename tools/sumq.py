@@ -156,16 +156,16 @@ def calc_q(energies):
         qs.append(q)
     return qs
 
-def main(args):
-    parser = return_parser()
-    opts = parser.parse_args(args)
-
+def sumq(groups,
+         appendfile=None,
+         max_energy=None,
+         max_structures=None):
     # list of lists
     # Each sublist contains all the energies for a grouping of
     # structures/filenames.
     energies = []
     # Get all the partition function values.
-    for group in opts.group:
+    for group in groups:
         group_energies = []
         for filename in group:
             if filename.endswith('.log'):
@@ -175,14 +175,16 @@ def main(args):
                 except IndexError:
                     e = read_energy_from_macro_log(
                         filename,
-                        max_structures=opts.max_structures,
-                        max_energy=opts.max_energy)
+                        max_structures=max_structures,
+                        max_energy=max_energy)
                 group_energies.extend(e)
             elif filename.endswith('.mae'):
                 e = read_energy_from_mae(filename)
                 group_energies.extend(e)
         energies.append(group_energies)
 
+    e1 = energies[0][0]
+    e2 = energies[1][0]
     energies = make_relative(energies)
 
     # Output code.
@@ -201,20 +203,23 @@ def main(args):
     if len(qs) == 2:
         dr12 = qs[0] / qs[1]
         dr21 = qs[1] / qs[0]
-        de = (dr12 - 1) / (dr12 + 1) * 100
+        # Changing sign temporarily.
+        de = - (dr12 - 1) / (dr12 + 1) * 100
         dde = K * T * log(qs[0]/qs[1])
         print('% dr/er (Group 1 : Group 2): {}'.format(dr12))
         print('% dr/er (Group 2 : Group 1): {}'.format(dr21))
-        print('% de/ee: {}'.format(abs(de)))
+        print('% de/ee: {}'.format(de))
         print('ddE (kJ/mol): {}'.format(abs(dde)))
 
-        if opts.appendfile:
-            with open(opts.appendfile, 'a') as f:
-                names1 = ' '.join(opts.group[0])
-                names2 = ' '.join(opts.group[1])
-                f.write('{},{},{},{},{},{}'.format(
+        if appendfile:
+            with open(appendfile, 'a') as f:
+                names1 = ' '.join(groups[0])
+                names2 = ' '.join(groups[1])
+                f.write('{},{},{},{},{},{},{},{}\n'.format(
                     names1,
                     names2,
+                    e1,
+                    e2,
                     dr12,
                     dr21,
                     de,
@@ -223,6 +228,13 @@ def main(args):
     print('-' * len(border))
     print('This should equal 1: {}'.format(sum(stuff)))
 
+def main(args):
+    parser = return_parser()
+    opts = parser.parse_args(args)
+    sumq(opts.group,
+         opts.appendfile,
+         opts.max_energy,
+         opts.max_structures)
 
 if __name__ == '__main__':
     args = sys.argv[1:]

@@ -57,7 +57,6 @@ ATOM_PROPERTIES_TO_REMOVE = \
     'i_sd_original_parity'
     ]
 
-
 if __name__ == '__main__':
     structure_reader = structure.StructureReader(sys.argv[1])
     structure_writer = structure.StructureWriter(sys.argv[2])

@@ -420,20 +420,33 @@
 ################################################################################
 # Atom types defined for Q2MM
 
-#&Rh catalyzed hydrogenation of enamides: Phosphorus cis-O
-200      15     30.97380    P1    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
-#&Rh catalyzed hydrogenation of enamides: Phosphorus trans-O
-201      15     30.97380    P2    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
-#&Rh catalyzed hydrogenation of enamides: H-stationary hydrogen 
-202        1      1.00797    H6    21     1.20      F      F      !   2.00     F       !     !         !      !    0  NCA       1   !
-#&Rh catalyzed hydrogenation of enamides: H-moving hydrogen
-203        1      1.00797    H7    21     1.20      F      F      !   2.00     F       !     !         !      !    0  NCA       2   !
+# Try to use these general types.
+#&Palladium (Heck, Allylpalladium)
+201      46  106.42         Pd    20     1.70      T      F      !  2.2       T       !     !         !      !   +1  NCA       2   !
+#&Ru (Heck)
+202      44  101.07         Ru    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
+#&Rh (Heck)
+203      45  102.91         Rh    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
+#&Ir (Heck)
+204      77  192.22         Ir    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
+#&Dummy atom (Ferrocene)
+205      -2    0.0000       D1    10     1.00      F      F      !  0.0       T       !     !         !      !    0  NCA       1   !
+#$Osmium (Heck)
+206      76  190.23         Os    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
+
+# Atom types specific for Rh catalyzed hydrogenation of enamides.
+# Need the +1 Rh, but the other atom types should be depreciated.
 #&Rh catalyzed hydrogenation of enamides: Rh
-204        !    102.90550    Rh     4     1.75      T      F      !   1.50     T       !     !         !      !   +1  NCA       1   !
-#&Ferrocene: Fe
-205      26     55.85000    z1     4     1.75      T      F      !   1.83     T       !     !         !      !    0  NCA       1   !
-#&Weightless dummy atom
-300      -2      1.00000    D1    10     1.00      F      F      !   1.00     T       !     !         !      !    0  NCA       1   !
+250        !    102.90550    RH     4     1.75      T      F      !   1.50     T       !     !         !      !   +1  NCA       1   !
+#&Rh catalyzed hydrogenation of enamides: H-moving hydrogen
+251        1      1.00797    H7    21     1.20      F      F      !   2.00     F       !     !         !      !    0  NCA       2   !
+#&Rh catalyzed hydrogenation of enamides: H-stationary hydrogen 
+252        1      1.00797    H6    21     1.20      F      F      !   2.00     F       !     !         !      !    0  NCA       1   !
+#&Rh catalyzed hydrogenation of enamides: Phosphorus trans-O
+253      15     30.97380    P2    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
+#&Rh catalyzed hydrogenation of enamides: Phosphorus cis-O
+254      15     30.97380    P1    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
+
 ################################################################################
 # Generalized atom types for coarse grain sites
 #     1     2          3     4     5        6      7      8      9     10    11      12    13        14     15   16  17       18   19
@@ -480,6 +493,20 @@
 #&-CH2-CH-CH2- : [*][C]([H])([H])[C]([H])([*])[C]([H])([H])[*]
 319       !     41.07330    XI     2     2.69      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
+# General CG atom types
+#&General CG site
+320       !     50.00000    XJ     1     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+321       !     50.00000    XK     2     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+322       !     50.00000    XL     3     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+323       !     50.00000    XM     4     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+324       !     50.00000    XN     5     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+325       !     50.00000    XO     6     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
 # Coarse grained alkenes, alkynes
 #&CH2=CH- : [H][C]([H])=[C]([H])[*]
 326       !     27.04621    XP   104     2.33      F      F      !    !       F       !     !         !      !    0  GCD      16   !
@@ -491,6 +518,18 @@
 329       !     54.09242    XS    56     2.94      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 #&-C(CH3)=CH- : [*][C]([C]([H])([H])[H])=[C]([H])[*]
 330       !     40.06533    XT    31     2.66      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
+# General CG atom types
+#&General CG site
+331       !     50.00000    XU     7     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+332       !     50.00000    XV     8     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+333       !     50.00000    XW     9     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+334       !     50.00000    XX    10     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+335       !     50.00000    XY    11     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
 # Coarse grained aromatic compounds, carbon rings and other combinations
 #&Benzene - C6H6 : [H]c1:c([H]):c([H]):c([H]):c([H]):c1([H])
@@ -514,6 +553,18 @@
 #&=C-C(CH3)(CH2-)CH< : [*][C](=[*])[C]([C]([H])([H])[H])([C]([H])([H])[*])[C]([H])([*])[*]
 345       !     66.10357    Y8   103     3.12      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
+# General CG atom types
+#&General CG site
+346       !     50.00000    Y9    12     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+347       !     50.00000    YA    13     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+348       !     50.00000    YB    14     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+349       !     50.00000    YC    15     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+350       !     50.00000    YD    16     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
 # Coarse grained hydroxyl group
 #&HO- : [H][O][*]
 351       !     17.00737    YE    70     1.60      F      F      !    !       F       !     !         !      !    0  GCD      16   !
@@ -535,6 +586,18 @@
 359       !     91.08744    YM   101     3.13      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 #&CH2(OH)-CH(NH3)-CH(OH)- : [H][C]([O][H])([H])[C]([H])([N]([H])([H])[H])[C]([H])([O][H])[*]
 360       !     91.11068    YN    22     3.19      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
+# General CG atom types
+#&General CG site
+361       !     50.00000    YO    17     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+362       !     50.00000    YP    18     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+363       !     50.00000    YQ    19     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+364       !     50.00000    YR    20     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+365       !     50.00000    YS    21     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
 # Coarse grained nitrogen group
 #&NH3- : [H][N]([H])([H])[*]
@@ -560,6 +623,16 @@
 #&(CH3)(CH3)(CH3)N-CH2-CH2- : [H][C]([H])([H])[N]([C]([H])([H])[H])([C]([H])([H])[H])[C]([H])([H])[C]([H])([H])[*]
 376       !     87.16606    Z4   120     3.47      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
+# General CG atom types
+#&General CG site
+377       !     50.00000    Z5    22     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+378       !     50.00000    Z6    23     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+379       !     50.00000    Z7    24     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+380       !     50.00000    Z8    25     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
 # Coarse grained acid groups
 #&-O-P(=O)(O)-O- : [*][O][P](=[O])([O])[O][*]
 381       !     94.97140    Z9    15     2.68      F      F      !    !       F       !     !         !      !    0  GCD      16   !
@@ -572,6 +645,38 @@
 #&CH(C(=O)O)(NH3)-CH2- : [H][C]([C](=[O])[O])([N]([H])([H])[H])[C]([H])([H])[*]
 385       !     88.08677    ZD    25     3.11      F      F      !    !       F       !     !         !      !    0  GCD      16   !
 
+# General CG atom types
+#&General CG site
+386       !     50.00000    ZE    26     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+387       !     50.00000    ZF    27     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+388       !     50.00000    ZG    28     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+389       !     50.00000    ZH    29     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+390       !     50.00000    ZI    30     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
 # Others
 #&-NH-C(=O)- : [*][N]([H])[C](=[O])[*]
 391       !     43.02522    ZJ   132     2.36      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+
+# General CG atom types
+#&General CG site
+392       !     50.00000    ZK    31     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+393       !     50.00000    ZL    32     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+394       !     50.00000    ZM    97     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+395       !     50.00000    ZN    98     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+396       !     50.00000    ZO    99     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+397       !     50.00000    ZP   100     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+398       !     50.00000    ZQ   101     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+399       !     50.00000    ZR   102     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !
+#&General CG site
+400       !     50.00000    ZS   103     2.75      F      F      !    !       F       !     !         !      !    0  GCD      16   !

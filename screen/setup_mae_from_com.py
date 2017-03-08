@@ -154,19 +154,34 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
         print('SETUP TORC:')
         for one_torc in torc:
             bond = structure.getBond(one_torc[1], one_torc[2])
-            bond.property['i_cs_torc_1'] = one_torc[0]
-            bond.property['i_cs_torc_2'] = one_torc[3]
-            bond.property['r_cs_torc_5'] = one_torc[4]
-            bond.property['r_cs_torc_6'] = one_torc[5]
-            # Might be nice to expand this to include the min and max torsion
-            # values.
-            print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-                      bond.property['i_cs_torc_1'],
-                      bond.atom1.index,
-                      bond.atom1.atom_type_name,
-                      bond.atom2.index,
-                      bond.atom2.atom_type_name,
-                      bond.property['i_cs_torc_2']))
+            if bond.property['i_cs_torc_a1']:
+                bond.property['i_cs_torc_a1'] = one_torc[0]
+                bond.property['i_cs_torc_a4'] = one_torc[3]
+                bond.property['r_cs_torc_a5'] = one_torc[4]
+                bond.property['r_cs_torc_a6'] = one_torc[5]
+                # Might be nice to expand this to include the min and max torsion
+                # values.
+                print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
+                    bond.property['i_cs_torc_a1'],
+                    bond.atom1.index,
+                    bond.atom1.atom_type_name,
+                    bond.atom2.index,
+                    bond.atom2.atom_type_name,
+                    bond.property['i_cs_torc_a4']))
+            else:
+                bond.property['i_cs_torc_b1'] = one_torc[0]
+                bond.property['i_cs_torc_b4'] = one_torc[3]
+                bond.property['r_cs_torc_b5'] = one_torc[4]
+                bond.property['r_cs_torc_b6'] = one_torc[5]
+                # Might be nice to expand this to include the min and max torsion
+                # values.
+                print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
+                    bond.property['i_cs_torc_b1'],
+                    bond.atom1.index,
+                    bond.atom1.atom_type_name,
+                    bond.atom2.index,
+                    bond.atom2.atom_type_name,
+                    bond.property['i_cs_torc_b4']))
         # Set i_cs_rca4_1, i_cs_rca4_2 and b_cs_tors to 0 for all other bonds.
         for bond in structure.bond:
             if not 'i_cs_rca4_1' in bond.property:
@@ -176,13 +191,21 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
             if not 'b_cs_tors' in bond.property:
                 bond.property['b_cs_tors'] = 0
             if not 'i_cs_torc_1' in bond.property:
-                bond.property['i_cs_torc_1'] = 0
-            if not 'i_cs_torc_2' in bond.property:
-                bond.property['i_cs_torc_2'] = 0
+                bond.property['i_cs_torc_a1'] = 0
+            if not 'i_cs_torc_4' in bond.property:
+                bond.property['i_cs_torc_a4'] = 0
             if not 'r_cs_torc_5' in bond.property:
-                bond.property['r_cs_torc_5'] = 0
+                bond.property['r_cs_torc_a5'] = 0
             if not 'r_cs_torc_6' in bond.property:
-                bond.property['r_cs_torc_6'] = 0
+                bond.property['r_cs_torc_a6'] = 0
+            if not 'i_cs_torc_1' in bond.property:
+                bond.property['i_cs_torc_b1'] = 0
+            if not 'i_cs_torc_4' in bond.property:
+                bond.property['i_cs_torc_b4'] = 0
+            if not 'r_cs_torc_5' in bond.property:
+                bond.property['r_cs_torc_b5'] = 0
+            if not 'r_cs_torc_6' in bond.property:
+                bond.property['r_cs_torc_b6'] = 0
         structure_writer.append(structure)
 
     structure_writer.close()

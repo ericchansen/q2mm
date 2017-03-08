@@ -5,11 +5,11 @@ Change all of atom type ATOM_X to ATOM_Y.
 import os
 from schrodinger import structure
 
-ATOM_X = 62
-ATOM_Y = 204
+ATOM_X = 1
+ATOM_Y = 2
 
-INPUT_FILE = "c1r2s_004.mae"
-OUTPUT_FILE = "c1r2s_004.mae"
+INPUT_FILE = "yourmae1.mae"
+OUTPUT_FILE = "yourmae2.mae"
 
 if INPUT_FILE == OUTPUT_FILE:
     print('Warning: INPUT_FILE ({}) == OUTPUT_FILE ({}).'.format(

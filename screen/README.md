@@ -90,13 +90,34 @@ during the conformational search.
 to rotate during the conformational search, whereas `0` indicates no rotation
 about that bond during the conformational search.
 
-* `b_cs_rca4_1` - Correlates to the MacroModel RCA4 command. These are given in
+* `i_cs_rca4_1` - Correlates to the MacroModel RCA4 command. These are given in
 sets of 4 atoms and identify ring breaks that should be made during the course
 of the sampling. Say you you identify the dihedral 1-2-3-4. This would break the
 bond 2-3 during the sampling. In this case, `b_cs_rca4_1` would be `1` and
 `b_cs_rca4_2` would be `4`.
 
-* `b_cs_rca4_2` - See `b_cs_rca4_1`.
+* `i_cs_rca4_2` - See `i_cs_rca4_1`.
+
+* `i_cs_torc_a1` - Like `i_cs_rca_1` except for the TORC command.
+
+* `i_cs_torc_a4` - Like `i_cs_rca_2` except for the TORC command and more
+appropriately named.
+
+* `i_cs_torc_a5` - Absolute value of the minimum torsional value allowed.
+
+* `i_cs_torc_a6` - Absolute value of the maximum torsional value allowed.
+
+* `i_cs_torc_b1` - Same as `i_cs_torc_a1`, but allows for a second TORC to be
+defined.
+
+* `i_cs_torc_b4` - Same as `i_cs_torc_a4`, but allows for a second TORC to be
+defined.
+
+* `i_cs_torc_b5` - Same as `i_cs_torc_a5`, but allows for a second TORC to be
+defined.
+
+* `i_cs_torc_b6` - Same as `i_cs_torc_a6, but allows for a second TORC to be
+defined.
 
 ##### Usage
 
@@ -126,7 +147,7 @@ atoms.
 Here's an example.
 
 ```
-python merger.py -g reactions/rh_hydrogenation_enamides.mae
+python merge.py -g reactions/rh_hydrogenation_enamides.mae
 -g substrates/*.mae -g ligands/*.mae
 ```
 
@@ -188,6 +209,11 @@ grouping, it will attempt to copy them over. The merging algorithm was actually
 not so simple to write, so reference [`merge`](../screen/merge.py) for more
 information.
 
+NOTE: Substrates typically change more than ligands when adjusting to the TS
+geometry. Given that is the case, it's wise to ADD THE SUBSTRATES to the
+reaction template BEFORE THE LIGANDS in order to minimize the potential overlap
+between structures.
+
 #### 4. Setting up the conformational search files
 
 All of the information inside the \*.mae files allows for
@@ -214,3 +240,19 @@ bmin -WAIT maefileb_cs
 ```
 
 Running these would produce `maefilea_cs.mae` and `maefileb_cs.mae`.
+
+There are also options inside `tools/setup_sh_from_com.py` that help with job
+submission on the ND CRC.
+
+#### 5. Settuping up the redundant conformer elimination
+
+This is very similar to step 4.
+
+```
+python setup_com_from_mae_many.py somedir/*.mae -j re
+```
+
+Add that jobtype "re" makes it do a redundant conformer elimination rather than
+a conformational search. This should always be done following a conformational
+search because, for some unknown reason, the energies reported in the
+conformational search output (\*.log and \*.mae) are not reproducible.

@@ -68,7 +68,12 @@ def return_parser():
         '-m', '--mini',
         action='store_true',
         help='Attempt to minimize merged structures using MacroModel and '
-        'MM3*.')
+        'MM3*. This is a completely unrestrained minimization with the final, '
+        'completed, merged structures. Several other optimizations will take '
+        'place during the merging procedure regardless of whether this option '
+        'is used. I have found that this option can sometimes be harmful. Use '
+        'it at your own risk. It does have potential though. Just requires '
+        'some more testing before I\'ll recommend it.')
     return parser
 
 def get_atom_numbers_from_structure_with_pattern(structure,
@@ -234,18 +239,19 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
             common_atom_2.index,
             common_atom_2.atom_type_name))
 
-        # ~*~*~ TESTING ~*~*~
-        # - test_01 (without this is test_02)
+        # Below are alternatives options for which atoms to keep. Currently, the
+        # coordinates of the atoms from struct_1 are kept.
+
         # Okay, let's try copying the XYZ from common_atom_2 into common_atom_1.
         # This fixes some problems, but causes some other problems.
         # common_atom_1.x = common_atom_2.x
         # common_atom_1.y = common_atom_2.y
         # common_atom_1.z = common_atom_2.z
 
+        # This keeps the average coordinates.
         # common_atom_1.x = (common_atom_1.x + common_atom_2.x) / 2
         # common_atom_1.y = (common_atom_1.y + common_atom_2.y) / 2
         # common_atom_1.z = (common_atom_1.z + common_atom_2.z) / 2
-        # ~*~*~ TESTING ~*~*~
 
         for merge_bond in common_atom_2.bond:
             print('   * BOND:             {:>4}/{} {:>4}/{}'.format(
@@ -284,29 +290,31 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
             for k, v in merge_bond.property.iteritems():
                 # Here, bond is the duplicate bond in struct_1 or the new bond.
                 if k not in bond.property or not bond.property[k]:
-                    # For i_cs_rca4_1, i_cs_rca4_2, i_cs_torc_1 and i_cs_torc_2,
+                    # For i_cs_rca4_1, i_cs_rca4_2, i_cs_torc_a1, etc.
                     # these values may not be correct. That's okay though! They
-                    # get fixed soon by the function add_bond_prop.
+                    # get fixed soon by the function add_bond_prop. What's
+                    # important is that values like i_cs_torc_a5 get copied.
+                    # (because these values don't get changed by atom number).
                     bond.property.update({k: v})
 
-    # ~*~*~ TESTING ~*~*~
-    # This works well.
     fix_torsions = get_torc(struct_1, struct_2, match_1, match_2)
     print('TORSION RESTRAINTS: {}'.format(fix_torsions))
-    # ~*~*~ TESTING ~*~*~
 
-    # ~*~*~ TESTING ~*~*~
-    # Commented out for testing.
     # Delete duplicate atoms once you copied all the data.
     merge.deleteAtoms(common_atoms_2)
-    merge = add_bond_prop(merge,
-                          struct_1, match_1,
-                          struct_2, match_2)
+    # This code is so dumb.
     merge = add_bond_prop(merge,
                           struct_1, match_1,
                           struct_2, match_2,
-                          torc=True)
-    # ~*~*~ TESTING ~*~*~
+                          name='rca4')
+    merge = add_bond_prop(merge,
+                          struct_1, match_1,
+                          struct_2, match_2,
+                          name='torca')
+    merge = add_bond_prop(merge,
+                          struct_1, match_1,
+                          struct_2, match_2,
+                          name='torcb')
 
     merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
     merge.property['s_m_entry_name'] += \
@@ -314,27 +322,62 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     # Minimize the structure.
     # Freeze atoms in struct_1.
-    # ~*~*~ TESTING ~*~*~
-    # Commented out.
+    # Also enforce the TORC commands.
     merge = mini(
         [merge],
         frozen_atoms=range(1, num_atoms + 1),
         fix_torsions=fix_torsions)[0]
-    # ~*~*~ TESTING
-
+    # Do another minimization, this time without frozen atoms.
+    if fix_torsions:
+        merge = mini(
+            [merge],
+            fix_torsions=fix_torsions)[0]
     return merge
 
 def get_torc(struct_1, struct_2, match_1, match_2):
+    """
+    Generates FXTA commands for MacroModel from TORC commands.
+
+    Very repetitive code. Whole thing should get an update when a better atom to
+    atom conversion is used.
+    """
     num_atoms = len(struct_1.atom)
     new_match_2 = [x + num_atoms for x in match_2]
     fix_torsions = []
     for bond in struct_2.bond:
-        if bond.property['i_cs_torc_1']:
+        if bond.property['i_cs_torc_a1']:
             atoms = [
-                bond.property['i_cs_torc_1'],
+                bond.property['i_cs_torc_a1'],
                 bond.atom1.index,
                 bond.atom2.index,
-                bond.property['i_cs_torc_2']
+                bond.property['i_cs_torc_a4']
+                ]
+            torsion = struct_2.measure(
+                atoms[0], atoms[1], atoms[2], atoms[3])
+            # Update atom numbers.
+            new_atoms = []
+            for atom in atoms:
+                if atom in match_2:
+                    new_atoms.append(match_1[match_2.index(atom)])
+                else:
+                    new_index = atom + num_atoms
+                    atoms_in_str_2_before_this_one = \
+                        sum(i < new_index for i in new_match_2)
+                    new_index -= atoms_in_str_2_before_this_one
+                    new_atoms.append(new_index)
+            fix_torsions.append((
+                new_atoms[0],
+                new_atoms[1],
+                new_atoms[2],
+                new_atoms[3],
+                torsion))
+        # Both can happen.
+        if bond.property['i_cs_torc_b1']:
+            atoms = [
+                bond.property['i_cs_torc_b1'],
+                bond.atom1.index,
+                bond.atom2.index,
+                bond.property['i_cs_torc_b4']
                 ]
             torsion = struct_2.measure(
                 atoms[0], atoms[1], atoms[2], atoms[3])
@@ -357,7 +400,7 @@ def get_torc(struct_1, struct_2, match_1, match_2):
                 torsion))
     return fix_torsions
 
-def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
+def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name=None):
     """
     Takes the RCA4 and TORC properties from two structures and properly combines
     them into the merged structures.
@@ -365,8 +408,14 @@ def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
     RCA4 and TORC properties are stored in Schrödinger bond properties:
      * i_cs_rca4_1
      * i_cs_rca4_2
-     * i_cs_torc_1
-     * i_cs_torc_2
+     * i_cs_torc_a1
+     * i_cs_torc_a4
+     * r_cs_torc_a5
+     * r_cs_torc_a6
+     * i_cs_torc_b1
+     * i_cs_torc_b4
+     * r_cs_torc_b5
+     * r_cs_torc_b6
 
     Arguments
     ---------
@@ -377,19 +426,25 @@ def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, torc=False):
     match_1 : string
     struct_2 : Schrödinger structure object
     match_2 : string
+    name : string
+           "rca4", "torca", or "torcb"
 
     Returns
     -------
     merge : Updated bonds with new RCA4 properties
     """
-    if torc:
-        string = 'TORC'
-        str1 = 'i_cs_torc_1'
-        str2 = 'i_cs_torc_2'
-    else:
+    if name == 'rca4':
         string = 'RCA4'
         str1 = 'i_cs_rca4_1'
         str2 = 'i_cs_rca4_2'
+    elif name == 'torca':
+        string = 'TORC'
+        str1 = 'i_cs_torc_a1'
+        str2 = 'i_cs_torc_a4'
+    elif name == 'torcb':
+        string = 'TORC'
+        str1 = 'i_cs_torc_b1'
+        str2 = 'i_cs_torc_b4'
     lists_of_atoms = []
     for bond in struct_2.bond:
         try:
@@ -570,20 +625,6 @@ def merge_many_filenames(list_of_lists):
         # Update existing list of structures after combining with the new
         # structures.
         structures = list(merge_many_structures(structures, new_structures))
-
-        # This ensures that we optimize all the bits as we're adding them
-        # together.
-        # The command chain leading from merge_many_structures eventually does
-        # some optimizations, but with frozen atoms. Here, it's completely
-        # free.
-        # What's necessary? I'm sure this is still debatable.
-
-        # Having this makes the mini command in main pointless.
-        # ~*~*~ TESTING ~*~*~
-        # Commented out for testing.
-        # structures = mini(structures)
-        # ~*~*~ TESTING ~*~*~
-
         print('NUM. STRUCTURES: {}'.format(len(structures)))
     return list(structures)
 
@@ -638,6 +679,7 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     for structure in sch_reader:
         structures.append(structure)
     sch_reader.close()
+
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')
@@ -694,10 +736,8 @@ def main(opts):
     print('-' * 50)
     print('NUM. RESULTING STRUCTURES: {}'.format(len(structures)))
 
-    # Actually, this is pointless now if the one inside
-    # merge_many_filenames is used.
-    # if opts.mini:
-    #     structures = mini(structures)
+    if opts.mini:
+        structures = mini(structures)
     new_structures = []
     for structure in structures:
         new_structures.append(add_chirality(structure))

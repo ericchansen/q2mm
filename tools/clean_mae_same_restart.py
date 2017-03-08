@@ -9,26 +9,23 @@ import sys
 
 from schrodinger import structure as sch_struct
 
-from clean_mae_same import PROPERTIES_TO_REMOVE, ATOM_PROPERTIES_TO_REMOVE
+from clean_mae import \
+    PROPERTIES_TO_REMOVE, ATOM_PROPERTIES_TO_REMOVE
+from clean_mae_same_update import \
+    ATOM_CS_PROPERTIES, BOND_CS_PROPERTIES, CONV_DIC
 
 PROPERTIES_TO_REMOVE.extend([
     's_cs_smiles_substrate',
     's_cs_smiles_ligand',
     'b_cs_c2',
-    's_cs_stereochemistry'
+    's_cs_stereochemistry',
+    'b_cs_first_match_only',
+    'b_cs_both_enantiomers'
     ])
 
-ATOM_PROPERTIES_TO_REMOVE.extend([
-    'b_cs_chig',
-    'b_cs_comp',
-    'b_cs_tors'
-    ])
-
-BOND_PROPERTIES_TO_REMOVE = \
-    [
-    'i_cs_rca4_1',
-    'i_cs_rca4_2'
-    ]
+ATOM_PROPERTIES_TO_REMOVE.extend(ATOM_CS_PROPERTIES)
+BOND_PROPERTIES_TO_REMOVE = BOND_CS_PROPERTIES
+BOND_PROPERTIES_TO_REMOVE.extend(CONV_DIC.keys())
 
 if __name__ == '__main__':
     for filename in sys.argv[1:]:

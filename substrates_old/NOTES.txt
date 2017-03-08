@@ -1,2 +1,6 @@
 Substrates s1.mae - s9.mae don't have any torsion checks (TORC). May want to
 update these.
+
+3/5/2017
+--------
+Bond properties have been significantly changed. All of these need an update.

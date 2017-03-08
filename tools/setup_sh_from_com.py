@@ -13,11 +13,11 @@ import time
 import subprocess as sp
 import sys
 
-EMAIL = "youremail@gmail.com"
+EMAIL = "youremail@domain.whatever"
 MAIL = "ae"
 QUEUE = "long"
 RETRY = "n"
-SCHRODINGER_TEMP = "/yourdir/.schrodtmp"
+SCHRODINGER_TEMP = None
 
 MACROMODEL_JOB_SCRIPT = \
 """#!/bin/csh
@@ -28,7 +28,10 @@ MACROMODEL_JOB_SCRIPT = \
 #$ -N T{}_{}
 
 module load schrodinger/2016u3
-setenv SCHRODINGER_TEMP_PROJECT {}
+"""
+
+if SCHRODINGER_TEMP:
+    MACROMODEL_JOB_SCRIPT += """setenv SCHRODINGER_TEMP_PROJECT {}
 setenv SCHRODINGER_TMPDIR {}
 setenv SCHRODINGER_JOBDB2 {}
 

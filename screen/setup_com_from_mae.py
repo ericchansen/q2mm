@@ -19,41 +19,47 @@ b_cs_comp - True (1) if the atom should be used for comparisons to determine
 
 Bond Properties
 ---------------
-b_cs_tors   - True (1) if the bond should be rotated.
-i_cs_rca4_1 - This and `i_cs_rca4_2` are used together and indicate where the
-              conformational search method should make ring breaks.
+b_cs_tors    - True (1) if the bond should be rotated.
+i_cs_rca4_1  - This and `i_cs_rca4_2` are used together and indicate where the
+               conformational search method should make ring breaks.
 
-              In MacroModel, ring breaks are specified by providing the atom
-              numbers for the 4 atoms in a torsion. The two middle atoms are
-              described by the existing Maestro properties `i_m_from` and
-              `i_m_to`. The two ending atoms are described using `i_cs_rca4_1`
-              (which is the atom connected to `i_m_from`) and `i_cs_rca4_2`
-              (which is the atom connected to `i_m_to`).
+               In MacroModel, ring breaks are specified by providing the atom
+               numbers for the 4 atoms in a torsion. The two middle atoms are
+               described by the existing Maestro properties `i_m_from` and
+               `i_m_to`. The two ending atoms are described using `i_cs_rca4_1`
+               (which is the atom connected to `i_m_from`) and `i_cs_rca4_2`
+               (which is the atom connected to `i_m_to`).
 
-              If both `i_cs_rca4_1` and `i_cs_rca4_2` are 0, then a ring break
-              isn't made across this bond.
+               If both `i_cs_rca4_1` and `i_cs_rca4_2` are 0, then a ring break
+               isn't made across this bond.
 
-              IMPORTANT NOTE TO AVOID CONFUSION:
-              By default, Schrödinger writes *.mae files with bonds listed in
-              both directions, i.e. 1-2 and 2-1. However, the bond properties
-              for 1-2 and 2-1 MUST BE THE SAME. Therefore, these RCA4
-              properties are setup to only read properly for the bond with
-              the lowest atom number first. In this case, 1-2.
-i_cs_rca4_2 - See `i_cs_rca4_1`.
-i_cs_torc_1 - This and `i_cs_torc_2` are used together to indicate where the
-              conformational search method should enforce torsion checks.
+               IMPORTANT NOTE TO AVOID CONFUSION:
+               By default, Schrödinger writes *.mae files with bonds listed in
+               both directions, i.e. 1-2 and 2-1. However, the bond properties
+               for 1-2 and 2-1 MUST BE THE SAME. Therefore, these RCA4
+               properties are setup to only read properly for the bond with
+               the lowest atom number first. In this case, 1-2.
+i_cs_rca4_2  - See `i_cs_rca4_1`.
+i_cs_torc_a1 - This and `i_cs_torc_xa` are used together to indicate where the
+               conformational search method should enforce torsion checks.
 
-              Functions similar to `i_cs_rca4_1` and `i_cs_rca4_2`.
-i_cs_torc_2 - See `i_cs_torc_1`.
-r_cs_torc_5 - Absolute value of the minimum torsional value allowed.
-r_cs_torc_6 - Absolute value of the maximum torsional value allowed.
+               Functions similar to `i_cs_rca4_1` and `i_cs_rca4_2`.
+i_cs_torc_a4 - See `i_cs_torc_a2`.
+r_cs_torc_a5 - Absolute value of the minimum torsional value allowed.
+r_cs_torc_a6 - Absolute value of the maximum torsional value allowed.
+i_cs_torc_b1 - Same as `i_cs_torc_a1`, but allows an additional TORC per bond.
+i_cs_torc_b4 - " " "
+i_cs_torc_b5 - " " "
+i_cs_torc_b6 - " " "
 
 To enforce a cis bond:
- * r_cs_torc_5 = 0
- * r_cs_torc_6 = 90
+ * r_cs_torc_x5 = 0
+ * r_cs_torc_x6 = 90
 To enforce a trans bond:
- * r_cs_torc_5 = 90
- * r_cs_torc_6 = 180
+ * r_cs_torc_x5 = 90
+ * r_cs_torc_x6 = 180
+
+Watch out because MacroModel sometimes assigns these enforcing floats wrong.
 """
 import argparse
 import sys
@@ -65,8 +71,10 @@ from schrodinger import structure as sch_struct
 ALL_CS_ATOM_PROPERTIES = ['b_cs_chig', 'b_cs_comp']
 ALL_CS_BOND_PROPERTIES = ['b_cs_tors',
                           'i_cs_rca4_1', 'i_cs_rca4_2',
-                          'i_cs_torc_1', 'i_cs_torc_2',
-                          'r_cs_torc_5', 'r_cs_torc_6']
+                          'i_cs_torc_a1', 'i_cs_torc_a4',
+                          'r_cs_torc_a5', 'r_cs_torc_a6',
+                          'i_cs_torc_b1', 'i_cs_torc_b4',
+                          'r_cs_torc_b5', 'r_cs_torc_b6']
 
 def grouper(n, iterable, fillvalue=0.):
     """
@@ -144,18 +152,6 @@ class MyComUtil(mmodutils.ComUtil):
                     print(' - BOND: {}'.format(bond))
                     print('   - MISSING: {} (setting to 0)'.format(prop))
                     bond.property[prop] = 0
-            # try:
-            #     bond.property['b_cs_tors']
-            #     bond.property['i_cs_rca4_1']
-            #     bond.property['i_cs_rca4_2']
-            #     bond.property['i_cs_torc_1']
-            #     bond.property['i_cs_torc_2']
-            #     bond.property['r_cs_torc_5']
-            #     bond.property['r_cs_torc_6']
-            # except KeyError as e:
-            #     print('ERROR! MISSING BOND PROPERTIES: {}'.format(
-            #         structure.property['s_m_title']))
-            #     raise e
             if bond.property['b_cs_tors']:
                 indices_tors.append((bond.atom1.index, bond.atom2.index))
             if bond.property['i_cs_rca4_1']:
@@ -165,14 +161,23 @@ class MyComUtil(mmodutils.ComUtil):
                     bond.atom2.index,
                     bond.property['i_cs_rca4_2']
                 ))
-            if bond.property['i_cs_torc_1']:
+            if bond.property['i_cs_torc_a1']:
                 indices_torc.append((
-                    bond.property['i_cs_torc_1'],
+                    bond.property['i_cs_torc_a1'],
                     bond.atom1.index,
                     bond.atom2.index,
-                    bond.property['i_cs_torc_2'],
-                    bond.property['r_cs_torc_5'],
-                    bond.property['r_cs_torc_6']
+                    bond.property['i_cs_torc_a4'],
+                    bond.property['r_cs_torc_a5'],
+                    bond.property['r_cs_torc_a6']
+                ))
+            if bond.property['i_cs_torc_b1']:
+                indices_torc.append((
+                    bond.property['i_cs_torc_b1'],
+                    bond.atom1.index,
+                    bond.atom2.index,
+                    bond.property['i_cs_torc_b4'],
+                    bond.property['r_cs_torc_b5'],
+                    bond.property['r_cs_torc_b6']
                 ))
         print('COMP: {}'.format(indices_comp))
         print('CHIG: {}'.format(indices_chig))
@@ -247,20 +252,12 @@ class MyComUtil(mmodutils.ComUtil):
         self.setOpcdArgs(opcd='CRMS', arg6=0.5)
         self.MCMM.clear()
         # 3**N where N = number of bonds rotated
-        # Maxes out at 50,000.
-
-        # ~*~*~ TESTING ~*~*~
-        # Commented out for testing.
-        # nsteps = 3**len(indices_tors)
-        # if nsteps > 50000:
-        #     nsteps = 50000
-        # ~*~*~ TESTING ~*~*~
-
-        # ~*~*~ TESTING ~*~*~
-        # Makes the tests faster.
-        nsteps = 50
-        # ~*~*~ TESTING ~*~*~
-
+        # Maxes out at 10,000.
+        nsteps = 3**len(indices_tors)
+        if nsteps > 10000:
+            nsteps = 10000
+        # Good for testing.
+        # nsteps = 50
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
         self.NANT.clear()
         self.MCNV.clear()

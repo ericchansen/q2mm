@@ -15,6 +15,26 @@ from schrodinger import structure as sch_struct
 
 from clean_mae import PROPERTIES_TO_REMOVE, ATOM_PROPERTIES_TO_REMOVE
 
+ATOM_CS_PROPERTIES = ['b_cs_chig',
+                      'b_cs_comp']
+BOND_CS_PROPERTIES = ['b_cs_tors',
+                      'i_cs_rca4_1',
+                      'i_cs_rca4_2',
+                      'i_cs_torc_a1',
+                      'i_cs_torc_a4',
+                      'r_cs_torc_a5',
+                      'r_cs_torc_a6',
+                      'i_cs_torc_b1',
+                      'i_cs_torc_b4',
+                      'r_cs_torc_b5',
+                      'r_cs_torc_b6']
+
+# Updates for new format.
+CONV_DIC = {'i_cs_torc_1': 'i_cs_torc_a1',
+            'i_cs_torc_2': 'i_cs_torc_a4',
+            'r_cs_torc_5': 'r_cs_torc_a5',
+            'r_cs_torc_6': 'r_cs_torc_a6'}
+
 if __name__ == "__main__":
     for filename in sys.argv[1:]:
         structure_reader = sch_struct.StructureReader(filename)
@@ -39,21 +59,21 @@ if __name__ == "__main__":
                         pass
                     except ValueError:
                         pass
-                if not 'b_cs_chig' in atom.property:
-                    atom.property['b_cs_chig'] = 0
-                if not 'b_cs_comp' in atom.property:
-                    atom.property['b_cs_comp'] = 0
+                for prop in ATOM_CS_PROPERTIES:
+                    if not prop in atom.property:
+                        atom.property[prop] = 0
+
             for bond in structure.bond:
-                if not 'b_cs_tors' in bond.property:
-                    bond.property['b_cs_tors'] = 0
-                if not 'i_cs_torc_1' in bond.property:
-                    bond.property['i_cs_torc_1'] = 0
-                if not 'i_cs_torc_2' in bond.property:
-                    bond.property['i_cs_torc_2'] = 0
-                if not 'i_cs_rca4_1' in bond.property:
-                    bond.property['i_cs_rca4_1'] = 0
-                if not 'i_cs_rca4_2' in bond.property:
-                    bond.property['i_cs_rca4_2'] = 0
+                # Update 1st.
+                for k, v in CONV_DIC.iteritems():
+                    if k in bond.property:
+                        bond.property[v] = bond.property[k]
+                        del bond.property[k]
+
+                for prop in BOND_CS_PROPERTIES:
+                    if not prop in bond.property:
+                        bond.property[prop] = 0
+
             structure_writer.append(structure)
 
         structure_reader.close()
