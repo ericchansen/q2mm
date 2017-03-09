@@ -98,13 +98,31 @@ def grouper(n, iterable, fillvalue=0.):
     return izip_longest(fillvalue=fillvalue, *args)
 
 class MyComUtil(mmodutils.ComUtil):
-    def my_mcmm(self, mae_file=None, com_file=None, out_file=None):
+    def my_mcmm(
+            self,
+            mae_file=None,
+            com_file=None,
+            out_file=None,
+            nsteps=None,
+            frozen_atoms=None):
         """
         Modified version of the the Schrödinger mcmm.
 
         Uses custom attributes inside of the mae_file to determine certain
         settings.
         """
+        if not frozen_atoms:
+            frozen_atoms = []
+        self.FXAT.clear()
+        for frozen_atom in frozen_atoms:
+            self.setOpcdArgs(
+                opcd='FXAT',
+                arg1=frozen_atom,
+                arg2=0,
+                arg3=0,
+                arg4=0,
+                arg5=-1
+            )
         # Setup the COMP, CHIG, TORS and RCA4 commands.
         self.COMP.clear()
         # self.CHIG.clear()
@@ -153,14 +171,31 @@ class MyComUtil(mmodutils.ComUtil):
                     print('   - MISSING: {} (setting to 0)'.format(prop))
                     bond.property[prop] = 0
             if bond.property['b_cs_tors']:
-                indices_tors.append((bond.atom1.index, bond.atom2.index))
+                if any(x in frozen_atoms for x in \
+                       [bond.atom1.index, bond.atom2.index]):
+                    print('SKIPPING TORS: {} {}'.format(
+                        bond.atom1.index,
+                        bond.atom2.index))
+                else:
+                    indices_tors.append((bond.atom1.index, bond.atom2.index))
             if bond.property['i_cs_rca4_1']:
-                indices_rca4.append((
-                    bond.property['i_cs_rca4_1'],
-                    bond.atom1.index,
-                    bond.atom2.index,
-                    bond.property['i_cs_rca4_2']
-                ))
+                if any(x in frozen_atoms for x in \
+                       [bond.property['i_cs_rca4_1'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_2']]):
+                    print('SKIPPING RCA4: {} {} {} {}'.format(
+                        bond.property['i_cs_rca4_1'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_2']))
+                else:
+                    indices_rca4.append((
+                        bond.property['i_cs_rca4_1'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_2']
+                    ))
             if bond.property['i_cs_torc_a1']:
                 indices_torc.append((
                     bond.property['i_cs_torc_a1'],
@@ -251,11 +286,12 @@ class MyComUtil(mmodutils.ComUtil):
         self.CRMS.clear()
         self.setOpcdArgs(opcd='CRMS', arg6=0.5)
         self.MCMM.clear()
-        # 3**N where N = number of bonds rotated
-        # Maxes out at 10,000.
-        nsteps = 3**len(indices_tors)
-        if nsteps > 10000:
-            nsteps = 10000
+        if not nsteps:
+            # 3**N where N = number of bonds rotated
+            # Maxes out at 10,000.
+            nsteps = 3**len(indices_tors)
+            if nsteps > 10000:
+                nsteps = 10000
         # Good for testing.
         # nsteps = 50
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
@@ -298,6 +334,7 @@ class MyComUtil(mmodutils.ComUtil):
             ]
         com_args.extend(['COMP'] * (count_comp))
         com_args.append('MSYM')
+        com_args.extend(['FXAT'] * len(frozen_atoms))
         com_args.extend(['CHIG'] * (count_chig))
         # Used to have AUOP here.
         com_args.extend(['TORS'] * (count_tors))

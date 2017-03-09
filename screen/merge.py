@@ -663,12 +663,18 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     sch_writer.close()
     # Setup the minimization.
     com_setup = MyComUtil()
-    com_setup.my_mini(
+    # com_setup.my_mini(
+    #     mae_file='TEMP.mae',
+    #     com_file='TEMP.com',
+    #     out_file='TEMP_OUT.mae',
+    #     frozen_atoms=frozen_atoms,
+    #     fix_torsions=fix_torsions)
+    com_setup.my_mcmm(
         mae_file='TEMP.mae',
         com_file='TEMP.com',
         out_file='TEMP_OUT.mae',
-        frozen_atoms=frozen_atoms,
-        fix_torsions=fix_torsions)
+        nsteps=50,
+        frozen_atoms=frozen_atoms)
     command = ['bmin', '-WAIT', 'TEMP']
     # Run the minimization.
     job = jobcontrol.launch_job(command)
@@ -681,9 +687,10 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     sch_reader.close()
     if len(new_structures) > 0:
         print(' - MINI SUCCEEDED')
-        structures = new_structures
+        structures = [new_structures[0]]
     else:
         print(' - MINI FAILED. CONTINUING W/O MINI')
+    raw_input('Continue?')
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')
