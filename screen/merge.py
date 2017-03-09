@@ -327,6 +327,9 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         [merge],
         frozen_atoms=range(1, num_atoms + 1),
         fix_torsions=fix_torsions)[0]
+    merge = mcmm(
+        [merge],
+        frozen_atoms=range(1, num_atoms + 1))[0]
     # Do another minimization, this time without frozen atoms.
     if fix_torsions:
         merge = mini(
@@ -663,18 +666,12 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     sch_writer.close()
     # Setup the minimization.
     com_setup = MyComUtil()
-    # com_setup.my_mini(
-    #     mae_file='TEMP.mae',
-    #     com_file='TEMP.com',
-    #     out_file='TEMP_OUT.mae',
-    #     frozen_atoms=frozen_atoms,
-    #     fix_torsions=fix_torsions)
-    com_setup.my_mcmm(
+    com_setup.my_mini(
         mae_file='TEMP.mae',
         com_file='TEMP.com',
         out_file='TEMP_OUT.mae',
-        nsteps=50,
-        frozen_atoms=frozen_atoms)
+        frozen_atoms=frozen_atoms,
+        fix_torsions=fix_torsions)
     command = ['bmin', '-WAIT', 'TEMP']
     # Run the minimization.
     job = jobcontrol.launch_job(command)
@@ -690,7 +687,52 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
         structures = [new_structures[0]]
     else:
         print(' - MINI FAILED. CONTINUING W/O MINI')
-    raw_input('Continue?')
+    # Remove temporary files.
+    os.remove('TEMP.mae')
+    os.remove('TEMP.com')
+    os.remove('TEMP_OUT.mae')
+    os.remove('TEMP.log')
+    return structures
+
+def mcmm(structures, frozen_atoms=None):
+    """
+    Takes many structures, and does a short MCMM search on them.
+
+    Arguments
+    ---------
+    structure : list of Schrödinger structure
+
+    Returns
+    -------
+    list of Schrödinger structure
+    """
+    import schrodinger.application.macromodel.utils as mmodutils
+    import schrodinger.job.jobcontrol as jobcontrol
+    from setup_com_from_mae import MyComUtil
+    print(' - ATTEMPTING MCMM')
+    sch_writer = sch_struct.StructureWriter('TEMP.mae')
+    sch_writer.extend(structures)
+    sch_writer.close()
+    com_setup = MyComUtil()
+    com_setup.my_mcmm(
+        mae_file='TEMP.mae',
+        com_file='TEMP.com',
+        out_file='TEMP_OUT.mae',
+        nsteps=50,
+        frozen_atoms=frozen_atoms)
+    command = ['bmin', '-WAIT', 'TEMP']
+    job = jobcontrol.launch_job(command)
+    job.wait()
+    sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
+    new_structures = []
+    for structure in sch_reader:
+        new_structures.append(structure)
+    sch_reader.close()
+    if len(new_structures) > 0:
+        print(' - MCMM SUCCEEDED')
+        structures = [new_structures[0]]
+    else:
+        print(' - MCMM FAILED. CONTINUING W/O MCMM')
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')

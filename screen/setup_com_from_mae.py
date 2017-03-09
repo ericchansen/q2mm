@@ -171,19 +171,26 @@ class MyComUtil(mmodutils.ComUtil):
                     print('   - MISSING: {} (setting to 0)'.format(prop))
                     bond.property[prop] = 0
             if bond.property['b_cs_tors']:
-                if any(x in frozen_atoms for x in \
-                       [bond.atom1.index, bond.atom2.index]):
+                thing = [bond.atom1.index, bond.atom2.index]
+                if set(thing).issubset(frozen_atoms):
+                # if any(x in frozen_atoms for x in \
+                #        [bond.atom1.index, bond.atom2.index]):
                     print('SKIPPING TORS: {} {}'.format(
                         bond.atom1.index,
                         bond.atom2.index))
                 else:
                     indices_tors.append((bond.atom1.index, bond.atom2.index))
             if bond.property['i_cs_rca4_1']:
-                if any(x in frozen_atoms for x in \
-                       [bond.property['i_cs_rca4_1'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_rca4_2']]):
+                thing = [bond.property['i_cs_rca4_1'],
+                         bond.atom1.index,
+                         bond.atom2.index,
+                         bond.property['i_cs_rca4_2']]
+                if set(thing).issubset(frozen_atoms):
+                # if any(x in frozen_atoms for x in \
+                #        [bond.property['i_cs_rca4_1'],
+                #         bond.atom1.index,
+                #         bond.atom2.index,
+                #         bond.property['i_cs_rca4_2']]):
                     print('SKIPPING RCA4: {} {} {} {}'.format(
                         bond.property['i_cs_rca4_1'],
                         bond.atom1.index,
@@ -417,6 +424,7 @@ class MyComUtil(mmodutils.ComUtil):
                 arg2=fix_torsion[1],
                 arg3=fix_torsion[2],
                 arg4=fix_torsion[3],
+                arg5=4000,
                 arg6=fix_torsion[4])
         self.DEBG.clear()
         self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
