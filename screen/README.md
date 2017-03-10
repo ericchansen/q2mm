@@ -52,7 +52,7 @@ resulting in the atoms, as an example, 2-1-3 or 3-1-2.
 * `b_cs_use_substructure` - If true, use
 `schrodinger.structutils.analyze.evaluate_substructure` to find the atom
 indices for the SMILES-like pattern you provide. If false, it uses
-`schrodinger.structutils.analyze.evluate_smarts`.
+`schrodinger.structutils.analyze.evaluate_smarts`.
 
    Default is false.
 
