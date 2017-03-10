@@ -27,7 +27,7 @@
 # versions of Donoghue's TSFF can still be used.
 
 #&Rh catalyzed hydrogenation of enamides: Rh
-250        !    102.90550    Rh     4     1.75      T      F      !   1.50     T       !     !         !      !   +1  NCA       1   !
+250        !    102.90550    RH     4     1.75      T      F      !   1.50     T       !     !         !      !   +1  NCA       1   !
 #&Rh catalyzed hydrogenation of enamides: H-moving hydrogen
 251        1      1.00797    H7    21     1.20      F      F      !   2.00     F       !     !         !      !    0  NCA       2   !
 #&Rh catalyzed hydrogenation of enamides: H-stationary hydrogen
