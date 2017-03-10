@@ -1,7 +1,11 @@
 # Hansen, Eric; Limé, Elaine; Norrby, Per-Ola; Wiest, Olaf. Anomeric Effects in
-# Sulfamides. J. Phys. Chem. A, 2016, ASAP.
+# Sulfamides. J. Phys. Chem. A, 2016, 120, 3677-3682.
+
+# No additional atom types are required. Simply add this substructure to
+# mm3.fld.
+
 -3
- C  Sulfone OPT
+ C  Sulfone (FFB)
  9  H3-N3-ST(*O2)[(-N3-H3)][(-C3-H1)]
 -2
  1   1   2                 1.0309     6.1197     1.7025
@@ -25,4 +29,3 @@
  4   4   3   7   8         0.0000     0.0000    -0.6040
  4   1   2   5   6        -0.4360    -0.3083    -0.0806
 -3
-

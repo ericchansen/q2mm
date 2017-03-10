@@ -1,11 +1,15 @@
 # * Hansen, Eric; Limé, Elaine; Norrby, Per-Ola; Wiest, Olaf. Anomeric Effects
-#   in Sulfamides. J. Phys. Chem. A, 2016, ASAP.
+#   in Sulfamides. J. Phys. Chem. A, 2016, 120, 3677-3682.
 # * Donoghue, Patrick; Helquist, Paul; Norrby, Per-Ola; Wiest, Olaf. J. Chem.
 #   Theory Comput. 2008, 4, 1313-1323.
-# * Donoghue, Patrick; Helquist, Paul; Norrby, Per-Ola; Wiest, Olaf. J. Am. Chem.
-#   Soc. 2009, 131, 410-411.
+# * Donoghue, Patrick; Helquist, Paul; Norrby, Per-Ola; Wiest, Olaf. J. Am.
+#   Chem. Soc. 2009, 131, 410-411.
+
+# For notes on usage, please see the individual FF files. Other changes to
+# mm3.fld and atom.typ may be required.
+
 -3
- C  Sulfone OPT
+ C  Sulfone (FFB)
  9  H3-N3-ST(*O2)[(-N3-H3)][(-C3-H1)]
 -2
  1   1   2                 1.0309     6.1197     1.7025
@@ -29,7 +33,7 @@
  4   4   3   7   8         0.0000     0.0000    -0.6040
  4   1   2   5   6        -0.4360    -0.3083    -0.0806
 -3
- C  Rhodium catalyzed hydrogenation of enamides OPT
+ C  Rhodium catalyzed hydrogenation of enamides (RhH3-E)
  9  Z0(-P1)(-P2)(.O2)(.C2-C2.H7-1)(-H6)
 -2
  1   1   2                 2.3914     5.0700    -6.6928
