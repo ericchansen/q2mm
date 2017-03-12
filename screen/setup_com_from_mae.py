@@ -149,13 +149,6 @@ class MyComUtil(mmodutils.ComUtil):
                     print(' - ATOM: {}'.format(atom))
                     print('   - MISSING: {} (setting to 0)'.format(prop))
                     atom.property[prop] = 0
-            # try:
-            #     atom.property['b_cs_comp']
-            #     atom.property['b_cs_chig']
-            # except KeyError as e:
-            #     print('ERROR! MISSING ATOM PROPERTIES: {}'.format(
-            #         structure.property['s_m_title']))
-            #     raise e
             if atom.property['b_cs_comp']:
                 indices_comp.append(atom.index)
             if atom.property['b_cs_chig']:
@@ -173,9 +166,7 @@ class MyComUtil(mmodutils.ComUtil):
             if bond.property['b_cs_tors']:
                 thing = [bond.atom1.index, bond.atom2.index]
                 if set(thing).issubset(frozen_atoms):
-                # if any(x in frozen_atoms for x in \
-                #        [bond.atom1.index, bond.atom2.index]):
-                    print('SKIPPING TORS: {} {}'.format(
+                     print('SKIPPING TORS: {} {}'.format(
                         bond.atom1.index,
                         bond.atom2.index))
                 else:
@@ -186,11 +177,6 @@ class MyComUtil(mmodutils.ComUtil):
                          bond.atom2.index,
                          bond.property['i_cs_rca4_2']]
                 if set(thing).issubset(frozen_atoms):
-                # if any(x in frozen_atoms for x in \
-                #        [bond.property['i_cs_rca4_1'],
-                #         bond.atom1.index,
-                #         bond.atom2.index,
-                #         bond.property['i_cs_rca4_2']]):
                     print('SKIPPING RCA4: {} {} {} {}'.format(
                         bond.property['i_cs_rca4_1'],
                         bond.atom1.index,
@@ -486,6 +472,11 @@ def return_parser():
         choices=['cs', 'mini', 're'],
         help='Job type. Choices include "cs", "mini" and "re". Default '
         'is "cs".')
+    parser.add_argument(
+        '-n', '--nsteps', type=int, default=15000,
+        help='Number of conformational search steps to take. Default is '
+        '3**N where N is the number of rotating bonds. If this exceeds '
+        '10,000, then 10,000 steps are taken as default.')
     return parser
 
 def main(opts):
@@ -497,7 +488,8 @@ def main(opts):
         com_setup.my_mcmm(
             mae_file=opts.input,
             com_file=opts.com,
-            out_file=opts.output)
+            out_file=opts.output,
+            nsteps=opts.nsteps)
     elif opts.jobtype == "mini":
         com_setup.my_mini(
             mae_file=opts.input,

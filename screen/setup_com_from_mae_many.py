@@ -46,6 +46,11 @@ def return_parser():
         help='Adds "string" to the end of the created *.com files. If you use '
         'this option without an argument, it doesn\'t add anything to the end '
         'of the *.com files.')
+    parser.add_argument(
+        '-n', '--nsteps', type=int, default=15000,
+        help='Number of conformational search steps to take. Default is '
+        '3**N where N is the number of rotating bonds. If this exceeds '
+        '10,000, then 10,000 steps are taken as default.')
     return parser
 
 def main(opts):
@@ -65,7 +70,8 @@ def main(opts):
             com_setup.my_mcmm(
                 mae_file=file_input,
                 com_file=name + '.com',
-                out_file=name + '.mae'
+                out_file=name + '.mae',
+                nsteps=opts.nsteps
                 )
         elif opts.jobtype == 'mini':
             com_setup.my_mini(
