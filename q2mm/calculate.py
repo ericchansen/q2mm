@@ -32,6 +32,7 @@ import constants as co
 import compare
 import datatypes
 import filetypes
+import parameters
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'mq', 'mqh', 'mqa',
                   'ma', 'mb', 'mt',
                   'me', 'meo', 'mea', 'meao',
-                  'mh', 'mjeig', 'mgeig']
+                  'mh', 'mjeig', 'mgeig',
+                  'mp']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
@@ -392,6 +394,12 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.mae,somename.log',
         help='MacroModel eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
+    mm_args.add_argument(
+        '-mp', type=str, nargs='+', action='append',
+        default=[], metavar='somename.fld,somename.txt',
+        help='Uses a MM3* FF file (somename.fld) and a parameter file '
+        '(somename.txt) to use the current FF parameter values as data. This '
+        'is used for harmonic parameter tethering.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -1262,6 +1270,24 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # MACROMODEL MM3* CURRENT PARAMETER VALUES
+    filenames = chain.from_iterable(coms['mp'])
+    for comma_filenames in filenames:
+        # FF file and parameter file.
+        name_fld, name_txt = comma_filenames.split(',')
+        ff = datatypes.MM3(os.path.join(direc, name_fld))
+        ff.import_ff()
+        ff.params = parameters.trim_params_by_file(
+            ff.params, os.path.join(direc, name_txt))
+        for param in ff.params:
+            data.extend([datatypes.Datum(
+                val=param.value,
+                com='mp',
+                typ='p',
+                src_1=name_fld,
+                src_2=name_txt,
+                idx_1=param.mm3_row,
+                idx_2=param.mm3_col)])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
