@@ -290,7 +290,14 @@ class MyComUtil(mmodutils.ComUtil):
         self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
         self.NANT.clear()
         self.MCNV.clear()
-        self.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
+        # What if we just leave this out? Sets range for allowed DOF to change.
+        # Here, it says change 1 - 5 DOF. This seems low. Default is 1 - N,
+        # N is the number of variable dihedral angles. At any rate, these
+        # initial values are overridden by the "adaptive mechanism" as the
+        # search progresses. Good luck finding any explanation of what the
+        # "adaptive mechanism" is from any of the Schrodinger documentation.
+        # The "adaptive mechanism" can be turned off with DEBG 103.
+        # self.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
         self.MCSS.clear()
         self.setOpcdArgs(opcd='MCSS', arg1=2, arg5=50.0)
         self.MCOP.clear()
@@ -320,7 +327,7 @@ class MyComUtil(mmodutils.ComUtil):
             'CRMS',
             'MCMM',
             'NANT',
-            'MCNV',
+            # 'MCNV',
             'MCSS',
             'MCOP',
             'DEMX'
