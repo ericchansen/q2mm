@@ -62,6 +62,44 @@ class File(object):
             for line in lines:
                 f.write(line)
 
+class Tinker_hess(File):
+    def __init__(self, path):
+        super(Tinker_hess, self).__init__(path)
+        self._hessian = None
+        self.natoms = None
+    @property
+    def hessian(self):
+        if self._hessian is None:
+            hessian = np.zeros([self.natoms * 3, self.natoms * 3], dtype=float)
+            with open(self.path, 'r') as f:
+                lines = f.read()
+            words = lines.split()
+            diag = True
+            row_num = 0
+            col_num = 0
+            line = -1
+            index = 0
+            for i, word in enumerate(words):
+                match = re.compile('\d+[.]\d+').search(word)
+                if word == 'Off-diagonal':
+                    diag = False
+                    line += 1
+                    index = line + 1
+                    row_num = 0
+                    col_num = 0
+                if diag and match:
+                    hessian[row_num, col_num] = word
+                    row_num += 1
+                    col_num += 1
+                if not diag and match:
+                    hessian[line, col_num + index] = word
+                    hessian[row_num + index, line] = word
+                    row_num += 1
+                    col_num += 1
+            #Convert hessian units to use kJ/mol instead of kcal/mol
+            self._hessian = hessian / co.HARTREE_TO_KCALMOL * co.HARTREE_TO_KJMOL
+            return self._hessian
+
 class Tinker_log(File):
     def __init__(self, path):
         super(Tinker_log, self).__init__(path)
@@ -142,7 +180,13 @@ class Tinker_log(File):
             return None
 
     def read_line_for_energy(self, line):
-        pass
+        match = re.compile('Total Potential Energy :\s+({0})'.format(
+            co.RE_FLOAT)).search(line)
+        if match:
+            energy = float(match.group(1))
+            return energy
+        else:
+            return None
 
 class Tinker_xyz(File):
     def __init__(self, path):
@@ -155,7 +199,11 @@ class Tinker_xyz(File):
     	self.name_log = self.name + '.q2mm.log'
         self.name_xyz = self.name + '.q2mm.xyz'
         self.name_hes = self.name + '.q2mm.hes'
-        self.log = None
+        self.name_1st_hess = self.name + '.hes'
+       # filename_length = -1 * (len(self.name) + 4)
+       # directory = self.path[:filename_length]
+       # self.log = Tinker_log(directory + self.name_log)
+       # self.hess = Tinker_hess(directory + self.name_hes)
     @property
     def structures(self):
         if self._structures is None: 
@@ -165,14 +213,19 @@ class Tinker_xyz(File):
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
-                        struct.props['total atoms'] = line[0]
+                        struct.props['total atoms'] = int(line[0])
                         struct.props['title'] = line[1]
                     if len(line) > 2:
                         indx, ele, x, y, z, at, bonded_atom = line[0], \
                             line[1], line[2], line[3], line[4], \
                             line[5], line[6:]
-                        struct.atoms.append(Atom(index=indx, element=ele, 
-                            x=float(x), y=float(y), z=float(z), atom_type=at,
+                        struct.atoms.append(Atom(index=indx, 
+                            element=ele, 
+                            x=float(x), 
+                            y=float(y), 
+                            z=float(z), 
+                            atom_type=at,
+                            atom_type_name=at,
                             bonded_atom_indices=bonded_atom))
             return self._structures
     def get_com_opts(self):
@@ -225,10 +278,21 @@ class Tinker_xyz(File):
                          \n=================================\n")
         if com_opts['freq']:
             with open(self.name_log, 'a') as f:
-                sp.call(
-                    'testhess {} -k {} y n {}'.format(self.name_xyz,
-                    self.name_key, self.name_hes), shell=True,
-                    stderr=f, stdin=f, stdout=f)
+                #Tinker will not take a file output argument if the there isn't
+                #currently a file.hes. For example, file.xyz will write to
+                #file.hes if file.hes doesn't already exist otherwise TINKER
+                #will ask the user for a new filename.
+                if os.path.isfile(self.name + '.hes'):
+                    sp.call(
+                        'testhess {} -k {} y n {}'.format(self.name,
+                        self.name_key,self.name_hes), shell=True,
+                        stderr=f, stdin=f, stdout=f)
+                else:
+                    sp.call(
+                        'testhess {} -k {} y n'.format(self.name,
+                        self.name_key), shell=True,
+                        stderr=f, stdin=f, stdout=f)
+                    os.rename(self.name + '.hes', self.name_hes)
                 f.write("\n==================\
                          \n= END OF HESSIAN =\
                          \n==================\n")
@@ -236,9 +300,6 @@ class Tinker_xyz(File):
             f.write("\n======================\
                      \n= END OF CALCULATION =\
                      \n======================\n")
-        filename_length = -1 * (len(self.name) + 4)
-        log_path = self.path[:filename_length] + self.name_log
-        self.log = Tinker_log(log_path)
         os.chdir(current_directory)             
 
 class GaussFormChk(File):
@@ -1719,7 +1780,7 @@ class MacroModel(File):
                 count_structure = 0
                 count_previous = 0
                 section = None
-                for i, line in enumerate(f):
+                for line in f:
                     if 'Input filename' in line:
                         count_input += 1
                     if 'Input Structure Name' in line:
@@ -1731,9 +1792,6 @@ class MacroModel(File):
                     count_current = max(count_input, count_structure)
                     # If these don't match, then we reached the end of a
                     # structure.
-                    if i < 20:
-                        print(i, count_current, count_previous)
-                        print(line)
                     if count_current != count_previous:
                         current_structure = Structure()
                         self._structures.append(current_structure)
