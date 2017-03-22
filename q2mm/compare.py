@@ -72,6 +72,13 @@ def pretty_data_comp(r_data, c_data, output=None):
         score_tot += score
         # Update dictionary.
         score_typ[c.typ] += score
+        # Also calculate the score for off-diagonal vs. diagonal elements of the
+        # eigenmatrix.
+        if c.typ == 'eig':
+            if c.idx_1 == c.idx_2:
+                score_typ[c.typ + '-d'] += score
+            else:
+                score_typ[c.typ + '-o'] += score
         strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
                 c.lbl, r.wht, r.val, c.val, score))
     strings.append('-' * 89)
