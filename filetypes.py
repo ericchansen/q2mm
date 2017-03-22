@@ -116,26 +116,49 @@ class Tinker_log(File):
                 for line in f:
                     count_current = sections[calc_section]
                     if count_current != count_previous:
+                        bonds = []
+                        angles = []
+                        torsions = []
                         current_structure = Structure()
                         self._structures.append(current_structure)
                         count_previous += 1
                     section = None
-                    if "END OF SINGLE POINT" in line:
+                    if "SINGLE POINT" in line:
                         calc_section = 'minimization'
+                        for bond in bonds:
+                            # Not sure if I have to sort the atom list but
+                            # I'm doing it anyway.
+                            bond.atom_nums.sort()
+                        #sorts the bonds by the first atom and then by 
+                        #the second
+                        bonds.sort(key=lambda x: (x.atom_nums[0], 
+                            x.atom_nums[1]))
+                        for angle in angles:
+                            if angle.atom_nums[0] > angle.atom_nums[2]:
+                                angle = [angle.atom_nums[2], 
+                                         angle.atom_nums[1],
+                                         angle.atom_nums[0]]
+                        angles.sort(key=lambda x: (x.atom_nums[1], 
+                            x.atom_nums[0],x.atom_nums[2]))
+                        torsions.sort(key=lambda x: (x.atom_nums[1], 
+                            x.atom_nums[2],x.atom_nums[0],x.atom_nums[3]))
+                        current_structure.bonds.extend(bonds)
+                        current_structure.angles.extend(angles)
+                        current_structure.torsions.extend(torsions)
                     if 'END OF OPTIMIZED SINGLE POINT' in line:
                         calc_section = 'hessian'
                     if 'Bond' in line:
                         bond = self.read_line_for_bond(line)
                         if bond is not None:
-                            current_structure.bonds.append(bond)
+                            bonds.append(bond)
                     if 'Angle' in line:
                         angle = self.read_line_for_angle(line)
                         if angle is not None:
-                            current_structure.angles.append(angle)
+                            angles.append(angle)
                     if 'Torsion' in line:
                         torsion = self.read_line_for_torsion(line)
                         if torsion is not None:
-                            current_structure.torsions.append(torsion)
+                            torsions.append(torsion)
                     if 'Total Potential Energy' in line:
                         energy = self.read_line_for_energy(line)
                         if energy is not None:
