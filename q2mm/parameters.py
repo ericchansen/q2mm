@@ -79,6 +79,9 @@ vdwr - van der Waals radius''')
     par_group.add_argument(
         '--ptypes', '-pt', nargs='+', default=[],
         help='Select these parameter types.')
+    par_group.add_argument(
+        '--printtether', '-t', action='store_true',
+        help='Prints a file formatted for parameter tethering.')
     return parser
 
 def trim_params_by_type(params, ptypes):
@@ -299,6 +302,15 @@ def main(args):
                         param.allowed_range[1]))
             else:
                 print('{} {}'.format(param.mm3_row, param.mm3_col))
+    if opts.printtether:
+        for param in params:
+            print(' ' '{:22s}'
+                  ' ' '{:22.4f}'
+                  ' ' '{:22.4f}'.format(
+                      'p_mm3_{}-{}'.format(param.mm3_row, param.mm3_col),
+                      # These should be floats without me making it one here.
+                      co.WEIGHTS['p'],
+                      param.value))
     ff.params = params
     return ff
 

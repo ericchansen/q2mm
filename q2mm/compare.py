@@ -14,6 +14,7 @@ from __future__ import print_function
 from collections import defaultdict
 from itertools import izip
 import argparse
+from argparse import RawTextHelpFormatter
 import logging
 import logging.config
 import numpy as np
@@ -99,7 +100,8 @@ def return_compare_parser():
     """
     Arguments parser for compare.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=RawTextHelpFormatter)
     parser.add_argument(
         '--calculate', '-c', type=str, metavar = '" commands for calculate.py"',
         help=('These commands produce the FF data. Leave one space after the '
@@ -228,17 +230,10 @@ def import_weights(data):
     Imports weights for various data types.
 
     Weights can be set in constants.WEIGHTS.
-
-    Checks whether the 1st data point has a weight. If it does, it assumes that
-    all other data points also already have weights. Operates in this fashion in
-    order to save time.
-
-    There is a commented method below that checks each data point individually.
     """
-    # Check if the 1st data point has a weight. If it does, assume all others do
-    # as well.
-    if data[0].wht is None:
-        for datum in data:
+    # Check each data point individually for weights.
+    for datum in data:
+        if datum.wht is None:
             if datum.typ == 'eig':
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
@@ -248,19 +243,6 @@ def import_weights(data):
                     datum.wht = co.WEIGHTS['eig_o']
             else:
                 datum.wht = co.WEIGHTS[datum.typ]
-
-    # Check each data point individually for weights.
-    # for datum in data:
-    #     if datum.wht is None:
-    #         if datum.typ == 'eig':
-    #             if datum.idx_1 == datum.idx_2 == 1:
-    #                 datum.wht = co.WEIGHTS['eig_i']
-    #             elif datum.idx_1 == datum.idx_2:
-    #                 datum.wht = co.WEIGHTS['eig_d']
-    #             elif datum.idx_1 != datum.idx_2:
-    #                 datum.wht = co.WEIGHTS['eig_o']
-    #         else:
-    #             datum.wht = co.WEIGHTS[datum.typ]
 
 def calculate_score(r_data, c_data):
     """
@@ -280,6 +262,7 @@ def calculate_score(r_data, c_data):
         else:
             diff = r_datum.val - c_datum.val
 
+        print(r_datum, r_datum.wht, diff)
         score_ind = r_datum.wht**2 * diff**2
         score_tot += score_ind
         # logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
