@@ -22,9 +22,6 @@ from itertools import chain
 from math import exp, log
 
 K = 0.008314459848 # kJ K^-1 mol^-1
-T = 298.15 # K
-# Beta
-B = 1/(K*T)
 ENERGY_LABEL = 'r_mmod_Potential_Energy-MM3*'
 RE_ENERGY = ('(\s|\*)Conformation\s+\d+\s\(\s+(?P<energy>[\d\.\-]+)\s+kJ/mol\) '
              'was found\s+(?P<num>[\d]+)')
@@ -147,19 +144,25 @@ def return_parser():
         '-a', '--appendfile', metavar='filename',
         type=str,
         help='Also append CSV style output to a file.')
+    parser.add_argument(
+        '-t', '--temperature', type=float, default=298.15,
+        help='Self-explanatory.')
     return parser
 
-def calc_q(energies):
+def calc_q(energies, temperature=298.15):
+    # Beta
+    beta = 1 / (K * temperature)
     qs = []
     for group_energies in energies:
-        q = sum([exp(-B*x) for x in group_energies])
+        q = sum([exp(-beta*x) for x in group_energies])
         qs.append(q)
     return qs
 
 def sumq(groups,
          appendfile=None,
          max_energy=None,
-         max_structures=None):
+         max_structures=None,
+         temperature=298.15):
     # list of lists
     # Each sublist contains all the energies for a grouping of
     # structures/filenames.
@@ -190,7 +193,7 @@ def sumq(groups,
     # Output code.
     border = ' % CONTRIBUTION TO TOTAL '.center(50, '-')
     print(border)
-    qs = calc_q(energies)
+    qs = calc_q(energies, temperature=temperature)
     total_q = sum(qs)
     stuff = []
     for i, q in enumerate(qs):
@@ -205,7 +208,7 @@ def sumq(groups,
         dr21 = qs[1] / qs[0]
         # Changing sign temporarily.
         de = - (dr12 - 1) / (dr12 + 1) * 100
-        dde = K * T * log(qs[0]/qs[1])
+        dde = K * temperature * log(qs[0]/qs[1])
         print('% dr/er (Group 1 : Group 2): {}'.format(dr12))
         print('% dr/er (Group 2 : Group 1): {}'.format(dr21))
         print('% de/ee: {}'.format(de))
@@ -234,7 +237,8 @@ def main(args):
     sumq(opts.group,
          opts.appendfile,
          opts.max_energy,
-         opts.max_structures)
+         opts.max_structures,
+         opts.temperature)
 
 if __name__ == '__main__':
     args = sys.argv[1:]
