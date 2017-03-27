@@ -35,13 +35,11 @@ def main(args):
     # Pretty readouts. Maybe opts.output could have 3 values:
     # True, False or None
     # Then I wouldn't need 2 if statements here.
-    if opts.output:
-        pretty_data_comp(r_data, c_data, output=opts.output)
-    if opts.print:
-        pretty_data_comp(r_data, c_data)
+    if opts.output or opts.print:
+        pretty_data_comp(r_data, c_data, output=opts.output, doprint=opts.print)
     logger.log(1, '>>> score: {}'.format(score))
 
-def pretty_data_comp(r_data, c_data, output=None):
+def pretty_data_comp(r_data, c_data, output=None, doprint=False):
     """
     Recalculates score along with making a pretty output.
 
@@ -92,7 +90,7 @@ def pretty_data_comp(r_data, c_data, output=None):
         with open(output, 'w') as f:
             for line in strings:
                 f.write('{}\n'.format(line))
-    else:
+    if doprint:
         for line in strings:
             print(line)
 
