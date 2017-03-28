@@ -70,7 +70,10 @@ class Tinker_hess(File):
     @property
     def hessian(self):
         if self._hessian is None:
+            logger.log(10, 'READING: {}'.format(self.filename))
             hessian = np.zeros([self.natoms * 3, self.natoms * 3], dtype=float)
+            logger.log(5, '  -- Creatting {} Hessian Matrix.'.format(
+                hessian.shape))
             with open(self.path, 'r') as f:
                 lines = f.read()
             words = lines.split()
@@ -81,23 +84,32 @@ class Tinker_hess(File):
             index = 0
             for i, word in enumerate(words):
                 match = re.compile('\d+[.]\d+').search(word)
+                #First group of values are all of the diagonal elements. So 
+                # This will grab them first and put them in the correct index
+                # of the Hessian.
+                if diag and match:
+                    hessian[row_num, col_num] = word
+                    row_num += 1
+                    col_num += 1
+                #After the first group of values the line will read 
+                # 'Off-diagonal'. This signifies when the next elements are 
+                # H_i,j for section i.
                 if word == 'Off-diagonal':
                     diag = False
                     line += 1
                     index = line + 1
                     row_num = 0
                     col_num = 0
-                if diag and match:
-                    hessian[row_num, col_num] = word
-                    row_num += 1
-                    col_num += 1
                 if not diag and match:
                     hessian[line, col_num + index] = word
                     hessian[row_num + index, line] = word
                     row_num += 1
                     col_num += 1
             #Convert hessian units to use kJ/mol instead of kcal/mol
-            self._hessian = hessian / co.HARTREE_TO_KCALMOL * co.HARTREE_TO_KJMOL
+            self._hessian = hessian / co.HARTREE_TO_KCALMOL \
+                * co.HARTREE_TO_KJMOL
+            logger.log(5, '  -- Finished Creating {} Hessian matrix.'.format(
+                hessian.shape))
             return self._hessian
 
 class Tinker_log(File):
@@ -108,6 +120,7 @@ class Tinker_log(File):
     @property
     def structures(self):
         if self._structures == None:
+            logger.log(10, 'READING: {}'.format(self.filename))
             self._structures = []
             with open(self.path, 'r') as f:
                 sections = {'sp':1, 'minimization':2, 'hessian':2} 
@@ -116,6 +129,12 @@ class Tinker_log(File):
                 for line in f:
                     count_current = sections[calc_section]
                     if count_current != count_previous:
+                        #Due to TINKER printing to standard error and standard
+                        #out the redirection of this printout to the *q2mm.log
+                        #does not print the bonds and angles in the correct
+                        #order or in a consistent order. Therefore we need to
+                        #sort the bonds, angles, and torsions in a standard 
+                        #way before extending the data in calculate.
                         bonds = []
                         angles = []
                         torsions = []
@@ -167,9 +186,13 @@ class Tinker_log(File):
                         calc_section != 'hessian':
                         last_ind = len(self._structures) - 1                
                         self._structures.remove(self._structures[last_ind])
+            logger.log(5, '  -- Imported {} structure(s)'.format(
+                len(self._structures)))
         return self._structures
 
     def read_line_for_bond(self, line):
+        #All bond data starts with the string "Bond" and then the rest of the
+        # interaction information.
         match = re.compile('Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
             '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
         if match:
@@ -180,6 +203,8 @@ class Tinker_log(File):
             return None
 
     def read_line_for_angle(self, line):
+        #All angle data starts with the string "Angle" and then the rest of the
+        # interaction information.
         match = re.compile('Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
             '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
         if match:
@@ -191,6 +216,8 @@ class Tinker_log(File):
             return None
 
     def read_line_for_torsion(self, line):
+        #All torsion data starts with the string "torsion" and then the rest of
+        # the interaction information.
         match = re.compile('Torsion\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
             '(\d+)-(\w+)\s+(\d+)-(\w+)\s+({0})\s+({0})'.format(
                 co.RE_FLOAT)).search(line)
@@ -203,10 +230,13 @@ class Tinker_log(File):
             return None
 
     def read_line_for_energy(self, line):
+        #The TPE is in units of kcal/mol, so we have to convert them to kJ/mol
+        # for consistency purposes.
         match = re.compile('Total Potential Energy :\s+({0})'.format(
             co.RE_FLOAT)).search(line)
         if match:
             energy = float(match.group(1))
+            energy *= co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
             return energy
         else:
             return None
@@ -218,18 +248,22 @@ class Tinker_xyz(File):
         self._structures = None
         self.commands = None
         self.name = os.path.splitext(self.filename)[0]
+        #Key file is needed to set the settings for the calculation, including
+        # the parameters needed to perform the calculation.
        	self.name_key = self.name + '.q2mm.key'
+        #The log file is a file that contains the information redirected from
+        # the TINKER calculations that are performed with Q2MM. This is not a
+        # file setup by TINKER. TINKER will only print to the front end except
+        # for select files such as a newly minimized structure. In this case
+        # the minimized structure will be saved to *.q2mm.xyz.
     	self.name_log = self.name + '.q2mm.log'
         self.name_xyz = self.name + '.q2mm.xyz'
         self.name_hes = self.name + '.q2mm.hes'
         self.name_1st_hess = self.name + '.hes'
-       # filename_length = -1 * (len(self.name) + 4)
-       # directory = self.path[:filename_length]
-       # self.log = Tinker_log(directory + self.name_log)
-       # self.hess = Tinker_hess(directory + self.name_hes)
     @property
     def structures(self):
         if self._structures is None: 
+            logger.log(10, 'READING: {}'.format(self.filename))
             struct = Structure()
             self._structures = [struct]
             with open(self.filename, 'r') as f:
@@ -238,6 +272,8 @@ class Tinker_xyz(File):
                     if len(line) == 2:
                         struct.props['total atoms'] = int(line[0])
                         struct.props['title'] = line[1]
+                        logger.log(5, '  -- Read {} atoms.'.format(
+                            struct.props['total atoms']))
                     if len(line) > 2:
                         indx, ele, x, y, z, at, bonded_atom = line[0], \
                             line[1], line[2], line[3], line[4], \
@@ -269,6 +305,7 @@ class Tinker_xyz(File):
             com_opts['tors'] = True
         return com_opts
     def run(self,check_tokens=False):
+        logger.log(5, 'RUNNING: {}'.format(self.filename))
         self._index_output_log = []
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
@@ -280,15 +317,23 @@ class Tinker_xyz(File):
         if os.path.isfile(self.name_hes):
             os.remove(self.name_hes)
         if com_opts['sp']:
+            logger.log(1, '  ANALYZE: {}'.format(self.filename)
             with open(self.name_log, 'w') as f:
                 sp.call(
                     'analyze {}.xyz -k {} D'.format(self.name,
                     self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                #Not sure if these print outs are important, but I add in these
+                # to define what section of the *q2mm.log file you are in. This
+                # is especially helpful when needed to grab all of the bond,
+                # angle, and torsional data since these have to be ordered 
+                # everytime they are grabbed.    
                 f.write("\n=======================\
                          \n= END OF SINGLE POINT =\
                          \n=======================\n")
         if com_opts['opt']:
+            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename)
             with open(self.name_log, 'a') as f:
+                #The float value is the convergence criteria.
                 sp.call(
                     'minimize {}.xyz -k {} 0.01 {}'.format(self.name,
                     self.name_key, self.name_xyz), shell=True, stderr=f,
@@ -300,6 +345,7 @@ class Tinker_xyz(File):
                          \n= END OF OPTIMIZED SINGLE POINT =\
                          \n=================================\n")
         if com_opts['freq']:
+            logger.log(1, '  TESTHESS: {}'.format(self.filename)
             with open(self.name_log, 'a') as f:
                 #Tinker will not take a file output argument if the there isn't
                 #currently a file.hes. For example, file.xyz will write to

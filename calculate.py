@@ -54,10 +54,10 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'me', 'meo', 'mea', 'meao',
                   'mh', 'mjeig', 'mgeig']
 # Commands related to Tinker.
-COM_TINKER     = ['tq', 'tqh', 'tqa', 'ta',
-                  'tao', 'tb', 'tbo', 'tt',
-                  'tto', 'te', 'teo', 'tea',
-                  'teao', 'th', 'tjeigz', 'tgeig']
+COM_TINKER     = ['ta','tao', 'tb', 'tbo', 
+                  'tt','tto', 'te', 'teo', 
+                  'tea','teao', 'th', 
+                  'tjeigz', 'tgeig']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
@@ -133,22 +133,11 @@ def main(args):
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
-#Tinker Code
-#
-                
         elif any(x in COM_TINKER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.xyz':
-                # Becomes and instance of the tinker class
                 inps[filename] = filetypes.Tinker_xyz(
                     os.path.join(opts.directory, filename))
-                # grabs the commands that are needed commands_for_filename
                 inps[filename].commands = commands_for_filename
-                # writes the command file. This would be *q2mm.com and for
-                # macromodel files
-#                inps[filename].write_com(sometext=opts.append)
-                
-#
-#
         # In this case, no command files have to be written.
         else:
             inps[filename] = None
@@ -171,9 +160,6 @@ def main(args):
         data = collect_data_fake(commands, inps, direc=opts.directory,
                                  invert=opts.invert)
     else:
-#Added by Tony #commands is a dictionary of lists: {com1:['test2.xyz','file2']}
-#Added by Tony #inps is a dictionary of objects: {'test2.xyz':Tinker_class_ob}
-#Addded by Tony
         data = collect_data(commands, inps, direc=opts.directory,
                             invert=opts.invert)
     # Adds weights to the data points in the data list.
@@ -414,19 +400,6 @@ def return_calculate_parser(add_help=True, parents=None):
     # TINKER OPTIONS
     tin_args = parser.add_argument_group("tinker data types")
     tin_args.add_argument(
-        '-tq', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker charges.')
-    tin_args.add_argument(
-        '-tqh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker charges (excludes aliphatic hydrogens).')
-    tin_args.add_argument(
-        '-tqa', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help=('Tinker partial charges. Sums the partial charge of all '
-              'singly bonded hydrogens into its connected atom.'))
-    tin_args.add_argument(
         '-te', type=str, nargs='+', action='append',
         default=[], metavar='somename.xyz',
         help='Tinker energies (pre-FF optimization).')
@@ -463,11 +436,11 @@ def return_calculate_parser(add_help=True, parents=None):
     tin_args.add_argument(
         '-tt', type=str, nargs='+', action='append',
         default=[], metavar='somename.xyz',
-        help='Tink torsions (pre-FF optimization).')
+        help='Tinker torsions (pre-FF optimization).')
     tin_args.add_argument(
         '-tto', type=str, nargs='+', action='append',
         default=[], metavar='somename.xyz',
-        help='Tink torsions (post-FF optimization).')
+        help='Tinker torsions (post-FF optimization).')
     tin_args.add_argument(
         '-th', type=str, nargs='+', action='append',
         default=[], metavar='somename.xyz',
@@ -963,7 +936,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
-#Added by Tony # Tinker bonds
     # TINKER SP BONDS
     filenames = chain.from_iterable(coms['tb'])
     for filename in filenames:
@@ -1039,8 +1011,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             datum.val -= avg
         data.extend(temp)
     
-#TINKER HESSIAN
-
+    #TINKER HESSIAN
     filenames = chain.from_iterable(coms['th'])
     for filename in filenames:
         xyz_struct = inps[filename].structures[0]
@@ -1050,8 +1021,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         hes.natoms = num_atoms
         hess = hes.hessian
         datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
-        #datatypes.mass_weight_hessian(hess, jin.structures[0].atoms)
         #Need to figure out dummy atoms at somepoint?
+        #I'm not even sure if we can use dummy atoms in TINKER
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
         data.extend([datatypes.Datum(
@@ -1063,10 +1034,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-
-
-#TINKER EIGENMATRIX USING GAUSSIAN EIGENVECTORS
-
+    #TINKER EIGENMATRIX USING GAUSSIAN EIGENVECTORS
     filenames = chain.from_iterable(coms['tgeig'])
     for comma_filenames in filenames:
         name_xyz, name_gau_log = comma_filenames.split(',')
@@ -1074,13 +1042,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         xyz = check_outs(name_xyz, outs, filetypes.Tinker_xyz, direc)
         xyz_hes = check_outs(name_xyz_hes, outs, filetypes.Tinker_hess, direc)
         gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
-#Need a better way to do this
         xyz_struct = xyz.structures[0]
         num_atoms = xyz_struct.props['total atoms']
         xyz_hes.natoms = num_atoms
         hess = xyz_hes.hessian
         datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
-#Still need to figure out a way to do dummy atoms
         evec = gau_log.evecs
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
@@ -1103,9 +1069,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-
-
-
     # MACROMODEL BONDS
     filenames = chain.from_iterable(coms['mb'])
     for filename in filenames:
