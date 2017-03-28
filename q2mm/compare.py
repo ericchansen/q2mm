@@ -259,8 +259,6 @@ def calculate_score(r_data, c_data):
                 diff = 360. - diff
         else:
             diff = r_datum.val - c_datum.val
-
-        print(r_datum, r_datum.wht, diff)
         score_ind = r_datum.wht**2 * diff**2
         score_tot += score_ind
         # logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))

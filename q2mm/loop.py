@@ -152,7 +152,8 @@ class Loop(object):
                 if '-p' in cols:
                     compare.pretty_data_comp(
                         self.ref_data,
-                        self.ff.data)
+                        self.ff.data,
+                        doprint=True)
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
                     direc=self.direc,
