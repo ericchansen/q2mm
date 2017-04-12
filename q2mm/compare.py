@@ -14,6 +14,7 @@ from __future__ import print_function
 from collections import defaultdict
 from itertools import izip
 import argparse
+from argparse import RawTextHelpFormatter
 import logging
 import logging.config
 import numpy as np
@@ -34,13 +35,11 @@ def main(args):
     # Pretty readouts. Maybe opts.output could have 3 values:
     # True, False or None
     # Then I wouldn't need 2 if statements here.
-    if opts.output:
-        pretty_data_comp(r_data, c_data, output=opts.output)
-    if opts.print:
-        pretty_data_comp(r_data, c_data)
+    if opts.output or opts.print:
+        pretty_data_comp(r_data, c_data, output=opts.output, doprint=opts.print)
     logger.log(1, '>>> score: {}'.format(score))
 
-def pretty_data_comp(r_data, c_data, output=None):
+def pretty_data_comp(r_data, c_data, output=None, doprint=False):
     """
     Recalculates score along with making a pretty output.
 
@@ -72,6 +71,13 @@ def pretty_data_comp(r_data, c_data, output=None):
         score_tot += score
         # Update dictionary.
         score_typ[c.typ] += score
+        # Also calculate the score for off-diagonal vs. diagonal elements of the
+        # eigenmatrix.
+        if c.typ == 'eig':
+            if c.idx_1 == c.idx_2:
+                score_typ[c.typ + '-d'] += score
+            else:
+                score_typ[c.typ + '-o'] += score
         strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
                 c.lbl, r.wht, r.val, c.val, score))
     strings.append('-' * 89)
@@ -84,7 +90,7 @@ def pretty_data_comp(r_data, c_data, output=None):
         with open(output, 'w') as f:
             for line in strings:
                 f.write('{}\n'.format(line))
-    else:
+    if doprint:
         for line in strings:
             print(line)
 
@@ -92,7 +98,8 @@ def return_compare_parser():
     """
     Arguments parser for compare.
     """
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=RawTextHelpFormatter)
     parser.add_argument(
         '--calculate', '-c', type=str, metavar = '" commands for calculate.py"',
         help=('These commands produce the FF data. Leave one space after the '
@@ -221,17 +228,10 @@ def import_weights(data):
     Imports weights for various data types.
 
     Weights can be set in constants.WEIGHTS.
-
-    Checks whether the 1st data point has a weight. If it does, it assumes that
-    all other data points also already have weights. Operates in this fashion in
-    order to save time.
-
-    There is a commented method below that checks each data point individually.
     """
-    # Check if the 1st data point has a weight. If it does, assume all others do
-    # as well.
-    if data[0].wht is None:
-        for datum in data:
+    # Check each data point individually for weights.
+    for datum in data:
+        if datum.wht is None:
             if datum.typ == 'eig':
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
@@ -241,19 +241,6 @@ def import_weights(data):
                     datum.wht = co.WEIGHTS['eig_o']
             else:
                 datum.wht = co.WEIGHTS[datum.typ]
-
-    # Check each data point individually for weights.
-    # for datum in data:
-    #     if datum.wht is None:
-    #         if datum.typ == 'eig':
-    #             if datum.idx_1 == datum.idx_2 == 1:
-    #                 datum.wht = co.WEIGHTS['eig_i']
-    #             elif datum.idx_1 == datum.idx_2:
-    #                 datum.wht = co.WEIGHTS['eig_d']
-    #             elif datum.idx_1 != datum.idx_2:
-    #                 datum.wht = co.WEIGHTS['eig_o']
-    #         else:
-    #             datum.wht = co.WEIGHTS[datum.typ]
 
 def calculate_score(r_data, c_data):
     """
@@ -272,7 +259,6 @@ def calculate_score(r_data, c_data):
                 diff = 360. - diff
         else:
             diff = r_datum.val - c_datum.val
-
         score_ind = r_datum.wht**2 * diff**2
         score_tot += score_ind
         # logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
