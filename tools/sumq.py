@@ -146,7 +146,7 @@ def return_parser():
         help='Also append CSV style output to a file.')
     parser.add_argument(
         '-t', '--temperature', type=float, default=298.15,
-        help='Self-explanatory.')
+        help='Self-explanatory. Default is 298.15 K.')
     return parser
 
 def calc_q(energies, temperature=298.15):
