@@ -106,6 +106,10 @@ def get_atom_numbers_from_structure_with_pattern(structure,
     -------
     list of integers
     """
+    # print(">>> structure: {}".format(structure))
+    # print(">>> pattern: {}".format(pattern))
+    # print(">>> first_match_only: {}".format(first_match_only))
+    # print(">>> use_substructure: {}".format(use_substructure))
     if use_substructure:
         return analyze.evaluate_substructure(structure,
                                              pattern,
@@ -130,8 +134,13 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     struct_1 : Schrödinger structure object
     struct_2 : Schrödinger structure object
     """
+    # Use the patterns from struct_2.
     patterns = list(search_dic_keys(struct_2.property, 'pattern'))
-    print(' * PATTERN: {}'.format(patterns))
+    # Determine whether to use analyze.evaluate_smarts or
+    # analyze.evaluate_substructure from struct_2 (this needs to match the pattern
+    # from struct_2).
+    use_substructure = struct_2.property.get('b_cs_use_substructure', False)
+    print(' * PATTERNS: {}'.format(patterns))
     for pattern in patterns:
         print('   * CHECKING: {}'.format(pattern))
         match_struct_1 = get_atom_numbers_from_structure_with_pattern(
@@ -139,8 +148,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             pattern,
             first_match_only=struct_1.property.get(
                 'b_cs_first_match_only', False),
-            use_substructure=struct_1.property.get(
-                'b_cs_use_substructure', False))
+            use_substructure=use_substructure)
         if match_struct_1:
             print('     * FOUND IN: {}'.format(struct_1._getTitle()))
             match_struct_2 = get_atom_numbers_from_structure_with_pattern(
@@ -148,8 +156,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                 pattern,
                 first_match_only=struct_2.property.get(
                     'b_cs_first_match_only', False),
-                use_substructure=struct_2.property.get(
-                    'b_cs_use_substructure', False))
+                use_substructure=use_substructure)
             if match_struct_2:
                 print('     * FOUND IN: {}'.format(struct_2._getTitle()))
             break
