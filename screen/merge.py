@@ -111,13 +111,14 @@ def get_atom_numbers_from_structure_with_pattern(structure,
     # print(">>> first_match_only: {}".format(first_match_only))
     # print(">>> use_substructure: {}".format(use_substructure))
     if use_substructure:
-        return analyze.evaluate_substructure(structure,
+        atom_numbers = analyze.evaluate_substructure(structure,
                                              pattern,
                                              first_match_only=first_match_only)
     else:
-        return analyze.evaluate_smarts(structure,
+        atom_numbers = analyze.evaluate_smarts(structure,
                                        pattern,
                                        unique_sets=first_match_only)
+    return atom_numbers
 
 def get_overlapping_atoms_in_both(struct_1, struct_2):
     """
@@ -133,12 +134,17 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     ---------
     struct_1 : Schrödinger structure object
     struct_2 : Schrödinger structure object
+
+    Returns
+    -------
+    match_struct_1 : list of integers
+    match_struct_2 : list of integers
     """
     # Use the patterns from struct_2.
     patterns = list(search_dic_keys(struct_2.property, 'pattern'))
     # Determine whether to use analyze.evaluate_smarts or
-    # analyze.evaluate_substructure from struct_2 (this needs to match the pattern
-    # from struct_2).
+    # analyze.evaluate_substructure from struct_2 (this needs to match the
+    # pattern from struct_2).
     use_substructure = struct_2.property.get('b_cs_use_substructure', False)
     print(' * PATTERNS: {}'.format(patterns))
     for pattern in patterns:
@@ -163,6 +169,8 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
         else:
             print('     * COULDN\'T FIND IN: {}'.format(struct_2._getTitle()))
             continue
+    # This is an interesting way to ensure we have actually found something for
+    # match_struct_1 and match_struct_2.
     try:
         match_struct_1
         match_struct_2
@@ -171,7 +179,36 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             struct_1.property['s_m_title'],
             struct_2.property['s_m_title']))
         raise e
+    match_struct_1, match_struct_2 = remove_index_from_both_if_equals_zero(
+        match_struct_1, match_struct_2)
     return match_struct_1, match_struct_2
+
+def remove_index_from_both_if_equals_zero(a, b):
+    """
+    Scans over two lists. If any elements equal False/None, then remove that
+    index from both lists.
+
+    Arguments
+    ---------
+    a : list (of integers usually)
+    b : list (of integers usually)
+
+    Returns
+    -------
+    a : list
+    b : list
+    """
+    assert len(a) == len(b), "Lists must be of same length!"
+    # This prevents the code from breaking if the user supplies a and b as the
+    # same object. It would probably be even better to check if they're the
+    # exact same object than create new objects.
+    a = copy.deepcopy(a)
+    b = copy.deepcopy(b)
+    for i in range(len(a) - 1, -1, -1):
+        if not a[i] or not b[i]:
+            a.pop(i)
+            b.pop(i)
+    return a, b
 
 def search_dic_keys(dic, lookup):
     """
