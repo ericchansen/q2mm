@@ -111,13 +111,15 @@ def get_atom_numbers_from_structure_with_pattern(structure,
     # print(">>> first_match_only: {}".format(first_match_only))
     # print(">>> use_substructure: {}".format(use_substructure))
     if use_substructure:
-        atom_numbers = analyze.evaluate_substructure(structure,
-                                             pattern,
-                                             first_match_only=first_match_only)
+        atom_numbers = analyze.evaluate_substructure(
+            structure,
+            pattern,
+            first_match_only=first_match_only)
     else:
-        atom_numbers = analyze.evaluate_smarts(structure,
-                                       pattern,
-                                       unique_sets=first_match_only)
+        atom_numbers = analyze.evaluate_smarts(
+            structure,
+            pattern,
+            unique_sets=first_match_only)
     return atom_numbers
 
 def get_overlapping_atoms_in_both(struct_1, struct_2):
@@ -137,8 +139,8 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
 
     Returns
     -------
-    match_struct_1 : list of integers
-    match_struct_2 : list of integers
+    match_struct_1 : list of list of integers
+    match_struct_2 : list of list of integers
     """
     # Use the patterns from struct_2.
     patterns = list(search_dic_keys(struct_2.property, 'pattern'))
@@ -179,9 +181,16 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             struct_1.property['s_m_title'],
             struct_2.property['s_m_title']))
         raise e
-    match_struct_1, match_struct_2 = remove_index_from_both_if_equals_zero(
-        match_struct_1, match_struct_2)
-    return match_struct_1, match_struct_2
+    new_match_struct_1 = []
+    new_match_struct_2 = []
+    for sub_match_struct_1, sub_match_struct_2 in itertools.izip(
+            match_struct_1, match_struct_2):
+        sub_match_struct_1, sub_match_struct_2 = \
+            remove_index_from_both_if_equals_zero(
+                sub_match_struct_1, sub_match_struct_2)
+        new_match_struct_1.append(sub_match_struct_1)
+        new_match_struct_2.append(sub_match_struct_2)
+    return new_match_struct_1, new_match_struct_2
 
 def remove_index_from_both_if_equals_zero(a, b):
     """
