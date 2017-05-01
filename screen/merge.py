@@ -115,6 +115,12 @@ def get_atom_numbers_from_structure_with_pattern(structure,
             structure,
             pattern,
             first_match_only=first_match_only)
+        #I'm not sure how the logic for schrodinger's first match function
+        #works, but it in the case for evaluate_substructure() it does not
+        #always returns a single match. The following logic should correct
+        #this without distrubing anything else. -Tony
+        if first_match_only and len(atom_numbers) > 1:
+            del atom_numbers[1:]
     else:
         atom_numbers = analyze.evaluate_smarts(
             structure,
