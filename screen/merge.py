@@ -43,7 +43,7 @@ import re
 import sys
 
 from schrodinger import structure as sch_struct
-from schrodinger.structutils import analyze, measure, rmsd
+from schrodinger.structutils import analyze, measure, rmsd, build
 
 def return_parser():
     """
@@ -408,6 +408,24 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge.property['s_m_entry_name'] += \
         '_' + struct_2.property['s_m_entry_name']
 
+    # I have encoutered problems in macromodel for metal centers with
+    # multiple bond (e.g. M-Cp or M-Ph). In order for macromodel to read
+    # these structures the metal and dummy atoms have to be at the end
+    # of the atom listing (this is a really silly bug). This code rearranges
+    # the atom in this correct order. Where interest refers to the atoms of
+    # interest to reorder.
+    reordered_atoms = []
+    original_wo_interest = []
+    interest = []
+    for atom in merge.atom:
+        if atom.atom_type_name in ['RU','IR','RH','D1']:
+            interest.append(atom.index)
+        else:
+            original_wo_interest.append(atom.index):
+    reordered_atoms.extend(original_wo_interest)
+    reordered_atoms.extend(interest)
+    merge = build.reorder_atoms(merge,reordered_atoms)
+      
     # Minimize the structure.
     # Freeze atoms in struct_1.
     # Also enforce the TORC commands.
