@@ -181,15 +181,44 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             struct_1.property['s_m_title'],
             struct_2.property['s_m_title']))
         raise e
-    new_match_struct_1 = []
-    new_match_struct_2 = []
-    for sub_match_struct_1, sub_match_struct_2 in itertools.izip(
-            match_struct_1, match_struct_2):
-        sub_match_struct_1, sub_match_struct_2 = \
-            remove_index_from_both_if_equals_zero(
-                sub_match_struct_1, sub_match_struct_2)
-        new_match_struct_1.append(sub_match_struct_1)
-        new_match_struct_2.append(sub_match_struct_2)
+
+    # 1.) Eliminate all with zero if b_cs_full_match_only.
+    print('>>> match_struct_1: {}'.format(match_struct_1))
+    print('>>> match_struct_2: {}'.format(match_struct_2))
+    if struct_1.property.get('b_cs_full_match_only', False):
+        new_match_struct_1 = []
+        for match in match_struct_1:
+            if 0 not in match:
+                new_match_struct_1.append(match)
+    else:
+        new_match_struct_1 = match_struct_1
+    if struct_2.property.get('b_cs_full_match_only', False):
+        new_match_struct_2 = []
+        for match in match_struct_2:
+            if 0 not in match:
+                new_match_struct_2.append(match)
+    else:
+        new_match_struct_2 = match_struct_2
+    print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
+    print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
+    # 2.) Eliminate zeroes indices from within lists.
+    # Actually, maybe it's best to do this upon application in a case by case
+    # basis.
+
+    # This only worked if the lists were the same length.
+    # print('>>> match_struct_1: {}'.format(match_struct_1))
+    # print('>>> match_struct_2: {}'.format(match_struct_2))
+    # new_match_struct_1 = []
+    # new_match_struct_2 = []
+    # for sub_match_struct_1, sub_match_struct_2 in itertools.izip(
+    #         match_struct_1, match_struct_2):
+    #     sub_match_struct_1, sub_match_struct_2 = \
+    #         remove_index_from_both_if_equals_zero(
+    #             sub_match_struct_1, sub_match_struct_2)
+    #     new_match_struct_1.append(sub_match_struct_1)
+    #     new_match_struct_2.append(sub_match_struct_2)
+    # print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
+    # print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
     return new_match_struct_1, new_match_struct_2
 
 def remove_index_from_both_if_equals_zero(a, b):
@@ -644,11 +673,46 @@ def load_enantiomers(structure):
         yield structures[0]
 
 def merge_many_structures(structures_1, structures_2):
+    """
+    Iterator for combining two lists of structures.
+
+    Arguments
+    ---------
+    structures_1 : list of Schrodinger structures
+    structures_2 : list of Schrodinger structures
+
+    Yields
+    ------
+    Schrodinger structure
+    """
     structures = []
     for structure_1 in structures_1:
         for structure_2 in structures_2:
             for structure in merge(structure_1, structure_2):
                 yield structure
+
+def read_filename(filename):
+    """
+    Just helps with the logging.
+
+    Arguments
+    ---------
+    filename : string
+
+    Returns
+    -------
+    list of Schrodinger structure objects
+    """
+    print('>>> filename: {}'.format(filename))
+    structures = []
+    sch_reader = sch_struct.StructureReader(filename)
+    for structure in sch_reader:
+        for enantiomer in load_enantiomers(structure):
+            structures.append(enantiomer)
+    sch_reader.close()
+    print('{} : {} structures (including enantiomers)'.format(
+        filename, len(structures)))
+    return structures
 
 def merge_many_filenames(list_of_lists):
     """
@@ -661,27 +725,18 @@ def merge_many_filenames(list_of_lists):
     # Setup list for first group of filenames/structures.
     structures = []
     for filename in list_of_lists[0]:
-        sch_reader = sch_struct.StructureReader(filename)
-        for structure in sch_reader:
-            for enantiomer in load_enantiomers(structure):
-                structures.append(enantiomer)
-        sch_reader.close()
-    print('NUM. STRUCTURES: {}'.format(len(structures)))
+        structures.extend(read_filename(filename))
+    print('TOTAL NUM. STRUCTURES: {}'.format(len(structures)))
 
     # Iterate over groups of filenames/structures.
     for filenames in list_of_lists[1:]:
         new_structures = []
         for filename in filenames:
-            sch_reader = sch_struct.StructureReader(filename)
-            for structure in sch_reader:
-                for enantiomer in load_enantiomers(structure):
-                    new_structures.append(enantiomer)
-            sch_reader.close()
-
+            new_structures.extend(read_filename(filename))
         # Update existing list of structures after combining with the new
         # structures.
         structures = list(merge_many_structures(structures, new_structures))
-        print('NUM. STRUCTURES: {}'.format(len(structures)))
+        print('TOTAL NUM. STRUCTURES: {}'.format(len(structures)))
     return list(structures)
 
 def add_chirality(structure):
