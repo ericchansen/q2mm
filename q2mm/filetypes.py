@@ -64,6 +64,318 @@ class File(object):
             for line in lines:
                 f.write(line)
 
+class TinkerHess(File):
+    def __init__(self, path):
+        super(TinkerHess, self).__init__(path)
+        self._hessian = None
+        self.natoms = None
+    @property
+    def hessian(self):
+        if self._hessian is None:
+            logger.log(10, 'READING: {}'.format(self.filename))
+            hessian = np.zeros([self.natoms * 3, self.natoms * 3], dtype=float)
+            logger.log(5, '  -- Creatting {} Hessian Matrix.'.format(
+                hessian.shape))
+            with open(self.path, 'r') as f:
+                lines = f.read()
+            words = lines.split()
+            diag = True
+            row_num = 0
+            col_num = 0
+            line = -1
+            index = 0
+            for i, word in enumerate(words):
+                match = re.compile('\d+[.]\d+').search(word)
+                # First group of values are all of the diagonal elements. So
+                # This will grab them first and put them in the correct index
+                # of the Hessian.
+                if diag and match:
+                    hessian[row_num, col_num] = word
+                    row_num += 1
+                    col_num += 1
+                # After the first group of values the line will read
+                # 'Off-diagonal'. This signifies when the next elements are
+                # H_i, j for section i.
+                if word == 'Off-diagonal':
+                    diag = False
+                    line += 1
+                    index = line + 1
+                    row_num = 0
+                    col_num = 0
+                if not diag and match:
+                    hessian[line, col_num + index] = word
+                    hessian[row_num + index, line] = word
+                    row_num += 1
+                    col_num += 1
+            #Convert hessian units to use kJ/mol instead of kcal/mol
+            self._hessian = hessian / co.HARTREE_TO_KCALMOL \
+                * co.HARTREE_TO_KJMOL
+            logger.log(5, '  -- Finished Creating {} Hessian matrix.'.format(
+                hessian.shape))
+            return self._hessian
+
+class TinkerLog(File):
+    def __init__(self, path):
+        super(TinkerLog, self).__init__(path)
+        self._structures = None
+        self.name = None
+    @property
+    def structures(self):
+        if self._structures == None:
+            logger.log(10, 'READING: {}'.format(self.filename))
+            self._structures = []
+            with open(self.path, 'r') as f:
+                sections = {'sp':1, 'minimization':2, 'hessian':2}
+                count_previous = 0
+                calc_section = 'sp'
+                for line in f:
+                    count_current = sections[calc_section]
+                    if count_current != count_previous:
+                        # Due to TINKER printing to standard error and standard
+                        # out the redirection of this printout to the *q2mm.log
+                        # does not print the bonds and angles in the correct
+                        # order or in a consistent order. Therefore we need to
+                        # sort the bonds, angles, and torsions in a standard
+                        # way before extending the data in calculate.
+                        bonds = []
+                        angles = []
+                        torsions = []
+                        current_structure = Structure()
+                        self._structures.append(current_structure)
+                        count_previous += 1
+                    section = None
+                    if "SINGLE POINT" in line:
+                        calc_section = 'minimization'
+                        for bond in bonds:
+                            # Not sure if I have to sort the atom list but
+                            # I'm doing it anyway.
+                            bond.atom_nums.sort()
+                        # Sorts the bonds by the first atom and then by
+                        # the second.
+                        bonds.sort(key=lambda x: (x.atom_nums[0],
+                                                  x.atom_nums[1]))
+                        for angle in angles:
+                            if angle.atom_nums[0] > angle.atom_nums[2]:
+                                angle = [angle.atom_nums[2],
+                                         angle.atom_nums[1],
+                                         angle.atom_nums[0]]
+                        angles.sort(key=lambda x: (x.atom_nums[1],
+                                                   x.atom_nums[0],
+                                                   x.atom_nums[2]))
+                        torsions.sort(key=lambda x: (x.atom_nums[1],
+                                                     x.atom_nums[2],
+                                                     x.atom_nums[0],
+                                                     x.atom_nums[3]))
+                        current_structure.bonds.extend(bonds)
+                        current_structure.angles.extend(angles)
+                        current_structure.torsions.extend(torsions)
+                    if 'END OF OPTIMIZED SINGLE POINT' in line:
+                        calc_section = 'hessian'
+                    if 'Bond' in line:
+                        bond = self.read_line_for_bond(line)
+                        if bond is not None:
+                            bonds.append(bond)
+                    if 'Angle' in line:
+                        angle = self.read_line_for_angle(line)
+                        if angle is not None:
+                            angles.append(angle)
+                    if 'Torsion' in line:
+                        torsion = self.read_line_for_torsion(line)
+                        if torsion is not None:
+                            torsions.append(torsion)
+                    if 'Total Potential Energy' in line:
+                        energy = self.read_line_for_energy(line)
+                        if energy is not None:
+                            current_structure.props['energy']=energy
+                    if "END OF CALCULATION" in line and \
+                        calc_section != 'hessian':
+                        last_ind = len(self._structures) - 1
+                        self._structures.remove(self._structures[last_ind])
+            logger.log(5, '  -- Imported {} structure(s)'.format(
+                len(self._structures)))
+        return self._structures
+
+    def read_line_for_bond(self, line):
+        # All bond data starts with the string "Bond" and then the rest of the
+        # interaction information.
+        match = re.compile('Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3)])
+            value = float(match.group(6))
+            return Bond(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_angle(self, line):
+        # All angle data starts with the string "Angle" and then the rest of the
+        # interaction information.
+        match = re.compile('Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3),
+                match.group(5)])
+            value = float(match.group(8))
+            return Angle(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_torsion(self, line):
+        # All torsion data starts with the string "torsion" and then the rest of
+        # the interaction information.
+        match = re.compile('Torsion\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            '(\d+)-(\w+)\s+(\d+)-(\w+)\s+({0})\s+({0})'.format(
+                co.RE_FLOAT)).search(line)
+        if match:
+            atom_nums = map(int, [match.group(1), match.group(3),
+                match.group(5), match.group(7)])
+            value = float(match.group(9))
+            return Angle(atom_nums=atom_nums, value=value)
+        else:
+            return None
+
+    def read_line_for_energy(self, line):
+        # The TPE is in units of kcal/mol, so we have to convert them to kJ/mol
+        # for consistency purposes.
+        match = re.compile('Total Potential Energy :\s+({0})'.format(
+            co.RE_FLOAT)).search(line)
+        if match:
+            energy = float(match.group(1))
+            energy *= co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
+            return energy
+        else:
+            return None
+
+class TinkerXYZ(File):
+    def __init__(self, path):
+        super(TinkerXYZ, self).__init__(path)
+        self._index_output_log = None
+        self._structures = None
+        self.commands = None
+        self.name = os.path.splitext(self.filename)[0]
+        # Key file is needed to set the settings for the calculation, including
+        # the parameters needed to perform the calculation.
+        self.name_key = self.name + '.q2mm.key'
+        # The log file is a file that contains the information redirected from
+        # the TINKER calculations that are performed with Q2MM. This is not a
+        # file setup by TINKER. TINKER will only print to the front end except
+        # for select files such as a newly minimized structure. In this case
+        # the minimized structure will be saved to *.q2mm.xyz.
+        self.name_log = self.name + '.q2mm.log'
+        self.name_xyz = self.name + '.q2mm.xyz'
+        self.name_hes = self.name + '.q2mm.hes'
+        self.name_1st_hess = self.name + '.hes'
+    @property
+    def structures(self):
+        if self._structures is None:
+            logger.log(10, 'READING: {}'.format(self.filename))
+            struct = Structure()
+            self._structures = [struct]
+            with open(self.filename, 'r') as f:
+                for line in f:
+                    line = line.split()
+                    if len(line) == 2:
+                        struct.props['total atoms'] = int(line[0])
+                        struct.props['title'] = line[1]
+                        logger.log(5, '  -- Read {} atoms.'.format(
+                            struct.props['total atoms']))
+                    if len(line) > 2:
+                        indx, ele, x, y, z, at, bonded_atom = line[0], \
+                            line[1], line[2], line[3], line[4], \
+                            line[5], line[6:]
+                        struct.atoms.append(Atom(index=indx,
+                            element=ele,
+                            x=float(x),
+                            y=float(y),
+                            z=float(z),
+                            atom_type=at,
+                            atom_type_name=at,
+                            bonded_atom_indices=bonded_atom))
+            return self._structures
+    def get_com_opts(self):
+        com_opts = {'freq': False,
+                    'opt': False,
+                    'sp': False,
+                    'tors': False}
+        if any(x in ['tb', 'ta', 'tt', 'te', 'tea'] for x in self.commands):
+            com_opts['sp'] = True
+        if any(x in ['tbo','tao','tto','teo','teao'] for x in self.commands):
+            com_opts['opt'] = True
+            com_opts['sp'] = True
+        if any(x in ['th', 'tjeig', 'tgeig'] for x in self.commands):
+            com_opts['freq'] = True
+            com_opts['opt'] = True
+            com_opts['sp'] = True
+        if any(x in ['tt', 'tto'] for x in self.commands):
+            com_opts['tors'] = True
+        return com_opts
+    def run(self,check_tokens=False):
+        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        self._index_output_log = []
+        com_opts = self.get_com_opts()
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        if os.path.isfile(self.name_log):
+            os.remove(self.name_log)
+        if os.path.isfile(self.name_xyz):
+            os.remove(self.name_xyz)
+        if os.path.isfile(self.name_hes):
+            os.remove(self.name_hes)
+        if com_opts['sp']:
+            logger.log(1, '  ANALYZE: {}'.format(self.filename)
+            with open(self.name_log, 'w') as f:
+                sp.call(
+                    'analyze {}.xyz -k {} D'.format(self.name,
+                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                # Not sure if these print outs are important, but I add in these
+                # to define what section of the *q2mm.log file you are in. This
+                # is especially helpful when needed to grab all of the bond,
+                # angle, and torsional data since these have to be ordered
+                # everytime they are grabbed.
+                f.write("\n=======================\
+                         \n= END OF SINGLE POINT =\
+                         \n=======================\n")
+        if com_opts['opt']:
+            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename)
+            with open(self.name_log, 'a') as f:
+                # The float value is the convergence criteria.
+                sp.call(
+                    'minimize {}.xyz -k {} 0.01 {}'.format(self.name,
+                    self.name_key, self.name_xyz), shell=True, stderr=f,
+                    stdin=f, stdout=f)
+                sp.call(
+                    'analyze {} -k {} D'.format(self.name_xyz,
+                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                f.write("\n=================================\
+                         \n= END OF OPTIMIZED SINGLE POINT =\
+                         \n=================================\n")
+        if com_opts['freq']:
+            logger.log(1, '  TESTHESS: {}'.format(self.filename)
+            with open(self.name_log, 'a') as f:
+                # Tinker will not take a file output argument if the there isn't
+                # currently a file.hes. For example, file.xyz will write to
+                # file.hes if file.hes doesn't already exist otherwise TINKER
+                # will ask the user for a new filename.
+                if os.path.isfile(self.name + '.hes'):
+                    sp.call(
+                        'testhess {} -k {} y n {}'.format(self.name,
+                        self.name_key,self.name_hes), shell=True,
+                        stderr=f, stdin=f, stdout=f)
+                else:
+                    sp.call(
+                        'testhess {} -k {} y n'.format(self.name,
+                        self.name_key), shell=True,
+                        stderr=f, stdin=f, stdout=f)
+                    os.rename(self.name + '.hes', self.name_hes)
+                f.write("\n==================\
+                         \n= END OF HESSIAN =\
+                         \n==================\n")
+        with open(self.name_log, 'a') as f:
+            f.write("\n======================\
+                     \n= END OF CALCULATION =\
+                     \n======================\n")
+        os.chdir(current_directory)
+
 class GaussFormChk(File):
     """
     Used to retrieve data from Gaussian formatted checkpoint files.
@@ -374,7 +686,7 @@ class GaussLog(File):
         # in a file.
         try:
             arch = re.findall(
-                '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)', 
+                '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',
                 open(self.path, 'r').read())[-1]
             logger.log(5, '  -- Located last archive.')
         except IndexError:
@@ -661,7 +973,7 @@ class GaussLog(File):
                                 except IndexError:
                                     current_structure.atoms.append(Atom())
                                     current_atom = current_structure.atoms[-1]
-                                if current_atom.atomic_num: 
+                                if current_atom.atomic_num:
                                     assert current_atom.atomic_num == int(
                                         match.group(2)), \
                                         ("[L{}] Atomic numbers don't match "
@@ -1369,6 +1681,7 @@ class Mae(SchrodingerFile):
                   Time waited in between lookups of Schrodinger license
                   tokens.
         """
+        print("Run " + str(self.filename) + " with commands:" + str(self.commands))
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0

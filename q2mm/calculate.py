@@ -56,10 +56,15 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'me', 'meo', 'mea', 'meao',
                   'mh', 'mjeig', 'mgeig',
                   'mp']
+# Commands related to Tinker.
+COM_TINKER     = ['ta','tao', 'tb', 'tbo',
+                  'tt','tto', 'te', 'teo',
+                  'tea','teao', 'th',
+                  'tjeigz', 'tgeig']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
-COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_OTHER
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + COM_OTHER
 
 def main(args):
     """
@@ -135,6 +140,11 @@ def main(args):
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
+        elif any(x in COM_TINKER for x in commands_for_filename):
+            if os.path.splitext(filename)[1] == '.xyz':
+                inps[filename] = filetypes.Tinker_xyz(
+                    os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
         # In this case, no command files have to be written.
         else:
             inps[filename] = None
@@ -400,6 +410,64 @@ def return_calculate_parser(add_help=True, parents=None):
         help='Uses a MM3* FF file (somename.fld) and a parameter file '
         '(somename.txt) to use the current FF parameter values as data. This '
         'is used for harmonic parameter tethering.')
+    # TINKER OPTIONS
+    tin_args = parser.add_argument_group("tinker data types")
+    tin_args.add_argument(
+        '-te', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tea', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (pre-FF optimization). Energies will be '
+        'relative to the average energy.')
+    tin_args.add_argument(
+        '-teo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (post-FF optimization).')
+    tin_args.add_argument(
+        '-teao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker energies (post-FF optimization). Energies will be '
+        'relative to the average energy.')
+    tin_args.add_argument(
+        '-tb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker bond lengths (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tbo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker bond lengths (post-FF optimization).')
+    tin_args.add_argument(
+        '-ta', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker angles (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker angles (post-FF optimization).')
+    tin_args.add_argument(
+        '-tt', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker torsions (pre-FF optimization).')
+    tin_args.add_argument(
+        '-tto', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker torsions (post-FF optimization).')
+    tin_args.add_argument(
+        '-th', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz',
+        help='Tinker Hessian.')
+    tin_args.add_argument(
+        '-tjeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz,somename.out',
+        help='Tinker eigenmatrix (all elements). Uses Jaguar '
+        'eigenvectors.')
+    tin_args.add_argument(
+        '-tgeig', type=str, nargs='+', action='append',
+        default=[], metavar='somename.xyz,somename.log',
+        help='Tinker eigenmatrix (all elements). Uses Gaussian '
+        'eigenvectors.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -561,7 +629,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 # energies = [0.634, 0.2352]. After the 2nd thing_group, we
                 # would have energies = [0.634 + 0.01234, 0.2352 + 0.0164].
                 for i, thing in enumerate(thing_group):
-                    energies[i] += thing 
+                    energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
                 temp.append(datatypes.Datum(
@@ -881,6 +949,138 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+    # TINKER SP BONDS
+    filenames = chain.from_iterable(coms['tb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tb', 'pre', 'bonds'))
+    # TINKER SP ANGLES
+    filenames = chain.from_iterable(coms['ta'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'ta', 'pre', 'angles'))
+    # TINKER SP TORSIONS
+    filenames = chain.from_iterable(coms['tt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tt', 'pre', 'torsions'))
+    # TINKER OPTIMIZED BONDS
+    filenames = chain.from_iterable(coms['tbo'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tbo', 'opt', 'bonds'))
+    # TINKER OPTIMIZED ANGLE
+    filenames = chain.from_iterable(coms['tao'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tao', 'opt', 'angles'))
+    # TINKER OPTIMIZED ANGLE
+    filenames = chain.from_iterable(coms['tto'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tto', 'opt', 'torsions'))
+    # TINKER ENERGIES RELATIVE TO LOWEST
+    filenames_s = coms['te']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'te', 'pre', 'e', idx_1 = idx_1))
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
+    # TINKER ENERGIES RELATIVE TO AVERAGE
+    filenames_s = coms['tea']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'tea', 'pre', 'ea', idx_1 = idx_1)) 
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # TINKER OPTIMIZED ENERGIES RELATIVE LOWEST
+    filenames_s = coms['teo']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'teo', 'opt', 'eo', idx_1 = idx_1)) 
+        zero = min([x.val for x in temp])
+        for datum in temp:
+            datum.val -= zero
+        data.extend(temp)
+    # TINKER OPTIMIZED ENERGIES RELATIVE TO AVERAGE
+    filenames_s = coms['teao']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_tinker_log(
+                filename, inps, outs, direc, 'teao', 'opt', 'eao', idx_1 = idx_1)) 
+        avg = sum([x.val for x in temp]) / len(temp)
+        for datum in temp:
+            datum.val -= avg
+        data.extend(temp)
+    # TINKER HESSIAN
+    filenames = chain.from_iterable(coms['th'])
+    for filename in filenames:
+        xyz_struct = inps[filename].structures[0]
+        num_atoms = xyz_struct.props['total atoms']
+        name_hes = inps[filename].name_hes
+        hes = check_outs(name_hes, outs, filetypes.Tinker_hess, direc)
+        hes.natoms = num_atoms
+        hess = hes.hessian
+        datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
+        # Need to figure out dummy atoms at somepoint?
+        # I'm not even sure if we can use dummy atoms in TINKER.
+        low_tri_idx = np.tril_indices_from(hess)
+        low_tri = hess[low_tri_idx]
+        data.extend([datatypes.Datum(
+            val=e,
+            com='th',
+            typ='h',
+            src_1=hes.filename,
+            idx_1=x + 1,
+            idx_2=y + 1)
+                for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+    # TINKER EIGENMATRIX USING GAUSSIAN EIGENVECTORS
+    filenames = chain.from_iterable(coms['tgeig'])
+    for comma_filenames in filenames:
+        name_xyz, name_gau_log = comma_filenames.split(',')
+        name_xyz_hes = inps[name_xyz].name_hes
+        xyz = check_outs(name_xyz, outs, filetypes.Tinker_xyz, direc)
+        xyz_hes = check_outs(name_xyz_hes, outs, filetypes.Tinker_hess, direc)
+        gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
+        xyz_struct = xyz.structures[0]
+        num_atoms = xyz_struct.props['total atoms']
+        xyz_hes.natoms = num_atoms
+        hess = xyz_hes.hessian
+        datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
+        evec = gau_log.evecs
+        try:
+            eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
+        except ValueError:
+            logger.warning('Matrices not aligned!')
+            logger.warning('Hessian retrieved from {}: {}'.format(
+                    name_mae_log, hess.shape))
+            logger.warning('Eigenvectors retrieved from {}: {}'.format(
+                    name_gau_log, evec.shape))
+            raise
+        low_tri_idx = np.tril_indices_from(eigenmatrix)
+        low_tri = eigenmatrix[low_tri_idx]
+        data.extend([datatypes.Datum(
+            val=e,
+            com='tgeig',
+            typ='eig',
+            src_1=name_xyz,
+            src_2=name_gau_log,
+            idx_1=x + 1,
+            idx_2=y + 1)
+                for e, x, y in izip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
     # MACROMODEL BONDS
     filenames = chain.from_iterable(coms['mb'])
     for filename in filenames:
@@ -1096,6 +1296,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         log.read_archive()
         # For now, the Hessian is stored on the structures inside the filetype.
         hess = log.structures[0].hess
+        datatypes.mass_weight_hessian(hess, log.structures[0].atoms)
         if invert:
             # Faster to use scipy.linalg.eig or scipy.linalg.eigsh (even
             # faster).
@@ -1339,7 +1540,9 @@ def collect_structural_data_from_mae(
     """
     data = []
     name_mmo = inps[name_mae].name_mmo
+    # The indices is jsut a list for the calculation done, 'pre' or 'opt'.
     indices = inps[name_mae]._index_output_mmo
+
     mmo = check_outs(name_mmo, outs, filetypes.MacroModel, direc)
     selected_structures = filetypes.select_structures(
         mmo.structures, indices, ind)
@@ -1352,11 +1555,44 @@ def collect_structural_data_from_mae(
                 idx_1=idx_1 + 1))
     return data
 
+# Added by Tony.
+# Probably want to use check_outs function at somepoint.
+def collect_structural_data_from_tinker_log(
+    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_log = inps[name_xyz].name_log
+    log = check_outs(name_log, outs, filetypes.Tinker_log, direc)
+    log_structure = log.structures
+    struct = log_structure[select_struct[ind]]
+    # Stuff to try out hessian.
+    # xyz_struct = xyz_structure[0]
+    # num_atoms = xyz_struct.props['total atoms']
+    # hes_structure = inps[name_xyz].hess
+    # hes_structure.natoms = num_atoms
+    # hessian = hes_structure.hessian()
+    # Stuff to try out hessian.
+    if com in ['te','teo','tea','teao']:
+        energy = struct.props['energy']
+        new_datum = (datatypes.Datum(
+            val=energy,
+            typ=typ,
+            src_1=name_log,
+            idx_1=idx_1 + 1))
+        return(new_datum)
+    else:
+        data.extend(struct.select_data(
+            typ,
+            com=com,
+            src_1=name_log))
+        return(data)
+
 def sort_commands_by_filename(commands):
     '''
     Takes a dictionary of commands like...
 
-     {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'], ['b1.01.mae', 'b2.01.mae']],
+     {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'],
+             ['b1.01.mae', 'b2.01.mae']],
       'mb': [['a1.01.mae'], ['b1.01.mae']],
       'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
      }
