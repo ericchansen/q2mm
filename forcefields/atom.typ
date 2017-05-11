@@ -36,3 +36,9 @@
 253      15     30.97380    P2    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
 #&Rh catalyzed hydrogenation of enamides: Phosphorus cis-O
 254      15     30.97380    P1    15     1.80      T      F      !   2.10     F       !     !         !      !    0  TET       3   H1
+
+# Atom types below are specific for ruthenium catalyzed ketone hydrogenation.
+# Stereoselectivity in Asymmetric Catalysis: The Case of Ruthenium-Catalyzed
+# Ketone Hydrogenation. Limé, E.; Lundholm, M.D.; Forbes, A.; Wiest, O.;
+# Helquist, P.; Norrby, P.-O. J. Chem. Theory Comput., 2014, 10, 2427--2435.
+
