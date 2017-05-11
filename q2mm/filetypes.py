@@ -322,7 +322,7 @@ class TinkerXYZ(File):
         if os.path.isfile(self.name_hes):
             os.remove(self.name_hes)
         if com_opts['sp']:
-            logger.log(1, '  ANALYZE: {}'.format(self.filename)
+            logger.log(1, '  ANALYZE: {}'.format(self.filename))
             with open(self.name_log, 'w') as f:
                 sp.call(
                     'analyze {}.xyz -k {} D'.format(self.name,
@@ -336,7 +336,7 @@ class TinkerXYZ(File):
                          \n= END OF SINGLE POINT =\
                          \n=======================\n")
         if com_opts['opt']:
-            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename)
+            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename))
             with open(self.name_log, 'a') as f:
                 # The float value is the convergence criteria.
                 sp.call(
@@ -350,7 +350,7 @@ class TinkerXYZ(File):
                          \n= END OF OPTIMIZED SINGLE POINT =\
                          \n=================================\n")
         if com_opts['freq']:
-            logger.log(1, '  TESTHESS: {}'.format(self.filename)
+            logger.log(1, '  TESTHESS: {}'.format(self.filename))
             with open(self.name_log, 'a') as f:
                 # Tinker will not take a file output argument if the there isn't
                 # currently a file.hes. For example, file.xyz will write to
