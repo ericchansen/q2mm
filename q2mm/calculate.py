@@ -61,10 +61,13 @@ COM_TINKER     = ['ta','tao', 'tb', 'tbo',
                   'tt','tto', 'te', 'teo',
                   'tea','teao', 'th',
                   'tjeigz', 'tgeig']
+# Commands related to Amber.
+COM_AMBER      = ['ae']
 # All other commands.
 COM_OTHER = ['r']
 # All possible commands.
-COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + COM_OTHER
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + \
+          COM_AMBER + COM_OTHER
 
 def main(args):
     """
@@ -131,7 +134,11 @@ def main(args):
     # This generates any of the necessary command files. It uses
     # commands_for_filenames, which contains all of the data types associated
     # with the given file.
+    # Stuff below doesn't need both comma separated filenames simultaneously.
     for filename, commands_for_filename in commands_for_filenames.iteritems():
+        logger.log(1, '>>> filename: {}'.format(filename))
+        logger.log(1, '>>> commands_for_filename: {}'.format(
+            commands_for_filename))
         # These next two if statements will break down what command files
         # have to be written by the backend software package.
         if any(x in COM_MACROMODEL for x in commands_for_filename):
@@ -145,30 +152,49 @@ def main(args):
                 inps[filename] = filetypes.Tinker_xyz(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
+        elif any(x in COM_AMBER for x in commands_for_filename):
+            # This doesn't work.
+            # We need to know both filenames simultaneously for this Amber crap.
+            # Have to add these to `inps` in some other way.
+            pass
         # In this case, no command files have to be written.
         else:
             inps[filename] = None
+    # Stuff below needs both comma separated filenames simultaneously.
+    # Do the Amber inputs.
+    # Leaving the filenames together because Taylor said this would work well.
+    for comma_sep_filenames in flatten(commands['ae']):
+        # Maybe make more specific later.
+        inps[comma_sep_filenames] = filetypes.AmberInput(
+            'DOES_PATH_EVEN_MATTER')
+        split_it = comma_sep_filenames.split(',')
+        inps[comma_sep_filenames].directory = opts.directory
+        inps[comma_sep_filenames].inpcrd = split_it[0]
+        inps[comma_sep_filenames].prmtop = split_it[1]
+    logger.log(1, '>>> commands: {}'.format(commands))
     # Check whether or not to skip calculations.
     if opts.norun or opts.fake:
         logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.iteritems():
+            logger.log(1, '>>> filename: {}'.format(filename))
+            logger.log(1, '>>> some_class: {}'.format(some_class))
             # Works if some class is None too.
             if hasattr(some_class, 'run'):
                 # Ideally this can be the same for each software backend,
                 # but that means we're going to have to make some changes
                 # so that this token argument is handled properly.
                 some_class.run(check_tokens=opts.check)
-    # This is a list comprised of datatypes.Datum objects.
+    # `data` is a list comprised of datatypes.Datum objects.
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
     if opts.fake:
-        data = collect_data_fake(commands, inps, direc=opts.directory,
-                                 invert=opts.invert)
+        data = collect_data_fake(
+            commands, inps, direc=opts.directory, invert=opts.invert)
     else:
-        data = collect_data(commands, inps, direc=opts.directory,
-                            invert=opts.invert)
+        data = collect_data(
+            commands, inps, direc=opts.directory, invert=opts.invert)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
@@ -468,6 +494,12 @@ def return_calculate_parser(add_help=True, parents=None):
         default=[], metavar='somename.xyz,somename.log',
         help='Tinker eigenmatrix (all elements). Uses Gaussian '
         'eigenvectors.')
+    # AMBER OPTIONS
+    amb_args = parser.add_argument_group("amber data types")
+    amb_args.add_argument(
+        '-ae', type=str, nargs='+', action='append',
+        default=[], metavar='somename.inpcrd,somename.prmtop',
+        help='Amber energy.')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -478,6 +510,10 @@ def check_outs(filename, outs, classtype, direc):
     Could work on easing the use of this by somehow reducing number of
     arguments required.
     """
+    logger.log(1, '>>> filename: {}'.format(filename))
+    logger.log(1, '>>> outs: {}'.format(outs))
+    logger.log(1, '>>> classtype: {}'.format(classtype))
+    logger.log(1, '>>> direc: {}'.format(direc))
     if filename not in outs:
         outs[filename] = \
             classtype(os.path.join(direc, filename))
@@ -704,6 +740,27 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
                         idx_2=idx_2 + 1))
+    # AMBER ENERGIES
+    filenames_s = coms['ae']
+    for idx_1, filenames in enumerate(filenames_s):
+        logger.log(1, '>>> idx_1: {}'.format(idx_1))
+        logger.log(1, '>>> filenames: {}'.format(filenames))
+        for idx_2, comma_sep_filenames in enumerate(filenames):
+            name_1, name_2 = comma_sep_filenames.split(',')
+            out = check_outs(
+                comma_sep_filenames, outs, filetypes.AmberOut, direc)
+            # Right now, path is a comma separated string.
+            out.path = inps[comma_sep_filenames].out
+            logger.log(1, '>>> out: {}'.format(out))
+            energy = out.read_energy()
+            data.append(datatypes.Datum(
+                val=energy,
+                com='ae',
+                typ='e',
+                src_1=name_1,
+                src_2=name_2,
+                idx_1=idx_1 + 1,
+                idx_2=idx_2 + 1))
     # JAGUAR AVERAGE ENERGIES
     filenames_s = coms['jea']
     # idx_1 is the number used to group sets of relative energies.
@@ -1029,7 +1086,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         xyz_struct = inps[filename].structures[0]
         num_atoms = xyz_struct.props['total atoms']
         name_hes = inps[filename].name_hes
-        hes = check_outs(name_hes, outs, filetypes.Tinker_hess, direc)
+        hes = check_outs(name_hes, outs, filetypes.TinkerHess, direc)
         hes.natoms = num_atoms
         hess = hes.hessian
         datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
@@ -1052,7 +1109,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         name_xyz, name_gau_log = comma_filenames.split(',')
         name_xyz_hes = inps[name_xyz].name_hes
         xyz = check_outs(name_xyz, outs, filetypes.Tinker_xyz, direc)
-        xyz_hes = check_outs(name_xyz_hes, outs, filetypes.Tinker_hess, direc)
+        xyz_hes = check_outs(name_xyz_hes, outs, filetypes.TinkerHess, direc)
         gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
         xyz_struct = xyz.structures[0]
         num_atoms = xyz_struct.props['total atoms']
@@ -1516,10 +1573,15 @@ def flatten(l):
 
     http://stackoverflow.com/questions/2158395/
         flatten-an-irregular-list-of-lists-in-python
+
+    This goes a bit further than chain.from_iterable in that it can deal with
+    an arbitrary number of nested lists.
     """
+    # Move this?
     import collections
     for el in l:
-        if isinstance(el, collections.Iterable) and not isinstance(el, basestring):
+        if isinstance(el, collections.Iterable) and \
+          not isinstance(el, basestring):
             for sub in flatten(el):
                 yield sub
         else:

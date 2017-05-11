@@ -64,6 +64,85 @@ class File(object):
             for line in lines:
                 f.write(line)
 
+class AmberInput(File):
+    """
+    Some sort of generic class for Amber shell scripts.
+    """
+    SCRIPT_ENERGY = \
+"""Energy of current thingy
+ &cntrl
+ ig=-1,
+ imin=1,
+ ncyc=0, maxcyc=0,
+ ntb=1,
+ &end
+"""
+    def __init__(self, path):
+        super(AmberInput, self).__init__(path)
+    def run(self, path=None, inpcrd=None, prmtop=None, **kwargs):
+        # Added `**kwargs` to deal with this varying from the MacroModel run
+        # command.
+        with open('AMBER_TEMP.in', 'w') as f:
+            f.writelines(self.SCRIPT_ENERGY)
+        if not path:
+            # Seriously, this doesn't matter.
+            path = self.path
+        if not inpcrd:
+            inpcrd = os.path.join(self.directory, self.inpcrd)
+        if not prmtop:
+            prmtop = os.path.join(self.directory, self.prmtop)
+        # Could use inpcrd as the basis for the output filename?
+        path = os.path.splitext(prmtop)
+        path, ext = path[0], path[1]
+        self.out = path + '.out'
+        self.rst = path + '.rst'
+        # sp.call(
+        #     'sander -O -i AMBER_TEMP.in -o {} -c {} -p {} -r {} -ref {}'.format(
+        #         self.out, inpcrd, prmtop, self.rst, inpcrd),
+        #     shell=True)
+
+class AmberOut(File):
+    """
+    Some sort of generic class for Amber output files.
+    """
+    LINE_HEADER = '\s+NSTEP\s+ENERGY\s+RMS\s+GMAX\s+NAME\s+NUMBER[\s+]?\n+'
+    def __init__(self, path):
+        super(AmberOut, self).__init__(path)
+    def read_energy(self, path=None):
+        if not path:
+            path = self.path
+        logger.log(1, '>>> path: {}'.format(path))
+        with open(path, 'r') as f:
+            string = f.read()
+        # No idea if this will find more than just this one. Sure hope not!
+        # I'd double check those energies.
+        # something = re.findall(
+        #     '\s+FINAL\sRESULTS\s+\n+{}\s+{}\s+' \
+        #     '(?P<energy>{})'.format(self.LINE_HEADER, co.RE_FLOAT, co.RE_FLOAT),
+        #     string,
+        #     re.MULTILINE)
+        # if something:
+        #     logger.log(1, '>>> something: {}'.format(something))
+        #     energy = float(something[-1])
+        #     logger.log(1, '>>> energy: {}'.format(energy))
+        #     return energy
+        # else:
+        #     raise Exception("Awww bummer! I can't find the energy "
+        #                     "in {}!".format(path))
+        # Here's an iterative version.
+        re_compiled = re.compile('FINAL\sRESULTS\s+\n+{}\s+{}\s+'
+                                 '(?P<energy>{})'.format(
+                        self.LINE_HEADER, co.RE_FLOAT, co.RE_FLOAT))
+        somethings = [x.groupdict() for x in re_compiled.finditer(string)]
+        if somethings:
+            logger.log(1, '>>> somethings: {}'.format(somethings))
+            energy = float(somethings[-1]['energy'])
+            logger.log(1, '>>> energy: {}'.format(energy))
+            return energy
+        else:
+            raise Exception("Awww bummer! I can't find the energy "
+                            "in {}!".format(path))
+
 class TinkerHess(File):
     def __init__(self, path):
         super(TinkerHess, self).__init__(path)
@@ -107,7 +186,7 @@ class TinkerHess(File):
                     hessian[row_num + index, line] = word
                     row_num += 1
                     col_num += 1
-            #Convert hessian units to use kJ/mol instead of kcal/mol
+            # Convert hessian units to use kJ/mol instead of kcal/mol.
             self._hessian = hessian / co.HARTREE_TO_KCALMOL \
                 * co.HARTREE_TO_KJMOL
             logger.log(5, '  -- Finished Creating {} Hessian matrix.'.format(
