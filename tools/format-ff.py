@@ -16,7 +16,7 @@ def format_ff(filename):
             print(line.strip('\n'))
         elif line.startswith(' 9'):
             print(line.strip('\n'))
-        elif line.startswith('-2'):
+        elif line.startswith('-'):
             print(line.strip('\n'))
         elif re.match('[a-z][A-Z]', line[:2]):
             # I don't think this section is general enough.
