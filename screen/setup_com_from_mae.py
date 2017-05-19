@@ -137,7 +137,7 @@ class MyComUtil(mmodutils.ComUtil):
         reader = sch_struct.StructureReader(mae_file)
         structure = reader.next()
         reader.close()
-        print('-' * 50)
+        print('-' * 80)
         print('READING: {}'.format(structure.property['s_m_title']))
         for atom in structure.atom:
             for prop in ALL_CS_ATOM_PROPERTIES:
