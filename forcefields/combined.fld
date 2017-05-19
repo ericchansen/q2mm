@@ -8,6 +8,12 @@
 # For notes on usage, please see the individual FF files. Other changes to
 # mm3.fld and atom.typ may be required.
 
+# Currently, ruthenium catalyzed hydrogenation of ketones uses Z0. It may be
+# ideal to change this to RU (as was done for the rhodium catalyzed
+# hydrogenation of enamides). The FF also modifies the Van der Waals and OOP
+# bending section of mm3.fld, so I avoided combining it here, as adding it in
+# may affect the performance of the fields in this file.
+
 -3
  C  Sulfone (FFB)
  9  H3-N3-ST(*O2)[(-N3-H3)][(-C3-H1)]

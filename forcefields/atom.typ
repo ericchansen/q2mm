@@ -42,3 +42,6 @@
 # Ketone Hydrogenation. Limé, E.; Lundholm, M.D.; Forbes, A.; Wiest, O.;
 # Helquist, P.; Norrby, P.-O. J. Chem. Theory Comput., 2014, 10, 2427--2435.
 
+# Currently, this Z0 is still the same as the unmodified Z0.
+
+62        !    100.00000    Z0     4     1.75      T      F      !   1.50     T       !     !         !      !    0  NCA       1   !

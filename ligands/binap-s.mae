@@ -12,8 +12,8 @@ f_m_ct {
  b_cs_use_substructure
  i_m_ct_format
  :::
- binap 
-  binap 
+ binap-s
+  binap-s
   P-[Rh]-P 
   1
   0
