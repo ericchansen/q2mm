@@ -50,6 +50,8 @@ from schrodinger.structutils import analyze, measure, rmsd, build
 
 ATOMS_TO_MOVE = ['RU','IR','RH','D1']
 
+DEBUG = False
+
 def return_parser():
     """
     Parser for merge.
@@ -879,6 +881,8 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
         structures = [new_structures[0]]
     else:
         print(' - MINI FAILED. CONTINUING W/O MINI')
+    if DEBUG:
+        raw_input('Press any button to continue.')
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')
@@ -925,6 +929,8 @@ def mcmm(structures, frozen_atoms=None):
         structures = [new_structures[0]]
     else:
         print(' - MCMM FAILED. CONTINUING W/O MCMM')
+    if DEBUG:
+        raw_input('Press any button to continue.')
     # Remove temporary files.
     os.remove('TEMP.mae')
     os.remove('TEMP.com')
