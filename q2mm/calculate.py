@@ -573,7 +573,25 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         # Unlike most datatypes, these Datum only get the attributes _lbl,
         # val and wht. This is to ensure that making and working with these
         # reference text files isn't too cumbersome.
-        data.extend(collect_reference(os.path.join(direc, filename)))
+        data.extend(collect_reference(os.path.join(direc, filename)))    
+    # MACROMODEL MM3* CURRENT PARAMETER VALUES
+    filenames = chain.from_iterable(coms['mp'])
+    for comma_filenames in filenames:
+        # FF file and parameter file.
+        name_fld, name_txt = comma_filenames.split(',')
+        ff = datatypes.MM3(os.path.join(direc, name_fld))
+        ff.import_ff()
+        ff.params = parameters.trim_params_by_file(
+            ff.params, os.path.join(direc, name_txt))
+        for param in ff.params:
+            data.extend([datatypes.Datum(
+                val=param.value,
+                com='mp',
+                typ='p',
+                src_1=name_fld,
+                src_2=name_txt,
+                idx_1=param.mm3_row,
+                idx_2=param.mm3_col)])
     # JAGUAR ENERGIES
     filenames_s = coms['je']
     # idx_1 is the number used to group sets of relative energies.
@@ -1528,24 +1546,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     idx_2=y + 1)
                      for e, x, y in izip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-    # MACROMODEL MM3* CURRENT PARAMETER VALUES
-    filenames = chain.from_iterable(coms['mp'])
-    for comma_filenames in filenames:
-        # FF file and parameter file.
-        name_fld, name_txt = comma_filenames.split(',')
-        ff = datatypes.MM3(os.path.join(direc, name_fld))
-        ff.import_ff()
-        ff.params = parameters.trim_params_by_file(
-            ff.params, os.path.join(direc, name_txt))
-        for param in ff.params:
-            data.extend([datatypes.Datum(
-                val=param.value,
-                com='mp',
-                typ='p',
-                src_1=name_fld,
-                src_2=name_txt,
-                idx_1=param.mm3_row,
-                idx_2=param.mm3_col)])
     logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
     return np.array(data, dtype=datatypes.Datum)
 
