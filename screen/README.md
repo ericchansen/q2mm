@@ -244,7 +244,7 @@ Running these would produce `maefilea_cs.mae` and `maefileb_cs.mae`.
 There are also options inside `tools/setup_sh_from_com.py` that help with job
 submission on the ND CRC.
 
-#### 5. Settuping up the redundant conformer elimination
+#### 5. Setting up the redundant conformer elimination
 
 This is very similar to step 4.
 
