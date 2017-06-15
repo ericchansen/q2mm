@@ -160,7 +160,7 @@ you'd like this way.
 Here's another example.
 
 ```
-python merger.py -g base1.mae base2.mae -g next1.mae -g another1.mae
+python merge.py -g base1.mae base2.mae -g next1.mae -g another1.mae
 another2.mae -g evenmore1.mae
 ```
 
