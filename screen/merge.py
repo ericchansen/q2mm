@@ -513,7 +513,8 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         # flexibility to merge. I still forsee many problems. -TR
         if common_atom_1.atom_type == 64:
             common_atom_1.atom_type = common_atom_2.atom_type
-
+            common_atom_1.color = common_atom_2.color
+            
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
 
