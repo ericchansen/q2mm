@@ -507,6 +507,12 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         print(' * NEW ATOM:           {:>4}/{}'.format(
             common_atom_2.index,
             common_atom_2.atom_type_name))
+        # If a user is templating struct2 onto struct1, but struct1 has a wild
+        # card indicated for one of the matching atoms then we need to replace 
+        # the atom type with that of struct2. This allows more variablity and
+        # flexibility to merge. I still forsee many problems. -TR
+        if common_atom_1.atom_type == 64:
+            common_atom_1.atom_type = common_atom_2.atom_type
 
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
