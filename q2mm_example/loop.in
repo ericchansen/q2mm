@@ -1,0 +1,74 @@
+####################
+##                ##
+##  Q2MM Example  ##
+##                ##
+####################
+
+# "DIR" refers to the directory that
+# the code will be working from.
+DIR ./
+# "FFLD" does a few things including
+# designating the file that contains 
+# the force field that you want to 
+# parameterize along with writing the
+# force field to a specific file. In 
+# the following instance tells the 
+# code to use the "mm3.fld" file.
+FFLD read mm3.fld
+# The following "WGHT" argument is 
+# optional and are used to alter
+# default options. While the default
+# weight of bond lengths is 100, the 
+# following option changes it to 50.
+WGHT b 50
+# The "PARM" section stands for 
+# parameters and it lets you either
+# define the parameters or define
+# the file that contains the parameters
+# that are to be optimized.
+PARM qparam.txt
+# Reference and calculted data are "RDAT"
+# and "CDAT", respectively. The commands
+# and arguments can be found by running
+# "python q2mmdirectory/calculate.py -h"
+# in the command line. In this example
+# The parameterization is comparing the QM
+# charges (-jqa/-mqa), bond lengths (-jb/
+# -mb) and minimized energies (-geao/-meao)
+RDAT -jqa meets1.mae meets2.mae -jb meets1.mae meets2.mae -geao meets1.log meets2.log
+CDAT -mqa meets1.mae meets2.mae -mb meets1.mae meets2.mae -meao meets1.mae meets2.mae
+# The "COMP" section is necessary to 
+# compare the refrence with calculated 
+# data, but the arguments are optional.
+# "COMP -p" will print out the comp while
+# "COMP -o somefile.txt" will write the 
+# comparison in somefile.txt.
+COMP -o opt_start.txt
+# Everything between "LOOP" and "END" is
+# in a constant loop until convergance 
+# of the "LOOP" argument is met. In the 
+# following case the parameterization will
+# continue to loop through gradient methods
+# until the change in the penalty function
+# is below 1%.
+LOOP 0.01
+GRAD
+END
+# At this point Q2MM should have developed
+# a force field that perfromed the best and
+# met the above convergence. Now that force
+# field is written to "mm3.01.fld". 
+FFLD write mm3.01.fld
+# For a final comparison and output file 
+# that you can analyze more thoroughly,
+# the calculated data is calulated again
+# with "CDAT". If there is no options given
+# "CDAT" will just use the argument from
+# above, otherwise it will calculate 
+# any new argument you give it instead.
+CDAT
+# As before "COMP" writes the new comparison
+# to "opt.01.txt"
+COMP -o opt.01.txt
+
+

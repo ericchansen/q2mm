@@ -1,0 +1,66 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ s_m_entry_name
+ i_m_ct_format
+ b_cs_first_match_only
+ b_cs_both_enantiomers
+ :::
+ rh-hydrogenation-enamides 
+  rh-hydrogenation-enamides 
+  2
+  1
+  1
+ m_atom[10] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  s_m_mmod_res
+  i_m_color
+  r_m_charge1
+  r_m_charge2
+  s_m_pdb_residue_name
+  i_m_atomic_number
+  i_m_formal_charge
+  s_m_color_rgb
+  :::
+  1 250 -0.039475 1.450653 0.819676 " " 14 0.03186 0.03186 "    " 45 1 EA8232 
+  2 15 -1.837305 2.596752 1.424702 " " 16 -0.38285 -0.38285 "    " 8 0 E11E1E 
+  3 2 -2.236783 3.396993 0.613448 " " 2 0.07237 0.07237 "    " 6 0 A0A0A0 
+  4 25 -1.549308 3.611718 -0.563498 " " 4 -0.36768 -0.36768 "    " 7 0 1E1EE1 
+  5 2 -0.346593 3.093319 -0.835611 " " 2 0.28343 0.28343 "    " 6 0 A0A0A0 
+  6 2 0.775096 3.502207 0.059093 " " 2 -0.32125 -0.32125 "    " 6 0 A0A0A0 
+  7 253 1.734025 0.156225 0.468504 " " 8 0.14122 0.14122 "    " 15 0 00FF7F 
+  8 254 -1.437633 -0.423148 0.227030 " " 8 0.27513 0.27513 "    " 15 0 00FF7F 
+  9 252 0.088489 0.759236 2.204686 " " 21 -0.05700 -0.05700 "    " 1 0 FFFFFF 
+  10 251 0.945837 2.574005 1.504665 " " 21 -0.00138 -0.00138 "    " 1 0 FFFFFF 
+  :::
+ } 
+ m_bond[11] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  :::
+  1 1 2 0
+  2 1 5 0
+  3 1 7 1
+  4 1 8 1
+  5 1 9 1
+  6 1 10 1
+  7 2 3 2
+  8 3 4 1
+  9 4 5 1
+  10 5 6 2
+  11 6 10 0
+  :::
+ } 
+} 
+
