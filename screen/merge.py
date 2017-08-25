@@ -667,10 +667,14 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         [merge],
         frozen_atoms=range(1, num_atoms + 1))[0]
     # Do another minimization, this time without frozen atoms.
-    if fix_torsions:
-        merge = mini(
-            [merge],
-            fix_torsions=fix_torsions)[0]
+    #if fix_torsions:
+    #    merge = mini(
+    #        [merge],
+    #        fix_torsions=fix_torsions)[0]
+    merge = mini(
+        [merge],  
+        fix_torsions=fix_torsions)[0]
+    merge = mcmm([merge])[0]
     return merge
 
 def add_chirality(structure):
