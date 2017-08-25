@@ -352,7 +352,6 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
     print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
 
-
     # Sometimes a match is made that isn't what is wanted by the user and 
     # incorporates an aromatic where it should not be. This prevents aryl
     # aromatic rings that have 2 or more atoms in a match to be used as a 
@@ -360,15 +359,12 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     new_new_match_struct_1 = []
     for ring in struct_1.ring:
         atoms_in_ring = ring.getAtomList()
-        print(ring, atoms_in_ring)
         for match in new_match_struct_1:
             matched_atoms_in_ring = 0
             for atom in match:
                 if atom in atoms_in_ring:
                     matched_atoms_in_ring += 1 
-                print(atom,matched_atoms_in_ring)
             if matched_atoms_in_ring >= 2:
-                print(ring.isAromatic())
                 if not ring.isAromatic():
                     new_new_match_struct_1.append(match)
             else:
