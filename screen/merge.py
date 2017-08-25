@@ -389,11 +389,6 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     print('>>> new_new_match_struct_1: {}'.format(new_new_match_struct_1))
     print('>>> new_new_match_struct_2: {}'.format(new_new_match_struct_2))
 
-
-
-
-
-
     # 2.) Eliminate zeroes indices from within lists.
     # Actually, maybe it's best to do this upon application in a case by case
     # basis.
