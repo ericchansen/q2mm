@@ -251,7 +251,8 @@ def merge(struct_1, struct_2):
             tup = tuple(new_match_2)
             if tup not in seen:
                 seen.add(tup)
-                seen.add(tup[::-1])
+                if struct_2.property['b_cs_first_match_only']:
+                    seen.add(tup[::-1])
                 print(' - Unique! Continuing.')
                 # Just to look good.
                 print('-' * 80)
@@ -350,6 +351,44 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
         new_match_struct_2 = match_struct_2
     print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
     print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
+
+
+    # Sometimes a match is made that isn't what is wanted by the user and 
+    # incorporates an aromatic where it should not be. This prevents aryl
+    # aromatic rings that have 2 or more atoms in a match to be used as a 
+    # match. -TR
+    new_new_match_struct_1 = []
+    for ring in struct_1.ring:
+        atoms_in_ring = ring.getAtomList()
+        print(ring, atoms_in_ring)
+        for match in new_match_struct_1:
+            matched_atoms_in_ring = 0
+            for atom in match:
+                if atom in atoms_in_ring:
+                    matched_atoms_in_ring += 1 
+                print(atom,matched_atoms_in_ring)
+            if matched_atoms_in_ring >= 2:
+                print(ring.isAromatic())
+                if not ring.isAromatic():
+                    new_new_match_struct_1.append(match)
+            else:
+                new_new_match_struct_1.append(match)
+    new_new_match_struct_2 = []
+    for ring in struct_2.ring:
+        atoms_in_ring = ring.getAtomList()
+        for match in new_match_struct_2:
+            matched_atoms_in_ring = 0
+            for atom in match:
+                if atom in atoms_in_ring:
+                    matched_atoms_in_ring += 1 
+            if matched_atoms_in_ring >= 2:
+                if not ring.isAromatic():
+                    new_new_match_struct_2.append(match)
+            else:
+                new_new_match_struct_2.append(match)
+    print('>>> new_new_match_struct_1: {}'.format(new_new_match_struct_1))
+    print('>>> new_new_match_struct_2: {}'.format(new_new_match_struct_2))
+
     # 2.) Eliminate zeroes indices from within lists.
     # Actually, maybe it's best to do this upon application in a case by case
     # basis.
@@ -368,7 +407,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     #     new_match_struct_2.append(sub_match_struct_2)
     # print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
     # print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
-    return new_match_struct_1, new_match_struct_2
+    return new_new_match_struct_1, new_new_match_struct_2
 
 def get_atom_numbers_from_structure_with_pattern(structure,
                                                  pattern,
@@ -507,7 +546,14 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         print(' * NEW ATOM:           {:>4}/{}'.format(
             common_atom_2.index,
             common_atom_2.atom_type_name))
-
+        # If a user is templating struct2 onto struct1, but struct1 has a wild
+        # card indicated for one of the matching atoms then we need to replace 
+        # the atom type with that of struct2. This allows more variablity and
+        # flexibility to merge. I still forsee many problems. -TR
+        if common_atom_1.atom_type == 64:
+            common_atom_1.atom_type = common_atom_2.atom_type
+            common_atom_1.color = common_atom_2.color
+            
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
 
