@@ -1,0 +1,110 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ s_m_entry_name
+ s_m_subgroupid
+ s_m_subgroup_title
+ b_m_subgroup_collapsed
+ i_m_ct_format
+ b_cs_first_match_only
+ b_cs_both_enantiomers
+ b_cs_use_substructure
+ s_cs_pattern
+ b_cs_accept_aromatic
+ :::
+ H 
+  H 
+  heck-arene->heck-arene1 
+  heck-arene->heck-arene 
+  0
+  2
+  1
+  0
+  1
+  PD-C2=C2
+  1
+ m_atom[12] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  s_m_mmod_res
+  i_m_color
+  r_m_charge1
+  r_m_charge2
+  s_m_pdb_residue_name
+  s_m_grow_name
+  i_m_atomic_number
+  i_m_formal_charge
+  s_m_color_rgb
+  s_m_atom_name
+  b_cs_chig
+  b_cs_comp
+  b_q_use_charge
+  s_bioluminate_saved_label_format
+  :::
+  1 201 -0.212790 0.686731 0.237837 " " 120 -0.21182 -0.21182 "    " "    " 46 1 006985  1  0 1 1 "" 
+  2 2 -0.852073 5.495683 0.512020 "X" 2 0.00000 0.00000 "    " "  n1" 6 0 A0A0A0  C2  0 1 <> <>
+  3 2 -1.963545 4.645039 0.394167 "X" 2 0.00000 0.00000 "    " "  f1" 6 0 A0A0A0  C3  0 1 <> <>
+  4 2 -1.778759 3.255005 0.314914 "X" 2 0.00000 0.00000 "    " "  c3" 6 0 A0A0A0  C4  0 1 <> <>
+  5 2 -0.482502 2.715616 0.353514 "X" 2 0.00000 0.00000 "    " "  c1" 6 0 A0A0A0  C5  0 1 <> <>
+  6 2 0.628983 3.566161 0.471361 "X" 2 0.00000 0.00000 "    " "    " 6 0 A0A0A0  C6  0 1 <> <>
+  7 2 0.444184 4.956294 0.550620 "X" 2 0.00000 0.00000 "    " "  n3" 6 0 A0A0A0  C7  0 1 <> <>
+  8 56 -0.997244 6.587718 0.574282 "X" 8 0.00000 0.00000 "    " "  n2" 9 0 00FF7F  F8  0 1 <> <>
+  9 41 -2.981901 5.068934 0.363852 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  H9  0 0 <> <>
+  10 41 -2.651931 2.586766 0.222331 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  H10  0 0 <> <>
+  11 41 1.647227 3.142353 0.501675 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  H11  0 0 <> <>
+  12 41 1.317356 5.624533 0.643203 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  H12  0 0 <> <>
+  :::
+ } 
+ m_bond[24] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  r_cs_torc_a5
+  r_cs_torc_a6
+  r_cs_torc_b5
+  r_cs_torc_b6
+  i_cs_rca4_1
+  i_cs_rca4_2
+  i_cs_torc_a1
+  i_cs_torc_a4
+  i_cs_torc_b1
+  i_cs_torc_b4
+  b_cs_tors
+  :::
+  1 1 5 1 0 0 0 0 0 0 0 0 0 0 0
+  2 2 3 2 0 0 0 0 0 0 0 0 0 0 0
+  3 2 7 1 0 0 0 0 0 0 0 0 0 0 0
+  4 2 8 1 0 0 0 0 0 0 0 0 0 0 0
+  5 3 2 2 0 0 0 0 0 0 0 0 0 0 0
+  6 3 4 1 0 0 0 0 0 0 0 0 0 0 0
+  7 3 9 1 0 0 0 0 0 0 0 0 0 0 0
+  8 4 3 1 0 0 0 0 0 0 0 0 0 0 0
+  9 4 5 2 0 0 0 0 0 0 0 0 0 0 0
+  10 4 10 1 0 0 0 0 0 0 0 0 0 0 0
+  11 5 1 1 0 0 0 0 0 0 0 0 0 0 0
+  12 5 4 2 0 0 0 0 0 0 0 0 0 0 0
+  13 5 6 1 0 0 0 0 0 0 0 0 0 0 0
+  14 6 5 1 0 0 0 0 0 0 0 0 0 0 0
+  15 6 7 2 0 0 0 0 0 0 0 0 0 0 0
+  16 6 11 1 0 0 0 0 0 0 0 0 0 0 0
+  17 7 2 1 0 0 0 0 0 0 0 0 0 0 0
+  18 7 6 2 0 0 0 0 0 0 0 0 0 0 0
+  19 7 12 1 0 0 0 0 0 0 0 0 0 0 0
+  20 8 2 1 0 0 0 0 0 0 0 0 0 0 0
+  21 9 3 1 0 0 0 0 0 0 0 0 0 0 0
+  22 10 4 1 0 0 0 0 0 0 0 0 0 0 0
+  23 11 6 1 0 0 0 0 0 0 0 0 0 0 0
+  24 12 7 1 0 0 0 0 0 0 0 0 0 0 0
+  :::
+ } 
+} 
+
