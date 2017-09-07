@@ -1330,7 +1330,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                         atom.props['b_q_use_charge']) and \
                         atom not in hyds:
                     charge = atom.partial_charge
-                    print(charge, atom.index)
                     for bonded_atom_index in atom.bonded_atom_indices:
                         bonded_atom = structure.atoms[bonded_atom_index - 1]
                         if bonded_atom in hyds:
