@@ -6,7 +6,7 @@ import os
 import subprocess as sp
 
 DEFAULT_SUB_FILE = '''#!/bin/csh
-#$ -M arosale4@nd.edu
+#$ -M {}@nd.edu
 #$ -m ae
 #$ -N {}
 #$ -q {}
@@ -16,20 +16,21 @@ DEFAULT_SUB_FILE = '''#!/bin/csh
 module load schrodinger/2015u3
 module load gaussian/09D01
 module load tinker
-setenv SCHRODINGER_TEMP_PROJECT "/scratch365/arosale4/schrodinger/.schrodtmp"
-setenv SCHRODINGER_TMPDIR "/scratch365/arosale4/schrodinger/.schrodtmp"
-setenv SCHRODINGER_JOBDB2 "/scratch365/arosale4/schrodinger/.schrodtmp"
-setenv GAUSS_SCRDIR "/scratch365/arosale4/gaussian"
+setenv SCHRODINGER_TEMP_PROJECT "~/.schrodtmp"
+setenv SCHRODINGER_TMPDIR "~/.schrodtmp"
+setenv SCHRODINGER_JOBDB2 "~/.schrodtmp"
 
 {}'''
 
+#Change the default user here
+defaultuser='arosale4'
 
-def CRC_qsub(job_name,QUEUE,CPU,COMMAND):
+def CRC_qsub(job_name,USER,QUEUE,CPU,COMMAND):
     ## Writes the submission file with all the appropriate options: job name,
     ## queue, processors, and the job command.
     submission_file = open(job_name + '.sh', 'w')
     submission_file.write(
-        DEFAULT_SUB_FILE.format(job_name,QUEUE,CPU,COMMAND.format(
+        DEFAULT_SUB_FILE.format(job_name,USER,QUEUE,CPU,COMMAND.format(
             job_name + '.com')))
     submission_file.close()
 
@@ -71,9 +72,13 @@ def main(args):
     QUEUE = queue(opts)
     CPU = processors(opts)
     COMMAND = command(opts)
+    if opts.username:
+        USER = opts.username
+    else:
+        USER = defaultuser
     for filename in opts.filename:
         run_file = os.path.splitext(filename)[0]
-        CRC_qsub(run_file,QUEUE,CPU,COMMAND)
+        CRC_qsub(run_file,USER,QUEUE,CPU,COMMAND)
         sp.call('qsub {}.sh'.format(run_file), shell=True)
 #        print('This is where you would run the following command')    
 #        print('>>>>> qsub {}.sh'.format(run_file))    
@@ -82,19 +87,20 @@ def return_parser():
     parser = argparse.ArgumentParser(
         description='To fill out later')
     parser.add_argument(
-        'filename', type=str, nargs='+', help='Filename without extension')
+        'filename', type=str, nargs='+', help='Filename')
     parser.add_argument(
-        '-q','--queue', type=str, help='Long or short(its not short anymore)')
-#    parser.add_argument(
-#        '-np', '--no_MP', type=str, nargs='?', const=' ', default='none',
-#        help='No multiple processing')
+        '-q','--queue', type=str, help='"long" or "debug"')
     parser.add_argument(
         '-pe','--processors', type=str, nargs='?', const='none',
         default='default', help='No option string = default smp 8; \n'
         'Option string but no argument = no multiple processing; and \n'
         'Option string with argument = "#$" + argument')
     parser.add_argument(
-        '-c','--command', type=str, help='Command that are being ran')
+        '-c','--command', type=str, help='Command that are being ran. The \
+            default will be to perform a g09 calcualtion on <filename>')
+    parser.add_argument(
+        '-u','--username', type=str, help='Notre Dame CRC user name. Probably \
+            a NetID.')
     return parser
         
 
