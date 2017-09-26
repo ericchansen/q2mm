@@ -353,9 +353,9 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
 
 
-    # Sometimes a match is made that isn't what is wanted by the user and 
+    # Sometimes a match is made that isn't what is wanted by the user and
     # incorporates an aromatic where it should not be. This prevents aryl
-    # aromatic rings that have 2 or more atoms in a match to be used as a 
+    # aromatic rings that have 2 or more atoms in a match to be used as a
     # match. -TR
     new_new_match_struct_1 = []
     for ring in struct_1.ring:
@@ -365,7 +365,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             matched_atoms_in_ring = 0
             for atom in match:
                 if atom in atoms_in_ring:
-                    matched_atoms_in_ring += 1 
+                    matched_atoms_in_ring += 1
                 print(atom,matched_atoms_in_ring)
             if matched_atoms_in_ring >= 2:
                 print(ring.isAromatic())
@@ -380,7 +380,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
             matched_atoms_in_ring = 0
             for atom in match:
                 if atom in atoms_in_ring:
-                    matched_atoms_in_ring += 1 
+                    matched_atoms_in_ring += 1
             if matched_atoms_in_ring >= 2:
                 if not ring.isAromatic():
                     new_new_match_struct_2.append(match)
@@ -543,17 +543,17 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
             print('   * BOND:             {:>4}/{} {:>4}/{}'.format(
                 original_bond.atom1.index, original_bond.atom1.atom_type_name,
                 original_bond.atom2.index, original_bond.atom2.atom_type_name))
-        print(' * NEW ATOM:           {:>4}/{}'.format(
+        print(' * MATCHING ATOM:           {:>4}/{}'.format(
             common_atom_2.index,
             common_atom_2.atom_type_name))
         # If a user is templating struct2 onto struct1, but struct1 has a wild
-        # card indicated for one of the matching atoms then we need to replace 
+        # card indicated for one of the matching atoms then we need to replace
         # the atom type with that of struct2. This allows more variablity and
         # flexibility to merge. I still forsee many problems. -TR
         if common_atom_1.atom_type == 64:
             common_atom_1.atom_type = common_atom_2.atom_type
             common_atom_1.color = common_atom_2.color
-            
+
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
 
@@ -580,28 +580,37 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                 common_atoms_2.index(merge_bond.atom1)]
 
             # These bonds already exist in the original structure.
+
+            # UPDATE: Just kidding! Jess found a case where the bond doesn't
+            # exist in the original structure. See q2mm/q2mm issue #40.
+
             # We want to copy any new properties from the bonds in the merged
             # structure into the original bonds.
             if merge_bond.atom2 in common_atoms_2:
                 atom2 = common_atoms_1[
                     common_atoms_2.index(merge_bond.atom2)]
-
                 # Bond that we want to copy properties to.
+                # Surprise! This can return None. You'd think that should raise
+                # an exception.
                 bond = merge.getBond(atom1, atom2)
-                print('     * UPDATING:       {:>4}/{} {:>4}/{}'.format(
-                    atom1.index, atom1.atom_type_name,
-                    atom2.index, atom2.atom_type_name))
-
+                if bond is None:
+                    atom1.addBond(atom2.index, merge_bond.order)
+                    print('     * ADDED:         {:>4}/{} {:>4}/{}'.format(
+                        atom1.index, atom1.atom_type_name,
+                        atom2.index, atom2.atom_type_name))
+                else:
+                    print('     * UPDATED:       {:>4}/{} {:>4}/{}'.format(
+                        atom1.index, atom1.atom_type_name,
+                        atom2.index, atom2.atom_type_name))
             # If the bond doesn't exist in struct_1, we want to make a new one.
             else:
                 atom2 = merge_bond.atom2
-                print('     * ADDING:         {:>4}/{} {:>4}/{}'.format(
+                atom1.addBond(atom2.index, merge_bond.order)
+                print('     * ADDED:         {:>4}/{} {:>4}/{}'.format(
                     atom1.index, atom1.atom_type_name,
                     atom2.index, atom2.atom_type_name))
 
-                atom1.addBond(atom2.index, merge_bond.order)
-                bond = merge.getBond(atom1, atom2)
-
+            bond = merge.getBond(atom1, atom2)
             for k, v in merge_bond.property.iteritems():
                 # Here, bond is the duplicate bond in struct_1 or the new bond.
                 if k not in bond.property or not bond.property[k]:
