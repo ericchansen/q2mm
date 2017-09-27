@@ -352,7 +352,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     print('>>> new_match_struct_1: {}'.format(new_match_struct_1))
     print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
 
-    # Sometimes a match is made that isn't what is wanted by the user and
+    # Sometimes a match is made that isn't what is wanted by the user and 
     # incorporates an aromatic where it should not be. This prevents aryl
     # aromatic rings that have 2 or more atoms in a match to be used as a
     # match. -TR
@@ -676,10 +676,14 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         [merge],
         frozen_atoms=range(1, num_atoms + 1))[0]
     # Do another minimization, this time without frozen atoms.
-    if fix_torsions:
-        merge = mini(
-            [merge],
-            fix_torsions=fix_torsions)[0]
+    #if fix_torsions:
+    #    merge = mini(
+    #        [merge],
+    #        fix_torsions=fix_torsions)[0]
+    merge = mini(
+        [merge],  
+        fix_torsions=fix_torsions)[0]
+    merge = mcmm([merge])[0]
     return merge
 
 def add_chirality(structure):

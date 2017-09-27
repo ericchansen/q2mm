@@ -2424,7 +2424,7 @@ class Bond(object):
             typ = 'a'
         elif self.__class__.__name__.lower() == 'torsion':
             typ = 't'
-        datum = datatypes.Datum(val=self.value, typ=typ)
+        datum = datatypes.Datum(val=self.value, typ=typ,ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, 'atm_{}'.format(i+1), atom_num)
         for k, v in kwargs.iteritems():

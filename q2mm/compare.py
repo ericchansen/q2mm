@@ -48,10 +48,11 @@ def pretty_data_comp(r_data, c_data, output=None, doprint=False):
     """
     strings = []
     strings.append('--' + ' Label '.ljust(30, '-') +
-                   '--' + ' Weight '.center(8, '-') +
-                   '--' + ' R. Value '.center(13, '-') +
-                   '--' + ' C. Value '.center(13, '-') +
-                   '--' + ' Score '.center(13, '-') + '--')
+                   '--' + ' Weight '.center(7, '-') +
+                   '--' + ' R. Value '.center(11, '-') +
+                   '--' + ' C. Value '.center(11, '-') +
+                   '--' + ' Score '.center(11, '-') + 
+                   '--' + ' Row ' + '--')
     score_typ = defaultdict(float)
     score_tot = 0.
     for r, c in izip(r_data, c_data):
@@ -78,8 +79,9 @@ def pretty_data_comp(r_data, c_data, output=None, doprint=False):
                 score_typ[c.typ + '-d'] += score
             else:
                 score_typ[c.typ + '-o'] += score
-        strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
-                c.lbl, r.wht, r.val, c.val, score))
+        strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '\
+                       '{:>5}  '.format(
+                        c.lbl, r.wht, r.val, c.val, score, c.ff_row))
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))

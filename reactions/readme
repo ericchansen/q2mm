@@ -1,0 +1,9 @@
+28082017 -- Anthony Rosales
+If the aryl nucleophile on the heck reaction is C2 symmetric use 
+Pdheckrxn-symNu.mae, otherwise use Pdheckrxn-asymNu.mae for non C2 aryls and 
+alkenyls. This will use the enantiomer of the template so as to get both 
+conformations of asymmetric nucleophile that I haven't been able to capture 
+with conformational searches.
+
+
+
