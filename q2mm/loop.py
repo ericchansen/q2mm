@@ -142,18 +142,30 @@ class Loop(object):
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
             if cols[0] == 'COMP':
-                self.ff.score = compare.compare_data(
-                    self.ref_data, self.ff.data)
+            # Deprecated
+            #    self.ff.score = compare.compare_data(
+            #        self.ref_data, self.ff.data)
+            #    if '-o' in cols:
+            #        compare.pretty_data_comp(
+            #            self.ref_data,
+            #            self.ff.data,
+            #            os.path.join(self.direc, cols[cols.index('-o') + 1]))
+            #    if '-p' in cols:
+            #        compare.pretty_data_comp(
+            #            self.ref_data,
+            #            self.ff.data,
+            #            doprint=True)
+                output = False
+                doprint = False
+                r_dict = compare.data_by_type(self.ref_data)
+                c_dict = compare.data_by_type(self.ff.data)
+                r_dict, c_dict = compare.trim_data(r_dict,c_dict)
                 if '-o' in cols:
-                    compare.pretty_data_comp(
-                        self.ref_data,
-                        self.ff.data,
-                        os.path.join(self.direc, cols[cols.index('-o') + 1]))
+                    output = os.path.join(self.direc, cols[cols.index('-o') +1])
                 if '-p' in cols:
-                    compare.pretty_data_comp(
-                        self.ref_data,
-                        self.ff.data,
-                        doprint=True)
+                    doprint = True
+                self.ff.score = compare.compare_data(
+                    r_dict, c_dict, output=output, doprint=doprint)
             if cols[0] == 'GRAD':
                 grad = gradient.Gradient(
                     direc=self.direc,

@@ -167,6 +167,9 @@ LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
 MIN_SUITE_TOKENS = 2
 MIN_MACRO_TOKENS = 2
 
+# Match the filename and atoms for a torsion label
+RE_T_LBL = re.compile('\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)')
+
 # MASSES
 # Used for mass weighting.
 MASSES = OrderedDict(

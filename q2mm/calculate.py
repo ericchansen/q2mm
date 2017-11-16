@@ -550,6 +550,8 @@ def collect_reference(path):
                 i, path, line)
             lbl, wht, val = cols
             datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
+            # Added this from the function below, read_reference()
+            lbl_to_data_attrs(datum, lbl)
             data.append(datum)
     return np.array(data)
 
@@ -1696,7 +1698,8 @@ def sort_commands_by_filename(commands):
     return sorted_commands
 
 # Will also have to be updated. Maybe the Datum class too and how it responds
-# to assigning labels.
+# to assigning labels. 
+## Why is this here? Is this deprecated? -Tony
 def read_reference(filename):
     data = []
     with open(filename, 'r') as f:
@@ -1716,22 +1719,31 @@ def read_reference(filename):
     data = data.sort(key=datatypes.datum_sort_key)
     return np.array(data)
 
+
+## This is also part of the read_reference function above, but I think these 
+## labels and attributes are important for handleing data.
 # Shouldn't be necessary anymore.
-# def lbl_to_data_attrs(datum, lbl):
-#     parts = lbl.split('_')
-#     datum.typ = parts[0]
-#     if len(parts) == 3:
-#         idxs = parts[-1]
-#     if len(parts) == 4:
-#         idxs = parts[-2]
-#         atm_nums = parts[-1]
-#         atm_nums = atm_nums.split('-')
-#         for i, atm_num in enumerate(atm_nums):
-#             setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
-#     idxs = idxs.split('-')
-#     datum.idx_1 = int(idxs[0])
-#     if len(idxs) == 2:
-#         datum.idx_2 == int(idxs[1])
+# This should be based by the datum type and not the length of the parts list.
+def lbl_to_data_attrs(datum, lbl):
+    parts = lbl.split('_')
+    datum.typ = parts[0]
+   # if len(parts) == 3:
+    if datum.typ in ['e','eo','ea','eao','eig','h','q','qh','qa']:
+        idxs = parts[-1]
+   # if len(parts) == 4:
+    if datum.typ in ['b','t','a']:
+        idxs = parts [-2]
+        atm_nums = parts[-1]
+        atm_nums = atm_nums.split('-')
+        for i, atm_num in enumerate(atm_nums):
+            setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
+    if datum.typ in ['p']:
+        datum.src_1 = parts[1]
+        idxs = parts[-1]
+    idxs = idxs.split('-')
+    datum.idx_1 = int(idxs[0])
+    if len(idxs) == 2:
+        datum.idx_2 == int(idxs[1])
 
 # Right now, this only looks good if the logger doesn't append each log
 # message with something (module, date/time, etc.).
