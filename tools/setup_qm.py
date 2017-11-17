@@ -105,11 +105,14 @@ class GaussCom():
                 # This option is intended to optimize a structure to a GS but
                 # with frozen coordinates to later optimize to a TS with no
                 # frozen coordinates.
+       # I think it is best to just do a frequency calcluations after a frozen
+       # coordinate optimization, this way the user can check the vibrations
                 if self.calculation_type == 'FZTS':
-                    route_section.append(
-                            ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
-                elif self.opt:
-                    route_section.append(self.opt[:-1] + ',nofreeze)')
+       #             route_section.append(
+       #                     ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
+                    route_section.append(' freq=noraman')
+       #         elif self.opt:
+       #             route_section.append(self.opt[:-1] + ',nofreeze)')
                 route_section.append('\n\n\n')
                 f.write(' '.join(route_section))
     
