@@ -554,6 +554,8 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         if common_atom_1.atom_type == 64:
             common_atom_1.atom_type = common_atom_2.atom_type
             common_atom_1.color = common_atom_2.color
+        common_atom_1.atom_type = common_atom_2.atom_type
+        common_atom_1.color = common_atom_2.color
 
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
@@ -663,18 +665,36 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     reordered_atoms.extend(original_wo_interest)
     reordered_atoms.extend(interest)
     merge = build.reorder_atoms(merge,reordered_atoms)
+    
+    print(reordered_atoms)
+    for bond in merge.bond:
+        for prop in bond.property:
+            initial_index = bond.property[prop]
+            if 'i_cs' in prop and initial_index:
+                for i,old_atom_index in enumerate(reordered_atoms):
+                    if old_atom_index == initial_index:
+                        bond.property[prop] = i+1
+    frozen_atoms = []
+    for frozen_atom_index in range(1, num_atoms+1):
+        initial_index = frozen_atom_index
+        for i,old_atom_index in enumerate(reordered_atoms):
+            if old_atom_index == initial_index:
+                frozen_atoms.append(i+1)
+
 
     # Minimize the structure.
     # Freeze atoms in struct_1.
     # Also enforce the TORC commands.
     merge = mini(
         [merge],
-        frozen_atoms=range(1, num_atoms + 1),
+        #frozen_atoms=range(1, num_atoms + 1),
+        frozen_atoms=frozen_atoms,
         fix_torsions=fix_torsions)[0]
     # Short conformational sampling.
     merge = mcmm(
         [merge],
-        frozen_atoms=range(1, num_atoms + 1))[0]
+        #frozen_atoms=range(1, num_atoms + 1))[0]
+        frozen_atoms=frozen_atoms)[0]
     # Do another minimization, this time without frozen atoms.
     #if fix_torsions:
     #    merge = mini(

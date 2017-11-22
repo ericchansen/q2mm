@@ -235,9 +235,15 @@ class TinkerLog(File):
                                                   x.atom_nums[1]))
                         for angle in angles:
                             if angle.atom_nums[0] > angle.atom_nums[2]:
-                                angle = [angle.atom_nums[2],
-                                         angle.atom_nums[1],
-                                         angle.atom_nums[0]]
+                                angle.atom_nums = [angle.atom_nums[2],
+                                                   angle.atom_nums[1],
+                                                   angle.atom_nums[0]]
+                        for torsion in torsions:
+                            if torsion.atom_nums[1] > torsion.atom_nums[2]:
+                                torsion.atom_nums = [torsion.atom_nums[3],
+                                                     torsion.atom_nums[2],
+                                                     torsion.atom_nums[1],
+                                                     torsion.atom_nums[0]]
                         angles.sort(key=lambda x: (x.atom_nums[1],
                                                    x.atom_nums[0],
                                                    x.atom_nums[2]))
@@ -1760,7 +1766,7 @@ class Mae(SchrodingerFile):
                   Time waited in between lookups of Schrodinger license
                   tokens.
         """
-        print("Run " + str(self.filename) + " with commands:" + str(self.commands))
+        #print("Run " + str(self.filename) + " with commands:" + str(self.commands))
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
@@ -1942,6 +1948,13 @@ class MacroModel(File):
                 count_previous = 0
                 section = None
                 for line in f:
+                # This would probably be better as a function in the structure
+                # class but I wanted this as upstream as possible so I didn't
+                # have to worry about other coding issues. The MMO file lists
+                # the bonds, angles, and torsions in some order that I am unsure
+                # of. It seems consistent with the same filename but with two
+                # files with the exact same structure the ordering is off. This
+                # reorders the lists before being added to the structure class.
                     if 'Input filename' in line:
                         count_input += 1
                     if 'Input Structure Name' in line:
@@ -1954,6 +1967,9 @@ class MacroModel(File):
                     # If these don't match, then we reached the end of a
                     # structure.
                     if count_current != count_previous:
+                        bonds = []
+                        angles = []
+                        torsions = []
                         current_structure = Structure()
                         self._structures.append(current_structure)
                     # For each structure we come across, look for sections that
@@ -1974,15 +1990,30 @@ class MacroModel(File):
                     if section == 'bond':
                         bond = self.read_line_for_bond(line)
                         if bond is not None:
-                            current_structure.bonds.append(bond)
+                            #current_structure.bonds.append(bond)
+                            bonds.append(bond)
                     if section == 'angle':
                         angle = self.read_line_for_angle(line)
                         if angle is not None:
-                            current_structure.angles.append(angle)
+                            #current_structure.angles.append(angle)
+                            angles.append(angle)
                     if section == 'torsion':
                         torsion = self.read_line_for_torsion(line)
                         if torsion is not None:
-                            current_structure.torsions.append(torsion)
+                            #current_structure.torsions.append(torsion)
+                            torsions.append(torsion)
+                    if 'Connection Table' in line:
+                        # Sort the bonds, angles, and torsions before the start
+                        # of a new structure
+                        if bonds:
+                            bonds.sort(key = lambda x: (x.atom_nums[0], x.atom_nums[1]))
+                            current_structure.bonds.extend(bonds)
+                        if angles:
+                            angles.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
+                            current_structure.angles.extend(angles)
+                        if torsions:
+                            torsions.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
+                            current_structure.torsions.extend(torsions)
             logger.log(5, '  -- Imported {} structure(s).'.format(
                     len(self._structures)))
         return self._structures
@@ -2002,6 +2033,9 @@ class MacroModel(File):
         if match:
             atom_nums = map(int, [match.group(1), match.group(2),
                                   match.group(3)])
+            # Reorder the terminal atoms so that the lower index atom is first.
+            if atom_nums[0] > atom_nums[2]:
+                atom_nums = [atom_nums[2],atom_nums[1],atom_nums[0]]
             value = float(match.group(4))
             comment = match.group(5).strip()
             ff_row = int(match.group(6))
@@ -2014,6 +2048,11 @@ class MacroModel(File):
         if match:
             atom_nums = map(int, [match.group(1), match.group(2),
                                   match.group(3), match.group(4)])
+            if atom_nums[1] > atom_nums[2]:
+                atom_nums = [atom_nums[3],
+                             atom_nums[2],
+                             atom_nums[1],
+                             atom_nums[0]]
             value = float(match.group(5))
             comment = match.group(6).strip()
             ff_row = int(match.group(7))

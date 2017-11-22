@@ -25,12 +25,12 @@ class GaussCom():
         self.opt = opt
         self.mae_struct = mae_struct
 
-    def write_com(self):
+    def write_com(self,directory='./'):
         """
         This is the heart of the code where all of the options are used to 
         write the Gaussian command file.
         """
-        with open(self.filename + '.com', 'w') as f:
+        with open(directory + self.filename + '.com', 'w') as f:
             if self.chk:
                 f.write('%chk={}\n'.format(self.chk))
             f.write('%mem={}GB\n'.format(self.memory))
@@ -105,11 +105,14 @@ class GaussCom():
                 # This option is intended to optimize a structure to a GS but
                 # with frozen coordinates to later optimize to a TS with no
                 # frozen coordinates.
+       # I think it is best to just do a frequency calcluations after a frozen
+       # coordinate optimization, this way the user can check the vibrations
                 if self.calculation_type == 'FZTS':
-                    route_section.append(
-                            ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
-                elif self.opt:
-                    route_section.append(self.opt[:-1] + ',nofreeze)')
+       #             route_section.append(
+       #                     ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
+                    route_section.append(' freq=noraman')
+       #         elif self.opt:
+       #             route_section.append(self.opt[:-1] + ',nofreeze)')
                 route_section.append('\n\n\n')
                 f.write(' '.join(route_section))
     
@@ -342,7 +345,10 @@ def main(args):
                         ECP.append(element)
                     gaussian_file.ECP = ECP
                 gaussian_file.basis = sets[0]
-            gaussian_file.write_com()                        
+            if opts.directory:
+                gaussian_file.write_com(directory=opts.directory)
+            else:
+                gaussian_file.write_com()                        
                                 
 
 def return_parser():
@@ -381,13 +387,16 @@ def return_parser():
             help='If included then a checkpoint file will be used during\
             the gaussian calculation.')
     parser.add_argument('-all', '--allstructs', action='store_false',
-            help='Include this argument if you just want the first structure\
+            help='Include this argument if you just want all the structures\
             of a maestro file to optimize at the QM level.')
     parser.add_argument('-fa', '--frozenatoms', type=str, help='Include the \
             the atoms you wish to freeze using the Schrodinger substructure \
             language. Also include the type of coordinate (B, A, T). Use ";" \
             to seperate multiple coordinates. \
             Example: -fa "C2.C2,B;PD-C2.C2,A"')
+    parser.add_argument('-d', '--directory', type=str, help='Specify the \
+            directory location you would like the gaussian *.com file to be \
+            written in.')
     return parser
 
 if __name__ == '__main__':
