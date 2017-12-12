@@ -82,6 +82,12 @@
 # of the FF, with substructure dihedrals that have V1, V2 and V3 all equal to
 # zero, so this should have no effect on the performance.
 
+# In the atom equivalency section of mm3.fld, add this definition for HX.
+
+ 6  HX  H1 H2 H3 H4 H5 H6 H7
+
+# Add below to the substructure section.
+
  C  Rhodium catalyzed hydrogenation of enamides (RhH3-E / Eric)
  9  HX-RH(-PX)-HX.C2*C2(.2)-N2-C2=O2.2
 -2
@@ -127,6 +133,7 @@ a2   3   2   9           169.9754     0.1161
  4   4   5   6   2         0.0000     0.0000     0.0000
  4   2   6  C2  O2         0.0000     0.0000     0.0000
  4   2   6  C2  O3         0.0000     0.0000     0.0000
+ 4   2   6  C2  N2         0.0000     0.0000     0.0000
  4   2   6   7  H0         0.0000     0.0000     0.0000
  4   2   6   7   8         0.0000     0.0000     0.0000
  4   2   9   8  00         0.0000     0.0000     0.0000
