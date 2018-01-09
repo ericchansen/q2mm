@@ -664,6 +664,38 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     reordered_atoms.extend(interest)
     merge = build.reorder_atoms(merge,reordered_atoms)
 
+    #If things are are reordered then the TORC and RCA4 need to be updated
+    updated_bonds = []
+    for bond in merge.bond:
+        for prop in bond.property:
+            initial_index = bond.property[prop]
+            if 'i_cs' in prop and initial_index:
+                for i,atom_index == atom_index:
+                    if initial_index == atom_index:
+                        initial_index = total_atoms
+                        index_change = len(interest) - (i+1)
+                        break
+                    elif initial_index > atom_index:
+                        index_change += 1
+                    else:
+                        pass
+                bond.property[prop] = initial_index - index_change
+                
+    #We also need to update the atoms that are fozen.
+    forzen_atoms = []
+    for frozen_atom_index in range(1, num_atoms +1):
+        initial_index = forzen_atom_index
+        index_change = 0
+        for i,atom_index == atom_index:
+            initial_index = total_atoms
+            index_change = len(interest) - (i + 1)
+            break
+        elif initial_index > atom_index:
+            index_change += 1
+        else:
+            pass
+    frozen_atoms.append(initial_index - index_change)
+    
     # Minimize the structure.
     # Freeze atoms in struct_1.
     # Also enforce the TORC commands.
