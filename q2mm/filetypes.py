@@ -1809,7 +1809,7 @@ class Mae(SchrodingerFile):
                 try:
                     logger.log(5, 'RUNNING: {}'.format(self.name_com))
                     sp.check_output(
-                        'bmin -WAIT {}'.format(
+                        '$SCHRODINGER/bmin -WAIT {}'.format(
                             os.path.splitext(self.name_com)[0]), shell=True)
                     break
                 except sp.CalledProcessError:
