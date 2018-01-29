@@ -8,6 +8,7 @@ import numpy as np
 import os
 import random
 import sys
+import re
 
 import calculate
 import compare
@@ -92,7 +93,12 @@ class Loop(object):
             if cols[0] == 'FFLD':
                 # Import FF data.
                 if cols[1] == 'read':
-                    self.ff = datatypes.MM3(os.path.join(self.direc, cols[2]))
+                    if cols[2] == 'mm3.fld':
+                        self.ff = datatypes.MM3(os.path.join(self.direc, 
+                                                             cols[2]))
+                    if '.prm' in cols[2]:
+                        self.ff = datatypes.TinkerFF(os.path.join(self.direc,
+                                                                  cols[2]))
                     self.ff.import_ff()
                     self.ff.method = 'READ'
                     with open(os.path.join(self.direc, cols[2]), 'r') as f:
@@ -172,6 +178,186 @@ class Loop(object):
                     ff=self.ff,
                     ff_lines=self.ff.lines,
                     args_ff=self.args_ff)
+                #### Should probably just write a function instead of looping
+                #### this for every gradient method. This includes everything
+                #### between the two lines of #. TR 20180112
+                ##############################################################        
+                for col in cols[1:]:
+                    if "lstsq" in col:
+                        g_args = col.split('=')[1].split(',')
+                        for arg in g_args:
+                            if arg == True:
+                                grad.do_lstsq=True
+                            elif arg == False:
+                                grad.do_lstsq=False
+                            if 'radii' in arg:
+                                grad.lstsq_radii = []
+                                radii_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if radii_vals == "None":
+                                    grad.lstsq_radii = None
+                                else:
+                                    for val in radii_vals:
+                                        grad.lstsq_radii.append(float(val)) 
+                            if 'cutoff' in arg:
+                                grad.lstsq_cutoff = []
+                                cutoff_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if cutoff_vals == "None":
+                                    grad.lstsq_cutoff = None
+                                else:
+                                    if len(cutoff_vals) > 2 or \
+                                        len(cutoff_vals) < 2:
+                                        raise Exception("Cutoff values must " \
+                                            "be between two numbers.")
+                                    for val in cutoff_vals:
+                                        grad.lstsq_cutoff.append(float(val))
+                    elif "newton" in col:
+                        g_args = col.split('=')[1].split(',')
+                        for arg in g_args:
+                            if arg == True:
+                                grad.do_newton=True
+                            elif arg == False:
+                                grad.do_newton=False
+                            if 'radii' in arg:
+                                grad.newton_radii = []
+                                radii_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if radii_vals=='None':
+                                    grad.newton_radii = None
+                                else:
+                                    for val in radii_vals:
+                                        grad.newton_radii.append(float(val)) 
+                            if 'cutoff' in arg:
+                                grad.newton_cutoff = []
+                                cutoff_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if cutoff_vals=='None':
+                                    grad.newton_cutoff = None
+                                else:
+                                    if len(cutoff_vals) > 2 or \
+                                        len(cutoff_vals) < 2:
+                                        raise Exception("Cutoff values must " \
+                                            "be between two numbers.")
+                                    for val in cutoff_vals:
+                                        grad.newton_cutoff.append(float(val))
+                    elif "levenberg" in col:
+                        g_args = col.split('=')[1].split(',')
+                        for arg in g_args:
+                            if arg == True:
+                                grad.do_levenberg=True
+                            elif arg == False:
+                                grad.do_levenberg=False
+                            if 'radii' in arg:
+                                grad.levenberg_radii = []
+                                radii_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if radii_vals=='None':
+                                    grad.levenberg_radii = None
+                                else:
+                                    for val in radii_vals:
+                                        grad.levenberg_radii.append(float(val)) 
+                            if 'cutoff' in arg:
+                                grad.levenberg_cutoff = []
+                                cutoff_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if cutoff_vals=='None':
+                                    grad.levenberg_cutoff = None
+                                else:
+                                    if len(cutoff_vals) > 2 or \
+                                        len(cutoff_vals) < 2:
+                                        raise Exception("Cutoff values must " \
+                                            "be between two numbers.")
+                                    for val in cutoff_vals:
+                                        grad.levenberg_cutoff.append(float(val))
+                            if 'factor' in arg:
+                                grad.levenberg_cutoff = []
+                                factor_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if factor_vals=='None':
+                                    grad.levenberg_factor = None
+                                else:
+                                    for val in factor_vals:
+                                        grad.levenberg_factor.append(float(val))
+                    elif "legrange" in col:
+                        g_args = col.split('=')[1].split(',')
+                        for arg in g_args:
+                            if arg == True:
+                                grad.do_legrange=True
+                            elif arg == False:
+                                grad.do_legrange=False
+                            if 'radii' in arg:
+                                grad.legrange_radii = []
+                                radii_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if radii_vals=='None':
+                                    grad.legrange_radii = None
+                                else:
+                                    for val in radii_vals:
+                                        grad.legrange_radii.append(float(val)) 
+                            if 'cutoff' in arg:
+                                grad.legrange_cutoff = []
+                                cutoff_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if cutoff_vals=='None':
+                                    grad.legrange_cutoff = None
+                                else:
+                                    if len(cutoff_vals) > 2 or \
+                                        len(cutoff_vals) < 2:
+                                        raise Exception("Cutoff values must " \
+                                            "be between two numbers.")
+                                    for val in cutoff_vals:
+                                        grad.legrange_cutoff.append(float(val))
+                            if 'factor' in arg:
+                                grad.legrange_cutoff = []
+                                factor_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if factor_vals=='None':
+                                    grad.legrange_factor = None
+                                else:
+                                    for val in factor_vals:
+                                        grad.legrange_factor.append(float(val))
+                    elif "svd" in col:
+                        g_args = col.split('=')[1].split(',')
+                        for arg in g_args:
+                            if arg == True:
+                                grad.do_svd=True
+                            elif arg == False:
+                                grad.do_svd=False
+                            if 'radii' in arg:
+                                grad.svd_radii = []
+                                radii_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if radii_vals=='None':
+                                    grad.svd_radii = None
+                                else:
+                                    for val in radii_vals:
+                                        grad.svd_radii.append(float(val)) 
+                            if 'cutoff' in arg:
+                                grad.svd_cutoff = []
+                                cutoff_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if cutoff_vals=='None':
+                                    grad.svd_cutoff = None
+                                else:
+                                    if len(cutoff_vals) > 2 or \
+                                        len(cutoff_vals) < 2:
+                                        raise Exception("Cutoff values must " \
+                                            "be between two numbers.")
+                                    for val in cutoff_vals:
+                                        grad.svd_cutoff.append(float(val))
+                            if 'factor' in arg:
+                                grad.svd_cutoff = []
+                                factor_vals = re.search(
+                                    r"\[(.+)\]",arg).group(1).split('/')
+                                if factor_vals=='None':
+                                    grad.svd_factor = None
+                                else:
+                                    for val in factor_vals:
+                                        grad.svd_factor.append(float(val))
+                    else:
+                        raise Exception("'{}' : Not Recognized".format(col))
+                ##############################################################
                 self.ff = grad.run(ref_data=self.ref_data)
             if cols[0] == 'SIMP':
                 simp = simplex.Simplex(
@@ -179,10 +365,18 @@ class Loop(object):
                     ff=self.ff,
                     ff_lines=self.ff.lines,
                     args_ff=self.args_ff)
+                for col in cols[1:]:
+                    if "max_params" in col:
+                        simp.max_params = col.split('=')[1]
+                    else:
+                        raise Exception("'{}' : Not Recognized".format(col))
                 self.ff = simp.run(r_data=self.ref_data)
             if cols[0] == 'WGHT':
                 data_type = cols[1]
                 co.WEIGHTS[data_type] = float(cols[2])
+            if cols[0] == 'STEP':
+                param_type = cols[1]
+                co.STEPS[param_type] = float(cols[2])
 
 def read_loop_input(filename):
     with open(filename, 'r') as f:

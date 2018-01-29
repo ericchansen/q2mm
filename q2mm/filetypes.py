@@ -400,12 +400,17 @@ class TinkerXYZ(File):
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
         os.chdir(self.directory)
+        if os.path.isfile(self.name_key):
+            os.remove(self.name_key)
         if os.path.isfile(self.name_log):
             os.remove(self.name_log)
         if os.path.isfile(self.name_xyz):
             os.remove(self.name_xyz)
         if os.path.isfile(self.name_hes):
-            os.remove(self.name_hes)
+            os.remove(self.name_heis)
+        with open(self.name_key, 'w') as f:
+            f.write('parameters mm3.prm\
+                     \nnoversion')
         if com_opts['sp']:
             logger.log(1, '  ANALYZE: {}'.format(self.filename))
             with open(self.name_log, 'w') as f:
@@ -1701,6 +1706,14 @@ class Mae(SchrodingerFile):
         # May want to turn on/off arg2 (continuum solvent).
         com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
         # Also may want to turn on/off cutoffs using BDCO.
+        ## We have noticed there are some oddities for electrostatic 
+        ## interactions. In some cases "Residue-based cutoffs" are used which
+        ## result inconsistent energy contributions. Inorder to keep this
+        ## consistent between calculations in Q2MM and conformational seaching
+        ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0 
+        ## ensuring all interactions are gathered. The seventh column is the
+        ## cutoff for hydrogen bonds, and 4 is the default value.
+        com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
