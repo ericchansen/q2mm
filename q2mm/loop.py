@@ -93,7 +93,12 @@ class Loop(object):
             if cols[0] == 'FFLD':
                 # Import FF data.
                 if cols[1] == 'read':
-                    self.ff = datatypes.MM3(os.path.join(self.direc, cols[2]))
+                    if cols[2] == 'mm3.fld':
+                        self.ff = datatypes.MM3(os.path.join(self.direc, 
+                                                             cols[2]))
+                    if '.prm' in cols[2]:
+                        self.ff = datatypes.TinkerFF(os.path.join(self.direc,
+                                                                  cols[2]))
                     self.ff.import_ff()
                     self.ff.method = 'READ'
                     with open(os.path.join(self.direc, cols[2]), 'r') as f:

@@ -400,12 +400,17 @@ class TinkerXYZ(File):
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
         os.chdir(self.directory)
+        if os.path.isfile(self.name_key):
+            os.remove(self.name_key)
         if os.path.isfile(self.name_log):
             os.remove(self.name_log)
         if os.path.isfile(self.name_xyz):
             os.remove(self.name_xyz)
         if os.path.isfile(self.name_hes):
-            os.remove(self.name_hes)
+            os.remove(self.name_heis)
+        with open(self.name_key, 'w') as f:
+            f.write('parameters mm3.prm\
+                     \nnoversion')
         if com_opts['sp']:
             logger.log(1, '  ANALYZE: {}'.format(self.filename))
             with open(self.name_log, 'w') as f:
