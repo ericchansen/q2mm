@@ -1701,6 +1701,14 @@ class Mae(SchrodingerFile):
         # May want to turn on/off arg2 (continuum solvent).
         com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
         # Also may want to turn on/off cutoffs using BDCO.
+        ## We have noticed there are some oddities for electrostatic 
+        ## interactions. In some cases "Residue-based cutoffs" are used which
+        ## result inconsistent energy contributions. Inorder to keep this
+        ## consistent between calculations in Q2MM and conformational seaching
+        ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0 
+        ## ensuring all interactions are gathered. The seventh column is the
+        ## cutoff for hydrogen bonds, and 4 is the default value.
+        com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
