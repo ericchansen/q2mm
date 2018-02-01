@@ -98,7 +98,7 @@ class GaussCom():
                     f.write('%chk={}\n'.format(self.chk))
                 f.write('%mem={}GB\n'.format(self.memory))
                 f.write('%nprocshared={}\n'.format(self.procs))
-                route_section = ['#','geom=allcheck','empiricaldisperion=gd',
+                route_section = ['#','geom=allcheck','empiricaldispersion=gd3',
                                  'int=ultrafine','chkbasis']
                 if self.frequency:
                     route_section.append(self.frequency)
