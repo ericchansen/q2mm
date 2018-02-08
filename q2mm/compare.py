@@ -148,8 +148,12 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
             num_typ[c.typ] += 1
             if c.typ == 'eig':
                 if c.idx_1 == c.idx_2:
-                    score_typ[c.typ + '-d'] += score
-                    num_typ[c.typ + '-d'] += 1
+                    if r.val < 1100:
+                        score_typ[c.typ + '-d-low'] += score
+                        num_typ[c.typ + '-d-low'] += 1
+                    else:
+                        score_typ[c.typ + '-d-high'] += score
+                        num_typ[c.typ + '-d-high'] += 1
                 else:
                     score_typ[c.typ + '-o'] += score
                     num_typ[c.typ + '-o'] += 1
@@ -317,7 +321,10 @@ def import_weights(data):
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
                 elif datum.idx_1 == datum.idx_2:
-                    datum.wht = co.WEIGHTS['eig_d']
+                    if datum.val < 1100:
+                        datum.wht = co.WEIGHTS['eig_d_low']
+                    else:
+                        datum.wht = co.WEIGHTS['eig_d_high']
                 elif datum.idx_1 != datum.idx_2:
                     datum.wht = co.WEIGHTS['eig_o']
             else:

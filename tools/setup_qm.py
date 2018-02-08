@@ -99,7 +99,7 @@ class GaussCom():
                 f.write('%mem={}GB\n'.format(self.memory))
                 f.write('%nprocshared={}\n'.format(self.procs))
                 route_section = ['#','geom=allcheck','empiricaldispersion=gd3',
-                                 'int=ultrafine','chkbasis']
+                                 'int=ultrafine','chkbasis',self.method]
                 if self.frequency:
                     route_section.append(self.frequency)
                 # This option is intended to optimize a structure to a GS but

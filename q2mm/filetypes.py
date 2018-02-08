@@ -1713,7 +1713,7 @@ class Mae(SchrodingerFile):
         ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0 
         ## ensuring all interactions are gathered. The seventh column is the
         ## cutoff for hydrogen bonds, and 4 is the default value.
-        com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
+        #com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
@@ -2286,8 +2286,8 @@ class Structure(object):
                             logger.error(">>> angle_2: {}".format(angle_2))
                         logger.warning('WARNING: Using torsion anyway!')
                         data.append(datum)
-                    if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
-                            -5. < angle_2 < 5. or 175. < angle_2 < 185.:
+                    if -20. < angle_1 < 20. or 160. < angle_1 < 200. or \
+                            -20. < angle_2 < 20. or 160. < angle_2 < 200.:
                         logger.log(
                             1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
                         pass

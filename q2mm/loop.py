@@ -309,14 +309,14 @@ class Loop(object):
                                     for val in cutoff_vals:
                                         grad.legrange_cutoff.append(float(val))
                             if 'factor' in arg:
-                                grad.legrange_cutoff = []
+                                grad.legrange_factors = []
                                 factor_vals = re.search(
                                     r"\[(.+)\]",arg).group(1).split('/')
                                 if factor_vals=='None':
-                                    grad.legrange_factor = None
+                                    grad.legrange_factors = None
                                 else:
                                     for val in factor_vals:
-                                        grad.legrange_factor.append(float(val))
+                                        grad.legrange_factors.append(float(val))
                     elif "svd" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:

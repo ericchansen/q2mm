@@ -4,8 +4,8 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
-GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
-# GAUSSIAN_ENERGIES = ['HF']
+#GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
+GAUSSIAN_ENERGIES = ['HF']
 
 # LOGGING SETTINGS
 # Settings loaded using logging.config.
@@ -92,7 +92,8 @@ WEIGHTS = {'a':          2.00,
            't':          1.00,
            'h':          1.00,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
-           'eig_d':      0.10, # Weight of other eigenvalues.
+           'eig_d_low':  0.10, # Weight of low mode diagonal elements
+           'eig_d_high': 0.10, # Weight of high mode diagonal elemetns
            'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
            'e':         20.00,
            'eo':       100.00,
