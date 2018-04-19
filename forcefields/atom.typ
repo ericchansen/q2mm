@@ -18,8 +18,8 @@
 204      77  192.22         Ir    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
 #&Dummy atom (Ferrocene)
 205      -2    0.0000       D1    10     1.00      F      F      !  0.0       T       !     !         !      !    0  NCA       1   !
-#$Osmium (Heck)
-206      76  190.23         Os    20     1.70      T      F      !  2.2       T       !     !         !      !    0  NCA       4   !
+#$Osmium (Sharpless AD)
+206      76  190.23         Os    20     1.75      T      F      !  1.5       T       !     !         !      !    0  NCA       1   !
 
 # Atom types below are specific for the Rh catalyzed hydrogenation of enamides.
 # Technically, only the definition for Rh is required (needed the +1 charge).
