@@ -9,6 +9,7 @@ import logging.config
 import numpy as np
 import re
 import textwrap
+import sys
 
 import calculate
 import compare
@@ -261,10 +262,13 @@ def param_derivs(ff, ffs):
     ffs : list of `datatypes.FF` (or subclass)
           Central differentiated and scored force fields.
     """
-    for i in xrange(0, len(ffs), 2):
+    # Reverting xrange() to range() as range() in python3 is equivalent to
+    # xrange() in python2. I don't expect the extra memory needed for range()
+    # in python2 will be significant here and syntactically this is simpler
+    for i in range(0, len(ffs), 2):
         logger.log(1, '>>> ffs[i].score: {}'.format(ffs[i].score))
-        ff.params[i/2].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
-        ff.params[i/2].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
+        ff.params[int(i/2)].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
+        ff.params[int(i/2)].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
     pretty_derivs(ff.params)
 
 def cal_ff(ff, ff_args, parent_ff=None, store_data=False):
@@ -329,7 +333,7 @@ def pretty_ff_params(ffs, level=20):
             '--' + ' PARAMETER '.ljust(25, '-') +
             '--' + ' VALUES '.ljust(48, '-') +
             '--')
-        for i in xrange(0, len(ffs[0].params)):
+        for i in range(0, len(ffs[0].params)):
             wrapper.initial_indent = ' {:25s} '.format(repr(ffs[0].params[i]))
             all_param_values = [x.params[i].value for x in ffs]
             all_param_values = ['{:8.4f}'.format(x) for x in all_param_values]
@@ -371,7 +375,11 @@ def pretty_param_changes(params, changes, method=None, level=20):
             '--')
         # This calculation of the real parameter step size is also repeated.
         # The things I do for a good looking log.
-        for param, change in itertools.izip(params, changes):
+        if (sys.version_info > (3, 0)):
+            zip_param_change = zip(params, changes)
+        else:
+            zip_param_change = itertools.izip(params, changes)
+        for param, change in zip_param_change:
             logger.log(
                 level,
                 '  ' + '{}'.format(param).ljust(34, ' ') +

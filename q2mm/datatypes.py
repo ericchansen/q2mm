@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import os
 import re
+import sys
 
 import constants as co
 import filetypes
@@ -95,10 +96,16 @@ class Param(object):
                 raise
         if self._step == 0.:
             self._step = 0.1
-        if isinstance(self._step, basestring):
-            return float(self._step) * self.value
+        if (sys.version_info > (3, 0)):
+            if isinstance(self._step, str):
+                return float(self._step) * self.value
+            else:
+                return self._step
         else:
-            return self._step
+            if isinstance(self._step, basestring):
+                return float(self._step) * self.value
+            else:
+                return self._step
     @step.setter
     def step(self, x):
         self._step = x
@@ -415,7 +422,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                                 ParamMM3(atom_labels = atm_lbls,
                                          atom_types = atm_typs,
@@ -463,7 +470,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -499,7 +506,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.append(
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -528,7 +535,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -561,7 +568,7 @@ class MM3(FF):
                         atm_lbls = self.params[-1].atom_labels
                         atm_typs = self.params[-1].atom_types
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -604,7 +611,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
