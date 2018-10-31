@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import os
 import re
+import sys
 
 import constants as co
 import filetypes
@@ -95,10 +96,16 @@ class Param(object):
                 raise
         if self._step == 0.:
             self._step = 0.1
-        if isinstance(self._step, basestring):
-            return float(self._step) * self.value
+        if (sys.version_info > (3, 0)):
+            if isinstance(self._step, str):
+                return float(self._step) * self.value
+            else:
+                return self._step
         else:
-            return self._step
+            if isinstance(self._step, basestring):
+                return float(self._step) * self.value
+            else:
+                return self._step
     @step.setter
     def step(self, x):
         self._step = x
@@ -157,24 +164,26 @@ class Datum(object):
     Class for a reference or calculated data point.
     '''
     __slots__ = ['_lbl', 'val', 'wht', 'typ', 'com', 'src_1', 'src_2', 'idx_1',
-                 'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4']
+                 'idx_2', 'atm_1', 'atm_2', 'atm_3', 'atm_4', 'ff_row']
     def __init__(self, lbl=None, val=None, wht=None, typ=None, com=None,
                  src_1=None, src_2=None,
                  idx_1=None, idx_2=None,
-                 atm_1=None, atm_2=None, atm_3=None, atm_4=None):
-        self._lbl  = lbl
-        self.val   = val
-        self.wht   = wht
-        self.typ   = typ
-        self.com   = com
-        self.src_1 = src_1
-        self.src_2 = src_2
-        self.idx_1 = idx_1
-        self.idx_2 = idx_2
-        self.atm_1 = atm_1
-        self.atm_2 = atm_2
-        self.atm_3 = atm_3
-        self.atm_4 = atm_4
+                 atm_1=None, atm_2=None, atm_3=None, atm_4=None,
+                 ff_row=None):
+        self._lbl   = lbl
+        self.val    = val
+        self.wht    = wht
+        self.typ    = typ
+        self.com    = com
+        self.src_1  = src_1
+        self.src_2  = src_2
+        self.idx_1  = idx_1
+        self.idx_2  = idx_2
+        self.atm_1  = atm_1
+        self.atm_2  = atm_2
+        self.atm_3  = atm_3
+        self.atm_4  = atm_4
+        self.ff_row = ff_row
     def __repr__(self):
         return '{}({:7.4f})'.format(self.lbl, self.val)
     @property
@@ -413,7 +422,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                                 ParamMM3(atom_labels = atm_lbls,
                                          atom_types = atm_typs,
@@ -461,7 +470,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -497,7 +506,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.append(
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -526,7 +535,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -559,7 +568,7 @@ class MM3(FF):
                         atm_lbls = self.params[-1].atom_labels
                         atm_typs = self.params[-1].atom_types
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -602,7 +611,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = list(map(float, parm_cols.split()))
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,

@@ -12,13 +12,14 @@ and :math:`x_c` is the calculated or force field's value for the data point.
 '''
 from __future__ import print_function
 from collections import defaultdict
-from itertools import izip
+import sys
+if (sys.version_info < (3, 0)):
+    from itertools import izip
 import argparse
 from argparse import RawTextHelpFormatter
 import logging
 import logging.config
 import numpy as np
-import sys
 
 import calculate
 import constants as co
@@ -48,13 +49,18 @@ def pretty_data_comp(r_data, c_data, output=None, doprint=False):
     """
     strings = []
     strings.append('--' + ' Label '.ljust(30, '-') +
-                   '--' + ' Weight '.center(8, '-') +
-                   '--' + ' R. Value '.center(13, '-') +
-                   '--' + ' C. Value '.center(13, '-') +
-                   '--' + ' Score '.center(13, '-') + '--')
+                   '--' + ' Weight '.center(7, '-') +
+                   '--' + ' R. Value '.center(11, '-') +
+                   '--' + ' C. Value '.center(11, '-') +
+                   '--' + ' Score '.center(11, '-') +
+                   '--' + ' Row ' + '--')
     score_typ = defaultdict(float)
     score_tot = 0.
-    for r, c in izip(r_data, c_data):
+    if (sys.version_info > (3, 0)):
+        rc_zip = zip(r_data, c_data)
+    else:
+        rc_zip = izip(r_data, c_data)
+    for r, c in rc_zip:
         # logger.log(1, '>>> {} {}'.format(r, c))
         # Double check data types.
         # Had to change to check from the FF data type because reference data
@@ -78,13 +84,18 @@ def pretty_data_comp(r_data, c_data, output=None, doprint=False):
                 score_typ[c.typ + '-d'] += score
             else:
                 score_typ[c.typ + '-o'] += score
-        strings.append('  {:<30}  {:>8.2f}  {:>13.4f}  {:>13.4f}  {:>13.4f}  '.format(
-                c.lbl, r.wht, r.val, c.val, score))
+        strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '\
+                       '{!s:>5}  '.format(
+                        c.lbl, r.wht, r.val, c.val, score, c.ff_row))
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<20} {:20d}'.format('Num. data points:', len(r_data)))
     strings.append('-' * 89)
-    for k, v in score_typ.iteritems():
+    if (sys.version_info > (3, 0)):
+        score_typ_iter = iter(score_typ.items())
+    else:
+        score_typ_iter = score_typ.iteritems()
+    for k, v in score_typ_iter:
         strings.append('{:<20} {:20.4f}'.format(k + ':', v))
     if output:
         with open(output, 'w') as f:
@@ -247,7 +258,11 @@ def calculate_score(r_data, c_data):
     Calculates the objective function score.
     """
     score_tot = 0.
-    for r_datum, c_datum in izip(r_data, c_data):
+    if (sys.version_info > (3, 0)):
+        rc_zip = zip(r_data, c_data)
+    else:
+        rc_zip = izip(r_data, c_data)
+    for r_datum, c_datum in rc_zip:
         # Could add a check here to assure that the data points are aligned.
         # Ex.) assert r_datum.ind_1 == c_datum.ind_1, 'Oh no!'
 

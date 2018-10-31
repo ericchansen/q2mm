@@ -29,9 +29,14 @@ import os
 import re
 import subprocess as sp
 import time
+import sys
 
-from schrodinger import structure as sch_str
-from schrodinger.application.jaguar import input as jag_in
+try:
+    from schrodinger import structure as sch_str
+    from schrodinger.application.jaguar import input as jag_in
+except:
+    print("Schrodinger not installed, limited functionality")
+    pass
 
 import constants as co
 import datatypes
@@ -1771,11 +1776,15 @@ class Mae(SchrodingerFile):
             while True:
                 token_string = sp.check_output(
                     '$SCHRODINGER/utilities/licutil -available', shell=True)
+                if (sys.version_info > (3, 0)):
+                  token_string = token_string.decode("utf-8")
                 if 'SUITE' not in token_string:
                     licenses_available = True
                     break
-                suite_tokens = re.search(co.LIC_SUITE, token_string)
-                macro_tokens = re.search(co.LIC_MACRO, token_string)
+                suite_tokens = co.LIC_SUITE.search(token_string)
+                macro_tokens = co.LIC_MACRO.search(token_string)
+                #suite_tokens = re.search(co.LIC_SUITE, token_string)
+                #macro_tokens = re.search(co.LIC_MACRO, token_string)
                 if not suite_tokens or not macro_tokens:
                     raise Exception(
                         'The command "$SCHRODINGER/utilities/licutil '
@@ -1809,7 +1818,7 @@ class Mae(SchrodingerFile):
                 try:
                     logger.log(5, 'RUNNING: {}'.format(self.name_com))
                     sp.check_output(
-                        'bmin -WAIT {}'.format(
+                        '$SCHRODINGER/bmin -WAIT {}'.format(
                             os.path.splitext(self.name_com)[0]), shell=True)
                     break
                 except sp.CalledProcessError:
@@ -2042,7 +2051,10 @@ def select_structures(structures, indices, label):
         idx_iter = iter(indices)
         for str_num, struct in enumerate(structures):
             try:
-                idx_curr = idx_iter.next()
+                if (sys.version_info > (3, 0)):
+                    idx_curr = next(idx_iter)
+                else:
+                    idx_curr = idx_iter.next()
             except StopIteration:
                 idx_iter = iter(indices)
                 idx_curr = idx_iter.next()
@@ -2424,10 +2436,14 @@ class Bond(object):
             typ = 'a'
         elif self.__class__.__name__.lower() == 'torsion':
             typ = 't'
-        datum = datatypes.Datum(val=self.value, typ=typ)
+        datum = datatypes.Datum(val=self.value, typ=typ,ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, 'atm_{}'.format(i+1), atom_num)
-        for k, v in kwargs.iteritems():
+        if (sys.version_info > (3, 0)):
+            kwargs_iter = iter(kwargs.items())
+        else:
+            kwargs_iter = kwargs.iteritems()
+        for k, v in kwargs_iter:
             setattr(datum, k, v)
         return datum
 

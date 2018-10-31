@@ -8,6 +8,7 @@ import logging.config
 import numpy as np
 import os
 import re
+import sys
 
 import calculate
 import compare
@@ -209,7 +210,7 @@ class Gradient(opt.Optimizer):
             # Setup the residual vector.
             num_d = len(ref_data)
             resid = np.empty((num_d, 1), dtype=float)
-            for i in xrange(0, num_d):
+            for i in range(0, num_d):
                 resid[i, 0] = ref_data[i].wht * \
                               (ref_data[i].val - self.ff.data[i].val)
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
@@ -306,7 +307,7 @@ class Gradient(opt.Optimizer):
 def copy_derivs(new_ff, old_ff):
     num_params = len(new_ff.params)
     assert num_params == len(old_ff.params)
-    for i in xrange(0, num_params):
+    for i in range(0, num_params):
         new_ff.params[i].d1 = old_ff.params[i].d1
         new_ff.params[i].d2 = old_ff.params[i].d2
     logger.log(20, '  -- Copied parameter derivatives from {} to {}.'.format(
@@ -514,7 +515,7 @@ def do_svd_w_thresholds(mu, vs, mvt, resid, factors):
         old_msi = copy.deepcopy(msi)
         logger.log(1, '>>> msi:\n{}'.format(msi))
         logger.log(1, '>>> old_msi:\n{}'.format(old_msi))
-        for i in xrange(0, len(vs)):
+        for i in range(0, len(vs)):
             if msi[i, i] > factor:
                 msi[i, i] = 0.
         logger.log(1, '>>> msi:\n{}'.format(msi))
@@ -576,7 +577,7 @@ def do_svd_wo_thresholds(mu, vs, mvt, resid):
     logger.log(1, '>>> changes:\n{}'.format(changes))
     all_changes.append(('SVD Z0', changes))
 
-    for i in xrange(0, len(vs) - 1):
+    for i in range(0, len(vs) - 1):
         # Save a copy to check whether or not anything actually changes after
         # zeroing.
         old_msi = copy.deepcopy(msi)
@@ -653,7 +654,7 @@ def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
         logger.log(15, 'READING: {}'.format(par_file))
         f.readline() # Labels.
-        whts = map(float, f.readline().split(',')) # Weights.
+        whts = list(map(float, f.readline().split(','))) # Weights.
         f.readline() # Reference values.
         f.readline() # Original values.
         # This is only for central differentiation.
@@ -665,8 +666,12 @@ def return_jacobian(jacob, par_file):
                 break
             inc_data = map(float, l1.split(','))
             dec_data = map(float, l2.split(','))
+            if (sys.version_info > (3, 0)):
+                data_zip = zip(inc_data, dec_data)
+            else:
+                data_zip = itertools.izip(inc_data, dec_data)
             for data_ind, (inc_datum, dec_datum) in \
-                    enumerate(itertools.izip(inc_data, dec_data)):
+                    enumerate(data_zip):
                 dydp = (inc_datum - dec_datum) / 2
                 jacob[data_ind, ff_ind] = whts[data_ind] * dydp
             ff_ind += 1
@@ -720,7 +725,11 @@ def update_params(params, changes):
                     Unscaled changes to the parameter values.
     """
     try:
-        for param, change in itertools.izip(params, changes):
+        if (sys.version_info > (3, 0)):
+            zip_params_changes = zip(params, changes)
+        else:
+            zip_params_changes = itertools.izip(params, changes)
+        for param, change in zip_params_changes:
             param.value += change * param.step
     except datatypes.ParamError as e:
         logger.warning(e.message)
