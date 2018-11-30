@@ -554,8 +554,15 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         if common_atom_1.atom_type == 64:
             common_atom_1.atom_type = common_atom_2.atom_type
             common_atom_1.color = common_atom_2.color
-        common_atom_1.atom_type = common_atom_2.atom_type
+        #common_atom_1.atom_type = common_atom_2.atom_type
         common_atom_1.color = common_atom_2.color
+        #For somereason the rest of the properties of the atom class aren't 
+        #updated when the atom_type is changed. Here we set the atom type to
+        #what the atom type is, which is redundant, but it resets the atomic
+        #number and weight. The AtomName isn't important, but it makes it look
+        #pretty in the final mae file.
+        common_atom_1._setAtomType(common_atom_1.atom_type)
+        common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
 
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
@@ -666,7 +673,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     reordered_atoms.extend(interest)
     merge = build.reorder_atoms(merge,reordered_atoms)
     
-    print(reordered_atoms)
+#    print(reordered_atoms)
     for bond in merge.bond:
         for prop in bond.property:
             initial_index = bond.property[prop]
@@ -691,11 +698,11 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         frozen_atoms=frozen_atoms,
         fix_torsions=fix_torsions)[0]
     # Short conformational sampling.
-    merge = mcmm(
-        [merge],
-        #frozen_atoms=range(1, num_atoms + 1))[0]
-        frozen_atoms=frozen_atoms)[0]
-    # Do another minimization, this time without frozen atoms.
+#    merge = mcmm(
+#        [merge],
+#        #frozen_atoms=range(1, num_atoms + 1))[0]
+#        frozen_atoms=frozen_atoms)[0]
+#    # Do another minimization, this time without frozen atoms.
     #if fix_torsions:
     #    merge = mini(
     #        [merge],
@@ -703,7 +710,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge = mini(
         [merge],  
         fix_torsions=fix_torsions)[0]
-    merge = mcmm([merge])[0]
+#    merge = mcmm([merge])[0]
     return merge
 
 def add_chirality(structure):

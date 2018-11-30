@@ -848,6 +848,33 @@ class MM3(FF):
                                      mm3_label = line[:2],
                                      value = parm_cols[1])))
                         continue
+                    # Bonds.
+                    elif match_mm3_vdw(line):
+                        logger.log(
+                            5, '[L{}] Found vdw:\n{}'.format(
+                                i + 1, line.strip('\n')))
+                        if section_sub:
+                            atm_lbls = [line[4:6], line[8:10]]
+                            atm_typs = self.convert_to_types(
+                                atm_lbls, self.atom_types[-1])
+                        parm_cols = line[P_1_START:P_3_END]
+                        parm_cols = map(float, parm_cols.split())
+                        self.params.extend((
+                                ParamMM3(atom_labels = atm_lbls,
+                                         atom_types = atm_typs,
+                                         ptype = 'vdwr',
+                                         mm3_col = 1,
+                                         mm3_row = i + 1,
+                                         mm3_label = line[:2],
+                                         value = parm_cols[0]),
+                                ParamMM3(atom_labels = atm_lbls,
+                                         atom_types = atm_typs,
+                                         ptype = 'vdwfc',
+                                         mm3_col = 2,
+                                         mm3_row = i + 1,
+                                         mm3_label = line[:2],
+                                         value = parm_cols[1])))
+                        continue
                 # The Van der Waals are stored in annoying way.
                 if line.startswith('-6'):
                     section_vdw = True
@@ -1215,6 +1242,9 @@ def match_mm3_label(mm3_label):
     in a Schrodinger mm3.fld file.
     """
     return re.match('[\s5a-z][1-5]', mm3_label)
+def match_mm3_vdw(mm3_label):
+    """Matches MM3* label for bonds."""
+    return re.match('[\sa-z]6', mm3_label)
 def match_mm3_bond(mm3_label):
     """Matches MM3* label for bonds."""
     return re.match('[\sa-z]1', mm3_label)

@@ -98,8 +98,8 @@ class GaussCom():
                     f.write('%chk={}\n'.format(self.chk))
                 f.write('%mem={}GB\n'.format(self.memory))
                 f.write('%nprocshared={}\n'.format(self.procs))
-                route_section = ['#','geom=allcheck','empiricaldisperion=gd',
-                                 'int=ultrafine','chkbasis']
+                route_section = ['#','geom=allcheck','empiricaldispersion=gd3',
+                                 'int=ultrafine','chkbasis',self.method]
                 if self.frequency:
                     route_section.append(self.frequency)
                 # This option is intended to optimize a structure to a GS but
@@ -142,7 +142,7 @@ class GaussCom():
         if self.frozen_atoms:
             self.opt += ' geom=modredundant'
         if self.calculation_type == 'FZTS':
-            self.opt += ' opt=(calcfc,maxcycle=50)'
+            self.opt += ' opt=(calcfc,maxcycle=500)'
         if self.calculation_type == 'TS':
             # Do I need this part? Will self.frequency ever be a value other 
             # than None or freq=noraman?
@@ -203,14 +203,14 @@ class GaussCom():
             dict_of_patterns = self.get_dictionary_of_frozen_coords(
                                                               dict_of_patterns)
         for pattern in dict_of_patterns:
-            atom_indicies = analyze.evaluate_substructure(self.mae_struct,
+            matches = analyze.evaluate_substructure(self.mae_struct,
                                                     pattern,
-                                                    first_match_only=False)[0]
-            str_indicies = []
-            for index in atom_indicies:
-                str_indicies.append(str(index))
-                
-            frozen_coord_lines.append('{} {} F'.format(
+                                                    first_match_only=False)
+            for atom_indicies in matches:
+                str_indicies = []
+                for index in atom_indicies:
+                    str_indicies.append(str(index))
+                frozen_coord_lines.append('{} {} F'.format(
                                         dict_of_patterns[pattern],
                                         ' '.join(str_indicies)))
         return frozen_coord_lines
@@ -263,13 +263,14 @@ def get_atoms_from_schrodinger_struct(structures_list):
     structures = {}
     for struct in structures_list:
         atom_list = []
-        dummy = None
+        dummy = []
         for atom in struct.atom:
+            atom._setAtomType(atom.atom_type)
             if atom.atomic_number < 0:
-                dummy = atom
+                dummy.append(atom.index)
             atom_list.append((atom.element, atom.x, atom.y, atom.z))
         if dummy:
-            struct.deleteAtoms((dummy.index),renumber_map=False)
+            struct.deleteAtoms(dummy,renumber_map=False)
         if 'r_mmod_Potential_Energy-MM3*' in struct.property:
             energy = struct.property['r_mmod_Potential_Energy-MM3*']
             structures[struct] = [struct.formal_charge, atom_list, energy]

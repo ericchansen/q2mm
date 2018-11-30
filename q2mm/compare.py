@@ -130,6 +130,10 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
     for typ in r_dict:
         data_types.append(typ)
     data_types.sort()
+    total_num_energy = 0
+    for typ in data_types:
+        if typ in ['e','eo','ea','eao']:
+            total_num_energy += len(r_dict[typ])
     for typ in data_types:
         total_num += int(len(r_dict[typ]))
         if typ in ['e','eo','ea','eao']:
@@ -142,14 +146,22 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
                     diff = 360. - diff
             else:
                 diff = r.val - c.val
-            score = (r.wht**2 * diff**2)/len(r_dict[typ])
+            #score = (r.wht**2 * diff**2)
+            if typ in ['e', 'eo', 'ea', 'eao']:
+                score = (r.wht**2 * diff**2)/total_num_energy
+            else:
+                score = (r.wht**2 * diff**2)/len(r_dict[typ])
             score_tot += score
             score_typ[c.typ] += score
             num_typ[c.typ] += 1
             if c.typ == 'eig':
                 if c.idx_1 == c.idx_2:
-                    score_typ[c.typ + '-d'] += score
-                    num_typ[c.typ + '-d'] += 1
+                    if r.val < 1100:
+                        score_typ[c.typ + '-d-low'] += score
+                        num_typ[c.typ + '-d-low'] += 1
+                    else:
+                        score_typ[c.typ + '-d-high'] += score
+                        num_typ[c.typ + '-d-high'] += 1
                 else:
                     score_typ[c.typ + '-o'] += score
                     num_typ[c.typ + '-o'] += 1
@@ -317,7 +329,10 @@ def import_weights(data):
                 if datum.idx_1 == datum.idx_2 == 1:
                     datum.wht = co.WEIGHTS['eig_i']
                 elif datum.idx_1 == datum.idx_2:
-                    datum.wht = co.WEIGHTS['eig_d']
+                    if datum.val < 1100:
+                        datum.wht = co.WEIGHTS['eig_d_low']
+                    else:
+                        datum.wht = co.WEIGHTS['eig_d_high']
                 elif datum.idx_1 != datum.idx_2:
                     datum.wht = co.WEIGHTS['eig_o']
             else:
