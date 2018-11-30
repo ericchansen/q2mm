@@ -183,7 +183,7 @@ def read_param_file(filename):
                 elif cols[2:]:
                     # Selects all values after 2 as a list, and then
                     # trims to only 2 values.
-                    allowed_range = map(float, cols[2:][:2])
+                    allowed_range = list(map(float, cols[2:][:2]))
                 else:
                     allowed_range = None
                 # Add information to the temporary list.
@@ -228,8 +228,14 @@ def main(args):
     Imports a force field object, which contains a list of all the available
     parameters. Returns a list of only the user selected parameters.
     '''
-    if isinstance(args, basestring):
-        args = args.split()
+    # basestring is deprecated in python3, str is probably safe to use in both
+    # but should be tested, for now sys.version_info switch can handle it
+    if (sys.version_info > (3, 0)):
+        if isinstance(args, str):
+            args = args.split()
+    else:
+        if isinstance(args, basestring):
+            args = args.split()
     parser = return_params_parser()
     opts = parser.parse_args(args)
     if opts.average or opts.check:
