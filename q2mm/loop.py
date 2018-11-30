@@ -186,7 +186,7 @@ class Loop(object):
                     if "lstsq" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
-                            if arg == True:
+                            if arg == "True":
                                 grad.do_lstsq=True
                             elif arg == False:
                                 grad.do_lstsq=False
@@ -215,7 +215,7 @@ class Loop(object):
                     elif "newton" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
-                            if arg == True:
+                            if arg == "True":
                                 grad.do_newton=True
                             elif arg == False:
                                 grad.do_newton=False
@@ -244,7 +244,7 @@ class Loop(object):
                     elif "levenberg" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
-                            if arg == True:
+                            if arg == "True":
                                 grad.do_levenberg=True
                             elif arg == False:
                                 grad.do_levenberg=False
@@ -279,48 +279,48 @@ class Loop(object):
                                 else:
                                     for val in factor_vals:
                                         grad.levenberg_factor.append(float(val))
-                    elif "legrange" in col:
+                    elif "lagrange" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
-                            if arg == True:
-                                grad.do_legrange=True
+                            if arg == "True":
+                                grad.do_lagrange=True
                             elif arg == False:
-                                grad.do_legrange=False
+                                grad.do_lagrange=False
                             if 'radii' in arg:
-                                grad.legrange_radii = []
+                                grad.lagrange_radii = []
                                 radii_vals = re.search(
                                     r"\[(.+)\]",arg).group(1).split('/')
                                 if radii_vals=='None':
-                                    grad.legrange_radii = None
+                                    grad.lagrange_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.legrange_radii.append(float(val)) 
+                                        grad.lagrange_radii.append(float(val)) 
                             if 'cutoff' in arg:
-                                grad.legrange_cutoff = []
+                                grad.lagrange_cutoff = []
                                 cutoff_vals = re.search(
                                     r"\[(.+)\]",arg).group(1).split('/')
                                 if cutoff_vals=='None':
-                                    grad.legrange_cutoff = None
+                                    grad.lagrange_cutoff = None
                                 else:
                                     if len(cutoff_vals) > 2 or \
                                         len(cutoff_vals) < 2:
                                         raise Exception("Cutoff values must " \
                                             "be between two numbers.")
                                     for val in cutoff_vals:
-                                        grad.legrange_cutoff.append(float(val))
+                                        grad.lagrange_cutoff.append(float(val))
                             if 'factor' in arg:
-                                grad.legrange_factors = []
+                                grad.lagrange_factors = []
                                 factor_vals = re.search(
                                     r"\[(.+)\]",arg).group(1).split('/')
                                 if factor_vals=='None':
-                                    grad.legrange_factors = None
+                                    grad.lagrange_factors = None
                                 else:
                                     for val in factor_vals:
-                                        grad.legrange_factors.append(float(val))
+                                        grad.lagrange_factors.append(float(val))
                     elif "svd" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
-                            if arg == True:
+                            if arg == "True":
                                 grad.do_svd=True
                             elif arg == False:
                                 grad.do_svd=False

@@ -48,6 +48,7 @@ ATOM_PROPERTIES_TO_REMOVE = \
     'i_m_formal_charge',
     's_m_color_rgb',
     's_m_atom_name',
+    's_m_atomic_number',
     's_m_label_format',
     'i_m_label_color',
     's_m_label_user_text',

@@ -83,7 +83,9 @@ STEPS = {'ae':      1.0,
          'imp2':    0.2,
          'sb':      0.2,
          'q':       0.1,
-         'q_p':     0.05
+         'q_p':     0.05,
+         'vdwr':    0.1,
+         'vdwfc':   0.02
          }
 
 # WEIGHTS
@@ -102,6 +104,7 @@ WEIGHTS = {'a':          2.00,
            'q':         10.00,
            'qh':        10.00,
            'qa':        10.00,
+           'esp':       10.00,
            'p':         10.00
            }
 
@@ -281,3 +284,33 @@ MASSES = OrderedDict(
         ('Lr',      262.109692000)
         ]
     )
+
+
+# ELECTRONIC STRUCTURE METHODS
+gaussian_methods = [    'b3lyp',
+                        'm06',
+                        'm062x',
+                        'm06L']
+
+
+
+
+# CHELPG NEEDED RADII
+# These are a combination of the default values in Gaussian09 (first and second
+# row?) and values we have used in the past for metals.
+CHELPG_RADII = OrderedDict(
+    [
+        ('H',   1.45),
+        ('C',   1.50),
+        ('N',   1.70),
+        ('O',   1.70),
+        ('F',   1.70),
+        ('Pd',  2.40),
+        ('Ir',  2.40),
+        ('Ru',  2.40),
+        ('Rh',  2.40),
+        ('S',   2.00)
+        ]
+    )
+
+

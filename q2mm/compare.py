@@ -130,6 +130,10 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
     for typ in r_dict:
         data_types.append(typ)
     data_types.sort()
+    total_num_energy = 0
+    for typ in data_types:
+        if typ in ['e','eo','ea','eao']:
+            total_num_energy += len(r_dict[typ])
     for typ in data_types:
         total_num += int(len(r_dict[typ]))
         if typ in ['e','eo','ea','eao']:
@@ -142,7 +146,11 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
                     diff = 360. - diff
             else:
                 diff = r.val - c.val
-            score = (r.wht**2 * diff**2)/len(r_dict[typ])
+            #score = (r.wht**2 * diff**2)
+            if typ in ['e', 'eo', 'ea', 'eao']:
+                score = (r.wht**2 * diff**2)/total_num_energy
+            else:
+                score = (r.wht**2 * diff**2)/len(r_dict[typ])
             score_tot += score
             score_typ[c.typ] += score
             num_typ[c.typ] += 1

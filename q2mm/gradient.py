@@ -82,9 +82,9 @@ class Gradient(opt.Optimizer):
 
         # Whether or not to generate parameters with these methods.
         self.do_lstsq = False
-        self.do_lagrange = True
+        self.do_lagrange = False
         self.do_levenberg = False
-        self.do_newton = True
+        self.do_newton = False
         self.do_svd = False
 
         # Particular settings for each method.
