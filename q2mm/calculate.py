@@ -58,7 +58,7 @@ COM_MACROMODEL = ['ja', 'jb', 'jt',
                   'ma', 'mb', 'mt',
                   'me', 'meo', 'mea', 'meao',
                   'mh', 'mjeig', 'mgeig',
-                  'mp']
+                  'mp', 'mgESP', 'mjESP']
 # Commands related to Tinker.
 COM_TINKER     = ['ta','tao', 'tb', 'tbo',
                   'tt','tto', 'te', 'teo',
@@ -67,7 +67,7 @@ COM_TINKER     = ['ta','tao', 'tb', 'tbo',
 # Commands related to Amber.
 COM_AMBER      = ['ae']
 # All other commands.
-COM_OTHER = ['r']
+COM_OTHER = ['r']                           
 # All possible commands.
 COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + \
           COM_AMBER + COM_OTHER
@@ -164,9 +164,23 @@ def main(args):
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
+            #Has to be here even though this is a Gaussian Job.
+            if os.path.splitext(filename)[1] == '.chk':
+                # The generated com file will be used as the input filename. It
+                # also seems best to do the gaussian calculation in the 
+                # collect_data function since we need to collect the force 
+                # fields partial charges. 
+                com_filename = os.path.splitext(filename)[0] + '.ESP.q2mm.com'
+                inps[com_filename] = filetypes.GaussCom(
+                    os.path.join(opts.directory, com_filename))
+                inps[com_filename].commands = commands_for_filename
+                inps[com_filename].read_newzmat(filename)
+                
+                
+
         elif any(x in COM_TINKER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.xyz':
-                inps[filename] = filetypes.Tinker_xyz(
+                inps[filename] = filetypes.TinkerXYZ(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
         elif any(x in COM_AMBER for x in commands_for_filename):
@@ -462,6 +476,17 @@ def return_calculate_parser(add_help=True, parents=None):
         help='Uses a MM3* FF file (somename.fld) and a parameter file '
         '(somename.txt) to use the current FF parameter values as data. This '
         'is used for harmonic parameter tethering.')
+    mm_args.add_argument(
+        '-mgESP', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae,somename.chk',
+        help='Uses the partial charges obtained from the FF and *mae file to '
+        'determine the RMS of electrostatic fitting from a gaussain *chk file.')
+    mm_args.add_argument(
+        '-mjESP', type=str, nargs='+', action='append',
+        default=[], metavar='somename.mae,somename.in',
+        help='Uses the partial charges obtained from the FF and *mae file to '
+        'determine the RMS of electrostatic fitting from a schrodinger *in '
+        'file.')
     # TINKER OPTIONS
     tin_args = parser.add_argument_group("tinker data types")
     tin_args.add_argument(
@@ -571,6 +596,8 @@ def collect_reference(path):
                 i, path, line)
             lbl, wht, val = cols
             datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
+            # Added this from the function below, read_reference()
+            lbl_to_data_attrs(datum, lbl)
             data.append(datum)
     return np.array(data)
 
@@ -1270,6 +1297,68 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                             src_1=filename,
                             idx_1=idx_1 + 1,
                             atm_1=atom.index))
+    # MACROMODEL+GUASSIAN ESP   
+    filenames = chain.from_iterable(coms['mgESP'])
+    for comma_filenames in filenames:
+        charges_list = []
+        filename_mae, name_gau_chk = comma_filenames.split(',')
+        #Filename of the output *mae file (i.e. filename.q2mm.mae)
+        name_mae = inps[filename_mae].name_mae
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        structures = filetypes.select_structures(
+            mae.structures, inps[filename_mae]._index_output_mae, 'pre')
+        for idx_1, structure in structures:
+            for atom in structure.atoms:
+                ### I think we want all the charges, right?
+                #if not 'b_q_use_charge' in atom.props or \
+                #    atom.props['b_q_use_charge']:
+                if atom.atomic_num > 0:
+                    charges_list.append(atom.partial_charge)
+        com_filename = os.path.splitext(name_gau_chk)[0] + '.ESP.q2mm.com'
+        inps[com_filename].charge_list = charges_list
+        inps[com_filename].write_com()
+        inps[com_filename].run_gaussian()
+        name_gauss_log = inps[com_filename].name_log
+        gauss = check_outs(name_gauss_log, outs, filetypes.GaussLog, direc)
+        esp_rms = gauss.esp_rms
+        if esp_rms < 0.0:
+            raise Exception('A negative RMS was obtained for the ESP fitting '
+                            'which indicates an error occured. Look at the '
+                            'following file: {}'.format(name_gauss_log))
+        data.append(datatypes.Datum(
+                            val=esp_rms,
+                            com='mgESP',
+                            typ='esp',
+                            src_1= name_mae,
+                            src_2='gaussian',
+                            idx_1 = 1))
+    # MACROMODEL+JAGUAR ESP   
+    ## This does not work, I still need to write code to support Jaguaer. -TR
+    filenames = chain.from_iterable(coms['mjESP'])
+    for comma_filenames in filenames:
+        charges_list = []
+        name_mae, name_jag_chk = comma_filenames.split(',')
+        mae = check_outs(name_mae, outs, filetypes.Mae, direc)
+        structures = filetypes.select_structures(
+            mae.structures, inps[name_mae]._index_output_mae, 'pre')
+        for idx_1, structure in structures:
+            for atom in structure.atoms:
+                if not 'b_q_use_charge' in atom.props or \
+                    atom.props['b_q_use_charge']:
+                    charges_list.append(atom.partial_charge)
+        ###Filler for ESP calculations####
+        ### This is what is used in anna's code
+        current_RMS = run_ChelpG_inp.run_JCHelpG(charges_list,name_jag_chk)
+        
+        ### End of filler
+        if current_RMS < 0:
+            sys.exit("Error while computing RMS. Exiting")
+        data.append(datatypes.Datum(
+                            val=current_RMS,
+                            com='mjESP',
+                            typ='esp',
+                            src_1=name_mae,
+                            idx_1=1))
     # JAGUAR CHARGES EXCLUDING ALIPHATIC HYDROGENS
     filenames = chain.from_iterable(coms['jqh'])
     for filename in filenames:
@@ -1829,7 +1918,8 @@ def sort_commands_by_filename(commands):
     return sorted_commands
 
 # Will also have to be updated. Maybe the Datum class too and how it responds
-# to assigning labels.
+# to assigning labels. 
+## Why is this here? Is this deprecated? -Tony
 def read_reference(filename):
     data = []
     with open(filename, 'r') as f:
@@ -1849,22 +1939,34 @@ def read_reference(filename):
     data = data.sort(key=datatypes.datum_sort_key)
     return np.array(data)
 
+
+## This is also part of the read_reference function above, but I think these 
+## labels and attributes are important for handleing data.
 # Shouldn't be necessary anymore.
-# def lbl_to_data_attrs(datum, lbl):
-#     parts = lbl.split('_')
-#     datum.typ = parts[0]
-#     if len(parts) == 3:
-#         idxs = parts[-1]
-#     if len(parts) == 4:
-#         idxs = parts[-2]
-#         atm_nums = parts[-1]
-#         atm_nums = atm_nums.split('-')
-#         for i, atm_num in enumerate(atm_nums):
-#             setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
-#     idxs = idxs.split('-')
-#     datum.idx_1 = int(idxs[0])
-#     if len(idxs) == 2:
-#         datum.idx_2 == int(idxs[1])
+# This should be based by the datum type and not the length of the parts list.
+def lbl_to_data_attrs(datum, lbl):
+    parts = lbl.split('_')
+    datum.typ = parts[0]
+   # if len(parts) == 3:
+    if datum.typ in ['e','eo','ea','eao','eig','h','q','qh','qa']:
+        idxs = parts[-1]
+   # if len(parts) == 4:
+    if datum.typ in ['b','t','a']:
+        idxs = parts[-2]
+        atm_nums = parts[-1]
+        atm_nums = atm_nums.split('-')
+        for i, atm_num in enumerate(atm_nums):
+            setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
+    if datum.typ in ['p']:
+        datum.src_1 = parts[1]
+        idxs = parts[-1]
+    if datum.typ in ['esp']:
+        datum.src_1 = parts[1]
+        idxs = parts[-1]
+    idxs = idxs.split('-')
+    datum.idx_1 = int(idxs[0])
+    if len(idxs) == 2:
+        datum.idx_2 == int(idxs[1])
 
 # Right now, this only looks good if the logger doesn't append each log
 # message with something (module, date/time, etc.).

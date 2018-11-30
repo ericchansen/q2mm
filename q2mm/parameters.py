@@ -287,9 +287,11 @@ def main(args):
             bond_avg = {}
             for ff_row, values in bond_dic.iteritems():
                 bond_avg[ff_row] = np.mean(values)
+                print(">> STD {}: {}".format(ff_row,np.std(values)))
             angle_avg = {}
             for ff_row, values in angle_dic.iteritems():
                 angle_avg[ff_row] = np.mean(values)
+                print(">> STD {}: {}".format(ff_row,np.std(values)))
             # Update parameter values.
             for param in params:
                 if param.ptype in ['be', 'ae'] and param.mm3_row in bond_avg:

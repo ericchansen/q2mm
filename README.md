@@ -278,3 +278,36 @@ there's no need for me to use another `RDAT` command. Write the data and scores
 out to `somedir/opt_end.txt`. At this point, it would be wise to examine
 `mm3.fld`. Check that the parameters seem reasonable, and cross-check them with
 the backed up original parameters.
+
+
+### Changes to default settings
+
+#### Maximum parameters for simplex optimization:
+The maximum parameters that are used for simplex optimizations is defaulted to 
+10, but can be changed with the max_params command.
+```
+SIMP max_params=6
+```
+
+#### Control of gradient methods:
+Five gradient methods are available: least-squared, lagrange, levenberg, 
+newton-raphson, and SVD. Changing default settings for these require the use of 
+the shortened name (lstsq, legrange, levenberg, newton, and svd) followed by "="
+and the settings the user wants to use. True and False commands will turn on and
+off the optimizers, respectively. Users can also change the factors, cutoffs, and
+radii, that are used by including the setting they want to change followed by the
+values seperated by "/" nested in brackets.
+```
+GRAD lstsq=False newton=True,cutoffs[None],radii[0.01/0.1/2.0] svd=True,factor[0.01/0.1]
+```
+
+#### Changing default weights and step sizes:
+A user may want to change the weights of certain data, or step sizes during 
+differentiation of parameters. This can be accomplished with the keywords WGHT and
+STEP followed by the data/parameter type and value.
+```
+WGHT b 10.0
+STEP be 1.0
+```
+
+

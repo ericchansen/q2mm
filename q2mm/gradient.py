@@ -86,7 +86,7 @@ class Gradient(opt.Optimizer):
         self.do_lagrange = True
         self.do_levenberg = False
         self.do_newton = True
-        self.do_svd = True
+        self.do_svd = False
 
         # Particular settings for each method.
         # LEAST SQUARES
@@ -140,10 +140,16 @@ class Gradient(opt.Optimizer):
             self.ff.data = calculate.main(self.args_ff)
             # Not 100% sure if this is necessary, but it certainly doesn't hurt.
             compare.correlate_energies(ref_data, self.ff.data)
+        r_dict = compare.data_by_type(ref_data)
+        c_dict = compare.data_by_type(self.ff.data)
+        r_dict, c_dict = compare.trim_data(r_dict,c_dict)
         if self.ff.score is None:
             # Already zeroed reference and correlated the energies.
-            self.ff.score = compare.calculate_score(ref_data, self.ff.data)
-
+            self.ff.score = compare.compare_data(r_dict, c_dict)
+        data_types = []
+        for typ in r_dict:
+            data_types.append(typ)
+        data_types.sort()
         logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
         logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
         opt.pretty_ff_results(self.ff, level=20)
@@ -173,10 +179,19 @@ class Gradient(opt.Optimizer):
             # Row 2 - Weights
             # Row 3 - Reference data values
             # Row 4 - Initial FF data values
-            csv_writer.writerow([x.lbl for x in ref_data])
-            csv_writer.writerow([x.wht for x in ref_data])
-            csv_writer.writerow([x.val for x in ref_data])
-            csv_writer.writerow([x.val for x in self.ff.data])
+            ## Deprecated -TR
+            #csv_writer.writerow([x.lbl for x in ref_data])
+            #csv_writer.writerow([x.wht for x in ref_data])
+            #csv_writer.writerow([x.val for x in ref_data])
+            #csv_writer.writerow([x.val for x in self.ff.data])
+            writerows = [[],[],[],[]]
+            for data_type in data_types:
+                writerows[0].extend([x.lbl for x in r_dict[data_type]])
+                writerows[1].extend([x.wht for x in r_dict[data_type]])
+                writerows[2].extend([x.val for x in r_dict[data_type]])
+                writerows[3].extend([x.val for x in c_dict[data_type]])
+            for row in writerows:
+                csv_writer.writerow(row)
             logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
             # Save many FFs, each with their own parameter sets.
             ffs = opt.differentiate_ff(self.ff)
@@ -186,11 +201,19 @@ class Gradient(opt.Optimizer):
                 ff.export_ff(lines=self.ff.lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
-                ff.score = compare.compare_data(ref_data, data)
+                # Deprecated
+                #ff.score = compare.compare_data(ref_data, data)
+                c_data = compare.data_by_type(data)
+                r_dict, c_data = compare.trim_data(r_dict,c_data)
+                ff.score = compare.compare_data(r_dict, c_data)
                 opt.pretty_ff_results(ff)
                 # Write the data rather than storing it in memory. For large
                 # parameter sets, this could consume GBs of memory otherwise!
-                csv_writer.writerow([x.val for x in data])
+                #csv_writer.writerow([x.val for x in data])
+                row = []
+                for data_type in data_types:
+                    row.extend([x.val for x in c_data[data_type]])
+                csv_writer.writerow(row)
             f.close()
 
             # Make sure we have derivative information. Used for NR.
@@ -208,11 +231,27 @@ class Gradient(opt.Optimizer):
                 self.do_svd:
             logger.log(20, '~~ JACOBIAN AND RESIDUAL VECTOR ~~'.rjust(79, '~'))
             # Setup the residual vector.
-            num_d = len(ref_data)
+            # Deprecated - TR
+            #num_d = len(ref_data)
+            num_d = 0
+            for datatype in r_dict:
+                num_d += len(r_dict[datatype])
             resid = np.empty((num_d, 1), dtype=float)
-            for i in range(0, num_d):
-                resid[i, 0] = ref_data[i].wht * \
-                              (ref_data[i].val - self.ff.data[i].val)
+            # Deprecated - TR
+            #for i in xrange(0, num_d):
+            #    resid[i, 0] = ref_data[i].wht * \
+            #                  (ref_data[i].val - self.ff.data[i].val)
+            count = 0
+            for data_type in data_types:
+
+              
+                if (sys.version_info > (3,0)):
+                    rc_zip = zip(r_dict[typ],c_dict[typ])
+                else:
+                    rc_zip = itertools.izip(r_dict[data_type],c_dict[data_type])
+                for r,c in rc_zip:
+                    resid[count, 0] = r.wht * (r.val - c.val)
+                    count += 1
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
             logger.log(
                 20, '  -- Formed {} residual vector.'.format(resid.shape))
@@ -283,7 +322,11 @@ class Gradient(opt.Optimizer):
             for ff in self.new_ffs:
                 data = opt.cal_ff(ff, self.args_ff, parent_ff=self.ff)
                 # Shouldn't need to zero anymore.
-                ff.score = compare.compare_data(ref_data, data)
+                # Deprecated
+                #ff.score = compare.compare_data(ref_data, data)
+                c_data = compare.data_by_type(data)
+                r_dict, c_data = compare.trim_data(r_dict,c_data)
+                ff.score = compare.compare_data(r_dict, c_data)
                 opt.pretty_ff_results(ff)
             self.new_ffs = sorted(
                 self.new_ffs, key=lambda x: x.score)
