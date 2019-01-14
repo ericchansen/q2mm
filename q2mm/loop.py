@@ -1,7 +1,10 @@
 #!/usr/bin/env python
+
+from __future__ import absolute_import
+from __future__ import division
+
 import argparse
 import glob
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -10,14 +13,14 @@ import random
 import sys
 import re
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import gradient
-import opt
-import parameters
-import simplex
+import .calculate
+import .compare
+import .constants as co
+import .datatypes
+import .gradient
+import .opt
+import .parameters
+import .simplex
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +87,7 @@ class Loop(object):
         lines_iterator = iter(lines)
         while True:
             try:
-                if (sys.version_info > (3, 0)):
-                    line = next(lines_iterator)
-                else:
-                    line = lines_iterator.next()
+                line = next(lines_iterator)
             except StopIteration:
                 return self.ff
             cols = line.split()
@@ -117,16 +117,10 @@ class Loop(object):
             if cols[0] == 'LOOP':
                 # Read lines that will be looped over.
                 inner_loop_lines = []
-                if (sys.version_info > (3, 0)):
-                    line = next(lines_iterator)
-                else:
-                    line = lines_iterator.next()
+                line = next(lines_iterator)
                 while line.split()[0] != 'END':
                     inner_loop_lines.append(line)
-                    if (sys.version_info > (3, 0)):
-                        line = next(lines_iterator)
-                    else:
-                        line = lines_iterator.next()
+                    line = next(lines_iterator)
                 # Make loop object and populate attributes.
                 loop = Loop()
                 loop.convergence = float(cols[1])

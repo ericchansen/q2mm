@@ -11,19 +11,18 @@ and :math:`x_c` is the calculated or force field's value for the data point.
 
 '''
 from __future__ import print_function
+from __future__ import absolute_import
 from collections import defaultdict
 import sys
-if (sys.version_info < (3, 0)):
-    from itertools import izip
 import argparse
 from argparse import RawTextHelpFormatter
 import logging
 import logging.config
 import numpy as np
 
-import calculate
-import constants as co
-import datatypes
+import .calculate
+import .constants as co
+import .datatypes
 
 logger = logging.getLogger(__name__)
 
@@ -140,11 +139,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
         if typ in ['e','eo','ea','eao']:
             correlate_energies(r_dict[typ],c_dict[typ])
         import_weights(r_dict[typ])
-        if (sys.version_info > (3,0)):
-            rc_zip = zip(r_dict[typ],c_dict[typ])
-        else:
-            rc_zip = izip(r_dict[typ],c_dict[typ])
-        for r,c in rc_zip:
+        for r,c in zip(r_dict[typ],c_dict[typ]):
             if c.typ == 't':
                 diff = abs(r.val - c.val)
                 if diff > 180.:
@@ -176,14 +171,10 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<30} {:10d}'.format('Total Num. data points:', total_num))
-    for k, v in num_typ.iteritems():
+    for k, v in num_typ.items():
         strings.append('{:<30} {:10d}'.format(k + ':', v))
     strings.append('-' * 89)
-    if (sys.version_info > (3, 0)):
-        score_typ_iter = iter(score_typ.items())
-    else:
-        score_typ_iter = score_typ.iteritems()
-    for k, v in score_typ_iter:
+    for k, v in score_typ.items():
         strings.append('{:<20} {:20.4f}'.format(k + ':', v))
     if output:
         with open(output, 'w') as f:
@@ -353,11 +344,7 @@ def calculate_score(r_data, c_data):
     Calculates the objective function score.
     """
     score_tot = 0.
-    if (sys.version_info > (3, 0)):
-        rc_zip = zip(r_data, c_data)
-    else:
-        rc_zip = izip(r_data, c_data)
-    for r_datum, c_datum in rc_zip:
+    for r_datum, c_datum in zip(r_data, c_data):
         # Could add a check here to assure that the data points are aligned.
         # Ex.) assert r_datum.ind_1 == c_datum.ind_1, 'Oh no!'
 

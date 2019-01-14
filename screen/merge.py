@@ -621,7 +621,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                     atom2.index, atom2.atom_type_name))
 
             bond = merge.getBond(atom1, atom2)
-            for k, v in merge_bond.property.iteritems():
+            for k, v in merge_bond.property.items():
                 # Here, bond is the duplicate bond in struct_1 or the new bond.
                 if k not in bond.property or not bond.property[k]:
                     # For i_cs_rca4_1, i_cs_rca4_2, i_cs_torc_a1, etc.
@@ -720,7 +720,7 @@ def add_chirality(structure):
     """
     chirality_dic = analyze.get_chiral_atoms(structure)
     string = '_'
-    for key, value in chirality_dic.iteritems():
+    for key, value in chirality_dic.items():
         string += '{}{}'.format(key, value.lower())
     structure.property['s_m_title'] += string
     structure.property['s_m_entry_name'] += string
@@ -736,7 +736,7 @@ def search_dic_keys(dic, lookup):
     dic : dictionary
     lookup : string
     """
-    for key, value in dic.iteritems():
+    for key, value in dic.items():
         if lookup in key:
             yield value
 

@@ -6,15 +6,18 @@ ASSUMES THERE IS NO OVERLAP BETWEEN THE PARAMETERS SELECTED BY THE PARAMETER
 FILE AND BY PTYPES!
 '''
 from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
+
 import argparse
 import logging
 import logging.config
 import numpy as np
 import sys
 
-import constants as co
-import datatypes
-import filetypes
+import .constants as co
+import .datatypes
+import .filetypes
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +186,7 @@ def read_param_file(filename):
                 elif cols[2:]:
                     # Selects all values after 2 as a list, and then
                     # trims to only 2 values.
-                    allowed_range = list(map(float, cols[2:][:2]))
+                    allowed_range = [float(x) for x in cols[2:][:2]]
                 else:
                     allowed_range = None
                 # Add information to the temporary list.
@@ -230,7 +233,7 @@ def main(args):
     '''
     # basestring is deprecated in python3, str is probably safe to use in both
     # but should be tested, for now sys.version_info switch can handle it
-    if (sys.version_info > (3, 0)):
+    if sys.version_info > (3, 0):
         if isinstance(args, str):
             args = args.split()
     else:
@@ -285,11 +288,11 @@ def main(args):
             #             1858: 1.3556
             #            }
             bond_avg = {}
-            for ff_row, values in bond_dic.iteritems():
+            for ff_row, values in bond_dic.items():
                 bond_avg[ff_row] = np.mean(values)
                 print(">> STD {}: {}".format(ff_row,np.std(values)))
             angle_avg = {}
-            for ff_row, values in angle_dic.iteritems():
+            for ff_row, values in angle_dic.items():
                 angle_avg[ff_row] = np.mean(values)
                 print(">> STD {}: {}".format(ff_row,np.std(values)))
             # Update parameter values.

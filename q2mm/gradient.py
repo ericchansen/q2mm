@@ -1,8 +1,10 @@
+from __future__ import absolute_import
+from __future__ import division
+
 import copy
 import collections
 import csv
 import glob
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -10,12 +12,12 @@ import os
 import re
 import sys
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import opt as opt
-import parameters
+import .calculate
+import .compare
+import .constants as co
+import .datatypes
+import .opt as opt
+import .parameters
 
 logger = logging.getLogger(__name__)
 
@@ -243,13 +245,7 @@ class Gradient(opt.Optimizer):
             #                  (ref_data[i].val - self.ff.data[i].val)
             count = 0
             for data_type in data_types:
-
-              
-                if (sys.version_info > (3,0)):
-                    rc_zip = zip(r_dict[typ],c_dict[typ])
-                else:
-                    rc_zip = itertools.izip(r_dict[data_type],c_dict[data_type])
-                for r,c in rc_zip:
+                for r,c in zip(r_dict[typ],c_dict[typ]):
                     resid[count, 0] = r.wht * (r.val - c.val)
                     count += 1
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
@@ -697,7 +693,7 @@ def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
         logger.log(15, 'READING: {}'.format(par_file))
         f.readline() # Labels.
-        whts = list(map(float, f.readline().split(','))) # Weights.
+        whts = [float(x) for x in f.readline().split(',')] # Weights.
         f.readline() # Reference values.
         f.readline() # Original values.
         # This is only for central differentiation.
@@ -709,12 +705,8 @@ def return_jacobian(jacob, par_file):
                 break
             inc_data = map(float, l1.split(','))
             dec_data = map(float, l2.split(','))
-            if (sys.version_info > (3, 0)):
-                data_zip = zip(inc_data, dec_data)
-            else:
-                data_zip = itertools.izip(inc_data, dec_data)
             for data_ind, (inc_datum, dec_datum) in \
-                    enumerate(data_zip):
+                    enumerate(zip(inc_data, dec_data)):
                 dydp = (inc_datum - dec_datum) / 2
                 jacob[data_ind, ff_ind] = whts[data_ind] * dydp
             ff_ind += 1
@@ -768,11 +760,7 @@ def update_params(params, changes):
                     Unscaled changes to the parameter values.
     """
     try:
-        if (sys.version_info > (3, 0)):
-            zip_params_changes = zip(params, changes)
-        else:
-            zip_params_changes = itertools.izip(params, changes)
-        for param, change in zip_params_changes:
+        for param, change in zip(params, changes):
             param.value += change * param.step
     except datatypes.ParamError as e:
         logger.warning(e.message)

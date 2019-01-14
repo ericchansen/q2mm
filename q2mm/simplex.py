@@ -1,9 +1,11 @@
 """
 Simplex optimization.
 """
+from __future__ import absolute_import
+from __future__ import division
+
 import copy
 import collections
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -11,12 +13,12 @@ import re
 import sqlite3
 import textwrap
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import opt
-import parameters
+import .calculate
+import .compare
+import .constants as co
+import .datatypes
+import .opt
+import .parameters
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +258,7 @@ class Simplex(opt.Optimizer):
                     raise opt.OptError(
                         'No difference between force field scores. '
                         'Exiting simplex.')
-            for i in xrange(0, len(last_best_ff.params)):
+            for i in range(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
                         sum([x.params[i].value *
@@ -287,7 +289,7 @@ class Simplex(opt.Optimizer):
                 exp_ff = self.ff.__class__()
                 exp_ff.method = 'EXPANSION'
                 exp_ff.params = copy.deepcopy(last_best_ff.params)
-                for i in xrange(0, len(last_best_ff.params)):
+                for i in range(0, len(last_best_ff.params)):
                     exp_ff.params[i].value = (
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
@@ -317,7 +319,7 @@ class Simplex(opt.Optimizer):
                 con_ff = self.ff.__class__()
                 con_ff.method = 'CONTRACTION'
                 con_ff.params = copy.deepcopy(last_best_ff.params)
-                for i in xrange(0, len(last_best_ff.params)):
+                for i in range(0, len(last_best_ff.params)):
                     if ref_ff.score > self.new_ffs[-1].score:
                         con_val = (
                             (inv_ff.params[i].value +
@@ -345,7 +347,7 @@ class Simplex(opt.Optimizer):
                     logger.log(
                         20, '~~ DOING MASSIVE CONTRACTION ~~'.rjust(79, '~'))
                     for ff_num, ff in enumerate(self.new_ffs[1:]):
-                        for i in xrange(0, len(last_best_ff.params)):
+                        for i in range(0, len(last_best_ff.params)):
                             ff.params[i].value = (
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)

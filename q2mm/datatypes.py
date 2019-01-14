@@ -2,6 +2,9 @@
 Contains basic data structures used throughout the rest of Q2MM.
 """
 from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
+
 import copy
 import logging
 import numpy as np
@@ -9,8 +12,8 @@ import os
 import re
 import sys
 
-import constants as co
-import filetypes
+import .constants as co
+import .filetypes
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +99,7 @@ class Param(object):
                 raise
         if self._step == 0.:
             self._step = 0.1
-        if (sys.version_info > (3, 0)):
+        if sys.version_info > (3, 0):
             if isinstance(self._step, str):
                 return float(self._step) * self.value
             else:
@@ -195,10 +198,9 @@ class Datum(object):
             # Why would it ever not have src_1?
             else:
                 b = None
-            c = '-'.join(map(str, remove_none(
-                        self.idx_1, self.idx_2)))
-            d = '-'.join(map(str, remove_none(
-                        self.atm_1, self.atm_2, self.atm_3, self.atm_4)))
+            c = '-'.join([str(x) for x in remove_none(self.idx_1, self.idx_2)])
+            d = '-'.join([str(x) for x in remove_none(
+                        self.atm_1, self.atm_2, self.atm_3, self.atm_4)])
             abcd = remove_none(a, b, c, d)
             self._lbl = '_'.join(abcd)
         return self._lbl
@@ -649,7 +651,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                                 ParamMM3(atom_labels = atm_lbls,
                                          atom_types = atm_typs,
@@ -697,7 +699,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -733,7 +735,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.append(
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -762,7 +764,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -795,7 +797,7 @@ class MM3(FF):
                         atm_lbls = self.params[-1].atom_labels
                         atm_typs = self.params[-1].atom_types
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -838,7 +840,7 @@ class MM3(FF):
                             comment = line[COM_POS_START:].strip()
                             self.sub_names.append(comment)
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = list(map(float, parm_cols.split()))
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                             ParamMM3(atom_labels = atm_lbls,
                                      atom_types = atm_typs,
@@ -865,7 +867,7 @@ class MM3(FF):
                             atm_typs = self.convert_to_types(
                                 atm_lbls, self.atom_types[-1])
                         parm_cols = line[P_1_START:P_3_END]
-                        parm_cols = map(float, parm_cols.split())
+                        parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend((
                                 ParamMM3(atom_labels = atm_lbls,
                                          atom_types = atm_typs,
@@ -1284,8 +1286,8 @@ def mass_weight_hessian(hess, atoms, reverse=False):
     for mass in masses:
         changes.extend([1 / np.sqrt(mass)] * 3)
     x, y = hess.shape
-    for i in xrange(0, x):
-        for j in xrange(0, y):
+    for i in range(0, x):
+        for j in range(0, y):
             if reverse:
                 hess[i, j] = \
                     hess[i, j] / changes[i] / changes[j]
@@ -1303,8 +1305,8 @@ def mass_weight_eigenvectors(evecs, atoms, reverse=False):
         if not atom.is_dummy:
             changes.extend([np.sqrt(atom.exact_mass)] * 3)
     x, y = evecs.shape
-    for i in xrange(0, x):
-        for j in xrange(0, y):
+    for i in range(0, x):
+        for j in range(0, y):
             if reverse:
                 evecs[i, j] /= changes[j]
             else:
