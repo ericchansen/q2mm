@@ -4,8 +4,8 @@ Constants and variables used throughout Q2MM.
 import re
 from collections import OrderedDict
 
-GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
-# GAUSSIAN_ENERGIES = ['HF']
+#GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
+GAUSSIAN_ENERGIES = ['HF']
 
 # LOGGING SETTINGS
 # Settings loaded using logging.config.
@@ -82,7 +82,10 @@ STEPS = {'ae':      1.0,
          'imp1':    0.2,
          'imp2':    0.2,
          'sb':      0.2,
-         'q':       0.1
+         'q':       0.1,
+         'q_p':     0.05,
+         'vdwr':    0.1,
+         'vdwfc':   0.02
          }
 
 # WEIGHTS
@@ -91,7 +94,8 @@ WEIGHTS = {'a':          2.00,
            't':          1.00,
            'h':          1.00,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
-           'eig_d':      0.10, # Weight of other eigenvalues.
+           'eig_d_low':  0.10, # Weight of low mode diagonal elements
+           'eig_d_high': 0.10, # Weight of high mode diagonal elemetns
            'eig_o':      0.05, # Weight of off diagonals in eigenmatrix.
            'e':         20.00,
            'eo':       100.00,
@@ -100,6 +104,7 @@ WEIGHTS = {'a':          2.00,
            'q':         10.00,
            'qh':        10.00,
            'qa':        10.00,
+           'esp':       10.00,
            'p':         10.00
            }
 
@@ -166,6 +171,9 @@ LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
 # Minimum number of tokens required to run MacrModel calculations.
 MIN_SUITE_TOKENS = 2
 MIN_MACRO_TOKENS = 2
+
+# Match the filename and atoms for a torsion label
+RE_T_LBL = re.compile('\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)')
 
 # MASSES
 # Used for mass weighting.
@@ -276,3 +284,33 @@ MASSES = OrderedDict(
         ('Lr',      262.109692000)
         ]
     )
+
+
+# ELECTRONIC STRUCTURE METHODS
+gaussian_methods = [    'b3lyp',
+                        'm06',
+                        'm062x',
+                        'm06L']
+
+
+
+
+# CHELPG NEEDED RADII
+# These are a combination of the default values in Gaussian09 (first and second
+# row?) and values we have used in the past for metals.
+CHELPG_RADII = OrderedDict(
+    [
+        ('H',   1.45),
+        ('C',   1.50),
+        ('N',   1.70),
+        ('O',   1.70),
+        ('F',   1.70),
+        ('Pd',  2.40),
+        ('Ir',  2.40),
+        ('Ru',  2.40),
+        ('Rh',  2.40),
+        ('S',   2.00)
+        ]
+    )
+
+

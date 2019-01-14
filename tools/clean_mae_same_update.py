@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
             for bond in structure.bond:
                 # Update 1st.
-                for k, v in CONV_DIC.iteritems():
+                for k, v in CONV_DIC.items():
                     if k in bond.property:
                         bond.property[v] = bond.property[k]
                         del bond.property[k]

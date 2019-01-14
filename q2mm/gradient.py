@@ -1,8 +1,10 @@
+from __future__ import absolute_import
+from __future__ import division
+
 import copy
 import collections
 import csv
 import glob
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -10,12 +12,12 @@ import os
 import re
 import sys
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import opt as opt
-import parameters
+import .calculate
+import .compare
+import .constants as co
+import .datatypes
+import .opt as opt
+import .parameters
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +88,7 @@ class Gradient(opt.Optimizer):
         self.do_lagrange = True
         self.do_levenberg = False
         self.do_newton = True
-        self.do_svd = True
+        self.do_svd = False
 
         # Particular settings for each method.
         # LEAST SQUARES
@@ -140,10 +142,16 @@ class Gradient(opt.Optimizer):
             self.ff.data = calculate.main(self.args_ff)
             # Not 100% sure if this is necessary, but it certainly doesn't hurt.
             compare.correlate_energies(ref_data, self.ff.data)
+        r_dict = compare.data_by_type(ref_data)
+        c_dict = compare.data_by_type(self.ff.data)
+        r_dict, c_dict = compare.trim_data(r_dict,c_dict)
         if self.ff.score is None:
             # Already zeroed reference and correlated the energies.
-            self.ff.score = compare.calculate_score(ref_data, self.ff.data)
-
+            self.ff.score = compare.compare_data(r_dict, c_dict)
+        data_types = []
+        for typ in r_dict:
+            data_types.append(typ)
+        data_types.sort()
         logger.log(20, '~~ GRADIENT OPTIMIZATION ~~'.rjust(79, '~'))
         logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
         opt.pretty_ff_results(self.ff, level=20)
@@ -173,10 +181,19 @@ class Gradient(opt.Optimizer):
             # Row 2 - Weights
             # Row 3 - Reference data values
             # Row 4 - Initial FF data values
-            csv_writer.writerow([x.lbl for x in ref_data])
-            csv_writer.writerow([x.wht for x in ref_data])
-            csv_writer.writerow([x.val for x in ref_data])
-            csv_writer.writerow([x.val for x in self.ff.data])
+            ## Deprecated -TR
+            #csv_writer.writerow([x.lbl for x in ref_data])
+            #csv_writer.writerow([x.wht for x in ref_data])
+            #csv_writer.writerow([x.val for x in ref_data])
+            #csv_writer.writerow([x.val for x in self.ff.data])
+            writerows = [[],[],[],[]]
+            for data_type in data_types:
+                writerows[0].extend([x.lbl for x in r_dict[data_type]])
+                writerows[1].extend([x.wht for x in r_dict[data_type]])
+                writerows[2].extend([x.val for x in r_dict[data_type]])
+                writerows[3].extend([x.val for x in c_dict[data_type]])
+            for row in writerows:
+                csv_writer.writerow(row)
             logger.log(20, '~~ DIFFERENTIATING PARAMETERS ~~'.rjust(79, '~'))
             # Save many FFs, each with their own parameter sets.
             ffs = opt.differentiate_ff(self.ff)
@@ -186,11 +203,19 @@ class Gradient(opt.Optimizer):
                 ff.export_ff(lines=self.ff.lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
-                ff.score = compare.compare_data(ref_data, data)
+                # Deprecated
+                #ff.score = compare.compare_data(ref_data, data)
+                c_data = compare.data_by_type(data)
+                r_dict, c_data = compare.trim_data(r_dict,c_data)
+                ff.score = compare.compare_data(r_dict, c_data)
                 opt.pretty_ff_results(ff)
                 # Write the data rather than storing it in memory. For large
                 # parameter sets, this could consume GBs of memory otherwise!
-                csv_writer.writerow([x.val for x in data])
+                #csv_writer.writerow([x.val for x in data])
+                row = []
+                for data_type in data_types:
+                    row.extend([x.val for x in c_data[data_type]])
+                csv_writer.writerow(row)
             f.close()
 
             # Make sure we have derivative information. Used for NR.
@@ -208,11 +233,21 @@ class Gradient(opt.Optimizer):
                 self.do_svd:
             logger.log(20, '~~ JACOBIAN AND RESIDUAL VECTOR ~~'.rjust(79, '~'))
             # Setup the residual vector.
-            num_d = len(ref_data)
+            # Deprecated - TR
+            #num_d = len(ref_data)
+            num_d = 0
+            for datatype in r_dict:
+                num_d += len(r_dict[datatype])
             resid = np.empty((num_d, 1), dtype=float)
-            for i in range(0, num_d):
-                resid[i, 0] = ref_data[i].wht * \
-                              (ref_data[i].val - self.ff.data[i].val)
+            # Deprecated - TR
+            #for i in xrange(0, num_d):
+            #    resid[i, 0] = ref_data[i].wht * \
+            #                  (ref_data[i].val - self.ff.data[i].val)
+            count = 0
+            for data_type in data_types:
+                for r,c in zip(r_dict[typ],c_dict[typ]):
+                    resid[count, 0] = r.wht * (r.val - c.val)
+                    count += 1
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
             logger.log(
                 20, '  -- Formed {} residual vector.'.format(resid.shape))
@@ -283,7 +318,11 @@ class Gradient(opt.Optimizer):
             for ff in self.new_ffs:
                 data = opt.cal_ff(ff, self.args_ff, parent_ff=self.ff)
                 # Shouldn't need to zero anymore.
-                ff.score = compare.compare_data(ref_data, data)
+                # Deprecated
+                #ff.score = compare.compare_data(ref_data, data)
+                c_data = compare.data_by_type(data)
+                r_dict, c_data = compare.trim_data(r_dict,c_data)
+                ff.score = compare.compare_data(r_dict, c_data)
                 opt.pretty_ff_results(ff)
             self.new_ffs = sorted(
                 self.new_ffs, key=lambda x: x.score)
@@ -654,7 +693,7 @@ def return_jacobian(jacob, par_file):
     with open(par_file, 'r') as f:
         logger.log(15, 'READING: {}'.format(par_file))
         f.readline() # Labels.
-        whts = list(map(float, f.readline().split(','))) # Weights.
+        whts = [float(x) for x in f.readline().split(',')] # Weights.
         f.readline() # Reference values.
         f.readline() # Original values.
         # This is only for central differentiation.
@@ -666,12 +705,8 @@ def return_jacobian(jacob, par_file):
                 break
             inc_data = map(float, l1.split(','))
             dec_data = map(float, l2.split(','))
-            if (sys.version_info > (3, 0)):
-                data_zip = zip(inc_data, dec_data)
-            else:
-                data_zip = itertools.izip(inc_data, dec_data)
             for data_ind, (inc_datum, dec_datum) in \
-                    enumerate(data_zip):
+                    enumerate(zip(inc_data, dec_data)):
                 dydp = (inc_datum - dec_datum) / 2
                 jacob[data_ind, ff_ind] = whts[data_ind] * dydp
             ff_ind += 1
@@ -725,11 +760,7 @@ def update_params(params, changes):
                     Unscaled changes to the parameter values.
     """
     try:
-        if (sys.version_info > (3, 0)):
-            zip_params_changes = zip(params, changes)
-        else:
-            zip_params_changes = itertools.izip(params, changes)
-        for param, change in zip_params_changes:
+        for param, change in zip(params, changes):
             param.value += change * param.step
     except datatypes.ParamError as e:
         logger.warning(e.message)

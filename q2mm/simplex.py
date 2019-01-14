@@ -1,9 +1,11 @@
 """
 Simplex optimization.
 """
+from __future__ import absolute_import
+from __future__ import division
+
 import copy
 import collections
-import itertools
 import logging
 import logging.config
 import numpy as np
@@ -11,12 +13,12 @@ import re
 import sqlite3
 import textwrap
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import opt
-import parameters
+import .calculate
+import .compare
+import .constants as co
+import .datatypes
+import .opt
+import .parameters
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +100,12 @@ class Simplex(opt.Optimizer):
             # recalculate it in gradient. Let's hope simplex generally yields
             # improvements.
             data = calculate.main(self.args_ff)
-            self.ff.score = compare.compare_data(r_data, data)
+            #deprecated
+            #self.ff.score = compare.compare_data(r_data, data)
+            r_dict = compare.data_by_type(r_data)
+            c_dict = compare.data_by_type(data)
+            r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+            self.ff.score = compare.compare_data(r_dict, c_dict)
         else:
             logger.log(20, '  -- Reused existing score and data for initial FF.')
 
@@ -129,7 +136,12 @@ class Simplex(opt.Optimizer):
                     ff.export_ff(path=self.ff.path, lines=self.ff_lines)
                     logger.log(20, '  -- Calculating {}.'.format(ff))
                     data = calculate.main(self.args_ff)
-                    ff.score = compare.compare_data(r_data, data)
+                    #deprecated
+                    #ff.score = compare.compare_data(r_data, data)
+                    r_dict = compare.data_by_type(r_data)
+                    c_dict = compare.data_by_type(data)
+                    r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+                    ff.score = compare.compare_data(r_dict, c_dict)
                     opt.pretty_ff_results(ff)
                 # Add the derivatives to your original FF.
                 opt.param_derivs(self.ff, ffs)
@@ -188,7 +200,12 @@ class Simplex(opt.Optimizer):
                 ff.export_ff(path=self.ff.path, lines=self.ff_lines)
                 logger.log(20, '  -- Calculating {}.'.format(ff))
                 data = calculate.main(self.args_ff)
-                ff.score = compare.compare_data(r_data, data)
+                #deprecated
+                #ff.score = compare.compare_data(r_data, data)
+                r_dict = compare.data_by_type(r_data)
+                c_dict = compare.data_by_type(data)
+                r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+                ff.score = compare.compare_data(r_dict, c_dict)
                 opt.pretty_ff_results(ff)
 
         # Add your copy of the orignal to FF to the forward differentiated FFs.
@@ -241,7 +258,7 @@ class Simplex(opt.Optimizer):
                     raise opt.OptError(
                         'No difference between force field scores. '
                         'Exiting simplex.')
-            for i in xrange(0, len(last_best_ff.params)):
+            for i in range(0, len(last_best_ff.params)):
                 if self.do_weighted_reflection:
                     inv_val = (
                         sum([x.params[i].value *
@@ -260,20 +277,30 @@ class Simplex(opt.Optimizer):
             # Calculate score for reflected parameters.
             ref_ff.export_ff(path=self.ff.path, lines=self.ff.lines)
             data = calculate.main(self.args_ff)
-            ref_ff.score = compare.compare_data(r_data, data)
+            #deprecated
+            #ref_ff.score = compare.compare_data(r_data, data)
+            r_dict = compare.data_by_type(r_data)
+            c_dict = compare.data_by_type(data)
+            r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+            ref_ff.score = compare.compare_data(r_dict, c_dict)
             opt.pretty_ff_results(ref_ff)
             if ref_ff.score < last_best_ff.score:
                 logger.log(20, '~~ ATTEMPTING EXPANSION ~~'.rjust(79, '~'))
                 exp_ff = self.ff.__class__()
                 exp_ff.method = 'EXPANSION'
                 exp_ff.params = copy.deepcopy(last_best_ff.params)
-                for i in xrange(0, len(last_best_ff.params)):
+                for i in range(0, len(last_best_ff.params)):
                     exp_ff.params[i].value = (
                         3 * inv_ff.params[i].value -
                         2 * self.new_ffs[-1].params[i].value)
                 exp_ff.export_ff(path=self.ff.path, lines=self.ff.lines)
                 data = calculate.main(self.args_ff)
-                exp_ff.score = compare.compare_data(r_data, data)
+                #deprecated
+                #exp_ff.score = compare.compare_data(r_data, data)
+                r_dict = compare.data_by_type(r_data)
+                c_dict = compare.data_by_type(data)
+                r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+                exp_ff.score = compare.compare_data(r_dict, c_dict)
                 opt.pretty_ff_results(exp_ff)
                 if exp_ff.score < ref_ff.score:
                     self.new_ffs[-1] = exp_ff
@@ -292,7 +319,7 @@ class Simplex(opt.Optimizer):
                 con_ff = self.ff.__class__()
                 con_ff.method = 'CONTRACTION'
                 con_ff.params = copy.deepcopy(last_best_ff.params)
-                for i in xrange(0, len(last_best_ff.params)):
+                for i in range(0, len(last_best_ff.params)):
                     if ref_ff.score > self.new_ffs[-1].score:
                         con_val = (
                             (inv_ff.params[i].value +
@@ -304,7 +331,12 @@ class Simplex(opt.Optimizer):
                     con_ff.params[i].value = con_val
                 self.ff.export_ff(params=con_ff.params)
                 data = calculate.main(self.args_ff)
-                con_ff.score = compare.compare_data(r_data, data)
+                #deprecated
+                #con_ff.score = compare.compare_data(r_data, data)
+                r_dict = compare.data_by_type(r_data)
+                c_dict = compare.data_by_type(data)
+                r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+                con_ff.score = compare.compare_data(r_dict, c_dict)
                 opt.pretty_ff_results(con_ff)
                 # This change was made to reflect the 1998 Q2MM publication.
                 # if con_ff.score < self.new_ffs[-1].score:
@@ -315,13 +347,18 @@ class Simplex(opt.Optimizer):
                     logger.log(
                         20, '~~ DOING MASSIVE CONTRACTION ~~'.rjust(79, '~'))
                     for ff_num, ff in enumerate(self.new_ffs[1:]):
-                        for i in xrange(0, len(last_best_ff.params)):
+                        for i in range(0, len(last_best_ff.params)):
                             ff.params[i].value = (
                                 (ff.params[i].value +
                                  self.new_ffs[0].params[i].value) / 2)
                         self.ff.export_ff(params=ff.params)
                         data = calculate.main(self.args_ff)
-                        ff.score = compare.compare_data(r_data, data)
+                        #deprecated
+                        #ff.score = compare.compare_data(r_data, data)
+                        r_dict = compare.data_by_type(r_data)
+                        c_dict = compare.data_by_type(data)
+                        r_dict, c_dict = compare.trim_data(r_dict,c_dict)
+                        ff.score = compare.compare_data(r_dict, c_dict)
                         ff.method += ' MC'
                         opt.pretty_ff_results(ff)
                 else:

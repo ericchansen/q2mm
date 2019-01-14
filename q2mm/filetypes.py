@@ -18,9 +18,11 @@ Note that the atom.typ must be located with your structure files, else the
 Schrodinger jobs will fail.
 """
 from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
+
 from argparse import RawTextHelpFormatter
 from string import digits
-import itertools
 import logging
 import mmap
 import numpy as np
@@ -38,8 +40,8 @@ except:
     print("Schrodinger not installed, limited functionality")
     pass
 
-import constants as co
-import datatypes
+import .constants as co
+import .datatypes
 
 logger = logging.getLogger(__name__)
 # Print out full matrices rather than having Numpy truncate them.
@@ -240,9 +242,15 @@ class TinkerLog(File):
                                                   x.atom_nums[1]))
                         for angle in angles:
                             if angle.atom_nums[0] > angle.atom_nums[2]:
-                                angle = [angle.atom_nums[2],
-                                         angle.atom_nums[1],
-                                         angle.atom_nums[0]]
+                                angle.atom_nums = [angle.atom_nums[2],
+                                                   angle.atom_nums[1],
+                                                   angle.atom_nums[0]]
+                        for torsion in torsions:
+                            if torsion.atom_nums[1] > torsion.atom_nums[2]:
+                                torsion.atom_nums = [torsion.atom_nums[3],
+                                                     torsion.atom_nums[2],
+                                                     torsion.atom_nums[1],
+                                                     torsion.atom_nums[0]]
                         angles.sort(key=lambda x: (x.atom_nums[1],
                                                    x.atom_nums[0],
                                                    x.atom_nums[2]))
@@ -285,7 +293,7 @@ class TinkerLog(File):
         match = re.compile('Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
             '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(3)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(3)]]
             value = float(match.group(6))
             return Bond(atom_nums=atom_nums, value=value)
         else:
@@ -297,8 +305,8 @@ class TinkerLog(File):
         match = re.compile('Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
             '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(3),
-                match.group(5)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(3),
+                match.group(5)]]
             value = float(match.group(8))
             return Angle(atom_nums=atom_nums, value=value)
         else:
@@ -311,8 +319,8 @@ class TinkerLog(File):
             '(\d+)-(\w+)\s+(\d+)-(\w+)\s+({0})\s+({0})'.format(
                 co.RE_FLOAT)).search(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(3),
-                match.group(5), match.group(7)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(3),
+                match.group(5), match.group(7)]]
             value = float(match.group(9))
             return Angle(atom_nums=atom_nums, value=value)
         else:
@@ -399,12 +407,17 @@ class TinkerXYZ(File):
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
         os.chdir(self.directory)
+        if os.path.isfile(self.name_key):
+            os.remove(self.name_key)
         if os.path.isfile(self.name_log):
             os.remove(self.name_log)
         if os.path.isfile(self.name_xyz):
             os.remove(self.name_xyz)
         if os.path.isfile(self.name_hes):
-            os.remove(self.name_hes)
+            os.remove(self.name_heis)
+        with open(self.name_key, 'w') as f:
+            f.write('parameters mm3.prm\
+                     \nnoversion')
         if com_opts['sp']:
             logger.log(1, '  ANALYZE: {}'.format(self.filename))
             with open(self.name_log, 'w') as f:
@@ -460,6 +473,107 @@ class TinkerXYZ(File):
                      \n======================\n")
         os.chdir(current_directory)
 
+class GaussCom(File):
+    """
+    Used to write Gaussian command files to run quick calculations. The ony use
+    thus far is for checking the RMS of the electrostatic potential using 
+    partial charges obtained from a force field.
+    """
+    def __init__(self, path):
+        super(GaussCom, self).__init__(path)
+        self.name = os.path.splitext(self.filename)[0]
+        self.commands = None
+        self.old_chk = None
+        self.name_chk = self.name + '.chk'
+        self.name_log = self.name + '.log'
+        self.atom_and_coords = []
+        self.charge = None
+        self.charge_list = None
+        self.multiplicity = 1
+        self.memory = 24
+        self.procs = 24
+        self.method = 'M06'
+
+    def read_newzmat(self, old_check):
+        self.old_chk = old_check
+        if os.path.isfile('TEMP.com'):
+            os.remove('TEMP.com')
+        sp.call('newzmat -ichk -ocart {} {}'.format(self.old_chk, 'TEMP'), 
+            shell=True)
+        with open('TEMP.com', 'r') as f:
+            for line in f:
+                if re.search('[A-Z][a-z]?\s+{0}\s+{0}\s+{0}'.format(
+                    co.RE_FLOAT),line):
+                    ele, x, y, z = line.split()
+                    self.atom_and_coords.append([ele,float(x),float(y),float(z)])
+                if re.search('[+-]?\d,\d',line):
+                    charge, multiplicity = line.split(',')
+                    self.charge = charge
+                    self.multiplicity = multiplicity    
+                if re.search('^[#]',line):
+                    split = line.split()
+                    for keyword in split:
+                        for method in co.gaussian_methods:
+                            if method.upper() in keyword.upper():
+                                self.method = method.upper()
+        #os.remove('TEMP.com')
+
+    def write_com(self):
+        """
+        Gaussian has a utility, newzmat, which could write the com file, but
+        in my experience it is rather slow especially for larger chkpoint files.
+        It is easier just writting the file ourselves. -Tony
+        """
+        elements_in_structure = []
+        with open(self.filename, 'w') as f:
+            if self.old_chk:
+                f.write('%oldchk={}\n'.format(self.old_chk))
+            f.write('%chk={}\n'.format(self.name_chk))
+            f.write('%mem={}GB\n'.format(self.memory))
+            f.write('%nprocshared={}\n'.format(self.procs))
+            f.write('#N Guess=TCheck SCRF=Check GenChk pop=(chelpg,readradii) '
+                    'IOp(6/20=30133) chkbasis {}\n\n'.format(self.method))
+            f.write('SP with fixed charges\n\n')
+            f.write('{} {}'.format(self.charge,self.multiplicity))
+            if self.charge_list:
+                try:
+                    if len(self.charge_list) != len(self.atom_and_coords):
+                        raise ValueError("Length of the charge list and atom "
+                                         "list are not the same: {}".format(
+                                         self.filename))
+                except:
+                    print("Just print something")
+                for atom, charge in zip(self.atom_and_coords,self.charge_list):
+                    if atom[0] not in elements_in_structure:
+                        elements_in_structure.append(atom[0])
+                    f.write('   '.join((' {}--{:8.6f}'.format(atom[0],charge),
+                                        '{:14.10f}'.format(atom[1]),
+                                        '{:14.10f}'.format(atom[2]),
+                                        '{:14.10f}'.format(atom[3]),
+                                        '\n'
+                                        )))
+            f.write('\n')
+            for atom in elements_in_structure:
+                f.write('{0} {1}\n'.format(atom,co.CHELPG_RADII[atom]))
+            f.write('\n')
+
+    def run_gaussian(self):
+        """
+        This runs the gaussian job. I have this labeled differently than our 
+        typical "run" functions because I don't want to use this function until
+        after we have calculated and collected partial charge data.
+        """
+        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        self._index_output_log = []
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        if os.path.isfile(self.name_log):
+            os.remove(self.name_log)
+        if os.path.isfile(self.name_chk):
+            os.remove(self.name_chk)
+        sp.call('g09 {}'.format(self.filename), shell=True)
+        os.chdir(current_directory)
+
 class GaussFormChk(File):
     """
     Used to retrieve data from Gaussian formatted checkpoint files.
@@ -488,11 +602,11 @@ class GaussFormChk(File):
             'Cartesian Force Constants.*?\n(?P<hess>.*?)'
             'Dipole Moment',
             open(self.path, 'r').read(), flags=re.DOTALL)
-        anums = map(int, stuff.group('anums').split())
-        masses = map(float, stuff.group('masses').split())
-        coords = map(float, stuff.group('coords').split())
+        anums = [int(x) for x in stuff.group('anums').split()]
+        masses = [float(x) for x in stuff.group('masses').split()]
+        coords = [float(x) for x in stuff.group('coords').split()]
         coords = [coords[i:i+3] for i in range(0, len(coords), 3)]
-        for anum, mass, coord in itertools.izip(anums, masses, coords):
+        for anum, mass, coord in zip(anums, masses, coords):
             self.atoms.append(
                 Atom(
                     atomic_num = anum,
@@ -501,10 +615,10 @@ class GaussFormChk(File):
                 )
         logger.log(5, '  -- Read {} atoms.'.format(len(self.atoms)))
         self.evals = np.array(
-            map(float, stuff.group('evals').split()), dtype=float)
+            [float(x) for x in stuff.group('evals').split()], dtype=float)
         logger.log(5, '  -- Read {} eigenvectors.'.format(len(self.evals)))
         self.low_tri = np.array(
-            map(float, stuff.group('hess').split()), dtype=float)
+            [float(x) for x in stuff.group('hess').split()], dtype=float)
         one_dim = len(anums) * 3
         self._hess = np.empty([one_dim, one_dim], dtype=float)
         self._hess[np.tril_indices_from(self._hess)] = self.low_tri
@@ -525,6 +639,7 @@ class GaussLog(File):
         self._evals = None
         self._evecs = None
         self._structures = None
+        self._esp_rms = None
     @property
     def evecs(self):
         if self._evecs is None:
@@ -541,6 +656,12 @@ class GaussLog(File):
             # self.read_out()
             self.read_archive()
         return self._structures
+    @property
+    def esp_rms(self):
+        if self._esp_rms is None:
+            self._esp_rms = -1
+            self.read_out()
+        return self._esp_rms
     def read_out(self):
         """
         Read force constant and eigenvector data from a frequency
@@ -565,18 +686,22 @@ class GaussLog(File):
             # if the high quality modes have been read already.
             while True:
                 try:
-                    line = file_iterator.next()
+                    line = next(file_iterator)
                 except:
                     # End of file.
                     break
+                if 'Charges from ESP fit' in line:
+                    pattern = re.compile('RMS=\s+({0})'.format(co.RE_FLOAT))
+                    match = pattern.search(line)
+                    self._esp_rms = float(match.group(1))
                 # Gathering some geometric information.
-                if 'orientation:' in line:
+                elif 'orientation:' in line:
                     self._structures.append(Structure())
-                    file_iterator.next()
-                    file_iterator.next()
-                    file_iterator.next()
-                    file_iterator.next()
-                    line = file_iterator.next()
+                    next(file_iterator)
+                    next(file_iterator)
+                    next(file_iterator)
+                    next(file_iterator)
+                    line = next(file_iterator)
                     while not '---' in line:
                         cols = line.split()
                         self._structures[-1].atoms.append(
@@ -584,7 +709,7 @@ class GaussLog(File):
                                  x=float(cols[3]),
                                  y=float(cols[4]),
                                  z=float(cols[5])))
-                        line = file_iterator.next()
+                        line = next(file_iterator)
                     logger.log(5, '  -- Found {} atoms.'.format(
                             len(self._structures[-1].atoms)))
                 elif 'Harmonic' in line:
@@ -621,7 +746,7 @@ class GaussLog(File):
                         evecs.append([])
 
                     # Moving on to the reduced masses.
-                    line = file_iterator.next()
+                    line = next(file_iterator)
                     cols = line.split()
                     # Again, trim the "Reduced masses ---".
                     # It's "Red. masses --" for without "hpmodes".
@@ -630,7 +755,7 @@ class GaussLog(File):
                         force_constants[i] = force_constants[i] / mass
 
                     # Now we are on the line with the force constants.
-                    line = file_iterator.next()
+                    line = next(file_iterator)
                     cols = line.split()
                     # Trim "Force constants ---". It's "Frc consts --" without
                     # "hpmodes".
@@ -646,19 +771,18 @@ class GaussLog(File):
                     #         factor is inside constants module)
 
                     # Skip the IR intensities.
-                    file_iterator.next()
+                    next(file_iterator)
                     # This is different depending on whether you use "hpmodes".
-                    line = file_iterator.next()
+                    line = next(file_iterator)
                     # "Coord" seems to only appear when the "hpmodes" is used.
                     if 'Coord' in line:
                         hpmodes = True
                     # This is different depending on whether you use
                     # "freq=projected".
-                    line = file_iterator.next()
+                    line = next(file_iterator)
                     # The "projected" keyword seems to add "IRC Coupling".
                     if 'IRC Coupling' in line:
-                        line = file_iterator.next()
-
+                        line = next(file_iterator)
                     # We're on to the eigenvectors.
                     # Until the end of this section containing the eigenvectors,
                     # the number of columns remains constant. When that changes,
@@ -684,7 +808,7 @@ class GaussLog(File):
                         # co.MASSES currently has the average mass.
                         # Gaussian may use the mass of the most abundant
                         # isotope. This may be a problem.
-                        mass_sqrt = np.sqrt(co.MASSES.items()[int(cols[1]) - 1][1])
+                        mass_sqrt = np.sqrt(list(co.MASSES.items())[int(cols[1]) - 1][1])
 
                         cols = cols[2:]
                         # This corresponds to the same line still, but without
@@ -717,7 +841,7 @@ class GaussLog(File):
                                 for useless in range(3):
                                     x = float(cols.pop(0))
                                     evecs[i].append(x * mass_sqrt)
-                        line = file_iterator.next()
+                        line = next(file_iterator)
                         cols = line.split()
 
                     # Here the overall number of eigenvalues and eigenvectors is
@@ -730,24 +854,26 @@ class GaussLog(File):
                     # We know we're done if this is in the line.
                     if 'Harmonic' in line:
                         break
-        for evec in self._evecs:
-            # Each evec is a single eigenvector.
-            # Add up the sum of squares over an eigenvector.
-            sum_of_squares = 0.
-            # Appropriately named, element is an element of that single
-            # eigenvector.
-            for element in evec:
-                sum_of_squares += element * element
-            # Now x is the inverse of the square root of the sum of squares
-            # for an individual eigenvector.
-            element = 1 / np.sqrt(sum_of_squares)
-            for i in range(len(evec)):
-                evec[i] *= element
-        self._evals = np.array(self._evals)
-        self._evecs = np.array(self._evecs)
-        logger.log(1, '>>> self._evals: {}'.format(self._evals))
-        logger.log(1, '>>> self._evecs: {}'.format(self._evecs))
-        logger.log(5, '  -- {} structures found.'.format(len(self.structures)))
+        if self._evals and self._evecs:
+            for evec in self._evecs:
+                # Each evec is a single eigenvector.
+                # Add up the sum of squares over an eigenvector.
+                sum_of_squares = 0.
+                # Appropriately named, element is an element of that single
+                # eigenvector.
+                for element in evec:
+                    sum_of_squares += element * element
+                # Now x is the inverse of the square root of the sum of squares
+                # for an individual eigenvector.
+                element = 1 / np.sqrt(sum_of_squares)
+                for i in range(len(evec)):
+                    evec[i] *= element
+            self._evals = np.array(self._evals)
+            self._evecs = np.array(self._evecs)
+            logger.log(1, '>>> self._evals: {}'.format(self._evals))
+            logger.log(1, '>>> self._evecs: {}'.format(self._evecs))
+            logger.log(5, '  -- {} structures found.'.format(
+                len(self.structures)))
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
     def read_archive(self):
@@ -1628,7 +1754,8 @@ class Mae(SchrodingerFile):
             com_opts['strs'] = True
         if any(x in ['jb', 'ja', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa'] for x in self.commands):
+        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa', 'mgESP', 'mjESP'] 
+            for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
         if any(x in ['mh', 'meig', 'mjeig', 'mgeig'] for x in self.commands):
@@ -1698,8 +1825,17 @@ class Mae(SchrodingerFile):
         else:
             com += co.COM_FORM.format('MMOD', 0, 1, 0, 0, 0, 0, 0, 0)
         # May want to turn on/off arg2 (continuum solvent).
+        #com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 36.7, 0, 0, 0)
         com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
         # Also may want to turn on/off cutoffs using BDCO.
+        ## We have noticed there are some oddities for electrostatic 
+        ## interactions. In some cases "Residue-based cutoffs" are used which
+        ## result inconsistent energy contributions. Inorder to keep this
+        ## consistent between calculations in Q2MM and conformational seaching
+        ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0 
+        ## ensuring all interactions are gathered. The seventh column is the
+        ## cutoff for hydrogen bonds, and 4 is the default value.
+        com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
         if com_opts['strs']:
             com += co.COM_FORM.format('BGIN', 0, 0, 0, 0, 0, 0, 0, 0)
         # Look into differences.
@@ -1765,7 +1901,7 @@ class Mae(SchrodingerFile):
                   Time waited in between lookups of Schrodinger license
                   tokens.
         """
-        print("Run " + str(self.filename) + " with commands:" + str(self.commands))
+        #print("Run " + str(self.filename) + " with commands:" + str(self.commands))
         current_directory = os.getcwd()
         os.chdir(self.directory)
         current_timeout = 0
@@ -1951,6 +2087,13 @@ class MacroModel(File):
                 count_previous = 0
                 section = None
                 for line in f:
+                # This would probably be better as a function in the structure
+                # class but I wanted this as upstream as possible so I didn't
+                # have to worry about other coding issues. The MMO file lists
+                # the bonds, angles, and torsions in some order that I am unsure
+                # of. It seems consistent with the same filename but with two
+                # files with the exact same structure the ordering is off. This
+                # reorders the lists before being added to the structure class.
                     if 'Input filename' in line:
                         count_input += 1
                     if 'Input Structure Name' in line:
@@ -1963,6 +2106,9 @@ class MacroModel(File):
                     # If these don't match, then we reached the end of a
                     # structure.
                     if count_current != count_previous:
+                        bonds = []
+                        angles = []
+                        torsions = []
                         current_structure = Structure()
                         self._structures.append(current_structure)
                     # For each structure we come across, look for sections that
@@ -1983,22 +2129,37 @@ class MacroModel(File):
                     if section == 'bond':
                         bond = self.read_line_for_bond(line)
                         if bond is not None:
-                            current_structure.bonds.append(bond)
+                            #current_structure.bonds.append(bond)
+                            bonds.append(bond)
                     if section == 'angle':
                         angle = self.read_line_for_angle(line)
                         if angle is not None:
-                            current_structure.angles.append(angle)
+                            #current_structure.angles.append(angle)
+                            angles.append(angle)
                     if section == 'torsion':
                         torsion = self.read_line_for_torsion(line)
                         if torsion is not None:
-                            current_structure.torsions.append(torsion)
+                            #current_structure.torsions.append(torsion)
+                            torsions.append(torsion)
+                    if 'Connection Table' in line:
+                        # Sort the bonds, angles, and torsions before the start
+                        # of a new structure
+                        if bonds:
+                            bonds.sort(key = lambda x: (x.atom_nums[0], x.atom_nums[1]))
+                            current_structure.bonds.extend(bonds)
+                        if angles:
+                            angles.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
+                            current_structure.angles.extend(angles)
+                        if torsions:
+                            torsions.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
+                            current_structure.torsions.extend(torsions)
             logger.log(5, '  -- Imported {} structure(s).'.format(
                     len(self._structures)))
         return self._structures
     def read_line_for_bond(self, line):
         match = co.RE_BOND.match(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(2)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(2)]]
             value = float(match.group(3))
             comment = match.group(4).strip()
             ff_row = int(match.group(5))
@@ -2009,8 +2170,11 @@ class MacroModel(File):
     def read_line_for_angle(self, line):
         match = co.RE_ANGLE.match(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(2),
-                                  match.group(3)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(2),
+                                  match.group(3)]]
+            # Reorder the terminal atoms so that the lower index atom is first.
+            if atom_nums[0] > atom_nums[2]:
+                atom_nums = [atom_nums[2],atom_nums[1],atom_nums[0]]
             value = float(match.group(4))
             comment = match.group(5).strip()
             ff_row = int(match.group(6))
@@ -2021,8 +2185,13 @@ class MacroModel(File):
     def read_line_for_torsion(self, line):
         match = co.RE_TORSION.match(line)
         if match:
-            atom_nums = map(int, [match.group(1), match.group(2),
-                                  match.group(3), match.group(4)])
+            atom_nums = [int(x) for x in [match.group(1), match.group(2),
+                                  match.group(3), match.group(4)]]
+            if atom_nums[1] > atom_nums[2]:
+                atom_nums = [atom_nums[3],
+                             atom_nums[2],
+                             atom_nums[1],
+                             atom_nums[0]]
             value = float(match.group(5))
             comment = match.group(6).strip()
             ff_row = int(match.group(7))
@@ -2051,13 +2220,10 @@ def select_structures(structures, indices, label):
         idx_iter = iter(indices)
         for str_num, struct in enumerate(structures):
             try:
-                if (sys.version_info > (3, 0)):
-                    idx_curr = next(idx_iter)
-                else:
-                    idx_curr = idx_iter.next()
+                idx_curr = next(idx_iter)
             except StopIteration:
                 idx_iter = iter(indices)
-                idx_curr = idx_iter.next()
+                idx_curr = next(idx_iter)
             if idx_curr == label:
                 selected.append((str_num, struct))
         return selected
@@ -2246,8 +2412,8 @@ class Structure(object):
                             logger.error(">>> angle_2: {}".format(angle_2))
                         logger.warning('WARNING: Using torsion anyway!')
                         data.append(datum)
-                    if -5. < angle_1 < 5. or 175. < angle_1 < 185. or \
-                            -5. < angle_2 < 5. or 175. < angle_2 < 185.:
+                    if -20. < angle_1 < 20. or 160. < angle_1 < 200. or \
+                            -20. < angle_2 < 20. or 160. < angle_2 < 200.:
                         logger.log(
                             1, '>>> angle_1 or angle_2 is too close to 0 or 180!')
                         pass
@@ -2439,11 +2605,7 @@ class Bond(object):
         datum = datatypes.Datum(val=self.value, typ=typ,ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, 'atm_{}'.format(i+1), atom_num)
-        if (sys.version_info > (3, 0)):
-            kwargs_iter = iter(kwargs.items())
-        else:
-            kwargs_iter = kwargs.iteritems()
-        for k, v in kwargs_iter:
+        for k, v in kwargs.items():
             setattr(datum, k, v)
         return datum
 

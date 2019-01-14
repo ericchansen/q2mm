@@ -25,12 +25,12 @@ class GaussCom():
         self.opt = opt
         self.mae_struct = mae_struct
 
-    def write_com(self):
+    def write_com(self,directory='./'):
         """
         This is the heart of the code where all of the options are used to 
         write the Gaussian command file.
         """
-        with open(self.filename + '.com', 'w') as f:
+        with open(directory + self.filename + '.com', 'w') as f:
             if self.chk:
                 f.write('%chk={}\n'.format(self.chk))
             f.write('%mem={}GB\n'.format(self.memory))
@@ -98,18 +98,21 @@ class GaussCom():
                     f.write('%chk={}\n'.format(self.chk))
                 f.write('%mem={}GB\n'.format(self.memory))
                 f.write('%nprocshared={}\n'.format(self.procs))
-                route_section = ['#','geom=allcheck','empiricaldisperion=gd',
-                                 'int=ultrafine','chkbasis']
+                route_section = ['#','geom=allcheck','empiricaldispersion=gd3',
+                                 'int=ultrafine','chkbasis',self.method]
                 if self.frequency:
                     route_section.append(self.frequency)
                 # This option is intended to optimize a structure to a GS but
                 # with frozen coordinates to later optimize to a TS with no
                 # frozen coordinates.
+       # I think it is best to just do a frequency calcluations after a frozen
+       # coordinate optimization, this way the user can check the vibrations
                 if self.calculation_type == 'FZTS':
-                    route_section.append(
-                            ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
-                elif self.opt:
-                    route_section.append(self.opt[:-1] + ',nofreeze)')
+       #             route_section.append(
+       #                     ' opt=(calcfc,ts,noeigentest,maxcycle=50,nofreeze)')
+                    route_section.append(' freq=noraman')
+       #         elif self.opt:
+       #             route_section.append(self.opt[:-1] + ',nofreeze)')
                 route_section.append('\n\n\n')
                 f.write(' '.join(route_section))
     
@@ -139,7 +142,7 @@ class GaussCom():
         if self.frozen_atoms:
             self.opt += ' geom=modredundant'
         if self.calculation_type == 'FZTS':
-            self.opt += ' opt=(calcfc,maxcycle=50)'
+            self.opt += ' opt=(calcfc,maxcycle=500)'
         if self.calculation_type == 'TS':
             # Do I need this part? Will self.frequency ever be a value other 
             # than None or freq=noraman?
@@ -200,14 +203,14 @@ class GaussCom():
             dict_of_patterns = self.get_dictionary_of_frozen_coords(
                                                               dict_of_patterns)
         for pattern in dict_of_patterns:
-            atom_indicies = analyze.evaluate_substructure(self.mae_struct,
+            matches = analyze.evaluate_substructure(self.mae_struct,
                                                     pattern,
-                                                    first_match_only=False)[0]
-            str_indicies = []
-            for index in atom_indicies:
-                str_indicies.append(str(index))
-                
-            frozen_coord_lines.append('{} {} F'.format(
+                                                    first_match_only=False)
+            for atom_indicies in matches:
+                str_indicies = []
+                for index in atom_indicies:
+                    str_indicies.append(str(index))
+                frozen_coord_lines.append('{} {} F'.format(
                                         dict_of_patterns[pattern],
                                         ' '.join(str_indicies)))
         return frozen_coord_lines
@@ -260,13 +263,14 @@ def get_atoms_from_schrodinger_struct(structures_list):
     structures = {}
     for struct in structures_list:
         atom_list = []
-        dummy = None
+        dummy = []
         for atom in struct.atom:
+            atom._setAtomType(atom.atom_type)
             if atom.atomic_number < 0:
-                dummy = atom
+                dummy.append(atom.index)
             atom_list.append((atom.element, atom.x, atom.y, atom.z))
         if dummy:
-            struct.deleteAtoms((dummy.index),renumber_map=False)
+            struct.deleteAtoms(dummy,renumber_map=False)
         if 'r_mmod_Potential_Energy-MM3*' in struct.property:
             energy = struct.property['r_mmod_Potential_Energy-MM3*']
             structures[struct] = [struct.formal_charge, atom_list, energy]
@@ -342,7 +346,10 @@ def main(args):
                         ECP.append(element)
                     gaussian_file.ECP = ECP
                 gaussian_file.basis = sets[0]
-            gaussian_file.write_com()                        
+            if opts.directory:
+                gaussian_file.write_com(directory=opts.directory)
+            else:
+                gaussian_file.write_com()                        
                                 
 
 def return_parser():
@@ -381,13 +388,16 @@ def return_parser():
             help='If included then a checkpoint file will be used during\
             the gaussian calculation.')
     parser.add_argument('-all', '--allstructs', action='store_false',
-            help='Include this argument if you just want the first structure\
+            help='Include this argument if you just want all the structures\
             of a maestro file to optimize at the QM level.')
     parser.add_argument('-fa', '--frozenatoms', type=str, help='Include the \
             the atoms you wish to freeze using the Schrodinger substructure \
             language. Also include the type of coordinate (B, A, T). Use ";" \
             to seperate multiple coordinates. \
             Example: -fa "C2.C2,B;PD-C2.C2,A"')
+    parser.add_argument('-d', '--directory', type=str, help='Specify the \
+            directory location you would like the gaussian *.com file to be \
+            written in.')
     return parser
 
 if __name__ == '__main__':

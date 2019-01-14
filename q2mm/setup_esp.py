@@ -17,13 +17,16 @@ This script helps setup those ESP calculations for Jaguar and
 Gaussian.
 """
 from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
+
 import argparse
 import copy
 import logging
 import logging.config
 
-import constants as co
-import filetypes as ft
+import .constants as co
+import .filetypes as ft
 
 logger = logging.getLogger(__name__)
 
