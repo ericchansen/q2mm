@@ -12,12 +12,12 @@ import os
 import re
 import sys
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .opt as opt
-import .parameters
+import calculate
+import compare
+import constants as co
+import datatypes
+import opt as opt
+import parameters
 
 logger = logging.getLogger(__name__)
 

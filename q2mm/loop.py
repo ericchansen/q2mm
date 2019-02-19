@@ -13,14 +13,14 @@ import random
 import sys
 import re
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .gradient
-import .opt
-import .parameters
-import .simplex
+import calculate
+import compare
+import constants as co
+import datatypes
+import gradient
+import opt
+import parameters
+import simplex
 
 logger = logging.getLogger(__name__)
 

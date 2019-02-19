@@ -20,9 +20,9 @@ import logging
 import logging.config
 import numpy as np
 
-import .calculate
-import .constants as co
-import .datatypes
+import calculate
+import constants as co
+import datatypes
 
 logger = logging.getLogger(__name__)
 

@@ -12,8 +12,8 @@ import os
 import re
 import sys
 
-import .constants as co
-import .filetypes
+import constants as co
+import filetypes
 
 logger = logging.getLogger(__name__)
 

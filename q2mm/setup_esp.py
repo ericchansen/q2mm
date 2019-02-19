@@ -25,8 +25,8 @@ import copy
 import logging
 import logging.config
 
-import .constants as co
-import .filetypes as ft
+import constants as co
+import filetypes as ft
 
 logger = logging.getLogger(__name__)
 

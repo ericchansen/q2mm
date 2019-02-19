@@ -31,11 +31,11 @@ import sys
 from itertools import chain
 from textwrap import TextWrapper
 
-import .constants as co
-import .compare
-import .datatypes
-import .filetypes
-import .parameters
+import constants as co
+import compare
+import datatypes
+import filetypes
+import parameters
 
 logger = logging.getLogger(__name__)
 
@@ -1682,21 +1682,13 @@ def flatten(l):
     """
     # Move this?
     import collections
-    if sys.version_info > (3, 0):
-        for el in l:
-            if isinstance(el, collections.Iterable) and \
-                    not isinstance(el, (str, bytes)):
-                yield from flatten(el):
-            else:
-                yield el
-    else:
-        for el in l:
-            if isinstance(el, collections.Iterable) and \
-              not isinstance(el, basestring):
-                for sub in flatten(el):
-                    yield sub
-            else:
-                yield el
+    for el in l:
+        if isinstance(el, collections.Iterable) and \
+          not isinstance(el, basestring):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):

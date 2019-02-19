@@ -40,12 +40,16 @@ except:
     print("Schrodinger not installed, limited functionality")
     pass
 
-import .constants as co
-import .datatypes
+import constants as co
+import datatypes
 
 logger = logging.getLogger(__name__)
 # Print out full matrices rather than having Numpy truncate them.
-np.set_printoptions(threshold=np.nan)
+# np.nan seems to no longer be supported for untruncated printing
+# of arrays. The suggestion is to use sys.maxsize but I haven't checked
+# that this works for python2 so leaving the commented code for now.
+# np.set_printoptions(threshold=np.nan)
+np.set_printoptions(threshold=sys.maxsize)
 
 class File(object):
     """

@@ -15,9 +15,9 @@ import logging.config
 import numpy as np
 import sys
 
-import .constants as co
-import .datatypes
-import .filetypes
+import constants as co
+import datatypes
+import filetypes
 
 logger = logging.getLogger(__name__)
 

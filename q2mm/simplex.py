@@ -13,12 +13,12 @@ import re
 import sqlite3
 import textwrap
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .opt
-import .parameters
+import calculate
+import compare
+import constants as co
+import datatypes
+import opt
+import parameters
 
 logger = logging.getLogger(__name__)
 

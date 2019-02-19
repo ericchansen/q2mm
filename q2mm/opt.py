@@ -13,11 +13,11 @@ import re
 import textwrap
 import sys
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .parameters
+import calculate
+import compare
+import constants as co
+import datatypes
+import parameters
 
 logger = logging.getLogger(__name__)
 
