@@ -185,7 +185,7 @@ def differentiate_params(params, central=True):
                 if central:
                     backward_params[i].value = original_value - param.step
             except datatypes.ParamError as e:
-                logger.warning(e.message)
+                logger.warning(str(e))
                 old_step = param.step
                 # New parameter step size modification.
                 # Should prevent problems with parameters trying to go

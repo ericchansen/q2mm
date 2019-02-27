@@ -245,7 +245,7 @@ class Gradient(opt.Optimizer):
             #                  (ref_data[i].val - self.ff.data[i].val)
             count = 0
             for data_type in data_types:
-                for r,c in zip(r_dict[typ],c_dict[typ]):
+                for r,c in zip(r_dict[data_type],c_dict[data_type]):
                     resid[count, 0] = r.wht * (r.val - c.val)
                     count += 1
             # logger.log(5, 'RESIDUAL VECTOR:\n{}'.format(resid))
@@ -763,6 +763,6 @@ def update_params(params, changes):
         for param, change in zip(params, changes):
             param.value += change * param.step
     except datatypes.ParamError as e:
-        logger.warning(e.message)
+        logger.warning(str(e))
         raise
 
