@@ -165,9 +165,15 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
                 else:
                     score_typ[c.typ + '-o'] += score
                     num_typ[c.typ + '-o'] += 1
-            strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '\
-                       '{!s:>5} '.format(
+#            print(c.lbl, r.wht, r.val, c.val, score, c.ff_row)
+            if c.ff_row is None:
+                strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '.format(
+                         c.lbl, r.wht, r.val, c.val, score))
+            else:
+                strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '\
+                       '{!:>5} '.format(
                         c.lbl, r.wht, r.val, c.val, score, c.ff_row))
+#            print(strings)
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
     strings.append('{:<30} {:10d}'.format('Total Num. data points:', total_num))
