@@ -97,8 +97,6 @@ class Param(object):
                     "{} doesn't have a default step size and none "
                     "provided!".format(self))
                 raise
-        if self._step == 0.:
-            self._step = 0.1
         if sys.version_info > (3, 0):
             if isinstance(self._step, str):
                 return float(self._step) * self.value
@@ -135,6 +133,26 @@ class Param(object):
                     value,
                     self.allowed_range[0],
                     self.allowed_range[1]))
+
+    def value_at_limits(self):
+        # Checks if the parameter is at the limits of
+        # its allowed range. Should only be run at the
+        # end of an optimization to warn users they should
+        # consider whether this is ok.
+        if self.value == min(self.allowed_range):
+            logger.warning(
+                "{} is equal to its lower limit of {}!\nReconsider "
+                "if you need to adjust limits, initial parameter "
+                "values, or if your reference data is appropriate.".format(
+                    str(self),
+                    self.value))
+        if self.value == max(self.allowed_range):
+            logger.warning(
+                "{} is equal to its upper limit of {}!\nReconsider "
+                "if you need to adjust limits, initial parameter "
+                "values, or if your reference data is appropriate.".format(
+                    str(self),
+                    self.value))
 
 # Need a general index scheme/method/property to compare the equalness of two
 # parameters, rather than having to rely on some expression that compares

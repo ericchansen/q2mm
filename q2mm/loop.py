@@ -82,6 +82,8 @@ class Loop(object):
             mm3_file = os.path.join(self.direc, mm3_file)
             self.ff.export_ff(path=mm3_file)
             logger.log(20, '  -- Wrote best FF to {}'.format(mm3_file))
+        for param in self.ff.params:
+            param.value_at_limits()
         return self.ff
     def run_loop_input(self, lines, score=None):
         lines_iterator = iter(lines)
