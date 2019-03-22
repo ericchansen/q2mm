@@ -475,6 +475,116 @@ class TinkerXYZ(File):
             f.write("\n======================\
                      \n= END OF CALCULATION =\
                      \n======================\n")
+        os.chdir(current_directory
+)
+class TinkerXYZ_FOR_GAUS(File):
+    def __init__(self, path):
+        super(TinkerXYZ_FOR_GAUS, self).__init__(path)
+        self._index_output_log = None
+        self._structures = None
+        self.commands = None
+        self.name = os.path.splitext(self.filename)[0]
+        self.ref_xyz = self.name + ".xyz"
+        self.name_key = "gaus." +self.name + '.q2mm.key'
+        self.name_log = "gaus." +self.name + '.q2mm.log'
+    @property
+    def structures(self):
+        if self._structures is None:
+            logger.log(10, 'READING: {}'.format(self.filename))
+            struct = Structure()
+            self._structures = [struct]
+            with open(self.filename, 'r') as f:
+                for line in f:
+                    line = line.split()
+                    if len(line) == 2:
+                        struct.props['total atoms'] = int(line[0])
+                        struct.props['title'] = line[1]
+                        logger.log(5, '  -- Read {} atoms.'.format(
+                            struct.props['total atoms']))
+                    if len(line) > 2:
+                        indx, ele, x, y, z, at, bonded_atom = line[0], \
+                            line[1], line[2], line[3], line[4], \
+                            line[5], line[6:]
+                        struct.atoms.append(Atom(index=indx,
+                            element=ele,
+                            x=float(x),
+                            y=float(y),
+                            z=float(z),
+                            atom_type=at,
+                            atom_type_name=at,
+                            bonded_atom_indices=bonded_atom))
+            return self._structures
+    def get_com_opts(self):
+        com_opts = {'freq': False,
+                    'opt': False,
+                    'sp': False,
+                    'tors': False}
+        if any(x in ['gb', 'ga', 'gt'] for x in self.commands):
+            com_opts['sp'] = True
+        return com_opts
+    def tinkerxyz_from_gaussian(self):
+        ref_xyz = list()
+        # Gaussian log to xyz coordinate
+        with open(self.filename) as f:
+            lines = f.readlines()
+            xyz = 0
+            comma = 0
+            for i in range(len(lines)):
+                line = lines[i]
+                if xyz and comma and "," not in line:
+                    #continue
+                    break
+                elif xyz and "," in line:
+                    comma = 1
+                    line = line.replace('\n','')
+                    l = line.split(',')
+                    ref_xyz.append(l[2:])
+                elif "Charge =" in line:
+                    xyz = 1
+                
+            
+        self.filename = "gaus." + self.name + '.xyz' #replace xyz
+        with open(self.ref_xyz,'r') as ref:
+            with open(self.filename,'w') as f:
+                lines = ref.readlines()
+                for i in range(len(lines)):
+                    line = lines[i]
+                    l = line.split()
+                    if i == 0:
+                        f.write(line)
+                    else:
+                        if len(l) > 5:
+                            l[2:5] = ref_xyz[i-1]
+                            f.write("\t".join(l)+'\n')
+        return
+    def run(self,check_tokens=False):
+        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        self.tinkerxyz_from_gaussian()
+        self._index_output_log = []
+        com_opts = self.get_com_opts()
+        current_directory = os.getcwd()
+        os.chdir(self.directory)
+        if os.path.isfile(self.name_key):
+            os.remove(self.name_key)
+        if os.path.isfile(self.name_log):
+            os.remove(self.name_log)
+        with open(self.name_key, 'w') as f:
+            f.write('parameters mm3.prm\
+                     \nnoversion')
+        if com_opts['sp']:
+            logger.log(1, '  ANALYZE: {}'.format(self.filename))
+            print("Gaussian Ref xyz file Running Tinker for Geo. Info.")
+            with open(self.name_log, 'w') as f:
+                sp.call(
+                    'analyze gaus.{}.xyz -k {} D'.format(self.name,
+                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                f.write("\n=======================\
+                         \n= END OF SINGLE POINT =\
+                         \n=======================\n")
+        with open(self.name_log, 'a') as f:
+            f.write("\n======================\
+                     \n= END OF CALCULATION =\
+                     \n======================\n")
         os.chdir(current_directory)
 
 class GaussCom(File):

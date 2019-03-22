@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 COM_LOAD_FF    = ['ma', 'mb', 'mt',
                   'ja', 'jb', 'jt']
 # Commands related to Gaussian.
-COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao',
+COM_GAUSSIAN   = ['ga','gb','gt','ge', 'gea', 'geo', 'geao',
                   'gh', 'geigz']
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['jq', 'jqh', 'jqa',
@@ -168,11 +168,17 @@ def main(args):
                 inps[com_filename].commands = commands_for_filename
                 inps[com_filename].read_newzmat(filename)
                 
-                
 
         elif any(x in COM_TINKER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.xyz':
                 inps[filename] = filetypes.TinkerXYZ(
+                    os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
+        elif any(x in ['ga','gb','gt'] for x in commands_for_filename):
+            # For bond, angle, torsion taken from Gaussian
+            # Will be using Tinker
+            if os.path.splitext(filename)[1] == ".log":
+                inps[filename] = filetypes.TinkerXYZ_FOR_GAUS(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
         elif any(x in COM_AMBER for x in commands_for_filename):
@@ -300,6 +306,18 @@ def return_calculate_parser(add_help=True, parents=None):
         help='Add weights to data points.')
     # GAUSSIAN OPTIONS
     gau_args = parser.add_argument_group("gaussian reference data types")
+    gau_args.add_argument(
+        '-ga', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian bonds.'))
+    gau_args.add_argument(
+        '-gb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian angles.'))
+    gau_args.add_argument(
+        '-gt', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian torsions.'))
     gau_args.add_argument(
         '-ge', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
@@ -1065,6 +1083,21 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+    # GAUSSIAN BONDS
+    filenames = chain.from_iterable(coms['gb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'gb', 'pre', 'bonds'))
+    # GAUSSIAN ANGLES
+    filenames = chain.from_iterable(coms['ga'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'ga', 'pre', 'angles'))
+    # GAUSSIAN TORSIONS
+    filenames = chain.from_iterable(coms['gt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'gt', 'pre', 'torsions'))
     # TINKER SP BONDS
     filenames = chain.from_iterable(coms['tb'])
     for filename in filenames:
@@ -1727,7 +1760,7 @@ def collect_structural_data_from_tinker_log(
     select_struct = {'pre':0, 'opt':1}
     data = []
     name_log = inps[name_xyz].name_log
-    log = check_outs(name_log, outs, filetypes.Tinker_log, direc)
+    log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
     log_structure = log.structures
     struct = log_structure[select_struct[ind]]
     # Stuff to try out hessian.
@@ -1752,6 +1785,20 @@ def collect_structural_data_from_tinker_log(
             src_1=name_log))
         return(data)
 
+def collect_structural_data_from_tinker_log_for_gaussian(
+    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_log = inps[name_xyz].name_log
+    log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
+    log_structure = log.structures
+    struct = log_structure[select_struct[ind]]
+
+    data.extend(struct.select_data(
+        typ,
+        com=com,
+        src_1=name_log))
+    return(data)
 def sort_commands_by_filename(commands):
     '''
     Takes a dictionary of commands like...
