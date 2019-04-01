@@ -1,0 +1,52 @@
+Remark line goes here
+# Q2MM
+# OPT
+MASS
+c4 12.010        0.360               ATTN, no polarizability parameter
+
+BOND
+c -c4                   337.5987      1.6002       ATTN,        need    revision
+c4-ca                   611.5838      1.4462       ATTN,        need    revision
+c4-p5                   380.7400      1.7631       ATTN,        need    revision
+
+ANGLE
+c -ce-c1   64.400     118.420   same as c -ce-cg, penalty score=  0.5
+c -c4-ca                 50.7932    102.6974       ATTN,        need    revision
+c -c4-p5                 56.3256    110.3387       ATTN,        need    revision
+c4-c -ce                 55.7524    103.7267       ATTN,        need    revision
+ce-c1-o    62.900     179.500   same as c2-c1-o , penalty score=  2.2
+c4-c -o                  53.1259    104.1557       ATTN,        need    revision
+c4-ca-ca                 54.8284     99.6002       ATTN,        need    revision
+c3-p5-c4                 40.1930    110.9950       ATTN,        need    revision
+c1-ce-ca         65.100   103.77282        same          as   ca-ce-cg, penalty score= 0.5
+ca-c4-p5                 48.2833    100.4771       ATTN,        need    revision
+
+DIHE
+ca-ca-ce-c    4    2.800       180.000           2.000      same as X -c2-ca-X , penalty score=237.0
+c -c4-ca-ca        1     2.44030     180.000       2.000   ATTN, need revision
+c -c4-p5-c3        1     3.16257     180.000       2.000   ATTN, need revision
+ce-c -c4-ca        1     2.74410     180.000       2.000   ATTN, need revision
+ce-c -c4-p5        1     1.92196     180.000       2.000   ATTN, need revision
+ca-ca-ce-c1   4    2.800       180.000           2.000      same as X -c2-ca-X , penalty score=237.0
+o -c -c4-ca        1     3.12269     180.000       2.000   ATTN, need revision
+ca-c4-p5-c3        1     2.97276     180.000       2.000   ATTN, need revision
+p5-c4-ca-ca        1     2.25968     180.000       2.000   ATTN, need revision
+o -c -c4-p5        1     2.49319     180.000       2.000   ATTN, need revision
+
+IMPROPER
+c4-ce-c -o         10.5          180.0         2.0          Using general improper torsional angle  X- X- c- o, penalty score=  6.0)
+c -c1-ce-ca         1.1          180.0         2.0          Using the default value
+c4-ca-ca-ca         1.1          180.0         2.0          Using the default value
+ca-ca-ca-n          1.1          180.0         2.0          Using the default value
+ca-ca-ca-ha         1.1          180.0         2.0          Using general improper torsional angle  X- X-ca-ha, penalty score=  6.0)
+ca-ca-ca-nh         1.1          180.0         2.0          Using the default value
+ca-ca-ca-ce         1.1          180.0         2.0          Using the default value
+c3-c3-nh-ca         1.1          180.0         2.0          Using the default value
+c -ca-n -hn         1.1          180.0         2.0          Using general improper torsional angle  X- X- n-hn, penalty score=  6.0)
+c3-n -c -o         10.5          180.0         2.0          Using general improper torsional angle  X- X- c- o, penalty score=  6.0)
+
+NONBON
+  c4          0.0000  0.0000             ATTN, need revision
+
+
+
