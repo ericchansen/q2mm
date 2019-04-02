@@ -669,13 +669,15 @@ exit
         else:
             sp.call("antechamber -i {} -fi mol2 -o {} -fo pdb".format(self.name+".mol2",self.name+".pdb"),shell=True)
         # nab input file
+        # dielectric constant = 80.4 for water.
+        # currently manual change required
         script = """molecule m;
 float x[4000], fret;
 
 m = getpdb("{}.pdb");
 readparm(m, "./calc/prmtop");
 
-mm_options( "cut=15., ntpr=1, nsnb=99999, gb = 1 " );
+mm_options( "cut=15., ntpr=1, nsnb=99999, diel = C, dielc = 80.40" );
 mme_init( m, NULL, "::Z", x, NULL);
 setxyz_from_mol( m, NULL, x );
 
