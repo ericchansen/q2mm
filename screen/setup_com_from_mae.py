@@ -61,9 +61,10 @@ To enforce a trans bond:
 
 Watch out because MacroModel sometimes assigns these enforcing floats wrong.
 """
+from __future__ import absolute_import
 import argparse
 import sys
-from itertools import izip_longest
+from itertools import zip_longest
 
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
@@ -95,7 +96,7 @@ def grouper(n, iterable, fillvalue=0.):
 
     """
     args = [iter(iterable)] * n
-    return izip_longest(fillvalue=fillvalue, *args)
+    return zip_longest(fillvalue=fillvalue, *args)
 
 class MyComUtil(mmodutils.ComUtil):
     def my_mcmm(
@@ -135,7 +136,7 @@ class MyComUtil(mmodutils.ComUtil):
         indices_torc = []
         # Only works with the 1st structure.
         reader = sch_struct.StructureReader(mae_file)
-        structure = reader.next()
+        structure = next(reader)
         reader.close()
         print('-' * 80)
         print('READING: {}'.format(structure.property['s_m_title']))
