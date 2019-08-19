@@ -42,6 +42,10 @@ def main(args):
 #    if opts.output or opts.print:
 #        pretty_data_comp(r_data, c_data, output=opts.output, doprint=opts.print)
     logger.log(1, '>>> score: {}'.format(score))
+def tor_atoms(da):
+    daa = da.lbl.split('-')
+    daa[0] = daa[0].split('_')[-1]
+    return daa
 
 def trim_data(dict1,dict2):
     """
@@ -63,16 +67,24 @@ def trim_data(dict1,dict2):
             # is done with the regex below.
             for d1 in dict1[typ]:
                 #if not any(x.lbl == d1.lbl for x in dict2[typ]):
-                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d1.lbl)[1] and 
+                if (len(co.RE_T_LBL.split(d1.lbl))) == 1:
+                    if not any( tor_atoms(d1) == tor_atoms(x) for x in dict2[typ]):
+                        to_remove.append(d1)
+                else:
+                    if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d1.lbl)[1] and 
                            co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d1.lbl)[2] 
                            for x in dict2[typ]):
-                    to_remove.append(d1)
+                        to_remove.append(d1)
             for d2 in dict2[typ]:
                 #if not any(x.lbl == d2.lbl for x in dict1[typ]):
-                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d2.lbl)[1] and 
+                if (len(co.RE_T_LBL.split(d2.lbl))) == 1:
+                    if not any( tor_atoms(d2) == tor_atoms(x) for x in dict1[typ]):
+                        to_remove.append(d2) 
+                else:
+                    if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d2.lbl)[1] and 
                            co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d2.lbl)[2] 
                            for x in dict1[typ]):
-                    to_remove.append(d2)
+                        to_remove.append(d2)
             for datum in to_remove:
                 if datum in dict1[typ] and datum in dict2[typ]:
                     raise AssertionError("The data point that is flagged to be \

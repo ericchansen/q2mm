@@ -13,10 +13,10 @@ ANGLE
 c -ce-c1   64.400     118.420   same as c -ce-cg, penalty score=  0.5
 c -c4-ca                 50.7932    102.6974       ATTN,        need    revision
 c -c4-p5                 56.3256    110.3387       ATTN,        need    revision
-c4-c -ce                 55.7524    103.7267       ATTN,        need    revision
+c4-c -ce                 55.7524    104.7267       ATTN,        need    revision
 ce-c1-o    62.900     179.500   same as c2-c1-o , penalty score=  2.2
 c4-c -o                  53.1259    104.1557       ATTN,        need    revision
-c4-ca-ca                 54.8284     99.6002       ATTN,        need    revision
+c4-ca-ca                 54.8284    100.6002       ATTN,        need    revision
 c3-p5-c4                 40.1930    110.9950       ATTN,        need    revision
 c1-ce-ca         65.100   103.77282        same          as   ca-ce-cg, penalty score= 0.5
 ca-c4-p5                 48.2833    100.4771       ATTN,        need    revision

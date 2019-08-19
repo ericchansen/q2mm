@@ -273,7 +273,7 @@ class AmberGeo(File):
         a,b,c,d,z = line.split()
         atom_nums = [int(x) for x in [a,b,c,d]]
         value = float(z)
-        return Angle(atom_nums=atom_nums, value=value)
+        return Torsion(atom_nums=atom_nums, value=value)
 
     def read_line_for_energy(self, line):
         # The TPE is in units of kcal/mol, so we have to convert them to kJ/mol
@@ -367,12 +367,14 @@ class AmberLeap_Gaus(File):
 
     def extract(self,log):
         script="""
-trajin calc/gaus.Ash.nc
+trajin calc/gaus.NAME.nc
+fixatomorder
 AA
 run
 write
 exit
 """
+        script = script.replace("NAME",self.name)
         geo = ""
 
         # read .geo file and store all possible interaction
@@ -406,14 +408,12 @@ exit
                 torsions.append(line.split()[-8:-4])
             elif "Atom4" in line:
                 count = 3
-
         for a,b in bonds:
             geo += "distance @{} @{} out calc/gaus.bonds".format(a,b) + '\n'
         for a,b,c in angles:
             geo += "angle @{} @{} @{} out calc/gaus.angles".format(a,b,c) + '\n'
         for a,b,c,d in torsions:
             geo += "dihedral @{} @{} @{} @{} out calc/gaus.torsions".format(a,b,c,d) + '\n'
-
         script = script.replace("AA",geo)
         script_f = './calc/' + self.name + '.temp'
         with open(script_f, 'w') as f:
@@ -459,9 +459,8 @@ exit
         int_script = "bonds\nangles\ndihedrals\n"
         with open('./calc/'+self.name_int, 'w') as f:
             f.write(int_script)
-        sp.call("cpptraj -p calc/prmtop < calc/{} > calc/{}".format(self.name_int,self.name_geo),shell=True)
+        sp.call("cpptraj -p calc/prmtop < calc/{} > calc/{} \n".format(self.name_int,self.name_geo),shell=True)
         self.extract(log)
-        
         return
     def run(self,check_tokens=False):
         logger.log(5, 'RUNNING: {}'.format(self.filename))
@@ -564,8 +563,6 @@ class AmberLeap(File):
                     'geo':False}
         if any(x in ['ab','aa','at','abo','aao','ato'] for x in self.commands):
             com_opts['geo'] = True
-        if any(x in ['ab', 'aa', 'at', 'ae','ae1', 'aea'] for x in self.commands):
-            com_opts['sp'] = True
         if any(x in ['abo','aao','ato','aeo','ae1o','aeao'] for x in self.commands):
             com_opts['opt'] = True
             com_opts['sp'] = True
@@ -578,12 +575,14 @@ class AmberLeap(File):
         return com_opts
     def extract(self,log):
         script="""
-trajin calc/amber.Ash.nc
+trajin calc/amber.NAME.nc
+fixatomorder
 AA
 run
 write
 exit
 """
+        script = script.replace("NAME",self.name)
         geo = ""
 
         # read .geo file and store all possible interaction
@@ -624,7 +623,6 @@ exit
             geo += "angle @{} @{} @{} out calc/amber.angles".format(a,b,c) + '\n'
         for a,b,c,d in torsions:
             geo += "dihedral @{} @{} @{} @{} out calc/amber.torsions".format(a,b,c,d) + '\n'
-
         script = script.replace("AA",geo)
         script_f = './calc/' + self.name + '.temp'
         with open(script_f, 'w') as f:
@@ -667,7 +665,7 @@ exit
         if os.path.isfile(self.name+".pdb"):
             0
         else:
-            sp.call("antechamber -i {} -fi mol2 -o {} -fo pdb".format(self.name+".mol2",self.name+".pdb"),shell=True)
+            sp.call("antechamber -dr no -i {} -fi mol2 -o {} -fo pdb".format(self.name+".mol2",self.name+".pdb"),shell=True)
         # nab input file
         # dielectric constant = 80.4 for water.
         # currently manual change required
@@ -925,7 +923,7 @@ class TinkerLog(File):
             atom_nums = [int(x) for x in [match.group(1), match.group(3),
                 match.group(5), match.group(7)]]
             value = float(match.group(9))
-            return Angle(atom_nums=atom_nums, value=value)
+            return Torsion(atom_nums=atom_nums, value=value)
         else:
             return None
 

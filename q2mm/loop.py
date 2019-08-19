@@ -155,6 +155,7 @@ class Loop(object):
                 if len(cols) > 1:
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
+                
             if cols[0] == 'COMP':
             # Deprecated
             #    self.ff.score = compare.compare_data(

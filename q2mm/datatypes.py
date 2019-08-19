@@ -274,8 +274,9 @@ class AmberFF(FF):
         self._atom_types = None
         self._lines = None
         # change constant
-        co.STEPS["bf"] = 20.00
-        co.STEPS["af"] = 1.0
+        co.STEPS["bf"] = 10.00
+        co.STEPS["af"] = 10.0
+        co.STEPS["df"] = 10.0
         
         
     def copy_attributes(self, ff):
@@ -335,7 +336,8 @@ class AmberFF(FF):
                         at = split[0] # need number if it matters
                         el = split[0]
                         mass = split[1]
-                        pol = split[2]
+                        if len(split) > 2:
+                            pol = split[2]
                         # no need for atom label
                         # at = ["Z0", "P1", "CX"]
                     # BOND
@@ -453,7 +455,7 @@ class AmberFF(FF):
             logger.log(1, '>>> param: {} param.value: {}'.format(
                     param, param.value))
             line = lines[param.mm3_row - 1]
-            if abs(param.value) > 999.:
+            if abs(param.value) > 1999.:
                 logger.warning(
                     'Value of {} is too high! Skipping write.'.format(param))
             else:
