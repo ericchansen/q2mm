@@ -1684,7 +1684,7 @@ def flatten(l):
     import collections
     for el in l:
         if isinstance(el, collections.Iterable) and \
-          not isinstance(el, basestring):
+          not isinstance(el, str):
             for sub in flatten(el):
                 yield sub
         else:
