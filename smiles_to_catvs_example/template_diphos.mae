@@ -1,0 +1,109 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ s_m_entry_name
+ s_cs_pattern
+ b_cs_use_substructure
+ b_cs_use_substrucuture
+ r_mmod_Relative_Potential_Energy-MM3*
+ i_mmod_Conformation-MM3*
+ i_m_ct_format
+ :::
+ template_diphos 
+  template_diphos 
+  P3.Z0.P3 
+  1
+  1
+  0
+  1
+  2
+ m_depend[2] { 
+  # First column is dependency index #
+  i_m_depend_dependency
+  s_m_depend_property
+  :::
+  1 20 r_mmod_Relative_Potential_Energy-MM3* 
+  2 20 i_mmod_Conformation-MM3* 
+  :::
+ } 
+ m_atom[9] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  i_m_residue_number
+  s_m_mmod_res
+  i_m_color
+  r_m_charge1
+  r_m_charge2
+  s_m_pdb_residue_name
+  s_m_grow_name
+  i_m_atomic_number
+  i_m_formal_charge
+  s_m_color_rgb
+  s_m_atom_name
+  s_m_label_format
+  i_m_label_color
+  s_m_label_user_text
+  b_cs_chig
+  b_cs_comp
+  b_st_NoSrcChirality
+  :::
+  1 3 -1.821422 -0.790817 -1.467506 1 "X" 2 -0.14687 -0.14687 "    " "  c1" 6 0 A0A0A0  "C1"  "%TY%NU"  2 ""  0 0 1
+  2 3 -0.782365 0.058319 -1.057588 1 "X" 2 0.18671 0.18671 "    " "  c1" 6 0 A0A0A0  "C3"  "%TY%NU"  2 ""  0 0 1
+  3 3 -0.080999 -0.225060 0.122316 1 "X" 2 -0.14687 -0.14687 "    " "  c1" 6 0 A0A0A0  "C4"  "%TY%NU"  2 ""  0 0 1
+  4 41 -0.633931 0.998097 -1.564777 1 "X" 21 0.08954 0.08954 "    " "    " 1 0 FFFFFF  "H100"  "%TY%NU"  2 ""  0 0 <>
+  5 62 -2.277037 -0.046161 0.535868 0 " " 20 -1.09080 -1.09080 "    " "    " 46 1 9F5F9F  "Pd5"  "%TY%NU"  2 ""  0 0 <>
+  6 53 -2.310011 0.659133 2.636019 0 " " 15 -0.21076 -0.21076 "    " "    " 15 0 8E236B  "P8"  "%TY%NU"  2 ""  0 0 <>
+  7 53 -4.548795 -0.365668 0.568336 0 " " 15 0.25926 0.25926 "    " "    " 15 0 8E236B  "P9"  "%TY%NU"  2 ""  0 0 <>
+  8 41 -2.454696 -0.485752 -2.300572 1 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  ""  ""  1 ""  0 0 <>
+  9 41 0.601728 0.520460 0.529973 1 "X" 21 0.00000 0.00000 "    " "    " 1 0 FFFFFF  ""  ""  1 ""  0 0 <>
+  :::
+ } 
+ m_bond[20] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  r_cs_torc_a5
+  r_cs_torc_a6
+  r_cs_torc_b5
+  r_cs_torc_b6
+  i_cs_rca4_1
+  i_cs_rca4_2
+  i_cs_torc_a1
+  i_cs_torc_a4
+  i_cs_torc_b1
+  i_cs_torc_b4
+  b_cs_tors
+  :::
+  1 1 2 1 0 0 0 0 0 0 0 0 0 0 0
+  2 1 5 1 0 0 0 0 0 0 0 0 0 0 0
+  3 1 8 1 0 0 0 0 0 0 0 0 0 0 0
+  4 2 1 1 0 0 0 0 0 0 0 0 0 0 0
+  5 2 3 1 0 0 0 0 0 0 0 0 0 0 0
+  6 2 4 1 0 0 0 0 0 0 0 0 0 0 0
+  7 2 5 1 0 0 0 0 0 0 0 0 0 0 0
+  8 3 2 1 0 0 0 0 0 0 0 0 0 0 0
+  9 3 5 1 0 0 0 0 0 0 0 0 0 0 0
+  10 3 9 1 0 0 0 0 0 0 0 0 0 0 0
+  11 4 2 1 0 0 0 0 0 0 0 0 0 0 0
+  12 5 1 1 0 0 0 0 0 0 0 0 0 0 0
+  13 5 2 1 0 0 0 0 0 0 0 0 0 0 0
+  14 5 3 1 0 0 0 0 0 0 0 0 0 0 0
+  15 5 7 1 0 0 0 0 0 0 0 0 0 0 0
+  16 5 6 1 0 0 0 0 0 0 0 0 0 0 0
+  17 6 5 1 0 0 0 0 0 0 0 0 0 0 0
+  18 7 5 1 0 0 0 0 0 0 0 0 0 0 0
+  19 8 1 1 0 0 0 0 0 0 0 0 0 0 0
+  20 9 3 1 0 0 0 0 0 0 0 0 0 0 0
+  :::
+ } 
+} 
+

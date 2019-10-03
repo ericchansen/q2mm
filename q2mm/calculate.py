@@ -1056,7 +1056,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         int3 = []
         int4 = []
         if os.path.isfile("calc/geo.npy"):
-            hes_geo = np.load("calc/geo.npy")
+            hes_geo = np.load("calc/geo.npy",allow_pickle=True)
             for ele in hes_geo:
                 inter = np.count_nonzero(ele)
                 a,b,c,d = ele
@@ -1072,15 +1072,26 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     a = int(a)
                     d = int(d)            
                     int4.append([a,d])
+        frozen = 0
+        f_atom = []
+        if os.path.isfile("fixedatoms.txt"):
+            frozen = 1
+            ref = open("fixedatoms.txt","r")
+            flines = ref.readlines()
+            for fline in flines:
+                line = fline.split()
+                if len(line) == 1:
+                    f_atom.append(int(line[0]))
+            print("Reading fixedatoms.txt\nFixed Atom Numbers:",f_atom)
         def int_wht(at_1,at_2):
             """
                 Weighted value for hessian matrix
                 default value
                 diagonal zero
-                1-2      0.31
+                1-2      0.031
                 1-3      0.031
-                1-4      0.0031
-                else     1.0
+                1-4      0.31
+                else     0.031
             """
             apair = [at_1,at_2]
             if at_1 == at_2:
@@ -1091,6 +1102,12 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 return co.WEIGHTS['h14']
             elif apair in int4:
                 return co.WEIGHTS['h14']
+            elif frozen:
+                if at_1 in f_atom or at_2 in f_atom:
+                    #print("DEBUG:",at_1,at_2,f_atom)
+                    return 0.0
+                else:
+                    return 1.0
             else:
                 return 1.0
         data.extend([datatypes.Datum(

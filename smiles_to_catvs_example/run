@@ -1,0 +1,40 @@
+#!/usr/bin/env python
+
+import os
+
+nt = 1
+
+if 1:
+    os.system("python $Q2MM/smiles_to_catvs/scripts/search.py") # make sdf folder
+if 0:
+    # It currently works for P-Pd-P system
+    # for the future work it should take 
+    # [AT1,AT2,AT3],[d12,d13,d23] as inputs
+    # where AT2 and AT3 are metal-bound atoms on ligand and AT1 is metal
+    # i.e. const = [Pd,P,P], dist = [2.4,3.2,3.2] for current system
+    const = ["Pd","P","P"]
+    dist = [2.4,2.4,3.2]
+    os.system("python $Q2MM/smiles_to_catvs/scripts/sdf_to_mae.py") # makes mol2 then mae folders (Optimize as well)
+if 0:
+    # mae -> ligands
+    # pattern = "P3-Z0-P3" for current example
+    # should be os.system("python scripts/prepare.py {}".format(pattern))
+    os.system("python $Q2MM/smiles_to_catvs/scripts/prepare.py")
+
+if 0:
+    reactions  = "template_diphos.mae"
+    subtrates  = "allyl16.mae"
+    ligands    = "ligands/*.mae"
+    mergedfile = "result.mae"
+    os.system("$SCHRODINGER/run $Q2MM/screen/merge.py -g {} -g {} -g {} -o {}".format(reactions,subtrates,ligands,mergedfile))
+# Split the result.mae to many/*.mae then submit the job
+# number of jobs is np variable in finish.py
+if 0:
+    np = 7
+
+    os.system("$SCHRODINGER/run $Q2MM/smiles_to_catvs/scripts/finish.py")
+
+#bmin -WAIT newcom
+# 5th step?
+#
+
