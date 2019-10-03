@@ -408,12 +408,14 @@ exit
                 torsions.append(line.split()[-8:-4])
             elif "Atom4" in line:
                 count = 3
+        
         for a,b in bonds:
             geo += "distance @{} @{} out calc/gaus.bonds".format(a,b) + '\n'
         for a,b,c in angles:
             geo += "angle @{} @{} @{} out calc/gaus.angles".format(a,b,c) + '\n'
         for a,b,c,d in torsions:
             geo += "dihedral @{} @{} @{} @{} out calc/gaus.torsions".format(a,b,c,d) + '\n'
+        
         script = script.replace("AA",geo)
         script_f = './calc/' + self.name + '.temp'
         with open(script_f, 'w') as f:
@@ -504,6 +506,7 @@ class AmberLeap(File):
         self.name_int = 'amber.' + self.name + '.int' # interaction input for cpptraj
         self.name_geo = 'amber.' + self.name + '.geo' # cpptraj output for all interactions
         self.name_hes = 'amber.' + self.name + '.hes'
+        self.geo = None
         self.min_script = """Comments
  &cntrl
   imin      = 1,
@@ -567,6 +570,7 @@ class AmberLeap(File):
             com_opts['opt'] = True
             com_opts['sp'] = True
         if any(x in ['ah', 'ajeig', 'ageig'] for x in self.commands):
+            com_opts['geo'] = True
             com_opts['freq'] = True
             com_opts['opt'] = True
             com_opts['sp'] = True
@@ -590,6 +594,7 @@ exit
         angles = []
         torsions = []
         ref = open('./calc/'+self.name_geo,'r').readlines()
+        self.geo = ref
         count = 0
         for line in ref:
             # Bonds
@@ -690,7 +695,50 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
         # rename to .hess
         sp.call("mv ./calc/hessian.mat ./calc/{}".format(self.name_hes),shell = True)
         return
+    def geo_extract(self):
+    
+        bonds = []
+        angles = []
+        torsions = []
+    
+        ref = self.geo
+        count = 0
+        for line in ref:
+            # Bonds
+            if "[angles]" in line:
+                count = 0
+            elif count == 1:
+                bonds.append(line.split()[-4:-2])
+            elif "Atom2" in line:
+                count = 1
 
+            # Angles
+            if "[dihedrals]" in line:
+                count = 0
+            if count == 2:
+                angles.append(line.split()[-6:-3])
+            elif "Atom3" in line:
+                count = 2
+
+            # Dihedral
+            # store the columns as negtive since there is unexpected "B" or E in front of column
+            if "TIME" in line:
+                count = 0
+            if count == 3:
+                torsions.append(line.split()[-8:-4])
+            elif "Atom4" in line:
+                count = 3
+
+        hes_ele = np.array([None,None,None,None])
+        for a,b in bonds:
+            hes_ele = np.vstack((hes_ele,[a,b,None,None]))
+        for a,b,c in angles:
+            hes_ele = np.vstack((hes_ele,[a,b,c,None]))
+        for a,b,c,d in torsions:
+            hes_ele = np.vstack((hes_ele,[a,b,c,d]))
+        np.save("calc/geo",hes_ele)
+        return
+        
     def geometry(self,log):
         # Run Trajectory (Required for cpptraj)
         with open("./calc/"+self.name_dyn, 'w') as f:
@@ -748,6 +796,10 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
             self.geometry(log)
         if com_opts['freq']:
             self.hessian(log)
+            # if geo file is already present 
+            # may not have geo file if hessian is only ran
+            if os.path.isfile('./calc/'+self.name_geo):
+                self.geo_extract()
         os.chdir(current_directory)
 
 

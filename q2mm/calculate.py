@@ -629,6 +629,10 @@ def return_calculate_parser(add_help=True, parents=None):
         '-ah', type=str, nargs='+', action='append',
         default=[], metavar='somename.in',
         help='Amber Hessian (post-FF optimization).')
+    amb_args.add_argument(
+        '-aha', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Amber Hessian (post-FF optimization).')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -1048,13 +1052,57 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         # hessian extracted from Amber is already mass weighted
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
+        int2 = []
+        int3 = []
+        int4 = []
+        if os.path.isfile("calc/geo.npy"):
+            hes_geo = np.load("calc/geo.npy")
+            for ele in hes_geo:
+                inter = np.count_nonzero(ele)
+                a,b,c,d = ele
+                if inter == 2:
+                    a = int(a)
+                    b = int(b)
+                    int2.append([a,b])
+                elif inter == 3:
+                    a = int(a)
+                    c = int(c)
+                    int3.append([a,c])
+                elif inter == 4:        
+                    a = int(a)
+                    d = int(d)            
+                    int4.append([a,d])
+        def int_wht(at_1,at_2):
+            """
+                Weighted value for hessian matrix
+                default value
+                diagonal zero
+                1-2      0.31
+                1-3      0.031
+                1-4      0.0031
+                else     1.0
+            """
+            apair = [at_1,at_2]
+            if at_1 == at_2:
+                return 0.0
+            elif apair in int2:
+                return co.WEIGHTS['h12']
+            elif apair in int3:
+                return co.WEIGHTS['h14']
+            elif apair in int4:
+                return co.WEIGHTS['h14']
+            else:
+                return 1.0
         data.extend([datatypes.Datum(
             val=e,
             com='ah',
             typ='h',
             src_1=hes.filename,
             idx_1=x + 1,
-            idx_2=y + 1)
+            idx_2=y + 1,
+            atm_1=int((x)//3+1),
+            atm_2=int((y)//3+1),
+            wht = int_wht(int((x)//3+1),int((y)//3+1)))
                 for e, x, y in zip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
         

@@ -93,7 +93,10 @@ STEPS = {'ae':      1.0,
 WEIGHTS = {'a':          2.00,
            'b':        100.00,
            't':          1.00,
-           'h':          1.00,
+           'h':          0.031,
+           'h12':        0.031,
+           'h13':       0.031,
+           'h14':       0.31,
            'eig_i':      0.00, # Weight of 1st eigenvalue.
            'eig_d_low':  0.10, # Weight of low mode diagonal elements
            'eig_d_high': 0.10, # Weight of high mode diagonal elemetns

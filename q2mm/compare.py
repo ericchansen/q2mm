@@ -161,6 +161,8 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
             #score = (r.wht**2 * diff**2)
             if typ in ['e', 'eo', 'ea', 'eao']:
                 score = (r.wht**2 * diff**2)/total_num_energy
+            elif typ == "h":
+                score = (c.wht**2 * diff**2)/len(c_dict[typ])
             else:
                 score = (r.wht**2 * diff**2)/len(r_dict[typ])
             score_tot += score
