@@ -1056,7 +1056,11 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         int3 = []
         int4 = []
         if os.path.isfile("calc/geo.npy"):
-            hes_geo = np.load("calc/geo.npy",allow_pickle=True)
+            hes_geo = None
+            if np.__version__ == '1.16.4':
+                hes_geo = np.load("calc/geo.npy",allow_pickle=True)
+            else:
+                hes_geo = np.load("calc/geo.npy")
             for ele in hes_geo:
                 inter = np.count_nonzero(ele)
                 a,b,c,d = ele
