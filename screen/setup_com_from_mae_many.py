@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 
+
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
 

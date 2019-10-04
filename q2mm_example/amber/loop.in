@@ -1,0 +1,25 @@
+####################
+##                ##
+##  Q2MM Example  ##
+##                ##
+####################
+
+DIR ./
+FFLD read frcmod
+PARM qparam.txt
+
+# need Ash.log -> gaus.Ash.in
+# gabo, gaao, gato may not need .log file format though
+#RDAT -gabo Ash.log -gaao Ash.log -gato Ash.log #-ge1o Ash.log
+#CDAT -abo Ash.in  -aao Ash.in  -ato Ash.in #-ae1o Ash.in 
+RDAT -gabo Ash.log -gaao Ash.log -gato Ash.log -gh Ash.log
+CDAT -abo Ash.in  -aao Ash.in  -ato Ash.in -ah Ash.in 
+COMP -o opt_start.txt
+LOOP 0.01
+GRAD
+END
+FFLD write frcmod.gaff.01
+CDAT
+COMP -o opt.01.txt
+
+

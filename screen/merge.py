@@ -144,6 +144,7 @@ def merge_many_filenames(list_of_lists):
             new_structures.extend(read_filename(filename))
         # Update existing list of structures after combining with the new
         # structures.
+        
         structures = list(merge_many_structures(structures, new_structures))
         print('TOTAL NUM. STRUCTURES: {}'.format(len(structures)))
     return list(structures)
@@ -321,7 +322,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                 print('     * FOUND IN: {}'.format(struct_2.title))
             break
         else:
-            print('     * COULDN\'T FIND IN: {}'.format(struct_2._getTitle()))
+            print('     * COULDN\'T FIND IN: {}'.format(struct_2.title))
             continue
     # This is an interesting way to ensure we have actually found something for
     # match_struct_1 and match_struct_2.
@@ -563,6 +564,8 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         #what the atom type is, which is redundant, but it resets the atomic
         #number and weight. The AtomName isn't important, but it makes it look
         #pretty in the final mae file.
+
+        common_atom_1.atom_name = (str(common_atom_1.element) + str(common_atom_1.index))
         #common_atom_1._setAtomType(common_atom_1.atom_type)
         #common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
 
@@ -657,8 +660,9 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                           name='torcb')
 
     merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
-    merge.property['s_m_entry_name'] += \
-        '_' + struct_2.property['s_m_entry_name']
+    if hasattr(struct_2, 's_m_entry_name'):
+        merge.property['s_m_entry_name'] += \
+            '_' + struct_2.property['s_m_entry_name']
 
     # I have encoutered problems in macromodel for metal centers with
     # multiple bond (e.g. M-Cp or M-Ph). In order for macromodel to read

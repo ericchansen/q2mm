@@ -140,6 +140,10 @@ class MyComUtil(mmodutils.ComUtil):
         reader.close()
         print('-' * 80)
         print('READING: {}'.format(structure.property['s_m_title']))
+        # Extra step due to TORS error using automated script
+        all_bond = []
+        for bond in structure.bond:
+            all_bond.append([bond.atom1.index,bond.atom2.index])
         for atom in structure.atom:
             for prop in ALL_CS_ATOM_PROPERTIES:
                 try:
@@ -184,12 +188,35 @@ class MyComUtil(mmodutils.ComUtil):
                         bond.atom2.index,
                         bond.property['i_cs_rca4_2']))
                 else:
-                    indices_rca4.append((
+                    t_bond = [bond.property['i_cs_rca4_1'],bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append((
                         bond.property['i_cs_rca4_1'],
                         bond.atom1.index,
                         bond.atom2.index,
                         bond.property['i_cs_rca4_2']
-                    ))
+                        ))
+            # FIXED FOR WRONG ORDER OF RCA4
+            if bond.property['i_cs_rca4_2']:
+                thing = [bond.property['i_cs_rca4_2'],
+                         bond.atom1.index,
+                         bond.atom2.index,
+                         bond.property['i_cs_rca4_1']]
+                if set(thing).issubset(frozen_atoms):
+                    print('SKIPPING RCA4: {} {} {} {}'.format(
+                        bond.property['i_cs_rca4_2'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_1']))
+                else:
+                    t_bond = [bond.property['i_cs_rca4_2'], bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append((
+                            bond.property['i_cs_rca4_2'],
+                            bond.atom1.index,
+                            bond.atom2.index,
+                            bond.property['i_cs_rca4_1']
+                        ))
             if bond.property['i_cs_torc_a1']:
                 indices_torc.append((
                     bond.property['i_cs_torc_a1'],
