@@ -15,7 +15,6 @@ re   - Redundant conformer elimination
 import argparse
 import os
 import sys
-from itertools import zip_longest
 
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
