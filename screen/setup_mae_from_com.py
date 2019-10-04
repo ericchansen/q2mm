@@ -51,14 +51,14 @@ def read_com(filename):
             if cols[0] == 'COMP':
                 comp.extend(map(int, cols[1:5]))
             if cols[0] == 'TORS':
-                tors.append(tuple(map(int, cols[1:3])))
+                tors.append([int(x) for x in cols[1:3]])
             if cols[0] == 'RCA4':
-                x = map(int, cols[1:5])
+                x = [int(x) for x in cols[1:5]]
                 if x[2] < x[1]:
                     x.reverse()
                 rca4.append(tuple(x))
             if cols[0] == 'TORC':
-                x = map(int, cols[1:5])
+                x = [int(x) for x in cols[1:5]]
                 if x[2] < x[1]:
                     x.reverse()
                 x.append(float(cols[5]))
@@ -69,8 +69,8 @@ def read_com(filename):
     # Remove all extra 0's from comp and chig.
     # Up to 4 COMP atoms are given per line. If 3 or less are given on a line,
     # the remaining columns are 0's. Delete those meaningless 0's.
-    comp = filter(lambda x: x != 0, comp)
-    chig = filter(lambda x: x != 0, chig)
+    comp = [x for x in comp if x != 0]
+    chig = [x for x in chig if x != 0]
     return comp, tors, rca4, chig, torc
 
 def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
@@ -112,6 +112,7 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
             atom.property['b_cs_comp'] = 1
             print(' *        {:>4}/{:2}'.format(
                 atom.index, atom.atom_type_name))
+
         # Copy over which atoms should go with CHIG.
         print('SETUP CHIG:')
         for one_chig in chig:
