@@ -1057,7 +1057,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         int4 = []
         if os.path.isfile("calc/geo.npy"):
             hes_geo = None
-            if np.__version__ == '1.16.4':
+            if np.__version__ >= '1.16.4':
                 hes_geo = np.load("calc/geo.npy",allow_pickle=True)
             else:
                 hes_geo = np.load("calc/geo.npy")
