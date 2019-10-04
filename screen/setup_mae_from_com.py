@@ -70,7 +70,7 @@ def read_com(filename):
     # Up to 4 COMP atoms are given per line. If 3 or less are given on a line,
     # the remaining columns are 0's. Delete those meaningless 0's.
     comp = [x for x in comp if x != 0]
-    chig = list(filter(lambda x: x != 0, chig))
+    chig = [x for x in chig if x != 0]
     return comp, tors, rca4, chig, torc
 
 def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
