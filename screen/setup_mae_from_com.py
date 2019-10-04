@@ -51,7 +51,7 @@ def read_com(filename):
             if cols[0] == 'COMP':
                 comp.extend(map(int, cols[1:5]))
             if cols[0] == 'TORS':
-                tors.append(list(map(int, cols[1:3])))
+                tors.append([int(x) for x in cols[1:3]])
             if cols[0] == 'RCA4':
                 x = (list(map(int, cols[1:5])))
                 if x[2] < x[1]:
