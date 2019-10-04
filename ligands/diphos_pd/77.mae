@@ -1,0 +1,85 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ s_m_source_file
+ i_m_source_file_index
+ i_m_ct_format
+ s_cs_pattern
+ b_cs_use_substructure
+ :::
+ 2-phosphanylethylphosphane 
+  ../mol2/2-phosphanylethylphosphane.mol2 
+  1
+  2
+  P3-Z0-P3 
+  1
+ m_atom[13] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  i_m_residue_number
+  i_m_color
+  r_m_charge1
+  s_m_pdb_residue_name
+  s_m_pdb_atom_name
+  i_m_atomic_number
+  s_m_atom_name
+  b_cs_comp
+  b_cs_chig
+  :::
+  1 53 0.987600 -0.360100 -0.431100 1 15 -0.13680 "UNL " " P  " 15 P  1 0
+  2 53 -2.079400 0.355400 0.127300 1 15 -0.13680 "UNL " " P  " 15 P  1 0
+  3 3 -0.168000 -0.318100 -1.850600 1 2 -0.03430 "UNL " " C  " 6 C  1 0
+  4 3 -1.385400 0.603500 -1.572400 1 2 -0.03430 "UNL " " C  " 6 C  1 0
+  5 41 0.320900 -0.067100 -2.818000 1 21 0.03120 "UNL " " H  " 1 H  0 0
+  6 41 -0.547500 -1.358200 -1.931400 1 21 0.03120 "UNL " " H  " 1 H  0 0
+  7 41 -1.062400 1.657700 -1.695200 1 21 0.03120 "UNL " " H  " 1 H  0 0
+  8 41 -2.169400 0.383200 -2.335700 1 21 0.03120 "UNL " " H  " 1 H  0 0
+  9 41 1.752300 -0.443800 0.748300 1 21 0.05440 "UNL " " H  " 1 H  0 0
+  10 41 1.863500 0.340100 -1.285000 1 21 0.05440 "UNL " " H  " 1 H  0 0
+  11 41 -2.607500 0.162900 1.417700 1 21 0.05440 "UNL " " H  " 1 H  0 0
+  12 41 -2.857500 1.414900 -0.388500 1 21 0.05440 "UNL " " H  " 1 H  0 0
+  13 62 -0.595400 -1.230500 1.148000 1 4 0.00000 "UNL " "PD  " 46 PD  1 0
+  :::
+ } 
+ m_bond[13] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  b_cs_tors
+  i_cs_rca4_1
+  i_cs_rca4_2
+  r_cs_torc_a5
+  r_cs_torc_a6
+  r_cs_torc_b5
+  r_cs_torc_b6
+  i_cs_torc_a1
+  i_cs_torc_a4
+  i_cs_torc_b1
+  i_cs_torc_b4
+  :::
+  1 1 3 1 1 0 0 0 0 0 0 0 0 0 0
+  2 1 9 1 0 0 0 0 0 0 0 0 0 0 0
+  3 1 10 1 0 0 0 0 0 0 0 0 0 0 0
+  4 1 13 1 1 0 0 0 0 0 0 0 0 0 0
+  5 2 4 1 0 13 3 0 0 0 0 0 0 0 0
+  6 2 11 1 0 0 0 0 0 0 0 0 0 0 0
+  7 2 12 1 0 0 0 0 0 0 0 0 0 0 0
+  8 2 13 1 0 0 0 0 0 0 0 0 0 0 0
+  9 3 4 1 0 0 0 0 0 0 0 0 0 0 0
+  10 3 5 1 0 0 0 0 0 0 0 0 0 0 0
+  11 3 6 1 0 0 0 0 0 0 0 0 0 0 0
+  12 4 7 1 0 0 0 0 0 0 0 0 0 0 0
+  13 4 8 1 0 0 0 0 0 0 0 0 0 0 0
+  :::
+ } 
+} 
+
