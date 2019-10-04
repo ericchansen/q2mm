@@ -58,7 +58,7 @@ def read_com(filename):
                     x.reverse()
                 rca4.append(tuple(x))
             if cols[0] == 'TORC':
-                x = (list(map(int, cols[1:5])))
+                x = [int(x) for x in cols[1:5]]
                 if x[2] < x[1]:
                     x.reverse()
                 x.append(float(cols[5]))
