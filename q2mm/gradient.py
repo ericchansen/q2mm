@@ -341,6 +341,7 @@ class Gradient(opt.Optimizer):
                 ff = self.ff
         else:
             ff = self.ff
+        ff.export_ff(ff.path)
         return ff
 
 def copy_derivs(new_ff, old_ff):
