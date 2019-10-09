@@ -1798,7 +1798,6 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             evals, evecs = np.linalg.eigh(hess)
             datatypes.replace_minimum(evals, value=invert)
             hess = evecs.dot(np.diag(evals).dot(evecs.T))
-        datatypes.replace_minimum(hess, value=invert)
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
         data.extend([datatypes.Datum(
