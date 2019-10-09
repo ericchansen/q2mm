@@ -309,5 +309,44 @@ STEP followed by the data/parameter type and value.
 WGHT b 10.0
 STEP be 1.0
 ```
+#### For using hessian matrix from AmberMD:
+In order to use -ah flag in CDAT section, the user must compile their own version of AmberMD.
+```
+            // q2mm
+            FILE * hFile;
+            hFile = fopen("./calc/hessian.mat","w");
+            fprintf( hFile, "Hessian %d\n", natom);
+            k = 0; 
+            for (i = 1; i <= ncopy; i++){
+                for (j = 1; j <= ncopy; j++){
+                    fprintf( hFile, "%12.5f ", h[k]);
+                    k++;
+                }
+                fprintf( hFile, "\n");
+            }
+            fclose(hFile);
+            // q2mm
 
+```
+Add the following line to AmberTools/src/sff/nmode.c after following code
+```
+         /*
+          * Mass weight the Hessian:
+          */
+         
+         j = 1; 
+         for (i = 1; i <= natom; i++) {
+            g[j + 2] = g[j + 1] = g[j] = 1.0 / sqrt(m[i]);
+            j += 3;
+         }  
+         
+         k = 0; 
+         for (i = 1; i <= ncopy; i++) {
+            for (j = 1; j <= ncopy; j++) {
+               h[k] = g[i] * h[k] * g[j];
+               k++;
+            }
+         }  
+
+```
 

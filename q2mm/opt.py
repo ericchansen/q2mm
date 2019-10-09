@@ -1,5 +1,6 @@
 """
 General code related to all optimization techniques.
+Testing
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -13,11 +14,11 @@ import re
 import textwrap
 import sys
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .parameters
+import calculate
+import compare
+import constants as co
+import datatypes
+import parameters
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ def differentiate_params(params, central=True):
                 if central:
                     backward_params[i].value = original_value - param.step
             except datatypes.ParamError as e:
-                logger.warning(e.message)
+                logger.warning(str(e))
                 old_step = param.step
                 # New parameter step size modification.
                 # Should prevent problems with parameters trying to go

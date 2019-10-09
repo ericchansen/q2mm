@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from __future__ import absolute_import
 from __future__ import division
@@ -13,14 +13,14 @@ import random
 import sys
 import re
 
-import .calculate
-import .compare
-import .constants as co
-import .datatypes
-import .gradient
-import .opt
-import .parameters
-import .simplex
+import calculate
+import compare
+import constants as co
+import datatypes
+import gradient
+import opt
+import parameters
+import simplex
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,8 @@ class Loop(object):
             mm3_file = os.path.join(self.direc, mm3_file)
             self.ff.export_ff(path=mm3_file)
             logger.log(20, '  -- Wrote best FF to {}'.format(mm3_file))
+        for param in self.ff.params:
+            param.value_at_limits()
         return self.ff
     def run_loop_input(self, lines, score=None):
         lines_iterator = iter(lines)
@@ -99,9 +101,12 @@ class Loop(object):
                     if cols[2] == 'mm3.fld':
                         self.ff = datatypes.MM3(os.path.join(self.direc, 
                                                              cols[2]))
-                    if '.prm' in cols[2]:
+                    if 'prm' in line:
                         self.ff = datatypes.TinkerFF(os.path.join(self.direc,
                                                                   cols[2]))
+                    if 'frcmod' in line:
+                        self.ff = datatypes.AmberFF(os.path.join(self.direc,
+                                                                cols[2]))
                     self.ff.import_ff()
                     self.ff.method = 'READ'
                     with open(os.path.join(self.direc, cols[2]), 'r') as f:
@@ -150,6 +155,7 @@ class Loop(object):
                 if len(cols) > 1:
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
+                
             if cols[0] == 'COMP':
             # Deprecated
             #    self.ff.score = compare.compare_data(

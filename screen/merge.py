@@ -38,9 +38,11 @@ See atom properties.
 # containing struct_1 and struct_2 and creating some sort of dictionary to look
 # up the atom indices in the merged structure. This whole process is repeated
 # too often.
+from __future__ import print_function
+from __future__ import absolute_import
+from __future__ import division
 import argparse
 import copy
-import itertools
 import os
 import re
 import sys
@@ -142,6 +144,7 @@ def merge_many_filenames(list_of_lists):
             new_structures.extend(read_filename(filename))
         # Update existing list of structures after combining with the new
         # structures.
+        
         structures = list(merge_many_structures(structures, new_structures))
         print('TOTAL NUM. STRUCTURES: {}'.format(len(structures)))
     return list(structures)
@@ -158,7 +161,7 @@ def read_filename(filename):
     -------
     list of Schrodinger structure objects
     """
-    # print('>>> filename: {}'.format(filename))
+    print('>>> filename: {}'.format(filename))
     structures = []
     sch_reader = sch_struct.StructureReader(filename)
     for structure in sch_reader:
@@ -253,19 +256,19 @@ def merge(struct_1, struct_2):
                 seen.add(tup)
                 if struct_2.property.get('b_cs_first_match_only', False):
                     seen.add(tup[::-1])
-                print(' - Unique! Continuing.')
-                # Just to look good.
+                    print(' - Unique! Continuing.')
+                    # Just to look good.
                 print('-' * 80)
                 print(' * ALIGNING:')
                 print('   * {:<30} {} {}'.format(
-                    struct_1._getTitle(),
+                    struct_1.title,
                     new_match_1,
                     [struct_1.atom[x].atom_type_name for x in new_match_1]))
                 print('   * {:<30} {} {}'.format(
-                    struct_2._getTitle(),
+                    struct_2.title,
                     new_match_2,
                     [struct_2.atom[x].atom_type_name for x in new_match_2]))
-                # Real work below.
+                    # Real work below.
                 rmsd.superimpose(struct_1, new_match_1, struct_2, new_match_2)
                 yield merge_structures_from_matching_atoms(
                     struct_1, new_match_1, struct_2, new_match_2)
@@ -308,7 +311,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                 'b_cs_first_match_only', False),
             use_substructure=use_substructure)
         if match_struct_1:
-            print('     * FOUND IN: {}'.format(struct_1._getTitle()))
+            print('     * FOUND IN: {}'.format(struct_1.title))
             match_struct_2 = get_atom_numbers_from_structure_with_pattern(
                 struct_2,
                 pattern,
@@ -316,10 +319,10 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                     'b_cs_first_match_only', False),
                 use_substructure=use_substructure)
             if match_struct_2:
-                print('     * FOUND IN: {}'.format(struct_2._getTitle()))
+                print('     * FOUND IN: {}'.format(struct_2.title))
             break
         else:
-            print('     * COULDN\'T FIND IN: {}'.format(struct_2._getTitle()))
+            print('     * COULDN\'T FIND IN: {}'.format(struct_2.title))
             continue
     # This is an interesting way to ensure we have actually found something for
     # match_struct_1 and match_struct_2.
@@ -525,7 +528,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
 
     print(' * AFTER MERGE:')
     print('   * {:<30} {} {}'.format(
-        struct_2._getTitle(),
+        struct_2.title,
         [x.index for x in common_atoms_2],
         [x.atom_type_name for x in common_atoms_2]))
     print('ATOMS IN ORIGINAL STRUCTURE: {:>5}'.format(num_atoms))
@@ -535,7 +538,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     print('-' * 80)
     # Look at all the common atoms in struct_2.
     for i, (common_atom_1, common_atom_2) in enumerate(
-            itertools.izip(common_atoms_1, common_atoms_2)):
+            zip(common_atoms_1, common_atoms_2)):
         print('CHECKING COMMON ATOM {}:'.format(i + 1))
         print(' * ORIGINAL ATOM:      {:>4}/{}'.format(
             common_atom_1.index,
@@ -552,7 +555,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         # the atom type with that of struct2. This allows more variablity and
         # flexibility to merge. I still forsee many problems. -TR
         if common_atom_1.atom_type == 64:
-            common_atom_1.atom_type = common_atom_2.atom_type
+            common_atom_2.atom_type = common_atom_1.atom_type
             common_atom_1.color = common_atom_2.color
         #common_atom_1.atom_type = common_atom_2.atom_type
         common_atom_1.color = common_atom_2.color
@@ -561,8 +564,10 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         #what the atom type is, which is redundant, but it resets the atomic
         #number and weight. The AtomName isn't important, but it makes it look
         #pretty in the final mae file.
-        common_atom_1._setAtomType(common_atom_1.atom_type)
-        common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
+
+        common_atom_1.atom_name = (str(common_atom_1.element) + str(common_atom_1.index))
+        #common_atom_1._setAtomType(common_atom_1.atom_type)
+        #common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
 
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
@@ -630,6 +635,9 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                     # important is that values like i_cs_torc_a5 get copied.
                     # (because these values don't get changed by atom number).
                     bond.property.update({k: v})
+        #if common_atom_1.atom_type != common_atom_2.atom_type:
+            #common_atom_1.atom_type = common_atom_2.atom_type
+            #common_atom_1.color = common_atom_2.color
 
     print('-' * 80)
     fix_torsions = get_torc(struct_1, struct_2, match_1, match_2)
@@ -652,8 +660,9 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                           name='torcb')
 
     merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
-    merge.property['s_m_entry_name'] += \
-        '_' + struct_2.property['s_m_entry_name']
+    if hasattr(struct_2, 's_m_entry_name'):
+        merge.property['s_m_entry_name'] += \
+            '_' + struct_2.property['s_m_entry_name']
 
     # I have encoutered problems in macromodel for metal centers with
     # multiple bond (e.g. M-Cp or M-Ph). In order for macromodel to read
@@ -694,14 +703,14 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     # Also enforce the TORC commands.
     merge = mini(
         [merge],
-        #frozen_atoms=range(1, num_atoms + 1),
-        frozen_atoms=frozen_atoms,
+        frozen_atoms=range(1, num_atoms + 1),
+        #frozen_atoms=frozen_atoms,
         fix_torsions=fix_torsions)[0]
     # Short conformational sampling.
-#    merge = mcmm(
-#        [merge],
-#        #frozen_atoms=range(1, num_atoms + 1))[0]
-#        frozen_atoms=frozen_atoms)[0]
+    merge = mcmm(
+        [merge],
+        frozen_atoms=range(1, num_atoms + 1))[0]
+    #frozen_atoms=frozen_atoms)[0]
 #    # Do another minimization, this time without frozen atoms.
     #if fix_torsions:
     #    merge = mini(
@@ -710,7 +719,7 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge = mini(
         [merge],  
         fix_torsions=fix_torsions)[0]
-#    merge = mcmm([merge])[0]
+    merge = mcmm([merge])[0]
     return merge
 
 def add_chirality(structure):

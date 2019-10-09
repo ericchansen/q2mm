@@ -61,9 +61,10 @@ To enforce a trans bond:
 
 Watch out because MacroModel sometimes assigns these enforcing floats wrong.
 """
+from __future__ import absolute_import
 import argparse
 import sys
-from itertools import izip_longest
+from itertools import zip_longest
 
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
@@ -95,7 +96,7 @@ def grouper(n, iterable, fillvalue=0.):
 
     """
     args = [iter(iterable)] * n
-    return izip_longest(fillvalue=fillvalue, *args)
+    return zip_longest(fillvalue=fillvalue, *args)
 
 class MyComUtil(mmodutils.ComUtil):
     def my_mcmm(
@@ -135,10 +136,14 @@ class MyComUtil(mmodutils.ComUtil):
         indices_torc = []
         # Only works with the 1st structure.
         reader = sch_struct.StructureReader(mae_file)
-        structure = reader.next()
+        structure = next(reader)
         reader.close()
         print('-' * 80)
         print('READING: {}'.format(structure.property['s_m_title']))
+        # Extra step due to TORS error using automated script
+        all_bond = []
+        for bond in structure.bond:
+            all_bond.append([bond.atom1.index,bond.atom2.index])
         for atom in structure.atom:
             for prop in ALL_CS_ATOM_PROPERTIES:
                 try:
@@ -183,12 +188,35 @@ class MyComUtil(mmodutils.ComUtil):
                         bond.atom2.index,
                         bond.property['i_cs_rca4_2']))
                 else:
-                    indices_rca4.append((
+                    t_bond = [bond.property['i_cs_rca4_1'],bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append((
                         bond.property['i_cs_rca4_1'],
                         bond.atom1.index,
                         bond.atom2.index,
                         bond.property['i_cs_rca4_2']
-                    ))
+                        ))
+            # FIXED FOR WRONG ORDER OF RCA4
+            if bond.property['i_cs_rca4_2']:
+                thing = [bond.property['i_cs_rca4_2'],
+                         bond.atom1.index,
+                         bond.atom2.index,
+                         bond.property['i_cs_rca4_1']]
+                if set(thing).issubset(frozen_atoms):
+                    print('SKIPPING RCA4: {} {} {} {}'.format(
+                        bond.property['i_cs_rca4_2'],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property['i_cs_rca4_1']))
+                else:
+                    t_bond = [bond.property['i_cs_rca4_2'], bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append((
+                            bond.property['i_cs_rca4_2'],
+                            bond.atom1.index,
+                            bond.atom2.index,
+                            bond.property['i_cs_rca4_1']
+                        ))
             if bond.property['i_cs_torc_a1']:
                 indices_torc.append((
                     bond.property['i_cs_torc_a1'],

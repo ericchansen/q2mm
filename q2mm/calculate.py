@@ -31,11 +31,11 @@ import sys
 from itertools import chain
 from textwrap import TextWrapper
 
-import .constants as co
-import .compare
-import .datatypes
-import .filetypes
-import .parameters
+import constants as co
+import compare
+import datatypes
+import filetypes
+import parameters
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,8 @@ logger = logging.getLogger(__name__)
 COM_LOAD_FF    = ['ma', 'mb', 'mt',
                   'ja', 'jb', 'jt']
 # Commands related to Gaussian.
-COM_GAUSSIAN   = ['ge', 'gea', 'geo', 'geao',
+COM_GAUSSIAN   = ['gaa','gaao','gab','gabo','gat','gato',
+                  'gta','gtb','gtt','ge','ge1', 'gea', 'geo','ge1o', 'geao',
                   'gh', 'geigz']
 # Commands related to Jaguar (Schrodinger).
 COM_JAGUAR     = ['jq', 'jqh', 'jqa',
@@ -65,7 +66,7 @@ COM_TINKER     = ['ta','tao', 'tb', 'tbo',
                   'tea','teao', 'th',
                   'tjeigz', 'tgeig']
 # Commands related to Amber.
-COM_AMBER      = ['ae']
+COM_AMBER      = ['ae','ae1','aeo','ae1o','abo','aao','ato','ah']
 # All other commands.
 COM_OTHER = ['r']                           
 # All possible commands.
@@ -168,32 +169,53 @@ def main(args):
                 inps[com_filename].commands = commands_for_filename
                 inps[com_filename].read_newzmat(filename)
                 
-                
 
         elif any(x in COM_TINKER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.xyz':
                 inps[filename] = filetypes.TinkerXYZ(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
+        # Gaussian to Tinker
+        elif any(x in ['gta','gtb','gtt'] for x in commands_for_filename):
+            # For bond, angle, torsion taken from Gaussian
+            # The xyz will be collected from Gaussian and be rewritten in corresponding software
+            # 
+            # Q2MM takes commands_for_filename for each line of RDAT and CDAT
+            # must make difference type
+            # Tinker
+            if os.path.splitext(filename)[1] == ".log":
+                inps[filename] = filetypes.TinkerXYZ_FOR_GAUS(
+                    os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
+        # Gausssian to Amber
+        elif any(x in ['gaa','gab','gat','gaao','gabo','gato'] for x in commands_for_filename):
+            if os.path.splitext(filename)[1] == ".log":
+                inps[filename] = filetypes.AmberLeap_Gaus(
+                    os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
+                    
         elif any(x in COM_AMBER for x in commands_for_filename):
+            if os.path.splitext(filename)[1] == ".in": # leap.in as for now
+                inps[filename] = filetypes.AmberLeap(os.path.join(opts.directory, filename))
+                inps[filename].commands = commands_for_filename
             # This doesn't work.
             # We need to know both filenames simultaneously for this Amber crap.
             # Have to add these to `inps` in some other way.
-            pass
+            # pass
         # In this case, no command files have to be written.
         else:
             inps[filename] = None
     # Stuff below needs both comma separated filenames simultaneously.
     # Do the Amber inputs.
     # Leaving the filenames together because Taylor said this would work well.
-    for comma_sep_filenames in flatten(commands['ae']):
-        # Maybe make more specific later.
-        inps[comma_sep_filenames] = filetypes.AmberInput(
-            'DOES_PATH_EVEN_MATTER')
-        split_it = comma_sep_filenames.split(',')
-        inps[comma_sep_filenames].directory = opts.directory
-        inps[comma_sep_filenames].inpcrd = split_it[0]
-        inps[comma_sep_filenames].prmtop = split_it[1]
+#    for comma_sep_filenames in flatten(commands['ae']):
+#        # Maybe make more specific later.
+#        inps[comma_sep_filenames] = filetypes.AmberInput(
+#            'DOES_PATH_EVEN_MATTER')
+#        split_it = comma_sep_filenames.split(',')
+#        inps[comma_sep_filenames].directory = opts.directory
+#        inps[comma_sep_filenames].inpcrd = split_it[0]
+#        inps[comma_sep_filenames].prmtop = split_it[1]
     logger.log(1, '>>> commands: {}'.format(commands))
     # Check whether or not to skip calculations.
     if opts.norun or opts.fake:
@@ -301,9 +323,49 @@ def return_calculate_parser(add_help=True, parents=None):
     # GAUSSIAN OPTIONS
     gau_args = parser.add_argument_group("gaussian reference data types")
     gau_args.add_argument(
+        '-gta', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian angles using Tinker.'))
+    gau_args.add_argument(
+        '-gtb', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian bonds using Tinker.'))
+    gau_args.add_argument(
+        '-gtt', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian torsions using Tinker.'))
+    gau_args.add_argument(
+        '-gaa', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian angles using Amber.'))
+    gau_args.add_argument(
+        '-gab', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian bonds using Amber.'))
+    gau_args.add_argument(
+        '-gat', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian torsions using Amber.'))
+    gau_args.add_argument(
+        '-gaao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian angles using Amber (POST OPT).'))
+    gau_args.add_argument(
+        '-gabo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian bonds using Amber (POST OPT).'))
+    gau_args.add_argument(
+        '-gato', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian torsions using Amber (POST OPT).'))
+    gau_args.add_argument(
         '-ge', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
         help=('Gaussian energies.'))
+    gau_args.add_argument(
+        '-ge1', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energy.'))
     gau_args.add_argument(
         '-gea', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
@@ -315,6 +377,10 @@ def return_calculate_parser(add_help=True, parents=None):
         help=('Gaussian energies. Same as -ge, except the files selected '
               'by this command will have their energies compared to those '
               'selected by -meo.'))
+    gau_args.add_argument(
+        '-ge1o', type=str, nargs='+', action='append',
+        default=[], metavar='somename.log',
+        help=('Gaussian energy. Used for FF a1o commands.'))
     gau_args.add_argument(
         '-geao', type=str, nargs='+', action='append',
         default=[], metavar='somename.log',
@@ -538,7 +604,35 @@ def return_calculate_parser(add_help=True, parents=None):
     amb_args.add_argument(
         '-ae', type=str, nargs='+', action='append',
         default=[], metavar='somename.inpcrd,somename.prmtop',
-        help='Amber energy.')
+        help='Amber energies.')
+    amb_args.add_argument(
+        '-abo', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help=('Amber bonds (post-FF optimization).'))
+    amb_args.add_argument(
+        '-aao', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help=('Amber angles (post-FF optimization).'))
+    amb_args.add_argument(
+        '-ato', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help=('Amber torsion (post-FF optimization).'))
+    amb_args.add_argument(
+        '-ae1', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Amber energy (pre-FF optimization).')
+    amb_args.add_argument(
+        '-ae1o', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Amber energy (post-FF optimization).')
+    amb_args.add_argument(
+        '-ah', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Amber Hessian (post-FF optimization).')
+    amb_args.add_argument(
+        '-aha', type=str, nargs='+', action='append',
+        default=[], metavar='somename.in',
+        help='Amber Hessian (post-FF optimization).')
     return parser
 
 def check_outs(filename, outs, classtype, direc):
@@ -659,6 +753,65 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
+        data.extend(temp)
+    # KJK
+    # FOR A SINGLE MODEL SYSTEM FITTING
+    # GAUSSIAN ENERGY
+    filename_s = coms['ge1']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = [float(x) for x in thing.split(',')]
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge1',
+                        typ='e1',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
+        data.extend(temp)
+    # FOR A SINGLE MODEL SYSTEM FITTING (Comparing to Optimized structure)
+    # GAUSSIAN ENERGY
+    filename_s = coms['ge1o']
+    for idx_1, filenames in enumerate(filename_s):
+        temp = []
+        for filename in filenames:
+            log = check_outs(filename, outs, filetypes.GaussLog, direc)
+            things_to_add = []
+            for thing_label in co.GAUSSIAN_ENERGIES:
+                thing = log.structures[0].props[thing_label]
+                if ',' in thing:
+                    thing = [float(x) for x in thing.split(',')]
+                else:
+                    thing = [float(thing)]
+                things_to_add.append(thing)
+            energies = [0.] * len(things_to_add[0])
+            for thing_group in things_to_add:
+                for i, thing in enumerate(thing_group):
+                    energies[i] += thing
+            energies = [x * co.HARTREE_TO_KJMOL for x in energies]
+            for i, e in enumerate(energies):
+                temp.append(datatypes.Datum(
+                        val=e,
+                        com='ge1o',
+                        typ='e1o',
+                        src_1=filename,
+                        idx_1=idx_1 + 1,
+                        idx_2=i + 1))
         data.extend(temp)
     # GAUSSIAN ENERGIES
     filename_s = coms['ge']
@@ -799,27 +952,202 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
                         idx_2=idx_2 + 1))
-    # AMBER ENERGIES
-    filenames_s = coms['ae']
+    # KJK
+    # GAUSSIAN TO AMBER BONDS (PRE OPT)
+    filenames_s = coms['gab']
     for idx_1, filenames in enumerate(filenames_s):
-        logger.log(1, '>>> idx_1: {}'.format(idx_1))
-        logger.log(1, '>>> filenames: {}'.format(filenames))
-        for idx_2, comma_sep_filenames in enumerate(filenames):
-            name_1, name_2 = comma_sep_filenames.split(',')
-            out = check_outs(
-                comma_sep_filenames, outs, filetypes.AmberOut, direc)
-            # Right now, path is a comma separated string.
-            out.path = inps[comma_sep_filenames].out
-            logger.log(1, '>>> out: {}'.format(out))
-            energy = out.read_energy()
-            data.append(datatypes.Datum(
-                val=energy,
-                com='ae',
-                typ='e',
-                src_1=name_1,
-                src_2=name_2,
-                idx_1=idx_1 + 1,
-                idx_2=idx_2 + 1))
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gab', 'pre', 'bonds', idx_1 = idx_1))
+        data.extend(temp) 
+    # GAUSSIAN TO AMBER ANGLES (PRE OPT)
+    filenames_s = coms['gaa']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gaao', 'pre', 'angles', idx_1 = idx_1))
+        data.extend(temp) 
+    # GAUSSIAN TO AMBER TORSIONS (PRE OPT)
+    filenames_s = coms['gat']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gato', 'pre', 'torsions', idx_1 = idx_1))
+        data.extend(temp) 
+    # GAUSSIAN TO AMBER BONDS (POST OPT)
+    filenames_s = coms['gabo']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gabo', 'opt', 'bonds', idx_1 = idx_1))
+        data.extend(temp) 
+    # GAUSSIAN TO AMBER ANGLES (POST OPT)
+    filenames_s = coms['gaao']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gaao', 'opt', 'angles', idx_1 = idx_1))
+        data.extend(temp) 
+    # GAUSSIAN TO AMBER TORSIONS (POST OPT)
+    filenames_s = coms['gato']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'gato', 'opt', 'torsions', idx_1 = idx_1))
+        data.extend(temp) 
+    # AMBER BONDS
+    filenames_s = coms['abo']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'abo', 'opt', 'bonds', idx_1 = idx_1))
+        data.extend(temp) 
+    # AMBER ANGLES
+    filenames_s = coms['aao']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'aao', 'opt', 'angles', idx_1 = idx_1))
+        data.extend(temp) 
+    # AMBER TORSIONS
+    filenames_s = coms['ato']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.extend(collect_structural_data_from_amber_geo(
+                filename, inps, outs, direc, 'ato', 'opt', 'torsions', idx_1 = idx_1))
+        data.extend(temp) 
+    # AMBER ENERGY
+    filenames_s = coms['ae1']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_amber_ene(
+                filename, inps, outs, direc, 'ae1', 'pre', 'e1', idx_1 = idx_1))
+        data.extend(temp) 
+
+    # AMBER OPTIMIZED ENERGY
+    filenames_s = coms['ae1o']
+    for idx_1, filenames in enumerate(filenames_s):
+        temp = []
+        for filename in filenames:
+            temp.append(collect_structural_data_from_amber_ene(
+                filename, inps, outs, direc, 'ae1o', 'opt', 'e1o', idx_1 = idx_1))
+        data.extend(temp) 
+        
+    # AMBER HESSIAN
+    filenames = chain.from_iterable(coms['ah'])
+    for filename in filenames:
+        name_hes = inps[filename].name_hes
+        hes = check_outs(name_hes, outs, filetypes.AmberHess, direc)
+        hess = hes.hessian
+        # hessian extracted from Amber is already mass weighted
+        low_tri_idx = np.tril_indices_from(hess)
+        low_tri = hess[low_tri_idx]
+        int2 = []
+        int3 = []
+        int4 = []
+        if os.path.isfile("calc/geo.npy"):
+            hes_geo = None
+            if np.__version__ >= '1.16.4':
+                hes_geo = np.load("calc/geo.npy",allow_pickle=True)
+            else:
+                hes_geo = np.load("calc/geo.npy")
+            for ele in hes_geo:
+                inter = np.count_nonzero(ele)
+                a,b,c,d = ele
+                if inter == 2:
+                    a = int(a)
+                    b = int(b)
+                    int2.append([a,b])
+                elif inter == 3:
+                    a = int(a)
+                    c = int(c)
+                    int3.append([a,c])
+                elif inter == 4:        
+                    a = int(a)
+                    d = int(d)            
+                    int4.append([a,d])
+        frozen = 0
+        f_atom = []
+        if os.path.isfile("fixedatoms.txt"):
+            frozen = 1
+            ref = open("fixedatoms.txt","r")
+            flines = ref.readlines()
+            for fline in flines:
+                line = fline.split()
+                if len(line) == 1:
+                    f_atom.append(int(line[0]))
+            print("Reading fixedatoms.txt\nFixed Atom Numbers:",f_atom)
+        def int_wht(at_1,at_2):
+            """
+                Weighted value for hessian matrix
+                default value
+                diagonal zero
+                1-2      0.031
+                1-3      0.031
+                1-4      0.31
+                else     0.031
+            """
+            apair = [at_1,at_2]
+            if at_1 == at_2:
+                return 0.0
+            elif apair in int2:
+                return co.WEIGHTS['h12']
+            elif apair in int3:
+                return co.WEIGHTS['h14']
+            elif apair in int4:
+                return co.WEIGHTS['h14']
+            elif frozen:
+                if at_1 in f_atom or at_2 in f_atom:
+                    #print("DEBUG:",at_1,at_2,f_atom)
+                    return 0.0
+                else:
+                    return 1.0
+            else:
+                return 1.0
+        data.extend([datatypes.Datum(
+            val=e,
+            com='ah',
+            typ='h',
+            src_1=hes.filename,
+            idx_1=x + 1,
+            idx_2=y + 1,
+            atm_1=int((x)//3+1),
+            atm_2=int((y)//3+1),
+            wht = int_wht(int((x)//3+1),int((y)//3+1)))
+                for e, x, y in zip(
+                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        
+    # AMBER ENERGIES
+#    filenames_s = coms['ae']
+#    for idx_1, filenames in enumerate(filenames_s):
+#        logger.log(1, '>>> idx_1: {}'.format(idx_1))
+#        logger.log(1, '>>> filenames: {}'.format(filenames))
+#        for idx_2, comma_sep_filenames in enumerate(filenames):
+#            name_1, name_2 = comma_sep_filenames.split(',')
+#            out = check_outs(
+#                comma_sep_filenames, outs, filetypes.AmberOut, direc)
+#            # Right now, path is a comma separated string.
+#            out.path = inps[comma_sep_filenames].out
+#            logger.log(1, '>>> out: {}'.format(out))
+#            energy = out.read_energy()
+#            data.append(datatypes.Datum(
+#                val=energy,
+#                com='ae',
+#                typ='e',
+#                src_1=name_1,
+#                src_2=name_2,
+#                idx_1=idx_1 + 1,
+#                idx_2=idx_2 + 1))
     # JAGUAR AVERAGE ENERGIES
     filenames_s = coms['jea']
     # idx_1 is the number used to group sets of relative energies.
@@ -1065,6 +1393,21 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     for filename in filenames:
         data.extend(collect_structural_data_from_mae(
                 filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+    # GAUSSIAN BONDS
+    filenames = chain.from_iterable(coms['gtb'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'gtb', 'pre', 'bonds'))
+    # GAUSSIAN ANGLES
+    filenames = chain.from_iterable(coms['gta'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'gta', 'pre', 'angles'))
+    # GAUSSIAN TORSIONS
+    filenames = chain.from_iterable(coms['gtt'])
+    for filename in filenames:
+        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
+                filename, inps, outs, direc, 'gtt', 'pre', 'torsions'))
     # TINKER SP BONDS
     filenames = chain.from_iterable(coms['tb'])
     for filename in filenames:
@@ -1682,21 +2025,13 @@ def flatten(l):
     """
     # Move this?
     import collections
-    if sys.version_info > (3, 0):
-        for el in l:
-            if isinstance(el, collections.Iterable) and \
-                    not isinstance(el, (str, bytes)):
-                yield from flatten(el):
-            else:
-                yield el
-    else:
-        for el in l:
-            if isinstance(el, collections.Iterable) and \
-              not isinstance(el, basestring):
-                for sub in flatten(el):
-                    yield sub
-            else:
-                yield el
+    for el in l:
+        if isinstance(el, collections.Iterable) and \
+          not isinstance(el, str):
+            for sub in flatten(el):
+                yield sub
+        else:
+            yield el
 
 def collect_structural_data_from_mae(
     name_mae, inps, outs, direc, sub_names, com, ind, typ):
@@ -1735,7 +2070,7 @@ def collect_structural_data_from_tinker_log(
     select_struct = {'pre':0, 'opt':1}
     data = []
     name_log = inps[name_xyz].name_log
-    log = check_outs(name_log, outs, filetypes.Tinker_log, direc)
+    log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
     log_structure = log.structures
     struct = log_structure[select_struct[ind]]
     # Stuff to try out hessian.
@@ -1759,6 +2094,68 @@ def collect_structural_data_from_tinker_log(
             com=com,
             src_1=name_log))
         return(data)
+
+def collect_structural_data_from_tinker_log_for_gaussian(
+    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_log = inps[name_xyz].name_log
+    log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
+    log_structure = log.structures
+    struct = log_structure[select_struct[ind]]
+
+    data.extend(struct.select_data(
+        typ,
+        com=com,
+        src_1=name_log))
+    return(data)
+
+def collect_structural_data_from_amber_geo(
+    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_geo = inps[name_xyz].name_geo
+    log = check_outs(name_geo, outs, filetypes.AmberGeo, direc) # returns classtype
+    log_structure = log.structures
+    struct = None
+    if len(inps) == 1:
+        struct = log_structure[0]
+    else:
+        struct = log_structure[select_struct[ind]]
+    data.extend(struct.select_data(
+            typ,
+            com=com,
+            src_1=name_geo))
+    return(data)
+def collect_structural_data_from_amber_ene(
+    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    # Problem with input only 1 file
+    select_struct = {'pre':0, 'opt':1}
+    data = []
+    name_ene = inps[name_xyz].name_ene
+    log = check_outs(name_ene, outs, filetypes.AmberEne, direc) # returns classtype
+    log_structure = log.structures
+    struct = None
+    if len(inps) == 1:
+        struct = log_structure[0]
+    else:
+        struct = log_structure[select_struct[ind]]
+    if com in ['ae','aeo','aea','aeao','ae1','ae1o']:
+        energy = struct.props['energy']
+        new_datum = (datatypes.Datum(
+            val=energy,
+            typ=typ,
+            src_1=name_ene,
+            idx_1=idx_1 + 1))
+        return(new_datum)
+    else:
+        data.extend(struct.select_data(
+            typ,
+            com=com,
+            src_1=name_ene))
+        return(data)
+
+
 
 def sort_commands_by_filename(commands):
     '''
