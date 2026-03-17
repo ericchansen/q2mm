@@ -53,12 +53,12 @@ pip install -e ".[amber]" # With parmed (AMBER support)
 
 ```
 q2mm/
-+-- core/          # Optimization engine (gradient, simplex, objective function)
-+-- backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
-+-- io/            # File format parsers (Gaussian, Jaguar, MOL2, MAE)
-+-- forcefields/   # Force field types (MM3, AMBER, Tinker)
-+-- cli/           # Command-line interface
-+-- seminario.py   # QFUERZA/Seminario force constant estimation
+├── core/          # Optimization engine (gradient, simplex, objective function)
+├── backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
+├── io/            # File format parsers (Gaussian, Jaguar, MOL2, MAE)
+├── forcefields/   # Force field types (MM3, AMBER, Tinker)
+├── cli/           # Command-line interface
+└── seminario.py   # QFUERZA/Seminario force constant estimation
 
 examples/          # Example workflows and training data
 data/              # Reference structures (ligands, substrates, reactions)
