@@ -1,27 +1,19 @@
-import copy
-import logging
-import logging.config
-import os
 import unittest
 from pathlib import Path
 import numpy as np
-from q2mm import linear_algebra
 
-from q2mm.schrod_indep_filetypes import MM3, MacroModelLog, GaussLog, Mol2, mass_weight_hessian
-from q2mm.seminario import seminario
+from q2mm.schrod_indep_filetypes import MM3, GaussLog, Mol2, mass_weight_hessian
 from q2mm import constants as co
-from q2mm import utilities
-
-logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ETHANE_DIR = REPO_ROOT / "q2mm_example" / "amber" / "Ethane"
-SEMINARIO_DIR = REPO_ROOT / "q2mm_example" / "amber" / "seminario"
 RH_SEMINARIO_DIR = REPO_ROOT / "rh-seminario"
 
 
 @unittest.skipUnless(
-    (ETHANE_DIR / "GS.mol2").exists() and (ETHANE_DIR / "GS.log").exists(),
+    (ETHANE_DIR / "GS.mol2").exists()
+    and (ETHANE_DIR / "GS.log").exists()
+    and (ETHANE_DIR / "TS.log").exists(),
     "Ethane fixture files not found"
 )
 class TestGaussLogParsing(unittest.TestCase):
@@ -116,5 +108,4 @@ class TestHessianMassWeighting(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    logging.config.dictConfig(co.LOG_SETTINGS)
     unittest.main()

@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-import random
-import string
 import unittest
 
 from q2mm.datatypes import (
-    MM3,
     match_mm3_bond,
     match_mm3_angle,
     match_mm3_stretch_bend,
@@ -37,9 +34,10 @@ class TestMM3LabelMatching(unittest.TestCase):
     def test_match_mm3_label_improper(self):
         self.assertTrue(match_mm3_improper(' 5'))
 
-    def test_match_mm3_label_random(self):
-        label = f'{random.choice(string.ascii_lowercase)}{random.randint(1, 5)}'
-        self.assertTrue(match_mm3_label(label))
+    def test_match_mm3_label_various(self):
+        # Verify match_mm3_label accepts any valid lowercase+digit combo
+        for label in ['a1', 'b2', 'c3', 'd4', 'e5', 'z1']:
+            self.assertTrue(match_mm3_label(label), f"Should match: {label!r}")
 
     def test_no_match_invalid_label(self):
         self.assertFalse(match_mm3_bond(' 2'))  # ' 2' is angle, not bond
