@@ -9,7 +9,7 @@ Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing the
 ## Quick Start
 
 ```bash
-pip install -e ".[dev]"
+pip install -e .
 ```
 
 ```python
