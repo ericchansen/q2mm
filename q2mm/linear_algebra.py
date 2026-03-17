@@ -1,11 +1,10 @@
 """Contains methods which perform linear algebraic operations.
 
 """
-from __future__ import division, print_function, absolute_import
 import copy
 
 import numpy as np
-import constants as co
+from q2mm import constants as co
 from typing import Tuple
 
 # region Generalized
@@ -39,7 +38,7 @@ def replace_neg_eigenvalue(
 
     Returns:
         np.ndarray: Eigenvalues with most negative eigenvalue replaced and, if requested, remaining negative values zeroed out.
-    """    
+    """
     neg_indices = np.argwhere([eval < 0 for eval in eigenvalues])
 
     if len(neg_indices) > 1:

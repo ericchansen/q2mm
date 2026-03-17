@@ -4,13 +4,13 @@ from tkinter import messagebox, filedialog, Menu
 import tkinter.ttk as ttk
 #from tkinter.ttk import *
 import os
-import constants as co
+from q2mm import constants as co
 #os.chdir(os.path.dirname(__file__))
 
-class q2mm_gui():
+class q2mm_gui:
     def __init__(self):
         self.anchor = W
-        
+
         self.cur_dir = os.getcwd()
         self.path = ["","","","",""] # ff file, qparam.txt, init_comparison, final ff file, fin_comparison
         self.weights = []
@@ -42,16 +42,16 @@ class q2mm_gui():
         self.menu(win)
         win.grid_rowconfigure(1, weight=1)
         win.grid_columnconfigure(0,weight=1)
-        
+
         frame1 = Frame(win,width=160, height=45,relief=RIDGE,bg="red")
         frame1.grid(row=0,column=0)
         frame2 = Frame(win,relief=FLAT,width=160, height=45,bg="cyan")
         frame2.grid(row=2,column=0)
-        
+
         frame3 = Frame(win,relief=RIDGE,width=160, height=45,bg="white")
         frame3.grid(row=0,column=1)
 
-        
+
 #        self.content(win)
         self.soft_frame(frame1)
         self.file_frame(frame2)
@@ -83,8 +83,8 @@ class q2mm_gui():
     def weights_frame(self,win):
         cur_row = 0
         cur_col = 0
-       
-        
+
+
         weights = ["Weights"]
         for val in co.WEIGHTS:
             weights.append(val)
@@ -112,7 +112,7 @@ class q2mm_gui():
             Label(text=r, relief=RIDGE,width=20).grid(row=cur_row,column=0)
             cur_row += 1
 
-        
+
         options = ["Charge","Energy","Bond","Angle","Torsion","Hessian","EigenMatrix"]
         var = []
         checks = []
@@ -180,7 +180,7 @@ class q2mm_gui():
         cb = ttk.Combobox(win,values=charge_options)
         cb.grid(row=cur_row, column=cur_col)
         cb.current(0)
-        
+
 
         # Option for Energy
         cur_col += 1
@@ -214,8 +214,8 @@ class q2mm_gui():
         # load forcefield file (FFLD read) bb
 #        commands += "\nFFLD read "+path
         # load qparam file (PARM)
-        
-        
+
+
         # reference
         # calculation
 
@@ -227,7 +227,7 @@ class q2mm_gui():
             Label(text=r, relief=RIDGE,width=20).grid(row=cur_row,column=0)
             cur_row += 1
 
-        
+
         options = ["Charge","Energy","Bond","Angle","Torsion","Hessian","EigenMatrix"]
         var = []
         checks = []
@@ -295,7 +295,7 @@ class q2mm_gui():
         cb = Combobox(win,values=charge_options)
         cb.grid(row=cur_row, column=cur_col)
         cb.current(0)
-        
+
 
         # Option for Energy
         cur_col += 1
@@ -309,18 +309,18 @@ class q2mm_gui():
         self.weight_param(win,cur_row)
 
         # bond_options = []
-        
+
 
         # eigenmatrix options for m changed by matching software
 
 
         # Convergence (LOOP)
-        
+
 
         # name the final forcefield file(FFLD write)
-        # run 
-        
-        row = cur_row + 2 
+        # run
+
+        row = cur_row + 2
 
         self.checks = checks
         self.var = var
@@ -351,15 +351,15 @@ class q2mm_gui():
             print(i.get())
 
     def view_file(self,n):
-        f = open(self.path[n],"r")
+        f = open(self.path[n])
         messagebox.showinfo("Preview",f.read())
         #Text("1.0",f.read())
 
     def weight_param(self,win,row):
         cur_row = 0
         cur_col = 9
-       
-        
+
+
         weights = ["Weights"]
         for val in co.WEIGHTS:
             weights.append(val)
@@ -375,7 +375,7 @@ class q2mm_gui():
             weight = Spinbox(win, from_=0, to=200, width=20, format="%10.2f", textvariable=fv)
             weight.grid(row=cur_row, column=cur_col)
             self.weights.append(weight)
-            
+
 
         return
 

@@ -1,16 +1,15 @@
-from __future__ import print_function
 import copy
 import logging
 import logging.config
 import os
 import unittest
 import numpy as np
-import linear_algebra
+from q2mm import linear_algebra
 
-from schrod_indep_filetypes import MM3, MacroModelLog, GaussLog, Mol2, mass_weight_hessian
-from seminario import seminario
-import constants as co
-import utilities
+from q2mm.schrod_indep_filetypes import MM3, MacroModelLog, GaussLog, Mol2, mass_weight_hessian
+from q2mm.seminario import seminario
+from q2mm import constants as co
+from q2mm import utilities
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ mm_log_path = "rh-seminario/mm3_results/q_seminario_fld/*.log"
 ethane_og_fld_path = "test/ethane/start.fld"
 mol2_path = "rh-seminario/rh_enamide_training_set/rh_enamide_training_set.mol2"
 def run_seminario(self):
-    
+
     ethane_ff = seminario(self.ethane_og_fld, self.structs, self.hessians, zero_out=True, hessian_units=co.KJMOLA)
     ethane_ff.export_ff(self.seminario_fld_path, ethane_ff.params)
 def read_in_files(self):

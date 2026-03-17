@@ -1,5 +1,5 @@
 #!/usr/bin/python
-from datatypes import *
+from q2mm.datatypes import *
 import random
 import string
 import unittest
@@ -22,9 +22,8 @@ class TestMM3(unittest.TestCase):
     def test_match_mm3_label_improper(self):
         self.assertTrue(self.ff.match_mm3_improper(' 5'))
     def test_match_mm3_label(self):
-        self.assertTrue(self.ff.match_mm3_label('{}{}'.format(
-                    random.choice(string.ascii_lowercase), random.randint(1, 5))))
-                        
+        self.assertTrue(self.ff.match_mm3_label(f'{random.choice(string.ascii_lowercase)}{random.randint(1, 5)}'))
+
 if __name__ == '__main__':
     unittest.main()
 

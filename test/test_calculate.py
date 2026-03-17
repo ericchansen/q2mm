@@ -1,13 +1,12 @@
-from __future__ import print_function
 import copy
 import logging
 import logging.config
 import os
 import unittest
 
-import constants as co
-import calculate
-import compare
+from q2mm import constants as co
+from q2mm import calculate
+from q2mm import compare
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,7 @@ class TestMacroModelBonds(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -mb X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-mb', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -29,7 +28,7 @@ class TestMacroModelAngles(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -ma X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-ma', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -41,7 +40,7 @@ class TestMacroModelTorsions(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -mt X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-mt', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -54,8 +53,7 @@ class TestMacroModelEnergies(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -me X001_E1.01.mae X001_E2.02.mae X001_Z1.02.mae '
-            'X001_Z2.02.mae'.split())
+            ['-d', 'd_rhod', '-me', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -68,8 +66,7 @@ class TestMacroModelOptimizedEnergies(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -meo X001_E1.01.mae X001_E2.02.mae X001_Z1.02.mae '
-            'X001_Z2.02.mae'.split())
+            ['-d', 'd_rhod', '-meo', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -82,7 +79,7 @@ class TestMacroModelCharges(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -mq X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-mq', 'X001_E1.01.mae'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -98,7 +95,7 @@ class TestMacroModelEigenvalues(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -meig X001_E1.01.mae,X001_E1.out'.split())
+            ['-d', 'd_rhod', '-meig', 'X001_E1.01.mae,X001_E1.out'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -110,7 +107,7 @@ class TestJaguarBonds(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -jb X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-jb', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -122,7 +119,7 @@ class TestJaguarAngles(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -ja X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-ja', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -134,7 +131,7 @@ class TestJaguarTorsions(unittest.TestCase):
     proper number of data points.
     """
     def setUp(self):
-        self.conn = calculate.main(' -d d_rhod -jt X001_E1.01.mae'.split())
+        self.conn = calculate.main(['-d', 'd_rhod', '-jt', 'X001_E1.01.mae'])
     def test_ma(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -147,8 +144,7 @@ class TestJaguarEnergies(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -je X001_E1.01.mae X001_E2.02.mae X001_Z1.02.mae '
-            'X001_Z2.02.mae'.split())
+            ['-d', 'd_rhod', '-je', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -165,8 +161,7 @@ class TestJaguarEnergies(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -jeo X001_E1.01.mae X001_E2.02.mae X001_Z1.02.mae '
-            'X001_Z2.02.mae'.split())
+            ['-d', 'd_rhod', '-jeo', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -180,7 +175,7 @@ class TestJaguarEigenvalues(unittest.TestCase):
     """
     def setUp(self):
         self.conn = calculate.main(
-            ' -d d_rhod -jeige X001_E1.01.in,X001_E1.out'.split())
+            ['-d', 'd_rhod', '-jeige', 'X001_E1.01.in,X001_E1.out'])
     def test_me(self):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
@@ -191,12 +186,12 @@ class TestCompareBonds(unittest.TestCase):
     evaluate the objective function.
     """
     def setUp(self):
-        self.f_conn = calculate.main(' -d d_rhod -mb X001_E1.01.mae'.split())
-        self.r_conn = calculate.main(' -d d_rhod -jb X001_E1.01.mae'.split())
+        self.f_conn = calculate.main(['-d', 'd_rhod', '-mb', 'X001_E1.01.mae'])
+        self.r_conn = calculate.main(['-d', 'd_rhod', '-jb', 'X001_E1.01.mae'])
     def test_compare_bonds(self):
         score = compare.compare_data(self.r_conn, self.f_conn)
-        print('COMPARE BONDS SCORE: {}'.format(score))
-            
+        print(f'COMPARE BONDS SCORE: {score}')
+
 if __name__ == '__main__':
     logging.config.dictConfig(co.LOG_SETTINGS)
     unittest.main()

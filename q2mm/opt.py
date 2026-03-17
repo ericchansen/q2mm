@@ -2,9 +2,6 @@
 General code related to all optimization techniques.
 Testing
 """
-from __future__ import absolute_import
-from __future__ import division
-
 import copy
 import collections
 import logging
@@ -14,11 +11,11 @@ import re
 import textwrap
 import sys
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import parameters
+from q2mm import calculate
+from q2mm import compare
+from q2mm import constants as co
+from q2mm import datatypes
+from q2mm import parameters
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -38,18 +35,16 @@ def catch_run_errors(func):
             logger.warning('opt.catch_run_errors caught an error!')
             logger.warning(e)
             if papa_bear.best_ff is None:
-                logger.warning('Exiting {} and returning initial FF.'.format(
-                        papa_bear.__class__.__name__.lower()))
+                logger.warning(f'Exiting {papa_bear.__class__.__name__.lower()} and returning initial FF.')
                 papa_bear.ff.export_ff(papa_bear.ff.path)
                 return papa_bear.ff
             else:
-                logger.warning('Exiting {} and returning best FF.'.format(
-                        papa_bear.__class__.__name__.lower()))
+                logger.warning(f'Exiting {papa_bear.__class__.__name__.lower()} and returning best FF.')
                 papa_bear.best_ff.export_ff(papa_bear.best_ff.path)
                 return papa_bear.best_ff
     return wrapper
 
-class Optimizer(object):
+class Optimizer:
     """
     Base class for all optimization methods.
 
@@ -93,8 +88,7 @@ class Optimizer(object):
                  ff_lines=None,
                  args_ff=None,
                  args_ref=None):
-        logger.log(20, '~~ {} SETUP ~~'.format(
-                self.__class__.__name__.upper()).rjust(79, '~'))
+        logger.log(20, f'~~ {self.__class__.__name__.upper()} SETUP ~~'.rjust(79, '~'))
         self.direc = direc
         self.ff = ff
         self.ff_lines = ff_lines
@@ -143,14 +137,14 @@ def differentiate_ff(ff, central=True):
         new_ff.params = param_set
         new_ff.path = ff.path
         if central and i % 2 == 1:
-            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
-            new_ff.method = 'BACKWARD {}'.format(param_set[int(np.floor(i/2.))])
+            logger.log(1, f'>>> i / i % 2: {i} {i % 2}')
+            new_ff.method = f'BACKWARD {param_set[int(np.floor(i/2.))]}'
         else:
-            logger.log(1, '>>> i / i % 2: {} {}'.format(i, i % 2))
+            logger.log(1, f'>>> i / i % 2: {i} {i % 2}')
             if central:
-                new_ff.method = 'FORWARD {}'.format(param_set[int(np.floor(i/2.))])
+                new_ff.method = f'FORWARD {param_set[int(np.floor(i/2.))]}'
             else:
-                new_ff.method = 'FORWARD {}'.format(param_set[i])
+                new_ff.method = f'FORWARD {param_set[i]}'
         ffs.append(new_ff)
     return ffs
 
@@ -169,12 +163,10 @@ def differentiate_params(params, central=True):
     """
     if central:
         logger.log(
-            20, '~~ CENTRAL DIFFERENTIATION ON {} PARAMS ~~'.format(
-                len(params)).rjust(79, '~'))
+            20, f'~~ CENTRAL DIFFERENTIATION ON {len(params)} PARAMS ~~'.rjust(79, '~'))
     else:
         logger.log(
-            20, '~~ FORWARD DIFFERENTIATION ON {} PARAMS ~~'.format(
-                len(params)).rjust(79, '~'))
+            20, f'~~ FORWARD DIFFERENTIATION ON {len(params)} PARAMS ~~'.rjust(79, '~'))
     param_sets = []
     for i, param in enumerate(params):
         while True:
@@ -195,7 +187,7 @@ def differentiate_params(params, central=True):
                 logger.warning(str(e))
                 forward_params[i].value = forward_params[i].allowed_range[1]
                 param.step = param.step/2.0
-                logger.warning("  -- No Forward Step. Staying with value of {}. Step size change to {}".format(forward_params[i].allowed_range[1],param.step))
+                logger.warning(f"  -- No Forward Step. Staying with value of {forward_params[i].allowed_range[1]}. Step size change to {param.step}")
                 backward_params[i].value = original_value - ori_step # if Forward step is blocked, Backward step should not be a problem
                 param_sets.append(forward_params)
                 if central:
@@ -205,7 +197,7 @@ def differentiate_params(params, central=True):
                 logger.warning(str(e))
                 backward_params[i].value = back_params[i].allowed_range[0]
                 param.step = param.step/2.0
-                logger.warning("  -- No Backward Step. Staying with value of {}. Step size change to {}".format(backward_params[i].allowed_range[0],param.step))
+                logger.warning(f"  -- No Backward Step. Staying with value of {backward_params[i].allowed_range[0]}. Step size change to {param.step}")
                 param_sets.append(forward_params)
                 if central:
                     param_sets.append(backward_params)
@@ -227,8 +219,7 @@ def differentiate_params(params, central=True):
                 # values from going below zero, but didn't work for much else.
                 # param.step = param.value * 0.1
                 logger.warning(
-                    '  -- Changed step size of {} from {} to {}.'.format(
-                        param, old_step, param.step))
+                    f'  -- Changed step size of {param} from {old_step} to {param.step}.')
             else:
                 # Each of these lists contains one changed parameter. It'd
                 # be nice to just use one list, modify the necessary parameter,
@@ -237,8 +228,7 @@ def differentiate_params(params, central=True):
                 if central:
                     param_sets.append(backward_params)
                 break
-    logger.log(20, '  -- Generated {} differentiated parameter sets.'.format(
-            len(param_sets)))
+    logger.log(20, f'  -- Generated {len(param_sets)} differentiated parameter sets.')
     return param_sets
 
 # It stinks that these two extraction methods rely upon a force field's method
@@ -258,7 +248,7 @@ def extract_ff_by_params(ffs, params):
     cols = [x.ff_col for x in params]
     keep = []
     for ff in ffs:
-        row, col = [int(x) for x in re.split('\[|\]', ff.method)[3].split(',')]
+        row, col = [int(x) for x in re.split(r'\[|\]', ff.method)[3].split(',')]
         if row in rows and col in cols:
             keep.append(ff)
     logger.log(20, 'KEEPING FFS FOR SIMPLEX:\n{}'.format(
@@ -291,7 +281,7 @@ def param_derivs(ff, ffs):
           Central differentiated and scored force fields.
     """
     for i in range(0, len(ffs), 2):
-        logger.log(1, '>>> ffs[i].score: {}'.format(ffs[i].score))
+        logger.log(1, f'>>> ffs[i].score: {ffs[i].score}')
         ff.params[int(i/2)].d1 = (ffs[i].score - ffs[i+1].score) * 0.5 # 18
         ff.params[int(i/2)].d2 = ffs[i].score + ffs[i+1].score - 2 * ff.score # 19
     pretty_derivs(ff.params)
@@ -332,12 +322,12 @@ def pretty_derivs(params, level=5):
             # derivative is None.
             try:
                 logger.log(level,
-                           '  ' + '{}'.format(param).ljust(33, ' ') +
-                           '  ' + '{:15.4f}'.format(param.d1).ljust(19, ' ') +
-                           '  ' + '{:15.4f}'.format(param.d2).ljust(19, ' '))
+                           '  ' + f'{param}'.ljust(33, ' ') +
+                           '  ' + f'{param.d1:15.4f}'.ljust(19, ' ') +
+                           '  ' + f'{param.d2:15.4f}'.ljust(19, ' '))
             except ValueError:
                 logger.log(level,
-                           '  ' + '{}'.format(param).ljust(33, ' ') +
+                           '  ' + f'{param}'.ljust(33, ' ') +
                            '  ' + 'None'.ljust(19, ' ') +
                            '  ' + 'None'.ljust(19, ' '))
         logger.log(level, '-' * 79)
@@ -359,9 +349,9 @@ def pretty_ff_params(ffs, level=20):
             '--' + ' VALUES '.ljust(48, '-') +
             '--')
         for i in range(0, len(ffs[0].params)):
-            wrapper.initial_indent = ' {:25s} '.format(repr(ffs[0].params[i]))
+            wrapper.initial_indent = f' {repr(ffs[0].params[i]):25s} '
             all_param_values = [x.params[i].value for x in ffs]
-            all_param_values = ['{:8.4f}'.format(x) for x in all_param_values]
+            all_param_values = [f'{x:8.4f}' for x in all_param_values]
             logger.log(level, wrapper.fill(' '.join(all_param_values)))
         logger.log(level, '-' * 79)
 
@@ -376,8 +366,8 @@ def pretty_ff_results(ff, level=20):
     """
     if logger.getEffectiveLevel() <= level:
         wrapper = textwrap.TextWrapper(width=79)
-        logger.log(level, ' {} '.format(ff.method).center(79, '='))
-        logger.log(level, 'SCORE: {}'.format(ff.score))
+        logger.log(level, f' {ff.method} '.center(79, '='))
+        logger.log(level, f'SCORE: {ff.score}')
         logger.log(level, 'PARAMETERS:')
         logger.log(level, wrapper.fill(' '.join(map(str, ff.params))))
         logger.log(level, '=' * 79)
@@ -389,7 +379,7 @@ def pretty_param_changes(params, changes, method=None, level=20):
     """
     if logger.getEffectiveLevel() <= level:
         if method:
-            logger.log(level, ' {} '.format(method).center(79, '='))
+            logger.log(level, f' {method} '.center(79, '='))
         else:
             logger.log(level, '=' * 79)
         logger.log(
@@ -403,13 +393,13 @@ def pretty_param_changes(params, changes, method=None, level=20):
         for param, change in zip(params, changes):
             logger.log(
                 level,
-                '  ' + '{}'.format(param).ljust(34, ' ') +
-                '  ' + '{:7.4f}'.format(change).center(19, ' ') +
-                '  ' + '{:7.4f}'.format(change * param.step).center(18, ' ') +
+                '  ' + f'{param}'.ljust(34, ' ') +
+                '  ' + f'{change:7.4f}'.center(19, ' ') +
+                '  ' + f'{change * param.step:7.4f}'.center(18, ' ') +
                 '  ')
         # This was probably already calculated before, but I guess it's worth
         # doing again for simplicity and a nice looking log.
         r = calculate_radius(changes)
-        logger.log(level, 'RADIUS: {}'.format(r))
+        logger.log(level, f'RADIUS: {r}')
         logger.log(level, '=' * 79)
         logger.log(level, '')

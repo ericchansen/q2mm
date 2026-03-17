@@ -200,29 +200,27 @@ int main(int argc, char* argv[] )
 # REGEX
 # COMMON
 # Match any float in a string.
-RE_FLOAT = '[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
+RE_FLOAT = r'[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?'
 
 # MM3.FLD RELATED
 # Match SMARTS notation used by MM3* substructures.
 # More from import_ff could be added here.
-RE_SMILES = '[\w\-\=\(\)\.\+\[\]\*]+'
+RE_SMILES = r'[\w\-\=\(\)\.\+\[\]\*]+'
 # Possible symbols used to split atoms in SMARTS notation.
-RE_SPLIT_ATOMS = '[\s\-\(\)\=\.\[\]\*]+'
+RE_SPLIT_ATOMS = r'[\s\-\(\)\=\.\[\]\*]+'
 # Name of MM3* substructures.
-RE_SUB = '[\w\s\-\.\*\(\)\%\=\,]+'
+RE_SUB = r'[\w\s\-\.\*\(\)\%\=\,]+'
 
 # .MMO RELATED
 # Match bonds in lines of a .mmo file.
-RE_BOND = re.compile('\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+({0})\s+{0}\s+\w+'
-                     '\s+\d+\s+({1})\s+(\d+)'.format(RE_FLOAT, RE_SUB))
+RE_BOND = re.compile(rf'\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+({RE_FLOAT})\s+{RE_FLOAT}\s+\w+'
+                     rf'\s+\d+\s+({RE_SUB})\s+(\d+)')
 # Match angles in lines of a .mmo file.
-RE_ANGLE = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
-                      '({0})\s+{0}\s+{0}\s+\w+\s+\d+\s+({1})\s+(\d+)'.format(
-        RE_FLOAT, RE_SUB))
+RE_ANGLE = re.compile(rf'\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+'
+                      rf'({RE_FLOAT})\s+{RE_FLOAT}\s+{RE_FLOAT}\s+\w+\s+\d+\s+({RE_SUB})\s+(\d+)')
 # Match torsions in lines of a .mmo file.
-RE_TORSION = re.compile('\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{0}\s+{0}\s+{0}\s+'
-                        '({0})\s+{0}\s+\w+\s+\d+({1})\s+(\d+)'.format(
-        RE_FLOAT, RE_SUB))
+RE_TORSION = re.compile(rf'\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+'
+                        rf'({RE_FLOAT})\s+{RE_FLOAT}\s+\w+\s+\d+({RE_SUB})\s+(\d+)')
 
 # VARIABLES FOR RUNNING MACROMODEL
 # String format used when writing MacroModel .com files.
@@ -230,19 +228,19 @@ COM_FORM = (' {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}'
             '{6:>11.4f}{7:>11.4f}{8:>11.4f}\n')
 # When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
 # allocations appear, but these are the 2 we care about.
-LABEL_SUITE = 'SUITE_\w+' # Ex.) SUITE_26NOV2012
+LABEL_SUITE = r'SUITE_\w+' # Ex.) SUITE_26NOV2012
 LABEL_MACRO = 'MMOD_MACROMODEL'
 # Some regex to pick out the number of available tokens.
-LIC_SUITE = re.compile('(?<!_){}\s+(\d+)\sof\s\d+\s'
-                       'tokens\savailable'.format(LABEL_SUITE))
-LIC_MACRO = re.compile('{}\s+(\d+)\sof\s\d+\stokens\s'
-                       'available'.format(LABEL_MACRO))
+LIC_SUITE = re.compile(rf'(?<!_){LABEL_SUITE}\s+(\d+)\sof\s\d+\s'
+                       r'tokens\savailable')
+LIC_MACRO = re.compile(rf'{LABEL_MACRO}\s+(\d+)\sof\s\d+\stokens\s'
+                       'available')
 # Minimum number of tokens required to run MacrModel calculations.
 MIN_SUITE_TOKENS = 2
 MIN_MACRO_TOKENS = 2
 
 # Match the filename and atoms for a torsion label
-RE_T_LBL = re.compile('\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)')
+RE_T_LBL = re.compile(r'\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)')
 
 # MASSES
 # Used for mass weighting.

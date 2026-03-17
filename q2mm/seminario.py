@@ -3,7 +3,7 @@
 Estimates bond and angle force constants, prepares a force field for Q2MM parameterization.
 
 Script takes in the structural, hessian, and ff files to output a new forcefield with initial
-parameters estimated via the Seminario/FUERZA method. Currently, only mol2, Gaussian .log, and 
+parameters estimated via the Seminario/FUERZA method. Currently, only mol2, Gaussian .log, and
 Amber .frcmod or MacroModel MM3* .fld filetypes are supported (respectively). If requested, it
 will do this estimation after inverting the Hessian for a TSFF or zero out the values necessary
 to be 0 before starting parameterization of the force field. Currently, it will always set
@@ -15,7 +15,7 @@ Jorge Seminario's original 1998 paper, but also because we keep them at zero dur
 parameterization until all other parameter values are well-determined, otherwise the torsions will
 simply be random.
 
-This step should be done after RESP calculation, generation of a force field file, and testing that 
+This step should be done after RESP calculation, generation of a force field file, and testing that
 ensures that all interactions in the structures are covered by a corresponding parameter in the
 force field file (compatibility via compare.py or calculate.py usage typically).
 
@@ -23,7 +23,6 @@ Portions of code adapted from Samuel Genheden and can be found at
 https://github.com/SGenheden/Seminario
 """
 
-from __future__ import division, print_function, absolute_import
 import argparse
 from collections import Counter
 import copy
@@ -33,14 +32,17 @@ import sys
 from typing import List
 
 import numpy as np
-import parmed
+try:
+    import parmed
+except ImportError:
+    parmed = None
 
-from linear_algebra import invert_ts_curvature, reform_hessian
+from q2mm.linear_algebra import invert_ts_curvature, reform_hessian
 
 import logging
 import logging.config
-import constants as co
-from schrod_indep_filetypes import (
+from q2mm import constants as co
+from q2mm.schrod_indep_filetypes import (
     FF,
     Atom,
     GaussLog,
@@ -54,7 +56,7 @@ from schrod_indep_filetypes import (
     mass_weight_force_constant,
     mass_weight_hessian,
 )
-import utilities
+from q2mm import utilities
 
 
 logging.config.dictConfig(co.LOG_SETTINGS)
@@ -67,9 +69,9 @@ logger = logging.getLogger(__file__)
 # Preferably, have it done before publication though.
 
 
-def sub_hessian(hessian, atom1: Atom, atom2: Atom, ang_to_bohr=False) -> tuple:   
+def sub_hessian(hessian, atom1: Atom, atom2: Atom, ang_to_bohr=False) -> tuple:
     """Subsample the Hessian matrix by pulling out the terms relevant to the
-    bond that is formed between atom1 and atom2 as well as calculating the 
+    bond that is formed between atom1 and atom2 as well as calculating the
     vector from atom1 to atom2.
 
     Args:
@@ -82,7 +84,7 @@ def sub_hessian(hessian, atom1: Atom, atom2: Atom, ang_to_bohr=False) -> tuple:
     Returns:
         tuple: tuple of (vector from atom1 to atom2, eigenvalues of the submatrix,
          eigenvector of the submatrix)
-    """    
+    """
     vec12 = atom1.coords - atom2.coords
     if ang_to_bohr:
         vec12 = vec12 / co.BOHR_TO_ANG
@@ -106,7 +108,7 @@ def get_unit_vector(atom1: Atom, atom2: Atom, ang_to_bohr=False) -> np.ndarray:
 
     Returns:
         numpy.ndarray: unit vector between atom1 and atom2
-    """    
+    """
     vec12 = atom1.coords - atom2.coords
     vec21 = atom2.coords - atom1.coords
     unit_vec = np.hstack((vec12, vec21))
@@ -118,7 +120,7 @@ def get_unit_vector(atom1: Atom, atom2: Atom, ang_to_bohr=False) -> np.ndarray:
 
 def get_subhessian(hessian, atom1: Atom, atom2: Atom) -> np.ndarray:
     """Subsample the Hessian matrix by pulling out the terms relevant to the
-    bond that is formed between atom1 and atom2 as well as calculating the 
+    bond that is formed between atom1 and atom2 as well as calculating the
     vector from atom1 to atom2.
 
     Args:
@@ -128,7 +130,7 @@ def get_subhessian(hessian, atom1: Atom, atom2: Atom) -> np.ndarray:
 
     Returns:
         np.ndarray: submatrix of the Hessian relevant to atom1-atom2 interactions.
-    """    
+    """
     submat_11 = (
         0
         * hessian[
@@ -192,7 +194,7 @@ def seminario_sum(vec, eigval, eigvec) -> float:
 
     Returns:
         float: the averaged projection to serve as a force constant estimate
-    """    
+    """
     ssum = 0.0
     for i in range(3):
         ssum += eigval[i] * np.abs(np.dot(eigvec[:, i], vec))
@@ -250,7 +252,7 @@ def seminario_bond(atoms: list, hessian, scaling=0.963, ang_to_bohr=False) -> fl
 
     Returns:
         float: estimated bond force constant in AU
-    """    
+    """
 
     vec12, eigval12, eigvec12 = sub_hessian(
         hessian, atoms[0], atoms[1], ang_to_bohr=ang_to_bohr
@@ -269,9 +271,7 @@ def seminario_bond(atoms: list, hessian, scaling=0.963, ang_to_bohr=False) -> fl
     if f12 <= 0 or f21 <= 0:
         logger.log(
             logging.DEBUG,
-            "Estimated force constant between atoms: {}, {} <= 0, with raw kJ/molA estimates: {} {}!\nSetting to 0.5 instead.".format(
-                atoms[0].index, atoms[1].index, f12, f21
-            ),
+            f"Estimated force constant between atoms: {atoms[0].index}, {atoms[1].index} <= 0, with raw kJ/molA estimates: {f12} {f21}!\nSetting to 0.5 instead.",
         )
 
     if np.iscomplexobj(f12):
@@ -280,7 +280,7 @@ def seminario_bond(atoms: list, hessian, scaling=0.963, ang_to_bohr=False) -> fl
             f12 = np.real(f12)
         else:
             logger.log(logging.WARN, "WARNING: Non-zero imaginary component of bond force constant estimate for angle ("+str(f12)+"): "+str(atoms)+".")
-    
+
     if np.iscomplexobj(f21):
         logger.log(logging.DEBUG, "Complex number in estimate for bond f21 ("+str(f21)+"): "+str(atoms))
         if not np.iscomplex(f21):
@@ -292,9 +292,7 @@ def seminario_bond(atoms: list, hessian, scaling=0.963, ang_to_bohr=False) -> fl
     if f <= 0:
         logger.log(
             logging.WARNING,
-            "WARNING: Estimated force constant between atoms: {}, {} <= 0, with (raw, scaled) kJ/molA estimate: {} {}!\nPlease visualize normal modes to confirm transition states are correct.".format(
-                atoms[0].index, atoms[1].index, f, f*scaling
-            ),
+            f"WARNING: Estimated force constant between atoms: {atoms[0].index}, {atoms[1].index} <= 0, with (raw, scaled) kJ/molA estimate: {f} {f*scaling}!\nPlease visualize normal modes to confirm transition states are correct.",
         )
 
     return scaling * f
@@ -373,10 +371,10 @@ def seminario_angle(atoms:list, hessian, scaling=0.963, convert=False, ang_to_bo
         calculations are often off by some consistent factor. In the case of DFT, values
         are typically overestimated, so DFT calculations must be scaled down by ~0.963x,
         hence the default scaling of 0.963.
-    
+
     Returns:
         float: estimated angle force constant
-    """    
+    """
 
     assert len(atoms) == 3
     vec12, eigval12, eigvec12 = sub_hessian(hessian, atoms[0], atoms[1])
@@ -404,9 +402,7 @@ def seminario_angle(atoms:list, hessian, scaling=0.963, convert=False, ang_to_bo
     if f12 <= 0 or f32 <= 0:
         logger.log(
             logging.DEBUG,
-            "Estimated force constant between atoms: {}, {}, {} <= 0, with raw kJ/molA estimates: {}, {}!".format(
-                atoms[0].index, atoms[1].index, atoms[2].index, f12, f32
-            ),
+            f"Estimated force constant between atoms: {atoms[0].index}, {atoms[1].index}, {atoms[2].index} <= 0, with raw kJ/molA estimates: {f12}, {f32}!",
         )
 
     f = 1.0 / (1.0 / (sum1 * len12 * len12) + 1.0 / (sum2 * len32 * len32))
@@ -414,9 +410,7 @@ def seminario_angle(atoms:list, hessian, scaling=0.963, convert=False, ang_to_bo
     if f < 0:
         logger.log(
             logging.WARNING,
-            "WARNING: Estimated force constant between atoms: {}, {}, {} < 0, with (raw, scaled) kJ/molA estimate: {} {}!\nPlease visualize normal modes to confirm transition states are correct.".format(
-                atoms[0].index, atoms[1].index, atoms[2].index, f, f*scaling
-            ),
+            f"WARNING: Estimated force constant between atoms: {atoms[0].index}, {atoms[1].index}, {atoms[2].index} < 0, with (raw, scaled) kJ/molA estimate: {f} {f*scaling}!\nPlease visualize normal modes to confirm transition states are correct.",
         )
 
     if np.iscomplexobj(f):
@@ -448,7 +442,7 @@ def return_params_parser(add_help=True) -> argparse.ArgumentParser:
 
     Returns:
         argparse.ArgumentParser: Parser for seminario.py command-line arguments
-    """    
+    """
     if add_help:
         description = __doc__
         parser = argparse.ArgumentParser(
@@ -592,7 +586,7 @@ def estimate_bf_param(
                     ang_to_bohr=ang_to_bohr,
                 )
                 if s_bond < 0 or np.iscomplex(s_bond):
-                    logger.log(logging.WARN, "Invalid estimate of param {} in structure {}".format(param, struct.origin_name))
+                    logger.log(logging.WARN, f"Invalid estimate of param {param} in structure {struct.origin_name}")
 
                 # The below reverse-massweighting of the force constant is only necessary if the mass-weighted
                 # Hessian is used.
@@ -601,7 +595,7 @@ def estimate_bf_param(
                     logging.DEBUG, "Seminario (KJMOLA)" + str(bond) + ": " + str(s_bond)
                 )
                 #TODO retest PO method p_bond = po_bond(struct.get_atoms_in_DOF(bond), hessian, ang_to_bohr)
-                if s_bond > 0 and not np.iscomplex(s_bond): match_vals.append(s_bond) # only includes estimate if it is valid, warnings are triggered upon calculation. bonds where all structures have invalid estimates should simply remain unchanged from input. 
+                if s_bond > 0 and not np.iscomplex(s_bond): match_vals.append(s_bond) # only includes estimate if it is valid, warnings are triggered upon calculation. bonds where all structures have invalid estimates should simply remain unchanged from input.
     if match_count <= 0:
         logger.log(
             logging.WARN,
@@ -611,9 +605,9 @@ def estimate_bf_param(
         return None
     else:
         if len(match_vals) == 0:
-            logger.log(logging.WARNING, "WARNING: All structures with interactions matching parameter {} have invalid estimates so it will not be changed. Please review normal modes.".format(param))
+            logger.log(logging.WARNING, f"WARNING: All structures with interactions matching parameter {param} have invalid estimates so it will not be changed. Please review normal modes.")
             return None
-        
+
         averaged_fc = sum([float(fc) for fc in match_vals]) / float(len(match_vals))
         return averaged_fc
 
@@ -654,7 +648,7 @@ def estimate_af_param(
                     struct.get_atoms_in_DOF(angle), hessian, ang_to_bohr=ang_to_bohr
                 )
                 if s_angle < 0 or np.iscomplex(s_angle):
-                    logger.log(logging.WARN, "Invalid estimate of param {} in structure {}".format(param, struct.origin_name))
+                    logger.log(logging.WARN, f"Invalid estimate of param {param} in structure {struct.origin_name}")
                 #TODO retest this method p_bond = po_angle(struct.get_atoms_in_DOF(bond), hessian, ang_to_bohr)
                 logger.log(
                     logging.DEBUG,
@@ -670,9 +664,9 @@ def estimate_af_param(
         return None
     else:
         if len(match_vals) == 0:
-            logger.log(logging.WARNING, "WARNING: All structures with interactions matching parameter {} have invalid estimates so it will not be changed. Please review normal modes.".format(param))
+            logger.log(logging.WARNING, f"WARNING: All structures with interactions matching parameter {param} have invalid estimates so it will not be changed. Please review normal modes.")
             return None
-        
+
         averaged_fc = sum([float(fc) for fc in match_vals]) / match_count
         return averaged_fc
 
@@ -821,12 +815,8 @@ def seminario(
 
 
 def main(args):
-    if sys.version_info > (3, 0):
-        if isinstance(args, str):
-            args = args.split()
-    else:
-        if isinstance(args, basestring):
-            args = args.split()
+    if isinstance(args, str):
+        args = args.split()
     parser = return_params_parser()
     args = parser.parse_args()
 
@@ -841,13 +831,13 @@ def main(args):
     if args.ff_in[-4:] == ".fld":
         ff_in = MM3(args.ff_in)
         ff_in.import_ff()
-        logger.log(logging.INFO, "mm3 ff imported: {}".format(ff_in.path))
+        logger.log(logging.INFO, f"mm3 ff imported: {ff_in.path}")
     elif args.ff_in[-7:] == ".frcmod":
         ff_in = AmberFF(args.ff_in)
         ff_in.import_ff()
-        logger.log(logging.INFO, "amber ff imported: {}".format(ff_in.path))
+        logger.log(logging.INFO, f"amber ff imported: {ff_in.path}")
     else:
-        raise NotImplemented()
+        raise NotImplementedError()
 
     if args.mol and "*" in args.mol[0]:
         args.mol = sorted(glob.glob(args.mol[0]))
@@ -861,23 +851,19 @@ def main(args):
         struct_files: List[Mol2] = [Mol2(mol_path) for mol_path in args.mol]
         logger.log(
             logging.INFO,
-            "{}/{} Mol2 structure files imported.".format(
-                len(struct_files), len(args.mol)
-            ),
+            f"{len(struct_files)}/{len(args.mol)} Mol2 structure files imported.",
         )
     elif args.mmo:
         struct_files: List[MacroModel] = [MacroModel(mmo_path) for mmo_path in args.mmo]
         logger.log(
             logging.INFO,
-            "{}/{} MMO structure files imported.".format(
-                len(struct_files), len(args.mmo)
-            ),
+            f"{len(struct_files)}/{len(args.mmo)} MMO structure files imported.",
         )
 
     for struct in struct_files:
         structs.extend(struct.structures)
     logger.log(
-        logging.INFO, "{} Structures imported from mol2 files.".format(len(structs))
+        logging.INFO, f"{len(structs)} Structures imported from mol2 files."
     )
 
     if args.log:
@@ -901,7 +887,7 @@ def main(args):
         logs: List[GaussLog] = [GaussLog(log, au_hessian=False) for log in args.log]
         logger.log(
             logging.INFO,
-            "{}/{} Gaussian log files imported.".format(len(logs), len(args.log)),
+            f"{len(logs)}/{len(args.log)} Gaussian log files imported.",
         )
         hessians: List[np.ndarray] = []
         for log in logs:
@@ -913,12 +899,12 @@ def main(args):
             if args.invert:
                 mw_hessian = invert_ts_curvature(mw_hessian)
                 logger.log(
-                    logging.INFO, "Inverted Hessian from {}...".format(log.filename)
+                    logging.INFO, f"Inverted Hessian from {log.filename}..."
                 )
             hessians.append(copy.deepcopy(mw_hessian))
         logger.log(
             logging.INFO,
-            "{}/{} Hessians imported.".format(len(hessians), len(args.log)),
+            f"{len(hessians)}/{len(args.log)} Hessians imported.",
         )
     elif args.jag_in:  # Hess should be in kJ/molA, not mass-weighted.
         # NOTE: If Hessian gets mass-weighted, then the resulting force constants must be un-massweighted.
@@ -926,7 +912,7 @@ def main(args):
         logs: List[JaguarIn] = [JaguarIn(log) for log in args.jag_in]
         logger.log(
             logging.INFO,
-            "{}/{} Jaguar in files imported.".format(len(logs), len(args.jag_in)),
+            f"{len(logs)}/{len(args.jag_in)} Jaguar in files imported.",
         )
         hessians: List[np.ndarray] = []
         for i in range(len(logs)):
@@ -936,12 +922,12 @@ def main(args):
             if args.invert:
                 hessian = invert_ts_curvature(hessian)
                 logger.log(
-                    logging.INFO, "Inverted Hessian from {}...".format(log.filename)
+                    logging.INFO, f"Inverted Hessian from {log.filename}..."
                 )
             hessians.append(copy.deepcopy(hessian))
         logger.log(
             logging.INFO,
-            "{}/{} Hessians imported.".format(len(hessians), len(args.jag_in)),
+            f"{len(hessians)}/{len(args.jag_in)} Hessians imported.",
         )
 
     assert len(structs) == len(

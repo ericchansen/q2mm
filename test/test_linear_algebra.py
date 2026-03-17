@@ -1,22 +1,22 @@
-from __future__ import print_function
-from ast import List
+from __future__ import annotations
+
 import copy
-from ctypes import Structure
+from typing import List
 
 import os
 import sys
 
 import unittest
 import numpy as np
-import constants
-from schrod_indep_filetypes import FF
+from q2mm import constants
+from q2mm.schrod_indep_filetypes import FF, Structure
 
 src_dir = os.path.abspath("q2mm")
 sys.path.append(src_dir)
-import linear_algebra
+from q2mm import linear_algebra
 
 
-class MakeHessian(object):
+class MakeHessian:
     def __init__(self):
         self.out = []
 

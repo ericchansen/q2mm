@@ -1,9 +1,6 @@
 """
 Simplex optimization.
 """
-from __future__ import absolute_import
-from __future__ import division
-
 import copy
 import collections
 import logging
@@ -13,12 +10,12 @@ import re
 import sqlite3
 import textwrap
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import opt
-import parameters
+from q2mm import calculate
+from q2mm import compare
+from q2mm import constants as co
+from q2mm import datatypes
+from q2mm import opt
+from q2mm import parameters
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -53,7 +50,7 @@ class Simplex(opt.Optimizer):
                  ff_lines=None,
                  args_ff=None,
                  args_ref=None):
-        super(Simplex, self).__init__(
+        super().__init__(
             direc, ff, ff_lines, args_ff, args_ref)
         self._max_cycles_wo_change = None
         self.do_massive_contraction = True
@@ -99,14 +96,14 @@ class Simplex(opt.Optimizer):
             logger.log(20, '  -- Reused existing score and data for initial FF.')
 
         logger.log(20, '~~ SIMPLEX OPTIMIZATION ~~'.rjust(79, '~'))
-        logger.log(20, 'INIT FF SCORE: {}'.format(self.ff.score))
+        logger.log(20, f'INIT FF SCORE: {self.ff.score}')
         opt.pretty_ff_results(self.ff, level=20)
 
         # Here's what we do if there are too many parameters.
         if self.max_params and len(self.ff.params) > self.max_params:
             logger.log(20, '  -- More parameters than the maximum allowed.')
-            logger.log(5, 'CURRENT PARAMS: {}'.format(len(self.ff.params)))
-            logger.log(5, 'MAX PARAMS: {}'.format(self.max_params))
+            logger.log(5, f'CURRENT PARAMS: {len(self.ff.params)}')
+            logger.log(5, f'MAX PARAMS: {self.max_params}')
             # Here we select the parameters that have the lowest 2nd
             # derivatives.
 
@@ -123,7 +120,7 @@ class Simplex(opt.Optimizer):
                 # We have to score to get the derivatives.
                 for ff in ffs:
                     ff.export_ff(path=self.ff.path, lines=self.ff_lines)
-                    logger.log(20, '  -- Calculating {}.'.format(ff))
+                    logger.log(20, f'  -- Calculating {ff}.')
                     data = calculate.main(self.args_ff)
                     #deprecated
                     #ff.score = compare.compare_data(r_data, data)
@@ -136,8 +133,8 @@ class Simplex(opt.Optimizer):
                 opt.param_derivs(self.ff, ffs)
                 # Only keep the forward differentiated FFs.
                 ffs = opt.extract_forward(ffs)
-                logger.log(5, '  -- Keeping {} forward differentiated '
-                           'FFs.'.format(len(ffs)))
+                logger.log(5, f'  -- Keeping {len(ffs)} forward differentiated '
+                           'FFs.')
             else:
                 logger.log(15, '  -- Reusing existing parameter derivatives.')
                 # Differentiate all parameters forward. Yes, I know this is
@@ -157,7 +154,7 @@ class Simplex(opt.Optimizer):
             # From the entire list of forward differentiated FFs, pick
             # out the ones that have the lowest 2nd derivatives.
             self.new_ffs = opt.extract_ff_by_params(ffs, params)
-            logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
+            logger.log(1, f'>>> len(self.new_ffs): {len(self.new_ffs)}')
 
             # Reduce number of parameters.
             # Will need an option that's not MM3* specific in the future.
@@ -180,14 +177,14 @@ class Simplex(opt.Optimizer):
             # In this case it's simple. Just forward differentiate each
             # parameter.
             self.new_ffs = opt.differentiate_ff(self.ff, central=False)
-            logger.log(1, '>>> len(self.new_ffs): {}'.format(len(self.new_ffs)))
+            logger.log(1, f'>>> len(self.new_ffs): {len(self.new_ffs)}')
             # Still make that FF copy.
             ff_copy = copy.deepcopy(self.ff)
         # Double check and make sure they're all scored.
         for ff in self.new_ffs:
             if ff.score is None:
                 ff.export_ff(path=self.ff.path, lines=self.ff_lines)
-                logger.log(20, '  -- Calculating {}.'.format(ff))
+                logger.log(20, f'  -- Calculating {ff}.')
                 data = calculate.main(self.args_ff)
                 #deprecated
                 #ff.score = compare.compare_data(r_data, data)
@@ -216,11 +213,10 @@ class Simplex(opt.Optimizer):
             # Save the last best in case some accidental sort goes on.
             # Plus it makes reading the code a litle easier.
             last_best_ff = copy.deepcopy(self.new_ffs[0])
-            logger.log(20, '~~ START SIMPLEX CYCLE {} ~~'.format(
-                    current_cycle).rjust(79, '~'))
+            logger.log(20, f'~~ START SIMPLEX CYCLE {current_cycle} ~~'.rjust(79, '~'))
             logger.log(20, 'ORDERED FF SCORES:')
             logger.log(20, wrapper.fill('{}'.format(
-                    ' '.join('{:15.4f}'.format(x.score) for x in self.new_ffs))))
+                    ' '.join(f'{x.score:15.4f}' for x in self.new_ffs))))
 
             inv_ff = self.ff.__class__()
             if self.do_weighted_reflection:
@@ -362,13 +358,11 @@ class Simplex(opt.Optimizer):
                 cycles_wo_change = 0
             else:
                 cycles_wo_change += 1
-                logger.log(20, '  -- {} cycles without improvement out of {} '
-                           'allowed.'.format(
-                        cycles_wo_change, self._max_cycles_wo_change))
+                logger.log(20, f'  -- {cycles_wo_change} cycles without improvement out of {self._max_cycles_wo_change} '
+                           'allowed.')
             logger.log(20, 'BEST:')
             opt.pretty_ff_results(self.new_ffs[0], level=20)
-            logger.log(20, '~~ END SIMPLEX CYCLE {} ~~'.format(
-                    current_cycle).rjust(79, '~'))
+            logger.log(20, f'~~ END SIMPLEX CYCLE {current_cycle} ~~'.rjust(79, '~'))
 
         # This sort is likely unnecessary because it should be done at the end
         # of the last loop cycle, but I put it here just in case.
@@ -394,9 +388,9 @@ def calc_simp_var(params):
     """
     Simplex variable is calculated: (2nd der.) / (1st der.)**2
     """
-    logger.log(1, '>>> params: {}'.format(params))
-    logger.log(1, '>>> 1st ders.: {}'.format([x.d1 for x in params]))
-    logger.log(1, '>>> 2nd ders.: {}'.format([x.d2 for x in params]))
+    logger.log(1, f'>>> params: {params}')
+    logger.log(1, f'>>> 1st ders.: {[x.d1 for x in params]}')
+    logger.log(1, f'>>> 2nd ders.: {[x.d2 for x in params]}')
     for param in params:
         param.simp_var = param.d2 / param.d1**2.
 
@@ -413,7 +407,7 @@ def select_simp_params_on_derivs(params, max_params=10):
     """
     calc_simp_var(params)
     keep = sorted(params, key=lambda x: x.simp_var)
-    logger.log(1, '>>> x.simp_var: {}'.format([x.simp_var for x in keep]))
+    logger.log(1, f'>>> x.simp_var: {[x.simp_var for x in keep]}')
 
     # Eliminate all where simp_var is greater than 1. This means that the
     # correct value is bracketed by the differentiation, so gradient
@@ -424,7 +418,7 @@ def select_simp_params_on_derivs(params, max_params=10):
     # keep = sorted(params, key=lambda x: x.d2)
 
     keep = keep[:max_params]
-    logger.log(1, '>>> x.simp_var: {}'.format([x.simp_var for x in keep]))
+    logger.log(1, f'>>> x.simp_var: {[x.simp_var for x in keep]}')
     logger.log(20, 'KEEPING PARAMS FOR SIMPLEX:\n{}'.format(
             ' '.join([str(x) for x in keep])))
     return keep
@@ -437,8 +431,7 @@ def restore_simp_ff(new_ff, old_ff):
     """
     old_ff.copy_attributes(new_ff)
     if len(old_ff.params) > len(new_ff.params):
-        logger.log(15, '  -- Restoring {} parameters to new FF.'.format(
-                len(old_ff.params) - len(new_ff.params)))
+        logger.log(15, f'  -- Restoring {len(old_ff.params) - len(new_ff.params)} parameters to new FF.')
 
         logger.log(1, '>>> old_ff.params:')
         logger.log(1, old_ff.params)

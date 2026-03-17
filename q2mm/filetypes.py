@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Handles importing data from the various filetypes that Q2MM uses.
 
@@ -17,13 +17,10 @@ the directory where you execute the Q2MM Python scripts.
 Note that the atom.typ must be located with your structure files, else the
 Schrodinger jobs will fail.
 """
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 from argparse import RawTextHelpFormatter
 from string import digits
 import logging
+import logging.config
 from logging import config
 import mmap
 import numpy as np
@@ -41,8 +38,8 @@ except:
     print("Schrodinger not installed, limited functionality")
     pass
 
-import constants as co
-import datatypes
+from q2mm import constants as co
+from q2mm import datatypes
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -54,7 +51,7 @@ logger = logging.getLogger(__file__)
 # np.set_printoptions(threshold=np.nan)
 np.set_printoptions(threshold=sys.maxsize)
 
-class File(object):
+class File:
     """
     Base for every other filetype class.
     """
@@ -68,7 +65,7 @@ class File(object):
     @property
     def lines(self):
         if self._lines is None:
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 self._lines = f.readlines()
         return self._lines
     def write(self, path, lines=None):
@@ -80,17 +77,17 @@ class File(object):
 
 
 # Currently only for 1 system.
-# 
+#
 class AmberHess(File):
     def __init__(self, path):
-        super(AmberHess, self).__init__(path)
+        super().__init__(path)
         self._hessian = None
         self.natoms = None
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
-            with open("./calc/"+self.filename, 'r') as f:
+            logger.log(10, f'READING: {self.filename}')
+            with open("./calc/"+self.filename) as f:
                 lines = f.readlines()
             for i,line in enumerate(lines):
                 if i == 0:
@@ -104,7 +101,7 @@ class AmberHess(File):
             # kcal/mol for energy in AMBER
             # E(kcal/mol -> cm**-1) = 349.75
             # freq = sqrt(lambda(kcal/mol)) / (2 pi c)
-            
+
             w, v = np.linalg.eigh(hessian)
             eigval = np.zeros([self.natoms * 3],dtype=float)
             for i,eig in enumerate(w):
@@ -115,28 +112,27 @@ class AmberHess(File):
             eigval *= 108.587 # freq in cm**-1
             self._hessian = hessian / co.HARTREE_TO_KCALMOL \
                 * co.HARTREE_TO_KJMOL
-            logger.log(5, '  -- Finished Creating {} Hessian matrix.'.format(
-                hessian.shape))
+            logger.log(5, f'  -- Finished Creating {hessian.shape} Hessian matrix.')
             return self._hessian
 class AmberEne(File):
     """
         Amber .ene file to read either current energy or optimized energy
     """
     def __init__(self, path):
-        super(AmberEne, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self.name = None
     @property
     def structures(self):
-        if self._structures == None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+        if self._structures is None:
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
             flag = 0
-            with open('./calc/'+self.filename, 'r') as f:
+            with open('./calc/'+self.filename) as f:
                 sections = {'sp':1, 'minimization':2}
                 calc_section = 'sp'
                 count_previous = 0
-                    
+
                 for line in f:
                     count_current = sections[calc_section]
                     if count_current != count_previous:
@@ -152,15 +148,14 @@ class AmberEne(File):
                         if energy is not None:
                             current_structure.props['energy']=energy
                         flag = 0
-            logger.log(5, '  -- Imported {} structure(s)'.format(
-                len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s)')
         return self._structures
 
 
     def read_line_for_energy(self, line):
         # The Amber Energy is in units of kcal/mol, so we have to convert them to kJ/mol
         # for consistency purposes.
-        # don't know how to use match = re.compile 
+        # don't know how to use match = re.compile
         linesplit = line.split()
         energy = float(linesplit[1])
         energy *= co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
@@ -178,20 +173,20 @@ class AmberGeo(File):
         .out file for the current value
     """
     def __init__(self, path):
-        super(AmberGeo, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self.name = None
     @property
     def structures(self):
-        if self._structures == None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+        if self._structures is None:
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open("./calc/"+self.filename, 'r') as f:
+            with open("./calc/"+self.filename) as f:
                 sections = {'sp':1, 'minimization':2, 'hessian':2}
                 count_previous = 0
                 calc_section = 'sp'
                 b = 0
-                a = 0  
+                a = 0
                 t = 0
                 for line in f:
                     count_current = sections[calc_section]
@@ -254,8 +249,7 @@ class AmberGeo(File):
                         b = 1
 
 
-            logger.log(5, '  -- Imported {} structure(s)'.format(
-                len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s)')
         return self._structures
 
     def read_line_for_bond(self, line):
@@ -281,8 +275,7 @@ class AmberGeo(File):
     def read_line_for_energy(self, line):
         # The TPE is in units of kcal/mol, so we have to convert them to kJ/mol
         # for consistency purposes.
-        match = re.compile('Total Potential Energy :\s+({0})'.format(
-            co.RE_FLOAT)).search(line)
+        match = re.compile(rf'Total Potential Energy :\s+({co.RE_FLOAT})').search(line)
         if match:
             energy = float(match.group(1))
             energy *= co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
@@ -295,7 +288,7 @@ class AmberLeap_Gaus(File):
             run -> gaus to amber -> sp -> traj -> cpptraj -> cpptraj -> AmberGeo
             path = leap.in
         """
-        super(AmberLeap_Gaus, self).__init__(path)
+        super().__init__(path)
         self._index_output_log = None
         self._structures = None
         self.commands = None
@@ -336,10 +329,10 @@ class AmberLeap_Gaus(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             struct = Structure()
             self._structures = [struct]
-            with open(self.filename, 'r') as f:
+            with open(self.filename) as f:
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
@@ -391,7 +384,7 @@ exit
         bonds = []
         angles = []
         torsions = []
-        ref = open('./calc/'+self.name_geo,'r').readlines()
+        ref = open('./calc/'+self.name_geo).readlines()
         count = 0
         for line in ref:
             # Bonds
@@ -418,43 +411,43 @@ exit
                 torsions.append(line.split()[-8:-4])
             elif "Atom4" in line:
                 count = 3
-        
+
         for a,b in bonds:
-            geo += "distance @{} @{} out calc/gaus.bonds".format(a,b) + '\n'
+            geo += f"distance @{a} @{b} out calc/gaus.bonds" + '\n'
         for a,b,c in angles:
-            geo += "angle @{} @{} @{} out calc/gaus.angles".format(a,b,c) + '\n'
+            geo += f"angle @{a} @{b} @{c} out calc/gaus.angles" + '\n'
         for a,b,c,d in torsions:
-            geo += "dihedral @{} @{} @{} @{} out calc/gaus.torsions".format(a,b,c,d) + '\n'
-        
+            geo += f"dihedral @{a} @{b} @{c} @{d} out calc/gaus.torsions" + '\n'
+
         script = script.replace("AA",geo)
         script_f = './calc/' + self.name + '.temp'
         with open(script_f, 'w') as f:
             f.write(script)
-        sp.call("cpptraj -p calc/prmtop < {}".format(script_f), shell=True, stderr=log, stdin=log, stdout=log)
+        sp.call(f"cpptraj -p calc/prmtop < {script_f}", shell=True, stderr=log, stdin=log, stdout=log)
         summary = ""
         if os.path.isfile("calc/gaus.bonds"):
-            bond_file = open("calc/gaus.bonds","r").readlines()
+            bond_file = open("calc/gaus.bonds").readlines()
             bond_line = bond_file[-1].split()[1:]
             summary += "BONDS\n"
             i = 0
             for a,b in bonds:
-                summary += "{} {} {} \n".format(a,b,bond_line[i])
+                summary += f"{a} {b} {bond_line[i]} \n"
                 i += 1
         if os.path.isfile("calc/gaus.angles"):
-            angle_file = open("calc/gaus.angles","r").readlines()
+            angle_file = open("calc/gaus.angles").readlines()
             angle_line = angle_file[-1].split()[1:]
             summary += "ANGLES\n"
             i = 0
             for a,b,c in angles:
-                summary += "{} {} {} {} \n".format(a,b,c,angle_line[i])
+                summary += f"{a} {b} {c} {angle_line[i]} \n"
                 i += 1
         if os.path.isfile("calc/gaus.torsions"):
-            tors_file = open("calc/gaus.torsions","r").readlines()
+            tors_file = open("calc/gaus.torsions").readlines()
             tors_line = tors_file[-1].split()[1:]
             summary += "TORSIONS\n"
             i = 0
             for a,b,c,d in torsions:
-                summary += "{} {} {} {} {} \n".format(a,b,c,d,tors_line[i])
+                summary += f"{a} {b} {c} {d} {tors_line[i]} \n"
                 i += 1
         summary += "END"
         # replace name_geo with summary
@@ -466,16 +459,16 @@ exit
         # Run Trajectory (Required for cpptraj)
         with open("./calc/"+self.name_dyn, 'w') as f:
             f.write(self.dyn_script)
-        sp.call("sander -O -i calc/{} -o calc/traj.out -p calc/prmtop -c calc/gaus.{}.rst -x calc/gaus.{}.nc".format(self.name_dyn,self.name,self.name),shell=True)
+        sp.call(f"sander -O -i calc/{self.name_dyn} -o calc/traj.out -p calc/prmtop -c calc/gaus.{self.name}.rst -x calc/gaus.{self.name}.nc",shell=True)
         # Generate All geometry
         int_script = "bonds\nangles\ndihedrals\n"
         with open('./calc/'+self.name_int, 'w') as f:
             f.write(int_script)
-        sp.call("cpptraj -p calc/prmtop < calc/{} > calc/{} \n".format(self.name_int,self.name_geo),shell=True)
+        sp.call(f"cpptraj -p calc/prmtop < calc/{self.name_int} > calc/{self.name_geo} \n",shell=True)
         self.extract(log)
         return
     def run(self,check_tokens=False):
-        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        logger.log(5, f'RUNNING: {self.filename}')
         self._index_output_log = []
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
@@ -486,13 +479,13 @@ exit
             os.remove('calc')
         sp.call("mkdir calc",shell=True, stderr=log, stdin=log, stdout=log)
         if com_opts['sp']:
-            logger.log(1, '  CALCULATE: {}'.format(self.filename))
+            logger.log(1, f'  CALCULATE: {self.filename}')
             # Run leap
-            sp.call("tleap -f {}".format(self.filename),shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
+            sp.call(f"tleap -f {self.filename}",shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
             # Run Min
             with open("./calc/"+self.name_min, 'w') as f:
                 f.write(self.min_script)
-            sp.call("sander -O -i calc/{} -o calc/{} -p calc/prmtop -c calc/inpcrd -r calc/gaus.{}.rst".format(self.name_min,self.name_ene,self.name),shell=True, stderr=log, stdin=log, stdout=log)
+            sp.call(f"sander -O -i calc/{self.name_min} -o calc/{self.name_ene} -p calc/prmtop -c calc/inpcrd -r calc/gaus.{self.name}.rst",shell=True, stderr=log, stdin=log, stdout=log)
         if com_opts['geo']:
             self.geometry(log)
         os.chdir(current_directory)
@@ -502,7 +495,7 @@ class AmberLeap(File):
         """
             path = leap.in
         """
-        super(AmberLeap, self).__init__(path)
+        super().__init__(path)
         self._index_output_log = None
         self._structures = None
         self.commands = None
@@ -544,10 +537,10 @@ class AmberLeap(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             struct = Structure()
             self._structures = [struct]
-            with open(self.filename, 'r') as f:
+            with open(self.filename) as f:
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
@@ -610,7 +603,7 @@ exit
         bonds = []
         angles = []
         torsions = []
-        ref = open('./calc/'+self.name_geo,'r').readlines()
+        ref = open('./calc/'+self.name_geo).readlines()
         self.geo = ref
         count = 0
         for line in ref:
@@ -640,40 +633,40 @@ exit
                 count = 3
 
         for a,b in bonds:
-            geo += "distance @{} @{} out calc/amber.bonds".format(a,b) + '\n'
+            geo += f"distance @{a} @{b} out calc/amber.bonds" + '\n'
         for a,b,c in angles:
-            geo += "angle @{} @{} @{} out calc/amber.angles".format(a,b,c) + '\n'
+            geo += f"angle @{a} @{b} @{c} out calc/amber.angles" + '\n'
         for a,b,c,d in torsions:
-            geo += "dihedral @{} @{} @{} @{} out calc/amber.torsions".format(a,b,c,d) + '\n'
+            geo += f"dihedral @{a} @{b} @{c} @{d} out calc/amber.torsions" + '\n'
         script = script.replace("AA",geo)
         script_f = './calc/' + self.name + '.temp'
         with open(script_f, 'w') as f:
             f.write(script)
-        sp.call("cpptraj -p calc/prmtop < {}".format(script_f), shell=True, stderr=log, stdin=log, stdout=log)
+        sp.call(f"cpptraj -p calc/prmtop < {script_f}", shell=True, stderr=log, stdin=log, stdout=log)
         summary = ""
         if os.path.isfile("calc/amber.bonds"):
-            bond_file = open("calc/amber.bonds","r").readlines()
+            bond_file = open("calc/amber.bonds").readlines()
             bond_line = bond_file[-1].split()[1:]
             summary += "BONDS\n"
             i = 0
             for a,b in bonds:
-                summary += "{} {} {} \n".format(a,b,bond_line[i])
+                summary += f"{a} {b} {bond_line[i]} \n"
                 i += 1
         if os.path.isfile("calc/amber.angles"):
-            angle_file = open("calc/amber.angles","r").readlines()
+            angle_file = open("calc/amber.angles").readlines()
             angle_line = angle_file[-1].split()[1:]
             summary += "ANGLES\n"
             i = 0
             for a,b,c in angles:
-                summary += "{} {} {} {} \n".format(a,b,c,angle_line[i])
+                summary += f"{a} {b} {c} {angle_line[i]} \n"
                 i += 1
         if os.path.isfile("calc/amber.torsions"):
-            tors_file = open("calc/amber.torsions","r").readlines()
+            tors_file = open("calc/amber.torsions").readlines()
             tors_line = tors_file[-1].split()[1:]
             summary += "TORSIONS\n"
             i = 0
             for a,b,c,d in torsions:
-                summary += "{} {} {} {} {} \n".format(a,b,c,d,tors_line[i])
+                summary += f"{a} {b} {c} {d} {tors_line[i]} \n"
                 i += 1
         summary += "END"
         # replace name_geo with summary
@@ -691,33 +684,33 @@ exit
         # nab input file
         # dielectric constant = 80.4 for water.
         # currently manual change required
-        script = """molecule m;
+        script = f"""molecule m;
 float x[4000], fret;
 
-m = getpdb("{}.pdb");
+m = getpdb("{self.name}.pdb");
 readparm(m, "./calc/prmtop");
 
 mm_options( "cut=15., ntpr=1, nsnb=99999, diel = C, dielc = 80.40" );
 mme_init( m, NULL, "::Z", x, NULL);
 setxyz_from_mol( m, NULL, x );
 
-nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
+nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);"""
         with open('./calc/'+self.name+'.nab','w') as f:
             f.write(script)
         # nab compile
-        sp.call("nab calc/{}.nab".format(self.name),shell=True)
+        sp.call(f"nab calc/{self.name}.nab",shell=True)
         # nab run
-        sp.call("./calc/{}".format(self.name),shell=True,stderr=log, stdin=log, stdout=log)
+        sp.call(f"./calc/{self.name}",shell=True,stderr=log, stdin=log, stdout=log)
         # hessian.mat formed
         # rename to .hess
-        sp.call("mv ./calc/hessian.mat ./calc/{}".format(self.name_hes),shell = True)
+        sp.call(f"mv ./calc/hessian.mat ./calc/{self.name_hes}",shell = True)
         return
     def geo_extract(self):
-    
+
         bonds = []
         angles = []
         torsions = []
-    
+
         ref = self.geo
         count = 0
         for line in ref:
@@ -755,22 +748,22 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
             hes_ele = np.vstack((hes_ele,[a,b,c,d]))
         np.save("calc/geo",hes_ele)
         return
-        
+
     def geometry(self,log):
         # Run Trajectory (Required for cpptraj)
         with open("./calc/"+self.name_dyn, 'w') as f:
             f.write(self.dyn_script)
-        sp.call("sander -O -i calc/{} -o calc/traj.out -p calc/prmtop -c calc/amber.{}.rst -x calc/amber.{}.nc".format(self.name_dyn,self.name,self.name),shell=True)
+        sp.call(f"sander -O -i calc/{self.name_dyn} -o calc/traj.out -p calc/prmtop -c calc/amber.{self.name}.rst -x calc/amber.{self.name}.nc",shell=True)
         # Generate All geometry
         int_script = "bonds\nangles\ndihedrals\n"
         with open('./calc/'+self.name_int, 'w') as f:
             f.write(int_script)
-        sp.call("cpptraj -p calc/prmtop < calc/{} > calc/{}".format(self.name_int,self.name_geo),shell=True)
+        sp.call(f"cpptraj -p calc/prmtop < calc/{self.name_int} > calc/{self.name_geo}",shell=True)
         self.extract(log)
-        
+
         return
     def run(self,check_tokens=False):
-        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        logger.log(5, f'RUNNING: {self.filename}')
         self._index_output_log = []
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
@@ -778,33 +771,33 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
         log = open(self.name_log,'w')
         sp.call("mkdir calc",shell=True, stderr=log, stdin=log, stdout=log)
         if com_opts['opt']:
-            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename))
+            logger.log(1, f'  MINIMIZE & ANALYZE: {self.filename}')
             # Run leap
-            sp.call("tleap -f {}".format(self.filename),shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
+            sp.call(f"tleap -f {self.filename}",shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
             # Run Min
             self.min_script = self.min_script.replace("aa","700")
             self.min_script = self.min_script.replace("bb","5")
             with open("./calc/"+self.name_min, 'w') as f:
                 f.write(self.min_script)
-            sp.call("sander -O -i calc/{} -o calc/{} -p calc/prmtop -c calc/inpcrd -r calc/amber.{}.rst".format(self.name_min,self.name_ene,self.name),shell=True, stderr=log, stdin=log, stdout=log)
+            sp.call(f"sander -O -i calc/{self.name_min} -o calc/{self.name_ene} -p calc/prmtop -c calc/inpcrd -r calc/amber.{self.name}.rst",shell=True, stderr=log, stdin=log, stdout=log)
         elif com_opts['sp']:
-            logger.log(1, '  CALCULATE: {}'.format(self.filename))
+            logger.log(1, f'  CALCULATE: {self.filename}')
             # Run leap
-            sp.call("tleap -f {}".format(self.filename),shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
+            sp.call(f"tleap -f {self.filename}",shell=True, stderr=log, stdin=log, stdout=log) # parm7 rst7 files made
             # Run Min
             self.min_script = self.min_script.replace("aa","0")
             self.min_script = self.min_script.replace("bb","0")
             with open("./calc/"+self.name_min, 'w') as f:
                 f.write(self.min_script)
-            sp.call("sander -O -i calc/{} -o calc/{} -p calc/prmtop -c calc/inpcrd -r calc/amber.{}.rst".format(self.name_min,self.name_ene,self.name),shell=True, stderr=log, stdin=log, stdout=log)
+            sp.call(f"sander -O -i calc/{self.name_min} -o calc/{self.name_ene} -p calc/prmtop -c calc/inpcrd -r calc/amber.{self.name}.rst",shell=True, stderr=log, stdin=log, stdout=log)
         # check if energy calculation failed
         restart = 1
         while(restart==1):
-            with open("./calc/"+self.name_ene,'r') as f:
+            with open("./calc/"+self.name_ene) as f:
                 fline = f.readlines()
                 for line in fline:
                     if "restarting should resolve the error" in line:
-                        sp.call("sander -O -i calc/{} -o calc/{} -p calc/prmtop -c calc/amber.{}.rst -r calc/amber.{}.rst".format(self.name_min,self.name_ene,self.name,self.name),shell=True, stderr=log, stdin=log, stdout=log)
+                        sp.call(f"sander -O -i calc/{self.name_min} -o calc/{self.name_ene} -p calc/prmtop -c calc/amber.{self.name}.rst -r calc/amber.{self.name}.rst",shell=True, stderr=log, stdin=log, stdout=log)
                         restart = 1
                     else:
                         restart = 0
@@ -813,7 +806,7 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
             self.geometry(log)
         if com_opts['freq']:
             self.hessian(log)
-            # if geo file is already present 
+            # if geo file is already present
             # may not have geo file if hessian is only ran
             if os.path.isfile('./calc/'+self.name_geo):
                 self.geo_extract()
@@ -822,17 +815,16 @@ nmode( x, 3*m.natoms, mme2, 0, 0, 0.0, 0.0, 0);""".format(self.name)
 
 class TinkerHess(File):
     def __init__(self, path):
-        super(TinkerHess, self).__init__(path)
+        super().__init__(path)
         self._hessian = None
         self.natoms = None
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             hessian = np.zeros([self.natoms * 3, self.natoms * 3], dtype=float)
-            logger.log(5, '  -- Creatting {} Hessian Matrix.'.format(
-                hessian.shape))
-            with open(self.path, 'r') as f:
+            logger.log(5, f'  -- Creatting {hessian.shape} Hessian Matrix.')
+            with open(self.path) as f:
                 lines = f.read()
             words = lines.split()
             diag = True
@@ -841,7 +833,7 @@ class TinkerHess(File):
             line = -1
             index = 0
             for i, word in enumerate(words):
-                match = re.compile('\d+[.]\d+').search(word)
+                match = re.compile(r'\d+[.]\d+').search(word)
                 # First group of values are all of the diagonal elements. So
                 # This will grab them first and put them in the correct index
                 # of the Hessian.
@@ -866,21 +858,20 @@ class TinkerHess(File):
             # Convert hessian units to use kJ/mol instead of kcal/mol.
             self._hessian = hessian / co.HARTREE_TO_KCALMOL \
                 * co.HARTREE_TO_KJMOL
-            logger.log(5, '  -- Finished Creating {} Hessian matrix.'.format(
-                hessian.shape))
+            logger.log(5, f'  -- Finished Creating {hessian.shape} Hessian matrix.')
             return self._hessian
 
 class TinkerLog(File):
     def __init__(self, path):
-        super(TinkerLog, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self.name = None
     @property
     def structures(self):
-        if self._structures == None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+        if self._structures is None:
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 sections = {'sp':1, 'minimization':2, 'hessian':2}
                 count_previous = 0
                 calc_section = 'sp'
@@ -953,15 +944,14 @@ class TinkerLog(File):
                         calc_section != 'hessian':
                         last_ind = len(self._structures) - 1
                         self._structures.remove(self._structures[last_ind])
-            logger.log(5, '  -- Imported {} structure(s)'.format(
-                len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s)')
         return self._structures
 
     def read_line_for_bond(self, line):
         # All bond data starts with the string "Bond" and then the rest of the
         # interaction information.
-        match = re.compile('Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
-            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        match = re.compile(r'Bond\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            rf'({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})').search(line)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(3)]]
             value = float(match.group(6))
@@ -972,8 +962,8 @@ class TinkerLog(File):
     def read_line_for_angle(self, line):
         # All angle data starts with the string "Angle" and then the rest of the
         # interaction information.
-        match = re.compile('Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
-            '({0})\s+({0})\s+({0})'.format(co.RE_FLOAT)).search(line)
+        match = re.compile(r'Angle\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            rf'({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})').search(line)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(3),
                 match.group(5)]]
@@ -985,9 +975,8 @@ class TinkerLog(File):
     def read_line_for_torsion(self, line):
         # All torsion data starts with the string "torsion" and then the rest of
         # the interaction information.
-        match = re.compile('Torsion\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
-            '(\d+)-(\w+)\s+(\d+)-(\w+)\s+({0})\s+({0})'.format(
-                co.RE_FLOAT)).search(line)
+        match = re.compile(r'Torsion\s+(\d+)-(\w+)\s+(\d+)-(\w+)\s+'
+            rf'(\d+)-(\w+)\s+(\d+)-(\w+)\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})').search(line)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(3),
                 match.group(5), match.group(7)]]
@@ -999,8 +988,7 @@ class TinkerLog(File):
     def read_line_for_energy(self, line):
         # The TPE is in units of kcal/mol, so we have to convert them to kJ/mol
         # for consistency purposes.
-        match = re.compile('Total Potential Energy :\s+({0})'.format(
-            co.RE_FLOAT)).search(line)
+        match = re.compile(rf'Total Potential Energy :\s+({co.RE_FLOAT})').search(line)
         if match:
             energy = float(match.group(1))
             energy *= co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
@@ -1010,7 +998,7 @@ class TinkerLog(File):
 
 class TinkerXYZ(File):
     def __init__(self, path):
-        super(TinkerXYZ, self).__init__(path)
+        super().__init__(path)
         self._index_output_log = None
         self._structures = None
         self.commands = None
@@ -1030,10 +1018,10 @@ class TinkerXYZ(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             struct = Structure()
             self._structures = [struct]
-            with open(self.filename, 'r') as f:
+            with open(self.filename) as f:
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
@@ -1072,7 +1060,7 @@ class TinkerXYZ(File):
             com_opts['tors'] = True
         return com_opts
     def run(self,check_tokens=False):
-        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        logger.log(5, f'RUNNING: {self.filename}')
         self._index_output_log = []
         com_opts = self.get_com_opts()
         current_directory = os.getcwd()
@@ -1089,11 +1077,10 @@ class TinkerXYZ(File):
             f.write('parameters mm3.prm\
                      \nnoversion')
         if com_opts['sp']:
-            logger.log(1, '  ANALYZE: {}'.format(self.filename))
+            logger.log(1, f'  ANALYZE: {self.filename}')
             with open(self.name_log, 'w') as f:
                 sp.call(
-                    'analyze {}.xyz -k {} D'.format(self.name,
-                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                    f'analyze {self.name}.xyz -k {self.name_key} D', shell=True, stderr=f, stdin=f, stdout=f)
                 # Not sure if these print outs are important, but I add in these
                 # to define what section of the *q2mm.log file you are in. This
                 # is especially helpful when needed to grab all of the bond,
@@ -1103,21 +1090,19 @@ class TinkerXYZ(File):
                          \n= END OF SINGLE POINT =\
                          \n=======================\n")
         if com_opts['opt']:
-            logger.log(1, '  MINIMIZE & ANALYZE: {}'.format(self.filename))
+            logger.log(1, f'  MINIMIZE & ANALYZE: {self.filename}')
             with open(self.name_log, 'a') as f:
                 # The float value is the convergence criteria.
                 sp.call(
-                    'minimize {}.xyz -k {} 0.01 {}'.format(self.name,
-                    self.name_key, self.name_xyz), shell=True, stderr=f,
+                    f'minimize {self.name}.xyz -k {self.name_key} 0.01 {self.name_xyz}', shell=True, stderr=f,
                     stdin=f, stdout=f)
                 sp.call(
-                    'analyze {} -k {} D'.format(self.name_xyz,
-                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                    f'analyze {self.name_xyz} -k {self.name_key} D', shell=True, stderr=f, stdin=f, stdout=f)
                 f.write("\n=================================\
                          \n= END OF OPTIMIZED SINGLE POINT =\
                          \n=================================\n")
         if com_opts['freq']:
-            logger.log(1, '  TESTHESS: {}'.format(self.filename))
+            logger.log(1, f'  TESTHESS: {self.filename}')
             with open(self.name_log, 'a') as f:
                 # Tinker will not take a file output argument if the there isn't
                 # currently a file.hes. For example, file.xyz will write to
@@ -1125,13 +1110,11 @@ class TinkerXYZ(File):
                 # will ask the user for a new filename.
                 if os.path.isfile(self.name + '.hes'):
                     sp.call(
-                        'testhess {} -k {} y n {}'.format(self.name,
-                        self.name_key,self.name_hes), shell=True,
+                        f'testhess {self.name} -k {self.name_key} y n {self.name_hes}', shell=True,
                         stderr=f, stdin=f, stdout=f)
                 else:
                     sp.call(
-                        'testhess {} -k {} y n'.format(self.name,
-                        self.name_key), shell=True,
+                        f'testhess {self.name} -k {self.name_key} y n', shell=True,
                         stderr=f, stdin=f, stdout=f)
                     os.rename(self.name + '.hes', self.name_hes)
                 f.write("\n==================\
@@ -1146,7 +1129,7 @@ class TinkerXYZ(File):
 
 class TinkerXYZ_FOR_GAUS(File):
     def __init__(self, path):
-        super(TinkerXYZ_FOR_GAUS, self).__init__(path)
+        super().__init__(path)
         self._index_output_log = None
         self._structures = None
         self.commands = None
@@ -1157,10 +1140,10 @@ class TinkerXYZ_FOR_GAUS(File):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             struct = Structure()
             self._structures = [struct]
-            with open(self.filename, 'r') as f:
+            with open(self.filename) as f:
                 for line in f:
                     line = line.split()
                     if len(line) == 2:
@@ -1208,24 +1191,23 @@ class TinkerXYZ_FOR_GAUS(File):
                     ref_xyz.append(l[2:])
                 elif "Charge =" in line:
                     xyz = 1
-                
-            
+
+
         self.filename = "gaus." + self.name + '.xyz' #replace xyz
-        with open(self.ref_xyz,'r') as ref:
-            with open(self.filename,'w') as f:
-                lines = ref.readlines()
-                for i in range(len(lines)):
-                    line = lines[i]
-                    l = line.split()
-                    if i == 0:
-                        f.write(line)
-                    else:
-                        if len(l) > 5:
-                            l[2:5] = ref_xyz[i-1]
-                            f.write("\t".join(l)+'\n')
+        with open(self.ref_xyz) as ref, open(self.filename,'w') as f:
+            lines = ref.readlines()
+            for i in range(len(lines)):
+                line = lines[i]
+                l = line.split()
+                if i == 0:
+                    f.write(line)
+                else:
+                    if len(l) > 5:
+                        l[2:5] = ref_xyz[i-1]
+                        f.write("\t".join(l)+'\n')
         return
     def run(self,check_tokens=False):
-        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        logger.log(5, f'RUNNING: {self.filename}')
         self.tinkerxyz_from_gaussian()
         self._index_output_log = []
         com_opts = self.get_com_opts()
@@ -1239,12 +1221,11 @@ class TinkerXYZ_FOR_GAUS(File):
             f.write('parameters mm3.prm\
                      \nnoversion')
         if com_opts['sp']:
-            logger.log(1, '  ANALYZE: {}'.format(self.filename))
+            logger.log(1, f'  ANALYZE: {self.filename}')
             print("Gaussian Ref xyz file Running Tinker for Geo. Info.")
             with open(self.name_log, 'w') as f:
                 sp.call(
-                    'analyze gaus.{}.xyz -k {} D'.format(self.name,
-                    self.name_key), shell=True, stderr=f, stdin=f, stdout=f)
+                    f'analyze gaus.{self.name}.xyz -k {self.name_key} D', shell=True, stderr=f, stdin=f, stdout=f)
                 f.write("\n=======================\
                          \n= END OF SINGLE POINT =\
                          \n=======================\n")
@@ -1257,11 +1238,11 @@ class TinkerXYZ_FOR_GAUS(File):
 class GaussCom(File):
     """
     Used to write Gaussian command files to run quick calculations. The ony use
-    thus far is for checking the RMS of the electrostatic potential using 
+    thus far is for checking the RMS of the electrostatic potential using
     partial charges obtained from a force field.
     """
     def __init__(self, path):
-        super(GaussCom, self).__init__(path)
+        super().__init__(path)
         self.name = os.path.splitext(self.filename)[0]
         self.commands = None
         self.old_chk = None
@@ -1279,18 +1260,17 @@ class GaussCom(File):
         self.old_chk = old_check
         if os.path.isfile('TEMP.com'):
             os.remove('TEMP.com')
-        sp.call('newzmat -ichk -ocart {} {}'.format(self.old_chk, 'TEMP'), 
+        sp.call('newzmat -ichk -ocart {} {}'.format(self.old_chk, 'TEMP'),
             shell=True)
-        with open('TEMP.com', 'r') as f:
+        with open('TEMP.com') as f:
             for line in f:
-                if re.search('[A-Z][a-z]?\s+{0}\s+{0}\s+{0}'.format(
-                    co.RE_FLOAT),line):
+                if re.search(rf'[A-Z][a-z]?\s+{co.RE_FLOAT}\s+{co.RE_FLOAT}\s+{co.RE_FLOAT}',line):
                     ele, x, y, z = line.split()
                     self.atom_and_coords.append([ele,float(x),float(y),float(z)])
-                if re.search('[+-]?\d,\d',line):
+                if re.search(r'[+-]?\d,\d',line):
                     charge, multiplicity = line.split(',')
                     self.charge = charge
-                    self.multiplicity = multiplicity    
+                    self.multiplicity = multiplicity
                 if re.search('^[#]',line):
                     split = line.split()
                     for keyword in split:
@@ -1308,43 +1288,42 @@ class GaussCom(File):
         elements_in_structure = []
         with open(self.filename, 'w') as f:
             if self.old_chk:
-                f.write('%oldchk={}\n'.format(self.old_chk))
-            f.write('%chk={}\n'.format(self.name_chk))
-            f.write('%mem={}GB\n'.format(self.memory))
-            f.write('%nprocshared={}\n'.format(self.procs))
+                f.write(f'%oldchk={self.old_chk}\n')
+            f.write(f'%chk={self.name_chk}\n')
+            f.write(f'%mem={self.memory}GB\n')
+            f.write(f'%nprocshared={self.procs}\n')
             f.write('#N Guess=TCheck SCRF=Check GenChk pop=(chelpg,readradii) '
-                    'IOp(6/20=30133) chkbasis {}\n\n'.format(self.method))
+                    f'IOp(6/20=30133) chkbasis {self.method}\n\n')
             f.write('SP with fixed charges\n\n')
-            f.write('{} {}'.format(self.charge,self.multiplicity))
+            f.write(f'{self.charge} {self.multiplicity}')
             if self.charge_list:
                 try:
                     if len(self.charge_list) != len(self.atom_and_coords):
                         raise ValueError("Length of the charge list and atom "
-                                         "list are not the same: {}".format(
-                                         self.filename))
+                                         f"list are not the same: {self.filename}")
                 except:
                     print("Just print something")
                 for atom, charge in zip(self.atom_and_coords,self.charge_list):
                     if atom[0] not in elements_in_structure:
                         elements_in_structure.append(atom[0])
-                    f.write('   '.join((' {}--{:8.6f}'.format(atom[0],charge),
-                                        '{:14.10f}'.format(atom[1]),
-                                        '{:14.10f}'.format(atom[2]),
-                                        '{:14.10f}'.format(atom[3]),
+                    f.write('   '.join((f' {atom[0]}--{charge:8.6f}',
+                                        f'{atom[1]:14.10f}',
+                                        f'{atom[2]:14.10f}',
+                                        f'{atom[3]:14.10f}',
                                         '\n'
                                         )))
             f.write('\n')
             for atom in elements_in_structure:
-                f.write('{0} {1}\n'.format(atom,co.CHELPG_RADII[atom]))
+                f.write(f'{atom} {co.CHELPG_RADII[atom]}\n')
             f.write('\n')
 
     def run_gaussian(self):
         """
-        This runs the gaussian job. I have this labeled differently than our 
+        This runs the gaussian job. I have this labeled differently than our
         typical "run" functions because I don't want to use this function until
         after we have calculated and collected partial charge data.
         """
-        logger.log(5, 'RUNNING: {}'.format(self.filename))
+        logger.log(5, f'RUNNING: {self.filename}')
         self._index_output_log = []
         current_directory = os.getcwd()
         os.chdir(self.directory)
@@ -1352,7 +1331,7 @@ class GaussCom(File):
             os.remove(self.name_log)
         if os.path.isfile(self.name_chk):
             os.remove(self.name_chk)
-        sp.call('g09 {}'.format(self.filename), shell=True)
+        sp.call(f'g09 {self.filename}', shell=True)
         os.chdir(current_directory)
 
 class GaussFormChk(File):
@@ -1360,7 +1339,7 @@ class GaussFormChk(File):
     Used to retrieve data from Gaussian formatted checkpoint files.
     """
     def __init__(self, path):
-        super(GaussFormChk, self).__init__(path)
+        super().__init__(path)
         self.atoms = []
         # Not sure these should really be called the eigenvalues.
         self.evals = None
@@ -1372,17 +1351,17 @@ class GaussFormChk(File):
             self.read_self()
         return self._hess
     def read_self(self):
-        logger.log(5, 'READING: {}'.format(self.filename))
+        logger.log(5, f'READING: {self.filename}')
         stuff = re.search(
-            'Atomic numbers\s+I\s+N=\s+(?P<num_atoms>\d+)'
-            '\n\s+(?P<anums>.*?)'
+            r'Atomic numbers\s+I\s+N=\s+(?P<num_atoms>\d+)'
+            '\n\\s+(?P<anums>.*?)'
             'Nuclear charges.*?Current cartesian coordinates.*?\n(?P<coords>.*?)'
             'Force Field'
             '.*?Real atomic weights.*?\n(?P<masses>.*?)'
             'Atom fragment info.*?Cartesian Gradient.*?\n(?P<evals>.*?)'
             'Cartesian Force Constants.*?\n(?P<hess>.*?)'
             'Dipole Moment',
-            open(self.path, 'r').read(), flags=re.DOTALL)
+            open(self.path).read(), flags=re.DOTALL)
         anums = [int(x) for x in stuff.group('anums').split()]
         masses = [float(x) for x in stuff.group('masses').split()]
         coords = [float(x) for x in stuff.group('coords').split()]
@@ -1394,10 +1373,10 @@ class GaussFormChk(File):
                     coords = coord,
                     exact_mass = mass)
                 )
-        logger.log(5, '  -- Read {} atoms.'.format(len(self.atoms)))
+        logger.log(5, f'  -- Read {len(self.atoms)} atoms.')
         self.evals = np.array(
             [float(x) for x in stuff.group('evals').split()], dtype=float)
-        logger.log(5, '  -- Read {} eigenvectors.'.format(len(self.evals)))
+        logger.log(5, f'  -- Read {len(self.evals)} eigenvectors.')
         self.low_tri = np.array(
             [float(x) for x in stuff.group('hess').split()], dtype=float)
         one_dim = len(anums) * 3
@@ -1406,7 +1385,7 @@ class GaussFormChk(File):
         self._hess += np.tril(self._hess, -1).T
         # Convert to MacroModel units.
         self._hess *= co.HESSIAN_CONVERSION
-        logger.log(5, '  -- Read {} Hessian.'.format(self._hess.shape))
+        logger.log(5, f'  -- Read {self._hess.shape} Hessian.')
 
 class GaussLog(File):
     """
@@ -1416,7 +1395,7 @@ class GaussLog(File):
     the keyword NoSymmetry when running the Gaussian calculation.
     """
     def __init__(self, path):
-        super(GaussLog, self).__init__(path)
+        super().__init__(path)
         self._evals = None
         self._evecs = None
         self._structures = None
@@ -1448,13 +1427,13 @@ class GaussLog(File):
         Read force constant and eigenvector data from a frequency
         calculation.
         """
-        logger.log(5, 'READING: {}'.format(self.filename))
+        logger.log(5, f'READING: {self.filename}')
         self._evals = []
         self._evecs = []
         self._structures = []
         force_constants = []
         evecs = []
-        with open(self.path, 'r') as f:
+        with open(self.path) as f:
             # The keyword "harmonic" shows up before the section we're
             # interested in. It can show up multiple times depending on the
             # options in the Gaussian .com file.
@@ -1472,7 +1451,7 @@ class GaussLog(File):
                     # End of file.
                     break
                 if 'Charges from ESP fit' in line:
-                    pattern = re.compile('RMS=\s+({0})'.format(co.RE_FLOAT))
+                    pattern = re.compile(rf'RMS=\s+({co.RE_FLOAT})')
                     match = pattern.search(line)
                     self._esp_rms = float(match.group(1))
                 # Gathering some geometric information.
@@ -1483,7 +1462,7 @@ class GaussLog(File):
                     next(file_iterator)
                     next(file_iterator)
                     line = next(file_iterator)
-                    while not '---' in line:
+                    while '---' not in line:
                         cols = line.split()
                         self._structures[-1].atoms.append(
                             Atom(index=int(cols[0]),
@@ -1492,8 +1471,7 @@ class GaussLog(File):
                                  y=float(cols[4]),
                                  z=float(cols[5])))
                         line = next(file_iterator)
-                    logger.log(5, '  -- Found {} atoms.'.format(
-                            len(self._structures[-1].atoms)))
+                    logger.log(5, f'  -- Found {len(self._structures[-1].atoms)} atoms.')
                 elif 'Harmonic' in line:
                     # The high quality eigenvectors come before the low quality
                     # ones. If you see "Harmonic" again, it means you're at the
@@ -1652,17 +1630,16 @@ class GaussLog(File):
                     evec[i] *= element
             self._evals = np.array(self._evals)
             self._evecs = np.array(self._evecs)
-            logger.log(1, '>>> self._evals: {}'.format(self._evals))
-            logger.log(1, '>>> self._evecs: {}'.format(self._evecs))
-            logger.log(5, '  -- {} structures found.'.format(
-                len(self.structures)))
+            logger.log(1, f'>>> self._evals: {self._evals}')
+            logger.log(1, f'>>> self._evecs: {self._evecs}')
+            logger.log(5, f'  -- {len(self.structures)} structures found.')
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
     def read_archive(self):
         """
         Only reads last archive found in the Gaussian .log file.
         """
-        logger.log(5, 'READING: {}'.format(self.filename))
+        logger.log(5, f'READING: {self.filename}')
         struct = Structure()
         self._structures = [struct]
         # Matches everything in between the start and end.
@@ -1681,8 +1658,8 @@ class GaussLog(File):
 #        print(re.findall('(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',open(self.path,'r').read()))
         try:
             arch = re.findall(
-                '(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',
-                open(self.path, 'r').read())[-1]
+                '(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)',
+                open(self.path).read())[-1]
             logger.log(5, '  -- Located last archive.')
         except IndexError:
             logger.warning("  -- Couldn't locate archive.")
@@ -1698,7 +1675,7 @@ class GaussLog(File):
         arch_general = arch[section_counter]
         section_counter += 1
         stuff = re.search(
-            '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
+            '\\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
             '\\\\(?P<date>.*?)'
             '\\\\.*?',
             arch_general)
@@ -1758,7 +1735,7 @@ class GaussLog(File):
                 #     'Not sure how to read coordinates from Gaussian archive!')
             struct.atoms.append(
                 Atom(element=ele, x=float(x), y=float(y), z=float(z)))
-        logger.log(20, '  -- Read {} atoms.'.format(len(struct.atoms)))
+        logger.log(20, f'  -- Read {len(struct.atoms)} atoms.')
         # SECTION 4
         # All sorts of information here. This area looks like:
         #     prop1=value1\prop2=value2\prop3=value3
@@ -1776,11 +1753,11 @@ class GaussLog(File):
             hess_tri = hess_tri.split(',')
             logger.log(
                 5,
-                '  -- Read {} Hessian elements in lower triangular '
-                'form.'.format(len(hess_tri)))
+                f'  -- Read {len(hess_tri)} Hessian elements in lower triangular '
+                'form.')
             hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
             logger.log(
-                5, '  -- Created {} Hessian matrix.'.format(hess.shape))
+                5, f'  -- Created {hess.shape} Hessian matrix.')
             # Code for if it was in upper triangle (it's not).
             # hess[np.triu_indices_from(hess)] = hess_tri
             # hess += np.triu(hess, -1).T
@@ -1861,14 +1838,13 @@ class GaussLog(File):
             yes_or_no = [value[2] for key, value in structure.props.items()
                          if key in fields]
             if not structure.atoms:
-                logger.warning('  -- No atoms found in structure {}. '
-                               'Skipping.'.format(i+1))
+                logger.warning(f'  -- No atoms found in structure {i+1}. '
+                               'Skipping.')
                 continue
             if len(yes_or_no) == 4:
                 structures_compared += 1
                 if best_structure is None:
-                    logger.log(10, '  -- Most converged structure: {}'.format(
-                            i+1))
+                    logger.log(10, f'  -- Most converged structure: {i+1}')
                     best_structure = structure
                     best_yes_or_no = yes_or_no
                 elif yes_or_no.count('YES') > best_yes_or_no.count('YES'):
@@ -1885,15 +1861,13 @@ class GaussLog(File):
                         best_yes_or_no = yes_or_no
             elif len(yes_or_no) != 0:
                 logger.warning(
-                    '  -- Partial convergence criterion in structure: {}'.format(
-                        self.path))
-        logger.log(10, '  -- Compared {} out of {} structures.'.format(
-                structures_compared, len(self.structures)))
+                    f'  -- Partial convergence criterion in structure: {self.path}')
+        logger.log(10, f'  -- Compared {structures_compared} out of {len(self.structures)} structures.')
         return best_structure
     def read_any_coords(self, coords_type='both'):
-        logger.log(10, 'READING: {}'.format(self.filename))
+        logger.log(10, f'READING: {self.filename}')
         structures = []
-        with open(self.path, 'r') as f:
+        with open(self.path) as f:
             section_coords_input = False
             section_coords_standard = False
             section_convergence = False
@@ -1904,14 +1878,13 @@ class GaussLog(File):
                         # Marks end of input coords for a given structure.
                         if section_coords_input and 'Distance matrix' in line:
                             section_coords_input = False
-                            logger.log(5, '[L{}] End of input coordinates '
-                                       '({} atoms).'.format(
-                                    i+1, count_atom))
+                            logger.log(5, f'[L{i+1}] End of input coordinates '
+                                       f'({count_atom} atoms).')
                         # Add atoms and coordinates to structure.
                         if section_coords_input:
                             match = re.match(
-                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+'
-                                '({0})'.format(co.RE_FLOAT), line)
+                                rf'\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+'
+                                f'({co.RE_FLOAT})', line)
                             if match:
                                 count_atom += 1
                                 try:
@@ -1923,11 +1896,9 @@ class GaussLog(File):
                                 if current_atom.atomic_num:
                                     assert current_atom.atomic_num == int(
                                         match.group(2)), \
-                                        ("[L{}] Atomic numbers don't match "
+                                        (f"[L{i+1}] Atomic numbers don't match "
                                          "(current != existing) "
-                                         "({} != {}).".format(
-                                                i+1, int(match.group(2)),
-                                                current_atom.atomic_num))
+                                         f"({int(match.group(2))} != {current_atom.atomic_num}).")
                                 else:
                                     current_atom.atomic_num = int(
                                         match.group(2))
@@ -1943,8 +1914,8 @@ class GaussLog(File):
                             structures.append(current_structure)
                             section_coords_input = True
                             count_atom = 0
-                            logger.log(5, '[L{}] Start input coordinates '
-                                       'section.'.format(i+1))
+                            logger.log(5, f'[L{i+1}] Start input coordinates '
+                                       'section.')
                     # Look for standard coordinates.
                     if coords_type == 'standard' or coords_type == 'both':
                         # End of coordinates for a given structure.
@@ -1952,15 +1923,13 @@ class GaussLog(File):
                                 ('Rotational constants' in line or
                                  'Leave Link' in line):
                             section_coords_standard = False
-                            logger.log(5, '[L{}] End standard coordinates '
-                                       'section ({} atoms).'.format(
-                                    i+1, count_atom))
+                            logger.log(5, f'[L{i+1}] End standard coordinates '
+                                       f'section ({count_atom} atoms).')
                         # Grab coordinates for each atom.
                         # Add atoms to the structure.
                         if section_coords_standard:
-                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+'
-                                             '({0})\s+({0})'.format(
-                                    co.RE_FLOAT), line)
+                            match = re.match(rf'\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+'
+                                             rf'({co.RE_FLOAT})\s+({co.RE_FLOAT})', line)
                             if match:
                                 count_atom += 1
                                 try:
@@ -1972,11 +1941,9 @@ class GaussLog(File):
                                 if current_atom.atomic_num:
                                     assert current_atom.atomic_num == int(
                                         match.group(2)), \
-                                        ("[L{}] Atomic numbers don't match "
+                                        (f"[L{i+1}] Atomic numbers don't match "
                                          "(current != existing) "
-                                         "({} != {}).".format(
-                                                i+1, int(match.group(2)),
-                                                current_atom.atomic_num))
+                                         f"({int(match.group(2))} != {current_atom.atomic_num}).")
                                 else:
                                     current_atom.atomic_num = int(
                                         match.group(2))
@@ -1992,8 +1959,8 @@ class GaussLog(File):
                             structures.append(current_structure)
                             section_coords_standard = True
                             count_atom = 0
-                            logger.log(5, '[L{}] Start standard coordinates '
-                                       'section.'.format(i+1))
+                            logger.log(5, f'[L{i+1}] Start standard coordinates '
+                                       'section.')
         return structures
     def read_optimization(self, coords_type='both'):
         """
@@ -2006,9 +1973,9 @@ class GaussLog(File):
                       to be overwritten by whatever comes later in the
                       log file.
         """
-        logger.log(10, 'READING: {}'.format(self.filename))
+        logger.log(10, f'READING: {self.filename}')
         structures = []
-        with open(self.path, 'r') as f:
+        with open(self.path) as f:
             section_coords_input = False
             section_coords_standard = False
             section_convergence = False
@@ -2018,54 +1985,46 @@ class GaussLog(File):
                 # set a flag that it has indeed started.
                 if section_optimization and 'Optimization stopped.' in line:
                     section_optimization = False
-                    logger.log(5, '[L{}] End optimization section.'.format(i+1))
+                    logger.log(5, f'[L{i+1}] End optimization section.')
                 if not section_optimization and \
                         'Search for a local minimum.' in line:
                     section_optimization = True
-                    logger.log(5, '[L{}] Start optimization section.'.format(
-                            i+1))
+                    logger.log(5, f'[L{i+1}] Start optimization section.')
                 if section_optimization:
                     # Start of a structure.
                     if 'Step number' in line:
                         structures.append(Structure())
                         current_structure = structures[-1]
-                        logger.log(5, '[L{}] Added structure '
-                                   '(currently {}).'.format(
-                                i+1, len(structures)))
+                        logger.log(5, f'[L{i+1}] Added structure '
+                                   f'(currently {len(structures)}).')
                     # Look for convergence information related to a single
                     # structure.
                     if section_convergence and 'GradGradGrad' in line:
                         section_convergence = False
-                        logger.log(5, '[L{}] End convergence section.'.format(
-                                i+1))
+                        logger.log(5, f'[L{i+1}] End convergence section.')
                     if section_convergence:
                         match = re.match(
-                            '\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+'
-                            '({0})\s+(YES|NO)'.format(
-                                co.RE_FLOAT), line)
+                            rf'\s(Maximum|RMS)\s+(Force|Displacement)\s+({co.RE_FLOAT})\s+'
+                            rf'({co.RE_FLOAT})\s+(YES|NO)', line)
                         if match:
-                            current_structure.props['{} {}'.format(
-                                    match.group(1), match.group(2))] = \
+                            current_structure.props[f'{match.group(1)} {match.group(2)}'] = \
                                 (float(match.group(3)),
                                  float(match.group(4)), match.group(5))
                     if 'Converged?' in line:
                         section_convergence = True
-                        logger.log(5, '[L{}] Start convergence section.'.format(
-                                i+1))
+                        logger.log(5, f'[L{i+1}] Start convergence section.')
                     # Look for input coords.
                     if coords_type == 'input' or coords_type == 'both':
                         # End of input coords for a given structure.
                         if section_coords_input and 'Distance matrix' in line:
                             section_coords_input = False
-                            logger.log(5, '[L{}] End input coordinates section '
-                                       '({} atoms).'.format(
-                                    i+1, count_atom))
+                            logger.log(5, f'[L{i+1}] End input coordinates section '
+                                       f'({count_atom} atoms).')
                         # Add atoms and coords to structure.
                         if section_coords_input:
                             match = re.match(
-                                '\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+'
-                                '({0})'.format(
-                                    co.RE_FLOAT), line)
+                                rf'\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+'
+                                f'({co.RE_FLOAT})', line)
                             if match:
                                 count_atom += 1
                                 try:
@@ -2077,11 +2036,9 @@ class GaussLog(File):
                                 if current_atom.atomic_num:
                                     assert current_atom.atomic_num == \
                                         int(match.group(2)), \
-                                        ("[L{}] Atomic numbers don't match "
+                                        (f"[L{i+1}] Atomic numbers don't match "
                                          "(current != existing) "
-                                         "({} != {}).".format(
-                                                i+1, int(match.group(2)),
-                                                current_atom.atomic_num))
+                                         f"({int(match.group(2))} != {current_atom.atomic_num}).")
                                 else:
                                     current_atom.atomic_num = \
                                         int(match.group(2))
@@ -2095,8 +2052,8 @@ class GaussLog(File):
                                 'Input orientation:' in line:
                             section_coords_input = True
                             count_atom = 0
-                            logger.log(5, '[L{}] Start input coordinates '
-                                       'section.'.format(i+1))
+                            logger.log(5, f'[L{i+1}] Start input coordinates '
+                                       'section.')
                     # Look for standard coords.
                     if coords_type == 'standard' or coords_type == 'both':
                         # End of coordinates for a given structure.
@@ -2104,14 +2061,12 @@ class GaussLog(File):
                                 ('Rotational constants' in line or
                                  'Leave Link' in line):
                             section_coords_standard = False
-                            logger.log(5, '[L{}] End standard coordinates '
-                                       'section ({} atoms).'.format(
-                                    i+1, count_atom))
+                            logger.log(5, f'[L{i+1}] End standard coordinates '
+                                       f'section ({count_atom} atoms).')
                         # Grab coords for each atom. Add atoms to the structure.
                         if section_coords_standard:
-                            match = re.match('\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+'
-                                             '({0})\s+({0})'.format(
-                                    co.RE_FLOAT), line)
+                            match = re.match(rf'\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+'
+                                             rf'({co.RE_FLOAT})\s+({co.RE_FLOAT})', line)
                             if match:
                                 count_atom += 1
                                 try:
@@ -2123,11 +2078,9 @@ class GaussLog(File):
                                 if current_atom.atomic_num:
                                     assert current_atom.atomic_num == int(
                                         match.group(2)), \
-                                        ("[L{}] Atomic numbers don't match "
+                                        (f"[L{i+1}] Atomic numbers don't match "
                                          "(current != existing) "
-                                         "({} != {}).".format(
-                                            i+1, int(match.group(2)),
-                                            current_atom.atomic_num))
+                                         f"({int(match.group(2))} != {current_atom.atomic_num}).")
                                 else:
                                     current_atom.atomic_num = int(
                                         match.group(2))
@@ -2141,8 +2094,8 @@ class GaussLog(File):
                                 'Standard orientation' in line:
                             section_coords_standard = True
                             count_atom = 0
-                            logger.log(5, '[L{}] Start standard coordinates '
-                                       'section.'.format(i+1))
+                            logger.log(5, f'[L{i+1}] Start standard coordinates '
+                                       'section.')
         return structures
 
 def conv_sch_str(sch_struct):
@@ -2177,7 +2130,7 @@ class SchrodingerFile(File):
     """
     Parent class used for all Schrodinger files.
     """
-    def conv_sch_str(self, sch_struct:sch_str):
+    def conv_sch_str(self, sch_struct):
         """
         Converts a schrodinger.structure object to my own structure object.
         Sort of pointless. Probably remove soon.
@@ -2210,7 +2163,7 @@ class JaguarIn(SchrodingerFile):
     Used to retrieve data from Jaguar .in files.
     """
     def __init__(self, path):
-        super(JaguarIn, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self._hessian = None
         self._empty_atoms = None
@@ -2225,17 +2178,13 @@ class JaguarIn(SchrodingerFile):
         if self._hessian is None:
             num = len(self.structures[0].atoms) + len(self._empty_atoms)
             logger.log(5,
-                       '  -- {} has {} atoms and {} dummy atoms.'.format(
-                    self.filename,
-                    len(self.structures[0].atoms),
-                    len(self._empty_atoms)))
+                       f'  -- {self.filename} has {len(self.structures[0].atoms)} atoms and {len(self._empty_atoms)} dummy atoms.')
             assert num != 0, \
-                'Zero atoms found when loading Hessian from {}!'.format(
-                self.path)
+                f'Zero atoms found when loading Hessian from {self.path}!'
             hessian = np.zeros([num * 3, num * 3], dtype=float)
-            logger.log(5, '  -- Created {} Hessian matrix (including dummy '
-                       'atoms).'.format(hessian.shape))
-            with open(self.path, 'r') as f:
+            logger.log(5, f'  -- Created {hessian.shape} Hessian matrix (including dummy '
+                       'atoms).')
+            with open(self.path) as f:
                 section_hess = False
                 for line in f:
                     if section_hess and line.startswith('&'):
@@ -2253,50 +2202,49 @@ class JaguarIn(SchrodingerFile):
                     if '&hess' in line:
                         section_hess = True
             for atom in self._empty_atoms:
-                logger.log(1, '>>> _empty_atom {}: {}'.format(atom.index, atom))
+                logger.log(1, f'>>> _empty_atom {atom.index}: {atom}')
             # Figure out the indices of the dummy atoms.
             dummy_indices = []
             for atom in self._empty_atoms:
-                logger.log(1, '>>> atom.index: {}'.format(atom.index))
+                logger.log(1, f'>>> atom.index: {atom.index}')
                 index = (atom.index - 1) * 3
                 dummy_indices.append(index)
                 dummy_indices.append(index + 1)
                 dummy_indices.append(index + 2)
-            logger.log(1, '>>> dummy_indices: {}'.format(dummy_indices))
+            logger.log(1, f'>>> dummy_indices: {dummy_indices}')
             # Delete these rows and columns.
-            logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
-            logger.log(1, '>>> hessian:\n{}'.format(hessian))
+            logger.log(1, f'>>> hessian.shape: {hessian.shape}')
+            logger.log(1, f'>>> hessian:\n{hessian}')
             hessian = np.delete(hessian, dummy_indices, 0)
             hessian = np.delete(hessian, dummy_indices, 1)
-            logger.log(1, '>>> hessian:\n{}'.format(hessian))
-            logger.log(5, '  -- Created {} Hessian matrix (w/o dummy '
-                       'atoms).'.format(hessian.shape))
+            logger.log(1, f'>>> hessian:\n{hessian}')
+            logger.log(5, f'  -- Created {hessian.shape} Hessian matrix (w/o dummy '
+                       'atoms).')
             self._hessian = hessian * co.HESSIAN_CONVERSION
-            logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
+            logger.log(1, f'>>> hessian.shape: {hessian.shape}')
         return self._hessian
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             sch_ob = jag_in.read(self.path)
             sch_struct = sch_ob.getStructure()
             structures = [self.conv_sch_str(sch_struct)]
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(structures)))
+            logger.log(5, f'  -- Imported {len(structures)} structure(s).')
             # This area is sketch. I added it so I could use Hessian data
             # generated from a Jaguar calculation that had a dummy atom.
             # No gaurantees this will always work.
             for i, structure in enumerate(structures):
                 empty_atoms = []
                 for atom in structure.atoms:
-                    logger.log(1, '>>> atom {}: {}'.format(atom.index, atom))
+                    logger.log(1, f'>>> atom {atom.index}: {atom}')
                     if atom.element == '':
                         empty_atoms.append(atom)
                 for atom in empty_atoms:
                     structure.atoms.remove(atom)
                 if empty_atoms:
-                    logger.log(5, 'Structure {}: {} empty atoms '
-                               'removed.'.format(i + 1, len(empty_atoms)))
+                    logger.log(5, f'Structure {i + 1}: {len(empty_atoms)} empty atoms '
+                               'removed.')
             self._empty_atoms = empty_atoms
             self._structures = structures
         return self._structures
@@ -2313,7 +2261,7 @@ class JaguarIn(SchrodingerFile):
         """
         lines = []
         mae_name = None
-        lines.append('MAEFILE: {}'.format(mae_name))
+        lines.append(f'MAEFILE: {mae_name}')
         lines.append('&gen')
         lines.append('&')
         lines.append('&zmat')
@@ -2329,7 +2277,7 @@ class JaguarOut(File):
     Used to retrieve data from Schrodinger Jaguar .out files.
     """
     def __init__(self, path):
-        super(JaguarOut, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self._eigenvalues = None
         self._eigenvectors = None
@@ -2362,12 +2310,12 @@ class JaguarOut(File):
             self.import_file()
         return self._dummy_atom_eigenvector_indices
     def import_file(self):
-        logger.log(10, 'READING: {}'.format(self.filename))
+        logger.log(10, f'READING: {self.filename}')
         frequencies = []
         force_constants = []
         eigenvectors = []
         structures = []
-        with open(self.path, 'r') as f:
+        with open(self.path) as f:
             section_geometry = False
             section_eigenvalues = False
             section_eigenvectors = False
@@ -2382,9 +2330,8 @@ class JaguarOut(File):
                         pass
                     else:
                         match = re.match(
-                            '\s+([\d\w]+)\s+({0})\s+({0})\s+({0})'.format(
-                                co.RE_FLOAT), line)
-                        if match != None:
+                            rf'\s+([\d\w]+)\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})', line)
+                        if match is not None:
                             current_atom = Atom()
                             current_atom.element = match.group(1).translate(
                                 None, digits)
@@ -2393,14 +2340,12 @@ class JaguarOut(File):
                             current_atom.z = float(match.group(4))
                             current_structure.atoms.append(current_atom)
                             logger.log(0,
-                                       '{0:<3}{1:>12.6f}{2:>12.6f}'
-                                       '{3:>12.6f}'.format(
-                                    current_atom.element, current_atom.x,
-                                    current_atom.y, current_atom.z))
+                                       f'{current_atom.element:<3}{current_atom.x:>12.6f}{current_atom.y:>12.6f}'
+                                       f'{current_atom.z:>12.6f}')
                 if 'geometry:' in line:
                     section_geometry = True
                     current_structure = Structure()
-                    logger.log(5, '[L{}] Located geometry.'.format(i + 1))
+                    logger.log(5, f'[L{i + 1}] Located geometry.')
                 if 'Number of imaginary frequencies' in line or \
                         'Writing vibrational' in line or \
                         'Thermochemical properties at' in line:
@@ -2428,8 +2373,8 @@ class JaguarOut(File):
                         temp_eigenvectors = [[]]
                 if 'normal modes in' in line:
                     section_eigenvalues = True
-        logger.log(1, '>>> len(frequencies): {}'.format(len(frequencies)))
-        logger.log(1, '>>> frequencies:\n{}'.format(frequencies))
+        logger.log(1, f'>>> len(frequencies): {len(frequencies)}')
+        logger.log(1, f'>>> frequencies:\n{frequencies}')
         # logger.log(1, '>>> frequencies:\n{}'.format(
         #         [x / co.FORCE_CONVERSION for x in frequencies]))
         # logger.log(1, '>>> frequencies:\n{}'.format(
@@ -2441,14 +2386,14 @@ class JaguarOut(File):
         eigenvalues = [- fc / co.FORCE_CONVERSION if f < 0 else
                          fc / co.FORCE_CONVERSION
                          for fc, f in zip(force_constants, frequencies)]
-        logger.log(1, '>>> eigenvalues:\n{}'.format(eigenvalues))
+        logger.log(1, f'>>> eigenvalues:\n{eigenvalues}')
         # Remove eigenvector components related to dummy atoms.
         # Find the index of the atoms that are dummies.
         dummy_atom_indices = []
         for i, atom in enumerate(structures[-1].atoms):
             if atom.is_dummy:
                 dummy_atom_indices.append(i)
-        logger.log(10, '  -- Located {} dummy atoms.'.format(len(dummy_atom_indices)))
+        logger.log(10, f'  -- Located {len(dummy_atom_indices)} dummy atoms.')
         # Correlate those indices to the rows in the cartesian eigenvector.
         dummy_atom_eigenvector_indices = []
         for dummy_atom_index in dummy_atom_indices:
@@ -2472,14 +2417,10 @@ class JaguarOut(File):
         self._eigenvectors = np.array(eigenvectors)
         self._frequencies = np.array(frequencies)
         # self._force_constants = np.array(force_constants)
-        logger.log(5, '  -- Read {} structures'.format(
-                len(self.structures)))
-        logger.log(5, '  -- Read {} frequencies.'.format(
-                len(self.frequencies)))
-        logger.log(5, '  -- Read {} eigenvalues.'.format(
-                len(self.eigenvalues)))
-        logger.log(5, '  -- Read {} eigenvectors.'.format(
-                self.eigenvectors.shape))
+        logger.log(5, f'  -- Read {len(self.structures)} structures')
+        logger.log(5, f'  -- Read {len(self.frequencies)} frequencies.')
+        logger.log(5, f'  -- Read {len(self.eigenvalues)} eigenvalues.')
+        logger.log(5, f'  -- Read {self.eigenvectors.shape} eigenvectors.')
         # num_atoms = len(structures[-1].atoms)
         # logger.log(5,
         #            '  -- ({}, {}) eigenvectors expected for linear '
@@ -2494,7 +2435,7 @@ class Mae(SchrodingerFile):
     Used to retrieve and work with data from Schrodinger .mae files.
     """
     def __init__(self, path):
-        super(Mae, self).__init__(path)
+        super().__init__(path)
         self._index_output_mae = None
         self._index_output_mmo = None
         self._structures = None
@@ -2509,17 +2450,16 @@ class Mae(SchrodingerFile):
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             # It would be great if we could leave this as an iter.
             try:
                 sch_structs = list(sch_str.StructureReader(self.path))
             except:
-                logger.warning('Error reading {}.'.format(self.path))
+                logger.warning(f'Error reading {self.path}.')
                 raise
             self._structures = [self.conv_sch_str(sch_struct)
                                 for sch_struct in sch_structs]
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s).')
         return self._structures
     def get_com_opts(self):
         """
@@ -2543,7 +2483,7 @@ class Mae(SchrodingerFile):
             com_opts['strs'] = True
         if any(x in ['jb', 'ja', 'jt'] for x in self.commands):
             com_opts['sp_mmo'] = True
-        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa', 'mgESP', 'mjESP'] 
+        if any(x in ['me', 'mea', 'mq', 'mqh', 'mqa', 'mgESP', 'mjESP']
             for x in self.commands):
             com_opts['sp'] = True
         # Command meig is depreciated.
@@ -2602,7 +2542,7 @@ class Mae(SchrodingerFile):
         self._index_output_mmo = []
         com_opts = self.get_com_opts()
         debg_opts = self.get_debg_opts(com_opts)
-        com = '{}\n{}\n'.format(self.filename, self.name_mae)
+        com = f'{self.filename}\n{self.name_mae}\n'
         # Is this right? It seems to work, but looking back at this,
         # I'm not sure why we wouldn't always want to control using
         # MMOD. Also, that 2nd argument of MMOD only affects the color
@@ -2617,11 +2557,11 @@ class Mae(SchrodingerFile):
         #com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 36.7, 0, 0, 0)
         com += co.COM_FORM.format('FFLD', 2, 0, 0, 0, 0, 0, 0, 0)
         # Also may want to turn on/off cutoffs using BDCO.
-        ## We have noticed there are some oddities for electrostatic 
+        ## We have noticed there are some oddities for electrostatic
         ## interactions. In some cases "Residue-based cutoffs" are used which
         ## result inconsistent energy contributions. Inorder to keep this
         ## consistent between calculations in Q2MM and conformational seaching
-        ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0 
+        ## EXNB is used to set all vdW and electrostatic cutoffs to 99.0
         ## ensuring all interactions are gathered. The seventh column is the
         ## cutoff for hydrogen bonds, and 4 is the default value.
         com += co.COM_FORM.format('EXNB', 0, 0, 0, 0, 99., 99., 4., 0)
@@ -2664,13 +2604,11 @@ class Mae(SchrodingerFile):
         # If the file already exists, don't rewrite it.
         path_com = os.path.join(self.directory, self.name_com)
         if sometext and os.path.exists(path_com):
-            logger.log(5, '  -- {} already exists. Skipping write.'.format(
-                    self.name_com))
+            logger.log(5, f'  -- {self.name_com} already exists. Skipping write.')
         else:
             with open(os.path.join(self.directory, self.name_com), 'w') as f:
                 f.write(com)
-            logger.log(5, 'WROTE: {}'.format(
-                    os.path.join(self.name_com)))
+            logger.log(5, f'WROTE: {os.path.join(self.name_com)}')
 
     def run(self, max_fails=5, max_timeout=None, timeout=10, check_tokens=True):
         """
@@ -2701,8 +2639,7 @@ class Mae(SchrodingerFile):
             while True:
                 token_string = sp.check_output(
                     '$SCHRODINGER/utilities/licutil -available', shell=True)
-                if (sys.version_info > (3, 0)):
-                  token_string = token_string.decode("utf-8")
+                token_string = token_string.decode("utf-8")
                 if 'SUITE' not in token_string:
                     licenses_available = True
                     break
@@ -2714,8 +2651,7 @@ class Mae(SchrodingerFile):
                     raise Exception(
                         'The command "$SCHRODINGER/utilities/licutil '
                         '-available" is not working with the current '
-                        'regex in calculate.py.\nOUTPUT:\n{}'.format(
-                            token_string))
+                        f'regex in calculate.py.\nOUTPUT:\n{token_string}')
                 suite_tokens = int(suite_tokens.group(1))
                 macro_tokens = int(macro_tokens.group(1))
                 if suite_tokens > co.MIN_SUITE_TOKENS and \
@@ -2729,9 +2665,8 @@ class Mae(SchrodingerFile):
                             current_timeout, suite_tokens,
                             macro_tokens, end=True, name_com=self.name_com)
                         raise Exception(
-                            "Not enough tokens to run {}. Waited {} seconds "
-                            "before giving up.".format(
-                                self.name_com, current_timeout))
+                            f"Not enough tokens to run {self.name_com}. Waited {current_timeout} seconds "
+                            "before giving up.")
                     pretty_timeout(current_timeout, suite_tokens, macro_tokens,
                                    name_com=self.name_com)
                     current_timeout += timeout
@@ -2741,10 +2676,9 @@ class Mae(SchrodingerFile):
         if licenses_available:
             while True:
                 try:
-                    logger.log(5, 'RUNNING: {}'.format(self.name_com))
+                    logger.log(5, f'RUNNING: {self.name_com}')
                     sp.check_output(
-                        '$SCHRODINGER/bmin -WAIT {}'.format(
-                            os.path.splitext(self.name_com)[0]), shell=True)
+                        f'$SCHRODINGER/bmin -WAIT {os.path.splitext(self.name_com)[0]}', shell=True)
                     break
                 except sp.CalledProcessError:
                     logger.warning('Call to MacroModel failed and I have no '
@@ -2777,15 +2711,13 @@ def pretty_timeout(current_timeout, macro_tokens, suite_tokens, end=False,
     """
     if current_timeout == 0:
         if name_com:
-            logger.warning('  -- Waiting on tokens to run {}.'.format(
-                    name_com))
+            logger.warning(f'  -- Waiting on tokens to run {name_com}.')
         logger.log(level,
                    '--' + ' (s) '.center(8, '-') +
-                   '--' + ' {} '.format(co.LABEL_SUITE).center(17, '-') +
-                   '--' + ' {} '.format(co.LABEL_MACRO).center(17, '-') +
+                   '--' + f' {co.LABEL_SUITE} '.center(17, '-') +
+                   '--' + f' {co.LABEL_MACRO} '.center(17, '-') +
                    '--')
-    logger.log(level, '  {:^8d}  {:^17d}  {:^17d}'.format(
-            current_timeout, macro_tokens, suite_tokens))
+    logger.log(level, f'  {current_timeout:^8d}  {macro_tokens:^17d}  {suite_tokens:^17d}')
     if end is True:
         logger.log(level, '-' * 50)
 
@@ -2794,20 +2726,20 @@ class MacroModelLog(File):
     Used to retrieve data from MacroModel log files.
     """
     def __init__(self, path):
-        super(MacroModelLog, self).__init__(path)
+        super().__init__(path)
         self._hessian = None
         self._structures = None
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
-            with open(self.path, 'r') as f:
+            logger.log(10, f'READING: {self.filename}')
+            with open(self.path) as f:
                 lines = f.read()
-            num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
-            logger.log(5, '  -- Read {} atoms.'.format(num_atoms))
+            num_atoms = int(re.search(r'Read\s+(\d+)\s+atoms.', lines).group(1))
+            logger.log(5, f'  -- Read {num_atoms} atoms.')
 
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
+            logger.log(5, f'  -- Creating {hessian.shape} Hessian matrix.')
             words = lines.split()
             section_hessian = False
             start_row = False
@@ -2855,15 +2787,15 @@ class MacroModelLog(File):
                     elements.append(float(word))
                     continue
             self._hessian = hessian
-            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
+            logger.log(5, f'  -- Creating {hessian.shape} Hessian matrix.')
         return self._hessian
 
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
@@ -2880,10 +2812,10 @@ class MacroModelLog(File):
                         section = section + 'ready'
                     elif ':::' in line and 'ready' in section:
                         section = None
-                    elif section is 'atom ready':
+                    elif section == 'atom ready':
                         #read in atoms to list
                         continue
-                    elif section is 'bond ready':
+                    elif section == 'bond ready':
                         #read in bond atom numbers, populate later with atoms
                         continue
                     else:
@@ -2954,8 +2886,7 @@ class MacroModelLog(File):
                         if torsions:
                             torsions.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
                             current_structure.torsions.extend(torsions)
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s).')
         return self._structures
 
 class MacroModel(File):
@@ -2963,14 +2894,14 @@ class MacroModel(File):
     Extracts data from MacroModel .mmo files.
     """
     def __init__(self, path):
-        super(MacroModel, self).__init__(path)
+        super().__init__(path)
         self._structures = None
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
@@ -3043,8 +2974,7 @@ class MacroModel(File):
                         if torsions:
                             torsions.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
                             current_structure.torsions.extend(torsions)
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s).')
         return self._structures
     def read_line_for_bond(self, line):
         match = co.RE_BOND.match(line)
@@ -3158,7 +3088,7 @@ def geo_from_points(*args):
         torsion = angle * (180/math.pi)
         return torsion
 
-class Structure(object):
+class Structure:
     """
     Data for a single structure/conformer/snapshot.
     """
@@ -3195,9 +3125,8 @@ class Structure(object):
                     ele = co.MASSES.items()[atom.atomic_num - 1][0]
                 else:
                     ele = atom.element
-                output.append('{0}{1} & {2:3.6f} & {3:3.6f} & '
-                              '{4:3.6f}\\\\'.format(
-                        ele, i+1, atom.x, atom.y, atom.z))
+                output.append(f'{ele}{i+1} & {atom.x:3.6f} & {atom.y:3.6f} & '
+                              f'{atom.z:3.6f}\\\\')
             output.append('\\end{tabular}')
             return output
         # Formatted for Gaussian .com's.
@@ -3213,16 +3142,12 @@ class Structure(object):
                 if indices_use_charge:
                     if atom.index in indices_use_charge:
                         output.append(
-                            ' {0:s}--{1:.5f}{2:>16.6f}{3:16.6f}'
-                            '{4:16.6f}'.format(
-                                ele, atom.partial_charge, atom.x,
-                                atom.y, atom.z))
+                            f' {ele:s}--{atom.partial_charge:.5f}{atom.x:>16.6f}{atom.y:16.6f}'
+                            f'{atom.z:16.6f}')
                     else:
-                        output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                                ele, atom.x, atom.y, atom.z))
+                        output.append(f' {ele:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}')
                 else:
-                    output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                            ele, atom.x, atom.y, atom.z))
+                    output.append(f' {ele:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}')
             return output
         # Formatted for Jaguar.
         elif format == 'jaguar':
@@ -3234,9 +3159,8 @@ class Structure(object):
                     ele = atom.element
                 # Used only for a problem Eric experienced.
                 # if ele == '': ele = 'Pd'
-                label = '{}{}'.format(ele, atom.index)
-                output.append(' {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}'.format(
-                        label, atom.x, atom.y, atom.z))
+                label = f'{ele}{atom.index}'
+                output.append(f' {label:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}')
             return output
     def select_stuff(self, typ, com_match=None):
         """
@@ -3264,7 +3188,7 @@ class Structure(object):
                     directly depend on our parameters.
         """
         data = []
-        logger.log(1, '>>> typ: {}'.format(typ))
+        logger.log(1, f'>>> typ: {typ}')
         for thing in getattr(self, typ):
             if (com_match and any(x in thing.comment for x in com_match)) or \
                     com_match is None:
@@ -3284,23 +3208,22 @@ class Structure(object):
                             angle_2 = angle.value
                             break
                     try:
-                        logger.log(1, '>>> atom_nums: {}'.format(atom_nums))
-                        logger.log(1, '>>> angle_1: {} / angle_2: {}'.format(
-                                angle_1, angle_2))
+                        logger.log(1, f'>>> atom_nums: {atom_nums}')
+                        logger.log(1, f'>>> angle_1: {angle_1} / angle_2: {angle_2}')
                     except UnboundLocalError:
-                        logger.error('>>> atom_nums: {}'.format(atom_nums))
+                        logger.error(f'>>> atom_nums: {atom_nums}')
                         logger.error(
-                            '>>> angle_atoms_1: {}'.format(angle_atoms_1))
+                            f'>>> angle_atoms_1: {angle_atoms_1}')
                         logger.error(
-                            '>>> angle_atoms_2: {}'.format(angle_atoms_2))
+                            f'>>> angle_atoms_2: {angle_atoms_2}')
                         if 'angle_1' not in locals():
                             logger.error("Can't identify angle_1!")
                         else:
-                            logger.error(">>> angle_1: {}".format(angle_1))
+                            logger.error(f">>> angle_1: {angle_1}")
                         if 'angle_2' not in locals():
                             logger.error("Can't identify angle_2!")
                         else:
-                            logger.error(">>> angle_2: {}".format(angle_2))
+                            logger.error(f">>> angle_2: {angle_2}")
                         logger.warning('WARNING: Using torsion anyway!')
                         data.append(datum)
                     if -20. < angle_1 < 20. or 160. < angle_1 < 200. or \
@@ -3344,7 +3267,7 @@ class Structure(object):
                     bonded_atom = self.atoms[bonded_atom_index - 1]
                     if bonded_atom.atom_type == 3:
                         aliph_hyds.append(atom)
-        logger.log(5, '  -- {} aliphatic hydrogen(s).'.format(len(aliph_hyds)))
+        logger.log(5, f'  -- {len(aliph_hyds)} aliphatic hydrogen(s).')
         return aliph_hyds
     def get_hyds(self):
         """
@@ -3357,7 +3280,7 @@ class Structure(object):
             if 40 < atom.atom_type < 49:
                 for bonded_atom_index in atom.bonded_atom_indices:
                     hyds.append(atom)
-        logger.log(5, '  -- {} hydrogen(s).'.format(len(hyds)))
+        logger.log(5, f'  -- {len(hyds)} hydrogen(s).')
         return hyds
     def get_dummy_atom_indices(self):
         """
@@ -3372,11 +3295,11 @@ class Structure(object):
         for atom in self.atoms:
             if atom.is_dummy:
                 logger.log(
-                    10,'  -- Identified {} as a dummy atom.'.format(atom))
+                    10,f'  -- Identified {atom} as a dummy atom.')
                 dummies.append(atom.index)
         return dummies
 
-class Atom(object):
+class Atom:
     """
     Data class for a single atom.
 
@@ -3410,8 +3333,7 @@ class Atom(object):
             self.z = coords[2]
         self.props = {}
     def __repr__(self):
-            return '{}[{},{},{}]'.format(
-                self.atom_type_name, self.x, self.y, self.z)
+            return f'{self.atom_type_name}[{self.x},{self.y},{self.z}]'
     @property
     def coords(self):
         return [self.x, self.y, self.z]
@@ -3464,7 +3386,7 @@ class Atom(object):
         else:
             return False
 
-class Bond(object):
+class Bond:
     """
     Data class for a single bond.
     """
@@ -3495,7 +3417,7 @@ class Bond(object):
             typ = 't'
         datum = datatypes.Datum(val=self.value, typ=typ,ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
-            setattr(datum, 'atm_{}'.format(i+1), atom_num)
+            setattr(datum, f'atm_{i+1}', atom_num)
         for k, v in kwargs.items():
             setattr(datum, k, v)
         return datum
@@ -3506,7 +3428,7 @@ class Angle(Bond):
     """
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
-        super(Angle, self).__init__(atom_nums, comment, order, value, ff_row)
+        super().__init__(atom_nums, comment, order, value, ff_row)
 
 class Torsion(Bond):
     """
@@ -3514,7 +3436,7 @@ class Torsion(Bond):
     """
     def __init__(self, atom_nums=None, comment=None, order=None, value=None,
                  ff_row=None):
-        super(Torsion, self).__init__(atom_nums, comment, order, value, ff_row)
+        super().__init__(atom_nums, comment, order, value, ff_row)
 
 def return_filetypes_parser():
     """
@@ -3563,7 +3485,7 @@ def main(args):
     if opts.print:
         if hasattr(file_ob, 'structures'):
             for i, structure in enumerate(file_ob.structures):
-                print(' ' + ' STRUCTURE {} '.format(i + 1).center(56, '-'))
+                print(' ' + f' STRUCTURE {i + 1} '.center(56, '-'))
                 output = structure.format_coords(format='gauss')
                 for line in output:
                     print(line)

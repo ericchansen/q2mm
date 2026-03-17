@@ -1,23 +1,19 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 Selects parameters from force fields.
 
 ASSUMES THERE IS NO OVERLAP BETWEEN THE PARAMETERS SELECTED BY THE PARAMETER
 FILE AND BY PTYPES!
 '''
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 import argparse
 import logging
 import logging.config
 import numpy as np
 import sys
 
-import constants as co
-from datatypes import AmberFF, MM3
-import filetypes
+from q2mm import constants as co
+from q2mm.datatypes import AmberFF, MM3
+from q2mm import filetypes
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -93,8 +89,7 @@ def trim_params_by_type(params, ptypes):
     Select all parameters with a matching ptype.
     '''
     chosen_params = [x for x in params if x.ptype in ptypes]
-    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
-            len(chosen_params)))
+    logger.log(20, f'  -- Trimmed number of parameters down to {len(chosen_params)}.')
     return chosen_params
 
 def trim_params_by_file(params, filename):
@@ -118,8 +113,7 @@ def trim_params_by_file(params, filename):
                 param._allowed_range = temp_param[2]
                 param.value_in_range(param.value)
                 chosen_params.append(param)
-    logger.log(20, '  -- Trimmed number of parameters down to {}.'.format(
-            len(chosen_params)))
+    logger.log(20, f'  -- Trimmed number of parameters down to {len(chosen_params)}.')
     return chosen_params
 
 def read_param_file(filename):
@@ -170,7 +164,7 @@ def read_param_file(filename):
     Doesn't actually return datatypes.Param objects.
     '''
     temp_params = []
-    with open(filename, 'r') as f:
+    with open(filename) as f:
         for line in f:
             line = line.partition('#')[0] # Ignore everything after a pound.
             line = line.partition('!')[0] # ! counts as comments too.
@@ -238,19 +232,13 @@ def main(args):
     Imports a force field object, which contains a list of all the available
     parameters. Returns a list of only the user selected parameters.
     '''
-    # basestring is deprecated in python3, str is probably safe to use in both
-    # but should be tested, for now sys.version_info switch can handle it
-    if sys.version_info > (3, 0):
-        if isinstance(args, str):
-            args = args.split()
-    else:
-        if isinstance(args, basestring):
-            args = args.split()
+    if isinstance(args, str):
+        args = args.split()
     parser = return_params_parser()
     opts = parser.parse_args(args)
     if opts.average or opts.check:
         assert opts.mmo, 'Must provide MacroModel .mmo files!'
-        
+
     # The function import_ff should be more like something that just
     # interprets filetypes.
     # ff = datatypes.import_ff(opts.ffpath)
@@ -260,7 +248,7 @@ def main(args):
     else:
         ff = MM3(opts.ffpath)
     ff.import_ff()
-    
+
     # Set the selected parameter types.
     if opts.all:
         opts.ptypes.extend(ALL_PARM_TYPES)
@@ -279,8 +267,7 @@ def main(args):
             if not param.value == 0.:
                 new_params.append(param)
         params = new_params
-    logger.log(20, '  -- Total number of chosen parameters: {}'.format(
-            len(params)))
+    logger.log(20, f'  -- Total number of chosen parameters: {len(params)}')
     # Load MacroModel .mmo files if desired.
     if opts.mmo or opts.average or opts.check:
         mmos = []
@@ -296,8 +283,8 @@ def main(args):
         if opts.check:
             all_rows = bond_dic.keys() + angle_dic.keys() + torsion_dic.keys()
             for param in params:
-                if not param.ff_row in all_rows:
-                    print("{} doesn't appear to be in use.".format(param))
+                if param.ff_row not in all_rows:
+                    print(f"{param} doesn't appear to be in use.")
 
         if opts.average:
             # bond_avg = {1857: 2.3171,
@@ -306,11 +293,11 @@ def main(args):
             bond_avg = {}
             for ff_row, values in bond_dic.items():
                 bond_avg[ff_row] = np.mean(values)
-                print(">> STD {}: {}".format(ff_row,np.std(values)))
+                print(f">> STD {ff_row}: {np.std(values)}")
             angle_avg = {}
             for ff_row, values in angle_dic.items():
                 angle_avg[ff_row] = np.mean(values)
-                print(">> STD {}: {}".format(ff_row,np.std(values)))
+                print(f">> STD {ff_row}: {np.std(values)}")
             # Update parameter values.
             for param in params:
                 if param.ptype in ['be', 'ae'] and param.ff_row in bond_avg:
@@ -319,23 +306,21 @@ def main(args):
                     param.value = angle_avg[param.ff_row]
             # Export the updated parameters.
             ff.export_ff(opts.average, params)
-        
+
     # Print the parameters.
     if opts.printparams:
         for param in params:
             # if param.ptype in ['df', 'q']:
             if param.allowed_range:
-                print('{} {} {} {}'.format(
-                        param.ff_row, param.ff_col, param.allowed_range[0],
-                        param.allowed_range[1]))
+                print(f'{param.ff_row} {param.ff_col} {param.allowed_range[0]} {param.allowed_range[1]}')
             else:
-                print('{} {}'.format(param.ff_row, param.ff_col))
+                print(f'{param.ff_row} {param.ff_col}')
     if opts.printtether:
         for param in params:
             print(' ' '{:22s}'
                   ' ' '{:22.4f}'
                   ' ' '{:22.4f}'.format(
-                      'p_mm3_{}-{}'.format(param.ff_row, param.ff_col),
+                      f'p_mm3_{param.ff_row}-{param.ff_col}',
                       # These should be floats without me making it one here.
                       co.WEIGHTS['p'],
                       param.value))
