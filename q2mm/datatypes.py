@@ -636,7 +636,7 @@ class TinkerFF(FF):
                                         ff_row = i + 1,
                                         value = float(split[7]))))
                         elif len(split) == 7:
-                            self.params.extend(
+                            self.params.append(
                                 ParamMM3(atom_types = at,
                                         ptype = 'ae',
                                         ff_col = 3,
@@ -872,7 +872,7 @@ class TinkerMM3A(FF):
                                         ff_row = i + 1,
                                         value = float(split[7]))))
                         elif len(split) == 7:
-                            self.params.extend(
+                            self.params.append(
                                 ParamMM3(atom_types = at,
                                         ptype = 'ae',
                                         ff_col = 3,
