@@ -3,6 +3,7 @@ import logging
 import logging.config
 import os
 import unittest
+from pathlib import Path
 import numpy as np
 from q2mm import linear_algebra
 
@@ -13,99 +14,107 @@ from q2mm import utilities
 
 logger = logging.getLogger(__name__)
 
-class TestEthane(unittest.TestCase):
-    """
-    Check that the -mb command for the calculate module produces the
-    proper number of data points.
-    """
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ETHANE_DIR = REPO_ROOT / "q2mm_example" / "amber" / "Ethane"
+SEMINARIO_DIR = REPO_ROOT / "q2mm_example" / "amber" / "seminario"
+RH_SEMINARIO_DIR = REPO_ROOT / "rh-seminario"
 
-    struct_path = "test/ethane/ethane.mol2"
-    qm_log_path = "test/ethane/ethane.log"
-    seminario_fld_path = "test/ethane/ethane.seminario.fld"
-    mm_log_path = "test/ethane/ethane.seminario.mm-freq.log"
-    ethane_og_fld_path = "test/ethane/start.fld"
-    mol2_path = "test/ethane/ethane.mol2"
 
-    def run_seminario(self):
+@unittest.skipUnless(
+    (ETHANE_DIR / "GS.mol2").exists() and (ETHANE_DIR / "GS.log").exists(),
+    "Ethane fixture files not found"
+)
+class TestGaussLogParsing(unittest.TestCase):
+    """Test that GaussLog can parse ethane Gaussian output."""
 
-        ethane_ff = seminario(self.ethane_og_fld, self.structs, self.hessians, zero_out=True, hessian_units=co.KJMOLA)
-        ethane_ff.export_ff(self.seminario_fld_path, ethane_ff.params)
+    def test_parse_gs_log(self):
+        log = GaussLog(str(ETHANE_DIR / "GS.log"))
+        self.assertGreater(len(log.structures), 0, "No structures parsed from GS.log")
 
-    def read_in_files(self):
-        self.ethane_og_fld = MM3(self.ethane_og_fld_path)
-        self.mol2s = [Mol2(self.mol2_path)]
-        self.structs = [mol2.structures[0] for mol2 in self.mol2s]
-        self.qm_log = GaussLog(self.qm_log_path)
-        self.qm_structs = self.qm_log.structures
-        self.hessians = [struct.hess for struct in self.qm_structs]
+    def test_gs_log_has_atoms(self):
+        log = GaussLog(str(ETHANE_DIR / "GS.log"))
+        struct = log.structures[0]
+        self.assertGreater(len(struct.atoms), 0, "No atoms in parsed structure")
 
-    def read_out_files(self):
-        self.qm_log = GaussLog(self.qm_log_path, au_hessian=False)
-        self.qm_structs = self.qm_log.structures
-        self.mm_log = MacroModelLog(self.mm_log_path)
+    def test_gs_log_has_hessian(self):
+        log = GaussLog(str(ETHANE_DIR / "GS.log"))
+        struct = log.structures[0]
+        self.assertIsNotNone(struct.hess, "No Hessian parsed from GS.log")
 
-    def test_seminario_ethane_hessian(self):
+    def test_parse_ts_log(self):
+        log = GaussLog(str(ETHANE_DIR / "TS.log"))
+        self.assertGreater(len(log.structures), 0, "No structures parsed from TS.log")
 
-        self.read_in_files()
-        self.read_out_files()
 
-        qm_hessian = self.qm_structs[0].hess # KJMOLA
-        mass_weight_hessian(qm_hessian, self.structs[0].atoms)
-        mm_hessian = self.mm_log.hessian
-        mm_hessian = mm_hessian #* co.HARTREE_TO_KJMOL / co.HARTREE_TO_KCALMOL
+@unittest.skipUnless(
+    (ETHANE_DIR / "GS.mol2").exists(),
+    "Ethane mol2 fixture not found"
+)
+class TestMol2Parsing(unittest.TestCase):
+    """Test that Mol2 can parse ethane structure."""
 
-        diff = mm_hessian - qm_hessian
-        proportion_error = diff / qm_hessian
-        percent_error_signed = proportion_error * 100
-        percent_error = np.abs(percent_error_signed)
-        max = np.max(percent_error)
-        min = np.min(percent_error)
-        avg = np.average(percent_error)
-        median = np.median(percent_error)
-        stddev = np.std(percent_error)
+    def test_parse_mol2(self):
+        mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        self.assertGreater(len(mol2.structures), 0, "No structures parsed from mol2")
 
-        mm_eigvals, mm_eigvecs = np.linalg.eigh(self.mm_log.hessian)
-        reformed_mm_hessian = linear_algebra.reform_hessian(mm_eigvals, self.qm_log.evecs)
+    def test_mol2_atom_count(self):
+        mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        struct = mol2.structures[0]
+        # Ethane: C2H6 = 8 atoms
+        self.assertEqual(len(struct.atoms), 8, "Ethane should have 8 atoms")
 
-        # reformed_diff = reformed_mm_hessian - qm_hessian
-        # reformed_proportion_error = reformed_diff / qm_hessian
-        # reformed_percent_error_signed = reformed_proportion_error * 100
-        # reformed_percent_error = np.abs(reformed_percent_error_signed)
-        # reformed_max = np.max(reformed_percent_error)
-        # reformed_min = np.min(reformed_percent_error)
-        # reformed_avg = np.average(reformed_percent_error)
-        # reformed_median = np.median(reformed_percent_error)
-        # reformed_stddev = np.std(reformed_percent_error)
+    def test_mol2_bond_count(self):
+        mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        struct = mol2.structures[0]
+        # Ethane: 7 bonds (1 C-C + 6 C-H)
+        self.assertEqual(len(struct.bonds), 7, "Ethane should have 7 bonds")
 
-        mm_eigenmatrix = np.dot(np.dot(self.qm_log.evecs, mm_hessian), self.qm_log.evecs.T)
-        qm_evals = self.qm_log.evals * co.HESSIAN_CONVERSION
-        qm_eigenmatrix = np.diag(qm_evals)
-        mm_eig_diag = np.diag(mm_eigenmatrix)
-        mm_eig_tril = np.tril(mm_eigenmatrix)
-        qm_eig_tril = np.tril(qm_eigenmatrix)
-        np.savetxt("test/ethane/qm_eig_tril.csv", qm_eig_tril, delimiter=',')
-        np.savetxt("test/ethane/mm_eig_tril.csv", mm_eig_tril, delimiter=',')
-        #qm_eigenmatrix = np.dot(np.dot(self.qm_log.evecs, qm_hessian), self.qm_log.evecs.T)
 
-        eig_diag_diff = mm_eig_diag - qm_evals
-        eig_diag_proportion_error = eig_diag_diff / qm_evals
-        eig_diag_perc_err_signed = eig_diag_proportion_error * 100
-        eig_diag_perc_error = np.abs(eig_diag_perc_err_signed)
-        eigenmatrix_max = np.max(eig_diag_diff)
-        eigenmatrix_min = np.min(eig_diag_diff)
-        eigenmatrix_avg = np.average(eig_diag_diff)
-        eigenmatrix_median = np.median(eig_diag_diff)
-        eigenmatrix_stddev = np.std(eig_diag_diff)
+@unittest.skipUnless(
+    (RH_SEMINARIO_DIR / "mm3.fld").exists(),
+    "rh-seminario fixture not found"
+)
+class TestMM3FFParsing(unittest.TestCase):
+    """Test MM3 force field parsing from schrod_indep_filetypes."""
 
-        eig_tril_diff = mm_eig_tril - qm_eig_tril
-        eig_tril_ratio_error = eig_tril_diff / qm_eig_tril
-        eig_tril_perc_err_signed = eig_tril_ratio_error * 100
-        eig_tril_perc_error = np.abs(eig_tril_perc_err_signed)
-        eigenmatrix_max = np.max(eig_tril_diff)
-        eigenmatrix_min = np.min(eig_tril_diff)
-        eigenmatrix_avg = np.average(eig_tril_diff)
-        eigenmatrix_median = np.median(eig_tril_diff)
-        eigenmatrix_stddev = np.std(eig_tril_diff)
+    def setUp(self):
+        self.ff = MM3(str(RH_SEMINARIO_DIR / "mm3.fld"))
+        self.ff.import_ff()
 
-        # TODO write tests to check that mm off-diags << mm diag corresponding
-        # mm diags close-ish to
+    def test_parse_mm3(self):
+        self.assertGreater(len(self.ff.params), 0, "No parameters parsed")
+
+    def test_mm3_has_bonds(self):
+        bond_params = [p for p in self.ff.params if p.ptype in ('bf', 'be')]
+        self.assertGreater(len(bond_params), 0, "No bond parameters found")
+
+    def test_mm3_has_angles(self):
+        angle_params = [p for p in self.ff.params if p.ptype in ('af', 'ae')]
+        self.assertGreater(len(angle_params), 0, "No angle parameters found")
+
+
+@unittest.skipUnless(
+    (ETHANE_DIR / "GS.log").exists() and (ETHANE_DIR / "GS.mol2").exists(),
+    "Ethane fixture files not found"
+)
+class TestHessianMassWeighting(unittest.TestCase):
+    """Test mass-weighting of Hessians."""
+
+    def test_mass_weight_roundtrip(self):
+        log = GaussLog(str(ETHANE_DIR / "GS.log"))
+        mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        struct = mol2.structures[0]
+        hess = log.structures[0].hess.copy()
+        original = hess.copy()
+        # Mass-weight then un-weight should give back original
+        mass_weight_hessian(hess, struct.atoms)
+        mass_weight_hessian(hess, struct.atoms, reverse=True)
+        np.testing.assert_allclose(
+            original, hess, rtol=1e-10,
+            err_msg="Mass-weight roundtrip did not preserve Hessian"
+        )
+
+
+if __name__ == '__main__':
+    logging.config.dictConfig(co.LOG_SETTINGS)
+    unittest.main()

@@ -26,4 +26,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -v --ignore=test/test_datatypes.py --ignore=test/test_seminario.py
+      - run: python -m pytest -v
