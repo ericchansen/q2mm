@@ -1,3 +1,6 @@
+# Runtime artifacts
+timer.dat
+
 # Temporary exclusions for when not intending to upload examples or force fields
 *.fld
 *.frcmod

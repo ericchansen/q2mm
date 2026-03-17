@@ -1,0 +1,18 @@
+SN2 F- + CH3F Reference Data at b3lyp/6-31+G(d)
+============================================================
+
+F- energy:       -99.859696300127 Ha
+CH3F energy:     -139.751112913417 Ha
+Complex energy:  -239.632665168590 Ha
+TS energy:       -239.617572855815 Ha
+
+C-F (TS):        1.8500 / 1.8500 A
+C-H (TS):        1.0760 A
+C-F (CH3F):      1.3986 A
+
+Barrier (TS - reactants):  -4.24 kcal/mol
+Barrier (TS - complex):    9.47 kcal/mol
+  Literature expected:     ~13-15 kcal/mol
+
+Imaginary freq:  -461.7 cm^-1
+Total freqs:     12 (1 imaginary)

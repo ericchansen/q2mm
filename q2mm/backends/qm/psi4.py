@@ -88,7 +88,8 @@ class Psi4Engine(QMEngine):
         else:
             atoms, coords = structure
         mol = _make_psi4_geometry(atoms, coords, self._charge, self._multiplicity)
-        _psi4.set_options({"basis": self._basis, "reference": "rhf"})
+        ref = "rhf" if self._multiplicity == 1 else "uhf"
+        _psi4.set_options({"basis": self._basis, "reference": ref})
         return mol
 
     def energy(self, structure, method: str = None, basis: str = None) -> float:
@@ -139,6 +140,16 @@ class Psi4Engine(QMEngine):
         _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
         return list(np.array(wfn.frequencies()))
 
-    def __del__(self):
+    def close(self):
+        """Clean up temporary files."""
         if hasattr(self, '_tmpdir') and os.path.exists(self._tmpdir):
             shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def __del__(self):
+        self.close()
