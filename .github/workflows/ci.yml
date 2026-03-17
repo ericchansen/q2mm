@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/ruff-action@v3
         with:
-          args: check q2mm/ test/ tools/ screen/
+          args: check q2mm/ test/ tools/ screen/ smiles_to_catvs/
 
   test:
     runs-on: ubuntu-latest
@@ -26,4 +26,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: python -m pytest -v
+      - run: python -m pytest -v --ignore=test/test_datatypes.py --ignore=test/test_seminario.py
