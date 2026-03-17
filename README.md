@@ -1,352 +1,112 @@
-# <center>Q2MM</center>
+# Q2MM
 
-Q2MM stands for quantum (mechanics) to molecular mechanics or quantum guided
-molecular mechanics, depending on what you prefer. Q2MM is open source software
-for force field optimization.
+**Quantum-guided molecular mechanics force field optimization.**
 
----
+Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing the difference between MM-calculated properties and quantum mechanics (QM) reference data. It supports multiple QM and MM backends through a plugin architecture.
 
-### <center>Python Dependencies</center>
+[![CI](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml)
 
-Q2MM uses Python 2.7.4. I'm reluctant to use more recent versions of Python
-because as far as I know, Schrödinger still uses 2.7.4.
+## Quick Start
 
-The following modules are required, but are included in the standard library for
-Python 2.7.4.
-
-* argparse
-* collections
-* copy
-* glob
-* itertools
-* logging
-* mmap
-* os
-* random
-* re
-* string
-* sqlite3
-* subprocess
-* sys
-* textwrap
-* time
-
-These are required, but aren't in the standard library.
-
-* numpy
-
-Required for particular features.
-
-* schrodinger
-
-If you'd like to use Schrödinger features, they recommend running external
-Python scripts using
-
-```
-$SCHRODINGER/run somepythoncode.py
+```bash
+pip install -e ".[dev]"
 ```
 
----
+```python
+from q2mm.io import GaussLog, Mol2
+from q2mm.forcefields import MM3
 
-### <center>Usage</center>
+# Parse QM reference data
+log = GaussLog("ethane.log")
+hessian = log.structures[0].hess
 
-You can get help for most python Q2MM scripts using the command line. Here's an
-example.
+# Parse molecular structure
+mol2 = Mol2("ethane.mol2")
+print(f"Atoms: {len(mol2.structures[0].atoms)}")
 
-```
-python calculate.py -h
-```
-
-### Setting up the Schrödinger MM3* force field
-
-These force field files are labeled `mm3.fld`. Our custom parameters are stored
-in substructures towards the end of theses files. For information on these
-substructures, see the MacroModel reference manual.
-
-Substructures are marked for optimization by adding the word "OPT" to their
-title. For example, you could name your substructure "New Metal Parameters OPT".
-Running
-
-```
-python parameters.py -f pathtomm3.fld -a -pp
+# Load force field
+ff = MM3("mm3.fld")
+ff.import_ff()
+print(f"Parameters: {len(ff.params)}")
 ```
 
-will print a list of the parameters that Q2MM identified. You can redirect the
-output parameter list to a file using standard Unix redirection.
+## Installation
 
-```
-python parameters.py -f pathtomm3fld -a -pp > params.txt
-```
+**Requirements:** Python 3.9+
 
-Here's an example of what `params.txt` might look like.
-
-```
-1854 1 0.0 inf
-1854 2 0.0 inf
-1854 3 -inf inf
-1855 1 0.0 inf
-1855 2 0.0 inf
-1856 1 -inf inf
-1856 2 -inf inf
-1856 3 -inf inf
+```bash
+pip install -e .          # Basic
+pip install -e ".[dev]"   # With pytest + ruff
+pip install -e ".[amber]" # With parmed (AMBER support)
 ```
 
-The first column refers to the line of the force field file where the parameter
-is located. The second column is an index refering to the location of the
-parameter in that line. For Schrödinger and `mm3.fld`, equilibrium bond lengths
-are found in column 1, force constants in column 2, dipoles in column 3, etc.
-See Schrödinger's documentation and the documentation inside
-[`parameters`](q2mm/parameters.py).
+### QM/MM Backends
 
-The 3rd and 4th column in `params.txt` are optional and specify the allowed
-parameter range. These values can be any floating points. Also, "inf" is used to
-signify the parameter can go to infinity. If the 3rd and 4th column aren't
-included, Q2MM will attempt to identify suitable parameter ranges based upon the
-parameter type.
+| Backend | Type | License | Install |
+|---------|------|---------|---------|
+| **Psi4** | QM | BSD-3 (open source) | `conda install psi4 -c conda-forge` |
+| **Tinker** | MM | Free (academic) | [download](https://dasher.wustl.edu/tinker/) |
+| **Gaussian** | QM | Commercial | Site license |
+| **Schrodinger** | QM/MM | Commercial | Site license |
 
-Currently, these parameter ranges are hard walls. In other words, if a step
-is made to move outside that wall, the step is simply scaled down to not go too
-far. Ideally, we should implement soft walls in the future.
-
-To select only certain types of parameters, use
+## Package Structure
 
 ```
-python parameters.py -f mm3.fld -pt bf af
+q2mm/
++-- core/          # Optimization engine (gradient, simplex, objective function)
++-- backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
++-- io/            # File format parsers (Gaussian, Jaguar, MOL2, MAE)
++-- forcefields/   # Force field types (MM3, AMBER, Tinker)
++-- cli/           # Command-line interface
++-- seminario.py   # QFUERZA/Seminario force constant estimation
+
+examples/          # Example workflows and training data
+data/              # Reference structures (ligands, substrates, reactions)
+scripts/           # Utility scripts and screening tools
 ```
 
-This command would print the bond and angle force constants in the format
-described above. See the help dialogue for
-[`parameters`](q2mm/parameters.py) for more information.
+## Development
 
-### <center>Running an optimization loop</center>
-
-I would always recommend making a backup of your force field before beginning an
-optimization.
-
-The loop module uses customized input files to manage the optimization of
-parameters. You can supply the input file using the simple command shown below.
-
-```
-python loop.py someinputfile
+```bash
+pip install -e ".[dev]"
+python -m pytest -v
+ruff check q2mm/ test/ scripts/
 ```
 
-Here's an example of what the input file could look like.
+## Citations
 
-```
-DIR somedir
-FFLD read mm3.fld # This is a comment.
-PARM params.txt
-RDAT -d somedir -je str_a.mae str_b.mae str_c.mae -je str_d.mae str_e.mae -jb str_a.mae str_b.mae str_c.mae str_d.mae str_e.mae
-CDAT -d somedir -me str_a.mae str_b.mae str_c.mae -me str_d.mae str_e.mae -mb str_a.mae str_b.mae str_c.mae str_d.mae str_e.mae
-COMP -o opt_start.txt
-# Here's another comment.
-LOOP 0.15
-GRAD
-SIMP
-END
-LOOP 0.05
-GRAD
-END
-FFLD write smm3.fld
-CDAT
-COMP -o opt_end.txt
-```
+If you use Q2MM in your research, please cite the relevant publications:
 
-Let's breakdown each line.
+### Core Method
 
-```
-DIR somedir
-```
+- Norrby, P.-O. Selectivity in Asymmetric Synthesis from QM-Guided Molecular Mechanics. *J. Mol. Struct. (THEOCHEM)* **2000**, *506*, 9–16. [DOI: 10.1016/S0166-1280(00)00398-5](https://doi.org/10.1016/S0166-1280(00)00398-5)
 
-This sets the directory where all the data files, `atom.typ`, and `mm3.fld`
-files are located. Also, the MacroModel calculations will be run from this
-directory, and Q2MM intermediate or temporary files will be written here.
+- Hansen, E.; Rosales, A. R.; Tutkowski, B.; Norrby, P.-O.; Wiest, O. Prediction of Stereochemistry using Q2MM. *Acc. Chem. Res.* **2016**, *49*, 996–1005. [DOI: 10.1021/acs.accounts.6b00037](https://doi.org/10.1021/acs.accounts.6b00037)
 
-```
-FFLD read mm3.fld
-```
+- Rosales, A. R.; Quinn, T. R.; Wahlers, J.; Tomberg, A.; Zhang, X.; Helquist, P.; Wiest, O.; Norrby, P.-O. Application of Q2MM to Predictions in Stereoselective Synthesis. *Chem. Commun.* **2018**, *54*, 8294–8301. [DOI: 10.1039/C8CC03695K](https://doi.org/10.1039/C8CC03695K)
 
-Read the initial force field.
+### QFUERZA / Seminario Method
 
-```
-PARM params.txt
-```
+- Farrugia, L. M.; Helquist, P.; Norrby, P.-O.; Wiest, O. Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement. *J. Chem. Theory Comput.* **2026**, *22*, 469–476. [DOI: 10.1021/acs.jctc.4c01372](https://doi.org/10.1021/acs.jctc.4c01372)
 
-Select certain parameters from the force field you just read. Without this, all
-parameters in the substructre are selected.
+### Applications
 
-```
-RDAT -d somedir -je str_a.mae str_b.mae str_c.mae -je str_d.mae str_e.mae -jb str_a.mae str_b.mae str_c.mae str_d.mae str_e.mae
-```
+- Rosales, A. R.; Wahlers, J.; Limé, E.; Meadows, R. E.; Leslie, K. W.; Savin, R.; Bell, F.; Hansen, E.; Helquist, P.; Munday, R. H.; Wiest, O.; Norrby, P.-O. Rapid Virtual Screening of Enantioselective Catalysts using CatVS. *Nat. Catal.* **2019**, *2*, 41–45. [DOI: 10.1038/s41929-018-0193-3](https://doi.org/10.1038/s41929-018-0193-3)
 
-This gathers the reference data used throughout the optimization. All of the
-arguments following `RDAT` are the same as the arguments used for the calculate
-module. See
-[`calculate`](q2mm/calculate.py) help for more information. Note that the
-directory is still included in the command shown above.
+- Burai Patrascu, M.; Pottel, J.; Pinus, S.; Bezanson, M.; Norrby, P.-O.; Moitessier, N. Virtual Chemist: Prediction of Enantioselectivity. *Nat. Catal.* **2020**, *3*, 574–584. [DOI: 10.1038/s41929-020-0467-0](https://doi.org/10.1038/s41929-020-0467-0)
 
-```
-CDAT -d somedir -me str_a.mae str_b.mae str_c.mae -me str_d.mae str_e.mae -mb str_a.mae str_b.mae str_c.mae str_d.mae str_e.mae
-```
+- Rosales, A. R.; Ross, S. P.; Helquist, P.; Norrby, P.-O.; Sigman, M. S.; Wiest, O. Transition State Force Field for the Asymmetric Redox-Relay Heck Reaction. *J. Am. Chem. Soc.* **2020**, *142*, 9700–9707. [DOI: 10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979)
 
-Same as above, except this is for the force field data.
+- Wahlers, J.; Maloney, M.; Salahi, F.; Rosales, A. R.; Helquist, P.; Norrby, P.-O.; Wiest, O. Stereoselectivity Predictions for the Pd-Catalyzed 1,4-Conjugate Addition. *J. Org. Chem.* **2021**, *86*, 5660–5667. [DOI: 10.1021/acs.joc.0c02918](https://doi.org/10.1021/acs.joc.0c02918)
 
-```
-COMP -o opt_start.txt
-```
+- Wahlers, J.; Margalef, J.; Hansen, E.; Bayesteh, A.; Helquist, P.; Diéguez, M.; Pàmies, O.; Wiest, O.; Norrby, P.-O. Proofreading Experimentally Assigned Stereochemistry through Q2MM Predictions. *Nat. Commun.* **2021**, *12*, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2)
 
-Compare the reference data to the force field data to determine the initial
-objective function score. Write the data and scores out to
-somedir/opt_start.txt.
+- Quinn, T. R.; Patel, H. N.; Koh, K. H.; Haines, B. E.; Norrby, P.-O.; Helquist, P.; Wiest, O. Automated Fitting of Transition State Force Fields for Biomolecular Simulations. *PLOS ONE* **2022**, *17*, e0264960. [DOI: 10.1371/journal.pone.0264960](https://doi.org/10.1371/journal.pone.0264960)
 
-```
-LOOP 0.15
-```
+- Wahlers, J.; Rosales, A. R.; Berkel, N.; Forbes, A.; Helquist, P.; Norrby, P.-O.; Wiest, O. MM3* Force Field for Ferrocenyl Ligands. *J. Org. Chem.* **2022**, *87*, 12334–12341. [DOI: 10.1021/acs.joc.2c01396](https://doi.org/10.1021/acs.joc.2c01396)
 
-This marks the beginning of an optimization loop. All commands located between
-this line and the line containg `END` will be repeated until convergence is
-reached. In this case, it loops back and forth between
-[`gradient`](q2mm/gradient.py) and
-[`simplex`](q2mm/simplex.py)
-until the objective function changes by less than 15%.
+- Maloney, M. P.; Stenfors, B. A.; Helquist, P.; Norrby, P.-O.; Wiest, O. Interplay of Computation and Experiment in Enantioselective Catalysis. *ACS Catal.* **2023**, *13*, 14285–14299. [DOI: 10.1021/acscatal.3c03706](https://doi.org/10.1021/acscatal.3c03706)
 
-```
-GRAD
-```
+## License
 
-Use the gradient methods to optimize parameters. See the
-[`gradient`](q2mm/gradient.py) module for
-more information.
-
-```
-SIMP
-```
-
-Use the simplex method to optimize parameters. See the
-[`simplex`](q2mm/simplex.py) module for more information.
-
-```
-END
-```
-
-Marks the end of the commands being looped.
-
-```
-LOOP 0.05
-```
-
-Start another loop, but this time with a stricter convergence of 5% change.
-Really, you will hardly ever need to include two separate loops. I'm just
-showing you that you can if you want to for whatever reason.
-
-```
-GRAD
-```
-
-In this loop, we're only using the
-[`gradient`](q2mm/gradient.py) method.
-
-```
-END
-```
-
-Marks the end of the second loop.
-
-```
-FFLD write mm3.fld
-```
-
-Write the optimized force field parammeters to `somedir/mm3.fld`.
-
-```
-CDAT
-```
-
-Calculate the force field data again. If `CDAT` is used without additional
-arguments, as shown here, then it remembers the previously entered arguments and
-repeats them. Calculating the force field data again here may seem excessive,
-but I wanted to make sure that the FF data stored in memory was calculated using
-the most recent optimized parameters. Better safe than sorry!
-
-```
-COMP -o opt_end.txt
-```
-
-Compare the reference and force field data for the optimized force field. Note
-that the reference data remains the same through this entire command file, so
-there's no need for me to use another `RDAT` command. Write the data and scores
-out to `somedir/opt_end.txt`. At this point, it would be wise to examine
-`mm3.fld`. Check that the parameters seem reasonable, and cross-check them with
-the backed up original parameters.
-
-
-### Changes to default settings
-
-#### Maximum parameters for simplex optimization:
-The maximum parameters that are used for simplex optimizations is defaulted to 
-10, but can be changed with the max_params command.
-```
-SIMP max_params=6
-```
-
-#### Control of gradient methods:
-Five gradient methods are available: least-squared, lagrange, levenberg, 
-newton-raphson, and SVD. Changing default settings for these require the use of 
-the shortened name (lstsq, legrange, levenberg, newton, and svd) followed by "="
-and the settings the user wants to use. True and False commands will turn on and
-off the optimizers, respectively. Users can also change the factors, cutoffs, and
-radii, that are used by including the setting they want to change followed by the
-values seperated by "/" nested in brackets.
-```
-GRAD lstsq=False newton=True,cutoffs[None],radii[0.01/0.1/2.0] svd=True,factor[0.01/0.1]
-```
-
-#### Changing default weights and step sizes:
-A user may want to change the weights of certain data, or step sizes during 
-differentiation of parameters. This can be accomplished with the keywords WGHT and
-STEP followed by the data/parameter type and value.
-```
-WGHT b 10.0
-STEP be 1.0
-```
-#### For using hessian matrix from AmberMD:
-In order to use -ah flag in CDAT section, the user must compile their own version of AmberMD.
-```
-            // q2mm
-            FILE * hFile;
-            hFile = fopen("./calc/hessian.mat","w");
-            fprintf( hFile, "Hessian %d\n", natom);
-            k = 0; 
-            for (i = 1; i <= ncopy; i++){
-                for (j = 1; j <= ncopy; j++){
-                    fprintf( hFile, "%12.5f ", h[k]);
-                    k++;
-                }
-                fprintf( hFile, "\n");
-            }
-            fclose(hFile);
-            // q2mm
-
-```
-Add the following line to AmberTools/src/sff/nmode.c after following code
-```
-         /*
-          * Mass weight the Hessian:
-          */
-         
-         j = 1; 
-         for (i = 1; i <= natom; i++) {
-            g[j + 2] = g[j + 1] = g[j] = 1.0 / sqrt(m[i]);
-            j += 3;
-         }  
-         
-         k = 0; 
-         for (i = 1; i <= ncopy; i++) {
-            for (j = 1; j <= ncopy; j++) {
-               h[k] = g[i] * h[k] * g[j];
-               k++;
-            }
-         }  
-
-```
-
+BSD-3-Clause. See [LICENSE](LICENSE).

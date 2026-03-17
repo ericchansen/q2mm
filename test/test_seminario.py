@@ -6,8 +6,8 @@ from q2mm.schrod_indep_filetypes import MM3, GaussLog, Mol2, mass_weight_hessian
 from q2mm import constants as co
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ETHANE_DIR = REPO_ROOT / "q2mm_example" / "amber" / "Ethane"
-RH_SEMINARIO_DIR = REPO_ROOT / "rh-seminario"
+ETHANE_DIR = REPO_ROOT / "examples" / "ethane"
+RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "rh-enamide"
 
 
 @unittest.skipUnless(
@@ -64,7 +64,7 @@ class TestMol2Parsing(unittest.TestCase):
 
 @unittest.skipUnless(
     (RH_SEMINARIO_DIR / "mm3.fld").exists(),
-    "rh-seminario fixture not found"
+    "rh-enamide fixture not found"
 )
 class TestMM3FFParsing(unittest.TestCase):
     """Test MM3 force field parsing from schrod_indep_filetypes."""
