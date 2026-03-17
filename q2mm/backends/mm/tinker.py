@@ -6,6 +6,8 @@ with MM3 and other force fields.
 Requires: Tinker binaries on PATH or configured via tinker_dir parameter.
 Download from: https://dasher.wustl.edu/tinker/
 """
+from __future__ import annotations
+
 import os
 import re
 import subprocess

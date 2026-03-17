@@ -5,6 +5,8 @@ energy, hessian, geometry optimization, and vibrational frequencies.
 
 Requires: conda install psi4 -c conda-forge
 """
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
