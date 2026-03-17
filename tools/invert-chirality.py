@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
 Uses Schrodinger to invert the chirality of a molecule.
 """

@@ -1,4 +1,5 @@
-import os,glob
+import os
+import glob
 from multiprocessing import Pool
 import pubchempy as pcp
 import requests as rq
@@ -10,12 +11,12 @@ def CID_to_IUPAC(cid):
 
     c = pcp.Compound.from_cid(cid)
     name = c.iupac_name
-    if name == None:
+    if name is None:
         return None
     else:
         return name
 
-center="""  P3-Z0-P3 
+center="""  P3-Z0-P3
   1
 """
 txt1 =""" s_cs_pattern
@@ -39,7 +40,7 @@ txt3 = """  b_cs_tors
 
 def prepare_mae_for_screen(file,s_txt):
     CID = file.replace(".mae","")
-    infile = open(file,"r")
+    infile = open(file)
     flines = infile.readlines()
     output = ""
     count = 0
@@ -50,7 +51,7 @@ def prepare_mae_for_screen(file,s_txt):
     for line in flines:
         if CID in line:
             iupac = CID_to_IUPAC(CID)
-            if iupac == None:
+            if iupac is None:
                 output += line
             else:
 #                output += iupac + "\n"
@@ -62,7 +63,7 @@ def prepare_mae_for_screen(file,s_txt):
             count = 1
         elif " PD " in line:
             numb = line.split()[1]
-            output += line.replace(" {} ".format(numb)," 62 ")
+            output += line.replace(f" {numb} "," 62 ")
         elif "CHIRAL" in line:
             chiral = "".join(line.split()[1:])
             chiral = ast.literal_eval(chiral)
@@ -105,7 +106,7 @@ def prepare_mae_for_screen(file,s_txt):
             comp = 1
             if "H " in line:
                 comp = 0
-            output += line + " {} {}".format(comp,chi)
+            output += line + f" {comp} {chi}"
         # bond
         elif count == 4:
             bond = list(map(int,line.split()[1:3]))
@@ -122,7 +123,7 @@ def prepare_mae_for_screen(file,s_txt):
                     rca4_1 = rca[3]
                     rca4_2 = rca[0]
 
-            output += line + " {} {} {} 0 0 0 0 0 0 0 0".format(tors,rca4_1,rca4_2)
+            output += line + f" {tors} {rca4_1} {rca4_2} 0 0 0 0 0 0 0 0"
         else:
             output += line
         output += "\n"
@@ -142,18 +143,18 @@ if 1:
         outfile =  open("temp","w")
         outfile.write(text)
         outfile.close()
-        os.system("cp temp ../ligands/{}.mae".format(str(n)))
+        os.system(f"cp temp ../ligands/{str(n)}.mae")
 
 def prepare(filenames):
     for fn0 in filenames:
         text = prepare_mae_for_screen(fn0,center)
-        
+
         fn = fn0.replace(".mae","")
-        temp = "{}.temp".format(fn)
+        temp = f"{fn}.temp"
         outfile = open(temp,"w")
         outfile.write(text)
         outfile.close()
-        os.system("mv {} ../ligands/{}.mae".format(fn,fn))
+        os.system(f"mv {fn} ../ligands/{fn}.mae")
 
     return 0
 if 0:

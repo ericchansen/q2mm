@@ -1,7 +1,8 @@
 import openbabel as ob
 import pybel as pb
 import numpy as np
-import glob, os
+import glob
+import os
 import multiprocessing as mp
 from multiprocessing import Pool
 
@@ -9,7 +10,7 @@ from multiprocessing import Pool
 def bmin_call(file_list):
     for filename in file_list:
         infile = filename.replace(".com","")
-        os.system("bmin -WAIT {};".format(infile))
+        os.system(f"bmin -WAIT {infile};")
     return 0
 
 
@@ -37,7 +38,7 @@ def cons_opt(infile,outfile,idx):
     cons.AddDistanceConstraint(p1, pd, ppd)
     cons.AddDistanceConstraint(p2, pd, ppd)
 
-        
+
 
     # Set up FF
     ff = ob.OBForceField.FindForceField("UFF")
@@ -154,7 +155,7 @@ def cons_opt(infile,outfile,idx):
                         #print("APPEND ",rca)
                     elif rca0 != rot:
                         rot_bond.append(rrot)
-                    
+
                 rca4.append(rca)
     # print(outfile,"CHIRAL",chiral)
     # print(outfile,"RCA4",rca4)
@@ -184,7 +185,7 @@ def to_mol2(infile,outfile):
     conv.ReadFile(mol, infile)
     conv.WriteFile(mol, outfile)
 
-    
+
 def add_pd(infile,outfile):
     conv = ob.OBConversion()
     conv.SetInAndOutFormats("mol2","mol2")
@@ -286,7 +287,7 @@ def add_pd(infile,outfile):
     mol.AddBond(pd,p1,1)
     mol.AddBond(pd,p2,1)
     mol.NumAtoms()
-    
+
     conv.WriteFile(mol, outfile)
     return [p1,p2,pd]
 
@@ -294,14 +295,14 @@ def sdf_to_mae(filenames):
     for fn0 in filenames:
         fn = fn0.replace(".sdf","")
         # print("reading {}".format(fn))
-        to_mol2(fn0,"{}.0temp".format(fn))
-        index = add_pd("{}.0temp".format(fn),"{}.temp".format(fn))
-        if index != None:
-            chiral, rca4, rot = cons_opt("{}.temp".format(fn),"{}.mol2".format(fn),index)
+        to_mol2(fn0,f"{fn}.0temp")
+        index = add_pd(f"{fn}.0temp",f"{fn}.temp")
+        if index is not None:
+            chiral, rca4, rot = cons_opt(f"{fn}.temp",f"{fn}.mol2",index)
             print("molecule ",fn, "finished")
-            os.system("mv {}.mol2 ../mol2/".format(fn))
-            os.system("mol2convert -imol2 ../mol2/{}.mol2 -omae ../maes/{}.mae".format(fn,fn))
-            os.system("echo 'CHIRAL {}\nRCA4 {}\n ROT {}' >> ../maes/{}.mae".format(chiral, rca4,rot,fn))
+            os.system(f"mv {fn}.mol2 ../mol2/")
+            os.system(f"mol2convert -imol2 ../mol2/{fn}.mol2 -omae ../maes/{fn}.mae")
+            os.system(f"echo 'CHIRAL {chiral}\nRCA4 {rca4}\n ROT {rot}' >> ../maes/{fn}.mae")
 
     return 0
 
@@ -331,4 +332,4 @@ if 1:
     with Pool(processes=nt) as pool:
         multiple_jobs = [pool.apply_async(sdf_to_mae,(files,)) for files in file_split]
         [res.get() for res in multiple_jobs]
-    
+

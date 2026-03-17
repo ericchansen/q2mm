@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Change all of atom type ATOM_X to ATOM_Y.
 """

@@ -1,6 +1,7 @@
 import copy
 import logging
 import logging.config
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -39,12 +40,12 @@ class TestMM3Export(unittest.TestCase):
             self.ff.lines = f.readlines()
         self.mod_params = copy.deepcopy(self.ff.params)
         self.mod_params[0].value = 999.
-        self.test_fld = REPO_ROOT / "test" / "test_output.fld"
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.test_fld = Path(self._tmpdir.name) / "test_output.fld"
         self.ff.export_ff(path=str(self.test_fld), params=self.mod_params, lines=self.ff.lines)
 
     def tearDown(self):
-        if self.test_fld.exists():
-            self.test_fld.unlink()
+        self._tmpdir.cleanup()
 
     def test_export_roundtrip(self):
         mod_ff = datatypes.MM3(str(self.test_fld))

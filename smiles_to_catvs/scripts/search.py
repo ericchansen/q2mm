@@ -1,10 +1,12 @@
 import pubchempy as pcp
 import requests as rq
-import sys, os, glob
+import sys
+import os
+import glob
 
 
 """
-Combined python script for 
+Combined python script for
 """
 
 def smi_to_sdf(SMILES):
@@ -15,7 +17,7 @@ def smi_to_sdf(SMILES):
     for c in results:
         CID = str(c.cid)
         print(c.iupac_name)
-        if c.cid == None:
+        if c.cid is None:
             print(SMILES)
         url = pre_url + CID + post_url
         r = rq.get(url)
@@ -23,7 +25,7 @@ def smi_to_sdf(SMILES):
             content = r.content
             with open(CID+".sdf","wb") as f:
                 f.write(content)
-            os.system("mv {}.sdf ../sdf/".format(CID))
+            os.system(f"mv {CID}.sdf ../sdf/")
 
 
 # SMILES to SDF files
@@ -31,7 +33,7 @@ if 1:
     os.system("mkdir sdf")
     os.chdir("./smi")
     for filename in glob.glob("*.smi"):
-        ref = open(filename,"r")
+        ref = open(filename)
         lines = ref.readlines()
         for line in lines:
             smi_to_sdf(line)

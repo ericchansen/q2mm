@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Generates ND CRC job submission files from Schrödinger *.com files.
 

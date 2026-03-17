@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 I use this to clean up FFs I find in the literature or wherever with poor
 formatting.
