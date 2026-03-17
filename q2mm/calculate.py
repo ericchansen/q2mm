@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Extracts data from reference files or calculates FF data.
 
@@ -13,9 +13,6 @@ Mae class inside filetypes. I'm still debating if that should be
 there or here. Will see how this framework translates into
 Amber and then decide.
 """
-from __future__ import absolute_import
-from __future__ import division
-
 import argparse
 import logging
 import logging.config
@@ -31,11 +28,11 @@ import sys
 from itertools import chain
 from textwrap import TextWrapper
 
-import constants as co
-import compare
-import datatypes
-import filetypes
-import parameters
+from q2mm import constants as co
+from q2mm import compare
+from q2mm import datatypes
+from q2mm import filetypes
+from q2mm import parameters
 
 # Commands where we need to load the force field.
 COM_LOAD_FF    = ['ma', 'mb', 'mt',
@@ -66,7 +63,7 @@ COM_TINKER     = ['ta','tao', 'tb', 'tbo',
 # Commands related to Amber.
 COM_AMBER      = ['ae','ae1','aeo','ae1o','abo','aao','ato','ah']
 # All other commands.
-COM_OTHER = ['r']                           
+COM_OTHER = ['r']
 # All possible commands.
 COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + \
           COM_AMBER + COM_OTHER
@@ -83,14 +80,8 @@ def main(args):
            it's a string, it will be converted into a list of strings.
     """
     # Should be a list of strings for use by argparse. Ensure that's the case.
-    # basestring is deprecated in python3, str is probably safe to use in both
-    # but should be tested, for now sys.version_info switch can handle it
-    if sys.version_info > (3, 0):
-        if isinstance(args, str):
-            args = args.split()
-    else:
-        if isinstance(args, basestring):
-            args = args.split()
+    if isinstance(args, str):
+        args = args.split()
     parser = return_calculate_parser()
     opts = parser.parse_args(args)
     # This makes a dictionary that only contains the arguments related to
@@ -147,9 +138,8 @@ def main(args):
     # with the given file.
     # Stuff below doesn't need both comma separated filenames simultaneously.
     for filename, commands_for_filename in commands_for_filenames.items():
-        logger.log(1, '>>> filename: {}'.format(filename))
-        logger.log(1, '>>> commands_for_filename: {}'.format(
-            commands_for_filename))
+        logger.log(1, f'>>> filename: {filename}')
+        logger.log(1, f'>>> commands_for_filename: {commands_for_filename}')
         # These next two if statements will break down what command files
         # have to be written by the backend software package.
         if any(x in COM_MACROMODEL for x in commands_for_filename):
@@ -161,15 +151,15 @@ def main(args):
             #Has to be here even though this is a Gaussian Job.
             if os.path.splitext(filename)[1] == '.chk':
                 # The generated com file will be used as the input filename. It
-                # also seems best to do the gaussian calculation in the 
-                # collect_data function since we need to collect the force 
-                # fields partial charges. 
+                # also seems best to do the gaussian calculation in the
+                # collect_data function since we need to collect the force
+                # fields partial charges.
                 com_filename = os.path.splitext(filename)[0] + '.ESP.q2mm.com'
                 inps[com_filename] = filetypes.GaussCom(
                     os.path.join(opts.directory, com_filename))
                 inps[com_filename].commands = commands_for_filename
                 inps[com_filename].read_newzmat(filename)
-                
+
 
         elif any(x in COM_TINKER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == '.xyz':
@@ -180,7 +170,7 @@ def main(args):
         elif any(x in ['gta','gtb','gtt'] for x in commands_for_filename):
             # For bond, angle, torsion taken from Gaussian
             # The xyz will be collected from Gaussian and be rewritten in corresponding software
-            # 
+            #
             # Q2MM takes commands_for_filename for each line of RDAT and CDAT
             # must make difference type
             # Tinker
@@ -194,7 +184,7 @@ def main(args):
                 inps[filename] = filetypes.AmberLeap_Gaus(
                     os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
-                    
+
         elif any(x in COM_AMBER for x in commands_for_filename):
             if os.path.splitext(filename)[1] == ".in": # leap.in as for now
                 inps[filename] = filetypes.AmberLeap(os.path.join(opts.directory, filename))
@@ -217,14 +207,14 @@ def main(args):
 #        inps[comma_sep_filenames].directory = opts.directory
 #        inps[comma_sep_filenames].inpcrd = split_it[0]
 #        inps[comma_sep_filenames].prmtop = split_it[1]
-    logger.log(1, '>>> commands: {}'.format(commands))
+    logger.log(1, f'>>> commands: {commands}')
     # Check whether or not to skip calculations.
     if opts.norun or opts.fake:
         logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.items():
-            logger.log(1, '>>> filename: {}'.format(filename))
-            logger.log(1, '>>> some_class: {}'.format(some_class))
+            logger.log(1, f'>>> filename: {filename}')
+            logger.log(1, f'>>> some_class: {some_class}')
             # Works if some class is None too.
             if hasattr(some_class, 'run'):
                 # Ideally this can be the same for each software backend,
@@ -644,10 +634,10 @@ def check_outs(filename, outs, classtype, direc):
     Could work on easing the use of this by somehow reducing number of
     arguments required.
     """
-    logger.log(1, '>>> filename: {}'.format(filename))
-    logger.log(1, '>>> outs: {}'.format(outs))
-    logger.log(1, '>>> classtype: {}'.format(classtype))
-    logger.log(1, '>>> direc: {}'.format(direc))
+    logger.log(1, f'>>> filename: {filename}')
+    logger.log(1, f'>>> outs: {outs}')
+    logger.log(1, f'>>> classtype: {classtype}')
+    logger.log(1, f'>>> direc: {direc}')
     if filename not in outs:
         outs[filename] = \
             classtype(os.path.join(direc, filename))
@@ -663,7 +653,7 @@ def collect_reference(path):
       3. Values
     """
     data = []
-    with open(path, 'r') as f:
+    with open(path) as f:
         for i, line in enumerate(f):
             # Skip certain lines.
             if line[0] in ['-', '#']:
@@ -675,8 +665,7 @@ def collect_reference(path):
             cols = line.split()
             # There should always be 3 columns.
             assert len(cols) == 3, \
-                'Error reading line {} from {}: {}'.format(
-                i, path, line)
+                f'Error reading line {i} from {path}: {line}'
             lbl, wht, val = cols
             datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
             # Added this from the function below, read_reference()
@@ -962,7 +951,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gab', 'pre', 'bonds', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # GAUSSIAN TO AMBER ANGLES (PRE OPT)
     filenames_s = coms['gaa']
     for idx_1, filenames in enumerate(filenames_s):
@@ -970,7 +959,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gaao', 'pre', 'angles', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # GAUSSIAN TO AMBER TORSIONS (PRE OPT)
     filenames_s = coms['gat']
     for idx_1, filenames in enumerate(filenames_s):
@@ -978,7 +967,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gato', 'pre', 'torsions', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # GAUSSIAN TO AMBER BONDS (POST OPT)
     filenames_s = coms['gabo']
     for idx_1, filenames in enumerate(filenames_s):
@@ -986,7 +975,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gabo', 'opt', 'bonds', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # GAUSSIAN TO AMBER ANGLES (POST OPT)
     filenames_s = coms['gaao']
     for idx_1, filenames in enumerate(filenames_s):
@@ -994,7 +983,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gaao', 'opt', 'angles', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # GAUSSIAN TO AMBER TORSIONS (POST OPT)
     filenames_s = coms['gato']
     for idx_1, filenames in enumerate(filenames_s):
@@ -1002,7 +991,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'gato', 'opt', 'torsions', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # AMBER BONDS
     filenames_s = coms['abo']
     for idx_1, filenames in enumerate(filenames_s):
@@ -1010,7 +999,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'abo', 'opt', 'bonds', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # AMBER ANGLES
     filenames_s = coms['aao']
     for idx_1, filenames in enumerate(filenames_s):
@@ -1018,7 +1007,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'aao', 'opt', 'angles', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # AMBER TORSIONS
     filenames_s = coms['ato']
     for idx_1, filenames in enumerate(filenames_s):
@@ -1026,7 +1015,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.extend(collect_structural_data_from_amber_geo(
                 filename, inps, outs, direc, 'ato', 'opt', 'torsions', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
     # AMBER ENERGY
     filenames_s = coms['ae1']
     for idx_1, filenames in enumerate(filenames_s):
@@ -1034,7 +1023,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.append(collect_structural_data_from_amber_ene(
                 filename, inps, outs, direc, 'ae1', 'pre', 'e1', idx_1 = idx_1))
-        data.extend(temp) 
+        data.extend(temp)
 
     # AMBER OPTIMIZED ENERGY
     filenames_s = coms['ae1o']
@@ -1043,8 +1032,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for filename in filenames:
             temp.append(collect_structural_data_from_amber_ene(
                 filename, inps, outs, direc, 'ae1o', 'opt', 'e1o', idx_1 = idx_1))
-        data.extend(temp) 
-        
+        data.extend(temp)
+
     # AMBER HESSIAN
     filenames = chain.from_iterable(coms['ah'])
     for filename in filenames:
@@ -1074,15 +1063,15 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     a = int(a)
                     c = int(c)
                     int3.append([a,c])
-                elif inter == 4:        
+                elif inter == 4:
                     a = int(a)
-                    d = int(d)            
+                    d = int(d)
                     int4.append([a,d])
         frozen = 0
         f_atom = []
         if os.path.isfile("fixedatoms.txt"):
             frozen = 1
-            ref = open("fixedatoms.txt","r")
+            ref = open("fixedatoms.txt")
             flines = ref.readlines()
             for fline in flines:
                 line = fline.split()
@@ -1104,9 +1093,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 return 0.0
             elif apair in int2:
                 return co.WEIGHTS['h12']
-            elif apair in int3:
-                return co.WEIGHTS['h14']
-            elif apair in int4:
+            elif apair in int3 or apair in int4:
                 return co.WEIGHTS['h14']
             elif frozen:
                 if at_1 in f_atom or at_2 in f_atom:
@@ -1128,7 +1115,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             wht = int_wht(int((x)//3+1),int((y)//3+1)))
                 for e, x, y in zip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-        
+
     # AMBER ENERGIES
 #    filenames_s = coms['ae']
 #    for idx_1, filenames in enumerate(filenames_s):
@@ -1525,10 +1512,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
             logger.warning('Matrices not aligned!')
-            logger.warning('Hessian retrieved from {}: {}'.format(
-                    name_mae_log, hess.shape))
-            logger.warning('Eigenvectors retrieved from {}: {}'.format(
-                    name_gau_log, evec.shape))
+            logger.warning(f'Hessian retrieved from {name_mae_log}: {hess.shape}')
+            logger.warning(f'Eigenvectors retrieved from {name_gau_log}: {evec.shape}')
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
@@ -1577,7 +1562,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 # use it.
                 # If b_q_use_charge is 1, use it. If it's 0, don't
                 # use it.
-                if not 'b_q_use_charge' in atom.props or \
+                if 'b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']:
                     data.append(datatypes.Datum(
                             val=atom.partial_charge,
@@ -1598,7 +1583,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             mae.structures, inps[filename]._index_output_mae, 'pre')
         for idx_1, structure in structures:
             for atom in structure.atoms:
-                if not 'b_q_use_charge' in atom.props or \
+                if 'b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']:
                     data.append(datatypes.Datum(
                             val=atom.partial_charge,
@@ -1607,7 +1592,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                             src_1=filename,
                             idx_1=idx_1 + 1,
                             atm_1=atom.index))
-    # MACROMODEL+GUASSIAN ESP   
+    # MACROMODEL+GUASSIAN ESP
     filenames = chain.from_iterable(coms['mgESP'])
     for comma_filenames in filenames:
         charges_list = []
@@ -1634,7 +1619,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         if esp_rms < 0.0:
             raise Exception('A negative RMS was obtained for the ESP fitting '
                             'which indicates an error occured. Look at the '
-                            'following file: {}'.format(name_gauss_log))
+                            f'following file: {name_gauss_log}')
         data.append(datatypes.Datum(
                             val=esp_rms,
                             com='mgESP',
@@ -1642,7 +1627,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                             src_1= name_mae,
                             src_2='gaussian',
                             idx_1 = 1))
-    # MACROMODEL+JAGUAR ESP   
+    # MACROMODEL+JAGUAR ESP
     ## This does not work, I still need to write code to support Jaguaer. -TR
     filenames = chain.from_iterable(coms['mjESP'])
     for comma_filenames in filenames:
@@ -1653,13 +1638,13 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             mae.structures, inps[name_mae]._index_output_mae, 'pre')
         for idx_1, structure in structures:
             for atom in structure.atoms:
-                if not 'b_q_use_charge' in atom.props or \
+                if 'b_q_use_charge' not in atom.props or \
                     atom.props['b_q_use_charge']:
                     charges_list.append(atom.partial_charge)
         ###Filler for ESP calculations####
         ### This is what is used in anna's code
         current_RMS = run_ChelpG_inp.run_JCHelpG(charges_list,name_jag_chk)
-        
+
         ### End of filler
         if current_RMS < 0:
             sys.exit("Error while computing RMS. Exiting")
@@ -1680,9 +1665,9 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 # use it.
                 # If b_q_use_charge is 1, use it. If it's 0, don't
                 # use it.
-                if (not 'b_q_use_charge' in atom.props or \
+                if ('b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']) and \
-                        not atom in aliph_hyds:
+                        atom not in aliph_hyds:
                     charge = atom.partial_charge
                     if atom.atom_type == 3:
                         for bonded_atom_index in atom.bonded_atom_indices:
@@ -1709,7 +1694,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for idx_1, structure in structures:
             aliph_hyds = structure.get_aliph_hyds()
             for atom in structure.atoms:
-                if (not 'b_q_use_charge' in atom.props or \
+                if ('b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']) and \
                         atom not in aliph_hyds:
 
@@ -1744,7 +1729,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             for atom in structure.atoms:
                 # Check if we want to use this charge and ensure it's not a
                 # hydrogen.
-                if (not 'b_q_use_charge' in atom.props or \
+                if ('b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']) and \
                         atom not in hyds:
                     charge = atom.partial_charge
@@ -1774,7 +1759,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         for idx_1, structure in structures:
             hyds = structure.get_hyds()
             for atom in structure.atoms:
-                if (not 'b_q_use_charge' in atom.props or \
+                if ('b_q_use_charge' not in atom.props or \
                         atom.props['b_q_use_charge']) and \
                         atom not in hyds:
                     charge = atom.partial_charge
@@ -1882,10 +1867,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
             logger.warning('Matrices not aligned!')
-            logger.warning('Hessian retrieved from {}: {}'.format(
-                    name_in, hess.shape))
-            logger.warning('Eigenvectors retrieved from {}: {}'.format(
-                    name_out, evec.shape))
+            logger.warning(f'Hessian retrieved from {name_in}: {hess.shape}')
+            logger.warning(f'Eigenvectors retrieved from {name_out}: {evec.shape}')
             raise
 
         # Funny way to make off-diagonal elements zero.
@@ -1946,10 +1929,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
             logger.warning('Matrices not aligned!')
-            logger.warning('Hessian retrieved from {}: {}'.format(
-                    log.filename, hess.shape))
-            logger.warning('Eigenvectors retrieved from {}: {}'.format(
-                    name_out, evec.shape))
+            logger.warning(f'Hessian retrieved from {log.filename}: {hess.shape}')
+            logger.warning(f'Eigenvectors retrieved from {name_out}: {evec.shape}')
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
@@ -1980,10 +1961,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
             logger.warning('Matrices not aligned!')
-            logger.warning('Hessian retrieved from {}: {}'.format(
-                    name_mae_log, hess.shape))
-            logger.warning('Eigenvectors retrieved from {}: {}'.format(
-                    name_gau_log, evec.shape))
+            logger.warning(f'Hessian retrieved from {name_mae_log}: {hess.shape}')
+            logger.warning(f'Eigenvectors retrieved from {name_gau_log}: {evec.shape}')
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
@@ -1997,7 +1976,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     idx_2=y + 1)
                      for e, x, y in zip(
                     low_tri, low_tri_idx[0], low_tri_idx[1])])
-    logger.log(15, 'TOTAL DATA POINTS: {}'.format(len(data)))
+    logger.log(15, f'TOTAL DATA POINTS: {len(data)}')
     return np.array(data, dtype=datatypes.Datum)
 
 def collect_data_fake(coms, inps, direc='.', sub_names=['OPT']):
@@ -2207,11 +2186,11 @@ def sort_commands_by_filename(commands):
     return sorted_commands
 
 # Will also have to be updated. Maybe the Datum class too and how it responds
-# to assigning labels. 
+# to assigning labels.
 ## Why is this here? Is this deprecated? -Tony
 def read_reference(filename):
     data = []
-    with open(filename, 'r') as f:
+    with open(filename) as f:
         for line in f:
             # Skip certain lines.
             if line.startswith('-'):
@@ -2229,7 +2208,7 @@ def read_reference(filename):
     return np.array(data)
 
 
-## This is also part of the read_reference function above, but I think these 
+## This is also part of the read_reference function above, but I think these
 ## labels and attributes are important for handleing data.
 # Shouldn't be necessary anymore.
 # This should be based by the datum type and not the length of the parts list.
@@ -2245,7 +2224,7 @@ def lbl_to_data_attrs(datum, lbl):
         atm_nums = parts[-1]
         atm_nums = atm_nums.split('-')
         for i, atm_num in enumerate(atm_nums):
-            setattr(datum, 'atm_{}'.format(i+1), int(atm_num))
+            setattr(datum, f'atm_{i+1}', int(atm_num))
     if datum.typ in ['p']:
         datum.src_1 = parts[1]
         idxs = parts[-1]
@@ -2281,7 +2260,7 @@ def pretty_commands_for_files(commands_for_files, log_level=5):
             '--' + ' COMMANDS '.center(22, '-') +
             '--')
         for filename, commands in commands_for_files.items():
-            foobar.initial_indent = '  {:22s}  '.format(filename)
+            foobar.initial_indent = f'  {filename:22s}  '
             logger.log(log_level, foobar.fill(' '.join(commands)))
         logger.log(log_level, '-'*50)
 
@@ -2308,10 +2287,10 @@ def pretty_all_commands(commands, log_level=5):
             for i, filenames in enumerate(groups_filenames):
                 if i == 0:
                     foobar.initial_indent = \
-                        '  {:9s}  {:^9d}  '.format(command, i+1)
+                        f'  {command:9s}  {i+1:^9d}  '
                 else:
                     foobar.initial_indent = \
-                        '  ' + ' '*9 + '  ' + '{:^9d}  '.format(i+1)
+                        '  ' + ' '*9 + '  ' + f'{i+1:^9d}  '
                 logger.log(log_level, foobar.fill(' '.join(filenames)))
         logger.log(log_level, '-'*50)
 
@@ -2335,12 +2314,12 @@ def pretty_data(data, log_level=20):
         logger.log(log_level, string)
     for d in data:
         if d.wht or d.wht == 0:
-            string = ('  ' + '{:22s}'.format(d.lbl) +
-                      '  ' + '{:22.4f}'.format(d.wht) +
-                      '  ' + '{:22.4f}'.format(d.val))
+            string = ('  ' + f'{d.lbl:22s}' +
+                      '  ' + f'{d.wht:22.4f}' +
+                      '  ' + f'{d.val:22.4f}')
         else:
-            string = ('  ' + '{:22s}'.format(d.lbl) +
-                      '  ' + '{:22.4f}'.format(d.val))
+            string = ('  ' + f'{d.lbl:22s}' +
+                      '  ' + f'{d.val:22.4f}')
         if log_level:
             logger.log(log_level, string)
         else:

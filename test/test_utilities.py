@@ -1,4 +1,3 @@
-from __future__ import print_function
 import os
 import unittest
 import sys
@@ -7,12 +6,12 @@ import parmed
 
 src_dir = os.path.abspath("q2mm")
 sys.path.append(src_dir)
-import utilities
+from q2mm import utilities
 
 ethane_struct = parmed.load_file('../q2mm_example/amber/Ethane/GS.mol2', structure=True)
 
 
-class MakeInput(object):
+class MakeInput:
     def __init__(self):
         self.out = []
 

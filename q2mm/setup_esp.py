@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Used to setup ESP calculations.
 
@@ -16,17 +16,13 @@ partial charges at their default MM value.
 This script helps setup those ESP calculations for Jaguar and
 Gaussian.
 """
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
-
 import argparse
 import copy
 import logging
 import logging.config
 
-import constants as co
-import filetypes as ft
+from q2mm import constants as co
+from q2mm import filetypes as ft
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -140,7 +136,7 @@ def gen_gaussian_output(mae, indices_use_charge=None, title='Title',
                  '',
                  title,
                  '',
-                 '{} {}'.format(charge, multiplicity)
+                 f'{charge} {multiplicity}'
                  ]
     new_lines.extend(mae.structures[0].format_coords(
             format='gauss', indices_use_charge=indices_use_charge))
@@ -179,12 +175,12 @@ def gen_jaguar_output(mae, jin=None, charge=0):
         # Header information.
         filename = '{}.mae'.format(mae.filename.split('.')[0])
         new_lines = [
-            'MAEFILE: {}'.format(filename),
+            f'MAEFILE: {filename}',
             '&gen',
             'icfit=1',
             'incdip=1']
         if charge != 0:
-            new_lines.append('molchg={}'.format(charge))
+            new_lines.append(f'molchg={charge}')
         new_lines.append('&')
         # Coordinates.
         new_lines.append('&zmat')
@@ -204,8 +200,7 @@ def gen_atomic_section(non_substr_atoms):
     lines.append('&atomic')
     lines.append('atom esp')
     for atom in non_substr_atoms:
-        lines.append(' {}{} {}'.format(
-                atom.element, atom.index, atom.partial_charge))
+        lines.append(f' {atom.element}{atom.index} {atom.partial_charge}')
     lines.append('&')
     return lines
 
@@ -220,11 +215,11 @@ def atom_nums_from_bonds(bonds):
     """
     substr_atoms = []
     for bond in bonds:
-        logger.log(20, 'SELECTED: {} {}'.format(bond, bond.comment))
+        logger.log(20, f'SELECTED: {bond} {bond.comment}')
         substr_atoms.extend(bond.atom_nums)
     substr_atoms = list(set(substr_atoms))
     logger.log(
-        20, 'ATOMS USED IN SUBSTRUCTURE BONDS: {}'.format(substr_atoms))
+        20, f'ATOMS USED IN SUBSTRUCTURE BONDS: {substr_atoms}')
     return substr_atoms
 
 if __name__ == '__main__':

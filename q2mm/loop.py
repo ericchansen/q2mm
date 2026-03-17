@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import absolute_import
-from __future__ import division
-
 import argparse
 import glob
 import logging
@@ -13,19 +10,19 @@ import random
 import sys
 import re
 
-import calculate
-import compare
-import constants as co
-import datatypes
-import gradient
-import opt
-import parameters
-import simplex
+from q2mm import calculate
+from q2mm import compare
+from q2mm import constants as co
+from q2mm import datatypes
+from q2mm import gradient
+from q2mm import opt
+from q2mm import parameters
+from q2mm import simplex
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
 
-class Loop(object):
+class Loop:
     def __init__(self):
         self.convergence = 0.01
         self.cycle_num = 0
@@ -63,8 +60,8 @@ class Loop(object):
             last_score = self.ff.score
             self.ff = self.run_loop_input(
                 self.loop_lines, score=self.ff.score)
-            logger.log(1, '>>> last_score: {}'.format(last_score))
-            logger.log(1, '>>> self.ff.score: {}'.format(self.ff.score))
+            logger.log(1, f'>>> last_score: {last_score}')
+            logger.log(1, f'>>> self.ff.score: {self.ff.score}')
             change = (last_score - self.ff.score) / last_score
             pretty_loop_summary(
                 self.cycle_num, self.ff.score, change)
@@ -77,12 +74,12 @@ class Loop(object):
                 most_recent_mm3_file = most_recent_mm3_file.split('/')[-1]
                 most_recent_num = most_recent_mm3_file[4:7]
                 num = int(most_recent_num) + 1
-                mm3_file = 'mm3_{:03d}.fld'.format(num)
+                mm3_file = f'mm3_{num:03d}.fld'
             else:
                 mm3_file = 'mm3_001.fld'
             mm3_file = os.path.join(self.direc, mm3_file)
             self.ff.export_ff(path=mm3_file)
-            logger.log(20, '  -- Wrote best FF to {}'.format(mm3_file))
+            logger.log(20, f'  -- Wrote best FF to {mm3_file}')
         for param in self.ff.params:
             param.value_at_limits()
         return self.ff
@@ -100,7 +97,7 @@ class Loop(object):
                 # Import FF data.
                 if cols[1] == 'read':
                     if cols[2] == 'mm3.fld':
-                        self.ff = datatypes.MM3(os.path.join(self.direc, 
+                        self.ff = datatypes.MM3(os.path.join(self.direc,
                                                              cols[2]))
                     if 'prm' in line:
                         self.ff = datatypes.TinkerFF(os.path.join(self.direc,
@@ -110,7 +107,7 @@ class Loop(object):
                                                                 cols[2]))
                     self.ff.import_ff()
                     self.ff.method = 'READ'
-                    with open(os.path.join(self.direc, cols[2]), 'r') as f:
+                    with open(os.path.join(self.direc, cols[2])) as f:
                         self.ff.lines = f.readlines()
                 # Export FF data.
                 if cols[1] == 'write':
@@ -156,7 +153,7 @@ class Loop(object):
                 if len(cols) > 1:
                     self.args_ff = ' '.join(cols[1:]).split()
                 self.ff.data = calculate.main(self.args_ff)
-                
+
             if cols[0] == 'COMP':
             # Deprecated
             #    self.ff.score = compare.compare_data(
@@ -191,14 +188,14 @@ class Loop(object):
                 #### Should probably just write a function instead of looping
                 #### this for every gradient method. This includes everything
                 #### between the two lines of #. TR 20180112
-                ##############################################################        
+                ##############################################################
                 for col in cols[1:]:
                     if "lstsq" in col:
                         g_args = col.split('=')[1].split(',')
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_lstsq=True
-                            elif arg == False:
+                            elif not arg:
                                 grad.do_lstsq=False
                             if 'radii' in arg:
                                 grad.lstsq_radii = []
@@ -208,7 +205,7 @@ class Loop(object):
                                     grad.lstsq_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.lstsq_radii.append(float(val)) 
+                                        grad.lstsq_radii.append(float(val))
                             if 'cutoff' in arg:
                                 grad.lstsq_cutoff = []
                                 cutoff_vals = re.search(
@@ -227,7 +224,7 @@ class Loop(object):
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_newton=True
-                            elif arg == False:
+                            elif not arg:
                                 grad.do_newton=False
                             if 'radii' in arg:
                                 grad.newton_radii = []
@@ -237,7 +234,7 @@ class Loop(object):
                                     grad.newton_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.newton_radii.append(float(val)) 
+                                        grad.newton_radii.append(float(val))
                             if 'cutoff' in arg:
                                 grad.newton_cutoff = []
                                 cutoff_vals = re.search(
@@ -256,7 +253,7 @@ class Loop(object):
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_levenberg=True
-                            elif arg == False:
+                            elif not arg:
                                 grad.do_levenberg=False
                             if 'radii' in arg:
                                 grad.levenberg_radii = []
@@ -266,7 +263,7 @@ class Loop(object):
                                     grad.levenberg_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.levenberg_radii.append(float(val)) 
+                                        grad.levenberg_radii.append(float(val))
                             if 'cutoff' in arg:
                                 grad.levenberg_cutoff = []
                                 cutoff_vals = re.search(
@@ -294,7 +291,7 @@ class Loop(object):
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_lagrange=True
-                            elif arg == False:
+                            elif not arg:
                                 grad.do_lagrange=False
                             if 'radii' in arg:
                                 grad.lagrange_radii = []
@@ -304,7 +301,7 @@ class Loop(object):
                                     grad.lagrange_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.lagrange_radii.append(float(val)) 
+                                        grad.lagrange_radii.append(float(val))
                             if 'cutoff' in arg:
                                 grad.lagrange_cutoff = []
                                 cutoff_vals = re.search(
@@ -332,7 +329,7 @@ class Loop(object):
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_svd=True
-                            elif arg == False:
+                            elif not arg:
                                 grad.do_svd=False
                             if 'radii' in arg:
                                 grad.svd_radii = []
@@ -342,7 +339,7 @@ class Loop(object):
                                     grad.svd_radii = None
                                 else:
                                     for val in radii_vals:
-                                        grad.svd_radii.append(float(val)) 
+                                        grad.svd_radii.append(float(val))
                             if 'cutoff' in arg:
                                 grad.svd_cutoff = []
                                 cutoff_vals = re.search(
@@ -366,7 +363,7 @@ class Loop(object):
                                     for val in factor_vals:
                                         grad.svd_factor.append(float(val))
                     else:
-                        raise Exception("'{}' : Not Recognized".format(col))
+                        raise Exception(f"'{col}' : Not Recognized")
                 ##############################################################
                 self.ff = grad.run(ref_data=self.ref_data)
             if cols[0] == 'SIMP':
@@ -379,7 +376,7 @@ class Loop(object):
                     if "max_params" in col:
                         simp.max_params = col.split('=')[1]
                     else:
-                        raise Exception("'{}' : Not Recognized".format(col))
+                        raise Exception(f"'{col}' : Not Recognized")
                 self.ff = simp.run(r_data=self.ref_data)
             if cols[0] == 'WGHT':
                 data_type = cols[1]
@@ -389,7 +386,7 @@ class Loop(object):
                 co.STEPS[param_type] = float(cols[2])
 
 def read_loop_input(filename):
-    with open(filename, 'r') as f:
+    with open(filename) as f:
         lines = f.readlines()
     lines = [x.partition('#')[0].strip('\n') for x in lines if
              x.partition('#')[0].strip('\n') != '']
@@ -397,21 +394,20 @@ def read_loop_input(filename):
     return lines
 
 def pretty_loop_input(lines, name='Q2MM', score=None):
-    logger.log(20, ' {} '.format(name).center(79, '='))
+    logger.log(20, f' {name} '.center(79, '='))
     logger.log(20, 'COMMANDS:')
     for line in lines:
         logger.log(20, '> ' + line)
     if score is not None:
-        logger.log(20, 'SCORE: {}'.format(score))
+        logger.log(20, f'SCORE: {score}')
     logger.log(20, '=' * 79)
     logger.log(20, '')
     return lines
 
 def pretty_loop_summary(cycle_num, score, change):
-    logger.log(20, ' Cycle {} Summary '.format(
-            cycle_num).center(50, '-'))
-    logger.log(20, '| PF Score: {:36.15f} |'.format(score))
-    logger.log(20, '| % change: {:36.15f} |'.format(change * 100))
+    logger.log(20, f' Cycle {cycle_num} Summary '.center(50, '-'))
+    logger.log(20, f'| PF Score: {score:36.15f} |')
+    logger.log(20, f'| % change: {change * 100:36.15f} |')
     logger.log(20, '-' * 50)
 
 def main(args):

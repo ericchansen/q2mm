@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "q2mm"
+version = "5.0.0"
+description = "Quantum-guided molecular mechanics force field optimization"
+requires-python = ">=3.9"
+license = "BSD-3-Clause"
+authors = [
+    { name = "Eric Hansen" },
+]
+dependencies = [
+    "numpy",
+]
+
+[project.optional-dependencies]
+amber = [
+    "parmed",
+]
+dev = [
+    "pytest",
+    "ruff",
+]
+all = [
+    "parmed",
+]
+
+[project.urls]
+Homepage = "https://github.com/ericchansen/q2mm"
+
+[tool.setuptools.packages.find]
+include = ["q2mm*"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "UP", "SIM"]
+ignore = [
+    "E402",   # module-import-not-at-top (conditional imports)
+    "E501",   # line too long (let formatter handle)
+    "E701",   # multiple statements on one line
+    "E722",   # bare except (used for optional Schrödinger import)
+    "E741",   # ambiguous variable name (common in scientific code)
+    "F401",   # unused imports (many are re-exports or conditional)
+    "F403",   # import star
+    "F405",   # undefined from import star
+    "F811",   # redefined while unused
+    "F821",   # undefined name (Schrödinger-dependent code paths)
+    "F841",   # unused variable (common in scientific iteration)
+    "UP006",  # non-pep585-annotation (List -> list, needs broader cleanup)
+    "UP028",  # yield-in-for-loop
+    "UP030",  # format literals (too noisy for legacy code)
+    "UP035",  # deprecated import (typing.List etc)
+    "SIM102", # collapsible-if (readability preference)
+    "SIM103", # needless-bool
+    "SIM105", # suppressible-exception
+    "SIM108", # ternary (readability preference)
+    "SIM113", # enumerate-for-loop
+    "SIM115", # open-file-with-context-handler
+    "SIM201", # negate-equal-op
+]

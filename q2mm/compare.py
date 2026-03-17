@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-'''
+#!/usr/bin/env python3
+r'''
 compare
 -------
 Contains code necessary to evaluate the objective function,
@@ -10,8 +10,6 @@ where :math:`w` is a weight, :math:`x_r` is the reference data point's value,
 and :math:`x_c` is the calculated or force field's value for the data point.
 
 '''
-from __future__ import print_function
-from __future__ import absolute_import
 from collections import defaultdict
 import sys
 import argparse
@@ -20,9 +18,9 @@ import logging
 import logging.config
 import numpy as np
 
-import calculate
-import constants as co
-import datatypes
+from q2mm import calculate
+from q2mm import constants as co
+from q2mm import datatypes
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -42,7 +40,7 @@ def main(args):
     # Then I wouldn't need 2 if statements here.
 #    if opts.output or opts.print:
 #        pretty_data_comp(r_data, c_data, output=opts.output, doprint=opts.print)
-    logger.log(1, '>>> score: {}'.format(score))
+    logger.log(1, f'>>> score: {score}')
 def tor_atoms(da):
     daa = da.lbl.split('-')
     daa[0] = daa[0].split('_')[-1]
@@ -68,27 +66,27 @@ def trim_data(dict1,dict2):
             # is done with the regex below.
             for d1 in dict1[typ]:
                 #if not any(x.lbl == d1.lbl for x in dict2[typ]):
-                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d1.lbl)[1] and 
-                           co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d1.lbl)[2] 
+                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d1.lbl)[1] and
+                           co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d1.lbl)[2]
                            for x in dict2[typ]):
                     to_remove.append(d1)
             for d2 in dict2[typ]:
                 #if not any(x.lbl == d2.lbl for x in dict1[typ]):
-                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d2.lbl)[1] and 
-                           co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d2.lbl)[2] 
+                if not any(co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d2.lbl)[1] and
+                           co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d2.lbl)[2]
                            for x in dict1[typ]):
                     to_remove.append(d2)
             for datum in to_remove:
                 if datum in dict1[typ] and datum in dict2[typ]:
                     raise AssertionError("The data point that is flagged to be \
                     removed is present in both data sets.")
-                # We may want to keep track of the data that is removed. 
+                # We may want to keep track of the data that is removed.
                 if datum in dict1[typ]:
-                    dict1[typ].remove(datum) 
+                    dict1[typ].remove(datum)
                 if datum in dict2[typ]:
-                    dict2[typ].remove(datum) 
+                    dict2[typ].remove(datum)
             if to_remove:
-                logger.log(20, '>>> Removed Data: {}'.format(len(to_remove)))
+                logger.log(20, f'>>> Removed Data: {len(to_remove)}')
         dict1[typ] = np.array(dict1[typ], dtype=datatypes.Datum)
         dict2[typ] = np.array(dict2[typ], dtype=datatypes.Datum)
     return dict1, dict2
@@ -174,12 +172,10 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
                     num_typ[c.typ + '-o'] += 1
 #            print(c.lbl, r.wht, r.val, c.val, score, c.ff_row)
             if c.ff_row is None:
-                strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '.format(
-                         c.lbl, r.wht, r.val, c.val, score))
+                strings.append(f'  {c.lbl:<30}  {r.wht:>7.2f}  {r.val:>11.4f}  {c.val:>11.4f}  {score:>11.4f}  ')
             else:
-                strings.append('  {:<30}  {:>7.2f}  {:>11.4f}  {:>11.4f}  {:>11.4f}  '\
-                       '{:>5} '.format(
-                        c.lbl, r.wht, r.val, c.val, score, c.ff_row))
+                strings.append(f'  {c.lbl:<30}  {r.wht:>7.2f}  {r.val:>11.4f}  {c.val:>11.4f}  {score:>11.4f}  '\
+                       f'{c.ff_row:>5} ')
 #            print(strings)
     strings.append('-' * 89)
     strings.append('{:<20} {:20.4f}'.format('Total score:', score_tot))
@@ -192,7 +188,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
     if output:
         with open(output, 'w') as f:
             for line in strings:
-                f.write('{}\n'.format(line))
+                f.write(f'{line}\n')
     if doprint:
         for line in strings:
             print(line)
@@ -371,9 +367,9 @@ def calculate_score(r_data, c_data):
             diff = r_datum.val - c_datum.val
         score_ind = r_datum.wht**2 * diff**2
         score_tot += score_ind
-        logger.log(1, '>>> {} {} {}'.format(r_datum, c_datum, score_ind))
+        logger.log(1, f'>>> {r_datum} {c_datum} {score_ind}')
 
-    logger.log(5, 'SCORE: {}'.format(score_tot))
+    logger.log(5, f'SCORE: {score_tot}')
     return score_tot
 
 if __name__ == '__main__':

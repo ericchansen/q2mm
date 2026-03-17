@@ -1,9 +1,7 @@
-from __future__ import print_function
-from __future__ import absolute_import
-from __future__ import division
 from abc import abstractmethod
 
 import logging
+import logging.config
 from string import digits
 from typing import List
 import numpy as np
@@ -11,8 +9,8 @@ import os
 import re
 import sys
 
-import constants as co
-import utilities
+from q2mm import constants as co
+from q2mm import utilities
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
@@ -25,7 +23,7 @@ logger = logging.getLogger(__file__)
 np.set_printoptions(threshold=sys.maxsize)
 
 
-class Atom(object):
+class Atom:
     """
     Data class for a single atom.
     """
@@ -109,7 +107,7 @@ class Atom(object):
         self.props = {}
 
     def __repr__(self):
-        return "{}[{},{},{}]".format(self.atom_type_name, self.x, self.y, self.z)
+        return f"{self.atom_type_name}[{self.x},{self.y},{self.z}]"
 
     @property
     def coords(self) -> np.ndarray:
@@ -177,7 +175,7 @@ class Atom(object):
             return False
 
 
-class DOF(object):
+class DOF:
     """
     Abstract data class for a single degree of freedom.
     """
@@ -200,7 +198,7 @@ class DOF(object):
             ff_row (int, optional): Row of the FF which models the DOF. Defaults to None.
         """
         self.atom_nums: List[int] = atom_nums
-        """ TODO atom_indices is a more intuitive name, 
+        """ TODO atom_indices is a more intuitive name,
         but use of this property is too widespread (with poor referencing) to change atm,
         refactor this name when there is time."""
         self.comment = comment
@@ -227,7 +225,7 @@ class DOF(object):
             typ = "t"
         datum = Datum(val=self.value, typ=typ, ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
-            setattr(datum, "atm_{}".format(i + 1), atom_num)
+            setattr(datum, f"atm_{i + 1}", atom_num)
         for k, v in kwargs.items():
             setattr(datum, k, v)
         return datum
@@ -281,7 +279,7 @@ class Bond(DOF):
             ff_row (int, optional): Row of the FF which models the bond. Defaults to None.
             order (int, optional): Bond order (e.g. single bond - 1, double bond - 2...)
         """
-        super(Bond, self).__init__(atom_nums, comment, value, ff_row)
+        super().__init__(atom_nums, comment, value, ff_row)
         self.order = order
 
 
@@ -299,7 +297,7 @@ class Angle(DOF):
             value (float, optional): Value of the Angle in degrees. Defaults to None.
             ff_row (int, optional): Row of the FF which models the Angle. Defaults to None.
         """
-        super(Angle, self).__init__(atom_nums, comment, value, ff_row)
+        super().__init__(atom_nums, comment, value, ff_row)
 
 
 class Torsion(DOF):
@@ -316,10 +314,10 @@ class Torsion(DOF):
             value (float, optional): Value of the torsion angle in degrees. Defaults to None.
             ff_row (int, optional): Row of the FF which models the Torsion. Defaults to None.
         """
-        super(Torsion, self).__init__(atom_nums, comment, value, ff_row)
+        super().__init__(atom_nums, comment, value, ff_row)
 
 
-class Structure(object):
+class Structure:
     """
     Data for a single structure/conformer/snapshot.
     """
@@ -345,7 +343,7 @@ class Structure(object):
         Returns atomic coordinates as a list of lists.
         """
         return [atom.coords for atom in self._atoms]
-    
+
     @property
     def num_atoms(self):
         if self._atoms is None or self._atoms == []:
@@ -388,10 +386,10 @@ class Structure(object):
         if self._torsions is None:
             self._torsions:List[Torsion] = []
         return self._torsions
-    
+
     def generalize_to_ff_atom_types(self, equivalency_dict:dict, substr_atom_types:list):
         for atom in self.atoms:
-            if atom.atom_type_name not in substr_atom_types and atom.atom_type_name in equivalency_dict.keys():
+            if atom.atom_type_name not in substr_atom_types and atom.atom_type_name in equivalency_dict:
                 atom.atom_type_name = equivalency_dict[atom.atom_type_name]
 
     def guess_atoms(self) -> int:
@@ -428,8 +426,8 @@ class Structure(object):
                 else:
                     ele = atom.element
                 output.append(
-                    "{0}{1} & {2:3.6f} & {3:3.6f} & "
-                    "{4:3.6f}\\\\".format(ele, i + 1, atom.x, atom.y, atom.z)
+                    f"{ele}{i + 1} & {atom.x:3.6f} & {atom.y:3.6f} & "
+                    f"{atom.z:3.6f}\\\\"
                 )
             output.append("\\end{tabular}")
             return output
@@ -446,22 +444,16 @@ class Structure(object):
                 if indices_use_charge:
                     if atom.index in indices_use_charge:
                         output.append(
-                            " {0:s}--{1:.5f}{2:>16.6f}{3:16.6f}"
-                            "{4:16.6f}".format(
-                                ele, atom.partial_charge, atom.x, atom.y, atom.z
-                            )
+                            f" {ele:s}--{atom.partial_charge:.5f}{atom.x:>16.6f}{atom.y:16.6f}"
+                            f"{atom.z:16.6f}"
                         )
                     else:
                         output.append(
-                            " {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}".format(
-                                ele, atom.x, atom.y, atom.z
-                            )
+                            f" {ele:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}"
                         )
                 else:
                     output.append(
-                        " {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}".format(
-                            ele, atom.x, atom.y, atom.z
-                        )
+                        f" {ele:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}"
                     )
             return output
         # Formatted for Jaguar.
@@ -474,11 +466,9 @@ class Structure(object):
                     ele = atom.element
                 # Used only for a problem Eric experienced.
                 # if ele == '': ele = 'Pd'
-                label = "{}{}".format(ele, atom.index)
+                label = f"{ele}{atom.index}"
                 output.append(
-                    " {0:<8s}{1:>16.6f}{2:>16.6f}{3:>16.6f}".format(
-                        label, atom.x, atom.y, atom.z
-                    )
+                    f" {label:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}"
                 )
             return output
 
@@ -510,7 +500,7 @@ class Structure(object):
                     directly depend on our parameters.
         """
         data = []
-        logger.log(1, ">>> typ: {}".format(typ))
+        logger.log(1, f">>> typ: {typ}")
         for thing in getattr(self, typ):
             if (
                 com_match and any(x in thing.comment for x in com_match)
@@ -531,22 +521,22 @@ class Structure(object):
                             angle_2 = angle.value
                             break
                     try:
-                        logger.log(1, ">>> atom_nums: {}".format(atom_nums))
+                        logger.log(1, f">>> atom_nums: {atom_nums}")
                         logger.log(
-                            1, ">>> angle_1: {} / angle_2: {}".format(angle_1, angle_2)
+                            1, f">>> angle_1: {angle_1} / angle_2: {angle_2}"
                         )
                     except UnboundLocalError:
-                        logger.error(">>> atom_nums: {}".format(atom_nums))
-                        logger.error(">>> angle_atoms_1: {}".format(angle_atoms_1))
-                        logger.error(">>> angle_atoms_2: {}".format(angle_atoms_2))
+                        logger.error(f">>> atom_nums: {atom_nums}")
+                        logger.error(f">>> angle_atoms_1: {angle_atoms_1}")
+                        logger.error(f">>> angle_atoms_2: {angle_atoms_2}")
                         if "angle_1" not in locals():
                             logger.error("Can't identify angle_1!")
                         else:
-                            logger.error(">>> angle_1: {}".format(angle_1))
+                            logger.error(f">>> angle_1: {angle_1}")
                         if "angle_2" not in locals():
                             logger.error("Can't identify angle_2!")
                         else:
-                            logger.error(">>> angle_2: {}".format(angle_2))
+                            logger.error(f">>> angle_2: {angle_2}")
                         logger.warning("WARNING: Using torsion anyway!")
                         data.append(datum)
                     if (
@@ -596,7 +586,7 @@ class Structure(object):
                     bonded_atom = self._atoms[bonded_atom_index - 1]
                     if bonded_atom.atom_type == 3:
                         aliph_hyds.append(atom)
-        logger.log(5, "  -- {} aliphatic hydrogen(s).".format(len(aliph_hyds)))
+        logger.log(5, f"  -- {len(aliph_hyds)} aliphatic hydrogen(s).")
         return aliph_hyds
 
     def get_hyds(self):
@@ -610,7 +600,7 @@ class Structure(object):
             if 40 < atom.atom_type < 49:
                 for bonded_atom_index in atom.bonded_atom_indices:
                     hyds.append(atom)
-        logger.log(5, "  -- {} hydrogen(s).".format(len(hyds)))
+        logger.log(5, f"  -- {len(hyds)} hydrogen(s).")
         return hyds
 
     def get_dummy_atom_indices(self):
@@ -625,11 +615,11 @@ class Structure(object):
         dummies = []
         for atom in self._atoms:
             if atom.is_dummy:
-                logger.log(10, "  -- Identified {} as a dummy atom.".format(atom))
+                logger.log(10, f"  -- Identified {atom} as a dummy atom.")
                 dummies.append(atom.index)
         return dummies
-    
-    
+
+
 
     # endregion
 
@@ -692,7 +682,7 @@ class Structure(object):
         return angles
 
     def identify_torsions(self):  # TODO
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_atoms_in_DOF(self, dof: DOF) -> List[Atom]:
         """Returns a list of Atom objects which are involved in the DOF as implied by atom indices.
@@ -721,7 +711,7 @@ class Structure(object):
                 atom.atom_type_name for atom in self.get_atoms_in_DOF(angle)
             ]
         return dof_atom_type_dict
-    
+
     def get_eqbm_geom_values(self):
         '''
         Gather bonds and angles from structures. Adapted from parameters.py code.
@@ -770,7 +760,7 @@ def check_mm_dummy(hess, dummy_indices):
     """
     hess = np.delete(hess, dummy_indices, 0)
     hess = np.delete(hess, dummy_indices, 1)
-    logger.log(15, 'Created {} Hessian w/o dummy atoms.'.format(hess.shape))
+    logger.log(15, f'Created {hess.shape} Hessian w/o dummy atoms.')
     return hess
 
 def get_dummy_hessian_indices(dummy_indices):
@@ -797,7 +787,7 @@ def get_dummy_hessian_indices(dummy_indices):
     return hess_dummy_indices
 
 
-class File(object):
+class File:
     """
     Base for every other filetype class. Identical to filetypes.py version,
     ported over for schrodinger independence in seminario.py
@@ -827,7 +817,7 @@ class File(object):
             List[str]: lines of the file
         """
         if self._lines is None:
-            with open(self.path, "r") as f:
+            with open(self.path) as f:
                 self._lines = f.readlines()
         return self._lines
 
@@ -869,7 +859,7 @@ class Mol2(File):
         Args:
             path (str): Absolute path of mol2 file.
         """
-        super(Mol2, self).__init__(path)
+        super().__init__(path)
         self._structures: List[Structure] = None
 
     @property
@@ -1015,9 +1005,7 @@ class Mol2(File):
         # use num atoms from @<TRIPOS>MOLECULE to verify parse is correct
         assert (
             len(struct._atoms) == num_atoms
-        ), "Parsed {} atoms but only expected {} atoms based on Mol2 data.".format(
-            len(struct.atoms), num_atoms
-        )
+        ), f"Parsed {len(struct.atoms)} atoms but only expected {num_atoms} atoms based on Mol2 data."
         assert all(
             struct.atoms[i].index == i + 1 for i in range(len(struct.atoms))
         ), "Mol2 atom index values do not match their ordering."
@@ -1028,9 +1016,7 @@ class Mol2(File):
         # use num bonds from @<TRIPOS>MOLECULE to verify parse is correct
         assert (
             len(struct._bonds) == num_bonds
-        ), "Parsed {} bonds but only expected {} bonds based on Mol2 data.".format(
-            len(struct.bonds), num_bonds
-        )
+        ), f"Parsed {len(struct.bonds)} bonds but only expected {num_bonds} bonds based on Mol2 data."
 
         return struct
 
@@ -1079,7 +1065,7 @@ class GaussLog(File):
             kJ/(mol*Angstrom^2) but rather left in Atomic Units (AU) (Hartree/Bohr^2).
             Defaults to False.
         """
-        super(GaussLog, self).__init__(path)
+        super().__init__(path)
         self._evals = None
         self._evecs = None
         self._structures = None
@@ -1140,13 +1126,13 @@ class GaussLog(File):
         Read force constant and eigenvector data from a frequency
         calculation.
         """
-        logger.log(5, "READING: {}".format(self.filename))
+        logger.log(5, f"READING: {self.filename}")
         self._evals = []
         self._evecs = []
         self._structures = []
         force_constants = []
         evecs = []
-        with open(self.path, "r") as f:
+        with open(self.path) as f:
             # The keyword "harmonic" shows up before the section we're
             # interested in. It can show up multiple times depending on the
             # options in the Gaussian .com file.
@@ -1164,7 +1150,7 @@ class GaussLog(File):
                     # End of file.
                     break
                 if "Charges from ESP fit" in line:
-                    pattern = re.compile("RMS=\s+({0})".format(co.RE_FLOAT))
+                    pattern = re.compile(rf"RMS=\s+({co.RE_FLOAT})")
                     match = pattern.search(line)
                     self._esp_rms = float(match.group(1))
                 # Gathering some geometric information.
@@ -1175,7 +1161,7 @@ class GaussLog(File):
                     next(file_iterator)
                     next(file_iterator)
                     line = next(file_iterator)
-                    while not "---" in line:
+                    while "---" not in line:
                         cols = line.split()
                         self._structures[-1].atoms.append(
                             Atom(
@@ -1189,7 +1175,7 @@ class GaussLog(File):
                         line = next(file_iterator)
                     logger.log(
                         5,
-                        "  -- Found {} atoms.".format(len(self._structures[-1].atoms)),
+                        f"  -- Found {len(self._structures[-1].atoms)} atoms.",
                     )
                 elif "Harmonic" in line:
                     # The high quality eigenvectors come before the low quality
@@ -1356,9 +1342,9 @@ class GaussLog(File):
                     evec[i] *= element
             self._evals = np.array(self._evals)
             self._evecs = np.array(self._evecs)
-            logger.log(1, ">>> self._evals: {}".format(self._evals))
-            logger.log(1, ">>> self._evecs: {}".format(self._evecs))
-            logger.log(5, "  -- {} structures found.".format(len(self.structures)))
+            logger.log(1, f">>> self._evals: {self._evals}")
+            logger.log(1, f">>> self._evecs: {self._evecs}")
+            logger.log(5, f"  -- {len(self.structures)} structures found.")
 
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
@@ -1367,7 +1353,7 @@ class GaussLog(File):
         Only reads last archive found in the Gaussian .log file. Hessian converted
         to kJ/molA^2
         """
-        logger.log(5, "READING: {}".format(self.filename))
+        logger.log(5, f"READING: {self.filename}")
         struct = Structure(self.filename)
         self._structures = [struct]
         # Matches everything in between the start and end.
@@ -1386,7 +1372,7 @@ class GaussLog(File):
         #        print(re.findall('(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',open(self.path,'r').read()))
         try:
             arch = re.findall(
-                "(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)", open(self.path, "r").read()
+                "(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", open(self.path).read()
             )[-1]
             logger.log(5, "  -- Located last archive.")
         except IndexError:
@@ -1403,7 +1389,7 @@ class GaussLog(File):
         arch_general = arch[section_counter]
         section_counter += 1
         stuff = re.search(
-            "\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)"
+            "\\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)"
             "\\\\(?P<date>.*?)"
             "\\\\.*?",
             arch_general,
@@ -1463,7 +1449,7 @@ class GaussLog(File):
                 # raise Exception(
                 #     'Not sure how to read coordinates from Gaussian archive!')
             struct._atoms.append(Atom(element=ele, x=float(x), y=float(y), z=float(z)))
-        logger.log(20, "  -- Read {} atoms.".format(len(struct._atoms)))
+        logger.log(20, f"  -- Read {len(struct._atoms)} atoms.")
         # SECTION 4
         # All sorts of information here. This area looks like:
         #     prop1=value1\prop2=value2\prop3=value3
@@ -1481,11 +1467,11 @@ class GaussLog(File):
             hess_tri = hess_tri.split(",")
             logger.log(
                 5,
-                "  -- Read {} Hessian elements in lower triangular "
-                "form.".format(len(hess_tri)),
+                f"  -- Read {len(hess_tri)} Hessian elements in lower triangular "
+                "form.",
             )
             hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-            logger.log(5, "  -- Created {} Hessian matrix.".format(hess.shape))
+            logger.log(5, f"  -- Created {hess.shape} Hessian matrix.")
             # Code for if it was in upper triangle (it's not).
             # hess[np.triu_indices_from(hess)] = hess_tri
             # hess += np.triu(hess, -1).T
@@ -1574,13 +1560,13 @@ class GaussLog(File):
             ]
             if not structure._atoms:
                 logger.warning(
-                    "  -- No atoms found in structure {}. " "Skipping.".format(i + 1)
+                    f"  -- No atoms found in structure {i + 1}. " "Skipping."
                 )
                 continue
             if len(yes_or_no) == 4:
                 structures_compared += 1
                 if best_structure is None:
-                    logger.log(10, "  -- Most converged structure: {}".format(i + 1))
+                    logger.log(10, f"  -- Most converged structure: {i + 1}")
                     best_structure = structure
                     best_yes_or_no = yes_or_no
                 elif yes_or_no.count("YES") > best_yes_or_no.count("YES"):
@@ -1596,15 +1582,11 @@ class GaussLog(File):
                         best_yes_or_no = yes_or_no
             elif len(yes_or_no) != 0:
                 logger.warning(
-                    "  -- Partial convergence criterion in structure: {}".format(
-                        self.path
-                    )
+                    f"  -- Partial convergence criterion in structure: {self.path}"
                 )
         logger.log(
             10,
-            "  -- Compared {} out of {} structures.".format(
-                structures_compared, len(self.structures)
-            ),
+            f"  -- Compared {structures_compared} out of {len(self.structures)} structures.",
         )
         return best_structure
 
@@ -1619,9 +1601,9 @@ class GaussLog(File):
                       to be overwritten by whatever comes later in the
                       log file.
         """
-        logger.log(10, "READING: {}".format(self.filename))
+        logger.log(10, f"READING: {self.filename}")
         structures = []
-        with open(self.path, "r") as f:
+        with open(self.path) as f:
             section_coords_input = False
             section_coords_standard = False
             section_convergence = False
@@ -1631,10 +1613,10 @@ class GaussLog(File):
                 # set a flag that it has indeed started.
                 if section_optimization and "Optimization stopped." in line:
                     section_optimization = False
-                    logger.log(5, "[L{}] End optimization section.".format(i + 1))
+                    logger.log(5, f"[L{i + 1}] End optimization section.")
                 if not section_optimization and "Search for a local minimum." in line:
                     section_optimization = True
-                    logger.log(5, "[L{}] Start optimization section.".format(i + 1))
+                    logger.log(5, f"[L{i + 1}] Start optimization section.")
                 if section_optimization:
                     # Start of a structure.
                     if "Step number" in line:
@@ -1642,23 +1624,23 @@ class GaussLog(File):
                         current_structure = structures[-1]
                         logger.log(
                             5,
-                            "[L{}] Added structure "
-                            "(currently {}).".format(i + 1, len(structures)),
+                            f"[L{i + 1}] Added structure "
+                            f"(currently {len(structures)}).",
                         )
                     # Look for convergence information related to a single
                     # structure.
                     if section_convergence and "GradGradGrad" in line:
                         section_convergence = False
-                        logger.log(5, "[L{}] End convergence section.".format(i + 1))
+                        logger.log(5, f"[L{i + 1}] End convergence section.")
                     if section_convergence:
                         match = re.match(
-                            "\s(Maximum|RMS)\s+(Force|Displacement)\s+({0})\s+"
-                            "({0})\s+(YES|NO)".format(co.RE_FLOAT),
+                            rf"\s(Maximum|RMS)\s+(Force|Displacement)\s+({co.RE_FLOAT})\s+"
+                            rf"({co.RE_FLOAT})\s+(YES|NO)",
                             line,
                         )
                         if match:
                             current_structure.props[
-                                "{} {}".format(match.group(1), match.group(2))
+                                f"{match.group(1)} {match.group(2)}"
                             ] = (
                                 float(match.group(3)),
                                 float(match.group(4)),
@@ -1666,7 +1648,7 @@ class GaussLog(File):
                             )
                     if "Converged?" in line:
                         section_convergence = True
-                        logger.log(5, "[L{}] Start convergence section.".format(i + 1))
+                        logger.log(5, f"[L{i + 1}] Start convergence section.")
                     # Look for input coords.
                     if coords_type == "input" or coords_type == "both":
                         # End of input coords for a given structure.
@@ -1674,14 +1656,14 @@ class GaussLog(File):
                             section_coords_input = False
                             logger.log(
                                 5,
-                                "[L{}] End input coordinates section "
-                                "({} atoms).".format(i + 1, count_atom),
+                                f"[L{i + 1}] End input coordinates section "
+                                f"({count_atom} atoms).",
                             )
                         # Add atoms and coords to structure.
                         if section_coords_input:
                             match = re.match(
-                                "\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+({0})\s+"
-                                "({0})".format(co.RE_FLOAT),
+                                rf"\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+"
+                                f"({co.RE_FLOAT})",
                                 line,
                             )
                             if match:
@@ -1697,13 +1679,9 @@ class GaussLog(File):
                                     assert current_atom.atomic_num == int(
                                         match.group(2)
                                     ), (
-                                        "[L{}] Atomic numbers don't match "
+                                        f"[L{i + 1}] Atomic numbers don't match "
                                         "(current != existing) "
-                                        "({} != {}).".format(
-                                            i + 1,
-                                            int(match.group(2)),
-                                            current_atom.atomic_num,
-                                        )
+                                        f"({int(match.group(2))} != {current_atom.atomic_num})."
                                     )
                                 else:
                                     current_atom.atomic_num = int(match.group(2))
@@ -1718,8 +1696,8 @@ class GaussLog(File):
                             count_atom = 0
                             logger.log(
                                 5,
-                                "[L{}] Start input coordinates "
-                                "section.".format(i + 1),
+                                f"[L{i + 1}] Start input coordinates "
+                                "section.",
                             )
                     # Look for standard coords.
                     if coords_type == "standard" or coords_type == "both":
@@ -1730,14 +1708,14 @@ class GaussLog(File):
                             section_coords_standard = False
                             logger.log(
                                 5,
-                                "[L{}] End standard coordinates "
-                                "section ({} atoms).".format(i + 1, count_atom),
+                                f"[L{i + 1}] End standard coordinates "
+                                f"section ({count_atom} atoms).",
                             )
                         # Grab coords for each atom. Add atoms to the structure.
                         if section_coords_standard:
                             match = re.match(
-                                "\s+(\d+)\s+(\d+)\s+\d+\s+({0})\s+"
-                                "({0})\s+({0})".format(co.RE_FLOAT),
+                                rf"\s+(\d+)\s+(\d+)\s+\d+\s+({co.RE_FLOAT})\s+"
+                                rf"({co.RE_FLOAT})\s+({co.RE_FLOAT})",
                                 line,
                             )
                             if match:
@@ -1753,13 +1731,9 @@ class GaussLog(File):
                                     assert current_atom.atomic_num == int(
                                         match.group(2)
                                     ), (
-                                        "[L{}] Atomic numbers don't match "
+                                        f"[L{i + 1}] Atomic numbers don't match "
                                         "(current != existing) "
-                                        "({} != {}).".format(
-                                            i + 1,
-                                            int(match.group(2)),
-                                            current_atom.atomic_num,
-                                        )
+                                        f"({int(match.group(2))} != {current_atom.atomic_num})."
                                     )
                                 else:
                                     current_atom.atomic_num = int(match.group(2))
@@ -1777,8 +1751,8 @@ class GaussLog(File):
                             count_atom = 0
                             logger.log(
                                 5,
-                                "[L{}] Start standard coordinates "
-                                "section.".format(i + 1),
+                                f"[L{i + 1}] Start standard coordinates "
+                                "section.",
                             )
         return structures
 
@@ -1787,12 +1761,12 @@ class JaguarIn(File):
     Used to retrieve data from Jaguar .in files. Hessian is not mass-weighted. Hessian units assumed to be kJ/(mol*Angstrom^2)
     """
     def __init__(self, path):
-        super(JaguarIn, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self._hessian = None
         self._empty_atoms = None
         self._lines = None
-    
+
     def get_hessian(self, num_atoms:int):
         """
         Reads the Hessian from a Jaguar .in.
@@ -1806,12 +1780,11 @@ class JaguarIn(File):
             num = num_atoms
 
             assert num != 0, \
-                'Zero atoms found when loading Hessian from {}!'.format(
-                self.path)
+                f'Zero atoms found when loading Hessian from {self.path}!'
             hessian = np.zeros([num * 3, num * 3], dtype=float)
-            logger.log(5, '  -- Created {} Hessian matrix (including dummy '
-                       'atoms).'.format(hessian.shape))
-            with open(self.path, 'r') as f:
+            logger.log(5, f'  -- Created {hessian.shape} Hessian matrix (including dummy '
+                       'atoms).')
+            with open(self.path) as f:
                 section_hess = False
                 for line in f:
                     if section_hess and line.startswith('&'):
@@ -1829,13 +1802,13 @@ class JaguarIn(File):
                     if '&hess' in line:
                         section_hess = True
 
-            logger.log(1, '>>> hessian:\n{}'.format(hessian))
-            logger.log(5, '  -- Created {} Hessian matrix (w/o dummy '
-                       'atoms).'.format(hessian.shape))
+            logger.log(1, f'>>> hessian:\n{hessian}')
+            logger.log(5, f'  -- Created {hessian.shape} Hessian matrix (w/o dummy '
+                       'atoms).')
             self._hessian = hessian * co.HESSIAN_CONVERSION #TODO find a more universal way to manage units, JAGUAR IGNORED UNITS SETTINGS????!
-            logger.log(1, '>>> hessian.shape: {}'.format(hessian.shape))
+            logger.log(1, f'>>> hessian.shape: {hessian.shape}')
         return self._hessian
-    
+
     def gen_lines(self):
         """
         Attempts to figure out the lines of itself.
@@ -1849,7 +1822,7 @@ class JaguarIn(File):
         """
         lines = []
         mae_name = None
-        lines.append('MAEFILE: {}'.format(mae_name))
+        lines.append(f'MAEFILE: {mae_name}')
         lines.append('&gen')
         lines.append('&')
         lines.append('&zmat')
@@ -1859,13 +1832,13 @@ class JaguarIn(File):
         lines.extend(struct.format_coords(format='gauss'))
         lines.append('&')
         return lines
-    
+
 class JaguarOut(File):
     """
     Used to retrieve data from Schrodinger Jaguar .out files. Eigenvalues and Eigenvectors are NOT mass-weighted.
     """
     def __init__(self, path):
-        super(JaguarOut, self).__init__(path)
+        super().__init__(path)
         self._structures = None
         self._eigenvalues = None
         self._eigenvectors = None
@@ -1898,12 +1871,12 @@ class JaguarOut(File):
             self.import_file()
         return self._dummy_atom_eigenvector_indices
     def import_file(self):
-        logger.log(10, 'READING: {}'.format(self.filename))
+        logger.log(10, f'READING: {self.filename}')
         frequencies = []
         force_constants = []
         eigenvectors = []
         structures = []
-        with open(self.path, 'r') as f:
+        with open(self.path) as f:
             section_geometry = False
             section_eigenvalues = False
             section_eigenvectors = False
@@ -1918,9 +1891,8 @@ class JaguarOut(File):
                         pass
                     else:
                         match = re.match(
-                            '\s+([\d\w]+)\s+({0})\s+({0})\s+({0})'.format(
-                                co.RE_FLOAT), line)
-                        if match != None:
+                            rf'\s+([\d\w]+)\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})', line)
+                        if match is not None:
                             current_atom = Atom()
                             current_atom.element = match.group(1).translate(str.maketrans('', '', digits))
                             current_atom.x = float(match.group(2))
@@ -1928,14 +1900,12 @@ class JaguarOut(File):
                             current_atom.z = float(match.group(4))
                             current_structure.atoms.append(current_atom)
                             logger.log(0,
-                                       '{0:<3}{1:>12.6f}{2:>12.6f}'
-                                       '{3:>12.6f}'.format(
-                                    current_atom.element, current_atom.x,
-                                    current_atom.y, current_atom.z))
+                                       f'{current_atom.element:<3}{current_atom.x:>12.6f}{current_atom.y:>12.6f}'
+                                       f'{current_atom.z:>12.6f}')
                 if 'geometry:' in line:
                     section_geometry = True
                     current_structure = Structure(self.filename)
-                    logger.log(5, '[L{}] Located geometry.'.format(i + 1))
+                    logger.log(5, f'[L{i + 1}] Located geometry.')
                 if 'Number of imaginary frequencies' in line or \
                         'Writing vibrational' in line or \
                         'Thermochemical properties at' in line:
@@ -1963,8 +1933,8 @@ class JaguarOut(File):
                         temp_eigenvectors = [[]]
                 if 'normal modes in' in line:
                     section_eigenvalues = True
-        logger.log(1, '>>> len(frequencies): {}'.format(len(frequencies)))
-        logger.log(1, '>>> frequencies:\n{}'.format(frequencies))
+        logger.log(1, f'>>> len(frequencies): {len(frequencies)}')
+        logger.log(1, f'>>> frequencies:\n{frequencies}')
         # logger.log(1, '>>> frequencies:\n{}'.format(
         #         [x / co.FORCE_CONVERSION for x in frequencies]))
         # logger.log(1, '>>> frequencies:\n{}'.format(
@@ -1976,14 +1946,14 @@ class JaguarOut(File):
         eigenvalues = [- fc / co.FORCE_CONVERSION if f < 0 else
                          fc / co.FORCE_CONVERSION
                          for fc, f in zip(force_constants, frequencies)]
-        logger.log(1, '>>> eigenvalues:\n{}'.format(eigenvalues))
+        logger.log(1, f'>>> eigenvalues:\n{eigenvalues}')
         # Remove eigenvector components related to dummy atoms.
         # Find the index of the atoms that are dummies.
         dummy_atom_indices = []
         for i, atom in enumerate(structures[-1].atoms):
             if atom.is_dummy:
                 dummy_atom_indices.append(i)
-        logger.log(10, '  -- Located {} dummy atoms.'.format(len(dummy_atom_indices)))
+        logger.log(10, f'  -- Located {len(dummy_atom_indices)} dummy atoms.')
         # Correlate those indices to the rows in the cartesian eigenvector.
         dummy_atom_eigenvector_indices = []
         for dummy_atom_index in dummy_atom_indices:
@@ -2007,14 +1977,10 @@ class JaguarOut(File):
         self._eigenvectors = np.array(eigenvectors)
         self._frequencies = np.array(frequencies)
         # self._force_constants = np.array(force_constants)
-        logger.log(5, '  -- Read {} structures'.format(
-                len(self.structures)))
-        logger.log(5, '  -- Read {} frequencies.'.format(
-                len(self.frequencies)))
-        logger.log(5, '  -- Read {} eigenvalues.'.format(
-                len(self.eigenvalues)))
-        logger.log(5, '  -- Read {} eigenvectors.'.format(
-                self.eigenvectors.shape))
+        logger.log(5, f'  -- Read {len(self.structures)} structures')
+        logger.log(5, f'  -- Read {len(self.frequencies)} frequencies.')
+        logger.log(5, f'  -- Read {len(self.eigenvalues)} eigenvalues.')
+        logger.log(5, f'  -- Read {self.eigenvectors.shape} eigenvectors.')
         # num_atoms = len(structures[-1].atoms)
         # logger.log(5,
         #            '  -- ({}, {}) eigenvectors expected for linear '
@@ -2047,7 +2013,7 @@ class ParamBE(Exception):
     pass
 
 
-class Param(object):
+class Param:
     """
      A single parameter of a force field (FF). TODO rework this to match Google style docstrings
      for later sphinx autodocumentation.
@@ -2096,7 +2062,7 @@ class Param(object):
         self.value = value
 
     def __repr__(self):
-        return "{}[{}]({:7.4f})".format(self.__class__.__name__, self.ptype, self.value)
+        return f"{self.__class__.__name__}[{self.ptype}]({self.value:7.4f})"
 
     @property
     def allowed_range(self) -> List[float]:
@@ -2126,20 +2092,14 @@ class Param(object):
                 self._step = co.STEPS[self.ptype]
             except KeyError:
                 logger.warning(
-                    "{} doesn't have a default step size and none "
-                    "provided!".format(self)
+                    f"{self} doesn't have a default step size and none "
+                    "provided!"
                 )
                 raise
-        if sys.version_info > (3, 0):
-            if isinstance(self._step, str):
-                return float(self._step) * self.value
-            else:
-                return self._step
+        if isinstance(self._step, str):
+            return float(self._step) * self.value
         else:
-            if isinstance(self._step, basestring):
-                return float(self._step) * self.value
-            else:
-                return self._step
+            return self._step
 
     @step.setter
     def step(self, x):
@@ -2187,7 +2147,7 @@ class Param(object):
                 else value * co.HARTREE_TO_KCALMOL
             )
         elif units == co.TINKERFF:
-            raise NotImplemented()
+            raise NotImplementedError()
         else:
             raise Exception(
                 "Only MM3, AMBER, and Tinker type force fields have defined units and conversions for parameters in Q2MM."
@@ -2211,20 +2171,18 @@ class Param(object):
             return True
         elif value == self.allowed_range[0] - 0.1:
             raise ParamBE(
-                "{} Backward Error. Forward Derivative only".format(str(self))
+                f"{str(self)} Backward Error. Forward Derivative only"
             )
         elif value == self.allowed_range[1] + 0.1:
             raise ParamFE(
-                "{} Forward Error. Backward Derivative only".format(str(self))
+                f"{str(self)} Forward Error. Backward Derivative only"
             )
         elif value == self.allowed_range[1] or value == self.allowed_range[0]:
             return True
         else:
             raise ParamError(
-                "{} isn't allowed to have a value of {}! "
-                "({} <= x <= {})".format(
-                    str(self), value, self.allowed_range[0], self.allowed_range[1]
-                )
+                f"{str(self)} isn't allowed to have a value of {value}! "
+                f"({self.allowed_range[0]} <= x <= {self.allowed_range[1]})"
             )
 
     def value_at_limits(self):
@@ -2235,19 +2193,15 @@ class Param(object):
         # consider whether this is ok.
         if self.value == min(self.allowed_range):
             logger.warning(
-                "{} is equal to its lower limit of {}!\nReconsider "
+                f"{str(self)} is equal to its lower limit of {self.value}!\nReconsider "
                 "if you need to adjust limits, initial parameter "
-                "values, or if your reference data is appropriate.".format(
-                    str(self), self.value
-                )
+                "values, or if your reference data is appropriate."
             )
         if self.value == max(self.allowed_range):
             logger.warning(
-                "{} is equal to its upper limit of {}!\nReconsider "
+                f"{str(self)} is equal to its upper limit of {self.value}!\nReconsider "
                 "if you need to adjust limits, initial parameter "
-                "values, or if your reference data is appropriate.".format(
-                    str(self), self.value
-                )
+                "values, or if your reference data is appropriate."
             )
 
 
@@ -2284,17 +2238,13 @@ class ParamMM3(Param):
         self.ff_col = ff_col
         self.ff_row = ff_row
         self.mm3_label = mm3_label
-        super(ParamMM3, self).__init__(ptype=ptype, value=value)
+        super().__init__(ptype=ptype, value=value)
 
     def __repr__(self):
-        return "{}[{}][{},{}]({})".format(
-            self.__class__.__name__, self.ptype, self.ff_row, self.ff_col, self.value
-        )
+        return f"{self.__class__.__name__}[{self.ptype}][{self.ff_row},{self.ff_col}]({self.value})"
 
     def __str__(self):
-        return "{}[{}][{},{}]({})".format(
-            self.__class__.__name__, self.ptype, self.ff_row, self.ff_col, self.value
-        )
+        return f"{self.__class__.__name__}[{self.ptype}][{self.ff_row},{self.ff_col}]({self.value})"
 
     def convert_and_set(self, value):
         return super().convert_and_set(value, units=co.MM3FF)
@@ -2324,23 +2274,19 @@ class ParAMBER(Param):
         self.ff_col = ff_col
         self.ff_row = ff_row
         self.mm3_label = mm3_label
-        super(ParAMBER, self).__init__(ptype=ptype, value=value)
+        super().__init__(ptype=ptype, value=value)
 
     def __repr__(self):
-        return "{}[{}][{},{}]({})".format(
-            self.__class__.__name__, self.ptype, self.ff_row, self.ff_col, self.value
-        )
+        return f"{self.__class__.__name__}[{self.ptype}][{self.ff_row},{self.ff_col}]({self.value})"
 
     def __str__(self):
-        return "{}[{}][{},{}]({})".format(
-            self.__class__.__name__, self.ptype, self.ff_row, self.ff_col, self.value
-        )
+        return f"{self.__class__.__name__}[{self.ptype}][{self.ff_row},{self.ff_col}]({self.value})"
 
     def convert_and_set(self, value):
         return super().convert_and_set(value, units=co.AMBERFF)
 
 
-class Datum(object):
+class Datum:
     """
     Class for a reference or calculated data point. TODO
     """
@@ -2395,7 +2341,7 @@ class Datum(object):
         self.ff_row = ff_row
 
     def __repr__(self):
-        return "{}({:7.4f})".format(self.lbl, self.val)
+        return f"{self.lbl}({self.val:7.4f})"
 
     @property
     def lbl(self):
@@ -2430,7 +2376,7 @@ def datum_sort_key(datum):
     return (datum.typ, datum.src_1, datum.src_2, datum.idx_1, datum.idx_2)
 
 
-class FF(object):
+class FF:
     """TODO
     Class for any type of force field.
 
@@ -2461,12 +2407,12 @@ class FF(object):
         ff.path = self.path
 
     def __repr__(self):
-        return "{}[{}]({})".format(self.__class__.__name__, self.method, self.score)
-    
+        return f"{self.__class__.__name__}[{self.method}]({self.score})"
+
     @abstractmethod
     def get_DOFs_by_param(self, structs:List[Structure]) -> dict:
-        raise NotImplemented
-        
+        raise NotImplementedError
+
 
 
 class AmberFF(FF):
@@ -2477,7 +2423,7 @@ class AmberFF(FF):
     units = co.AMBERFF
 
     def __init__(self, path=None, data=None, method=None, params=None, score=None):
-        super(AmberFF, self).__init__(path, data, method, params, score)
+        super().__init__(path, data, method, params, score)
         self.sub_names = []
         self._atom_types = None
         self._lines = None
@@ -2501,7 +2447,7 @@ class AmberFF(FF):
     @property
     def lines(self):
         if self._lines is None:
-            with open(self.path, "r") as f:
+            with open(self.path) as f:
                 self._lines = f.readlines()
         return self._lines
 
@@ -2522,8 +2468,8 @@ class AmberFF(FF):
         gather_data = False
         self.sub_names = []
         count = 0
-        with open(path, "r") as f:
-            logger.log(15, "READING: {}".format(path))
+        with open(path) as f:
+            logger.log(15, f"READING: {path}")
             for i, line in enumerate(f):
                 split = line.split()
                 if not q2mm_sec and "# Q2MM" in line:
@@ -2654,7 +2600,7 @@ class AmberFF(FF):
                     if count == 6:
                         continue
 
-                    if "vdw" == split[0]:
+                    if split[0] == "vdw":
                         # The first float is the vdw radius, the second has to do
                         # with homoatomic well depths and the last is a reduction
                         # factor for univalent atoms (I don't think we will need
@@ -2669,7 +2615,7 @@ class AmberFF(FF):
                                 value=float(split[2]),
                             )
                         )
-        logger.log(15, "  -- Read {} parameters.".format(len(self.params)))
+        logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def export_ff(self, path=None, params:List[Param]=None, lines=None):
         """
@@ -2682,16 +2628,16 @@ class AmberFF(FF):
         if lines is None:
             lines = self.lines
         for param in params:
-            logger.log(1, ">>> param: {} param.value: {}".format(param, param.value))
+            logger.log(1, f">>> param: {param} param.value: {param.value}")
             line = lines[param.ff_row - 1]
             if abs(param.value) > 1999.0:
-                logger.warning("Value of {} is too high! Skipping write.".format(param))
+                logger.warning(f"Value of {param} is too high! Skipping write.")
             else:
                 atoms = ""
                 const = ""
                 space3 = " " * 3
                 col = int(param.ff_col - 1)
-                value = "{:7.4f}".format(param.value)
+                value = f"{param.value:7.4f}"
                 tempsplit = line.split("-")
                 leng = len(tempsplit)
                 AA = None
@@ -2718,7 +2664,7 @@ class AmberFF(FF):
                     AA = line[:nl].split("-")
                     BB = line[nl:].split()
                     atoms = "-".join([format(el, "<2") for el in AA]) + space3 * 2
-                    value = "{:7.5f}".format(param.value)
+                    value = f"{param.value:7.5f}"
                     if param.ptype == "imp1":
                         atoms += space3
                         BB[0] = value
@@ -2740,7 +2686,7 @@ class AmberFF(FF):
                 lines[param.ff_row - 1] = atoms + const + "\n"
         with open(path, "w") as f:
             f.writelines(lines)
-        logger.log(10, "WROTE: {}".format(path))
+        logger.log(10, f"WROTE: {path}")
 
     def get_DOFs_by_atom_type(self, structs:List[Structure]) -> dict:
         dof_by_param = dict()
@@ -2754,7 +2700,7 @@ class AmberFF(FF):
             for dihed in struct.torsions:
                 dof_by_param[dihed.ff_row].append(dihed)
         return dof_by_param
-    
+
     def get_DOFs_by_param(self, structs:List[Structure]) -> dict:
         return self.get_DOFs_by_atom_type(structs)
 
@@ -2783,7 +2729,7 @@ class MM3(FF):
     __slots__ = ["smiles", "sub_names", "_atom_types", "_lines", "atom_type_equivalencies"]
 
     def __init__(self, path=None, data=None, method=None, params:List[Param]=None, score=None):
-        super(MM3, self).__init__(path, data, method, params, score)
+        super().__init__(path, data, method, params, score)
         self.smiles = []
         self.sub_names = []
         self._atom_types = None
@@ -2803,7 +2749,7 @@ class MM3(FF):
         ff.sub_names = self.sub_names
         ff._atom_types = self._atom_types
         ff._lines = self._lines
-    
+
     @property
     def atom_types(self):
         """
@@ -2819,7 +2765,7 @@ class MM3(FF):
     @property
     def lines(self):
         if self._lines is None:
-            with open(self.path, "r") as f:
+            with open(self.path) as f:
                 self._lines = f.readlines()
         return self._lines
 
@@ -2873,8 +2819,8 @@ class MM3(FF):
         self.params:List[Param] = []
         self.smiles = []
         self.sub_names = []
-        with open(path, "r") as f:
-            logger.log(15, "READING: {}".format(path))
+        with open(path) as f:
+            logger.log(15, f"READING: {path}")
             section_sub = False
             section_smiles = False
             section_vdw = False
@@ -2892,29 +2838,29 @@ class MM3(FF):
 
                 # These lines are for parameters.
                 if not section_sub and sub_search in line and line.startswith(" C"):
-                    matched = re.match("\sC\s+({})\s+".format(co.RE_SUB), line)
+                    matched = re.match(rf"\sC\s+({co.RE_SUB})\s+", line)
                     assert (
                         matched is not None
-                    ), "[L{}] Can't read substructure name: {}".format(i + 1, line)
-                    if matched != None:
+                    ), f"[L{i + 1}] Can't read substructure name: {line}"
+                    if matched is not None:
                         # Oh good, you found your substructure!
                         section_sub = True
                         sub_name = matched.group(1).strip()
                         self.sub_names.append(sub_name)
                         logger.log(
                             15,
-                            "[L{}] Start of substructure: {}".format(i + 1, sub_name),
+                            f"[L{i + 1}] Start of substructure: {sub_name}",
                         )
                         section_smiles = True
                         continue
                 elif section_smiles is True:
-                    matched = re.match("\s9\s+({})\s".format(co.RE_SMILES), line)
+                    matched = re.match(rf"\s9\s+({co.RE_SMILES})\s", line)
                     assert (
                         matched is not None
-                    ), "[L{}] Can't read substructure SMILES: {}".format(i + 1, line)
+                    ), f"[L{i + 1}] Can't read substructure SMILES: {line}"
                     smiles = matched.group(1)
                     self.smiles.append(smiles)
-                    logger.log(15, "  -- SMILES: {}".format(self.smiles[-1]))
+                    logger.log(15, f"  -- SMILES: {self.smiles[-1]}")
                     logger.log(
                         15, "  -- Atom types: {}".format(" ".join(self.atom_types[-1]))
                     )
@@ -2924,7 +2870,7 @@ class MM3(FF):
                 elif section_sub and line.startswith("-3"):
                     logger.log(
                         15,
-                        "[L{}] End of substructure: {}".format(i, self.sub_names[-1]),
+                        f"[L{i}] End of substructure: {self.sub_names[-1]}",
                     )
                     section_sub = False
                     continue
@@ -3271,7 +3217,7 @@ class MM3(FF):
                 if "New Atom Type Equivalencies" in line:
                     section_atm_eqv = True
                     continue
-        logger.log(15, "  -- Read {} parameters.".format(len(self.params)))
+        logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def alternate_import_ff(self, path=None, sub_search="OPT"):
         """
@@ -3283,8 +3229,8 @@ class MM3(FF):
         self.params:List[Param] = []
         self.smiles = []
         self.sub_names = []
-        with open(path, "r") as f:
-            logger.log(15, "READING: {}".format(path))
+        with open(path) as f:
+            logger.log(15, f"READING: {path}")
             section_sub = False
             section_smiles = False
             section_vdw = False
@@ -3292,10 +3238,10 @@ class MM3(FF):
                 cols = line.split()
                 # These lines are for parameters.
                 if not section_sub and sub_search in line and line.startswith(" C"):
-                    matched = re.match("\sC\s+({})\s+".format(co.RE_SUB), line)
+                    matched = re.match(rf"\sC\s+({co.RE_SUB})\s+", line)
                     assert (
                         matched is not None
-                    ), "[L{}] Can't read substructure name: {}".format(i + 1, line)
+                    ), f"[L{i + 1}] Can't read substructure name: {line}"
                     if matched:
                         # Oh good, you found your substructure!
                         section_sub = True
@@ -3303,18 +3249,18 @@ class MM3(FF):
                         self.sub_names.append(sub_name)
                         logger.log(
                             15,
-                            "[L{}] Start of substructure: {}".format(i + 1, sub_name),
+                            f"[L{i + 1}] Start of substructure: {sub_name}",
                         )
                         section_smiles = True
                         continue
                 elif section_smiles is True:
-                    matched = re.match("\s9\s+({})\s".format(co.RE_SMILES), line)
+                    matched = re.match(rf"\s9\s+({co.RE_SMILES})\s", line)
                     assert (
                         matched is not None
-                    ), "[L{}] Can't read substructure SMILES: {}".format(i + 1, line)
+                    ), f"[L{i + 1}] Can't read substructure SMILES: {line}"
                     smiles = matched.group(1)
                     self.smiles.append(smiles)
-                    logger.log(15, "  -- SMILES: {}".format(self.smiles[-1]))
+                    logger.log(15, f"  -- SMILES: {self.smiles[-1]}")
                     logger.log(
                         15, "  -- Atom types: {}".format(" ".join(self.atom_types[-1]))
                     )
@@ -3324,7 +3270,7 @@ class MM3(FF):
                 elif section_sub and line.startswith("-3"):
                     logger.log(
                         15,
-                        "[L{}] End of substructure: {}".format(i, self.sub_names[-1]),
+                        f"[L{i}] End of substructure: {self.sub_names[-1]}",
                     )
                     section_sub = False
                     continue
@@ -3611,7 +3557,7 @@ class MM3(FF):
                 if line.startswith("-6"):
                     section_vdw = True
                     continue
-        logger.log(15, "  -- Read {} parameters.".format(len(self.params)))
+        logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def export_ff(self, path=None, params=None, lines=None):
         """
@@ -3633,7 +3579,7 @@ class MM3(FF):
         if lines is None:
             lines = self.lines
         for param in params:
-            logger.log(1, ">>> param: {} param.value: {}".format(param, param.value))
+            logger.log(1, f">>> param: {param} param.value: {param.value}")
             line = lines[param.ff_row - 1]
             # There are some problems with this. Probably an optimization
             # technique gave you these crazy parameter values. Ideally, this
@@ -3642,22 +3588,22 @@ class MM3(FF):
             # get too rediculous, and this exception should be handled by the
             # optimization techniques appropriately.
             if abs(param.value) > 999.0:
-                logger.warning("Value of {} is too high! Skipping write.".format(param))
+                logger.warning(f"Value of {param} is too high! Skipping write.")
             elif param.ff_col == 1:
                 lines[param.ff_row - 1] = (
-                    line[:P_1_START] + "{:10.4f}".format(param.value) + line[P_1_END:]
+                    line[:P_1_START] + f"{param.value:10.4f}" + line[P_1_END:]
                 )
             elif param.ff_col == 2:
                 lines[param.ff_row - 1] = (
-                    line[:P_2_START] + "{:10.4f}".format(param.value) + line[P_2_END:]
+                    line[:P_2_START] + f"{param.value:10.4f}" + line[P_2_END:]
                 )
             elif param.ff_col == 3:
                 lines[param.ff_row - 1] = (
-                    line[:P_3_START] + "{:10.4f}".format(param.value) + line[P_3_END:]
+                    line[:P_3_START] + f"{param.value:10.4f}" + line[P_3_END:]
                 )
         with open(path, "w") as f:
             f.writelines(lines)
-        logger.log(10, "WROTE: {}".format(path))
+        logger.log(10, f"WROTE: {path}")
 
     def get_DOFs_by_ff_row(self, structs:List[Structure]) -> dict:
         dof_by_param = dict()
@@ -3671,7 +3617,7 @@ class MM3(FF):
             for dihed in struct.torsions:
                 dof_by_param[dihed.ff_row].append(dihed)
         return dof_by_param
-    
+
     def get_DOFs_by_param(self, structs:List[Structure]) -> dict:
         return self.get_DOFs_by_ff_row(structs)
 
@@ -3691,37 +3637,37 @@ def match_mm3_label(mm3_label):
     The label is the 1st 2 characters in the line containing the parameter
     in a Schrodinger mm3.fld file.
     """
-    return re.match("[\s5a-z][1-5]", mm3_label)
+    return re.match(r"[\s5a-z][1-5]", mm3_label)
 
 
 def match_mm3_vdw(mm3_label):
     """Matches MM3* label for bonds."""
-    return re.match("[\sa-z]6", mm3_label)
+    return re.match(r"[\sa-z]6", mm3_label)
 
 
 def match_mm3_bond(mm3_label):
     """Matches MM3* label for bonds."""
-    return re.match("[\sa-z]1", mm3_label)
+    return re.match(r"[\sa-z]1", mm3_label)
 
 
 def match_mm3_angle(mm3_label):
     """Matches MM3* label for angles."""
-    return re.match("[\sa-z]2", mm3_label)
+    return re.match(r"[\sa-z]2", mm3_label)
 
 
 def match_mm3_stretch_bend(mm3_label):
     """Matches MM3* label for stretch-bends."""
-    return re.match("[\sa-z]3", mm3_label)
+    return re.match(r"[\sa-z]3", mm3_label)
 
 
 def match_mm3_torsion(mm3_label):
     """Matches MM3* label for all orders of torsional parameters."""
-    return re.match("[\sa-z]4|54", mm3_label)
+    return re.match(r"[\sa-z]4|54", mm3_label)
 
 
 def match_mm3_lower_torsion(mm3_label):
     """Matches MM3* label for torsions (1st through 3rd order)."""
-    return re.match("[\sa-z]4", mm3_label)
+    return re.match(r"[\sa-z]4", mm3_label)
 
 
 def match_mm3_higher_torsion(mm3_label):
@@ -3731,7 +3677,7 @@ def match_mm3_higher_torsion(mm3_label):
 
 def match_mm3_improper(mm3_label):
     """Matches MM3* label for improper torsions."""
-    return re.match("[\sa-z]5", mm3_label)
+    return re.match(r"[\sa-z]5", mm3_label)
 
 
 def mass_weight_hessian(hess, atoms, reverse=False):
@@ -3808,14 +3754,14 @@ class MacroModel(File):
     Extracts data from MacroModel .mmo files.
     """
     def __init__(self, path):
-        super(MacroModel, self).__init__(path)
+        super().__init__(path)
         self._structures = None
     @property
     def structures(self): #TODO make this read atoms for consistency and bc need num atoms for hessian read
         if self._structures is None or self._structures == []:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
@@ -3903,8 +3849,7 @@ class MacroModel(File):
                         if torsion is not None:
                             #current_structure.torsions.append(torsion)
                             torsions.append(torsion)
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s).')
         return self._structures
     def read_line_for_bond(self, line):
         match = co.RE_BOND.match(line)
@@ -3950,7 +3895,7 @@ class MacroModel(File):
                            ff_row=ff_row)
         else:
             return None
-        
+
 
 # This could use some documentation. Looks pretty though.
 def geo_from_points(*args):
@@ -3996,20 +3941,20 @@ class MacroModelLog(File):
     Used to retrieve data from MacroModel log files. Hessian is Mass weighted.
     """
     def __init__(self, path):
-        super(MacroModelLog, self).__init__(path)
+        super().__init__(path)
         self._hessian = None
         self._structures = None
     @property
     def hessian(self):
         if self._hessian is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
-            with open(self.path, 'r') as f:
+            logger.log(10, f'READING: {self.filename}')
+            with open(self.path) as f:
                 lines = f.read()
-            num_atoms = int(re.search('Read\s+(\d+)\s+atoms.', lines).group(1))
-            logger.log(5, '  -- Read {} atoms.'.format(num_atoms))
+            num_atoms = int(re.search(r'Read\s+(\d+)\s+atoms.', lines).group(1))
+            logger.log(5, f'  -- Read {num_atoms} atoms.')
 
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
-            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
+            logger.log(5, f'  -- Creating {hessian.shape} Hessian matrix.')
             words = lines.split()
             section_hessian = False
             start_row = False
@@ -4057,15 +4002,15 @@ class MacroModelLog(File):
                     elements.append(float(word))
                     continue
             self._hessian = hessian
-            logger.log(5, '  -- Creating {} Hessian matrix.'.format(hessian.shape))
+            logger.log(5, f'  -- Creating {hessian.shape} Hessian matrix.')
         return self._hessian
 
     @property
     def structures(self):
         if self._structures is None:
-            logger.log(10, 'READING: {}'.format(self.filename))
+            logger.log(10, f'READING: {self.filename}')
             self._structures = []
-            with open(self.path, 'r') as f:
+            with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
@@ -4082,10 +4027,10 @@ class MacroModelLog(File):
                         section = section + 'ready'
                     elif ':::' in line and 'ready' in section:
                         section = None
-                    elif section is 'atom ready':
+                    elif section == 'atom ready':
                         #read in atoms to list
                         continue
-                    elif section is 'bond ready':
+                    elif section == 'bond ready':
                         #read in bond atom numbers, populate later with atoms
                         continue
                     else:
@@ -4156,6 +4101,5 @@ class MacroModelLog(File):
                         if torsions:
                             torsions.sort(key = lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
                             current_structure.torsions.extend(torsions)
-            logger.log(5, '  -- Imported {} structure(s).'.format(
-                    len(self._structures)))
+            logger.log(5, f'  -- Imported {len(self._structures)} structure(s).')
         return self._structures

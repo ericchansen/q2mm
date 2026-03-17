@@ -1,6 +1,6 @@
 import schrodinger.structure as struct
 import schrodinger.structutils.analyze as ana
-import constants as co
+from q2mm import constants as co
 
 def interation234(filename):
     """

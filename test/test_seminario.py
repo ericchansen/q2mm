@@ -1,16 +1,15 @@
-from __future__ import print_function
 import copy
 import logging
 import logging.config
 import os
 import unittest
 import numpy as np
-import linear_algebra
+from q2mm import linear_algebra
 
-from schrod_indep_filetypes import MM3, MacroModelLog, GaussLog, Mol2, mass_weight_hessian
-from seminario import seminario
-import constants as co
-import utilities
+from q2mm.schrod_indep_filetypes import MM3, MacroModelLog, GaussLog, Mol2, mass_weight_hessian
+from q2mm.seminario import seminario
+from q2mm import constants as co
+from q2mm import utilities
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +27,7 @@ class TestEthane(unittest.TestCase):
     mol2_path = "test/ethane/ethane.mol2"
 
     def run_seminario(self):
-        
+
         ethane_ff = seminario(self.ethane_og_fld, self.structs, self.hessians, zero_out=True, hessian_units=co.KJMOLA)
         ethane_ff.export_ff(self.seminario_fld_path, ethane_ff.params)
 
@@ -109,4 +108,4 @@ class TestEthane(unittest.TestCase):
         eigenmatrix_stddev = np.std(eig_tril_diff)
 
         # TODO write tests to check that mm off-diags << mm diag corresponding
-        # mm diags close-ish to 
+        # mm diags close-ish to
