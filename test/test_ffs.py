@@ -11,7 +11,7 @@ from q2mm import datatypes
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FF_PATH = REPO_ROOT / "rh-seminario" / "mm3.fld"
+FF_PATH = REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
 
 
 class TestMM3Import(unittest.TestCase):

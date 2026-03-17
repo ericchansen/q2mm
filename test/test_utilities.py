@@ -12,7 +12,7 @@ except ImportError:
 from q2mm import utilities
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ETHANE_MOL2 = REPO_ROOT / "q2mm_example" / "amber" / "Ethane" / "GS.mol2"
+ETHANE_MOL2 = REPO_ROOT / "examples" / "ethane" / "GS.mol2"
 
 
 class MakeInput:
@@ -52,7 +52,7 @@ class TestAtomTypeConversion(unittest.TestCase):
 @unittest.skipUnless(HAS_PARMED, "parmed not installed")
 @unittest.skipUnless(
     Path(__file__).resolve().parent.parent.joinpath(
-        "q2mm_example", "amber", "Ethane", "GS.mol2"
+        "examples", "ethane", "GS.mol2"
     ).exists(),
     "Ethane fixture not found",
 )
