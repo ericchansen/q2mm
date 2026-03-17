@@ -6,7 +6,7 @@ import os
 from schrodinger import structure as sch_struct
 from schrodinger.structutils import analyze, measure, rmsd
 
-class GaussCom():
+class GaussCom:
     def __init__(self, filename, atom_list, calculation_type, charge,
         frozen_atoms=None, memory=8, procs=8, chk=None, frequency='',
         method='m06', basis='6-31+g*', ECP=False, opt='', mae_struct=None):
@@ -27,21 +27,21 @@ class GaussCom():
 
     def write_com(self,directory='./'):
         """
-        This is the heart of the code where all of the options are used to 
+        This is the heart of the code where all of the options are used to
         write the Gaussian command file.
         """
         with open(directory + self.filename + '.com', 'w') as f:
             if self.chk:
-                f.write('%chk={}\n'.format(self.chk))
-            f.write('%mem={}GB\n'.format(self.memory))
-            f.write('%nprocshared={}\n'.format(self.procs))
+                f.write(f'%chk={self.chk}\n')
+            f.write(f'%mem={self.memory}GB\n')
+            f.write(f'%nprocshared={self.procs}\n')
             # I'm not sure why but I guess I have to conver the textwrap to a
             # string inorder to write it.
             #f.write(str(textwrap.wrap(' '.join(['#',
             # I want to be able to wrap text, but I can't quite figure how to
             # write the wrapped text to a file
             self.determine_method()
-            # If we are using an ECP then we can't include the basis in the 
+            # If we are using an ECP then we can't include the basis in the
             # route section, and we have to use 'genecp'.
             if self.ECP:
                 route_section = ['#','empiricaldispersion=gd3','int=ultrafine',
@@ -58,15 +58,15 @@ class GaussCom():
             route_section.append('\n\n')
             f.write(' '.join(route_section))
             f.write('SOME SORT OF STRING\n\n')
-            f.write('{} 1 \n'.format(self.charge))
+            f.write(f'{self.charge} 1 \n')
             # I'm not sure if maestro files give coordinates to 10 decimals, but
             # I have included it here because this class should be independent
             # of the source of the structure.
             for i,atom in enumerate(self.atom_list):
-                f.write('   '.join((' {:2}'.format(atom[0]),
-                                    '{:14.10f}'.format(atom[1]),
-                                    '{:14.10f}'.format(atom[2]),
-                                    '{:14.10f}'.format(atom[3]),
+                f.write('   '.join((f' {atom[0]:2}',
+                                    f'{atom[1]:14.10f}',
+                                    f'{atom[2]:14.10f}',
+                                    f'{atom[3]:14.10f}',
                                     '\n'
                                     )))
             f.write('\n')
@@ -88,16 +88,16 @@ class GaussCom():
                 f.write('****\n\n')
                 f.write(' '.join(self.ECP[1:])+' 0\n')
                 f.write(self.ECP[0] + '\n\n')
-                 
+
             # If we have frozen coordinates then we probably only have them to
             # keep the geometery close to our starting structure. We then want
             # to do a second optimization but now without any forzen coords.
             if self.frozen_atoms:
                 f.write('--link1-- \n')
                 if self.chk:
-                    f.write('%chk={}\n'.format(self.chk))
-                f.write('%mem={}GB\n'.format(self.memory))
-                f.write('%nprocshared={}\n'.format(self.procs))
+                    f.write(f'%chk={self.chk}\n')
+                f.write(f'%mem={self.memory}GB\n')
+                f.write(f'%nprocshared={self.procs}\n')
                 route_section = ['#','geom=allcheck','empiricaldispersion=gd3',
                                  'int=ultrafine','chkbasis',self.method]
                 if self.frequency:
@@ -115,14 +115,14 @@ class GaussCom():
        #             route_section.append(self.opt[:-1] + ',nofreeze)')
                 route_section.append('\n\n\n')
                 f.write(' '.join(route_section))
-    
+
     def get_nonECP_atoms(self):
         """
         The user should just have to specify what elements should be used for
         the ECP, and then this function will determine the rest of the elements
         for the other basis.
         """
-        # Not sure if there is an instance where we want all of the atoms so 
+        # Not sure if there is an instance where we want all of the atoms so
         # I'm including it anyway if it is needed.
         atoms = []
         nonECPatoms =[]
@@ -137,19 +137,19 @@ class GaussCom():
         """
         Simple way to determine the type of calculation (SP, TS, GS, etc.)
         """
-        # It might be better to collect all self.opt arguments as a list and 
+        # It might be better to collect all self.opt arguments as a list and
         # then join() them to have the command file look prettier.
         if self.frozen_atoms:
             self.opt += ' geom=modredundant'
         if self.calculation_type == 'FZTS':
             self.opt += ' opt=(calcfc,maxcycle=500)'
         if self.calculation_type == 'TS':
-            # Do I need this part? Will self.frequency ever be a value other 
+            # Do I need this part? Will self.frequency ever be a value other
             # than None or freq=noraman?
             if not self.frequency:
                 self.frequency = 'freq=noraman'
             # The 50 cycles can probably be an option that is allowed to change,
-            # but it seems fine for now.  
+            # but it seems fine for now.
             self.opt += ' opt=(calcfc,ts,noeigentest,maxcycle=50)'
         if self.calculation_type == 'GS':
             self.opt += ' opt=(calcfc,maxcycle=50)'
@@ -158,14 +158,14 @@ class GaussCom():
         """
         Converts the argparse argument from the command line to a dictionary
         for get_frozen_coords().
-        
+
         Arguments
         ---------
         patterns : the string that is from the command line. This should be a
-                   nonspace string where each coordinate that is intended to 
+                   nonspace string where each coordinate that is intended to
                    be forzen is sperated by ';' and the key and value are split
                    by ','.
-        
+
         Returns
         -------
         patterns_and_type : a dictionary with pattern as the key and coordinate
@@ -177,26 +177,26 @@ class GaussCom():
             key_value = pattern.split(',')
             patterns_and_type[key_value[0]] = key_value[1]
         return patterns_and_type
-            
+
     def get_frozen_coords(self, dict_of_patterns, from_command_line=False):
         """
         I'm still unsure if I want this within the class or outside. Either way
-        This sets up the lines for frozen coordinates that will be written in 
+        This sets up the lines for frozen coordinates that will be written in
         the command file.
 
         Arguments
         ---------
         dict_of_patterns: dictionary of patterns to match with schrodingers
                           psuedo SMILES language. {key=SMILE like pattern:
-                          value=coordinate type such as bond or angle}        
+                          value=coordinate type such as bond or angle}
 
         Returns
         -------
-        frozen_coord_lines: A list of strings that will each be written on a 
+        frozen_coord_lines: A list of strings that will each be written on a
                             seperate line of the Gaussian Command file.
         """
         frozen_coord_lines = []
-        # This is the part I am not sure if I should include in the class 
+        # This is the part I am not sure if I should include in the class
         # instance or have it within main() since it has more to do with the
         # command line.
         if from_command_line:
@@ -222,10 +222,10 @@ def get_sch_structs(filename, first_struct_only=True):
     filename : Maestro file. Supports both *mae and *maegz.
     first_struct_only : Gather only the first sturcture (True) or gather them
                         all (False). This should only be True when the user
-                        knows the the first structure is the one they want. 
+                        knows the the first structure is the one they want.
                         This is important, because sometimes the lowest energy
                         structure is not the first structure.
-    
+
     Returns
     -------
     structers : A LIST of structure class instances from maestro.
@@ -258,7 +258,7 @@ def get_atoms_from_schrodinger_struct(structures_list):
     Returns
     -------
     structures_list : returns a dictionary with the following key:value combo:
-            {Key=Structure class instance: Value=[charge,atom listings, energy]}    
+            {Key=Structure class instance: Value=[charge,atom listings, energy]}
     """
     structures = {}
     for struct in structures_list:
@@ -275,7 +275,7 @@ def get_atoms_from_schrodinger_struct(structures_list):
             energy = struct.property['r_mmod_Potential_Energy-MM3*']
             structures[struct] = [struct.formal_charge, atom_list, energy]
         else:
-            structures[struct] = [struct.formal_charge, atom_list]        
+            structures[struct] = [struct.formal_charge, atom_list]
     structures_list = structures
     return structures_list
 
@@ -283,7 +283,7 @@ def get_atoms_from_schrodinger_struct(structures_list):
 def main(args):
     """
     Uses the command line arguments to create a GaussCom instance in order to
-    write the intended command file. 
+    write the intended command file.
     """
     parser = return_parser()
     opts = parser.parse_args(args)
@@ -294,14 +294,14 @@ def main(args):
      #   raise Exception('Indicate a correction calculation type from: \
      #                   TS, GS, FZTS.')
     if opts.calculationtype == 'FZTS' and not opts.frozenatoms:
-        raise Exception('The FZTS argument can only be used when frozen atoms' + 
+        raise Exception('The FZTS argument can only be used when frozen atoms' +
                          ' are indicated.')
     for filename in opts.filename:
         structures = get_sch_structs(filename,first_struct_only=opts.allstructs)
         structures = get_atoms_from_schrodinger_struct(structures)
 
         for i,structure in enumerate(structures):
-            print(' WRITING COM FILE FOR STRUCTURE {}'.format(i+1))
+            print(f' WRITING COM FILE FOR STRUCTURE {i+1}')
             if len(structures) == 1:
                 gaussian_file = GaussCom(filename=os.path.splitext(filename)[0],
                                 atom_list=structures[structure][1],
@@ -310,7 +310,7 @@ def main(args):
                                 mae_struct=structure)
             else:
                 file_iterator_name = os.path.splitext(filename)[0] + \
-                    '_{0:03d}'.format(i+1)
+                    f'_{i+1:03d}'
                 gaussian_file = GaussCom(filename=file_iterator_name,
                                 atom_list=structures[structure][1],
                                 calculation_type=opts.calculationtype,
@@ -334,9 +334,9 @@ def main(args):
                                                     opts.frozenatoms,
                                                     from_command_line=True)
             if opts.basisset:
-                # I am unsure about the different scenarios that will be 
+                # I am unsure about the different scenarios that will be
                 # encountered when it comes to basis sets and ECPs. So this
-                # is written to work with what we have done in the past 
+                # is written to work with what we have done in the past
                 # with Q2MM.
                 sets = opts.basisset.split('/')
                 if len(sets) > 1:
@@ -349,8 +349,8 @@ def main(args):
             if opts.directory:
                 gaussian_file.write_com(directory=opts.directory)
             else:
-                gaussian_file.write_com()                        
-                                
+                gaussian_file.write_com()
+
 
 def return_parser():
     parser = argparse.ArgumentParser(description="Automatically make a \
@@ -378,7 +378,7 @@ def return_parser():
             set. If an ECP is needed seperate basis sets with "/" and include \
             elements that are wanted for ECP with a ",". Example. \
              -bs "6-31+g*/LANL2DZ,Pd,Fe". The ECP basis should always be last. \
-            The default is 6-31+g* without any basis.')  
+            The default is 6-31+g* without any basis.')
     parser.add_argument('-mf', '--methodfunction', type=str, help='Include the\
             QM method you would like to use. The default will be M06.')
     parser.add_argument('-freq', '--frequency', action='store_true', help='If\

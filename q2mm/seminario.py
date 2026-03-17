@@ -818,7 +818,7 @@ def main(args):
     if isinstance(args, str):
         args = args.split()
     parser = return_params_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     assert (
         args.ff_in

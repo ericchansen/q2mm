@@ -5,9 +5,9 @@ import os
 import re
 import sys
 
-RE_INPUT = ('\s+Search initialized with\s+(?P<num>\d+)\s+structures from the '
+RE_INPUT = (r'\s+Search initialized with\s+(?P<num>\d+)\s+structures from the '
             'input structure file')
-RE_TOTAL = ('\s+Total number of structures processed =\s+(?P<num>\d+)')
+RE_TOTAL = (r'\s+Total number of structures processed =\s+(?P<num>\d+)')
 
 def count_steps(direc):
     filenames = glob.glob(os.path.join(
@@ -17,7 +17,7 @@ def count_steps(direc):
     lmcs_steps = 0
     lmc2_steps = 0
     for filename in filenames:
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             search_type = None
             num_input = None
             num_total = None
@@ -41,7 +41,7 @@ def count_steps(direc):
                 if search_type and num_input and num_total:
                     break
             if search_type is None:
-                print('Skipping {}.'.format(filename))
+                print(f'Skipping {filename}.')
                 continue
             steps = num_total - num_input + 1
             if search_type == 'MCMM':
@@ -53,8 +53,7 @@ def count_steps(direc):
     return mcmm_steps, lmcs_steps, lmc2_steps
 
 def print_how_to(direc, mcmm_steps, lmcs_steps, lmc2_steps):
-    print('{:15.15s} MCMM: {:10d} LMCS: {:10d} LMC2: {:10d}'.format(
-            direc, mcmm_steps, lmcs_steps, lmc2_steps))
+    print(f'{direc:15.15s} MCMM: {mcmm_steps:10d} LMCS: {lmcs_steps:10d} LMC2: {lmc2_steps:10d}')
 
 def main(args):
     parser = argparse.ArgumentParser(

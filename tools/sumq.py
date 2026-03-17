@@ -12,7 +12,6 @@ Supported filetypes:
 For now the options --max_structures and --max_energy only apply to MacroModel
 .log files.
 """
-from __future__ import print_function
 import argparse
 import os
 import re
@@ -23,15 +22,15 @@ from math import exp, log
 
 K = 0.008314459848 # kJ K^-1 mol^-1
 ENERGY_LABEL = 'r_mmod_Potential_Energy-MM3*'
-RE_ENERGY = ('(\s|\*)Conformation\s+\d+\s\(\s+(?P<energy>[\d\.\-]+)\s+kJ/mol\) '
-             'was found\s+(?P<num>[\d]+)')
+RE_ENERGY = (r'(\s|\*)Conformation\s+\d+\s\(\s+(?P<energy>[\d\.\-]+)\s+kJ/mol\) '
+             r'was found\s+(?P<num>[\d]+)')
 HARTREE_TO_KJMOL = 2625.5 # Hartree to kJ/mol
 
 def read_energy_from_macro_log(filename,
                                max_structures=None,
                                max_energy=None):
     energies = []
-    with open(filename, 'r') as f:
+    with open(filename) as f:
         energy_section = False
         for line in f:
             if '*** MC Statistics ***' in line:
@@ -41,7 +40,7 @@ def read_energy_from_macro_log(filename,
                 energy_section = True
             if energy_section:
                 matched = re.match(RE_ENERGY, line)
-                if matched != None:
+                if matched is not None:
                     energy = float(matched.group('energy'))
                     num = int(matched.group('num'))
                     if max_energy and len(energies) > 0:
@@ -198,7 +197,7 @@ def sumq(groups,
     stuff = []
     for i, q in enumerate(qs):
         ratio = q / total_q
-        print('Group {}: {}'.format(i + 1, ratio))
+        print(f'Group {i + 1}: {ratio}')
         stuff.append(ratio)
 
     # Additional output for when there are only 2 isomers.
@@ -209,27 +208,19 @@ def sumq(groups,
         # Changing sign temporarily.
         de = - (dr12 - 1) / (dr12 + 1) * 100
         dde = K * temperature * log(qs[0]/qs[1])
-        print('% dr/er (Group 1 : Group 2): {}'.format(dr12))
-        print('% dr/er (Group 2 : Group 1): {}'.format(dr21))
-        print('% de/ee: {}'.format(de))
-        print('ddE (kJ/mol): {}'.format(abs(dde)))
+        print(f'% dr/er (Group 1 : Group 2): {dr12}')
+        print(f'% dr/er (Group 2 : Group 1): {dr21}')
+        print(f'% de/ee: {de}')
+        print(f'ddE (kJ/mol): {abs(dde)}')
 
         if appendfile:
             with open(appendfile, 'a') as f:
                 names1 = ' '.join(groups[0])
                 names2 = ' '.join(groups[1])
-                f.write('{},{},{},{},{},{},{},{}\n'.format(
-                    names1,
-                    names2,
-                    e1,
-                    e2,
-                    dr12,
-                    dr21,
-                    de,
-                    dde))
+                f.write(f'{names1},{names2},{e1},{e2},{dr12},{dr21},{de},{dde}\n')
 
     print('-' * len(border))
-    print('This should equal 1: {}'.format(sum(stuff)))
+    print(f'This should equal 1: {sum(stuff)}')
 
 def main(args):
     parser = return_parser()

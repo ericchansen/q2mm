@@ -45,8 +45,8 @@ def queue(opts):
 
 def processors(opts):
     ## Sets the number of processors to request from the CRC. Default is to use
-    ## 8 processors. When there is no argument to follow ("-pe") then this 
-    ## section is removed to allow for only one processor. An additional 
+    ## 8 processors. When there is no argument to follow ("-pe") then this
+    ## section is removed to allow for only one processor. An additional
     ## argument will just write that argument, e.g. "-pe -pe smp 16" would add
     ## #$ -pe smp 16 to the submission script.
     if opts.processors == 'default':
@@ -79,9 +79,9 @@ def main(args):
     for filename in opts.filename:
         run_file = os.path.splitext(filename)[0]
         CRC_qsub(run_file,USER,QUEUE,CPU,COMMAND)
-        sp.call('qsub {}.sh'.format(run_file), shell=True)
-#        print('This is where you would run the following command')    
-#        print('>>>>> qsub {}.sh'.format(run_file))    
+        sp.call(f'qsub {run_file}.sh', shell=True)
+#        print('This is where you would run the following command')
+#        print('>>>>> qsub {}.sh'.format(run_file))
 
 def return_parser():
     parser = argparse.ArgumentParser(
@@ -102,7 +102,7 @@ def return_parser():
         '-u','--username', type=str, help='Notre Dame CRC user name. Probably \
             a NetID.')
     return parser
-        
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])

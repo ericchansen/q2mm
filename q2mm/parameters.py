@@ -281,7 +281,7 @@ def main(args):
         # from the MacroModel .mmo file. Currently only takes into
         # account bonds and angles.
         if opts.check:
-            all_rows = bond_dic.keys() + angle_dic.keys() + torsion_dic.keys()
+            all_rows = set(bond_dic.keys()) | set(angle_dic.keys()) | set(torsion_dic.keys())
             for param in params:
                 if param.ff_row not in all_rows:
                     print(f"{param} doesn't appear to be in use.")

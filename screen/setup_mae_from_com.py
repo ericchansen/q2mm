@@ -45,7 +45,7 @@ def read_com(filename):
     rca4 = [] # Holds RCA4. List of tuples of length 4.
     chig = [] # Holds CHIG. Flat list.
     torc = [] # Holds TORC. List of tuples of length 6.
-    with open(filename, 'r') as f:
+    with open(filename) as f:
         for line in f:
             cols = line.split()
             if cols[0] == 'COMP':
@@ -110,33 +110,27 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
         for one_comp in comp:
             atom = structure.atom[one_comp]
             atom.property['b_cs_comp'] = 1
-            print(' *        {:>4}/{:2}'.format(
-                atom.index, atom.atom_type_name))
+            print(f' *        {atom.index:>4}/{atom.atom_type_name:2}')
 
         # Copy over which atoms should go with CHIG.
         print('SETUP CHIG:')
         for one_chig in chig:
             atom = structure.atom[one_chig]
             atom.property['b_cs_chig'] = 1
-            print(' *        {:>4}/{:2}'.format(
-                atom.index, atom.atom_type_name))
+            print(f' *        {atom.index:>4}/{atom.atom_type_name:2}')
 
         # Set all remaining b_cs_comp and b_cs_chig to 0.
         for atom in structure.atom:
-            if not atom.index in comp:
+            if atom.index not in comp:
                 atom.property['b_cs_comp'] = 0
-            if not atom.index in chig:
+            if atom.index not in chig:
                 atom.property['b_cs_chig'] = 0
 
         print('SETUP TORS:')
         for one_tors in tors:
             bond = structure.getBond(one_tors[0], one_tors[1])
             bond.property['b_cs_tors'] = 1
-            print(' *        {:>4}/{:2} {:>4}/{:2}'.format(
-                      bond.atom1.index,
-                      bond.atom1.atom_type_name,
-                      bond.atom2.index,
-                      bond.atom2.atom_type_name))
+            print(f' *        {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2}')
 
         # Add RCA4 properties.
         print('SETUP RCA4:')
@@ -186,27 +180,27 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
                     bond.property['i_cs_torc_b4']))
         # Set i_cs_rca4_1, i_cs_rca4_2 and b_cs_tors to 0 for all other bonds.
         for bond in structure.bond:
-            if not 'i_cs_rca4_1' in bond.property:
+            if 'i_cs_rca4_1' not in bond.property:
                 bond.property['i_cs_rca4_1'] = 0
-            if not 'i_cs_rca4_2' in bond.property:
+            if 'i_cs_rca4_2' not in bond.property:
                 bond.property['i_cs_rca4_2'] = 0
-            if not 'b_cs_tors' in bond.property:
+            if 'b_cs_tors' not in bond.property:
                 bond.property['b_cs_tors'] = 0
-            if not 'i_cs_torc_a1' in bond.property:
+            if 'i_cs_torc_a1' not in bond.property:
                 bond.property['i_cs_torc_a1'] = 0
-            if not 'i_cs_torc_a4' in bond.property:
+            if 'i_cs_torc_a4' not in bond.property:
                 bond.property['i_cs_torc_a4'] = 0
-            if not 'r_cs_torc_a5' in bond.property:
+            if 'r_cs_torc_a5' not in bond.property:
                 bond.property['r_cs_torc_a5'] = 0
-            if not 'r_cs_torc_a6' in bond.property:
+            if 'r_cs_torc_a6' not in bond.property:
                 bond.property['r_cs_torc_a6'] = 0
-            if not 'i_cs_torc_b1' in bond.property:
+            if 'i_cs_torc_b1' not in bond.property:
                 bond.property['i_cs_torc_b1'] = 0
-            if not 'i_cs_torc_b4' in bond.property:
+            if 'i_cs_torc_b4' not in bond.property:
                 bond.property['i_cs_torc_b4'] = 0
-            if not 'r_cs_torc_b5' in bond.property:
+            if 'r_cs_torc_b5' not in bond.property:
                 bond.property['r_cs_torc_b5'] = 0
-            if not 'r_cs_torc_b6' in bond.property:
+            if 'r_cs_torc_b6' not in bond.property:
                 bond.property['r_cs_torc_b6'] = 0
         structure_writer.append(structure)
 
@@ -214,7 +208,7 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
     structure_reader.close()
 
     os.rename('TEMP.mae', output)
-    print('WROTE: {}'.format(output))
+    print(f'WROTE: {output}')
 
 def return_parser():
     """
@@ -241,12 +235,12 @@ def main(com, mae, out=None):
     if not out:
         out = mae
     comp, tors, rca4, chig, torc = read_com(com)
-    print('READ: {}'.format(com))
-    print(' * COMP: {}'.format(comp))
-    print(' * TORS: {}'.format(tors))
-    print(' * RCA4: {}'.format(rca4))
-    print(' * CHIG: {}'.format(chig))
-    print(' * TORC: {}'.format(torc))
+    print(f'READ: {com}')
+    print(f' * COMP: {comp}')
+    print(f' * TORS: {tors}')
+    print(f' * RCA4: {rca4}')
+    print(f' * CHIG: {chig}')
+    print(f' * TORC: {torc}')
     add_to_mae(mae, out, comp, tors, rca4, chig, torc)
 
 if __name__ == '__main__':

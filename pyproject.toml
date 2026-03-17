@@ -49,6 +49,7 @@ ignore = [
     "E722",   # bare except (used for optional Schrödinger import)
     "E741",   # ambiguous variable name (common in scientific code)
     "F401",   # unused imports (many are re-exports or conditional)
+    "F402",   # import shadowed by loop variable
     "F403",   # import star
     "F405",   # undefined from import star
     "F811",   # redefined while unused

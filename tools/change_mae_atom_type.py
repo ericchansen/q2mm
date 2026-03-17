@@ -12,8 +12,7 @@ INPUT_FILE = "yourmae1.mae"
 OUTPUT_FILE = "yourmae2.mae"
 
 if INPUT_FILE == OUTPUT_FILE:
-    print('Warning: INPUT_FILE ({}) == OUTPUT_FILE ({}).'.format(
-            INPUT_FILE, OUTPUT_FILE))
+    print(f'Warning: INPUT_FILE ({INPUT_FILE}) == OUTPUT_FILE ({OUTPUT_FILE}).')
     print('Using a file called TEMP.mae in current dir.')
 
 reader = structure.StructureReader(INPUT_FILE)
