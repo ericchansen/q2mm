@@ -1,0 +1,29 @@
+
+     ######################################################################
+   ##########################################################################
+  ###                                                                      ###
+ ###            Tinker  ---  Software Tools for Molecular Design            ###
+ ##                                                                          ##
+ ##                       Version 25.6   December 2025                       ##
+ ##                                                                          ##
+ ##               Copyright (c)  Jay William Ponder  1990-2025               ##
+ ###                           All Rights Reserved                          ###
+  ###                                                                      ###
+   ##########################################################################
+     ######################################################################
+
+
+ Atoms with an Unusual Number of Attached Atoms :
+
+ Type           Atom Name      Atom Type       Expected    Found
+
+ Valence           1-C              1              4         5
+
+ Total Potential Energy :                297.9599 Kcal/mole
+
+ Energy Component Breakdown :           Kcal/mole        Interactions
+
+ Bond Stretching                         124.5982                5
+ Angle Bending                           158.4260               10
+ Stretch-Bend                             12.2843                7
+ Angle-Angle                               2.6514               21

@@ -72,9 +72,7 @@ with open(energy_output, "w") as f:
 
 # Parse total energy
 for line in result.stdout.split("\n"):
-    if "Total Potential Energy" in line:
-        print(f"  {line.strip()}")
-    elif "Bond Stretching" in line or "Angle Bending" in line or "Torsional" in line:
+    if "Total Potential Energy" in line or "Bond Stretching" in line or "Angle Bending" in line or "Torsional" in line:
         print(f"  {line.strip()}")
 
 # Run vibrate for frequencies and Hessian

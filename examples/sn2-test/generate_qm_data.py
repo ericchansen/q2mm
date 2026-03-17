@@ -89,7 +89,7 @@ else:
 # Save energy
 energy_path = os.path.join(OUTPUT_DIR, "sn2-ts-energy.txt")
 with open(energy_path, "w") as f:
-    f.write(f"# SN2 TS energy at B3LYP/6-31G*\n")
+    f.write("# SN2 TS energy at B3LYP/6-31G*\n")
     f.write(f"{ts_energy:.12f}\n")
 
 # =====================================================================
@@ -122,7 +122,7 @@ np.savetxt(os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs,
            header="CH3F vibrational frequencies (cm^-1)")
 
 with open(os.path.join(OUTPUT_DIR, "ch3f-energy.txt"), "w") as f:
-    f.write(f"# CH3F ground state energy at B3LYP/6-31G*\n")
+    f.write("# CH3F ground state energy at B3LYP/6-31G*\n")
     f.write(f"{ch3f_energy:.12f}\n")
 
 # =====================================================================
@@ -135,7 +135,7 @@ print(f"  TS energy:     {ts_energy:.10f} Ha")
 print(f"  CH3F energy:   {ch3f_energy:.10f} Ha")
 print(f"  Hessian shape: {hessian.shape}")
 print(f"  TS freqs:      {len(freqs)} modes, {n_imaginary} imaginary")
-print(f"\nFiles:")
+print("\nFiles:")
 for f in sorted(os.listdir(OUTPUT_DIR)):
     size = os.path.getsize(os.path.join(OUTPUT_DIR, f))
     print(f"  {f:40s} {size:>10,} bytes")

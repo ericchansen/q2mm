@@ -1,10 +1,8 @@
 """Integration tests for Psi4Engine.
 
 These tests require Psi4 to be installed (conda install psi4 -c conda-forge).
-Skipped automatically if Psi4 is not available.
-
-Note: These tests use pre-computed QM fixtures for fast comparison.
-Only test_energy actually calls Psi4 (quick single-point).
+Tests that only validate saved fixtures (TestPsi4HessianFixture) run without Psi4.
+Tests that call Psi4 directly are skipped if Psi4 is not available.
 """
 import unittest
 from pathlib import Path
@@ -52,7 +50,7 @@ class TestPsi4EnergyCH3F(unittest.TestCase):
         self.assertIsInstance(energy, float)
 
     def test_energy_matches_reference(self):
-        """Energy should match the saved reference within 1e-6 Ha."""
+        """Energy should match the saved reference within 1e-5 Ha."""
         energy = self.engine.energy(self.xyz)
         # Reference from generate_qm_data_v2.py
         ref_energy = -139.751112913417

@@ -108,7 +108,7 @@ print(f"  C-F1: {cf1:.4f} A, C-F2: {cf2:.4f} A, C-H: {ch1:.4f} A")
 # =====================================================================
 # 4. Hessian at TS
 # =====================================================================
-print(f"\n[4/5] Hessian at TS...")
+print("\n[4/5] Hessian at TS...")
 ts_e2, ts_wfn = psi4.frequency(METHOD, molecule=ts_mol, return_wfn=True)
 
 hessian = np.array(ts_wfn.hessian())
@@ -130,7 +130,7 @@ else:
 # =====================================================================
 # 5. Ion-dipole complex (F-...CH3F)
 # =====================================================================
-print(f"\n[5/5] Ion-dipole complex optimization...")
+print("\n[5/5] Ion-dipole complex optimization...")
 # F- approaching CH3F from the backside, ~2.5 A away
 complex_mol = psi4.geometry("""
     -1 1
@@ -165,7 +165,7 @@ with open(os.path.join(OUTPUT_DIR, "summary.txt"), "w") as f:
     f.write(f"C-F (CH3F):      {cf_dist:.4f} A\n\n")
     f.write(f"Barrier (TS - reactants):  {barrier_vs_reactants:.2f} kcal/mol\n")
     f.write(f"Barrier (TS - complex):    {barrier_vs_complex:.2f} kcal/mol\n")
-    f.write(f"  Literature expected:     ~13-15 kcal/mol\n\n")
+    f.write("  Literature expected:     ~13-15 kcal/mol\n\n")
     f.write(f"Imaginary freq:  {freqs[freqs < 0][0]:.1f} cm^-1\n")
     f.write(f"Total freqs:     {len(freqs)} ({n_imag} imaginary)\n")
 

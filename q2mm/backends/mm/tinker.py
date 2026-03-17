@@ -74,6 +74,11 @@ class TinkerEngine(MMEngine):
                     params_file = c
                     break
         self._params_file = params_file
+        if self._params_file is None:
+            raise FileNotFoundError(
+                "MM3 parameter file not found. Provide params_file parameter "
+                "or place mm3.prm alongside the Tinker bin directory."
+            )
 
     @property
     def name(self) -> str:
@@ -162,10 +167,15 @@ class TinkerEngine(MMEngine):
         exe = _exe(self._tinker_dir, exe_name)
         key_path = xyz_path.replace(".xyz", ".key")
         cmd = [exe, xyz_path, "-k", key_path] + (args or [])
-        return subprocess.run(
+        result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=300,
             input=stdin, cwd=os.path.dirname(xyz_path)
         )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}"
+            )
+        return result
 
     def energy(self, structure, forcefield=None) -> float:
         """Calculate MM energy in kcal/mol."""
@@ -189,6 +199,11 @@ class TinkerEngine(MMEngine):
                 if "Final Function Value" in line:
                     energy = float(line.split(":")[1].strip().split()[0])
 
+            if energy is None:
+                raise RuntimeError(
+                    f"Could not parse energy from Tinker minimize output:\n{result.stdout}"
+                )
+
             # Read minimized coordinates from .xyz_2 output
             min_xyz = txyz + "_2"
             if not os.path.exists(min_xyz):
@@ -209,14 +224,12 @@ class TinkerEngine(MMEngine):
     def hessian(self, structure, forcefield=None) -> np.ndarray:
         """Calculate MM Hessian matrix.
 
-        Returns np.ndarray of shape (3*N, 3*N).
-        Note: Tinker outputs the Hessian via the 'testhess' program.
-        For now, we extract frequencies from 'vibrate'.
+        Note: Full Hessian extraction from Tinker requires the testhess program.
+        Use frequencies() for vibrational analysis instead.
         """
-        freqs = self.frequencies(structure, forcefield)
-        # Return frequencies as a proxy — full Hessian extraction
-        # from Tinker requires parsing the .hes file from testhess
-        return np.array(freqs)
+        raise NotImplementedError(
+            "Full Hessian extraction not yet implemented. Use frequencies() instead."
+        )
 
     def frequencies(self, structure, forcefield=None) -> list[float]:
         """Calculate vibrational frequencies in cm^-1."""

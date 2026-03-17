@@ -13,6 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
 
 
+@unittest.skipUnless(
+    (QM_REF / "sn2-ts-hessian.npy").exists(),
+    "SN2 TS fixtures not found"
+)
 class TestHessianAnalysis(unittest.TestCase):
     """Test that we can load and analyze the QM Hessian."""
 
@@ -42,6 +46,10 @@ class TestHessianAnalysis(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(
+    (QM_REF / "sn2-ts-hessian.npy").exists(),
+    "SN2 TS fixtures not found"
+)
 class TestFrequencyFixtures(unittest.TestCase):
     """Validate the saved frequency fixtures."""
 
