@@ -60,7 +60,7 @@ if __name__ == "__main__":
                     except ValueError:
                         pass
                 for prop in ATOM_CS_PROPERTIES:
-                    if not prop in atom.property:
+                    if prop not in atom.property:
                         atom.property[prop] = 0
 
             for bond in structure.bond:
@@ -71,7 +71,7 @@ if __name__ == "__main__":
                         del bond.property[k]
 
                 for prop in BOND_CS_PROPERTIES:
-                    if not prop in bond.property:
+                    if prop not in bond.property:
                         bond.property[prop] = 0
 
             structure_writer.append(structure)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Takes *.mae structure files and generates *.com files for
 conformational searches.
@@ -61,7 +60,6 @@ To enforce a trans bond:
 
 Watch out because MacroModel sometimes assigns these enforcing floats wrong.
 """
-from __future__ import absolute_import
 import argparse
 import sys
 from itertools import zip_longest
@@ -151,8 +149,8 @@ class MyComUtil(mmodutils.ComUtil):
                 except KeyError as e:
                     print('STRUCTURE: {}'.format(
                         structure.property['s_m_title']))
-                    print(' - ATOM: {}'.format(atom))
-                    print('   - MISSING: {} (setting to 0)'.format(prop))
+                    print(f' - ATOM: {atom}')
+                    print(f'   - MISSING: {prop} (setting to 0)')
                     atom.property[prop] = 0
             if atom.property['b_cs_comp']:
                 indices_comp.append(atom.index)
@@ -165,15 +163,13 @@ class MyComUtil(mmodutils.ComUtil):
                 except KeyError as e:
                     print('STRUCTURE: {}'.format(
                         structure.property['s_m_title']))
-                    print(' - BOND: {}'.format(bond))
-                    print('   - MISSING: {} (setting to 0)'.format(prop))
+                    print(f' - BOND: {bond}')
+                    print(f'   - MISSING: {prop} (setting to 0)')
                     bond.property[prop] = 0
             if bond.property['b_cs_tors']:
                 thing = [bond.atom1.index, bond.atom2.index]
                 if set(thing).issubset(frozen_atoms):
-                     print('SKIPPING TORS: {} {}'.format(
-                        bond.atom1.index,
-                        bond.atom2.index))
+                     print(f'SKIPPING TORS: {bond.atom1.index} {bond.atom2.index}')
                 else:
                     indices_tors.append((bond.atom1.index, bond.atom2.index))
             if bond.property['i_cs_rca4_1']:
@@ -235,11 +231,11 @@ class MyComUtil(mmodutils.ComUtil):
                     bond.property['r_cs_torc_b5'],
                     bond.property['r_cs_torc_b6']
                 ))
-        print('COMP: {}'.format(indices_comp))
-        print('CHIG: {}'.format(indices_chig))
-        print('TORS: {}'.format(indices_tors))
-        print('RCA4: {}'.format(indices_rca4))
-        print('TORC: {}'.format(indices_torc))
+        print(f'COMP: {indices_comp}')
+        print(f'CHIG: {indices_chig}')
+        print(f'TORS: {indices_tors}')
+        print(f'RCA4: {indices_rca4}')
+        print(f'TORC: {indices_torc}')
         count_comp = 0
         for count_comp, args in enumerate(grouper(4, indices_comp), 1):
             self.setOpcdArgs(
@@ -288,11 +284,11 @@ class MyComUtil(mmodutils.ComUtil):
                 arg5=args[4],
                 arg6=args[5]
                 )
-        print('NUM. COMP: {}'.format(count_comp))
-        print('NUM. CHIG: {}'.format(count_chig))
-        print('NUM. TORS: {}'.format(count_tors))
-        print('NUM. RCA4: {}'.format(count_rca4))
-        print('NUM. TORC: {}'.format(count_torc))
+        print(f'NUM. COMP: {count_comp}')
+        print(f'NUM. CHIG: {count_chig}')
+        print(f'NUM. TORS: {count_tors}')
+        print(f'NUM. RCA4: {count_rca4}')
+        print(f'NUM. TORC: {count_torc}')
 
         self.DEBG.clear()
         self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
@@ -372,7 +368,7 @@ class MyComUtil(mmodutils.ComUtil):
                 'CONV',
                 'MINI'
                 ])
-        print('WRITING: {}'.format(com_file))
+        print(f'WRITING: {com_file}')
         return self.writeComFile(com_args)
     def my_conf_elim(
         self,
@@ -407,7 +403,7 @@ class MyComUtil(mmodutils.ComUtil):
             'COMP',
             'MINI',
             'END']
-        print('WRITING: {}'.format(com_file))
+        print(f'WRITING: {com_file}')
         return self.writeComFile(com_args)
     def my_mini(
         self,
@@ -419,8 +415,8 @@ class MyComUtil(mmodutils.ComUtil):
         """
         Modified version of the the Schrödinger mini.
         """
-        print('FROZEN ATOMS: {}'.format(frozen_atoms))
-        print('FIXED TORSIONS: {}'.format(fix_torsions))
+        print(f'FROZEN ATOMS: {frozen_atoms}')
+        print(f'FIXED TORSIONS: {fix_torsions}')
         if not frozen_atoms:
             frozen_atoms = []
         if not fix_torsions:
@@ -483,7 +479,7 @@ class MyComUtil(mmodutils.ComUtil):
             'CONV',
             'MINI',
             'END'])
-        print('WRITING: {}'.format(com_file))
+        print(f'WRITING: {com_file}')
         return self.writeComFile(com_args)
 
 def return_parser():

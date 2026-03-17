@@ -10,6 +10,11 @@ from q2mm import compare
 
 logger = logging.getLogger(__name__)
 
+
+@unittest.skipUnless(
+    os.path.isdir('d_rhod'),
+    "Requires Schrödinger MacroModel and d_rhod/ fixture data"
+)
 class TestCompareEthaneHessian(unittest.TestCase):
     """
     Check that the -mb command for the calculate module produces the

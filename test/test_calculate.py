@@ -10,6 +10,16 @@ from q2mm import compare
 
 logger = logging.getLogger(__name__)
 
+# These tests require Schrödinger MacroModel to execute MM calculations.
+# They call calculate.main() which invokes MacroModel via subprocess.
+# Skip when the required fixture data and software aren't available.
+_REQUIRES_MACROMODEL = unittest.skipUnless(
+    os.path.isdir('d_rhod'),
+    "Requires Schrödinger MacroModel and d_rhod/ fixture data"
+)
+
+
+@_REQUIRES_MACROMODEL
 class TestMacroModelBonds(unittest.TestCase):
     """
     Check that the -mb command for the calculate module produces the
@@ -22,6 +32,7 @@ class TestMacroModelBonds(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 8)
 
+@_REQUIRES_MACROMODEL
 class TestMacroModelAngles(unittest.TestCase):
     """
     Check that the -ma command for the calculate module produces the
@@ -34,6 +45,7 @@ class TestMacroModelAngles(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 34)
 
+@_REQUIRES_MACROMODEL
 class TestMacroModelTorsions(unittest.TestCase):
     """
     Check that the -mt command for the calculate module produces the
@@ -46,6 +58,7 @@ class TestMacroModelTorsions(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 90)
 
+@_REQUIRES_MACROMODEL
 class TestMacroModelEnergies(unittest.TestCase):
     """
     Check that the -me command for the calculate module produces the
@@ -59,6 +72,7 @@ class TestMacroModelEnergies(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 4)
 
+@_REQUIRES_MACROMODEL
 class TestMacroModelOptimizedEnergies(unittest.TestCase):
     """
     Check that the -meo command for the calculate module produces the
@@ -73,6 +87,7 @@ class TestMacroModelOptimizedEnergies(unittest.TestCase):
         self.assertEqual(len(rows), 4)
 
 # I need to implement charges again.
+@_REQUIRES_MACROMODEL
 class TestMacroModelCharges(unittest.TestCase):
     """
     Check that the -mq command for the calculate module produces the
@@ -88,6 +103,7 @@ class TestMacroModelCharges(unittest.TestCase):
             print(row)
 
 # Need to add a check on the number of data points generated.
+@_REQUIRES_MACROMODEL
 class TestMacroModelEigenvalues(unittest.TestCase):
     """
     Check that the -meig command for the calculate module produces the
@@ -101,6 +117,7 @@ class TestMacroModelEigenvalues(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         print(len(rows))
 
+@_REQUIRES_MACROMODEL
 class TestJaguarBonds(unittest.TestCase):
     """
     Check that the -jb command for the calculate module produces the
@@ -113,6 +130,7 @@ class TestJaguarBonds(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 8)
 
+@_REQUIRES_MACROMODEL
 class TestJaguarAngles(unittest.TestCase):
     """
     Check that the -ja command for the calculate module produces the
@@ -125,6 +143,7 @@ class TestJaguarAngles(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 34)
 
+@_REQUIRES_MACROMODEL
 class TestJaguarTorsions(unittest.TestCase):
     """
     Check that the -jt command for the calculate module produces the
@@ -137,6 +156,7 @@ class TestJaguarTorsions(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 90)
 
+@_REQUIRES_MACROMODEL
 class TestJaguarEnergies(unittest.TestCase):
     """
     Check that the -je command for the calculate module produces the
@@ -150,6 +170,7 @@ class TestJaguarEnergies(unittest.TestCase):
         rows = list(c.execute('SELECT * FROM data'))
         self.assertEqual(len(rows), 4)
 
+@_REQUIRES_MACROMODEL
 class TestJaguarEnergies(unittest.TestCase):
     """
     Check that the -jeo command for the calculate module produces the
@@ -168,6 +189,7 @@ class TestJaguarEnergies(unittest.TestCase):
         self.assertEqual(len(rows), 4)
 
 # Need to add a check on the number of data points generated.
+@_REQUIRES_MACROMODEL
 class TestJaguarEigenvalues(unittest.TestCase):
     """
     Check that the -jeige command for the calculate module produces the
@@ -180,6 +202,7 @@ class TestJaguarEigenvalues(unittest.TestCase):
         c = self.conn.cursor()
         rows = list(c.execute('SELECT * FROM data'))
 
+@_REQUIRES_MACROMODEL
 class TestCompareBonds(unittest.TestCase):
     """
     Check that these two commands produce a reasonable data set to

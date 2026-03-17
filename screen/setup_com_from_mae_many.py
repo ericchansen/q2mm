@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 See __doc__ for setup_com_from_mae.
 
@@ -65,7 +64,7 @@ def main(opts):
         elif not opts.suffix:
             pass
         else:
-            name += '_{}'.format(opts.jobtype)
+            name += f'_{opts.jobtype}'
         if opts.jobtype == 'cs':
             com_setup.my_mcmm(
                 mae_file=file_input,

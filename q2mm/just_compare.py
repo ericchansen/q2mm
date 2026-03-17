@@ -10,7 +10,8 @@ where :math:`w` is a weight, :math:`x_r` is the reference data point's value,
 and :math:`x_c` is the calculated or force field's value for the data point.
 
 '''
-from ast import List
+from ast import List as _AstList  # noqa: F401 - unused, kept for compat
+from typing import List
 from collections import defaultdict
 import glob
 import sys

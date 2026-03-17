@@ -1,6 +1,20 @@
-import schrodinger.structure as struct
-import schrodinger.structutils.analyze as ana
+try:
+    import schrodinger.structure as struct
+    import schrodinger.structutils.analyze as ana
+except ImportError:
+    struct = None
+    ana = None
+
 from q2mm import constants as co
+
+
+def _require_schrodinger():
+    if struct is None:
+        raise ImportError(
+            "Schrödinger Python API is required for sch_util functions. "
+            "Install Schrödinger Suite or use the schrod_indep modules instead."
+        )
+
 
 def interation234(filename):
     """
@@ -9,6 +23,7 @@ def interation234(filename):
     :param filename: .mae filename
     :return: tuples of pair of atoms with 1-2,1-3,1-4 interaction
     """
+    _require_schrodinger()
     st = next(struct.StructureReader(filename))
     bonds = ana.bond_iterator(st)
     angles = ana.angle_iterator(st)

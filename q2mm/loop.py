@@ -195,7 +195,7 @@ class Loop:
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_lstsq=True
-                            elif not arg:
+                            elif arg == "False":
                                 grad.do_lstsq=False
                             if 'radii' in arg:
                                 grad.lstsq_radii = []
@@ -224,7 +224,7 @@ class Loop:
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_newton=True
-                            elif not arg:
+                            elif arg == "False":
                                 grad.do_newton=False
                             if 'radii' in arg:
                                 grad.newton_radii = []
@@ -253,7 +253,7 @@ class Loop:
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_levenberg=True
-                            elif not arg:
+                            elif arg == "False":
                                 grad.do_levenberg=False
                             if 'radii' in arg:
                                 grad.levenberg_radii = []
@@ -291,7 +291,7 @@ class Loop:
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_lagrange=True
-                            elif not arg:
+                            elif arg == "False":
                                 grad.do_lagrange=False
                             if 'radii' in arg:
                                 grad.lagrange_radii = []
@@ -329,7 +329,7 @@ class Loop:
                         for arg in g_args:
                             if arg == "True":
                                 grad.do_svd=True
-                            elif not arg:
+                            elif arg == "False":
                                 grad.do_svd=False
                             if 'radii' in arg:
                                 grad.svd_radii = []

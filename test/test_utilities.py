@@ -1,14 +1,18 @@
 import os
 import unittest
 import sys
+from pathlib import Path
 
-import parmed
+try:
+    import parmed
+    HAS_PARMED = True
+except ImportError:
+    HAS_PARMED = False
 
-src_dir = os.path.abspath("q2mm")
-sys.path.append(src_dir)
 from q2mm import utilities
 
-ethane_struct = parmed.load_file('../q2mm_example/amber/Ethane/GS.mol2', structure=True)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+ETHANE_MOL2 = REPO_ROOT / "q2mm_example" / "amber" / "Ethane" / "GS.mol2"
 
 
 class MakeInput:
@@ -45,13 +49,18 @@ class TestAtomTypeConversion(unittest.TestCase):
         )
 
 
-# class TestStructureEqual(unittest.TestCase):
-
-#     def test_is_same_bond(self):
-#         self.assertEqual()
-
+@unittest.skipUnless(HAS_PARMED, "parmed not installed")
+@unittest.skipUnless(
+    Path(__file__).resolve().parent.parent.joinpath(
+        "q2mm_example", "amber", "Ethane", "GS.mol2"
+    ).exists(),
+    "Ethane fixture not found",
+)
 class TestIdentifyAngles(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ethane_struct = parmed.load_file(str(ETHANE_MOL2), structure=True)
 
     def test_identify_angles_ethane(self):
-        angles = utilities.identify_angles(ethane_struct.bonds)
+        angles = utilities.identify_angles(self.ethane_struct.bonds)
         self.assertEqual(len(angles), 12)

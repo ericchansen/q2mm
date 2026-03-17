@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 """
 Generates ND CRC job submission files from Schrödinger *.com files.
 
@@ -77,14 +76,14 @@ def main(opts):
                 )
             for filename in opts.filenames:
                 name, ext = os.path.splitext(filename)
-                f.write('bmin -WAIT {}\n'.format(name))
-        print('WROTE: {}'.format(opts.one))
+                f.write(f'bmin -WAIT {name}\n')
+        print(f'WROTE: {opts.one}')
         if opts.execute:
-            print(' - Attempting execution from {} ...'.format(os.getcwd()))
-            sp.call('csh {}'.format(opts.one), shell=True)
+            print(f' - Attempting execution from {os.getcwd()} ...')
+            sp.call(f'csh {opts.one}', shell=True)
         elif opts.submit:
-            print(' - Attempting submission from {} ...'.format(os.getcwd()))
-            sp.call('qsub {}'.format(opts.one), shell=True)
+            print(f' - Attempting submission from {os.getcwd()} ...')
+            sp.call(f'qsub {opts.one}', shell=True)
     else:
         for filename in opts.filenames:
             name, ext = os.path.splitext(filename)
@@ -102,10 +101,10 @@ def main(opts):
                         SCHRODINGER_TEMP
                         )
                     )
-                f.write('bmin -WAIT {}\n'.format(name))
+                f.write(f'bmin -WAIT {name}\n')
             print('WROTE: {}'.format(name + ".sh"))
             if opts.execute:
-                print(' - Attempting execution from {} ...'.format(os.getcwd()))
+                print(f' - Attempting execution from {os.getcwd()} ...')
                 sp.call('csh {}'.format(name + '.sh'), shell=True)
             elif opts.submit:
                 sp.call('qsub {}'.format(name + ".sh"), shell=True)
