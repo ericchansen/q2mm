@@ -4,6 +4,7 @@ Decouples Q2MM's optimization from specific file formats (MM3 .fld,
 Tinker .prm, AMBER .frcmod). Parameters are identified by element
 pairs/triples, not format-specific atom type strings or line numbers.
 """
+
 from __future__ import annotations
 
 import copy
@@ -22,13 +23,14 @@ from q2mm.models.identifiers import (
 @dataclass
 class BondParam:
     """A bond force field parameter."""
-    elements: tuple[str, str]    # Sorted element pair, e.g., ('C', 'F')
-    equilibrium: float           # Angstrom
-    force_constant: float        # mdyn/A (MM3 units)
-    label: str = ""              # Human-readable label
-    env_id: str = ""             # Environment ID for disambiguating same-element params
-                                 # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
-    ff_row: int | None = None    # Source force-field row for exact legacy parity
+
+    elements: tuple[str, str]  # Sorted element pair, e.g., ('C', 'F')
+    equilibrium: float  # Angstrom
+    force_constant: float  # mdyn/A (MM3 units)
+    label: str = ""  # Human-readable label
+    env_id: str = ""  # Environment ID for disambiguating same-element params
+    # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
+    ff_row: int | None = None  # Source force-field row for exact legacy parity
 
     @property
     def key(self) -> tuple[str, str]:
@@ -38,12 +40,13 @@ class BondParam:
 @dataclass
 class AngleParam:
     """An angle force field parameter."""
+
     elements: tuple[str, str, str]  # (outer, center, outer)
-    equilibrium: float              # degrees
-    force_constant: float           # mdyn*A/rad^2
+    equilibrium: float  # degrees
+    force_constant: float  # mdyn*A/rad^2
     label: str = ""
-    env_id: str = ""             # Environment ID for disambiguating same-element params
-    ff_row: int | None = None    # Source force-field row for exact legacy parity
+    env_id: str = ""  # Environment ID for disambiguating same-element params
+    ff_row: int | None = None  # Source force-field row for exact legacy parity
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -55,10 +58,11 @@ class AngleParam:
 @dataclass
 class TorsionParam:
     """A torsion/dihedral force field parameter."""
+
     elements: tuple[str, str, str, str]
     periodicity: int = 1
     force_constant: float = 0.0  # kcal/mol
-    phase: float = 0.0           # degrees
+    phase: float = 0.0  # degrees
     label: str = ""
 
 
@@ -75,6 +79,7 @@ class ForceField:
         ff = ForceField(bonds=[BondParam(('C', 'F'), 1.38, 5.0)])
         # Export to MM3 .fld is planned but not yet implemented.
     """
+
     name: str = "Q2MM Force Field"
     bonds: list[BondParam] = field(default_factory=list)
     angles: list[AngleParam] = field(default_factory=list)
@@ -169,20 +174,22 @@ class ForceField:
 
         for param in parser.params:
             # Extract element letters from atom type (e.g., 'C1' -> 'C', ' F' -> 'F')
-            atom_types = [t.strip() for t in param.atom_types if t.strip() and t.strip() != '-']
+            atom_types = [t.strip() for t in param.atom_types if t.strip() and t.strip() != "-"]
 
             if param.ptype == "bf" and len(atom_types) >= 2:
                 elems = tuple(_extract_element(t) for t in atom_types[:2])
                 env_id = canonicalize_bond_env_id(atom_types[:2])
                 eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
-                bonds.append(BondParam(
-                    elements=elems,
-                    equilibrium=eq_val,
-                    force_constant=param.value,
-                    label=f"MM3 row {param.ff_row}",
-                    env_id=env_id,
-                    ff_row=param.ff_row,
-                ))
+                bonds.append(
+                    BondParam(
+                        elements=elems,
+                        equilibrium=eq_val,
+                        force_constant=param.value,
+                        label=f"MM3 row {param.ff_row}",
+                        env_id=env_id,
+                        ff_row=param.ff_row,
+                    )
+                )
 
             elif param.ptype == "af" and len(atom_types) >= 2:
                 # Angle: extract center and outer elements
@@ -193,14 +200,16 @@ class ForceField:
                     elems = (_extract_element(atom_types[0]), _extract_element(atom_types[1]), "?")
                     env_id = canonicalize_angle_env_id(atom_types[:2])
                 eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
-                angles.append(AngleParam(
-                    elements=elems,
-                    equilibrium=eq_val,
-                    force_constant=param.value,
-                    label=f"MM3 row {param.ff_row}",
-                    env_id=env_id,
-                    ff_row=param.ff_row,
-                ))
+                angles.append(
+                    AngleParam(
+                        elements=elems,
+                        equilibrium=eq_val,
+                        force_constant=param.value,
+                        label=f"MM3 row {param.ff_row}",
+                        env_id=env_id,
+                        ff_row=param.ff_row,
+                    )
+                )
 
         return cls(
             name=f"MM3 from {Path(path).name}",
@@ -209,10 +218,9 @@ class ForceField:
         )
 
     @classmethod
-    def create_for_molecule(cls, molecule: Q2MMMolecule,
-                            default_bond_k: float = 5.0,
-                            default_angle_k: float = 0.5,
-                            name: str = "") -> ForceField:
+    def create_for_molecule(
+        cls, molecule: Q2MMMolecule, default_bond_k: float = 5.0, default_angle_k: float = 0.5, name: str = ""
+    ) -> ForceField:
         """Create a force field with default parameters for a molecule.
 
         Auto-detects unique bond and angle types from the molecule's
@@ -231,12 +239,14 @@ class ForceField:
         bonds = []
         for key, lengths in bond_types.items():
             avg_len = np.mean(lengths)
-            bonds.append(BondParam(
-                elements=key,
-                equilibrium=avg_len,
-                force_constant=default_bond_k,
-                label=f"{key[0]}-{key[1]} (auto)",
-            ))
+            bonds.append(
+                BondParam(
+                    elements=key,
+                    equilibrium=avg_len,
+                    force_constant=default_bond_k,
+                    label=f"{key[0]}-{key[1]} (auto)",
+                )
+            )
 
         # Unique angle types
         angle_types: dict[tuple[str, str, str], list[float]] = {}
@@ -249,12 +259,14 @@ class ForceField:
         angles = []
         for key, values in angle_types.items():
             avg_val = np.mean(values)
-            angles.append(AngleParam(
-                elements=key,
-                equilibrium=avg_val,
-                force_constant=default_angle_k,
-                label=f"{key[0]}-{key[1]}-{key[2]} (auto)",
-            ))
+            angles.append(
+                AngleParam(
+                    elements=key,
+                    equilibrium=avg_val,
+                    force_constant=default_angle_k,
+                    label=f"{key[0]}-{key[1]}-{key[2]} (auto)",
+                )
+            )
 
         return cls(
             name=name or f"Auto FF for {molecule.name}",
@@ -263,6 +275,8 @@ class ForceField:
         )
 
     def __repr__(self) -> str:
-        return (f"ForceField('{self.name}', "
-                f"{len(self.bonds)} bonds, {len(self.angles)} angles, "
-                f"{len(self.torsions)} torsions)")
+        return (
+            f"ForceField('{self.name}', "
+            f"{len(self.bonds)} bonds, {len(self.angles)} angles, "
+            f"{len(self.torsions)} torsions)"
+        )

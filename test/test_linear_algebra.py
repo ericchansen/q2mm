@@ -32,9 +32,7 @@ example_sq3 = np.asarray([[-2, -4, 2], [-4, 1, 2], [2, 2, 5]])
 # which is used by linear_algebra methods (decompose in particular)
 evals_sq3 = np.asarray([-5.51082, 3.659278, 5.851542])
 # Matrix rows must be ordered such that eigenvectors correspond to correct eigenvalues
-evec_sq3 = np.asarray(
-    [[-3.06513, -2.19028, 1], [2.82137, -3.49173, 1], [0.0770902, 0.348681, 1]]
-)
+evec_sq3 = np.asarray([[-3.06513, -2.19028, 1], [2.82137, -3.49173, 1], [0.0770902, 0.348681, 1]])
 evec_normd_sq3 = np.array([evec / np.linalg.norm(evec) for evec in evec_sq3])
 
 
@@ -80,9 +78,7 @@ class TestLinearAlgebra(unittest.TestCase):
     def test_reform_hessian(self):
         evals, evecs = linear_algebra.decompose(example_sq3)
         reformed_sq3 = linear_algebra.reform_hessian(evals, evecs)
-        np.testing.assert_allclose(
-            example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly."
-        )
+        np.testing.assert_allclose(example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly.")
 
     @unittest.skip("Incomplete — requires refactoring (upstream TODO)")
     def test_last(
@@ -106,7 +102,5 @@ class TestLinearAlgebra(unittest.TestCase):
         print("last evec dot hess: " + str(last_evec_hess))
         dotted_again = last_evec_hess.dot(np.transpose(normed))
         print("last evec dot dot: " + str(dotted_again))
-        print(
-            "all close hessian dotted: " + str(np.allclose(log.evals[-1], dotted_again))
-        )
+        print("all close hessian dotted: " + str(np.allclose(log.evals[-1], dotted_again)))
         print("last eigenvalue/force constant: " + str(log.evals[-1]))

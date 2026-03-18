@@ -9,13 +9,12 @@ from multiprocessing import Pool
 
 def bmin_call(file_list):
     for filename in file_list:
-        infile = filename.replace(".com","")
+        infile = filename.replace(".com", "")
         os.system(f"bmin -WAIT {infile};")
     return 0
 
 
-
-def cons_opt(infile,outfile,idx):
+def cons_opt(infile, outfile, idx):
     """
     Only Mol2/UFF can Optimize
     Optimize with Pd1-P-P1 constraints
@@ -24,7 +23,7 @@ def cons_opt(infile,outfile,idx):
     :param idx:
     :return:
     """
-    p1,p2,pd = idx
+    p1, p2, pd = idx
 
     conv = ob.OBConversion()
     conv.SetInAndOutFormats("mol2", "mol2")
@@ -38,8 +37,6 @@ def cons_opt(infile,outfile,idx):
     cons.AddDistanceConstraint(p1, pd, ppd)
     cons.AddDistanceConstraint(p2, pd, ppd)
 
-
-
     # Set up FF
     ff = ob.OBForceField.FindForceField("UFF")
     ff.Setup(mol, cons)
@@ -49,7 +46,6 @@ def cons_opt(infile,outfile,idx):
     # Optimize
     ff.ConjugateGradients(10000)
     ff.GetCoordinates(mol)
-
 
     def ring_bond(ring):
         """
@@ -64,9 +60,10 @@ def cons_opt(infile,outfile,idx):
             at2 = bond.GetEndAtom().GetIndex() + 1
             if ring.IsMember(bond):
                 if not bond.IsAromatic():
-                    bonds.append(sorted([at1,at2]))
+                    bonds.append(sorted([at1, at2]))
         return bonds
-    def common_atom(bond,bonds):
+
+    def common_atom(bond, bonds):
         """
         :param bond: list [atom1,atom2]
         :param bonds: list of list [atom1,atom2]
@@ -97,23 +94,23 @@ def cons_opt(infile,outfile,idx):
     for bond in ob.OBMolBondIter(mol):
         at1 = bond.GetBeginAtom().GetIndex() + 1
         at2 = bond.GetEndAtom().GetIndex() + 1
-#        print(at1, at2)
+        #        print(at1, at2)
         if bond.IsRotor() and not bond.IsAromatic():
-            rot = sorted([at1,at2])
-#            print(outfile,"ROT ",rot)
+            rot = sorted([at1, at2])
+            #            print(outfile,"ROT ",rot)
             rot_bond.append(rot)
         if bond.IsClosure():
-            rca0 = sorted([at1,at2])
-            rca = sorted([at1,at2])
+            rca0 = sorted([at1, at2])
+            rca = sorted([at1, at2])
 
             # The Assumption is IsClosure picking up only one bond in the ring
             # and bond.IsRotor() does not provide any ring bonds.
             # to prevent rca23 sharing common atoms
             if len(rca23) != 0:
-                if common_atom(rca,rca23):
+                if common_atom(rca, rca23):
                     ringbonds = ring_bond(bond.FindSmallestRing())
                     for rbond in ringbonds:
-                        if common_atom(rbond,rca23):
+                        if common_atom(rbond, rca23):
                             continue
                         else:
                             rca0 = rbond.copy()
@@ -128,7 +125,7 @@ def cons_opt(infile,outfile,idx):
                         break
             rca23.append(rca0)
 
-            #print(outfile,"RING OPENING BOND", rca0)
+            # print(outfile,"RING OPENING BOND", rca0)
             ring = bond.FindSmallestRing()
             ring_rots = []
             if not ring.IsAromatic():
@@ -136,23 +133,23 @@ def cons_opt(infile,outfile,idx):
                     if ring.IsMember(bond1):
                         b1 = bond1.GetBeginAtom().GetIndex() + 1
                         b2 = bond1.GetEndAtom().GetIndex() + 1
-                        rot = sorted([b1,b2])
+                        rot = sorted([b1, b2])
                         if rot != rca0:
                             ring_rots.append(rot)
-                #print("RING ROT:",ring_rots)
+                # print("RING ROT:",ring_rots)
                 for rrot in ring_rots:
                     if rca0[0] in rrot:
                         atom = rrot.copy()
                         atom.remove(rca0[0])
-                        #print(atom)
-                        rca.insert(0,atom[0])
-                        #print("INSERT ",rca)
+                        # print(atom)
+                        rca.insert(0, atom[0])
+                        # print("INSERT ",rca)
                     elif rca0[1] in rrot:
                         atom = rrot.copy()
                         atom.remove(rca0[1])
-                        #print(rca)
+                        # print(rca)
                         rca.append(atom[0])
-                        #print("APPEND ",rca)
+                        # print("APPEND ",rca)
                     elif rca0 != rot:
                         rot_bond.append(rrot)
 
@@ -164,31 +161,32 @@ def cons_opt(infile,outfile,idx):
     for rr in rca4:
         check.append(rr[1])
         check.append(rr[2])
-        bond = sorted([rr[1],rr[2]])
+        bond = sorted([rr[1], rr[2]])
         if bond in rot_bond:
             rot_bond.remove(bond)
     if len(check) != len(set(check)):
-        print("\t\tBAD",outfile)
-        print("\t\t",rca4)
- #   else:
-#        print("\t\tBAD",outfile)
+        print("\t\tBAD", outfile)
+        print("\t\t", rca4)
+    #   else:
+    #        print("\t\tBAD",outfile)
 
     # print(outfile,"ROT", rot_bond)
 
     conv.WriteFile(mol, outfile)
     return chiral, rca4, rot_bond
 
-def to_mol2(infile,outfile):
+
+def to_mol2(infile, outfile):
     conv = ob.OBConversion()
-    conv.SetInAndOutFormats("sdf","mol2")
+    conv.SetInAndOutFormats("sdf", "mol2")
     mol = ob.OBMol()
     conv.ReadFile(mol, infile)
     conv.WriteFile(mol, outfile)
 
 
-def add_pd(infile,outfile):
+def add_pd(infile, outfile):
     conv = ob.OBConversion()
-    conv.SetInAndOutFormats("mol2","mol2")
+    conv.SetInAndOutFormats("mol2", "mol2")
     mol = ob.OBMol()
     conv.ReadFile(mol, infile)
 
@@ -198,7 +196,7 @@ def add_pd(infile,outfile):
     for i in range(nAtoms):
         n = i + 1
         at = mol.GetAtom(n)
-        an = (at.GetAtomicNum())
+        an = at.GetAtomicNum()
         if an == 15:
             p.append(n)
         elif an == 8:
@@ -235,15 +233,14 @@ def add_pd(infile,outfile):
         pho1 = mol.GetAtom(p1)
         pho2 = mol.GetAtom(p2)
         pp1 = pho1.GetDistance(pho2)
-        err0 = abs(pp1-pp)
+        err0 = abs(pp1 - pp)
         if err0 < 0.015:
             cont = False
 
         else:
-            print("\tNOT converged YET:",outfile, " diff:", err0)
+            print("\tNOT converged YET:", outfile, " diff:", err0)
             ff.ConjugateGradients(10000)
             ff.GetCoordinates(mol)
-
 
     p = []
     pxyz = []
@@ -252,25 +249,20 @@ def add_pd(infile,outfile):
     for i in range(nAtoms):
         n = i + 1
         at = mol.GetAtom(n)
-        an = (at.GetAtomicNum())
+        an = at.GetAtomicNum()
         if an == 15:
             p.append(n)
-            pxyz.append([at.x(),at.y(),at.z()])
+            pxyz.append([at.x(), at.y(), at.z()])
         else:
-            nxyz.append([at.x(),at.y(),at.z()])
+            nxyz.append([at.x(), at.y(), at.z()])
     nxyz = np.array(nxyz)
-
-
-
-
-
 
     # Add Pd and connect it to two Ps
     a = mol.NewAtom()
     a.SetAtomicNum(46)
     pxyz = np.array(pxyz)
-    x,y,z = (pxyz[0] + pxyz[1])/2
-    pdxyz = np.array([x,y,z])
+    x, y, z = (pxyz[0] + pxyz[1]) / 2
+    pdxyz = np.array([x, y, z])
     vec0 = None
     r0 = 100.0
     for vec in nxyz:
@@ -279,32 +271,34 @@ def add_pd(infile,outfile):
         if r < r0:
             r0 = r
             vec0 = vec
-    x,y,z = pdxyz-10.0*vec0
-    a.SetVector(x,y,z)
+    x, y, z = pdxyz - 10.0 * vec0
+    a.SetVector(x, y, z)
     # AddBond(BeginIdx,EndIdx,bond order)
     pd = mol.NumAtoms()
-    p1,p2 = p
-    mol.AddBond(pd,p1,1)
-    mol.AddBond(pd,p2,1)
+    p1, p2 = p
+    mol.AddBond(pd, p1, 1)
+    mol.AddBond(pd, p2, 1)
     mol.NumAtoms()
 
     conv.WriteFile(mol, outfile)
-    return [p1,p2,pd]
+    return [p1, p2, pd]
+
 
 def sdf_to_mae(filenames):
     for fn0 in filenames:
-        fn = fn0.replace(".sdf","")
+        fn = fn0.replace(".sdf", "")
         # print("reading {}".format(fn))
-        to_mol2(fn0,f"{fn}.0temp")
-        index = add_pd(f"{fn}.0temp",f"{fn}.temp")
+        to_mol2(fn0, f"{fn}.0temp")
+        index = add_pd(f"{fn}.0temp", f"{fn}.temp")
         if index is not None:
-            chiral, rca4, rot = cons_opt(f"{fn}.temp",f"{fn}.mol2",index)
-            print("molecule ",fn, "finished")
+            chiral, rca4, rot = cons_opt(f"{fn}.temp", f"{fn}.mol2", index)
+            print("molecule ", fn, "finished")
             os.system(f"mv {fn}.mol2 ../mol2/")
             os.system(f"mol2convert -imol2 ../mol2/{fn}.mol2 -omae ../maes/{fn}.mae")
             os.system(f"echo 'CHIRAL {chiral}\nRCA4 {rca4}\n ROT {rot}' >> ../maes/{fn}.mae")
 
     return 0
+
 
 # Get the list of sdf files in current directory
 # for loop all
@@ -317,19 +311,18 @@ if 1:
     # number of threads for parallel job
     nt = 32
     lf = len(fns)
-    nj = int(lf/nt)
-    nr = int(lf%nt)
+    nj = int(lf / nt)
+    nr = int(lf % nt)
     ni = 0
     count = 0
-    file_split=[]
-    for i in range(nt-1):
-        fn = fns[ni:ni+nj]
+    file_split = []
+    for i in range(nt - 1):
+        fn = fns[ni : ni + nj]
         file_split.append(fn)
         count += len(fn)
         ni = ni + nj
     for i in range(nr):
-        file_split[i].append(fns[ni+i])
+        file_split[i].append(fns[ni + i])
     with Pool(processes=nt) as pool:
-        multiple_jobs = [pool.apply_async(sdf_to_mae,(files,)) for files in file_split]
+        multiple_jobs = [pool.apply_async(sdf_to_mae, (files,)) for files in file_split]
         [res.get() for res in multiple_jobs]
-

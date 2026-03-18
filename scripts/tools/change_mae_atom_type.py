@@ -2,6 +2,7 @@
 """
 Change all of atom type ATOM_X to ATOM_Y.
 """
+
 import os
 from schrodinger import structure
 
@@ -12,12 +13,12 @@ INPUT_FILE = "yourmae1.mae"
 OUTPUT_FILE = "yourmae2.mae"
 
 if INPUT_FILE == OUTPUT_FILE:
-    print(f'Warning: INPUT_FILE ({INPUT_FILE}) == OUTPUT_FILE ({OUTPUT_FILE}).')
-    print('Using a file called TEMP.mae in current dir.')
+    print(f"Warning: INPUT_FILE ({INPUT_FILE}) == OUTPUT_FILE ({OUTPUT_FILE}).")
+    print("Using a file called TEMP.mae in current dir.")
 
 reader = structure.StructureReader(INPUT_FILE)
 if INPUT_FILE == OUTPUT_FILE:
-    writer = structure.StructureWriter('TEMP.mae')
+    writer = structure.StructureWriter("TEMP.mae")
 else:
     writer = structure.StructureWriter(OUTPUT_FILE)
 
@@ -31,4 +32,4 @@ reader.close()
 writer.close()
 
 if INPUT_FILE == OUTPUT_FILE:
-    os.rename('TEMP.mae', OUTPUT_FILE)
+    os.rename("TEMP.mae", OUTPUT_FILE)

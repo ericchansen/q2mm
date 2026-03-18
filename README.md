@@ -58,10 +58,9 @@ q2mm/
 ├── io/            # File format parsers (Gaussian, Jaguar, MOL2, MAE)
 ├── forcefields/   # Force field types (MM3, AMBER, Tinker)
 ├── cli/           # Command-line interface
-└── seminario.py   # QFUERZA/Seminario force constant estimation
+└── models/        # Clean molecule/force-field models + Seminario estimation
 
-examples/          # Example workflows and training data
-data/              # Reference structures (ligands, substrates, reactions)
+examples/          # Supported example workflows and bundled reference inputs
 scripts/           # Utility scripts and screening tools
 ```
 
@@ -71,7 +70,26 @@ scripts/           # Utility scripts and screening tools
 pip install -e ".[dev]"
 python -m pytest -v
 ruff check q2mm/ test/ scripts/
+ruff format --check q2mm test scripts examples
 ```
+
+To regenerate the pinned upstream Seminario parity fixtures, create a sibling
+worktree and run the fixture generator:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup_upstream_worktree.ps1
+python .\scripts\regenerate_parity_fixtures.py --worktree ..\q2mm-upstream-worktree
+```
+
+To validate current behavior against pinned fixtures or live upstream code:
+
+```powershell
+python .\scripts\validate_against_upstream.py --mode fixture
+powershell -ExecutionPolicy Bypass -File .\scripts\validate_against_upstream.ps1 -Mode both
+```
+
+For overlapping old/new behavior, do not treat work as complete until the
+relevant validation case passes.
 
 ## Citations
 

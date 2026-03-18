@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-'''
+"""
 Selects parameters from force fields.
 
 ASSUMES THERE IS NO OVERLAP BETWEEN THE PARAMETERS SELECTED BY THE PARAMETER
 FILE AND BY PTYPES!
-'''
+"""
+
 import argparse
 import logging
 import logging.config
@@ -18,17 +19,18 @@ from q2mm import filetypes
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
 
-ALL_PARM_TYPES = ('ae', 'af', 'be', 'bf', 'df', 'imp1', 'imp2',
-                  'sb', 'q', 'vdwe', 'vdwr')
+ALL_PARM_TYPES = ("ae", "af", "be", "bf", "df", "imp1", "imp2", "sb", "q", "vdwe", "vdwr")
+
 
 def return_params_parser(add_help=True):
-    '''
+    """
     Returns an argparse.ArgumentParser object for the selection of
     parameters.
-    '''
+    """
     if add_help:
-        description=(__doc__ +
-                     '''
+        description = (
+            __doc__
+            + """
 PTYPES:
 ae   - equilibrium angles
 af   - angle force constants
@@ -40,66 +42,69 @@ imp2 - improper torsions (2nd MM3* column)
 sb   - stretch-bend force constants
 q    - bond dipoles
 vdwe - van der Waals epsilon
-vdwr - van der Waals radius''')
-        parser = argparse.ArgumentParser(
-            formatter_class=argparse.RawTextHelpFormatter,
-            description=description)
+vdwr - van der Waals radius"""
+        )
+        parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description=description)
     else:
         parser = argparse.ArgumentParser(add_help=False)
-    par_group = parser.add_argument_group('parameters')
+    par_group = parser.add_argument_group("parameters")
     par_group.add_argument(
-        '--all', '-a', action='store_true',
-        help='Select all available parameters from the force field.')
+        "--all", "-a", action="store_true", help="Select all available parameters from the force field."
+    )
     par_group.add_argument(
-        '--check', action='store_true',
-        help=('Check to see if the selected parameters are used in a\n'
-              'MacroModel file. Currently only supports bonds and angles.\n'
-              'Stretch-Bends appear to overwrite force field rows in the\n'
-              'MacroModel file, resulting in false positives.'))
+        "--check",
+        action="store_true",
+        help=(
+            "Check to see if the selected parameters are used in a\n"
+            "MacroModel file. Currently only supports bonds and angles.\n"
+            "Stretch-Bends appear to overwrite force field rows in the\n"
+            "MacroModel file, resulting in false positives."
+        ),
+    )
     par_group.add_argument(
-        '--average', '-av', type=str, metavar='mm3.fld',
-        help=('Use MacroModel files to generate a new force field where\n'
-              'each equilibrium value in the optimized section is replaced\n'
-              'by the average value from the MacroModel file.'))
+        "--average",
+        "-av",
+        type=str,
+        metavar="mm3.fld",
+        help=(
+            "Use MacroModel files to generate a new force field where\n"
+            "each equilibrium value in the optimized section is replaced\n"
+            "by the average value from the MacroModel file."
+        ),
+    )
+    par_group.add_argument("--ffpath", "-f", metavar="mm3.fld", default="mm3.fld", help="Path to force field.")
+    par_group.add_argument("--mmo", "-m", type=str, nargs="+", help="Read these MacroModel files.")
+    par_group.add_argument("--nozero", action="store_true", help="Exclude any parameters that have values of zero.")
     par_group.add_argument(
-        '--ffpath', '-f', metavar='mm3.fld', default='mm3.fld',
-        help='Path to force field.')
+        "--printparams", "-pp", action="store_true", help="Print information about the selected parameters."
+    )
     par_group.add_argument(
-        '--mmo', '-m', type=str, nargs='+',
-        help='Read these MacroModel files.')
+        "--pfile", "-pf", type=str, metavar="filename", help="Use a file to select parameters. Allows advanced options."
+    )
+    par_group.add_argument("--ptypes", "-pt", nargs="+", default=[], help="Select these parameter types.")
     par_group.add_argument(
-        '--nozero', action='store_true',
-        help='Exclude any parameters that have values of zero.')
-    par_group.add_argument(
-        '--printparams', '-pp', action='store_true',
-        help='Print information about the selected parameters.')
-    par_group.add_argument(
-        '--pfile', '-pf', type=str, metavar='filename',
-        help='Use a file to select parameters. Allows advanced options.')
-    par_group.add_argument(
-        '--ptypes', '-pt', nargs='+', default=[],
-        help='Select these parameter types.')
-    par_group.add_argument(
-        '--printtether', '-t', action='store_true',
-        help='Prints a file formatted for parameter tethering.')
+        "--printtether", "-t", action="store_true", help="Prints a file formatted for parameter tethering."
+    )
     return parser
 
+
 def trim_params_by_type(params, ptypes):
-    '''
+    """
     Select all parameters with a matching ptype.
-    '''
+    """
     chosen_params = [x for x in params if x.ptype in ptypes]
-    logger.log(20, f'  -- Trimmed number of parameters down to {len(chosen_params)}.')
+    logger.log(20, f"  -- Trimmed number of parameters down to {len(chosen_params)}.")
     return chosen_params
 
+
 def trim_params_by_file(params, filename):
-    '''
+    """
     Trims the list of parameters based upon the parameter
     file.
 
     params   - List of datatypes.Param objects
     filename - Path to parameter file
-    '''
+    """
     # This will hold the parameters you chose.
     chosen_params = []
     # All parameters read from the file.
@@ -107,17 +112,17 @@ def trim_params_by_file(params, filename):
     # Keep only the parameters that are specified in the file.
     for param in params:
         for temp_param in temp_params:
-            if param.ff_row == temp_param[0] and \
-                    param.ff_col == temp_param[1]:
+            if param.ff_row == temp_param[0] and param.ff_col == temp_param[1]:
                 # Update the allow negative information.
                 param._allowed_range = temp_param[2]
                 param.value_in_range(param.value)
                 chosen_params.append(param)
-    logger.log(20, f'  -- Trimmed number of parameters down to {len(chosen_params)}.')
+    logger.log(20, f"  -- Trimmed number of parameters down to {len(chosen_params)}.")
     return chosen_params
 
+
 def read_param_file(filename):
-    '''
+    """
     Read a parameter file.
 
     Format of parameter file:
@@ -162,22 +167,22 @@ def read_param_file(filename):
                      # -1.0 and 1.0.
 
     Doesn't actually return datatypes.Param objects.
-    '''
+    """
     temp_params = []
     with open(filename) as f:
         for line in f:
-            line = line.partition('#')[0] # Ignore everything after a pound.
-            line = line.partition('!')[0] # ! counts as comments too.
+            line = line.partition("#")[0]  # Ignore everything after a pound.
+            line = line.partition("!")[0]  # ! counts as comments too.
             cols = line.split()
             if cols:
                 ff_row, ff_col = int(cols[0]), int(cols[1])
                 # Check if you allow negative values.
-                if 'neg' in cols[2:]:
-                    allowed_range = [-float('inf'), 0.]
-                elif 'pos' in cols[2:]:
-                    allowed_range = [0., float('inf')]
-                elif 'both' in cols[2:]:
-                    allowed_range = [-float('inf'), float('inf')]
+                if "neg" in cols[2:]:
+                    allowed_range = [-float("inf"), 0.0]
+                elif "pos" in cols[2:]:
+                    allowed_range = [0.0, float("inf")]
+                elif "both" in cols[2:]:
+                    allowed_range = [-float("inf"), float("inf")]
                 elif cols[2:]:
                     # Selects all values after 2 as a list, and then
                     # trims to only 2 values.
@@ -188,8 +193,9 @@ def read_param_file(filename):
                 temp_params.append((ff_row, ff_col, allowed_range))
     return temp_params
 
+
 def gather_values(mmos):
-    '''
+    """
     Gather bonds and angles from MacroModel .mmo files. Could expand to load
     torsions.
 
@@ -197,7 +203,7 @@ def gather_values(mmos):
       bond_dic = {1857: [2.2233, 2.2156, 2.5123],
                   1858: [1.3601, 1.3535, 1.3532]
                  }
-    '''
+    """
 
     bond_dic = {}
     angle_dic = {}
@@ -221,23 +227,26 @@ def gather_values(mmos):
                     torsion_dic[torsion.ff_row] = [torsion.value]
     return bond_dic, angle_dic, torsion_dic
 
+
 def check_params_in_ff():
     return
+
 
 def average_values():
     return
 
+
 def main(args):
-    '''
+    """
     Imports a force field object, which contains a list of all the available
     parameters. Returns a list of only the user selected parameters.
-    '''
+    """
     if isinstance(args, str):
         args = args.split()
     parser = return_params_parser()
     opts = parser.parse_args(args)
     if opts.average or opts.check:
-        assert opts.mmo, 'Must provide MacroModel .mmo files!'
+        assert opts.mmo, "Must provide MacroModel .mmo files!"
 
     # The function import_ff should be more like something that just
     # interprets filetypes.
@@ -252,7 +261,7 @@ def main(args):
     # Set the selected parameter types.
     if opts.all:
         opts.ptypes.extend(ALL_PARM_TYPES)
-    logger.log(20, 'Selected parameter types: {}'.format(' '.join(opts.ptypes)))
+    logger.log(20, "Selected parameter types: {}".format(" ".join(opts.ptypes)))
     params = []
     # These two functions populate the selected parameter list. Each takes
     # ff.params and returns a subset of it.
@@ -264,10 +273,10 @@ def main(args):
     if opts.nozero:
         new_params = []
         for param in params:
-            if not param.value == 0.:
+            if not param.value == 0.0:
                 new_params.append(param)
         params = new_params
-    logger.log(20, f'  -- Total number of chosen parameters: {len(params)}')
+    logger.log(20, f"  -- Total number of chosen parameters: {len(params)}")
     # Load MacroModel .mmo files if desired.
     if opts.mmo or opts.average or opts.check:
         mmos = []
@@ -276,7 +285,9 @@ def main(args):
         if opts.mmo:
             for filename in opts.mmo:
                 mmos.append(filetypes.MacroModel(filename))
-                bond_dic, angle_dic, torsion_dic = gather_values(mmos) #BUG: shouldn't this be one indent back, out of for-loop? shouldn't affect output, just performance
+                bond_dic, angle_dic, torsion_dic = gather_values(
+                    mmos
+                )  # BUG: shouldn't this be one indent back, out of for-loop? shouldn't affect output, just performance
         # Check if the parameter's FF row shows up in the data gathered
         # from the MacroModel .mmo file. Currently only takes into
         # account bonds and angles.
@@ -300,9 +311,9 @@ def main(args):
                 print(f">> STD {ff_row}: {np.std(values)}")
             # Update parameter values.
             for param in params:
-                if param.ptype in ['be', 'ae'] and param.ff_row in bond_avg:
+                if param.ptype in ["be", "ae"] and param.ff_row in bond_avg:
                     param.value = bond_avg[param.ff_row]
-                if param.ptype in ['be', 'ae'] and param.ff_row in angle_avg:
+                if param.ptype in ["be", "ae"] and param.ff_row in angle_avg:
                     param.value = angle_avg[param.ff_row]
             # Export the updated parameters.
             ff.export_ff(opts.average, params)
@@ -312,21 +323,23 @@ def main(args):
         for param in params:
             # if param.ptype in ['df', 'q']:
             if param.allowed_range:
-                print(f'{param.ff_row} {param.ff_col} {param.allowed_range[0]} {param.allowed_range[1]}')
+                print(f"{param.ff_row} {param.ff_col} {param.allowed_range[0]} {param.allowed_range[1]}")
             else:
-                print(f'{param.ff_row} {param.ff_col}')
+                print(f"{param.ff_row} {param.ff_col}")
     if opts.printtether:
         for param in params:
-            print(' ' '{:22s}'
-                  ' ' '{:22.4f}'
-                  ' ' '{:22.4f}'.format(
-                      f'p_mm3_{param.ff_row}-{param.ff_col}',
-                      # These should be floats without me making it one here.
-                      co.WEIGHTS['p'],
-                      param.value))
+            print(
+                " {:22s} {:22.4f} {:22.4f}".format(
+                    f"p_mm3_{param.ff_row}-{param.ff_col}",
+                    # These should be floats without me making it one here.
+                    co.WEIGHTS["p"],
+                    param.value,
+                )
+            )
     ff.params = params
     return ff
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     logging.config.dictConfig(co.LOG_SETTINGS)
     main(sys.argv[1:])

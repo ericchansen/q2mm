@@ -1,0 +1,68 @@
+{
+  "metadata": {
+    "system": "sn2-test",
+    "generated_at": "2026-03-18T17:01:08.436990+00:00",
+    "generator": "scripts/regenerate_parity_fixtures.py",
+    "upstream_commit": "b26404b8cc4a8cc9442b0094d8f326a99bf3eec5",
+    "xyz_path": "examples/sn2-test/qm-reference/sn2-ts-optimized.xyz",
+    "hessian_path": "examples/sn2-test/qm-reference/sn2-ts-hessian.npy",
+    "dft_scaling": 0.963
+  },
+  "bonds": [
+    {
+      "atom_i": 0,
+      "atom_j": 1,
+      "label": "C1-F2",
+      "elements": [
+        "C",
+        "F"
+      ],
+      "legacy_force_constant_au": -0.04444819045413761,
+      "legacy_force_constant_mdyn_a": -0.6920201443753224
+    },
+    {
+      "atom_i": 0,
+      "atom_j": 2,
+      "label": "C1-F3",
+      "elements": [
+        "C",
+        "F"
+      ],
+      "legacy_force_constant_au": -0.04444819045413761,
+      "legacy_force_constant_mdyn_a": -0.6920201443753224
+    },
+    {
+      "atom_i": 0,
+      "atom_j": 3,
+      "label": "C1-H4",
+      "elements": [
+        "C",
+        "H"
+      ],
+      "legacy_force_constant_au": 0.3656829637010929,
+      "legacy_force_constant_mdyn_a": 5.693369623160197
+    },
+    {
+      "atom_i": 0,
+      "atom_j": 4,
+      "label": "C1-H5",
+      "elements": [
+        "C",
+        "H"
+      ],
+      "legacy_force_constant_au": 0.3656735537857301,
+      "legacy_force_constant_mdyn_a": 5.693223118861115
+    },
+    {
+      "atom_i": 0,
+      "atom_j": 5,
+      "label": "C1-H6",
+      "elements": [
+        "C",
+        "H"
+      ],
+      "legacy_force_constant_au": 0.3656735537857301,
+      "legacy_force_constant_mdyn_a": 5.693223118861115
+    }
+  ]
+}

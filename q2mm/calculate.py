@@ -13,6 +13,7 @@ Mae class inside filetypes. I'm still debating if that should be
 there or here. Will see how this framework translates into
 Amber and then decide.
 """
+
 import argparse
 import logging
 import logging.config
@@ -35,41 +36,66 @@ from q2mm import filetypes
 from q2mm import parameters
 
 # Commands where we need to load the force field.
-COM_LOAD_FF    = ['ma', 'mb', 'mt',
-                  'ja', 'jb', 'jt']
+COM_LOAD_FF = ["ma", "mb", "mt", "ja", "jb", "jt"]
 # Commands related to Gaussian.
-COM_GAUSSIAN   = ['gaa','gaao','gab','gabo','gat','gato',
-                  'gta','gtb','gtt','ge','ge1', 'gea', 'geo','ge1o', 'geao',
-                  'gh', 'geigz']
+COM_GAUSSIAN = [
+    "gaa",
+    "gaao",
+    "gab",
+    "gabo",
+    "gat",
+    "gato",
+    "gta",
+    "gtb",
+    "gtt",
+    "ge",
+    "ge1",
+    "gea",
+    "geo",
+    "ge1o",
+    "geao",
+    "gh",
+    "geigz",
+]
 # Commands related to Jaguar (Schrodinger).
-COM_JAGUAR     = ['jq', 'jqh', 'jqa',
-                  'je', 'jeo', 'jea', 'jeao',
-                  'jh', 'jeigz']
+COM_JAGUAR = ["jq", "jqh", "jqa", "je", "jeo", "jea", "jeao", "jh", "jeigz"]
 # Commands related to MacroModel (Schrodinger).
 # Seems odd that the Jaguar geometry datatypes are in here, but we
 # do a MacroModel calculation to get the data in an easy form to
 # extract.
-COM_MACROMODEL = ['ja', 'jb', 'jt',
-                  'mq', 'mqh', 'mqa',
-                  'ma', 'mb', 'mt',
-                  'me', 'meo', 'mea', 'meao',
-                  'mh', 'mjeig', 'mgeig',
-                  'mp', 'mgESP', 'mjESP']
+COM_MACROMODEL = [
+    "ja",
+    "jb",
+    "jt",
+    "mq",
+    "mqh",
+    "mqa",
+    "ma",
+    "mb",
+    "mt",
+    "me",
+    "meo",
+    "mea",
+    "meao",
+    "mh",
+    "mjeig",
+    "mgeig",
+    "mp",
+    "mgESP",
+    "mjESP",
+]
 # Commands related to Tinker.
-COM_TINKER     = ['ta','tao', 'tb', 'tbo',
-                  'tt','tto', 'te', 'teo',
-                  'tea','teao', 'th',
-                  'tjeigz', 'tgeig']
+COM_TINKER = ["ta", "tao", "tb", "tbo", "tt", "tto", "te", "teo", "tea", "teao", "th", "tjeigz", "tgeig"]
 # Commands related to Amber.
-COM_AMBER      = ['ae','ae1','aeo','ae1o','abo','aao','ato','ah']
+COM_AMBER = ["ae", "ae1", "aeo", "ae1o", "abo", "aao", "ato", "ah"]
 # All other commands.
-COM_OTHER = ['r']
+COM_OTHER = ["r"]
 # All possible commands.
-COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + \
-          COM_AMBER + COM_OTHER
+COM_ALL = COM_GAUSSIAN + COM_JAGUAR + COM_MACROMODEL + COM_TINKER + COM_AMBER + COM_OTHER
 
 logging.config.dictConfig(co.LOG_SETTINGS)
 logger = logging.getLogger(__file__)
+
 
 def main(args):
     """
@@ -96,8 +122,7 @@ def main(args):
     #  'mb': [['a1.01.mae'], ['b1.01.mae']],
     #  'jeig': [['a1.01.in,a1.out', 'b1.01.in,b1.out']]
     # }
-    commands = {key: value for key, value in opts.__dict__.items() if key
-                in COM_ALL and value}
+    commands = {key: value for key, value in opts.__dict__.items() if key in COM_ALL and value}
     # Add in the empty commands. I'd rather not do this, but it makes later
     # coding when collecting data easier.
     for command in COM_ALL:
@@ -138,36 +163,32 @@ def main(args):
     # with the given file.
     # Stuff below doesn't need both comma separated filenames simultaneously.
     for filename, commands_for_filename in commands_for_filenames.items():
-        logger.log(1, f'>>> filename: {filename}')
-        logger.log(1, f'>>> commands_for_filename: {commands_for_filename}')
+        logger.log(1, f">>> filename: {filename}")
+        logger.log(1, f">>> commands_for_filename: {commands_for_filename}")
         # These next two if statements will break down what command files
         # have to be written by the backend software package.
         if any(x in COM_MACROMODEL for x in commands_for_filename):
-            if os.path.splitext(filename)[1] == '.mae':
-                inps[filename] = filetypes.Mae(
-                    os.path.join(opts.directory, filename))
+            if os.path.splitext(filename)[1] == ".mae":
+                inps[filename] = filetypes.Mae(os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
                 inps[filename].write_com(sometext=opts.append)
-            #Has to be here even though this is a Gaussian Job.
-            if os.path.splitext(filename)[1] == '.chk':
+            # Has to be here even though this is a Gaussian Job.
+            if os.path.splitext(filename)[1] == ".chk":
                 # The generated com file will be used as the input filename. It
                 # also seems best to do the gaussian calculation in the
                 # collect_data function since we need to collect the force
                 # fields partial charges.
-                com_filename = os.path.splitext(filename)[0] + '.ESP.q2mm.com'
-                inps[com_filename] = filetypes.GaussCom(
-                    os.path.join(opts.directory, com_filename))
+                com_filename = os.path.splitext(filename)[0] + ".ESP.q2mm.com"
+                inps[com_filename] = filetypes.GaussCom(os.path.join(opts.directory, com_filename))
                 inps[com_filename].commands = commands_for_filename
                 inps[com_filename].read_newzmat(filename)
 
-
         elif any(x in COM_TINKER for x in commands_for_filename):
-            if os.path.splitext(filename)[1] == '.xyz':
-                inps[filename] = filetypes.TinkerXYZ(
-                    os.path.join(opts.directory, filename))
+            if os.path.splitext(filename)[1] == ".xyz":
+                inps[filename] = filetypes.TinkerXYZ(os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
         # Gaussian to Tinker
-        elif any(x in ['gta','gtb','gtt'] for x in commands_for_filename):
+        elif any(x in ["gta", "gtb", "gtt"] for x in commands_for_filename):
             # For bond, angle, torsion taken from Gaussian
             # The xyz will be collected from Gaussian and be rewritten in corresponding software
             #
@@ -175,18 +196,16 @@ def main(args):
             # must make difference type
             # Tinker
             if os.path.splitext(filename)[1] == ".log":
-                inps[filename] = filetypes.TinkerXYZ_FOR_GAUS(
-                    os.path.join(opts.directory, filename))
+                inps[filename] = filetypes.TinkerXYZ_FOR_GAUS(os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
         # Gausssian to Amber
-        elif any(x in ['gaa','gab','gat','gaao','gabo','gato'] for x in commands_for_filename):
+        elif any(x in ["gaa", "gab", "gat", "gaao", "gabo", "gato"] for x in commands_for_filename):
             if os.path.splitext(filename)[1] == ".log":
-                inps[filename] = filetypes.AmberLeap_Gaus(
-                    os.path.join(opts.directory, filename))
+                inps[filename] = filetypes.AmberLeap_Gaus(os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
 
         elif any(x in COM_AMBER for x in commands_for_filename):
-            if os.path.splitext(filename)[1] == ".in": # leap.in as for now
+            if os.path.splitext(filename)[1] == ".in":  # leap.in as for now
                 inps[filename] = filetypes.AmberLeap(os.path.join(opts.directory, filename))
                 inps[filename].commands = commands_for_filename
             # This doesn't work.
@@ -199,24 +218,24 @@ def main(args):
     # Stuff below needs both comma separated filenames simultaneously.
     # Do the Amber inputs.
     # Leaving the filenames together because Taylor said this would work well.
-#    for comma_sep_filenames in flatten(commands['ae']):
-#        # Maybe make more specific later.
-#        inps[comma_sep_filenames] = filetypes.AmberInput(
-#            'DOES_PATH_EVEN_MATTER')
-#        split_it = comma_sep_filenames.split(',')
-#        inps[comma_sep_filenames].directory = opts.directory
-#        inps[comma_sep_filenames].inpcrd = split_it[0]
-#        inps[comma_sep_filenames].prmtop = split_it[1]
-    logger.log(1, f'>>> commands: {commands}')
+    #    for comma_sep_filenames in flatten(commands['ae']):
+    #        # Maybe make more specific later.
+    #        inps[comma_sep_filenames] = filetypes.AmberInput(
+    #            'DOES_PATH_EVEN_MATTER')
+    #        split_it = comma_sep_filenames.split(',')
+    #        inps[comma_sep_filenames].directory = opts.directory
+    #        inps[comma_sep_filenames].inpcrd = split_it[0]
+    #        inps[comma_sep_filenames].prmtop = split_it[1]
+    logger.log(1, f">>> commands: {commands}")
     # Check whether or not to skip calculations.
     if opts.norun or opts.fake:
         logger.log(15, "  -- Skipping backend calculations.")
     else:
         for filename, some_class in inps.items():
-            logger.log(1, f'>>> filename: {filename}')
-            logger.log(1, f'>>> some_class: {some_class}')
+            logger.log(1, f">>> filename: {filename}")
+            logger.log(1, f">>> some_class: {some_class}")
             # Works if some class is None too.
-            if hasattr(some_class, 'run'):
+            if hasattr(some_class, "run"):
                 # Ideally this can be the same for each software backend,
                 # but that means we're going to have to make some changes
                 # so that this token argument is handled properly.
@@ -225,17 +244,13 @@ def main(args):
     # If we remove/with sorting removed, the Datum class is less
     # useful. We may want to reduce this to a N x 3 matrix or
     # 3 vectors (labels, weights, values).
-    sub_names = ['OPT']
+    sub_names = ["OPT"]
     if opts.subnames:
         sub_names = opts.subnames
     if opts.fake:
-        data = collect_data_fake(
-            commands, inps, direc=opts.directory, invert=opts.invert,
-            sub_names=sub_names)
+        data = collect_data_fake(commands, inps, direc=opts.directory, invert=opts.invert, sub_names=sub_names)
     else:
-        data = collect_data(
-            commands, inps, direc=opts.directory, invert=opts.invert,
-            sub_names=sub_names)
+        data = collect_data(commands, inps, direc=opts.directory, invert=opts.invert, sub_names=sub_names)
     # Adds weights to the data points in the data list.
     if opts.weight:
         compare.import_weights(data)
@@ -244,8 +259,9 @@ def main(args):
         pretty_data(data, log_level=None)
     return data
 
+
 def return_calculate_parser(add_help=True, parents=None):
-    '''
+    """
     Command line argument parser for calculate.
 
     Arguments
@@ -256,375 +272,668 @@ def return_calculate_parser(add_help=True, parents=None):
     parents : argparse.ArgumentParser
               Parent parser incorporated into this parser. Default
               is None.
-    '''
+    """
     # Whether or not to add parents parsers. Not sure if/where this may be used
     # anymore.
-    if parents is None: parents = []
+    if parents is None:
+        parents = []
     # Whether or not to add help. You may not want to add help if these
     # arguments are being used in another, higher level parser.
     if add_help:
-        parser = argparse.ArgumentParser(
-            description=__doc__, parents=parents)
+        parser = argparse.ArgumentParser(description=__doc__, parents=parents)
     else:
-        parser = argparse.ArgumentParser(
-            add_help=False, parents=parents)
+        parser = argparse.ArgumentParser(add_help=False, parents=parents)
     # GENERAL OPTIONS
     opts = parser.add_argument_group("calculate options")
     opts.add_argument(
-        '--append', '-a', type=str, metavar='sometext',
-        help='Append this text to command files generated by Q2MM.')
+        "--append", "-a", type=str, metavar="sometext", help="Append this text to command files generated by Q2MM."
+    )
     opts.add_argument(
-        '--directory', '-d', type=str, metavar='somepath', default=os.getcwd(),
-        help=('Directory searched for files '
-              '(ex. *.mae, *.log, mm3.fld, etc.). '
-              'Subshell commands (ex. MacroModel) are executed from here. '
-              'Default is the current directory.'))
+        "--directory",
+        "-d",
+        type=str,
+        metavar="somepath",
+        default=os.getcwd(),
+        help=(
+            "Directory searched for files "
+            "(ex. *.mae, *.log, mm3.fld, etc.). "
+            "Subshell commands (ex. MacroModel) are executed from here. "
+            "Default is the current directory."
+        ),
+    )
+    opts.add_argument("--doprint", "-p", action="store_true", help=("Logs data. Can generate extensive log files."))
+    opts.add_argument("--fake", action="store_true", help=("Generate fake data sets. Used to expedite testing."))
     opts.add_argument(
-        '--doprint', '-p', action='store_true',
-        help=("Logs data. Can generate extensive log files."))
+        "--ffpath",
+        "-f",
+        type=str,
+        metavar="somepath",
+        help=("Path to force field. Only necessary for certain data types if you don't provide the substructure name."),
+    )
     opts.add_argument(
-        '--fake', action='store_true',
-        help=("Generate fake data sets. Used to expedite testing."))
+        "--invert",
+        "-i",
+        type=float,
+        metavar="somefloat",
+        help=(
+            "This option will invert the smallest eigenvalue to be whatever "
+            "value is specified by this argument whenever a Hessian is "
+            "read."
+        ),
+    )
     opts.add_argument(
-        '--ffpath', '-f', type=str, metavar='somepath',
-        help=("Path to force field. Only necessary for certain data types "
-              "if you don't provide the substructure name."))
+        "--nocheck",
+        "-nc",
+        action="store_false",
+        dest="check",
+        default=True,
+        help=(
+            "By default, Q2MM checks whether MacroModel tokens are "
+            "available before attempting a MacroModel calculation. If this "
+            "option is supplied, MacroModel will not check for tokens "
+            "first."
+        ),
+    )
+    opts.add_argument("--norun", "-n", action="store_true", help="Don't run 3rd party software.")
     opts.add_argument(
-        '--invert', '-i', type=float, metavar='somefloat',
-        help=("This option will invert the smallest eigenvalue to be whatever "
-              "value is specified by this argument whenever a Hessian is "
-              "read."))
-    opts.add_argument(
-        '--nocheck', '-nc', action='store_false', dest='check', default=True,
-        help=("By default, Q2MM checks whether MacroModel tokens are "
-              "available before attempting a MacroModel calculation. If this "
-              "option is supplied, MacroModel will not check for tokens "
-              "first."))
-    opts.add_argument(
-        '--norun', '-n', action='store_true',
-        help="Don't run 3rd party software.")
-    opts.add_argument(
-        '--subnames',  '-s', type=str, nargs='+',
+        "--subnames",
+        "-s",
+        type=str,
+        nargs="+",
         metavar='"Substructure Name OPT"',
-        help=("Names of the substructures containing parameters to "
-              "optimize in a mm3.fld file."))
-    opts.add_argument(
-        '--weight', '-w', action='store_true',
-        help='Add weights to data points.')
+        help=("Names of the substructures containing parameters to optimize in a mm3.fld file."),
+    )
+    opts.add_argument("--weight", "-w", action="store_true", help="Add weights to data points.")
     # GAUSSIAN OPTIONS
     gau_args = parser.add_argument_group("gaussian reference data types")
     gau_args.add_argument(
-        '-gta', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian angles using Tinker.'))
+        "-gta",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian angles using Tinker."),
+    )
     gau_args.add_argument(
-        '-gtb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian bonds using Tinker.'))
+        "-gtb",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian bonds using Tinker."),
+    )
     gau_args.add_argument(
-        '-gtt', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian torsions using Tinker.'))
+        "-gtt",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian torsions using Tinker."),
+    )
     gau_args.add_argument(
-        '-gaa', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian angles using Amber.'))
+        "-gaa",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian angles using Amber."),
+    )
     gau_args.add_argument(
-        '-gab', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian bonds using Amber.'))
+        "-gab",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian bonds using Amber."),
+    )
     gau_args.add_argument(
-        '-gat', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian torsions using Amber.'))
+        "-gat",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian torsions using Amber."),
+    )
     gau_args.add_argument(
-        '-gaao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian angles using Amber (POST OPT).'))
+        "-gaao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian angles using Amber (POST OPT)."),
+    )
     gau_args.add_argument(
-        '-gabo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian bonds using Amber (POST OPT).'))
+        "-gabo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian bonds using Amber (POST OPT)."),
+    )
     gau_args.add_argument(
-        '-gato', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian torsions using Amber (POST OPT).'))
+        "-gato",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian torsions using Amber (POST OPT)."),
+    )
     gau_args.add_argument(
-        '-ge', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energies.'))
+        "-ge", type=str, nargs="+", action="append", default=[], metavar="somename.log", help=("Gaussian energies.")
+    )
     gau_args.add_argument(
-        '-ge1', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energy.'))
+        "-ge1", type=str, nargs="+", action="append", default=[], metavar="somename.log", help=("Gaussian energy.")
+    )
     gau_args.add_argument(
-        '-gea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energies. Energies will be relative to the average '
-              'energy within this data type.'))
+        "-gea",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian energies. Energies will be relative to the average energy within this data type."),
+    )
     gau_args.add_argument(
-        '-geo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energies. Same as -ge, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meo.'))
+        "-geo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=(
+            "Gaussian energies. Same as -ge, except the files selected "
+            "by this command will have their energies compared to those "
+            "selected by -meo."
+        ),
+    )
     gau_args.add_argument(
-        '-ge1o', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energy. Used for FF a1o commands.'))
+        "-ge1o",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=("Gaussian energy. Used for FF a1o commands."),
+    )
     gau_args.add_argument(
-        '-geao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian energies. Same as -ge, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meo. Energies will be relative to the average '
-              'energy within this data type.'))
+        "-geao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=(
+            "Gaussian energies. Same as -ge, except the files selected "
+            "by this command will have their energies compared to those "
+            "selected by -meo. Energies will be relative to the average "
+            "energy within this data type."
+        ),
+    )
     gau_args.add_argument(
-        '-gh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help='Gaussian Hessian extracted from a .log archive.')
+        "-gh",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help="Gaussian Hessian extracted from a .log archive.",
+    )
     gau_args.add_argument(
-        '-geigz', type=str, nargs='+', action='append',
-        default=[], metavar='somename.log',
-        help=('Gaussian eigenmatrix. Incluldes all elements, but zeroes '
-              'all off-diagonal elements. Uses only the .log for '
-              'the eigenvalues and eigenvectors.'))
+        "-geigz",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.log",
+        help=(
+            "Gaussian eigenmatrix. Incluldes all elements, but zeroes "
+            "all off-diagonal elements. Uses only the .log for "
+            "the eigenvalues and eigenvectors."
+        ),
+    )
     # JAGUAR OPTIONS
     jag_args = parser.add_argument_group("jaguar reference data types")
     jag_args.add_argument(
-        '-jq', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar partial charges.')
+        "-jq", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="Jaguar partial charges."
+    )
     jag_args.add_argument(
-        '-jqh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar partial charges (excludes aliphatic hydrogens). '
-              'Sums aliphatic hydrogen charges into their bonded sp3 '
-              'carbon.'))
+        "-jqh",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=(
+            "Jaguar partial charges (excludes aliphatic hydrogens). "
+            "Sums aliphatic hydrogen charges into their bonded sp3 "
+            "carbon."
+        ),
+    )
     jag_args.add_argument(
-        '-jqa', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar partial charges. Sums the partial charge of all singly '
-              'bonded hydrogens into its connected atom.'))
+        "-jqa",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=(
+            "Jaguar partial charges. Sums the partial charge of all singly bonded hydrogens into its connected atom."
+        ),
+    )
     jag_args.add_argument(
-        '-je', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar energies.')
+        "-je", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="Jaguar energies."
+    )
     jag_args.add_argument(
-        '-jea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Everything will be relative to the average '
-              'energy.'))
+        "-jea",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=("Jaguar energies. Everything will be relative to the average energy."),
+    )
     jag_args.add_argument(
-        '-jeo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Same as -je, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meo.'))
+        "-jeo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=(
+            "Jaguar energies. Same as -je, except the files selected "
+            "by this command will have their energies compared to those "
+            "selected by -meo."
+        ),
+    )
     jag_args.add_argument(
-        '-jeao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('Jaguar energies. Same as -jea, except the files selected '
-              'by this command will have their energies compared to those '
-              'selected by -meao.'))
+        "-jeao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=(
+            "Jaguar energies. Same as -jea, except the files selected "
+            "by this command will have their energies compared to those "
+            "selected by -meao."
+        ),
+    )
     jag_args.add_argument(
-        '-ja', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar angles.')
+        "-ja", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="Jaguar angles."
+    )
     jag_args.add_argument(
-        '-jb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar bond lengths.')
+        "-jb", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="Jaguar bond lengths."
+    )
     jag_args.add_argument(
-        '-jt', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='Jaguar torsions.')
+        "-jt", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="Jaguar torsions."
+    )
     jag_args.add_argument(
-        '-jh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help='Jaguar Hessian.')
+        "-jh", type=str, nargs="+", action="append", default=[], metavar="somename.in", help="Jaguar Hessian."
+    )
     jag_args.add_argument(
-        '-jeigz', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in,somename.out',
-        help=('Jaguar eigenmatrix. Incluldes all elements, but zeroes '
-              'all off-diagonal elements.'))
+        "-jeigz",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in,somename.out",
+        help=("Jaguar eigenmatrix. Incluldes all elements, but zeroes all off-diagonal elements."),
+    )
     # ADDITIONAL REFERENCE OPTIONS
     ref_args = parser.add_argument_group("other reference data types")
     ref_args.add_argument(
-        '-r', type=str, nargs='+', action='append',
-        default=[], metavar='somename.txt',
-        help=('Read reference data from file. The reference file should '
-              '3 space or tab separated columns. Column 1 is the labels, '
-              'column 2 is the weights and column 3 is the values.'))
+        "-r",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.txt",
+        help=(
+            "Read reference data from file. The reference file should "
+            "3 space or tab separated columns. Column 1 is the labels, "
+            "column 2 is the weights and column 3 is the values."
+        ),
+    )
     # MACROMODEL OPTIONS
     mm_args = parser.add_argument_group("macromodel data types")
     mm_args.add_argument(
-        '-mq', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel charges.')
+        "-mq", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="MacroModel charges."
+    )
     mm_args.add_argument(
-        '-mqh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel charges (excludes aliphatic hydrogens).')
+        "-mqh",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel charges (excludes aliphatic hydrogens).",
+    )
     mm_args.add_argument(
-        '-mqa', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help=('MacroModel partial charges. Sums the partial charge of all '
-              'singly bonded hydrogens into its connected atom.'))
+        "-mqa",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help=(
+            "MacroModel partial charges. Sums the partial charge of all "
+            "singly bonded hydrogens into its connected atom."
+        ),
+    )
     mm_args.add_argument(
-        '-me', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (pre-FF optimization).')
+        "-me",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel energies (pre-FF optimization).",
+    )
     mm_args.add_argument(
-        '-mea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (pre-FF optimization). Energies will be '
-        'relative to the average energy.')
+        "-mea",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel energies (pre-FF optimization). Energies will be relative to the average energy.",
+    )
     mm_args.add_argument(
-        '-meo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (post-FF optimization).')
+        "-meo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel energies (post-FF optimization).",
+    )
     mm_args.add_argument(
-        '-meao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel energies (post-FF optimization). Energies will be '
-        'relative to the average energy.')
+        "-meao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel energies (post-FF optimization). Energies will be relative to the average energy.",
+    )
     mm_args.add_argument(
-        '-mb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel bond lengths (post-FF optimization).')
+        "-mb",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel bond lengths (post-FF optimization).",
+    )
     mm_args.add_argument(
-        '-ma', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel angles (post-FF optimization).')
+        "-ma",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel angles (post-FF optimization).",
+    )
     mm_args.add_argument(
-        '-mt', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel torsions (post-FF optimization).')
+        "-mt",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae",
+        help="MacroModel torsions (post-FF optimization).",
+    )
     mm_args.add_argument(
-        '-mh', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae',
-        help='MacroModel Hessian.')
+        "-mh", type=str, nargs="+", action="append", default=[], metavar="somename.mae", help="MacroModel Hessian."
+    )
     mm_args.add_argument(
-        '-mjeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.out',
-        help='MacroModel eigenmatrix (all elements). Uses Jaguar '
-        'eigenvectors.')
+        "-mjeig",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae,somename.out",
+        help="MacroModel eigenmatrix (all elements). Uses Jaguar eigenvectors.",
+    )
     mm_args.add_argument(
-        '-mgeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.log',
-        help='MacroModel eigenmatrix (all elements). Uses Gaussian '
-        'eigenvectors.')
+        "-mgeig",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae,somename.log",
+        help="MacroModel eigenmatrix (all elements). Uses Gaussian eigenvectors.",
+    )
     mm_args.add_argument(
-        '-mp', type=str, nargs='+', action='append',
-        default=[], metavar='somename.fld,somename.txt',
-        help='Uses a MM3* FF file (somename.fld) and a parameter file '
-        '(somename.txt) to use the current FF parameter values as data. This '
-        'is used for harmonic parameter tethering.')
+        "-mp",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.fld,somename.txt",
+        help="Uses a MM3* FF file (somename.fld) and a parameter file "
+        "(somename.txt) to use the current FF parameter values as data. This "
+        "is used for harmonic parameter tethering.",
+    )
     mm_args.add_argument(
-        '-mgESP', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.chk',
-        help='Uses the partial charges obtained from the FF and *mae file to '
-        'determine the RMS of electrostatic fitting from a gaussain *chk file.')
+        "-mgESP",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae,somename.chk",
+        help="Uses the partial charges obtained from the FF and *mae file to "
+        "determine the RMS of electrostatic fitting from a gaussain *chk file.",
+    )
     mm_args.add_argument(
-        '-mjESP', type=str, nargs='+', action='append',
-        default=[], metavar='somename.mae,somename.in',
-        help='Uses the partial charges obtained from the FF and *mae file to '
-        'determine the RMS of electrostatic fitting from a schrodinger *in '
-        'file.')
+        "-mjESP",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.mae,somename.in",
+        help="Uses the partial charges obtained from the FF and *mae file to "
+        "determine the RMS of electrostatic fitting from a schrodinger *in "
+        "file.",
+    )
     # TINKER OPTIONS
     tin_args = parser.add_argument_group("tinker data types")
     tin_args.add_argument(
-        '-te', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker energies (pre-FF optimization).')
+        "-te",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker energies (pre-FF optimization).",
+    )
     tin_args.add_argument(
-        '-tea', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker energies (pre-FF optimization). Energies will be '
-        'relative to the average energy.')
+        "-tea",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker energies (pre-FF optimization). Energies will be relative to the average energy.",
+    )
     tin_args.add_argument(
-        '-teo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker energies (post-FF optimization).')
+        "-teo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker energies (post-FF optimization).",
+    )
     tin_args.add_argument(
-        '-teao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker energies (post-FF optimization). Energies will be '
-        'relative to the average energy.')
+        "-teao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker energies (post-FF optimization). Energies will be relative to the average energy.",
+    )
     tin_args.add_argument(
-        '-tb', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker bond lengths (pre-FF optimization).')
+        "-tb",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker bond lengths (pre-FF optimization).",
+    )
     tin_args.add_argument(
-        '-tbo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker bond lengths (post-FF optimization).')
+        "-tbo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker bond lengths (post-FF optimization).",
+    )
     tin_args.add_argument(
-        '-ta', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker angles (pre-FF optimization).')
+        "-ta",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker angles (pre-FF optimization).",
+    )
     tin_args.add_argument(
-        '-tao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker angles (post-FF optimization).')
+        "-tao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker angles (post-FF optimization).",
+    )
     tin_args.add_argument(
-        '-tt', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker torsions (pre-FF optimization).')
+        "-tt",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker torsions (pre-FF optimization).",
+    )
     tin_args.add_argument(
-        '-tto', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker torsions (post-FF optimization).')
+        "-tto",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz",
+        help="Tinker torsions (post-FF optimization).",
+    )
     tin_args.add_argument(
-        '-th', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz',
-        help='Tinker Hessian.')
+        "-th", type=str, nargs="+", action="append", default=[], metavar="somename.xyz", help="Tinker Hessian."
+    )
     tin_args.add_argument(
-        '-tjeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz,somename.out',
-        help='Tinker eigenmatrix (all elements). Uses Jaguar '
-        'eigenvectors.')
+        "-tjeig",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz,somename.out",
+        help="Tinker eigenmatrix (all elements). Uses Jaguar eigenvectors.",
+    )
     tin_args.add_argument(
-        '-tgeig', type=str, nargs='+', action='append',
-        default=[], metavar='somename.xyz,somename.log',
-        help='Tinker eigenmatrix (all elements). Uses Gaussian '
-        'eigenvectors.')
+        "-tgeig",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.xyz,somename.log",
+        help="Tinker eigenmatrix (all elements). Uses Gaussian eigenvectors.",
+    )
     # AMBER OPTIONS
     amb_args = parser.add_argument_group("amber data types")
     amb_args.add_argument(
-        '-ae', type=str, nargs='+', action='append',
-        default=[], metavar='somename.inpcrd,somename.prmtop',
-        help='Amber energies.')
+        "-ae",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.inpcrd,somename.prmtop",
+        help="Amber energies.",
+    )
     amb_args.add_argument(
-        '-abo', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help=('Amber bonds (post-FF optimization).'))
+        "-abo",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help=("Amber bonds (post-FF optimization)."),
+    )
     amb_args.add_argument(
-        '-aao', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help=('Amber angles (post-FF optimization).'))
+        "-aao",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help=("Amber angles (post-FF optimization)."),
+    )
     amb_args.add_argument(
-        '-ato', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help=('Amber torsion (post-FF optimization).'))
+        "-ato",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help=("Amber torsion (post-FF optimization)."),
+    )
     amb_args.add_argument(
-        '-ae1', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help='Amber energy (pre-FF optimization).')
+        "-ae1",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help="Amber energy (pre-FF optimization).",
+    )
     amb_args.add_argument(
-        '-ae1o', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help='Amber energy (post-FF optimization).')
+        "-ae1o",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help="Amber energy (post-FF optimization).",
+    )
     amb_args.add_argument(
-        '-ah', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help='Amber Hessian (post-FF optimization).')
+        "-ah",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help="Amber Hessian (post-FF optimization).",
+    )
     amb_args.add_argument(
-        '-aha', type=str, nargs='+', action='append',
-        default=[], metavar='somename.in',
-        help='Amber Hessian (post-FF optimization).')
+        "-aha",
+        type=str,
+        nargs="+",
+        action="append",
+        default=[],
+        metavar="somename.in",
+        help="Amber Hessian (post-FF optimization).",
+    )
     return parser
+
 
 def check_outs(filename, outs, classtype, direc):
     """
@@ -634,14 +943,14 @@ def check_outs(filename, outs, classtype, direc):
     Could work on easing the use of this by somehow reducing number of
     arguments required.
     """
-    logger.log(1, f'>>> filename: {filename}')
-    logger.log(1, f'>>> outs: {outs}')
-    logger.log(1, f'>>> classtype: {classtype}')
-    logger.log(1, f'>>> direc: {direc}')
+    logger.log(1, f">>> filename: {filename}")
+    logger.log(1, f">>> outs: {outs}")
+    logger.log(1, f">>> classtype: {classtype}")
+    logger.log(1, f">>> direc: {direc}")
     if filename not in outs:
-        outs[filename] = \
-            classtype(os.path.join(direc, filename))
+        outs[filename] = classtype(os.path.join(direc, filename))
     return outs[filename]
+
 
 def collect_reference(path):
     """
@@ -656,16 +965,15 @@ def collect_reference(path):
     with open(path) as f:
         for i, line in enumerate(f):
             # Skip certain lines.
-            if line[0] in ['-', '#']:
+            if line[0] in ["-", "#"]:
                 continue
             # if line.startswith('-'):
             #     continue
             # Remove everything following a # in a line.
-            line = line.partition('#')[0]
+            line = line.partition("#")[0]
             cols = line.split()
             # There should always be 3 columns.
-            assert len(cols) == 3, \
-                f'Error reading line {i} from {path}: {line}'
+            assert len(cols) == 3, f"Error reading line {i} from {path}: {line}"
             lbl, wht, val = cols
             datum = datatypes.Datum(lbl=lbl, wht=float(wht), val=float(val))
             # Added this from the function below, read_reference()
@@ -673,9 +981,10 @@ def collect_reference(path):
             data.append(datum)
     return np.array(data)
 
+
 # Must be rewritten to go in a particular order of data types every time.
-#TODO: MF Why and what order? Has this already been done?  What priority level is this?
-def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
+# TODO: MF Why and what order? Has this already been done?  What priority level is this?
+def collect_data(coms, inps, direc=".", sub_names=["OPT"], invert=None):
     """
     Arguments
     ---------
@@ -694,32 +1003,36 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     # REFERENCE DATA TEXT FILES
     # No grouping is necessary for this data type, so flatten the list of
     # lists.
-    filenames = chain.from_iterable(coms['r'])
+    filenames = chain.from_iterable(coms["r"])
     for filename in filenames:
         # Unlike most datatypes, these Datum only get the attributes _lbl,
         # val and wht. This is to ensure that making and working with these
         # reference text files isn't too cumbersome.
         data.extend(collect_reference(os.path.join(direc, filename)))
     # MACROMODEL MM3* CURRENT PARAMETER VALUES
-    filenames = chain.from_iterable(coms['mp'])
+    filenames = chain.from_iterable(coms["mp"])
     for comma_filenames in filenames:
         # FF file and parameter file.
-        name_fld, name_txt = comma_filenames.split(',')
+        name_fld, name_txt = comma_filenames.split(",")
         ff = datatypes.MM3(os.path.join(direc, name_fld))
         ff.import_ff()
-        ff.params = parameters.trim_params_by_file(
-            ff.params, os.path.join(direc, name_txt))
+        ff.params = parameters.trim_params_by_file(ff.params, os.path.join(direc, name_txt))
         for param in ff.params:
-            data.extend([datatypes.Datum(
-                val=param.value,
-                com='mp',
-                typ='p',
-                src_1=name_fld,
-                src_2=name_txt,
-                idx_1=param.ff_row,
-                idx_2=param.ff_col)])
+            data.extend(
+                [
+                    datatypes.Datum(
+                        val=param.value,
+                        com="mp",
+                        typ="p",
+                        src_1=name_fld,
+                        src_2=name_txt,
+                        idx_1=param.ff_row,
+                        idx_2=param.ff_col,
+                    )
+                ]
+            )
     # JAGUAR ENERGIES
-    filenames_s = coms['je']
+    filenames_s = coms["je"]
     # idx_1 is the number used to group sets of relative energies.
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -729,17 +1042,13 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             # .mae files contains multiple structures.
             for idx_2, structure in enumerate(mae.structures):
                 try:
-                    energy = structure.props['r_j_Gas_Phase_Energy']
+                    energy = structure.props["r_j_Gas_Phase_Energy"]
                 except KeyError:
-                    energy = structure.props['r_j_QM_Energy']
+                    energy = structure.props["r_j_QM_Energy"]
                 energy *= co.HARTREE_TO_KJMOL
-                temp.append(datatypes.Datum(
-                        val=energy,
-                        com='je',
-                        typ='e',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                temp.append(
+                    datatypes.Datum(val=energy, com="je", typ="e", src_1=filename, idx_1=idx_1 + 1, idx_2=idx_2 + 1)
+                )
         # For this data type, we set everything relative.
         zero = min([x.val for x in temp])
         for datum in temp:
@@ -748,7 +1057,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
     # KJK
     # FOR A SINGLE MODEL SYSTEM FITTING
     # GAUSSIAN ENERGY
-    filename_s = coms['ge1']
+    filename_s = coms["ge1"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -756,28 +1065,22 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             things_to_add = []
             for thing_label in co.GAUSSIAN_ENERGIES:
                 thing = log.structures[0].props[thing_label]
-                if ',' in thing:
-                    thing = [float(x) for x in thing.split(',')]
+                if "," in thing:
+                    thing = [float(x) for x in thing.split(",")]
                 else:
                     thing = [float(thing)]
                 things_to_add.append(thing)
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='ge1',
-                        typ='e1',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="ge1", typ="e1", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
         data.extend(temp)
     # FOR A SINGLE MODEL SYSTEM FITTING (Comparing to Optimized structure)
     # GAUSSIAN ENERGY
-    filename_s = coms['ge1o']
+    filename_s = coms["ge1o"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -785,27 +1088,21 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             things_to_add = []
             for thing_label in co.GAUSSIAN_ENERGIES:
                 thing = log.structures[0].props[thing_label]
-                if ',' in thing:
-                    thing = [float(x) for x in thing.split(',')]
+                if "," in thing:
+                    thing = [float(x) for x in thing.split(",")]
                 else:
                     thing = [float(thing)]
                 things_to_add.append(thing)
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='ge1o',
-                        typ='e1o',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="ge1o", typ="e1o", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
         data.extend(temp)
     # GAUSSIAN ENERGIES
-    filename_s = coms['ge']
+    filename_s = coms["ge"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -843,10 +1140,10 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 thing = log.structures[0].props[thing_label]
                 # Deal with multiple structures by checking for this
                 # split here.
-                if ',' in thing:
+                if "," in thing:
                     # Note that the "stupidproperty" example would fail here
                     # because its elements can not be converted to floats.
-                    thing = [float(x) for x in thing.split(',')]
+                    thing = [float(x) for x in thing.split(",")]
                     # Here, thing might look like:
                     #    thing = [0.1235235, 0.2352, 0.352345]
                 else:
@@ -857,7 +1154,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             # The length of the things_to_add sublists should always be the
             # same if you're doing it right. I suppose you could add some
             # sort of assert here.
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             # In this case, consider the earlier example where:
             #    things_to_add = [[0.634, 0.2352],
             #                     [0.01234, 0.0164]]
@@ -871,13 +1168,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='ge',
-                        typ='e',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="ge", typ="e", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
 
             # This works when HF and ZeroPoint are used. Had to make it more
             # general.
@@ -924,8 +1215,8 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             datum.val -= zero
         data.extend(temp)
     # MACROMODEL ENERGIES
-    filenames_s = coms['me']
-    ind = 'pre'
+    filenames_s = coms["me"]
+    ind = "pre"
     for idx_1, filenames in enumerate(filenames_s):
         for filename in filenames:
             name_mae = inps[filename].name_mae
@@ -933,109 +1224,132 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             indices = inps[filename]._index_output_mae
             # This is list of sets. The 1st value in the set corresponds to the
             # number of the structure. The 2nd value is the structure class.
-            selected_structures = filetypes.select_structures(
-                mae.structures, indices, ind)
+            selected_structures = filetypes.select_structures(mae.structures, indices, ind)
             for idx_2, structure in selected_structures:
-                data.append(datatypes.Datum(
-                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
-                        com='me',
-                        typ='e',
+                data.append(
+                    datatypes.Datum(
+                        val=structure.props["r_mmod_Potential_Energy-MM3*"],
+                        com="me",
+                        typ="e",
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                        idx_2=idx_2 + 1,
+                    )
+                )
     # KJK
     # GAUSSIAN TO AMBER BONDS (PRE OPT)
-    filenames_s = coms['gab']
+    filenames_s = coms["gab"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gab', 'pre', 'bonds', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(filename, inps, outs, direc, "gab", "pre", "bonds", idx_1=idx_1)
+            )
         data.extend(temp)
     # GAUSSIAN TO AMBER ANGLES (PRE OPT)
-    filenames_s = coms['gaa']
+    filenames_s = coms["gaa"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gaao', 'pre', 'angles', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(
+                    filename, inps, outs, direc, "gaao", "pre", "angles", idx_1=idx_1
+                )
+            )
         data.extend(temp)
     # GAUSSIAN TO AMBER TORSIONS (PRE OPT)
-    filenames_s = coms['gat']
+    filenames_s = coms["gat"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gato', 'pre', 'torsions', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(
+                    filename, inps, outs, direc, "gato", "pre", "torsions", idx_1=idx_1
+                )
+            )
         data.extend(temp)
     # GAUSSIAN TO AMBER BONDS (POST OPT)
-    filenames_s = coms['gabo']
+    filenames_s = coms["gabo"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gabo', 'opt', 'bonds', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(filename, inps, outs, direc, "gabo", "opt", "bonds", idx_1=idx_1)
+            )
         data.extend(temp)
     # GAUSSIAN TO AMBER ANGLES (POST OPT)
-    filenames_s = coms['gaao']
+    filenames_s = coms["gaao"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gaao', 'opt', 'angles', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(
+                    filename, inps, outs, direc, "gaao", "opt", "angles", idx_1=idx_1
+                )
+            )
         data.extend(temp)
     # GAUSSIAN TO AMBER TORSIONS (POST OPT)
-    filenames_s = coms['gato']
+    filenames_s = coms["gato"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'gato', 'opt', 'torsions', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(
+                    filename, inps, outs, direc, "gato", "opt", "torsions", idx_1=idx_1
+                )
+            )
         data.extend(temp)
     # AMBER BONDS
-    filenames_s = coms['abo']
+    filenames_s = coms["abo"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'abo', 'opt', 'bonds', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(filename, inps, outs, direc, "abo", "opt", "bonds", idx_1=idx_1)
+            )
         data.extend(temp)
     # AMBER ANGLES
-    filenames_s = coms['aao']
+    filenames_s = coms["aao"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'aao', 'opt', 'angles', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(filename, inps, outs, direc, "aao", "opt", "angles", idx_1=idx_1)
+            )
         data.extend(temp)
     # AMBER TORSIONS
-    filenames_s = coms['ato']
+    filenames_s = coms["ato"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.extend(collect_structural_data_from_amber_geo(
-                filename, inps, outs, direc, 'ato', 'opt', 'torsions', idx_1 = idx_1))
+            temp.extend(
+                collect_structural_data_from_amber_geo(
+                    filename, inps, outs, direc, "ato", "opt", "torsions", idx_1=idx_1
+                )
+            )
         data.extend(temp)
     # AMBER ENERGY
-    filenames_s = coms['ae1']
+    filenames_s = coms["ae1"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_amber_ene(
-                filename, inps, outs, direc, 'ae1', 'pre', 'e1', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_amber_ene(filename, inps, outs, direc, "ae1", "pre", "e1", idx_1=idx_1)
+            )
         data.extend(temp)
 
     # AMBER OPTIMIZED ENERGY
-    filenames_s = coms['ae1o']
+    filenames_s = coms["ae1o"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_amber_ene(
-                filename, inps, outs, direc, 'ae1o', 'opt', 'e1o', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_amber_ene(filename, inps, outs, direc, "ae1o", "opt", "e1o", idx_1=idx_1)
+            )
         data.extend(temp)
 
     # AMBER HESSIAN
-    filenames = chain.from_iterable(coms['ah'])
+    filenames = chain.from_iterable(coms["ah"])
     for filename in filenames:
         name_hes = inps[filename].name_hes
         hes = check_outs(name_hes, outs, filetypes.AmberHess, direc)
@@ -1048,25 +1362,25 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         int4 = []
         if os.path.isfile("calc/geo.npy"):
             hes_geo = None
-            if np.__version__ >= '1.16.4':
-                hes_geo = np.load("calc/geo.npy",allow_pickle=True)
+            if np.__version__ >= "1.16.4":
+                hes_geo = np.load("calc/geo.npy", allow_pickle=True)
             else:
                 hes_geo = np.load("calc/geo.npy")
             for ele in hes_geo:
                 inter = np.count_nonzero(ele)
-                a,b,c,d = ele
+                a, b, c, d = ele
                 if inter == 2:
                     a = int(a)
                     b = int(b)
-                    int2.append([a,b])
+                    int2.append([a, b])
                 elif inter == 3:
                     a = int(a)
                     c = int(c)
-                    int3.append([a,c])
+                    int3.append([a, c])
                 elif inter == 4:
                     a = int(a)
                     d = int(d)
-                    int4.append([a,d])
+                    int4.append([a, d])
         frozen = 0
         f_atom = []
         if os.path.isfile("fixedatoms.txt"):
@@ -1077,68 +1391,74 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 line = fline.split()
                 if len(line) == 1:
                     f_atom.append(int(line[0]))
-            print("Reading fixedatoms.txt\nFixed Atom Numbers:",f_atom)
-        def int_wht(at_1,at_2): #TODO: MF - Why is this defined within a for-loop??
+            print("Reading fixedatoms.txt\nFixed Atom Numbers:", f_atom)
+
+        def int_wht(at_1, at_2):  # TODO: MF - Why is this defined within a for-loop??
             """
-                Weighted value for hessian matrix
-                default value
-                diagonal zero
-                1-2      0.031
-                1-3      0.031
-                1-4      0.31
-                else     0.031
+            Weighted value for hessian matrix
+            default value
+            diagonal zero
+            1-2      0.031
+            1-3      0.031
+            1-4      0.31
+            else     0.031
             """
-            apair = [at_1,at_2]
+            apair = [at_1, at_2]
             if at_1 == at_2:
                 return 0.0
             elif apair in int2:
-                return co.WEIGHTS['h12']
+                return co.WEIGHTS["h12"]
             elif apair in int3 or apair in int4:
-                return co.WEIGHTS['h14']
+                return co.WEIGHTS["h14"]
             elif frozen:
                 if at_1 in f_atom or at_2 in f_atom:
-                    #print("DEBUG:",at_1,at_2,f_atom)
+                    # print("DEBUG:",at_1,at_2,f_atom)
                     return 0.0
                 else:
                     return 1.0
             else:
                 return 1.0
-        data.extend([datatypes.Datum(
-            val=e,
-            com='ah',
-            typ='h',
-            src_1=hes.filename,
-            idx_1=x + 1,
-            idx_2=y + 1,
-            atm_1=int((x)//3+1),
-            atm_2=int((y)//3+1),
-            wht = int_wht(int((x)//3+1),int((y)//3+1)))
-                for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+
+        data.extend(
+            [
+                datatypes.Datum(
+                    val=e,
+                    com="ah",
+                    typ="h",
+                    src_1=hes.filename,
+                    idx_1=x + 1,
+                    idx_2=y + 1,
+                    atm_1=int((x) // 3 + 1),
+                    atm_2=int((y) // 3 + 1),
+                    wht=int_wht(int((x) // 3 + 1), int((y) // 3 + 1)),
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
 
     # AMBER ENERGIES
-#    filenames_s = coms['ae']
-#    for idx_1, filenames in enumerate(filenames_s):
-#        logger.log(1, '>>> idx_1: {}'.format(idx_1))
-#        logger.log(1, '>>> filenames: {}'.format(filenames))
-#        for idx_2, comma_sep_filenames in enumerate(filenames):
-#            name_1, name_2 = comma_sep_filenames.split(',')
-#            out = check_outs(
-#                comma_sep_filenames, outs, filetypes.AmberOut, direc)
-#            # Right now, path is a comma separated string.
-#            out.path = inps[comma_sep_filenames].out
-#            logger.log(1, '>>> out: {}'.format(out))
-#            energy = out.read_energy()
-#            data.append(datatypes.Datum(
-#                val=energy,
-#                com='ae',
-#                typ='e',
-#                src_1=name_1,
-#                src_2=name_2,
-#                idx_1=idx_1 + 1,
-#                idx_2=idx_2 + 1))
+    #    filenames_s = coms['ae']
+    #    for idx_1, filenames in enumerate(filenames_s):
+    #        logger.log(1, '>>> idx_1: {}'.format(idx_1))
+    #        logger.log(1, '>>> filenames: {}'.format(filenames))
+    #        for idx_2, comma_sep_filenames in enumerate(filenames):
+    #            name_1, name_2 = comma_sep_filenames.split(',')
+    #            out = check_outs(
+    #                comma_sep_filenames, outs, filetypes.AmberOut, direc)
+    #            # Right now, path is a comma separated string.
+    #            out.path = inps[comma_sep_filenames].out
+    #            logger.log(1, '>>> out: {}'.format(out))
+    #            energy = out.read_energy()
+    #            data.append(datatypes.Datum(
+    #                val=energy,
+    #                com='ae',
+    #                typ='e',
+    #                src_1=name_1,
+    #                src_2=name_2,
+    #                idx_1=idx_1 + 1,
+    #                idx_2=idx_2 + 1))
     # JAGUAR AVERAGE ENERGIES
-    filenames_s = coms['jea']
+    filenames_s = coms["jea"]
     # idx_1 is the number used to group sets of relative energies.
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -1148,24 +1468,20 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             # .mae files contains multiple structures.
             for idx_2, structure in enumerate(mae.structures):
                 try:
-                    energy = structure.props['r_j_Gas_Phase_Energy']
+                    energy = structure.props["r_j_Gas_Phase_Energy"]
                 except KeyError:
-                    energy = structure.props['r_j_QM_Energy']
+                    energy = structure.props["r_j_QM_Energy"]
                 energy *= co.HARTREE_TO_KJMOL
-                temp.append(datatypes.Datum(
-                        val=energy,
-                        com='jea',
-                        typ='ea',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                temp.append(
+                    datatypes.Datum(val=energy, com="jea", typ="ea", src_1=filename, idx_1=idx_1 + 1, idx_2=idx_2 + 1)
+                )
         # For this data type, we set everything relative.
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # GAUSSIAN AVERAGE ENERGIES
-    filename_s = coms['gea']
+    filename_s = coms["gea"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -1173,31 +1489,25 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             things_to_add = []
             for thing_label in co.GAUSSIAN_ENERGIES:
                 thing = log.structures[0].props[thing_label]
-                if ',' in thing:
-                    thing = [float(x) for x in thing.split(',')]
+                if "," in thing:
+                    thing = [float(x) for x in thing.split(",")]
                 else:
                     thing = [float(thing)]
                 things_to_add.append(thing)
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='gea',
-                        typ='ea',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="gea", typ="ea", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # MACROMODEL AVERAGE ENERGIES
-    filenames_s = coms['mea']
-    ind = 'pre'
+    filenames_s = coms["mea"]
+    ind = "pre"
     # idx_1 is the number used to group sets of relative energies.
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -1207,22 +1517,24 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             indices = inps[filename]._index_output_mae
             # This is list of sets. The 1st value in the set corresponds to the
             # number of the structure. The 2nd value is the structure class.
-            selected_structures = filetypes.select_structures(
-                mae.structures, indices, ind)
+            selected_structures = filetypes.select_structures(mae.structures, indices, ind)
             for idx_2, structure in selected_structures:
-                temp.append(datatypes.Datum(
-                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
-                        com='mea',
-                        typ='ea',
+                temp.append(
+                    datatypes.Datum(
+                        val=structure.props["r_mmod_Potential_Energy-MM3*"],
+                        com="mea",
+                        typ="ea",
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                        idx_2=idx_2 + 1,
+                    )
+                )
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # JAGUAR ENERGIES COMPARED TO OPTIMIZED MM
-    filenames_s = coms['jeo']
+    filenames_s = coms["jeo"]
     # idx_1 is the number used to group sets of relative energies.
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -1232,24 +1544,20 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             # .mae files contains multiple structures.
             for idx_2, structure in enumerate(mae.structures):
                 try:
-                    energy = structure.props['r_j_Gas_Phase_Energy']
+                    energy = structure.props["r_j_Gas_Phase_Energy"]
                 except KeyError:
-                    energy = structure.props['r_j_QM_Energy']
+                    energy = structure.props["r_j_QM_Energy"]
                 energy *= co.HARTREE_TO_KJMOL
-                temp.append(datatypes.Datum(
-                        val=energy,
-                        com='jeo',
-                        typ='eo',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                temp.append(
+                    datatypes.Datum(val=energy, com="jeo", typ="eo", src_1=filename, idx_1=idx_1 + 1, idx_2=idx_2 + 1)
+                )
         # For this data type, we set everything relative.
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
     # GAUSSIAN ENERGIES RELATIVE TO OPTIMIZED MM
-    filename_s = coms['geo']
+    filename_s = coms["geo"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -1257,48 +1565,44 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             things_to_add = []
             for thing_label in co.GAUSSIAN_ENERGIES:
                 thing = log.structures[0].props[thing_label]
-                if ',' in thing:
-                    thing = [float(x) for x in thing.split(',')]
+                if "," in thing:
+                    thing = [float(x) for x in thing.split(",")]
                 else:
                     thing = [float(thing)]
                 things_to_add.append(thing)
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='geo',
-                        typ='eo',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="geo", typ="eo", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
     # MACROMODEL OPTIMIZED ENERGIES
-    filenames_s = coms['meo']
-    ind = 'opt'
+    filenames_s = coms["meo"]
+    ind = "opt"
     for idx_1, filenames in enumerate(filenames_s):
         for filename in filenames:
             name_mae = inps[filename].name_mae
             mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
-            selected_structures = filetypes.select_structures(
-                mae.structures, indices, ind)
+            selected_structures = filetypes.select_structures(mae.structures, indices, ind)
             for idx_2, structure in selected_structures:
-                data.append(datatypes.Datum(
-                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
-                        com='meo',
-                        typ='eo',
+                data.append(
+                    datatypes.Datum(
+                        val=structure.props["r_mmod_Potential_Energy-MM3*"],
+                        com="meo",
+                        typ="eo",
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                        idx_2=idx_2 + 1,
+                    )
+                )
     # JAGUAR ENERGIES RELATIVE TO AVERAGE COMPARED TO OPTIMIZED MM
-    filenames_s = coms['jeao']
+    filenames_s = coms["jeao"]
     # idx_1 is the number used to group sets of relative energies.
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
@@ -1308,23 +1612,19 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             # .mae files contains multiple structures.
             for idx_2, structure in enumerate(mae.structures):
                 try:
-                    energy = structure.props['r_j_Gas_Phase_Energy']
+                    energy = structure.props["r_j_Gas_Phase_Energy"]
                 except KeyError:
-                    energy = structure.props['r_j_QM_Energy']
+                    energy = structure.props["r_j_QM_Energy"]
                 energy *= co.HARTREE_TO_KJMOL
-                temp.append(datatypes.Datum(
-                        val=energy,
-                        com='jeao',
-                        typ='eao',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                temp.append(
+                    datatypes.Datum(val=energy, com="jeao", typ="eao", src_1=filename, idx_1=idx_1 + 1, idx_2=idx_2 + 1)
+                )
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # GAUSSIAN AVERAGE ENERGIES RELATIVE TO OPTIMIZED MM
-    filename_s = coms['geao']
+    filename_s = coms["geao"]
     for idx_1, filenames in enumerate(filename_s):
         temp = []
         for filename in filenames:
@@ -1332,150 +1632,146 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             things_to_add = []
             for thing_label in co.GAUSSIAN_ENERGIES:
                 thing = log.structures[0].props[thing_label]
-                if ',' in thing:
-                    thing = [float(x) for x in thing.split(',')]
+                if "," in thing:
+                    thing = [float(x) for x in thing.split(",")]
                 else:
                     thing = [float(thing)]
                 things_to_add.append(thing)
-            energies = [0.] * len(things_to_add[0])
+            energies = [0.0] * len(things_to_add[0])
             for thing_group in things_to_add:
                 for i, thing in enumerate(thing_group):
                     energies[i] += thing
             energies = [x * co.HARTREE_TO_KJMOL for x in energies]
             for i, e in enumerate(energies):
-                temp.append(datatypes.Datum(
-                        val=e,
-                        com='geao',
-                        typ='eao',
-                        src_1=filename,
-                        idx_1=idx_1 + 1,
-                        idx_2=i + 1))
+                temp.append(datatypes.Datum(val=e, com="geao", typ="eao", src_1=filename, idx_1=idx_1 + 1, idx_2=i + 1))
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # MACROMODEL OPTIMIZED ENERGIES RELATIVE TO AVERAGE
-    filenames_s = coms['meao']
-    ind = 'opt'
+    filenames_s = coms["meao"]
+    ind = "opt"
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
             name_mae = inps[filename].name_mae
             mae = check_outs(name_mae, outs, filetypes.Mae, direc)
             indices = inps[filename]._index_output_mae
-            selected_structures = filetypes.select_structures(
-                mae.structures, indices, ind)
+            selected_structures = filetypes.select_structures(mae.structures, indices, ind)
             for idx_2, structure in selected_structures:
-                temp.append(datatypes.Datum(
-                        val=structure.props['r_mmod_Potential_Energy-MM3*'],
-                        com='meao',
-                        typ='eao',
+                temp.append(
+                    datatypes.Datum(
+                        val=structure.props["r_mmod_Potential_Energy-MM3*"],
+                        com="meao",
+                        typ="eao",
                         src_1=inps[filename].name_mae,
                         idx_1=idx_1 + 1,
-                        idx_2=idx_2 + 1))
+                        idx_2=idx_2 + 1,
+                    )
+                )
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # JAGUAR BONDS
-    filenames = chain.from_iterable(coms['jb'])
+    filenames = chain.from_iterable(coms["jb"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'jb', 'pre', 'bonds'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "jb", "pre", "bonds"))
     # GAUSSIAN BONDS
-    filenames = chain.from_iterable(coms['gtb'])
+    filenames = chain.from_iterable(coms["gtb"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
-                filename, inps, outs, direc, 'gtb', 'pre', 'bonds'))
+        data.extend(
+            collect_structural_data_from_tinker_log_for_gaussian(filename, inps, outs, direc, "gtb", "pre", "bonds")
+        )
     # GAUSSIAN ANGLES
-    filenames = chain.from_iterable(coms['gta'])
+    filenames = chain.from_iterable(coms["gta"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
-                filename, inps, outs, direc, 'gta', 'pre', 'angles'))
+        data.extend(
+            collect_structural_data_from_tinker_log_for_gaussian(filename, inps, outs, direc, "gta", "pre", "angles")
+        )
     # GAUSSIAN TORSIONS
-    filenames = chain.from_iterable(coms['gtt'])
+    filenames = chain.from_iterable(coms["gtt"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log_for_gaussian(
-                filename, inps, outs, direc, 'gtt', 'pre', 'torsions'))
+        data.extend(
+            collect_structural_data_from_tinker_log_for_gaussian(filename, inps, outs, direc, "gtt", "pre", "torsions")
+        )
     # TINKER SP BONDS
-    filenames = chain.from_iterable(coms['tb'])
+    filenames = chain.from_iterable(coms["tb"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tb', 'pre', 'bonds'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tb", "pre", "bonds"))
     # TINKER SP ANGLES
-    filenames = chain.from_iterable(coms['ta'])
+    filenames = chain.from_iterable(coms["ta"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'ta', 'pre', 'angles'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "ta", "pre", "angles"))
     # TINKER SP TORSIONS
-    filenames = chain.from_iterable(coms['tt'])
+    filenames = chain.from_iterable(coms["tt"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tt', 'pre', 'torsions'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tt", "pre", "torsions"))
     # TINKER OPTIMIZED BONDS
-    filenames = chain.from_iterable(coms['tbo'])
+    filenames = chain.from_iterable(coms["tbo"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tbo', 'opt', 'bonds'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tbo", "opt", "bonds"))
     # TINKER OPTIMIZED ANGLE
-    filenames = chain.from_iterable(coms['tao'])
+    filenames = chain.from_iterable(coms["tao"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tao', 'opt', 'angles'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tao", "opt", "angles"))
     # TINKER OPTIMIZED ANGLE
-    filenames = chain.from_iterable(coms['tto'])
+    filenames = chain.from_iterable(coms["tto"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tto', 'opt', 'torsions'))
+        data.extend(collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tto", "opt", "torsions"))
     # TINKER ENERGIES RELATIVE TO LOWEST
-    filenames_s = coms['te']
+    filenames_s = coms["te"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'te', 'pre', 'e', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_tinker_log(filename, inps, outs, direc, "te", "pre", "e", idx_1=idx_1)
+            )
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
     # TINKER ENERGIES RELATIVE TO AVERAGE
-    filenames_s = coms['tea']
+    filenames_s = coms["tea"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'tea', 'pre', 'ea', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_tinker_log(filename, inps, outs, direc, "tea", "pre", "ea", idx_1=idx_1)
+            )
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # TINKER OPTIMIZED ENERGIES RELATIVE LOWEST
-    filenames_s = coms['teo']
+    filenames_s = coms["teo"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'teo', 'opt', 'eo', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_tinker_log(filename, inps, outs, direc, "teo", "opt", "eo", idx_1=idx_1)
+            )
         zero = min([x.val for x in temp])
         for datum in temp:
             datum.val -= zero
         data.extend(temp)
     # TINKER OPTIMIZED ENERGIES RELATIVE TO AVERAGE
-    filenames_s = coms['teao']
+    filenames_s = coms["teao"]
     for idx_1, filenames in enumerate(filenames_s):
         temp = []
         for filename in filenames:
-            temp.append(collect_structural_data_from_tinker_log(
-                filename, inps, outs, direc, 'teao', 'opt', 'eao', idx_1 = idx_1))
+            temp.append(
+                collect_structural_data_from_tinker_log(filename, inps, outs, direc, "teao", "opt", "eao", idx_1=idx_1)
+            )
         avg = sum([x.val for x in temp]) / len(temp)
         for datum in temp:
             datum.val -= avg
         data.extend(temp)
     # TINKER HESSIAN
-    filenames = chain.from_iterable(coms['th'])
+    filenames = chain.from_iterable(coms["th"])
     for filename in filenames:
         xyz_struct = inps[filename].structures[0]
-        num_atoms = xyz_struct.props['total atoms']
+        num_atoms = xyz_struct.props["total atoms"]
         name_hes = inps[filename].name_hes
         hes = check_outs(name_hes, outs, filetypes.TinkerHess, direc)
         hes.natoms = num_atoms
@@ -1485,25 +1781,22 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         # I'm not even sure if we can use dummy atoms in TINKER.
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
-        data.extend([datatypes.Datum(
-            val=e,
-            com='th',
-            typ='h',
-            src_1=hes.filename,
-            idx_1=x + 1,
-            idx_2=y + 1)
-                for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(val=e, com="th", typ="h", src_1=hes.filename, idx_1=x + 1, idx_2=y + 1)
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # TINKER EIGENMATRIX USING GAUSSIAN EIGENVECTORS
-    filenames = chain.from_iterable(coms['tgeig'])
+    filenames = chain.from_iterable(coms["tgeig"])
     for comma_filenames in filenames:
-        name_xyz, name_gau_log = comma_filenames.split(',')
+        name_xyz, name_gau_log = comma_filenames.split(",")
         name_xyz_hes = inps[name_xyz].name_hes
         xyz = check_outs(name_xyz, outs, filetypes.Tinker_xyz, direc)
         xyz_hes = check_outs(name_xyz_hes, outs, filetypes.TinkerHess, direc)
         gau_log = check_outs(name_gau_log, outs, filetypes.GaussLog, direc)
         xyz_struct = xyz.structures[0]
-        num_atoms = xyz_struct.props['total atoms']
+        num_atoms = xyz_struct.props["total atoms"]
         xyz_hes.natoms = num_atoms
         hess = xyz_hes.hessian
         datatypes.mass_weight_hessian(hess, xyz_struct.atoms)
@@ -1511,49 +1804,42 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
-            logger.warning('Matrices not aligned!')
-            logger.warning(f'Hessian retrieved from {name_mae_log}: {hess.shape}')
-            logger.warning(f'Eigenvectors retrieved from {name_gau_log}: {evec.shape}')
+            logger.warning("Matrices not aligned!")
+            logger.warning(f"Hessian retrieved from {name_mae_log}: {hess.shape}")
+            logger.warning(f"Eigenvectors retrieved from {name_gau_log}: {evec.shape}")
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
-        data.extend([datatypes.Datum(
-            val=e,
-            com='tgeig',
-            typ='eig',
-            src_1=name_xyz,
-            src_2=name_gau_log,
-            idx_1=x + 1,
-            idx_2=y + 1)
-                for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(
+                    val=e, com="tgeig", typ="eig", src_1=name_xyz, src_2=name_gau_log, idx_1=x + 1, idx_2=y + 1
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # MACROMODEL BONDS
-    filenames = chain.from_iterable(coms['mb'])
+    filenames = chain.from_iterable(coms["mb"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'mb', 'opt', 'bonds'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "mb", "opt", "bonds"))
     # JAGUAR ANGLES
-    filenames = chain.from_iterable(coms['ja'])
+    filenames = chain.from_iterable(coms["ja"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'ja', 'pre', 'angles'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "ja", "pre", "angles"))
     # MACROMODEL BONDS
-    filenames = chain.from_iterable(coms['ma'])
+    filenames = chain.from_iterable(coms["ma"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'ma', 'opt', 'angles'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "ma", "opt", "angles"))
     # JAGUAR BONDS
-    filenames = chain.from_iterable(coms['jt'])
+    filenames = chain.from_iterable(coms["jt"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'jt', 'pre', 'torsions'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "jt", "pre", "torsions"))
     # MACROMODEL BONDS
-    filenames = chain.from_iterable(coms['mt'])
+    filenames = chain.from_iterable(coms["mt"])
     for filename in filenames:
-        data.extend(collect_structural_data_from_mae(
-                filename, inps, outs, direc, sub_names, 'mt', 'opt', 'torsions'))
+        data.extend(collect_structural_data_from_mae(filename, inps, outs, direc, sub_names, "mt", "opt", "torsions"))
     # JAGUAR CHARGES
-    filenames = chain.from_iterable(coms['jq'])
+    filenames = chain.from_iterable(coms["jq"])
     for filename in filenames:
         mae = check_outs(filename, outs, filetypes.Mae, direc)
         for idx_1, structure in enumerate(mae.structures):
@@ -1562,54 +1848,56 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 # use it.
                 # If b_q_use_charge is 1, use it. If it's 0, don't
                 # use it.
-                if 'b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']:
-                    data.append(datatypes.Datum(
+                if "b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]:
+                    data.append(
+                        datatypes.Datum(
                             val=atom.partial_charge,
-                            com='jq',
-                            typ='q',
+                            com="jq",
+                            typ="q",
                             src_1=filename,
                             idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                            atm_1=atom.index,
+                        )
+                    )
     # MACROMODEL CHARGES
-    filenames = chain.from_iterable(coms['mq'])
+    filenames = chain.from_iterable(coms["mq"])
     for filename in filenames:
         name_mae = inps[filename].name_mae
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         # Pick out the right structures. Sometimes our .com files
         # generate many structures in a .mae, not all of which
         # apply to this command.
-        structures = filetypes.select_structures(
-            mae.structures, inps[filename]._index_output_mae, 'pre')
+        structures = filetypes.select_structures(mae.structures, inps[filename]._index_output_mae, "pre")
         for idx_1, structure in structures:
             for atom in structure.atoms:
-                if 'b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']:
-                    data.append(datatypes.Datum(
+                if "b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]:
+                    data.append(
+                        datatypes.Datum(
                             val=atom.partial_charge,
-                            com='mq',
-                            typ='q',
+                            com="mq",
+                            typ="q",
                             src_1=filename,
                             idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                            atm_1=atom.index,
+                        )
+                    )
     # MACROMODEL+GUASSIAN ESP
-    filenames = chain.from_iterable(coms['mgESP'])
+    filenames = chain.from_iterable(coms["mgESP"])
     for comma_filenames in filenames:
         charges_list = []
-        filename_mae, name_gau_chk = comma_filenames.split(',')
-        #Filename of the output *mae file (i.e. filename.q2mm.mae)
+        filename_mae, name_gau_chk = comma_filenames.split(",")
+        # Filename of the output *mae file (i.e. filename.q2mm.mae)
         name_mae = inps[filename_mae].name_mae
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
-        structures = filetypes.select_structures(
-            mae.structures, inps[filename_mae]._index_output_mae, 'pre')
+        structures = filetypes.select_structures(mae.structures, inps[filename_mae]._index_output_mae, "pre")
         for idx_1, structure in structures:
             for atom in structure.atoms:
                 ### I think we want all the charges, right?
-                #if not 'b_q_use_charge' in atom.props or \
+                # if not 'b_q_use_charge' in atom.props or \
                 #    atom.props['b_q_use_charge']:
                 if atom.atomic_num > 0:
                     charges_list.append(atom.partial_charge)
-        com_filename = os.path.splitext(name_gau_chk)[0] + '.ESP.q2mm.com'
+        com_filename = os.path.splitext(name_gau_chk)[0] + ".ESP.q2mm.com"
         inps[com_filename].charge_list = charges_list
         inps[com_filename].write_com()
         inps[com_filename].run_gaussian()
@@ -1617,45 +1905,34 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         gauss = check_outs(name_gauss_log, outs, filetypes.GaussLog, direc)
         esp_rms = gauss.esp_rms
         if esp_rms < 0.0:
-            raise Exception('A negative RMS was obtained for the ESP fitting '
-                            'which indicates an error occured. Look at the '
-                            f'following file: {name_gauss_log}')
-        data.append(datatypes.Datum(
-                            val=esp_rms,
-                            com='mgESP',
-                            typ='esp',
-                            src_1= name_mae,
-                            src_2='gaussian',
-                            idx_1 = 1))
+            raise Exception(
+                "A negative RMS was obtained for the ESP fitting "
+                "which indicates an error occured. Look at the "
+                f"following file: {name_gauss_log}"
+            )
+        data.append(datatypes.Datum(val=esp_rms, com="mgESP", typ="esp", src_1=name_mae, src_2="gaussian", idx_1=1))
     # MACROMODEL+JAGUAR ESP
     ## This does not work, I still need to write code to support Jaguaer. -TR
-    filenames = chain.from_iterable(coms['mjESP'])
+    filenames = chain.from_iterable(coms["mjESP"])
     for comma_filenames in filenames:
         charges_list = []
-        name_mae, name_jag_chk = comma_filenames.split(',')
+        name_mae, name_jag_chk = comma_filenames.split(",")
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
-        structures = filetypes.select_structures(
-            mae.structures, inps[name_mae]._index_output_mae, 'pre')
+        structures = filetypes.select_structures(mae.structures, inps[name_mae]._index_output_mae, "pre")
         for idx_1, structure in structures:
             for atom in structure.atoms:
-                if 'b_q_use_charge' not in atom.props or \
-                    atom.props['b_q_use_charge']:
+                if "b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]:
                     charges_list.append(atom.partial_charge)
         ###Filler for ESP calculations####
         ### This is what is used in anna's code
-        current_RMS = run_ChelpG_inp.run_JCHelpG(charges_list,name_jag_chk)
+        current_RMS = run_ChelpG_inp.run_JCHelpG(charges_list, name_jag_chk)
 
         ### End of filler
         if current_RMS < 0:
             sys.exit("Error while computing RMS. Exiting")
-        data.append(datatypes.Datum(
-                            val=current_RMS,
-                            com='mjESP',
-                            typ='esp',
-                            src_1=name_mae,
-                            idx_1=1))
+        data.append(datatypes.Datum(val=current_RMS, com="mjESP", typ="esp", src_1=name_mae, idx_1=1))
     # JAGUAR CHARGES EXCLUDING ALIPHATIC HYDROGENS
-    filenames = chain.from_iterable(coms['jqh'])
+    filenames = chain.from_iterable(coms["jqh"])
     for filename in filenames:
         mae = check_outs(filename, outs, filetypes.Mae, direc)
         for idx_1, structure in enumerate(mae.structures):
@@ -1665,39 +1942,31 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                 # use it.
                 # If b_q_use_charge is 1, use it. If it's 0, don't
                 # use it.
-                if ('b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']) and \
-                        atom not in aliph_hyds:
+                if ("b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]) and atom not in aliph_hyds:
                     charge = atom.partial_charge
                     if atom.atom_type == 3:
                         for bonded_atom_index in atom.bonded_atom_indices:
                             bonded_atom = structure.atoms[bonded_atom_index - 1]
                             if bonded_atom in aliph_hyds:
                                 charge += bonded_atom.partial_charge
-                    data.append(datatypes.Datum(
-                            val=charge,
-                            com='jqh',
-                            typ='qh',
-                            src_1=filename,
-                            idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                    data.append(
+                        datatypes.Datum(
+                            val=charge, com="jqh", typ="qh", src_1=filename, idx_1=idx_1 + 1, atm_1=atom.index
+                        )
+                    )
     # MACROMODEL CHARGES EXCLUDING ALIPHATIC HYDROGENS
-    filenames = chain.from_iterable(coms['mqh'])
+    filenames = chain.from_iterable(coms["mqh"])
     for filename in filenames:
         name_mae = inps[filename].name_mae
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         # Pick out the right structures. Sometimes our .com files
         # generate many structures in a .mae, not all of which
         # apply to this command.
-        structures = filetypes.select_structures(
-            mae.structures, inps[filename]._index_output_mae, 'pre')
+        structures = filetypes.select_structures(mae.structures, inps[filename]._index_output_mae, "pre")
         for idx_1, structure in structures:
             aliph_hyds = structure.get_aliph_hyds()
             for atom in structure.atoms:
-                if ('b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']) and \
-                        atom not in aliph_hyds:
-
+                if ("b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]) and atom not in aliph_hyds:
                     # Since the charge is always zero AS FAR AS I KNOW, this
                     # whole recalculation of the charge is totally unnecessary.
                     # However, I want users to be aware that if a situation
@@ -1712,16 +1981,19 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                     #         if bonded_atom in aliph_hyds:
                     #             charge += bonded_atom.partial_charge
 
-                    data.append(datatypes.Datum(
+                    data.append(
+                        datatypes.Datum(
                             # val=charge,
                             val=atom.partial_charge,
-                            com='mqh',
-                            typ='qh',
+                            com="mqh",
+                            typ="qh",
                             src_1=filename,
                             idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                            atm_1=atom.index,
+                        )
+                    )
     # JAGUAR CHARGES EXCLUDING ALL SINGLE BONDED HYDROGENS
-    filenames = chain.from_iterable(coms['jqa'])
+    filenames = chain.from_iterable(coms["jqa"])
     for filename in filenames:
         mae = check_outs(filename, outs, filetypes.Mae, direc)
         for idx_1, structure in enumerate(mae.structures):
@@ -1729,9 +2001,7 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             for atom in structure.atoms:
                 # Check if we want to use this charge and ensure it's not a
                 # hydrogen.
-                if ('b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']) and \
-                        atom not in hyds:
+                if ("b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]) and atom not in hyds:
                     charge = atom.partial_charge
                     # Check if it's bonded to a hydrogen.
                     for bonded_atom_index in atom.bonded_atom_indices:
@@ -1739,44 +2009,37 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
                         if bonded_atom in hyds:
                             if len(bonded_atom.bonded_atom_indices) < 2:
                                 charge += bonded_atom.partial_charge
-                    data.append(datatypes.Datum(
-                            val=charge,
-                            com='jqa',
-                            typ='qa',
-                            src_1=filename,
-                            idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                    data.append(
+                        datatypes.Datum(
+                            val=charge, com="jqa", typ="qa", src_1=filename, idx_1=idx_1 + 1, atm_1=atom.index
+                        )
+                    )
     # MACROMODEL CHARGES EXCLUDING ALL SINGLE BONDED HYDROGENS
-    filenames = chain.from_iterable(coms['mqa'])
+    filenames = chain.from_iterable(coms["mqa"])
     for filename in filenames:
         name_mae = inps[filename].name_mae
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         # Pick out the right structures. Sometimes our .com files
         # generate many structures in a .mae, not all of which
         # apply to this command.
-        structures = filetypes.select_structures(
-            mae.structures, inps[filename]._index_output_mae, 'pre')
+        structures = filetypes.select_structures(mae.structures, inps[filename]._index_output_mae, "pre")
         for idx_1, structure in structures:
             hyds = structure.get_hyds()
             for atom in structure.atoms:
-                if ('b_q_use_charge' not in atom.props or \
-                        atom.props['b_q_use_charge']) and \
-                        atom not in hyds:
+                if ("b_q_use_charge" not in atom.props or atom.props["b_q_use_charge"]) and atom not in hyds:
                     charge = atom.partial_charge
                     for bonded_atom_index in atom.bonded_atom_indices:
                         bonded_atom = structure.atoms[bonded_atom_index - 1]
                         if bonded_atom in hyds:
                             if len(bonded_atom.bonded_atom_indices) < 2:
                                 charge += bonded_atom.partial_charge
-                    data.append(datatypes.Datum(
-                            val=charge,
-                            com='mqa',
-                            typ='qa',
-                            src_1=filename,
-                            idx_1=idx_1 + 1,
-                            atm_1=atom.index))
+                    data.append(
+                        datatypes.Datum(
+                            val=charge, com="mqa", typ="qa", src_1=filename, idx_1=idx_1 + 1, atm_1=atom.index
+                        )
+                    )
     # JAGUAR HESSIAN
-    filenames = chain.from_iterable(coms['jh'])
+    filenames = chain.from_iterable(coms["jh"])
     for filename in filenames:
         jin = check_outs(filename, outs, filetypes.JaguarIn, direc)
         hess = jin.hessian
@@ -1787,17 +2050,14 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
             hess = evecs.dot(np.diag(evals).dot(evecs.T))
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='jh',
-                    typ='h',
-                    src_1=jin.filename,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(val=e, com="jh", typ="h", src_1=jin.filename, idx_1=x + 1, idx_2=y + 1)
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # GAUSSIAN HESSIAN
-    filenames = chain.from_iterable(coms['gh'])
+    filenames = chain.from_iterable(coms["gh"])
     for filename in filenames:
         log = check_outs(filename, outs, filetypes.GaussLog, direc)
         log.read_archive()
@@ -1816,17 +2076,14 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         # WARNING: This option may need to be mass weighted!
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='gh',
-                    typ='h',
-                    src_1=log.filename,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(val=e, com="gh", typ="h", src_1=log.filename, idx_1=x + 1, idx_2=y + 1)
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # MACROMODEL HESSIAN
-    filenames = chain.from_iterable(coms['mh'])
+    filenames = chain.from_iterable(coms["mh"])
     for filename in filenames:
         # Get the .log for the .mae.
         name_log = inps[filename].name_log
@@ -1841,22 +2098,26 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         low_tri_idx = np.tril_indices_from(hess)
         low_tri = hess[low_tri_idx]
         ints = sch_util.interation234(filename)
-        data.extend([datatypes.Datum(
+        data.extend(
+            [
+                datatypes.Datum(
                     val=e,
-                    com='mh',
-                    typ='h',
+                    com="mh",
+                    typ="h",
                     src_1=mae.filename,
                     atm_1=int((x) // 3 + 1),
                     atm_2=int((y) // 3 + 1),
-                    wht=sch_util.wht(int((x) // 3 + 1), int((y) // 3 + 1),ints),
+                    wht=sch_util.wht(int((x) // 3 + 1), int((y) // 3 + 1), ints),
                     idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+                    idx_2=y + 1,
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # JAGUAR EIGENMATRIX
-    filenames = chain.from_iterable(coms['jeigz'])
+    filenames = chain.from_iterable(coms["jeigz"])
     for comma_sep_filenames in filenames:
-        name_in, name_out = comma_sep_filenames.split(',')
+        name_in, name_out = comma_sep_filenames.split(",")
         jin = check_outs(name_in, outs, filetypes.JaguarIn, direc)
         out = check_outs(name_out, outs, filetypes.JaguarOut, direc)
         hess = jin.hessian
@@ -1866,9 +2127,9 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
-            logger.warning('Matrices not aligned!')
-            logger.warning(f'Hessian retrieved from {name_in}: {hess.shape}')
-            logger.warning(f'Eigenvectors retrieved from {name_out}: {evec.shape}')
+            logger.warning("Matrices not aligned!")
+            logger.warning(f"Hessian retrieved from {name_in}: {hess.shape}")
+            logger.warning(f"Eigenvectors retrieved from {name_out}: {evec.shape}")
             raise
 
         # Funny way to make off-diagonal elements zero.
@@ -1882,18 +2143,16 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         eigenmatrix = np.diag(eigenmatrix)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='jeigz',
-                    typ='eig',
-                    src_1=jin.filename,
-                    src_2=out.filename,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(
+                    val=e, com="jeigz", typ="eig", src_1=jin.filename, src_2=out.filename, idx_1=x + 1, idx_2=y + 1
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # GAUSSIAN EIGENMATRIX
-    filenames = chain.from_iterable(coms['geigz'])
+    filenames = chain.from_iterable(coms["geigz"])
     for filename in filenames:
         log = check_outs(filename, outs, filetypes.GaussLog, direc)
         evals = log.evals * co.HESSIAN_CONVERSION
@@ -1902,19 +2161,16 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         eigenmatrix = np.diag(evals)
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='geigz',
-                    typ='eig',
-                    src_1=log.filename,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(val=e, com="geigz", typ="eig", src_1=log.filename, idx_1=x + 1, idx_2=y + 1)
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # MACROMODEL EIGENMATRIX USING JAGUAR EIGENVECTORS
-    filenames = chain.from_iterable(coms['mjeig'])
+    filenames = chain.from_iterable(coms["mjeig"])
     for comma_sep_filenames in filenames:
-        name_mae, name_out = comma_sep_filenames.split(',')
+        name_mae, name_out = comma_sep_filenames.split(",")
         name_log = inps[name_mae].name_log
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         log = check_outs(name_log, outs, filetypes.MacroModelLog, direc)
@@ -1928,26 +2184,24 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
-            logger.warning('Matrices not aligned!')
-            logger.warning(f'Hessian retrieved from {log.filename}: {hess.shape}')
-            logger.warning(f'Eigenvectors retrieved from {name_out}: {evec.shape}')
+            logger.warning("Matrices not aligned!")
+            logger.warning(f"Hessian retrieved from {log.filename}: {hess.shape}")
+            logger.warning(f"Eigenvectors retrieved from {name_out}: {evec.shape}")
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='mjeig',
-                    typ='eig',
-                    src_1=mae.filename,
-                    src_2=out.filename,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
+        data.extend(
+            [
+                datatypes.Datum(
+                    val=e, com="mjeig", typ="eig", src_1=mae.filename, src_2=out.filename, idx_1=x + 1, idx_2=y + 1
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
     # MACROMODEL EIGENMATRIX USING GAUSSIAN EIGENVECTORS
-    filenames = chain.from_iterable(coms['mgeig'])
+    filenames = chain.from_iterable(coms["mgeig"])
     for comma_filenames in filenames:
-        name_mae, name_gau_log = comma_filenames.split(',')
+        name_mae, name_gau_log = comma_filenames.split(",")
         name_mae_log = inps[name_mae].name_log
         mae = check_outs(name_mae, outs, filetypes.Mae, direc)
         mae_log = check_outs(name_mae_log, outs, filetypes.MacroModelLog, direc)
@@ -1960,42 +2214,41 @@ def collect_data(coms, inps, direc='.', sub_names=['OPT'], invert=None):
         try:
             eigenmatrix = np.dot(np.dot(evec, hess), evec.T)
         except ValueError:
-            logger.warning('Matrices not aligned!')
-            logger.warning(f'Hessian retrieved from {name_mae_log}: {hess.shape}')
-            logger.warning(f'Eigenvectors retrieved from {name_gau_log}: {evec.shape}')
+            logger.warning("Matrices not aligned!")
+            logger.warning(f"Hessian retrieved from {name_mae_log}: {hess.shape}")
+            logger.warning(f"Eigenvectors retrieved from {name_gau_log}: {evec.shape}")
             raise
         low_tri_idx = np.tril_indices_from(eigenmatrix)
         low_tri = eigenmatrix[low_tri_idx]
-        data.extend([datatypes.Datum(
-                    val=e,
-                    com='mgeig',
-                    typ='eig',
-                    src_1=name_mae,
-                    src_2=name_gau_log,
-                    idx_1=x + 1,
-                    idx_2=y + 1)
-                     for e, x, y in zip(
-                    low_tri, low_tri_idx[0], low_tri_idx[1])])
-    logger.log(15, f'TOTAL DATA POINTS: {len(data)}')
+        data.extend(
+            [
+                datatypes.Datum(
+                    val=e, com="mgeig", typ="eig", src_1=name_mae, src_2=name_gau_log, idx_1=x + 1, idx_2=y + 1
+                )
+                for e, x, y in zip(low_tri, low_tri_idx[0], low_tri_idx[1])
+            ]
+        )
+    logger.log(15, f"TOTAL DATA POINTS: {len(data)}")
     return np.array(data, dtype=datatypes.Datum)
 
-def collect_data_fake(coms, inps, direc='.', sub_names=['OPT']):
+
+def collect_data_fake(coms, inps, direc=".", sub_names=["OPT"]):
     """
     Generates a random data set quickly.
     """
     import random
+
     data = []
     filenames = flatten(coms.values())
     for idx_1, filename in enumerate(filenames):
         for idx_2 in range(5):
-            data.append(datatypes.Datum(
-                    val=random.uniform(0, 10),
-                    com='rand',
-                    typ='a',
-                    src_1=filename,
-                    idx_1=idx_1 + 1,
-                    idx_2=idx_2 + 1))
+            data.append(
+                datatypes.Datum(
+                    val=random.uniform(0, 10), com="rand", typ="a", src_1=filename, idx_1=idx_1 + 1, idx_2=idx_2 + 1
+                )
+            )
     return np.array(data, dtype=datatypes.Datum)
+
 
 def flatten(l):
     """
@@ -2009,16 +2262,16 @@ def flatten(l):
     """
     # Move this?
     import collections
+
     for el in l:
-        if isinstance(el, collections.Iterable) and \
-          not isinstance(el, str):
+        if isinstance(el, collections.Iterable) and not isinstance(el, str):
             for sub in flatten(el):
                 yield sub
         else:
             yield el
 
-def collect_structural_data_from_mae(
-    name_mae, inps, outs, direc, sub_names, com, ind, typ):
+
+def collect_structural_data_from_mae(name_mae, inps, outs, direc, sub_names, com, ind, typ):
     """
     Repeated code used to extract structural data from .mae files (through
     the generation of .mmo files).
@@ -2036,22 +2289,16 @@ def collect_structural_data_from_mae(
     indices = inps[name_mae]._index_output_mmo
 
     mmo = check_outs(name_mmo, outs, filetypes.MacroModel, direc)
-    selected_structures = filetypes.select_structures(
-        mmo.structures, indices, ind)
+    selected_structures = filetypes.select_structures(mmo.structures, indices, ind)
     for idx_1, structure in selected_structures:
-        data.extend(structure.select_data(
-                typ,
-                com=com,
-                com_match=sub_names,
-                src_1=mmo.filename,
-                idx_1=idx_1 + 1))
+        data.extend(structure.select_data(typ, com=com, com_match=sub_names, src_1=mmo.filename, idx_1=idx_1 + 1))
     return data
+
 
 # Added by Tony.
 # Probably want to use check_outs function at somepoint.
-def collect_structural_data_from_tinker_log(
-    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
-    select_struct = {'pre':0, 'opt':1}
+def collect_structural_data_from_tinker_log(name_xyz, inps, outs, direc, com, ind, typ, idx_1=None):
+    select_struct = {"pre": 0, "opt": 1}
     data = []
     name_log = inps[name_xyz].name_log
     log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
@@ -2064,88 +2311,65 @@ def collect_structural_data_from_tinker_log(
     # hes_structure.natoms = num_atoms
     # hessian = hes_structure.hessian()
     # Stuff to try out hessian.
-    if com in ['te','teo','tea','teao']:
-        energy = struct.props['energy']
-        new_datum = (datatypes.Datum(
-            val=energy,
-            typ=typ,
-            src_1=name_log,
-            idx_1=idx_1 + 1))
-        return(new_datum)
+    if com in ["te", "teo", "tea", "teao"]:
+        energy = struct.props["energy"]
+        new_datum = datatypes.Datum(val=energy, typ=typ, src_1=name_log, idx_1=idx_1 + 1)
+        return new_datum
     else:
-        data.extend(struct.select_data(
-            typ,
-            com=com,
-            src_1=name_log))
-        return(data)
+        data.extend(struct.select_data(typ, com=com, src_1=name_log))
+        return data
 
-def collect_structural_data_from_tinker_log_for_gaussian(
-    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
-    select_struct = {'pre':0, 'opt':1}
+
+def collect_structural_data_from_tinker_log_for_gaussian(name_xyz, inps, outs, direc, com, ind, typ, idx_1=None):
+    select_struct = {"pre": 0, "opt": 1}
     data = []
     name_log = inps[name_xyz].name_log
     log = check_outs(name_log, outs, filetypes.TinkerLog, direc)
     log_structure = log.structures
     struct = log_structure[select_struct[ind]]
 
-    data.extend(struct.select_data(
-        typ,
-        com=com,
-        src_1=name_log))
-    return(data)
+    data.extend(struct.select_data(typ, com=com, src_1=name_log))
+    return data
 
-def collect_structural_data_from_amber_geo(
-    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
-    select_struct = {'pre':0, 'opt':1}
+
+def collect_structural_data_from_amber_geo(name_xyz, inps, outs, direc, com, ind, typ, idx_1=None):
+    select_struct = {"pre": 0, "opt": 1}
     data = []
     name_geo = inps[name_xyz].name_geo
-    log = check_outs(name_geo, outs, filetypes.AmberGeo, direc) # returns classtype
+    log = check_outs(name_geo, outs, filetypes.AmberGeo, direc)  # returns classtype
     log_structure = log.structures
     struct = None
     if len(inps) == 1:
         struct = log_structure[0]
     else:
         struct = log_structure[select_struct[ind]]
-    data.extend(struct.select_data(
-            typ,
-            com=com,
-            src_1=name_xyz,
-            idx_2=1))
-    return(data)
-def collect_structural_data_from_amber_ene(
-    name_xyz, inps, outs, direc, com, ind, typ, idx_1 = None):
+    data.extend(struct.select_data(typ, com=com, src_1=name_xyz, idx_2=1))
+    return data
+
+
+def collect_structural_data_from_amber_ene(name_xyz, inps, outs, direc, com, ind, typ, idx_1=None):
     # Problem with input only 1 file
-    select_struct = {'pre':0, 'opt':1}
+    select_struct = {"pre": 0, "opt": 1}
     data = []
     name_ene = inps[name_xyz].name_ene
-    log = check_outs(name_ene, outs, filetypes.AmberEne, direc) # returns classtype
+    log = check_outs(name_ene, outs, filetypes.AmberEne, direc)  # returns classtype
     log_structure = log.structures
     struct = None
     if len(inps) == 1:
         struct = log_structure[0]
     else:
         struct = log_structure[select_struct[ind]]
-    if com in ['ae','aeo','aea','aeao','ae1','ae1o']:
-        energy = struct.props['energy']
-        new_datum = (datatypes.Datum(
-            val=energy,
-            typ=typ,
-            src_1=name_xyz,
-            idx_1=idx_1 + 1,
-            idx_2=1))
-        return(new_datum)
+    if com in ["ae", "aeo", "aea", "aeao", "ae1", "ae1o"]:
+        energy = struct.props["energy"]
+        new_datum = datatypes.Datum(val=energy, typ=typ, src_1=name_xyz, idx_1=idx_1 + 1, idx_2=1)
+        return new_datum
     else:
-        data.extend(struct.select_data(
-            typ,
-            com=com,
-            src_1=name_xyz,
-            idx_2=1))
-        return(data)
-
+        data.extend(struct.select_data(typ, com=com, src_1=name_xyz, idx_2=1))
+        return data
 
 
 def sort_commands_by_filename(commands):
-    '''
+    """
     Takes a dictionary of commands like...
 
      {'me': [['a1.01.mae', 'a2.01.mae', 'a3.01.mae'],
@@ -2174,16 +2398,17 @@ def sort_commands_by_filename(commands):
     Returns
     -------
     dictionary of the sorted commands
-    '''
+    """
     sorted_commands = {}
     for command, groups_filenames in commands.items():
         for comma_separated in chain.from_iterable(groups_filenames):
-            for filename in comma_separated.split(','):
+            for filename in comma_separated.split(","):
                 if filename in sorted_commands:
                     sorted_commands[filename].append(command)
                 else:
                     sorted_commands[filename] = [command]
     return sorted_commands
+
 
 # Will also have to be updated. Maybe the Datum class too and how it responds
 # to assigning labels.
@@ -2193,10 +2418,10 @@ def read_reference(filename):
     with open(filename) as f:
         for line in f:
             # Skip certain lines.
-            if line.startswith('-'):
+            if line.startswith("-"):
                 continue
             # Remove everything following a # in a line.
-            line = line.partition('#')[0]
+            line = line.partition("#")[0]
             cols = line.split()
             # There should always be 3 columns.
             if len(cols) == 3:
@@ -2213,28 +2438,29 @@ def read_reference(filename):
 # Shouldn't be necessary anymore.
 # This should be based by the datum type and not the length of the parts list.
 def lbl_to_data_attrs(datum, lbl):
-    parts = lbl.split('_')
+    parts = lbl.split("_")
     datum.typ = parts[0]
-   # if len(parts) == 3:
-    if datum.typ in ['e','eo','ea','eao','eig','h','q','qh','qa']:
+    # if len(parts) == 3:
+    if datum.typ in ["e", "eo", "ea", "eao", "eig", "h", "q", "qh", "qa"]:
         idxs = parts[-1]
-   # if len(parts) == 4:
-    if datum.typ in ['b','t','a']:
+    # if len(parts) == 4:
+    if datum.typ in ["b", "t", "a"]:
         idxs = parts[-2]
         atm_nums = parts[-1]
-        atm_nums = atm_nums.split('-')
+        atm_nums = atm_nums.split("-")
         for i, atm_num in enumerate(atm_nums):
-            setattr(datum, f'atm_{i+1}', int(atm_num))
-    if datum.typ in ['p']:
+            setattr(datum, f"atm_{i + 1}", int(atm_num))
+    if datum.typ in ["p"]:
         datum.src_1 = parts[1]
         idxs = parts[-1]
-    if datum.typ in ['esp']:
+    if datum.typ in ["esp"]:
         datum.src_1 = parts[1]
         idxs = parts[-1]
-    idxs = idxs.split('-')
+    idxs = idxs.split("-")
     datum.idx_1 = int(idxs[0])
     if len(idxs) == 2:
         datum.idx_2 == int(idxs[1])
+
 
 # Right now, this only looks good if the logger doesn't append each log
 # message with something (module, date/time, etc.).
@@ -2252,17 +2478,13 @@ def pretty_commands_for_files(commands_for_files, log_level=5):
     log_level : int
     """
     if logger.getEffectiveLevel() <= log_level:
-        foobar = TextWrapper(
-            width=48, subsequent_indent=' '*26)
-        logger.log(
-            log_level,
-            '--' + ' FILENAME '.center(22, '-') +
-            '--' + ' COMMANDS '.center(22, '-') +
-            '--')
+        foobar = TextWrapper(width=48, subsequent_indent=" " * 26)
+        logger.log(log_level, "--" + " FILENAME ".center(22, "-") + "--" + " COMMANDS ".center(22, "-") + "--")
         for filename, commands in commands_for_files.items():
-            foobar.initial_indent = f'  {filename:22s}  '
-            logger.log(log_level, foobar.fill(' '.join(commands)))
-        logger.log(log_level, '-'*50)
+            foobar.initial_indent = f"  {filename:22s}  "
+            logger.log(log_level, foobar.fill(" ".join(commands)))
+        logger.log(log_level, "-" * 50)
+
 
 def pretty_all_commands(commands, log_level=5):
     """
@@ -2275,24 +2497,27 @@ def pretty_all_commands(commands, log_level=5):
     log_level : int
     """
     if logger.getEffectiveLevel() <= log_level:
-        foobar = TextWrapper(width=48, subsequent_indent=' '*24)
-        logger.log(log_level, '')
+        foobar = TextWrapper(width=48, subsequent_indent=" " * 24)
+        logger.log(log_level, "")
         logger.log(
             log_level,
-            '--' + ' COMMAND '.center(9, '-') +
-            '--' + ' GROUP # '.center(9, '-') +
-            '--' + ' FILENAMES '.center(24, '-') +
-            '--')
+            "--"
+            + " COMMAND ".center(9, "-")
+            + "--"
+            + " GROUP # ".center(9, "-")
+            + "--"
+            + " FILENAMES ".center(24, "-")
+            + "--",
+        )
         for command, groups_filenames in commands.items():
             for i, filenames in enumerate(groups_filenames):
                 if i == 0:
-                    foobar.initial_indent = \
-                        f'  {command:9s}  {i+1:^9d}  '
+                    foobar.initial_indent = f"  {command:9s}  {i + 1:^9d}  "
                 else:
-                    foobar.initial_indent = \
-                        '  ' + ' '*9 + '  ' + f'{i+1:^9d}  '
-                logger.log(log_level, foobar.fill(' '.join(filenames)))
-        logger.log(log_level, '-'*50)
+                    foobar.initial_indent = "  " + " " * 9 + "  " + f"{i + 1:^9d}  "
+                logger.log(log_level, foobar.fill(" ".join(filenames)))
+        logger.log(log_level, "-" * 50)
+
 
 def pretty_data(data, log_level=20):
     """
@@ -2307,26 +2532,29 @@ def pretty_data(data, log_level=20):
     if not data[0].wht:
         compare.import_weights(data)
     if log_level:
-        string = ('--' + ' LABEL '.center(22, '-') +
-                  '--' + ' WEIGHT '.center(22, '-') +
-                  '--' + ' VALUE '.center(22, '-') +
-                  '--')
+        string = (
+            "--"
+            + " LABEL ".center(22, "-")
+            + "--"
+            + " WEIGHT ".center(22, "-")
+            + "--"
+            + " VALUE ".center(22, "-")
+            + "--"
+        )
         logger.log(log_level, string)
     for d in data:
         if d.wht or d.wht == 0:
-            string = ('  ' + f'{d.lbl:22s}' +
-                      '  ' + f'{d.wht:22.4f}' +
-                      '  ' + f'{d.val:22.4f}')
+            string = "  " + f"{d.lbl:22s}" + "  " + f"{d.wht:22.4f}" + "  " + f"{d.val:22.4f}"
         else:
-            string = ('  ' + f'{d.lbl:22s}' +
-                      '  ' + f'{d.val:22.4f}')
+            string = "  " + f"{d.lbl:22s}" + "  " + f"{d.val:22.4f}"
         if log_level:
             logger.log(log_level, string)
         else:
             print(string)
     if log_level:
-        logger.log(log_level, '-' * 50)
+        logger.log(log_level, "-" * 50)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     logging.config.dictConfig(co.LOG_SETTINGS)
     main(sys.argv[1:])

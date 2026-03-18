@@ -4,6 +4,7 @@ Run with: conda run -n q2mm python examples/sn2-test/generate_qm_data.py
 
 Outputs saved to examples/sn2-test/qm-reference/
 """
+
 import os
 import sys
 import numpy as np
@@ -42,12 +43,14 @@ ts_mol = psi4.geometry("""
     H    -0.513360   -0.889165    0.000000
 """)
 
-psi4.set_options({
-    "basis": "6-31G*",
-    "reference": "rhf",
-    "opt_type": "ts",
-    "geom_maxiter": 100,
-})
+psi4.set_options(
+    {
+        "basis": "6-31G*",
+        "reference": "rhf",
+        "opt_type": "ts",
+        "geom_maxiter": 100,
+    }
+)
 
 print("[2/4] Optimizing TS geometry (saddle point search)...")
 ts_energy = psi4.optimize("b3lyp", molecule=ts_mol)
@@ -118,8 +121,7 @@ ch3f_energy_freq, ch3f_wfn = psi4.frequency("b3lyp", molecule=ch3f_mol, return_w
 ch3f_hessian = np.array(ch3f_wfn.hessian())
 np.save(os.path.join(OUTPUT_DIR, "ch3f-hessian.npy"), ch3f_hessian)
 ch3f_freqs = np.array(ch3f_wfn.frequencies())
-np.savetxt(os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs,
-           header="CH3F vibrational frequencies (cm^-1)")
+np.savetxt(os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs, header="CH3F vibrational frequencies (cm^-1)")
 
 with open(os.path.join(OUTPUT_DIR, "ch3f-energy.txt"), "w") as f:
     f.write("# CH3F ground state energy at B3LYP/6-31G*\n")

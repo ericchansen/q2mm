@@ -39,7 +39,7 @@ class TestMM3Export(unittest.TestCase):
         with open(FF_PATH) as f:
             self.ff.lines = f.readlines()
         self.mod_params = copy.deepcopy(self.ff.params)
-        self.mod_params[0].value = 999.
+        self.mod_params[0].value = 999.0
         self._tmpdir = tempfile.TemporaryDirectory()
         self.test_fld = Path(self._tmpdir.name) / "test_output.fld"
         self.ff.export_ff(path=str(self.test_fld), params=self.mod_params, lines=self.ff.lines)
@@ -50,7 +50,7 @@ class TestMM3Export(unittest.TestCase):
     def test_export_roundtrip(self):
         mod_ff = datatypes.MM3(str(self.test_fld))
         mod_ff.import_ff()
-        self.assertEqual(mod_ff.params[0].value, 999.)
+        self.assertEqual(mod_ff.params[0].value, 999.0)
 
     def test_export_preserves_other_params(self):
         mod_ff = datatypes.MM3(str(self.test_fld))
@@ -59,6 +59,6 @@ class TestMM3Export(unittest.TestCase):
             self.assertAlmostEqual(orig.value, exported.value, places=4)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.config.dictConfig(co.LOG_SETTINGS)
     unittest.main()

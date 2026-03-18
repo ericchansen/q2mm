@@ -1,4 +1,5 @@
 """Tests for q2mm.models (molecule, forcefield, seminario)."""
+
 from pathlib import Path
 
 import numpy as np
@@ -17,6 +18,7 @@ CH3F_HESS = DATA_DIR / "ch3f-hessian.npy"
 
 
 # ---- _extract_element helper ----
+
 
 class TestExtractElement:
     def test_single_letter(self):
@@ -38,6 +40,7 @@ class TestExtractElement:
 
 
 # ---- Q2MMMolecule ----
+
 
 class TestMoleculeFromXYZ:
     def test_load_ch3f(self):
@@ -76,6 +79,7 @@ class TestMoleculeFromXYZ:
 
 # ---- ForceField ----
 
+
 class TestForceField:
     def test_create_for_molecule(self):
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
@@ -104,6 +108,7 @@ class TestForceField:
 
 
 # ---- Seminario force constant estimation ----
+
 
 class TestSeminario:
     @pytest.fixture

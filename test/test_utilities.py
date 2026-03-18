@@ -5,6 +5,7 @@ from pathlib import Path
 
 try:
     import parmed
+
     HAS_PARMED = True
 except ImportError:
     HAS_PARMED = False
@@ -51,9 +52,7 @@ class TestAtomTypeConversion(unittest.TestCase):
 
 @unittest.skipUnless(HAS_PARMED, "parmed not installed")
 @unittest.skipUnless(
-    Path(__file__).resolve().parent.parent.joinpath(
-        "examples", "ethane", "GS.mol2"
-    ).exists(),
+    Path(__file__).resolve().parent.parent.joinpath("examples", "ethane", "GS.mol2").exists(),
     "Ethane fixture not found",
 )
 class TestIdentifyAngles(unittest.TestCase):

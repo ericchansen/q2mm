@@ -9,6 +9,7 @@ Reference:
     Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476.
     Seminario, Int. J. Quantum Chem. 1996, 60, 1271-1277.
 """
+
 from __future__ import annotations
 
 import copy
@@ -67,22 +68,10 @@ def _collect_matching_bonds(
     all_bonds = [(molecule, bond) for molecule in molecules for bond in molecule.bonds]
     match_mode = _match_mode_for_bonds(param, [bond for _, bond in all_bonds])
     if match_mode == "ff_row":
-        return [
-            (molecule, bond)
-            for molecule, bond in all_bonds
-            if bond.ff_row == param.ff_row
-        ]
+        return [(molecule, bond) for molecule, bond in all_bonds if bond.ff_row == param.ff_row]
     if match_mode == "env_id":
-        return [
-            (molecule, bond)
-            for molecule, bond in all_bonds
-            if bond.env_id == param.env_id
-        ]
-    return [
-        (molecule, bond)
-        for molecule, bond in all_bonds
-        if bond.element_pair == param.key
-    ]
+        return [(molecule, bond) for molecule, bond in all_bonds if bond.env_id == param.env_id]
+    return [(molecule, bond) for molecule, bond in all_bonds if bond.element_pair == param.key]
 
 
 def _collect_matching_angles(
@@ -93,22 +82,10 @@ def _collect_matching_angles(
     all_angles = [(molecule, angle) for molecule in molecules for angle in molecule.angles]
     match_mode = _match_mode_for_angles(param, [angle for _, angle in all_angles])
     if match_mode == "ff_row":
-        return [
-            (molecule, angle)
-            for molecule, angle in all_angles
-            if angle.ff_row == param.ff_row
-        ]
+        return [(molecule, angle) for molecule, angle in all_angles if angle.ff_row == param.ff_row]
     if match_mode == "env_id":
-        return [
-            (molecule, angle)
-            for molecule, angle in all_angles
-            if angle.env_id == param.env_id
-        ]
-    return [
-        (molecule, angle)
-        for molecule, angle in all_angles
-        if angle.element_triple == param.key
-    ]
+        return [(molecule, angle) for molecule, angle in all_angles if angle.env_id == param.env_id]
+    return [(molecule, angle) for molecule, angle in all_angles if angle.element_triple == param.key]
 
 
 def _should_keep_force_constant(value: float, invalid_policy: Literal["keep", "skip"]) -> bool:
@@ -120,8 +97,7 @@ def _should_keep_force_constant(value: float, invalid_policy: Literal["keep", "s
     return True
 
 
-def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int,
-                           coords: np.ndarray, au_units: bool) -> float:
+def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int, coords: np.ndarray, au_units: bool) -> float:
     """Project a single Hessian sub-block onto the bond vector.
 
     Returns the projected force constant in atomic units (Hartree/Bohr^2)
@@ -139,7 +115,7 @@ def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int,
     r_hat = r_vec / r_len
 
     i3, j3 = 3 * atom_i, 3 * atom_j
-    h_sub = -hessian[i3:i3 + 3, j3:j3 + 3]
+    h_sub = -hessian[i3 : i3 + 3, j3 : j3 + 3]
 
     # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric)
     eigenvalues, eigenvectors = np.linalg.eig(h_sub)
@@ -155,10 +131,9 @@ def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int,
     return k.real
 
 
-def seminario_bond_fc(atom_i: int, atom_j: int,
-                      coords: np.ndarray, hessian: np.ndarray,
-                      au_units: bool = True,
-                      dft_scaling: float = 0.963) -> float:
+def seminario_bond_fc(
+    atom_i: int, atom_j: int, coords: np.ndarray, hessian: np.ndarray, au_units: bool = True, dft_scaling: float = 0.963
+) -> float:
     """Estimate bond stretching force constant via Seminario method.
 
     Averages the i->j and j->i projections (bidirectional) to match
@@ -186,10 +161,15 @@ def seminario_bond_fc(atom_i: int, atom_j: int,
     return k_bond
 
 
-def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
-                       coords: np.ndarray, hessian: np.ndarray,
-                       au_units: bool = True,
-                       dft_scaling: float = 0.963) -> float:
+def seminario_angle_fc(
+    atom_i: int,
+    atom_j: int,
+    atom_k: int,
+    coords: np.ndarray,
+    hessian: np.ndarray,
+    au_units: bool = True,
+    dft_scaling: float = 0.963,
+) -> float:
     """Estimate angle bending force constant via modified Seminario method.
 
     Uses the Q2MM approximation for angles (FUERZA overestimates by ~2x).
@@ -247,7 +227,7 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     i3, j3, k3 = 3 * atom_i, 3 * atom_j, 3 * atom_k
 
     # For i-j interaction
-    h_ij = -hessian[i3:i3 + 3, j3:j3 + 3]
+    h_ij = -hessian[i3 : i3 + 3, j3 : j3 + 3]
     evals_ij, evecs_ij = np.linalg.eig(h_ij)
     k_ij = 0.0
     for n in range(3):
@@ -255,7 +235,7 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     k_ij = k_ij.real
 
     # For k-j interaction
-    h_kj = -hessian[k3:k3 + 3, j3:j3 + 3]
+    h_kj = -hessian[k3 : k3 + 3, j3 : j3 + 3]
     evals_kj, evecs_kj = np.linalg.eig(h_kj)
     k_kj = 0.0
     for n in range(3):
@@ -264,8 +244,8 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
 
     # Combine: 1/k_angle = 1/(k_ij * r_ij^2) + 1/(k_kj * r_kj^2)
     # Q2MM approximation (avoids FUERZA's 2x overestimate for angles)
-    denom_ij = k_ij * r_ij_len ** 2
-    denom_kj = k_kj * r_kj_len ** 2
+    denom_ij = k_ij * r_ij_len**2
+    denom_kj = k_kj * r_kj_len**2
 
     if abs(denom_ij) < 1e-10 or abs(denom_kj) < 1e-10:
         return 0.0
@@ -346,24 +326,17 @@ def estimate_force_constants(
                         f"negative FC = {k:.4f} (TS reaction coordinate?)"
                     )
             else:
-                logger.warning(
-                    f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): "
-                    f"invalid FC = {k} — skipped"
-                )
+                logger.warning(f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): invalid FC = {k} — skipped")
 
         if equilibria:
             bond_param.equilibrium = float(np.mean(equilibria))
         if force_constants:
             bond_param.force_constant = float(np.mean(force_constants))
             logger.info(
-                f"  Bond {bond_param.key}: k={bond_param.force_constant:.4f} mdyn/A, "
-                f"r0={bond_param.equilibrium:.4f} A"
+                f"  Bond {bond_param.key}: k={bond_param.force_constant:.4f} mdyn/A, r0={bond_param.equilibrium:.4f} A"
             )
         else:
-            logger.warning(
-                f"  Bond {bond_param.key}: no valid force constants found, "
-                "keeping existing force constant"
-            )
+            logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")
 
     # Estimate angle force constants
     for angle_param in ff.angles:
@@ -377,7 +350,9 @@ def estimate_force_constants(
         equilibria = [angle.value for _, angle in matching_angles]
         for molecule_item, angle in matching_angles:
             k = seminario_angle_fc(
-                angle.atom_i, angle.atom_j, angle.atom_k,
+                angle.atom_i,
+                angle.atom_j,
+                angle.atom_k,
                 molecule_item.geometry,
                 molecule_item.hessian,
                 au_units=au_hessian,
@@ -385,13 +360,9 @@ def estimate_force_constants(
             if _should_keep_force_constant(k, invalid_policy):
                 force_constants.append(float(np.real(k)))
                 if k < 0:
-                    logger.warning(
-                        f"  Angle {angle.elements}: negative FC = {k:.4f}"
-                    )
+                    logger.warning(f"  Angle {angle.elements}: negative FC = {k:.4f}")
             else:
-                logger.warning(
-                    f"  Angle {angle.elements}: invalid FC = {k} — skipped"
-                )
+                logger.warning(f"  Angle {angle.elements}: invalid FC = {k} — skipped")
 
         if equilibria:
             angle_param.equilibrium = float(np.mean(equilibria))
@@ -403,8 +374,7 @@ def estimate_force_constants(
             )
         else:
             logger.warning(
-                f"  Angle {angle_param.key}: no valid force constants found, "
-                "keeping existing force constant"
+                f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant"
             )
 
     # Zero torsions if requested

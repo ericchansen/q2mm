@@ -3,6 +3,7 @@
 These tests require Tinker to be installed locally.
 Skipped automatically if Tinker is not found.
 """
+
 import unittest
 from pathlib import Path
 import numpy as np
@@ -13,6 +14,7 @@ QM_REF = FIXTURE_DIR / "qm-reference"
 
 try:
     from q2mm.backends.mm.tinker import TinkerEngine
+
     _engine = TinkerEngine()
     HAS_TINKER = _engine.is_available()
 except (ImportError, FileNotFoundError):
@@ -31,10 +33,7 @@ class TestTinkerEngineAvailability(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_TINKER, "Tinker not installed")
-@unittest.skipUnless(
-    (QM_REF / "ch3f-optimized.xyz").exists(),
-    "CH3F fixture not found"
-)
+@unittest.skipUnless((QM_REF / "ch3f-optimized.xyz").exists(), "CH3F fixture not found")
 class TestTinkerEnergyCH3F(unittest.TestCase):
     """Test Tinker MM3 energy calculation on CH3F."""
 
@@ -52,10 +51,7 @@ class TestTinkerEnergyCH3F(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_TINKER, "Tinker not installed")
-@unittest.skipUnless(
-    (QM_REF / "sn2-ts-optimized.xyz").exists(),
-    "SN2 TS fixture not found"
-)
+@unittest.skipUnless((QM_REF / "sn2-ts-optimized.xyz").exists(), "SN2 TS fixture not found")
 class TestTinkerFrequenciesSN2(unittest.TestCase):
     """Test Tinker vibrational analysis on SN2 TS."""
 
@@ -76,15 +72,11 @@ class TestTinkerFrequenciesSN2(unittest.TestCase):
         """SN2 TS is not an MM minimum — expect imaginary frequencies."""
         freqs = self.engine.frequencies(self.xyz)
         n_imaginary = sum(1 for f in freqs if f < -1.0)
-        self.assertGreater(n_imaginary, 0,
-                           "TS should have imaginary frequencies on MM surface")
+        self.assertGreater(n_imaginary, 0, "TS should have imaginary frequencies on MM surface")
 
 
 @unittest.skipUnless(HAS_TINKER, "Tinker not installed")
-@unittest.skipUnless(
-    (QM_REF / "ch3f-optimized.xyz").exists(),
-    "CH3F fixture not found"
-)
+@unittest.skipUnless((QM_REF / "ch3f-optimized.xyz").exists(), "CH3F fixture not found")
 class TestTinkerMinimize(unittest.TestCase):
     """Test Tinker energy minimization."""
 

@@ -1,5 +1,0 @@
-source leaprc.gaff
-loadamberparams frcmod
-mol = loadmol2 Ash.mol2 
-saveamberparm mol calc/prmtop calc/inpcrd
-quit

@@ -6,6 +6,7 @@ with MM3 and other force fields.
 Requires: Tinker binaries on PATH or configured via tinker_dir parameter.
 Download from: https://dasher.wustl.edu/tinker/
 """
+
 from __future__ import annotations
 
 import os
@@ -29,8 +30,7 @@ def _find_tinker_dir() -> str | None:
         r"/opt/tinker/bin",
     ]
     for d in candidates:
-        if os.path.isfile(os.path.join(d, "analyze.exe")) or \
-           os.path.isfile(os.path.join(d, "analyze")):
+        if os.path.isfile(os.path.join(d, "analyze.exe")) or os.path.isfile(os.path.join(d, "analyze")):
             return d
     # Check PATH
     for name in ["analyze.exe", "analyze"]:
@@ -61,8 +61,7 @@ class TinkerEngine(MMEngine):
         self._tinker_dir = tinker_dir or _find_tinker_dir()
         if self._tinker_dir is None:
             raise FileNotFoundError(
-                "Tinker not found. Install from https://dasher.wustl.edu/tinker/ "
-                "or pass tinker_dir parameter."
+                "Tinker not found. Install from https://dasher.wustl.edu/tinker/ or pass tinker_dir parameter."
             )
 
         if params_file is None:
@@ -106,12 +105,11 @@ class TinkerEngine(MMEngine):
         """
         # Default MM3 atom type mapping
         if forcefield is None or isinstance(forcefield, str):
-            type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13,
-                        "N": 8, "O": 6, "S": 15, "P": 25}
+            type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
         elif isinstance(forcefield, dict):
             type_map = forcefield
         else:
-            type_map = getattr(forcefield, 'atom_type_map', {"C": 1, "H": 5, "F": 11})
+            type_map = getattr(forcefield, "atom_type_map", {"C": 1, "H": 5, "F": 11})
 
         # Read standard XYZ
         with open(structure) as f:
@@ -119,7 +117,7 @@ class TinkerEngine(MMEngine):
         n_atoms = int(lines[0].strip())
         atoms = []
         coords = []
-        for line in lines[2:2 + n_atoms]:
+        for line in lines[2 : 2 + n_atoms]:
             parts = line.split()
             atoms.append(parts[0])
             coords.append([float(x) for x in parts[1:4]])
@@ -136,8 +134,7 @@ class TinkerEngine(MMEngine):
                 atype = type_map.get(atom, 1)
                 bonded = [str(j + 1) for j in bonds.get(i, [])]
                 bond_str = "     ".join(bonded)
-                f.write(f"     {i+1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}"
-                        f"    {atype:2d}     {bond_str}\n")
+                f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
 
         # Write key file
         key_path = os.path.join(workdir, "molecule.key")
@@ -150,8 +147,17 @@ class TinkerEngine(MMEngine):
     @staticmethod
     def _detect_bonds(atoms: list[str], coords: np.ndarray) -> dict:
         """Simple distance-based bond detection."""
-        cov_radii = {"H": 0.31, "C": 0.76, "N": 0.71, "O": 0.66,
-                     "F": 0.57, "Cl": 0.99, "Br": 1.14, "S": 1.05, "P": 1.07}
+        cov_radii = {
+            "H": 0.31,
+            "C": 0.76,
+            "N": 0.71,
+            "O": 0.66,
+            "F": 0.57,
+            "Cl": 0.99,
+            "Br": 1.14,
+            "S": 1.05,
+            "P": 1.07,
+        }
         bonds = {i: [] for i in range(len(atoms))}
         for i in range(len(atoms)):
             for j in range(i + 1, len(atoms)):
@@ -163,20 +169,18 @@ class TinkerEngine(MMEngine):
                     bonds[j].append(i)
         return bonds
 
-    def _run_tinker(self, exe_name: str, xyz_path: str, args: list = None,
-                    stdin: str = None) -> subprocess.CompletedProcess:
+    def _run_tinker(
+        self, exe_name: str, xyz_path: str, args: list = None, stdin: str = None
+    ) -> subprocess.CompletedProcess:
         """Run a Tinker executable."""
         exe = _exe(self._tinker_dir, exe_name)
         key_path = xyz_path.replace(".xyz", ".key")
         cmd = [exe, xyz_path, "-k", key_path] + (args or [])
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
-            input=stdin, cwd=os.path.dirname(xyz_path)
+            cmd, capture_output=True, text=True, timeout=300, input=stdin, cwd=os.path.dirname(xyz_path)
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}"
-            )
+            raise RuntimeError(f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}")
         return result
 
     def energy(self, structure, forcefield=None) -> float:
@@ -202,9 +206,7 @@ class TinkerEngine(MMEngine):
                     energy = float(line.split(":")[1].strip().split()[0])
 
             if energy is None:
-                raise RuntimeError(
-                    f"Could not parse energy from Tinker minimize output:\n{result.stdout}"
-                )
+                raise RuntimeError(f"Could not parse energy from Tinker minimize output:\n{result.stdout}")
 
             # Read minimized coordinates from .xyz_2 output
             min_xyz = txyz + "_2"
@@ -229,9 +231,7 @@ class TinkerEngine(MMEngine):
         Note: Full Hessian extraction from Tinker requires the testhess program.
         Use frequencies() for vibrational analysis instead.
         """
-        raise NotImplementedError(
-            "Full Hessian extraction not yet implemented. Use frequencies() instead."
-        )
+        raise NotImplementedError("Full Hessian extraction not yet implemented. Use frequencies() instead.")
 
     def frequencies(self, structure, forcefield=None) -> list[float]:
         """Calculate vibrational frequencies in cm^-1."""

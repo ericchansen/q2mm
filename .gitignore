@@ -231,3 +231,6 @@ dmypy.json
 
 # VSCode files
 *.json
+!test/fixtures/
+!test/fixtures/seminario_parity/
+!test/fixtures/seminario_parity/*.json
