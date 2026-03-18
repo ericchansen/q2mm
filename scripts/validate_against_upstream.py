@@ -56,6 +56,7 @@ class CaseDefinition:
     supported_modes: tuple[Mode, ...]
     fixture_systems: tuple[str, ...] = ()
     blocked_reason: str | None = None
+    requires_worktree: bool = True
 
 
 @dataclass
@@ -110,6 +111,13 @@ CASE_MATRIX: dict[str, CaseDefinition] = {
             "Blocked until a shared old/new optimization workflow is wrapped in the "
             "validation harness with agreed endpoint tolerances."
         ),
+    ),
+    "openmm-tinker-mm3-shared": CaseDefinition(
+        case_id="openmm-tinker-mm3-shared",
+        description="OpenMM vs Tinker MM3 parity on shared bond-only and vdW-only cases.",
+        category="backend",
+        supported_modes=("fixture", "live"),
+        requires_worktree=False,
     ),
 }
 
@@ -311,10 +319,73 @@ def _run_rh_pipeline_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     )
 
 
+def _run_openmm_tinker_case(fixture_dir: Path, mode: Mode) -> CaseResult:
+    case = CASE_MATRIX["openmm-tinker-mm3-shared"]
+    try:
+        from q2mm.backends.mm.openmm import OpenMMEngine
+        from q2mm.backends.mm.tinker import TinkerEngine
+    except (ImportError, FileNotFoundError) as exc:
+        return _blocked_result(case, mode, str(exc))
+
+    try:
+        openmm = OpenMMEngine()
+        tinker = TinkerEngine()
+    except (ImportError, FileNotFoundError) as exc:
+        return _blocked_result(case, mode, str(exc))
+
+    forcefield = ForceField.from_tinker_prm(Path(tinker._params_file))
+    bond_molecule = Q2MMMolecule(
+        symbols=["C", "H"],
+        atom_types=["1", "5"],
+        geometry=np.array([[0.0, 0.0, 0.0], [1.20, 0.0, 0.0]], dtype=float),
+        name="CH-bond",
+        bond_tolerance=1.5,
+    )
+    vdw_molecule = Q2MMMolecule(
+        symbols=["F", "F"],
+        atom_types=["11", "11"],
+        geometry=np.array([[0.0, 0.0, 0.0], [3.50, 0.0, 0.0]], dtype=float),
+        name="F2-nonbonded",
+        bond_tolerance=0.5,
+    )
+
+    comparisons = {
+        "bond_energy_kcal_mol": (bond_molecule, 1.0e-3),
+        "vdw_energy_kcal_mol": (vdw_molecule, 1.0e-3),
+    }
+    details: list[str] = []
+    metrics: dict[str, float | int | str | None] = {
+        "tinker_params_file": str(tinker._params_file),
+    }
+    max_abs_diff = 0.0
+    for label, (molecule, tolerance) in comparisons.items():
+        openmm_energy = openmm.energy(molecule, forcefield)
+        tinker_energy = tinker.energy(molecule)
+        diff = abs(openmm_energy - tinker_energy)
+        max_abs_diff = max(max_abs_diff, diff)
+        metrics[f"{label}_openmm"] = openmm_energy
+        metrics[f"{label}_tinker"] = tinker_energy
+        metrics[f"{label}_abs_diff"] = diff
+        if diff > tolerance:
+            details.append(f"{label}: OpenMM {openmm_energy:.6f}, Tinker {tinker_energy:.6f}, diff {diff:.3e}")
+
+    metrics["max_abs_diff"] = max_abs_diff
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="passed" if not details else "failed",
+        metrics=metrics,
+        details=details,
+    )
+
+
 CASE_RUNNERS: dict[str, Callable[[Path, Mode], CaseResult]] = {
     "seminario-sn2-bond": _run_sn2_bond_case,
     "seminario-rh-direct-bond": _run_rh_direct_case,
     "seminario-rh-pipeline": _run_rh_pipeline_case,
+    "openmm-tinker-mm3-shared": _run_openmm_tinker_case,
 }
 
 
@@ -453,18 +524,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode in ("live", "both"):
         if not args.worktree.exists():
+            runnable_without_worktree = [
+                case_id
+                for case_id in case_ids
+                if "live" in CASE_MATRIX[case_id].supported_modes and not CASE_MATRIX[case_id].requires_worktree
+            ]
+            if runnable_without_worktree:
+                results.extend(_run_mode(runnable_without_worktree, "live", FIXTURE_DIR))
             for case_id in case_ids:
                 case = CASE_MATRIX[case_id]
+                if case_id in runnable_without_worktree:
+                    continue
                 reason = f"Live mode requested but worktree does not exist: {args.worktree}"
                 results.append(_blocked_result(case, "live", reason))
         else:
             with TemporaryDirectory() as tempdir:
-                fixture_dir = _ensure_live_fixture_dir(
-                    [case_id for case_id in case_ids if "live" in CASE_MATRIX[case_id].supported_modes],
-                    args.worktree,
-                    Path(tempdir),
-                )
-                results.extend(_run_mode(case_ids, "live", fixture_dir))
+                worktree_cases = [
+                    case_id
+                    for case_id in case_ids
+                    if "live" in CASE_MATRIX[case_id].supported_modes and CASE_MATRIX[case_id].requires_worktree
+                ]
+                non_worktree_cases = [
+                    case_id
+                    for case_id in case_ids
+                    if "live" in CASE_MATRIX[case_id].supported_modes and not CASE_MATRIX[case_id].requires_worktree
+                ]
+                if worktree_cases:
+                    fixture_dir = _ensure_live_fixture_dir(worktree_cases, args.worktree, Path(tempdir))
+                    results.extend(_run_mode(worktree_cases, "live", fixture_dir))
+                if non_worktree_cases:
+                    results.extend(_run_mode(non_worktree_cases, "live", FIXTURE_DIR))
 
     _print_results(results)
     if args.report_json:

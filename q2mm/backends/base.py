@@ -36,6 +36,10 @@ class QMEngine(ABC):
         """Check if this engine is installed and accessible."""
         return False
 
+    def supports_runtime_params(self) -> bool:
+        """Whether parameters can be updated without rebuilding engine state."""
+        return False
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -66,6 +70,10 @@ class MMEngine(ABC):
 
     def is_available(self) -> bool:
         """Check if this engine is installed and accessible."""
+        return False
+
+    def supports_runtime_params(self) -> bool:
+        """Whether parameters can be updated without rebuilding engine state."""
         return False
 
     @property

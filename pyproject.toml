@@ -19,6 +19,9 @@ dependencies = [
 amber = [
     "parmed",
 ]
+openmm = [
+    "openmm",
+]
 qcel = [
     "qcelemental",
 ]
@@ -28,6 +31,7 @@ dev = [
     "qcelemental",
 ]
 all = [
+    "openmm",
     "parmed",
     "qcelemental",
 ]
