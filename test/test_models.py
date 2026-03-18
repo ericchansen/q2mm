@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from q2mm import datatypes
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam, _extract_element
 from q2mm.models.seminario import estimate_force_constants
@@ -15,6 +16,7 @@ TS_XYZ = DATA_DIR / "sn2-ts-optimized.xyz"
 TS_HESS = DATA_DIR / "sn2-ts-hessian.npy"
 CH3F_XYZ = DATA_DIR / "ch3f-optimized.xyz"
 CH3F_HESS = DATA_DIR / "ch3f-hessian.npy"
+RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "mm3.fld"
 
 
 # ---- _extract_element helper ----
@@ -105,6 +107,112 @@ class TestForceField:
         ff2.set_param_vector(vec * 2)
         vec2 = ff2.get_param_vector()
         np.testing.assert_allclose(vec2, vec * 2)
+
+    def test_mm3_export_roundtrip_generic(self, tmp_path):
+        ff = ForceField(
+            name="Generic MM3",
+            bonds=[BondParam(("C", "F"), 1.381, 5.25, env_id="C1-F1")],
+            angles=[AngleParam(("H", "C", "F"), 109.7, 0.55, env_id="H1-C1-F1")],
+        )
+        out_path = tmp_path / "generated.fld"
+        ff.to_mm3_fld(out_path)
+
+        roundtrip = ForceField.from_mm3_fld(out_path)
+        assert roundtrip.source_format == "mm3_fld"
+        assert roundtrip.source_path == out_path
+
+        bond = roundtrip.get_bond("C", "F", env_id="C1-F1")
+        angle = roundtrip.get_angle("H", "C", "F", env_id="F1-C1-H1")
+        assert bond is not None
+        assert angle is not None
+        assert bond.force_constant == pytest.approx(5.25)
+        assert bond.equilibrium == pytest.approx(1.381)
+        assert angle.force_constant == pytest.approx(0.55)
+        assert angle.equilibrium == pytest.approx(109.7)
+
+    def test_mm3_export_updates_template(self, tmp_path):
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        first_bond = ff.bonds[0]
+        first_bond.force_constant += 1.234
+        first_bond.equilibrium += 0.123
+
+        out_path = tmp_path / "updated_mm3.fld"
+        ff.to_mm3_fld(out_path)
+
+        roundtrip = ForceField.from_mm3_fld(out_path)
+        updated = next(bond for bond in roundtrip.bonds if bond.ff_row == first_bond.ff_row)
+        assert updated.force_constant == pytest.approx(first_bond.force_constant)
+        assert updated.equilibrium == pytest.approx(first_bond.equilibrium)
+
+    def test_tinker_import_export_roundtrip(self, tmp_path):
+        prm_path = tmp_path / "sample.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    "# Example parameter file",
+                    "# Q2MM",
+                    "# OPT Synthetic",
+                    "bond     C1   F1     5.0000     1.3800",
+                    "angle    H1   C1   F1     0.5000   109.5000   111.0000   112.0000",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        ff = ForceField.from_tinker_prm(prm_path)
+        assert ff.source_format == "tinker_prm"
+        assert ff.source_path == prm_path
+
+        bond = ff.get_bond("C", "F", env_id="C1-F1")
+        angle = ff.get_angle("H", "C", "F", env_id="F1-C1-H1")
+        assert bond is not None
+        assert angle is not None
+        assert bond.force_constant == pytest.approx(5.0)
+        assert bond.equilibrium == pytest.approx(1.38)
+        assert angle.force_constant == pytest.approx(0.5)
+        assert angle.equilibrium == pytest.approx(109.5)
+
+        generic_out = tmp_path / "generated.prm"
+        ff.to_tinker_prm(generic_out, template_path=None)
+        generic_roundtrip = ForceField.from_tinker_prm(generic_out)
+        generic_bond = generic_roundtrip.get_bond("C", "F", env_id="C1-F1")
+        generic_angle = generic_roundtrip.get_angle("H", "C", "F", env_id="F1-C1-H1")
+        assert generic_bond is not None
+        assert generic_angle is not None
+        assert generic_bond.force_constant == pytest.approx(5.0)
+        assert generic_angle.equilibrium == pytest.approx(109.5)
+
+    def test_tinker_export_updates_primary_angle_only(self, tmp_path):
+        prm_path = tmp_path / "sample.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    "# Example parameter file",
+                    "# Q2MM",
+                    "# OPT Synthetic",
+                    "bond     C1   F1     5.0000     1.3800",
+                    "angle    H1   C1   F1     0.5000   109.5000   111.0000   112.0000",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        ff = ForceField.from_tinker_prm(prm_path)
+        ff.angles[0].equilibrium = 108.25
+        ff.angles[0].force_constant = 0.75
+
+        out_path = tmp_path / "updated.prm"
+        ff.to_tinker_prm(out_path)
+
+        legacy = datatypes.TinkerFF(str(out_path))
+        legacy.import_ff()
+        angle_row = ff.angles[0].ff_row
+        angle_fcs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "af"]
+        angle_eqs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "ae"]
+        assert angle_fcs == [pytest.approx(0.75)]
+        assert angle_eqs[0] == pytest.approx(108.25)
+        assert angle_eqs[1:] == [pytest.approx(111.0), pytest.approx(112.0)]
 
 
 # ---- Seminario force constant estimation ----
