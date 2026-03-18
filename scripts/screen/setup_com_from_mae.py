@@ -60,6 +60,7 @@ To enforce a trans bond:
 
 Watch out because MacroModel sometimes assigns these enforcing floats wrong.
 """
+
 import argparse
 import sys
 from itertools import zip_longest
@@ -67,15 +68,23 @@ from itertools import zip_longest
 import schrodinger.application.macromodel.utils as mmodutils
 from schrodinger import structure as sch_struct
 
-ALL_CS_ATOM_PROPERTIES = ['b_cs_chig', 'b_cs_comp']
-ALL_CS_BOND_PROPERTIES = ['b_cs_tors',
-                          'i_cs_rca4_1', 'i_cs_rca4_2',
-                          'i_cs_torc_a1', 'i_cs_torc_a4',
-                          'r_cs_torc_a5', 'r_cs_torc_a6',
-                          'i_cs_torc_b1', 'i_cs_torc_b4',
-                          'r_cs_torc_b5', 'r_cs_torc_b6']
+ALL_CS_ATOM_PROPERTIES = ["b_cs_chig", "b_cs_comp"]
+ALL_CS_BOND_PROPERTIES = [
+    "b_cs_tors",
+    "i_cs_rca4_1",
+    "i_cs_rca4_2",
+    "i_cs_torc_a1",
+    "i_cs_torc_a4",
+    "r_cs_torc_a5",
+    "r_cs_torc_a6",
+    "i_cs_torc_b1",
+    "i_cs_torc_b4",
+    "r_cs_torc_b5",
+    "r_cs_torc_b6",
+]
 
-def grouper(n, iterable, fillvalue=0.):
+
+def grouper(n, iterable, fillvalue=0.0):
     """
     Returns list of lists from a single list.
 
@@ -96,14 +105,9 @@ def grouper(n, iterable, fillvalue=0.):
     args = [iter(iterable)] * n
     return zip_longest(fillvalue=fillvalue, *args)
 
+
 class MyComUtil(mmodutils.ComUtil):
-    def my_mcmm(
-            self,
-            mae_file=None,
-            com_file=None,
-            out_file=None,
-            nsteps=None,
-            frozen_atoms=None):
+    def my_mcmm(self, mae_file=None, com_file=None, out_file=None, nsteps=None, frozen_atoms=None):
         """
         Modified version of the the Schrödinger mcmm.
 
@@ -114,14 +118,7 @@ class MyComUtil(mmodutils.ComUtil):
             frozen_atoms = []
         self.FXAT.clear()
         for frozen_atom in frozen_atoms:
-            self.setOpcdArgs(
-                opcd='FXAT',
-                arg1=frozen_atom,
-                arg2=0,
-                arg3=0,
-                arg4=0,
-                arg5=-1
-            )
+            self.setOpcdArgs(opcd="FXAT", arg1=frozen_atom, arg2=0, arg3=0, arg4=0, arg5=-1)
         # Setup the COMP, CHIG, TORS and RCA4 commands.
         self.COMP.clear()
         # self.CHIG.clear()
@@ -136,182 +133,157 @@ class MyComUtil(mmodutils.ComUtil):
         reader = sch_struct.StructureReader(mae_file)
         structure = next(reader)
         reader.close()
-        print('-' * 80)
-        print('READING: {}'.format(structure.property['s_m_title']))
+        print("-" * 80)
+        print("READING: {}".format(structure.property["s_m_title"]))
         # Extra step due to TORS error using automated script
         all_bond = []
         for bond in structure.bond:
-            all_bond.append([bond.atom1.index,bond.atom2.index])
+            all_bond.append([bond.atom1.index, bond.atom2.index])
         for atom in structure.atom:
             for prop in ALL_CS_ATOM_PROPERTIES:
                 try:
                     atom.property[prop]
                 except KeyError as e:
-                    print('STRUCTURE: {}'.format(
-                        structure.property['s_m_title']))
-                    print(f' - ATOM: {atom}')
-                    print(f'   - MISSING: {prop} (setting to 0)')
+                    print("STRUCTURE: {}".format(structure.property["s_m_title"]))
+                    print(f" - ATOM: {atom}")
+                    print(f"   - MISSING: {prop} (setting to 0)")
                     atom.property[prop] = 0
-            if atom.property['b_cs_comp']:
+            if atom.property["b_cs_comp"]:
                 indices_comp.append(atom.index)
-            if atom.property['b_cs_chig']:
+            if atom.property["b_cs_chig"]:
                 indices_chig.append(atom.index)
         for bond in structure.bond:
             for prop in ALL_CS_BOND_PROPERTIES:
                 try:
                     bond.property[prop]
                 except KeyError as e:
-                    print('STRUCTURE: {}'.format(
-                        structure.property['s_m_title']))
-                    print(f' - BOND: {bond}')
-                    print(f'   - MISSING: {prop} (setting to 0)')
+                    print("STRUCTURE: {}".format(structure.property["s_m_title"]))
+                    print(f" - BOND: {bond}")
+                    print(f"   - MISSING: {prop} (setting to 0)")
                     bond.property[prop] = 0
-            if bond.property['b_cs_tors']:
+            if bond.property["b_cs_tors"]:
                 thing = [bond.atom1.index, bond.atom2.index]
                 if set(thing).issubset(frozen_atoms):
-                     print(f'SKIPPING TORS: {bond.atom1.index} {bond.atom2.index}')
+                    print(f"SKIPPING TORS: {bond.atom1.index} {bond.atom2.index}")
                 else:
                     indices_tors.append((bond.atom1.index, bond.atom2.index))
-            if bond.property['i_cs_rca4_1']:
-                thing = [bond.property['i_cs_rca4_1'],
-                         bond.atom1.index,
-                         bond.atom2.index,
-                         bond.property['i_cs_rca4_2']]
+            if bond.property["i_cs_rca4_1"]:
+                thing = [bond.property["i_cs_rca4_1"], bond.atom1.index, bond.atom2.index, bond.property["i_cs_rca4_2"]]
                 if set(thing).issubset(frozen_atoms):
-                    print('SKIPPING RCA4: {} {} {} {}'.format(
-                        bond.property['i_cs_rca4_1'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_rca4_2']))
-                else:
-                    t_bond = [bond.property['i_cs_rca4_1'],bond.atom1.index]
-                    if t_bond in all_bond or t_bond[::-1] in all_bond:
-                        indices_rca4.append((
-                        bond.property['i_cs_rca4_1'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_rca4_2']
-                        ))
-            # FIXED FOR WRONG ORDER OF RCA4
-            if bond.property['i_cs_rca4_2']:
-                thing = [bond.property['i_cs_rca4_2'],
-                         bond.atom1.index,
-                         bond.atom2.index,
-                         bond.property['i_cs_rca4_1']]
-                if set(thing).issubset(frozen_atoms):
-                    print('SKIPPING RCA4: {} {} {} {}'.format(
-                        bond.property['i_cs_rca4_2'],
-                        bond.atom1.index,
-                        bond.atom2.index,
-                        bond.property['i_cs_rca4_1']))
-                else:
-                    t_bond = [bond.property['i_cs_rca4_2'], bond.atom1.index]
-                    if t_bond in all_bond or t_bond[::-1] in all_bond:
-                        indices_rca4.append((
-                            bond.property['i_cs_rca4_2'],
+                    print(
+                        "SKIPPING RCA4: {} {} {} {}".format(
+                            bond.property["i_cs_rca4_1"],
                             bond.atom1.index,
                             bond.atom2.index,
-                            bond.property['i_cs_rca4_1']
-                        ))
-            if bond.property['i_cs_torc_a1']:
-                indices_torc.append((
-                    bond.property['i_cs_torc_a1'],
-                    bond.atom1.index,
-                    bond.atom2.index,
-                    bond.property['i_cs_torc_a4'],
-                    bond.property['r_cs_torc_a5'],
-                    bond.property['r_cs_torc_a6']
-                ))
-            if bond.property['i_cs_torc_b1']:
-                indices_torc.append((
-                    bond.property['i_cs_torc_b1'],
-                    bond.atom1.index,
-                    bond.atom2.index,
-                    bond.property['i_cs_torc_b4'],
-                    bond.property['r_cs_torc_b5'],
-                    bond.property['r_cs_torc_b6']
-                ))
-        print(f'COMP: {indices_comp}')
-        print(f'CHIG: {indices_chig}')
-        print(f'TORS: {indices_tors}')
-        print(f'RCA4: {indices_rca4}')
-        print(f'TORC: {indices_torc}')
+                            bond.property["i_cs_rca4_2"],
+                        )
+                    )
+                else:
+                    t_bond = [bond.property["i_cs_rca4_1"], bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append(
+                            (
+                                bond.property["i_cs_rca4_1"],
+                                bond.atom1.index,
+                                bond.atom2.index,
+                                bond.property["i_cs_rca4_2"],
+                            )
+                        )
+            # FIXED FOR WRONG ORDER OF RCA4
+            if bond.property["i_cs_rca4_2"]:
+                thing = [bond.property["i_cs_rca4_2"], bond.atom1.index, bond.atom2.index, bond.property["i_cs_rca4_1"]]
+                if set(thing).issubset(frozen_atoms):
+                    print(
+                        "SKIPPING RCA4: {} {} {} {}".format(
+                            bond.property["i_cs_rca4_2"],
+                            bond.atom1.index,
+                            bond.atom2.index,
+                            bond.property["i_cs_rca4_1"],
+                        )
+                    )
+                else:
+                    t_bond = [bond.property["i_cs_rca4_2"], bond.atom1.index]
+                    if t_bond in all_bond or t_bond[::-1] in all_bond:
+                        indices_rca4.append(
+                            (
+                                bond.property["i_cs_rca4_2"],
+                                bond.atom1.index,
+                                bond.atom2.index,
+                                bond.property["i_cs_rca4_1"],
+                            )
+                        )
+            if bond.property["i_cs_torc_a1"]:
+                indices_torc.append(
+                    (
+                        bond.property["i_cs_torc_a1"],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property["i_cs_torc_a4"],
+                        bond.property["r_cs_torc_a5"],
+                        bond.property["r_cs_torc_a6"],
+                    )
+                )
+            if bond.property["i_cs_torc_b1"]:
+                indices_torc.append(
+                    (
+                        bond.property["i_cs_torc_b1"],
+                        bond.atom1.index,
+                        bond.atom2.index,
+                        bond.property["i_cs_torc_b4"],
+                        bond.property["r_cs_torc_b5"],
+                        bond.property["r_cs_torc_b6"],
+                    )
+                )
+        print(f"COMP: {indices_comp}")
+        print(f"CHIG: {indices_chig}")
+        print(f"TORS: {indices_tors}")
+        print(f"RCA4: {indices_rca4}")
+        print(f"TORC: {indices_torc}")
         count_comp = 0
         for count_comp, args in enumerate(grouper(4, indices_comp), 1):
-            self.setOpcdArgs(
-                opcd='COMP',
-                arg1=args[0],
-                arg2=args[1],
-                arg3=args[2],
-                arg4=args[3]
-                )
+            self.setOpcdArgs(opcd="COMP", arg1=args[0], arg2=args[1], arg3=args[2], arg4=args[3])
         count_chig = 0
         for count_chig, args in enumerate(grouper(4, indices_chig), 1):
-            self.setOpcdArgs(
-                opcd='CHIG',
-                arg1=args[0],
-                arg2=args[1],
-                arg3=args[2],
-                arg4=args[3]
-                )
+            self.setOpcdArgs(opcd="CHIG", arg1=args[0], arg2=args[1], arg3=args[2], arg4=args[3])
         count_tors = 0
         for count_tors, args in enumerate(indices_tors, 1):
-            self.setOpcdArgs(
-                opcd='TORS',
-                arg1=args[0],
-                arg2=args[1],
-                arg6=180.
-                )
+            self.setOpcdArgs(opcd="TORS", arg1=args[0], arg2=args[1], arg6=180.0)
         count_rca4 = 0
         for count_rca4, args in enumerate(indices_rca4, 1):
-            self.setOpcdArgs(
-                opcd='RCA4',
-                arg1=args[0],
-                arg2=args[1],
-                arg3=args[2],
-                arg4=args[3],
-                arg5=0.5,
-                arg6=2.5
-                )
+            self.setOpcdArgs(opcd="RCA4", arg1=args[0], arg2=args[1], arg3=args[2], arg4=args[3], arg5=0.5, arg6=2.5)
         count_torc = 0
         for count_torc, args in enumerate(indices_torc, 1):
             self.setOpcdArgs(
-                opcd='TORC',
-                arg1=args[0],
-                arg2=args[1],
-                arg3=args[2],
-                arg4=args[3],
-                arg5=args[4],
-                arg6=args[5]
-                )
-        print(f'NUM. COMP: {count_comp}')
-        print(f'NUM. CHIG: {count_chig}')
-        print(f'NUM. TORS: {count_tors}')
-        print(f'NUM. RCA4: {count_rca4}')
-        print(f'NUM. TORC: {count_torc}')
+                opcd="TORC", arg1=args[0], arg2=args[1], arg3=args[2], arg4=args[3], arg5=args[4], arg6=args[5]
+            )
+        print(f"NUM. COMP: {count_comp}")
+        print(f"NUM. CHIG: {count_chig}")
+        print(f"NUM. TORS: {count_tors}")
+        print(f"NUM. RCA4: {count_rca4}")
+        print(f"NUM. TORC: {count_torc}")
 
         self.DEBG.clear()
-        self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+        self.setOpcdArgs(opcd="DEBG", arg1=55, arg2=179)
         self.SEED.clear()
-        self.setOpcdArgs(opcd='SEED', arg1=40000)
+        self.setOpcdArgs(opcd="SEED", arg1=40000)
         self.FFLD.clear()
-        self.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+        self.setOpcdArgs(opcd="FFLD", arg1=2, arg2=1, arg5=1)
         self.EXNB.clear()
         self.BDCO.clear()
-        self.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
+        self.setOpcdArgs(opcd="BDCO", arg5=89.4427, arg6=99999)
         self.READ.clear()
         self.CRMS.clear()
-        self.setOpcdArgs(opcd='CRMS', arg6=0.5)
+        self.setOpcdArgs(opcd="CRMS", arg6=0.5)
         self.MCMM.clear()
         if not nsteps:
             # 3**N where N = number of bonds rotated
             # Maxes out at 10,000.
-            nsteps = 3**len(indices_tors)
+            nsteps = 3 ** len(indices_tors)
             if nsteps > 10000:
                 nsteps = 10000
         # Good for testing.
         # nsteps = 50
-        self.setOpcdArgs(opcd='MCMM', arg1=nsteps)
+        self.setOpcdArgs(opcd="MCMM", arg1=nsteps)
         self.NANT.clear()
         self.MCNV.clear()
         # What if we just leave this out? Sets range for allowed DOF to change.
@@ -323,17 +295,17 @@ class MyComUtil(mmodutils.ComUtil):
         # The "adaptive mechanism" can be turned off with DEBG 103.
         # self.setOpcdArgs(opcd='MCNV', arg1=1, arg2=5)
         self.MCSS.clear()
-        self.setOpcdArgs(opcd='MCSS', arg1=2, arg5=50.0)
+        self.setOpcdArgs(opcd="MCSS", arg1=2, arg5=50.0)
         self.MCOP.clear()
-        self.setOpcdArgs(opcd='MCOP', arg1=1, arg4=0.5)
+        self.setOpcdArgs(opcd="MCOP", arg1=1, arg4=0.5)
         self.DEMX.clear()
-        self.setOpcdArgs(opcd='DEMX', arg2=1000, arg5=50, arg6=100)
+        self.setOpcdArgs(opcd="DEMX", arg2=1000, arg5=50, arg6=100)
         self.MSYM.clear()
         self.AUOP.clear()
         self.CONV.clear()
-        self.setOpcdArgs('CONV', arg1=2, arg5=0.05)
+        self.setOpcdArgs("CONV", arg1=2, arg5=0.05)
         self.MINI.clear()
-        self.setOpcdArgs('MINI', arg1=1, arg3=2500)
+        self.setOpcdArgs("MINI", arg1=1, arg3=2500)
         # Honestly, not sure why K Shawn Watts initializes this as an empty
         # list, but I suppose I will do it too just in case.
         com_args = []
@@ -341,122 +313,93 @@ class MyComUtil(mmodutils.ComUtil):
             com_file,
             mae_file,
             out_file,
-            'MMOD',
-            'DEBG',
-            'SEED',
-            'FFLD',
-            'EXNB',
-            'BDCO',
-            'READ',
-            'CRMS',
-            'MCMM',
-            'NANT',
+            "MMOD",
+            "DEBG",
+            "SEED",
+            "FFLD",
+            "EXNB",
+            "BDCO",
+            "READ",
+            "CRMS",
+            "MCMM",
+            "NANT",
             # 'MCNV',
-            'MCSS',
-            'MCOP',
-            'DEMX'
-            ]
-        com_args.extend(['COMP'] * (count_comp))
-        com_args.append('MSYM')
-        com_args.extend(['FXAT'] * len(frozen_atoms))
-        com_args.extend(['CHIG'] * (count_chig))
+            "MCSS",
+            "MCOP",
+            "DEMX",
+        ]
+        com_args.extend(["COMP"] * (count_comp))
+        com_args.append("MSYM")
+        com_args.extend(["FXAT"] * len(frozen_atoms))
+        com_args.extend(["CHIG"] * (count_chig))
         # Used to have AUOP here.
-        com_args.extend(['TORS'] * (count_tors))
-        com_args.extend(['TORC'] * (count_torc))
-        com_args.extend(['RCA4'] * (count_rca4))
-        com_args.extend([
-                'CONV',
-                'MINI'
-                ])
-        print(f'WRITING: {com_file}')
+        com_args.extend(["TORS"] * (count_tors))
+        com_args.extend(["TORC"] * (count_torc))
+        com_args.extend(["RCA4"] * (count_rca4))
+        com_args.extend(["CONV", "MINI"])
+        print(f"WRITING: {com_file}")
         return self.writeComFile(com_args)
-    def my_conf_elim(
-        self,
-        mae_file=None,
-        com_file=None,
-        out_file=None):
+
+    def my_conf_elim(self, mae_file=None, com_file=None, out_file=None):
         """
         Modified version of the the Schrödinger redundant conformer elimination.
         """
         self.DEBG.clear()
-        self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+        self.setOpcdArgs(opcd="DEBG", arg1=55, arg2=179)
         self.SEED.clear()
-        self.setOpcdArgs(opcd='SEED', arg1=40000)
+        self.setOpcdArgs(opcd="SEED", arg1=40000)
         self.FFLD.clear()
-        self.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+        self.setOpcdArgs(opcd="FFLD", arg1=2, arg2=1, arg5=1)
         self.READ.clear()
         self.MINI.clear()
         self.COMP.clear()
-        self.setOpcdArgs(opcd='COMP', arg7=2)
+        self.setOpcdArgs(opcd="COMP", arg7=2)
         # 9 = Truncated Newton (TNCG)
-        self.setOpcdArgs('MINI', arg1=9, arg3=2500)
-        com_args = [
-            com_file,
-            mae_file,
-            out_file,
-            'MMOD',
-            'DEBG',
-            'SEED',
-            'FFLD',
-            'BGIN',
-            'READ',
-            'COMP',
-            'MINI',
-            'END']
-        print(f'WRITING: {com_file}')
+        self.setOpcdArgs("MINI", arg1=9, arg3=2500)
+        com_args = [com_file, mae_file, out_file, "MMOD", "DEBG", "SEED", "FFLD", "BGIN", "READ", "COMP", "MINI", "END"]
+        print(f"WRITING: {com_file}")
         return self.writeComFile(com_args)
-    def my_mini(
-        self,
-        mae_file=None,
-        com_file=None,
-        out_file=None,
-        frozen_atoms=None,
-        fix_torsions=None):
+
+    def my_mini(self, mae_file=None, com_file=None, out_file=None, frozen_atoms=None, fix_torsions=None):
         """
         Modified version of the the Schrödinger mini.
         """
-        print(f'FROZEN ATOMS: {frozen_atoms}')
-        print(f'FIXED TORSIONS: {fix_torsions}')
+        print(f"FROZEN ATOMS: {frozen_atoms}")
+        print(f"FIXED TORSIONS: {fix_torsions}")
         if not frozen_atoms:
             frozen_atoms = []
         if not fix_torsions:
             fix_torsions = []
         self.FXAT.clear()
         for frozen_atom in frozen_atoms:
-            self.setOpcdArgs(
-                opcd='FXAT',
-                arg1=frozen_atom,
-                arg2=0,
-                arg3=0,
-                arg4=0,
-                arg5=-1
-                )
+            self.setOpcdArgs(opcd="FXAT", arg1=frozen_atom, arg2=0, arg3=0, arg4=0, arg5=-1)
         self.FXTA.clear()
         for fix_torsion in fix_torsions:
             # arg5 is the force constant in kJ/mol.
             # arg6 > 360 means to keep the current torsion value.
             self.setOpcdArgs(
-                opcd='FXTA',
+                opcd="FXTA",
                 arg1=fix_torsion[0],
                 arg2=fix_torsion[1],
                 arg3=fix_torsion[2],
                 arg4=fix_torsion[3],
                 arg5=4000,
-                arg6=fix_torsion[4])
+                arg6=fix_torsion[4],
+            )
         self.DEBG.clear()
-        self.setOpcdArgs(opcd='DEBG', arg1=55, arg2=179)
+        self.setOpcdArgs(opcd="DEBG", arg1=55, arg2=179)
         self.SEED.clear()
-        self.setOpcdArgs(opcd='SEED', arg1=40000)
+        self.setOpcdArgs(opcd="SEED", arg1=40000)
         self.FFLD.clear()
-        self.setOpcdArgs(opcd='FFLD', arg1=2, arg2=1, arg5=1)
+        self.setOpcdArgs(opcd="FFLD", arg1=2, arg2=1, arg5=1)
         self.EXNB.clear()
         self.BDCO.clear()
-        self.setOpcdArgs(opcd='BDCO', arg5=89.4427, arg6=99999)
+        self.setOpcdArgs(opcd="BDCO", arg5=89.4427, arg6=99999)
         self.READ.clear()
         self.CONV.clear()
-        self.setOpcdArgs('CONV', arg1=2, arg5=0.05)
+        self.setOpcdArgs("CONV", arg1=2, arg5=0.05)
         self.MINI.clear()
-        self.setOpcdArgs('MINI', arg1=1, arg3=2500)
+        self.setOpcdArgs("MINI", arg1=1, arg3=2500)
         # Honestly, not sure why K Shawn Watts initializes this as an empty
         # list, but I suppose I will do it too just in case.
         com_args = []
@@ -464,51 +407,55 @@ class MyComUtil(mmodutils.ComUtil):
             com_file,
             mae_file,
             out_file,
-            'MMOD',
-            'DEBG',
-            'SEED',
-            'FFLD',
-            'EXNB',
-            'BDCO',
-            'CRMS',
-            'BGIN',
-            'READ']
-        com_args.extend(['FXAT'] * len(frozen_atoms))
-        com_args.extend(['FXTA'] * len(fix_torsions))
-        com_args.extend([
-            'CONV',
-            'MINI',
-            'END'])
-        print(f'WRITING: {com_file}')
+            "MMOD",
+            "DEBG",
+            "SEED",
+            "FFLD",
+            "EXNB",
+            "BDCO",
+            "CRMS",
+            "BGIN",
+            "READ",
+        ]
+        com_args.extend(["FXAT"] * len(frozen_atoms))
+        com_args.extend(["FXTA"] * len(fix_torsions))
+        com_args.extend(["CONV", "MINI", "END"])
+        print(f"WRITING: {com_file}")
         return self.writeComFile(com_args)
 
+
 def return_parser():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        'input', type=str,
+        "input",
+        type=str,
         help="Name of *.mae file that you'd like to generate a conformational "
         "search *.com file for. Must contain the properties as described in "
-        "the __doc__ and description for proper functioning.")
+        "the __doc__ and description for proper functioning.",
+    )
+    parser.add_argument("com", type=str, help="Name for the *.com file you'd like to generate.")
     parser.add_argument(
-        'com', type=str,
-        help="Name for the *.com file you'd like to generate.")
+        "output", type=str, help="Name for the output *.mae file generated by the conformational search."
+    )
     parser.add_argument(
-        'output', type=str,
-        help="Name for the output *.mae file generated by the conformational "
-        "search.")
+        "-j",
+        "--jobtype",
+        type=str,
+        default="cs",
+        choices=["cs", "mini", "re"],
+        help='Job type. Choices include "cs", "mini" and "re". Default is "cs".',
+    )
     parser.add_argument(
-        '-j', '--jobtype', type=str, default='cs',
-        choices=['cs', 'mini', 're'],
-        help='Job type. Choices include "cs", "mini" and "re". Default '
-        'is "cs".')
-    parser.add_argument(
-        '-n', '--nsteps', type=int, default=15000,
-        help='Number of conformational search steps to take. Default is '
-        '3**N where N is the number of rotating bonds. If this exceeds '
-        '10,000, then 10,000 steps are taken as default.')
+        "-n",
+        "--nsteps",
+        type=int,
+        default=15000,
+        help="Number of conformational search steps to take. Default is "
+        "3**N where N is the number of rotating bonds. If this exceeds "
+        "10,000, then 10,000 steps are taken as default.",
+    )
     return parser
+
 
 def main(opts):
     """
@@ -516,23 +463,14 @@ def main(opts):
     """
     com_setup = MyComUtil()
     if opts.jobtype == "cs":
-        com_setup.my_mcmm(
-            mae_file=opts.input,
-            com_file=opts.com,
-            out_file=opts.output,
-            nsteps=opts.nsteps)
+        com_setup.my_mcmm(mae_file=opts.input, com_file=opts.com, out_file=opts.output, nsteps=opts.nsteps)
     elif opts.jobtype == "mini":
-        com_setup.my_mini(
-            mae_file=opts.input,
-            com_file=opts.com,
-            out_file=opts.output)
+        com_setup.my_mini(mae_file=opts.input, com_file=opts.com, out_file=opts.output)
     elif opts.jobtype == "re":
-        com_setup.my_conf_elim(
-            mae_file=opts.input,
-            com_file=opts.com,
-            out_file=opts.output)
+        com_setup.my_conf_elim(mae_file=opts.input, com_file=opts.com, out_file=opts.output)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = return_parser()
     opts = parser.parse_args(sys.argv[1:])
     main(opts)

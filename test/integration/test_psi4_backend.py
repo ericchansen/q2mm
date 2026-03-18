@@ -4,6 +4,7 @@ These tests require Psi4 to be installed (conda install psi4 -c conda-forge).
 Tests that only validate saved fixtures (TestPsi4HessianFixture) run without Psi4.
 Tests that call Psi4 directly are skipped if Psi4 is not available.
 """
+
 import unittest
 from pathlib import Path
 import numpy as np
@@ -15,6 +16,7 @@ QM_REF = FIXTURE_DIR / "qm-reference"
 try:
     import psi4  # noqa: F401
     from q2mm.backends.qm.psi4 import Psi4Engine
+
     HAS_PSI4 = True
 except ImportError:
     HAS_PSI4 = False
@@ -32,10 +34,7 @@ class TestPsi4EngineAvailability(unittest.TestCase):
 
 
 @unittest.skipUnless(HAS_PSI4, "Psi4 not installed")
-@unittest.skipUnless(
-    (QM_REF / "ch3f-optimized.xyz").exists(),
-    "CH3F fixture not found"
-)
+@unittest.skipUnless((QM_REF / "ch3f-optimized.xyz").exists(), "CH3F fixture not found")
 class TestPsi4EnergyCH3F(unittest.TestCase):
     """Test Psi4 energy calculation on CH3F.
 
@@ -55,8 +54,7 @@ class TestPsi4EnergyCH3F(unittest.TestCase):
         energy = self.engine.energy(self.xyz)
         # Reference from generate_qm_data_v2.py
         ref_energy = -139.751112913417
-        self.assertAlmostEqual(energy, ref_energy, places=5,
-                               msg=f"Energy {energy} differs from reference {ref_energy}")
+        self.assertAlmostEqual(energy, ref_energy, places=5, msg=f"Energy {energy} differs from reference {ref_energy}")
 
 
 @unittest.skipUnless(HAS_PSI4, "Psi4 not installed")
@@ -81,10 +79,7 @@ class TestPsi4EngineLoadMolecule(unittest.TestCase):
         self.assertAlmostEqual(energy, -1.17, delta=0.05)
 
 
-@unittest.skipUnless(
-    (QM_REF / "sn2-ts-hessian.npy").exists(),
-    "SN2 TS Hessian fixture not found"
-)
+@unittest.skipUnless((QM_REF / "sn2-ts-hessian.npy").exists(), "SN2 TS Hessian fixture not found")
 class TestPsi4HessianFixture(unittest.TestCase):
     """Verify the saved Hessian fixture is valid."""
 
@@ -95,8 +90,7 @@ class TestPsi4HessianFixture(unittest.TestCase):
 
     def test_hessian_symmetric(self):
         hess = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
-        np.testing.assert_allclose(hess, hess.T, atol=1e-10,
-                                   err_msg="Hessian should be symmetric")
+        np.testing.assert_allclose(hess, hess.T, atol=1e-10, err_msg="Hessian should be symmetric")
 
     def test_hessian_has_negative_eigenvalue(self):
         """TS Hessian should have exactly 1 negative eigenvalue
@@ -105,8 +99,7 @@ class TestPsi4HessianFixture(unittest.TestCase):
         eigenvalues = np.linalg.eigvalsh(hess)
         # Significantly negative eigenvalues (not just numerical noise)
         n_negative = sum(1 for ev in eigenvalues if ev < -0.001)
-        self.assertEqual(n_negative, 1,
-                         f"Expected 1 negative eigenvalue, got {n_negative}")
+        self.assertEqual(n_negative, 1, f"Expected 1 negative eigenvalue, got {n_negative}")
 
 
 if __name__ == "__main__":

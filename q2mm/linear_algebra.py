@@ -1,6 +1,5 @@
-"""Contains methods which perform linear algebraic operations.
+"""Contains methods which perform linear algebraic operations."""
 
-"""
 import copy
 
 import numpy as np
@@ -25,9 +24,7 @@ def decompose(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return eigenvalues, eigenvectors
 
 
-def replace_neg_eigenvalue(
-    eigenvalues: np.ndarray, replace_with=1.0, zer_out_neg=False, units=co.KJMOLA
-) -> np.ndarray:
+def replace_neg_eigenvalue(eigenvalues: np.ndarray, replace_with=1.0, zer_out_neg=False, units=co.KJMOLA) -> np.ndarray:
     """Replaces the most negative eigenvalue with a strong positive value to invert the curvature of the Potential Energy Surface.
 
     Args:
@@ -51,9 +48,9 @@ def replace_neg_eigenvalue(
     if zer_out_neg:
         for neg_index in neg_indices:
             replaced_eigenvalues[neg_index[0]] = 0.00
-    replaced_eigenvalues[
-        index_to_replace
-    ] = replace_with * co.HESSIAN_CONVERSION  if units == co.KJMOLA else replace_with # TODO: MF determine if we stick to this method, what it depends on, etc
+    replaced_eigenvalues[index_to_replace] = (
+        replace_with * co.HESSIAN_CONVERSION if units == co.KJMOLA else replace_with
+    )  # TODO: MF determine if we stick to this method, what it depends on, etc
 
     return replaced_eigenvalues
 
@@ -87,15 +84,13 @@ def invert_ts_curvature(hessian_matrix: np.ndarray) -> np.ndarray:
         np.ndarray: inverted hessian matrix
     """
     eigenvalues, eigenvectors = decompose(hessian_matrix)
-    inv_curv_hessian = reform_hessian(
-        replace_neg_eigenvalue(eigenvalues, zer_out_neg=True), eigenvectors
-    )
+    inv_curv_hessian = reform_hessian(replace_neg_eigenvalue(eigenvalues, zer_out_neg=True), eigenvectors)
 
-    #check_evals = np.diag()
+    # check_evals = np.diag()
 
     if not inv_curv_hessian.all() >= 0.0:
         print("Inverted Hessian has negative values...")
-        print(str(sum(inv_curv_hessian > 0))+" negative values...")
+        print(str(sum(inv_curv_hessian > 0)) + " negative values...")
 
     return inv_curv_hessian
 

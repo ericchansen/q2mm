@@ -1,4 +1,5 @@
 """Abstract base classes for QM and MM engine backends."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

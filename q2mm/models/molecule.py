@@ -4,6 +4,7 @@ Built on QCElemental for validated molecular data (symbols, geometry,
 charge, multiplicity, connectivity) with Q2MM-specific extensions
 (Hessian, detected bonds/angles, element-based matching).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from q2mm.models.identifiers import (
 
 try:
     import qcelemental as qcel
+
     _HAS_QCEL = True
 except ImportError:
     qcel = None
@@ -26,24 +28,50 @@ except ImportError:
 
 # Covalent radii for bond detection (Angstrom)
 COVALENT_RADII = {
-    "H": 0.31, "He": 0.28, "Li": 1.28, "Be": 0.96, "B": 0.84,
-    "C": 0.76, "N": 0.71, "O": 0.66, "F": 0.57, "Ne": 0.58,
-    "Na": 1.66, "Mg": 1.41, "Al": 1.21, "Si": 1.11, "P": 1.07,
-    "S": 1.05, "Cl": 1.02, "Ar": 1.06, "K": 2.03, "Ca": 1.76,
-    "Br": 1.20, "I": 1.39,
+    "H": 0.31,
+    "He": 0.28,
+    "Li": 1.28,
+    "Be": 0.96,
+    "B": 0.84,
+    "C": 0.76,
+    "N": 0.71,
+    "O": 0.66,
+    "F": 0.57,
+    "Ne": 0.58,
+    "Na": 1.66,
+    "Mg": 1.41,
+    "Al": 1.21,
+    "Si": 1.11,
+    "P": 1.07,
+    "S": 1.05,
+    "Cl": 1.02,
+    "Ar": 1.06,
+    "K": 2.03,
+    "Ca": 1.76,
+    "Br": 1.20,
+    "I": 1.39,
     # Transition metals relevant to Q2MM
-    "Rh": 1.42, "Pd": 1.39, "Ru": 1.46, "Ir": 1.41, "Pt": 1.36,
-    "Fe": 1.32, "Co": 1.26, "Ni": 1.24, "Cu": 1.32, "Zn": 1.22,
+    "Rh": 1.42,
+    "Pd": 1.39,
+    "Ru": 1.46,
+    "Ir": 1.41,
+    "Pt": 1.36,
+    "Fe": 1.32,
+    "Co": 1.26,
+    "Ni": 1.24,
+    "Cu": 1.32,
+    "Zn": 1.22,
 }
 
 
 @dataclass
 class DetectedBond:
     """A bond detected from molecular geometry."""
-    atom_i: int          # 0-based index
-    atom_j: int          # 0-based index
+
+    atom_i: int  # 0-based index
+    atom_j: int  # 0-based index
     elements: tuple[str, str]
-    length: float        # Angstrom
+    length: float  # Angstrom
     env_id: str = ""
     ff_row: int | None = None
 
@@ -56,11 +84,12 @@ class DetectedBond:
 @dataclass
 class DetectedAngle:
     """An angle detected from molecular bonds."""
-    atom_i: int          # 0-based (outer)
-    atom_j: int          # 0-based (center)
-    atom_k: int          # 0-based (outer)
+
+    atom_i: int  # 0-based (outer)
+    atom_j: int  # 0-based (center)
+    atom_k: int  # 0-based (outer)
     elements: tuple[str, str, str]
-    value: float         # degrees
+    value: float  # degrees
     env_id: str = ""
     ff_row: int | None = None
 
@@ -80,13 +109,14 @@ class Q2MMMolecule:
 
     Can be created from XYZ files, QCElemental molecules, or raw data.
     """
+
     symbols: list[str]
-    geometry: np.ndarray          # Shape (N, 3), Angstrom
+    geometry: np.ndarray  # Shape (N, 3), Angstrom
     charge: int = 0
     multiplicity: int = 1
     name: str = ""
-    bond_tolerance: float = 1.3   # Multiplier for bond detection. 1.4+ for TS.
-    hessian: np.ndarray | None = None   # Shape (3N, 3N), Hartree/Bohr^2
+    bond_tolerance: float = 1.3  # Multiplier for bond detection. 1.4+ for TS.
+    hessian: np.ndarray | None = None  # Shape (3N, 3N), Hartree/Bohr^2
     _bonds: list[DetectedBond] | None = field(default=None, repr=False)
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
 
@@ -117,11 +147,14 @@ class Q2MMMolecule:
                 rj = COVALENT_RADII.get(self.symbols[j], 0.76)
                 dist = np.linalg.norm(self.geometry[i] - self.geometry[j])
                 if dist < tolerance * (ri + rj):
-                    bonds.append(DetectedBond(
-                        atom_i=i, atom_j=j,
-                        elements=(self.symbols[i], self.symbols[j]),
-                        length=dist,
-                    ))
+                    bonds.append(
+                        DetectedBond(
+                            atom_i=i,
+                            atom_j=j,
+                            elements=(self.symbols[i], self.symbols[j]),
+                            length=dist,
+                        )
+                    )
         return bonds
 
     def _detect_angles(self) -> list[DetectedAngle]:
@@ -142,19 +175,23 @@ class Q2MMMolecule:
                     v2 = self.geometry[b] - self.geometry[center]
                     cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
                     angle_val = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
-                    angles.append(DetectedAngle(
-                        atom_i=a, atom_j=center, atom_k=b,
-                        elements=(self.symbols[a], self.symbols[center], self.symbols[b]),
-                        value=angle_val,
-                    ))
+                    angles.append(
+                        DetectedAngle(
+                            atom_i=a,
+                            atom_j=center,
+                            atom_k=b,
+                            elements=(self.symbols[a], self.symbols[center], self.symbols[b]),
+                            value=angle_val,
+                        )
+                    )
         return angles
 
     # ---- Factory methods ----
 
     @classmethod
-    def from_xyz(cls, path: str | Path, charge: int = 0,
-                 multiplicity: int = 1, name: str = "",
-                 bond_tolerance: float = 1.3) -> Q2MMMolecule:
+    def from_xyz(
+        cls, path: str | Path, charge: int = 0, multiplicity: int = 1, name: str = "", bond_tolerance: float = 1.3
+    ) -> Q2MMMolecule:
         """Load from XYZ file.
 
         Args:
@@ -168,7 +205,7 @@ class Q2MMMolecule:
         n = int(lines[0].strip())
         symbols = []
         coords = []
-        for line in lines[2:2 + n]:
+        for line in lines[2 : 2 + n]:
             parts = line.split()
             symbols.append(parts[0])
             coords.append([float(x) for x in parts[1:4]])
@@ -208,14 +245,16 @@ class Q2MMMolecule:
             length = bond.value
             if length is None:
                 length = np.linalg.norm(atoms[0].coords - atoms[1].coords)
-            bonds.append(DetectedBond(
-                atom_i=bond.atom_nums[0] - 1,
-                atom_j=bond.atom_nums[1] - 1,
-                elements=elements,
-                length=float(length),
-                env_id=canonicalize_bond_env_id(atom_types),
-                ff_row=bond.ff_row,
-            ))
+            bonds.append(
+                DetectedBond(
+                    atom_i=bond.atom_nums[0] - 1,
+                    atom_j=bond.atom_nums[1] - 1,
+                    elements=elements,
+                    length=float(length),
+                    env_id=canonicalize_bond_env_id(atom_types),
+                    ff_row=bond.ff_row,
+                )
+            )
 
         angles = []
         for angle in structure.angles:
@@ -228,15 +267,17 @@ class Q2MMMolecule:
                 v2 = atoms[2].coords - atoms[1].coords
                 cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
                 angle_value = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
-            angles.append(DetectedAngle(
-                atom_i=angle.atom_nums[0] - 1,
-                atom_j=angle.atom_nums[1] - 1,
-                atom_k=angle.atom_nums[2] - 1,
-                elements=elements,
-                value=float(angle_value),
-                env_id=canonicalize_angle_env_id(atom_types),
-                ff_row=angle.ff_row,
-            ))
+            angles.append(
+                DetectedAngle(
+                    atom_i=angle.atom_nums[0] - 1,
+                    atom_j=angle.atom_nums[1] - 1,
+                    atom_k=angle.atom_nums[2] - 1,
+                    elements=elements,
+                    value=float(angle_value),
+                    env_id=canonicalize_angle_env_id(atom_types),
+                    ff_row=angle.ff_row,
+                )
+            )
 
         return cls(
             symbols=symbols,
@@ -251,8 +292,7 @@ class Q2MMMolecule:
         )
 
     @classmethod
-    def from_qcel(cls, mol: qcel.models.Molecule,
-                  name: str = "") -> Q2MMMolecule:
+    def from_qcel(cls, mol: qcel.models.Molecule, name: str = "") -> Q2MMMolecule:
         """Create from a QCElemental Molecule object."""
         if not _HAS_QCEL:
             raise ImportError("qcelemental required: pip install qcelemental")

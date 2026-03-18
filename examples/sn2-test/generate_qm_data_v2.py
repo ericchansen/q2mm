@@ -5,6 +5,7 @@ Also computes the ion-dipole complex for standard barrier height.
 
 Run with: conda run -n q2mm python examples/sn2-test/generate_qm_data_v2.py
 """
+
 import os
 import sys
 import numpy as np
@@ -62,8 +63,9 @@ ch3f.save_xyz_file(os.path.join(OUTPUT_DIR, "ch3f-optimized.xyz"), True)
 ch3f_e2, ch3f_wfn = psi4.frequency(METHOD, molecule=ch3f, return_wfn=True)
 np.save(os.path.join(OUTPUT_DIR, "ch3f-hessian.npy"), np.array(ch3f_wfn.hessian()))
 ch3f_freqs = np.array(ch3f_wfn.frequencies())
-np.savetxt(os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs,
-           header=f"CH3F frequencies (cm^-1) at {METHOD}/{BASIS}")
+np.savetxt(
+    os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs, header=f"CH3F frequencies (cm^-1) at {METHOD}/{BASIS}"
+)
 
 # Extract CH3F geometry
 ch3f_coords = ch3f.geometry().np
@@ -86,13 +88,15 @@ ts_mol = psi4.geometry("""
     H    -0.513360   -0.889165    0.000000
 """)
 
-psi4.set_options({
-    "basis": BASIS,
-    "reference": "rhf",
-    "opt_type": "ts",
-    "geom_maxiter": 150,
-    "full_hess_every": 5,
-})
+psi4.set_options(
+    {
+        "basis": BASIS,
+        "reference": "rhf",
+        "opt_type": "ts",
+        "geom_maxiter": 150,
+        "full_hess_every": 5,
+    }
+)
 
 ts_energy = psi4.optimize(METHOD, molecule=ts_mol)
 print(f"  TS energy: {ts_energy:.12f} Ha")
@@ -115,8 +119,9 @@ hessian = np.array(ts_wfn.hessian())
 np.save(os.path.join(OUTPUT_DIR, "sn2-ts-hessian.npy"), hessian)
 
 freqs = np.array(ts_wfn.frequencies())
-np.savetxt(os.path.join(OUTPUT_DIR, "sn2-ts-frequencies.txt"), freqs,
-           header=f"SN2 TS frequencies (cm^-1) at {METHOD}/{BASIS}")
+np.savetxt(
+    os.path.join(OUTPUT_DIR, "sn2-ts-frequencies.txt"), freqs, header=f"SN2 TS frequencies (cm^-1) at {METHOD}/{BASIS}"
+)
 
 n_imag = np.sum(freqs < 0)
 print(f"  Hessian shape: {hessian.shape}")
@@ -155,7 +160,7 @@ barrier_vs_complex = (ts_energy - complex_energy) * 627.509
 
 with open(os.path.join(OUTPUT_DIR, "summary.txt"), "w") as f:
     f.write(f"SN2 F- + CH3F Reference Data at {METHOD}/{BASIS}\n")
-    f.write(f"{'='*60}\n\n")
+    f.write(f"{'=' * 60}\n\n")
     f.write(f"F- energy:       {f_energy:.12f} Ha\n")
     f.write(f"CH3F energy:     {ch3f_energy:.12f} Ha\n")
     f.write(f"Complex energy:  {complex_energy:.12f} Ha\n")
@@ -174,9 +179,9 @@ with open(os.path.join(OUTPUT_DIR, "sn2-ts-energy.txt"), "w") as f:
 with open(os.path.join(OUTPUT_DIR, "ch3f-energy.txt"), "w") as f:
     f.write(f"# CH3F energy at {METHOD}/{BASIS}\n{ch3f_energy:.12f}\n")
 
-print(f"\n{'='*60}")
+print(f"\n{'=' * 60}")
 print(f"RESULTS at {METHOD}/{BASIS}")
-print(f"{'='*60}")
+print(f"{'=' * 60}")
 print(f"  C-F (TS):             {cf1:.4f} / {cf2:.4f} A  (lit: ~1.83-1.85)")
 print(f"  C-F (CH3F):           {cf_dist:.4f} A  (expt: 1.382)")
 print(f"  Imaginary freq:       {freqs[freqs < 0][0]:.1f} cm^-1")

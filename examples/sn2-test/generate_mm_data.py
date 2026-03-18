@@ -3,6 +3,7 @@
 Run with: python examples/sn2-test/generate_mm_data.py
 Requires Tinker binaries on PATH or at C:\\Users\\ericc\\tinker\\bin-windows
 """
+
 import os
 import subprocess
 import numpy as np
@@ -40,7 +41,9 @@ with open(tinker_xyz, "w") as f:
     f.write(f"     {len(atoms)}  SN2 TS F-CH3-F from Psi4 B3LYP/6-31+G(d)\n")
     # C is atom 1, bonded to F(2), F(3), H(4), H(5), H(6)
     # In the TS, C has 5 "bonds" (trigonal bipyramidal)
-    f.write(f"     1  C   {coords[0][0]:12.6f} {coords[0][1]:12.6f} {coords[0][2]:12.6f}     1     2     3     4     5     6\n")
+    f.write(
+        f"     1  C   {coords[0][0]:12.6f} {coords[0][1]:12.6f} {coords[0][2]:12.6f}     1     2     3     4     5     6\n"
+    )
     f.write(f"     2  F   {coords[1][0]:12.6f} {coords[1][1]:12.6f} {coords[1][2]:12.6f}    11     1\n")
     f.write(f"     3  F   {coords[2][0]:12.6f} {coords[2][1]:12.6f} {coords[2][2]:12.6f}    11     1\n")
     f.write(f"     4  H   {coords[3][0]:12.6f} {coords[3][1]:12.6f} {coords[3][2]:12.6f}     5     1\n")
@@ -58,10 +61,7 @@ print(f"      Key file:   {key_file}")
 # Run analyze for energy breakdown
 print("\n[2/3] Running Tinker analyze (energy)...")
 analyze_exe = os.path.join(TINKER_BIN, "analyze.exe")
-result = subprocess.run(
-    [analyze_exe, tinker_xyz, "-k", key_file, "E"],
-    capture_output=True, text=True, timeout=60
-)
+result = subprocess.run([analyze_exe, tinker_xyz, "-k", key_file, "E"], capture_output=True, text=True, timeout=60)
 
 energy_output = os.path.join(MM_DIR, "analyze-energy.txt")
 with open(energy_output, "w") as f:
@@ -80,8 +80,10 @@ print("\n[3/3] Running Tinker vibrate (frequencies)...")
 vibrate_exe = os.path.join(TINKER_BIN, "vibrate.exe")
 result_vib = subprocess.run(
     [vibrate_exe, tinker_xyz, "-k", key_file],
-    capture_output=True, text=True, timeout=120,
-    input="A\n"  # 'A' for all vibrations
+    capture_output=True,
+    text=True,
+    timeout=120,
+    input="A\n",  # 'A' for all vibrations
 )
 
 vib_output = os.path.join(MM_DIR, "vibrate-output.txt")
@@ -104,8 +106,7 @@ for line in result_vib.stdout.split("\n"):
                 pass
 
 if mm_freqs:
-    np.savetxt(os.path.join(MM_DIR, "mm-frequencies.txt"), mm_freqs,
-               header="MM3 frequencies (cm^-1)")
+    np.savetxt(os.path.join(MM_DIR, "mm-frequencies.txt"), mm_freqs, header="MM3 frequencies (cm^-1)")
     print(f"  MM3 frequencies: {mm_freqs}")
 else:
     print("  No frequencies parsed — check vibrate-output.txt")
@@ -113,6 +114,6 @@ else:
     for line in result_vib.stdout.split("\n")[-20:]:
         print(f"    {line}")
 
-print(f"\n{'='*60}")
+print(f"\n{'=' * 60}")
 print(f"MM3 outputs saved to: {MM_DIR}")
-print(f"{'='*60}")
+print(f"{'=' * 60}")

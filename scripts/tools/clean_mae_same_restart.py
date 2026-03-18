@@ -4,36 +4,36 @@ Cleans up *.mae files.
 
 Accepts multiple filenames and glob as the argument(s).
 """
+
 import os
 import sys
 
 from schrodinger import structure as sch_struct
 
-from clean_mae import \
-    PROPERTIES_TO_REMOVE, ATOM_PROPERTIES_TO_REMOVE
-from clean_mae_same_update import \
-    ATOM_CS_PROPERTIES, BOND_CS_PROPERTIES, CONV_DIC
+from clean_mae import PROPERTIES_TO_REMOVE, ATOM_PROPERTIES_TO_REMOVE
+from clean_mae_same_update import ATOM_CS_PROPERTIES, BOND_CS_PROPERTIES, CONV_DIC
 
-PROPERTIES_TO_REMOVE.extend([
-    's_cs_smiles_substrate',
-    's_cs_smiles_ligand',
-    'b_cs_c2',
-    's_cs_stereochemistry',
-    'b_cs_first_match_only',
-    'b_cs_both_enantiomers'
-    ])
+PROPERTIES_TO_REMOVE.extend(
+    [
+        "s_cs_smiles_substrate",
+        "s_cs_smiles_ligand",
+        "b_cs_c2",
+        "s_cs_stereochemistry",
+        "b_cs_first_match_only",
+        "b_cs_both_enantiomers",
+    ]
+)
 
 ATOM_PROPERTIES_TO_REMOVE.extend(ATOM_CS_PROPERTIES)
 BOND_PROPERTIES_TO_REMOVE = BOND_CS_PROPERTIES
 BOND_PROPERTIES_TO_REMOVE.extend(CONV_DIC.keys())
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     for filename in sys.argv[1:]:
         structure_reader = sch_struct.StructureReader(filename)
-        structure_writer = sch_struct.StructureWriter('TEMP.mae')
+        structure_writer = sch_struct.StructureWriter("TEMP.mae")
 
         for structure in structure_reader:
-
             # Clean structure properties.
             for prop in PROPERTIES_TO_REMOVE:
                 try:
@@ -41,10 +41,9 @@ if __name__ == '__main__':
                 except KeyError:
                     pass
             # Change the name too. Why not.
-            structure.property['s_m_title'] = \
-                structure.property['s_m_entry_name'] = \
-                    os.path.splitext(
-                        os.path.basename(filename))[0]
+            structure.property["s_m_title"] = structure.property["s_m_entry_name"] = os.path.splitext(
+                os.path.basename(filename)
+            )[0]
 
             # Clean atom properties.
             for atom in structure.atom:
@@ -71,4 +70,4 @@ if __name__ == '__main__':
         structure_reader.close()
         structure_writer.close()
 
-        os.rename('TEMP.mae', filename)
+        os.rename("TEMP.mae", filename)

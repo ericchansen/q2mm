@@ -1,8 +1,8 @@
 """Quick test of both backends."""
+
 import sys
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test TinkerEngine (doesn't need conda)
     from q2mm.backends.mm.tinker import TinkerEngine
 
@@ -14,6 +14,7 @@ if __name__ == '__main__':
     # Test Psi4Engine
     try:
         from q2mm.backends.qm.psi4 import Psi4Engine
+
         psi4_engine = Psi4Engine(charge=0)  # CH3F is neutral
         print(f"Psi4Engine: {psi4_engine.name}, available={psi4_engine.is_available()}")
         e = psi4_engine.energy("examples/sn2-test/qm-reference/ch3f-optimized.xyz")

@@ -14,8 +14,7 @@ logger = logging.getLogger(__name__)
 # They call calculate.main() which invokes MacroModel via subprocess.
 # Skip when the required fixture data and software aren't available.
 _REQUIRES_MACROMODEL = unittest.skipUnless(
-    os.path.isdir('d_rhod'),
-    "Requires Schrödinger MacroModel and d_rhod/ fixture data"
+    os.path.isdir("d_rhod"), "Requires Schrödinger MacroModel and d_rhod/ fixture data"
 )
 
 
@@ -25,12 +24,15 @@ class TestMacroModelBonds(unittest.TestCase):
     Check that the -mb command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-mb', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-mb", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 8)
+
 
 @_REQUIRES_MACROMODEL
 class TestMacroModelAngles(unittest.TestCase):
@@ -38,12 +40,15 @@ class TestMacroModelAngles(unittest.TestCase):
     Check that the -ma command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-ma', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-ma", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 34)
+
 
 @_REQUIRES_MACROMODEL
 class TestMacroModelTorsions(unittest.TestCase):
@@ -51,12 +56,15 @@ class TestMacroModelTorsions(unittest.TestCase):
     Check that the -mt command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-mt', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-mt", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 90)
+
 
 @_REQUIRES_MACROMODEL
 class TestMacroModelEnergies(unittest.TestCase):
@@ -64,13 +72,17 @@ class TestMacroModelEnergies(unittest.TestCase):
     Check that the -me command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
         self.conn = calculate.main(
-            ['-d', 'd_rhod', '-me', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
+            ["-d", "d_rhod", "-me", "X001_E1.01.mae", "X001_E2.02.mae", "X001_Z1.02.mae", "X001_Z2.02.mae"]
+        )
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 4)
+
 
 @_REQUIRES_MACROMODEL
 class TestMacroModelOptimizedEnergies(unittest.TestCase):
@@ -78,13 +90,17 @@ class TestMacroModelOptimizedEnergies(unittest.TestCase):
     Check that the -meo command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
         self.conn = calculate.main(
-            ['-d', 'd_rhod', '-meo', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
+            ["-d", "d_rhod", "-meo", "X001_E1.01.mae", "X001_E2.02.mae", "X001_Z1.02.mae", "X001_Z2.02.mae"]
+        )
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 4)
+
 
 # I need to implement charges again.
 @_REQUIRES_MACROMODEL
@@ -93,14 +109,17 @@ class TestMacroModelCharges(unittest.TestCase):
     Check that the -mq command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-mq', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-mq", "X001_E1.01.mae"])
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         print(len(rows))
         for row in rows:
             print(row)
+
 
 # Need to add a check on the number of data points generated.
 @_REQUIRES_MACROMODEL
@@ -109,13 +128,15 @@ class TestMacroModelEigenvalues(unittest.TestCase):
     Check that the -meig command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(
-            ['-d', 'd_rhod', '-meig', 'X001_E1.01.mae,X001_E1.out'])
+        self.conn = calculate.main(["-d", "d_rhod", "-meig", "X001_E1.01.mae,X001_E1.out"])
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         print(len(rows))
+
 
 @_REQUIRES_MACROMODEL
 class TestJaguarBonds(unittest.TestCase):
@@ -123,12 +144,15 @@ class TestJaguarBonds(unittest.TestCase):
     Check that the -jb command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-jb', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-jb", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 8)
+
 
 @_REQUIRES_MACROMODEL
 class TestJaguarAngles(unittest.TestCase):
@@ -136,12 +160,15 @@ class TestJaguarAngles(unittest.TestCase):
     Check that the -ja command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-ja', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-ja", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 34)
+
 
 @_REQUIRES_MACROMODEL
 class TestJaguarTorsions(unittest.TestCase):
@@ -149,12 +176,15 @@ class TestJaguarTorsions(unittest.TestCase):
     Check that the -jt command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(['-d', 'd_rhod', '-jt', 'X001_E1.01.mae'])
+        self.conn = calculate.main(["-d", "d_rhod", "-jt", "X001_E1.01.mae"])
+
     def test_ma(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 90)
+
 
 @_REQUIRES_MACROMODEL
 class TestJaguarEnergies(unittest.TestCase):
@@ -162,13 +192,17 @@ class TestJaguarEnergies(unittest.TestCase):
     Check that the -je command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
         self.conn = calculate.main(
-            ['-d', 'd_rhod', '-je', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
+            ["-d", "d_rhod", "-je", "X001_E1.01.mae", "X001_E2.02.mae", "X001_Z1.02.mae", "X001_Z2.02.mae"]
+        )
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 4)
+
 
 @_REQUIRES_MACROMODEL
 class TestJaguarEnergies(unittest.TestCase):
@@ -180,13 +214,17 @@ class TestJaguarEnergies(unittest.TestCase):
     instead used to indicate that -jeo energies should be matched with
     -meo energies, rather than -me energies.
     """
+
     def setUp(self):
         self.conn = calculate.main(
-            ['-d', 'd_rhod', '-jeo', 'X001_E1.01.mae', 'X001_E2.02.mae', 'X001_Z1.02.mae', 'X001_Z2.02.mae'])
+            ["-d", "d_rhod", "-jeo", "X001_E1.01.mae", "X001_E2.02.mae", "X001_Z1.02.mae", "X001_Z2.02.mae"]
+        )
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
         self.assertEqual(len(rows), 4)
+
 
 # Need to add a check on the number of data points generated.
 @_REQUIRES_MACROMODEL
@@ -195,12 +233,14 @@ class TestJaguarEigenvalues(unittest.TestCase):
     Check that the -jeige command for the calculate module produces the
     proper number of data points.
     """
+
     def setUp(self):
-        self.conn = calculate.main(
-            ['-d', 'd_rhod', '-jeige', 'X001_E1.01.in,X001_E1.out'])
+        self.conn = calculate.main(["-d", "d_rhod", "-jeige", "X001_E1.01.in,X001_E1.out"])
+
     def test_me(self):
         c = self.conn.cursor()
-        rows = list(c.execute('SELECT * FROM data'))
+        rows = list(c.execute("SELECT * FROM data"))
+
 
 @_REQUIRES_MACROMODEL
 class TestCompareBonds(unittest.TestCase):
@@ -208,13 +248,16 @@ class TestCompareBonds(unittest.TestCase):
     Check that these two commands produce a reasonable data set to
     evaluate the objective function.
     """
+
     def setUp(self):
-        self.f_conn = calculate.main(['-d', 'd_rhod', '-mb', 'X001_E1.01.mae'])
-        self.r_conn = calculate.main(['-d', 'd_rhod', '-jb', 'X001_E1.01.mae'])
+        self.f_conn = calculate.main(["-d", "d_rhod", "-mb", "X001_E1.01.mae"])
+        self.r_conn = calculate.main(["-d", "d_rhod", "-jb", "X001_E1.01.mae"])
+
     def test_compare_bonds(self):
         score = compare.compare_data(self.r_conn, self.f_conn)
-        print(f'COMPARE BONDS SCORE: {score}')
+        print(f"COMPARE BONDS SCORE: {score}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     logging.config.dictConfig(co.LOG_SETTINGS)
     unittest.main()

@@ -11,10 +11,8 @@ RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "rh-enamide"
 
 
 @unittest.skipUnless(
-    (ETHANE_DIR / "GS.mol2").exists()
-    and (ETHANE_DIR / "GS.log").exists()
-    and (ETHANE_DIR / "TS.log").exists(),
-    "Ethane fixture files not found"
+    (ETHANE_DIR / "GS.mol2").exists() and (ETHANE_DIR / "GS.log").exists() and (ETHANE_DIR / "TS.log").exists(),
+    "Ethane fixture files not found",
 )
 class TestGaussLogParsing(unittest.TestCase):
     """Test that GaussLog can parse ethane Gaussian output."""
@@ -38,10 +36,7 @@ class TestGaussLogParsing(unittest.TestCase):
         self.assertGreater(len(log.structures), 0, "No structures parsed from TS.log")
 
 
-@unittest.skipUnless(
-    (ETHANE_DIR / "GS.mol2").exists(),
-    "Ethane mol2 fixture not found"
-)
+@unittest.skipUnless((ETHANE_DIR / "GS.mol2").exists(), "Ethane mol2 fixture not found")
 class TestMol2Parsing(unittest.TestCase):
     """Test that Mol2 can parse ethane structure."""
 
@@ -62,10 +57,7 @@ class TestMol2Parsing(unittest.TestCase):
         self.assertEqual(len(struct.bonds), 7, "Ethane should have 7 bonds")
 
 
-@unittest.skipUnless(
-    (RH_SEMINARIO_DIR / "mm3.fld").exists(),
-    "rh-enamide fixture not found"
-)
+@unittest.skipUnless((RH_SEMINARIO_DIR / "mm3.fld").exists(), "rh-enamide fixture not found")
 class TestMM3FFParsing(unittest.TestCase):
     """Test MM3 force field parsing from schrod_indep_filetypes."""
 
@@ -77,17 +69,16 @@ class TestMM3FFParsing(unittest.TestCase):
         self.assertGreater(len(self.ff.params), 0, "No parameters parsed")
 
     def test_mm3_has_bonds(self):
-        bond_params = [p for p in self.ff.params if p.ptype in ('bf', 'be')]
+        bond_params = [p for p in self.ff.params if p.ptype in ("bf", "be")]
         self.assertGreater(len(bond_params), 0, "No bond parameters found")
 
     def test_mm3_has_angles(self):
-        angle_params = [p for p in self.ff.params if p.ptype in ('af', 'ae')]
+        angle_params = [p for p in self.ff.params if p.ptype in ("af", "ae")]
         self.assertGreater(len(angle_params), 0, "No angle parameters found")
 
 
 @unittest.skipUnless(
-    (ETHANE_DIR / "GS.log").exists() and (ETHANE_DIR / "GS.mol2").exists(),
-    "Ethane fixture files not found"
+    (ETHANE_DIR / "GS.log").exists() and (ETHANE_DIR / "GS.mol2").exists(), "Ethane fixture files not found"
 )
 class TestHessianMassWeighting(unittest.TestCase):
     """Test mass-weighting of Hessians."""
@@ -101,11 +92,8 @@ class TestHessianMassWeighting(unittest.TestCase):
         # Mass-weight then un-weight should give back original
         mass_weight_hessian(hess, struct.atoms)
         mass_weight_hessian(hess, struct.atoms, reverse=True)
-        np.testing.assert_allclose(
-            original, hess, rtol=1e-10,
-            err_msg="Mass-weight roundtrip did not preserve Hessian"
-        )
+        np.testing.assert_allclose(original, hess, rtol=1e-10, err_msg="Mass-weight roundtrip did not preserve Hessian")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

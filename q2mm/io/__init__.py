@@ -4,6 +4,7 @@ Re-exports key parser classes for convenient access:
 
     from q2mm.io import GaussLog, Mol2, Structure, Atom, Bond
 """
+
 from q2mm.schrod_indep_filetypes import (
     GaussLog,
     JaguarIn,

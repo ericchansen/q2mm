@@ -14,10 +14,12 @@ conformational search *.com files.
    files for MacroModel conformational searches from these combined *.mae
    structures.
 """
+
 import argparse
 import os
 import sys
 from schrodinger import structure as sch_struct
+
 
 def read_com(filename):
     """
@@ -40,31 +42,31 @@ def read_com(filename):
            check and 2 real numbers used to describe the abs(min) and abs(max)
            torsion values.
     """
-    comp = [] # Holds the COMP atoms. This is a flat list.
-    tors = [] # Holds TORS. List of tuples of length 2.
-    rca4 = [] # Holds RCA4. List of tuples of length 4.
-    chig = [] # Holds CHIG. Flat list.
-    torc = [] # Holds TORC. List of tuples of length 6.
+    comp = []  # Holds the COMP atoms. This is a flat list.
+    tors = []  # Holds TORS. List of tuples of length 2.
+    rca4 = []  # Holds RCA4. List of tuples of length 4.
+    chig = []  # Holds CHIG. Flat list.
+    torc = []  # Holds TORC. List of tuples of length 6.
     with open(filename) as f:
         for line in f:
             cols = line.split()
-            if cols[0] == 'COMP':
+            if cols[0] == "COMP":
                 comp.extend(map(int, cols[1:5]))
-            if cols[0] == 'TORS':
+            if cols[0] == "TORS":
                 tors.append([int(x) for x in cols[1:3]])
-            if cols[0] == 'RCA4':
+            if cols[0] == "RCA4":
                 x = [int(x) for x in cols[1:5]]
                 if x[2] < x[1]:
                     x.reverse()
                 rca4.append(tuple(x))
-            if cols[0] == 'TORC':
+            if cols[0] == "TORC":
                 x = [int(x) for x in cols[1:5]]
                 if x[2] < x[1]:
                     x.reverse()
                 x.append(float(cols[5]))
                 x.append(float(cols[6]))
                 torc.append(tuple(x))
-            if cols[0] == 'CHIG':
+            if cols[0] == "CHIG":
                 chig.extend(map(int, cols[1:5]))
     # Remove all extra 0's from comp and chig.
     # Up to 4 COMP atoms are given per line. If 3 or less are given on a line,
@@ -72,6 +74,7 @@ def read_com(filename):
     comp = [x for x in comp if x != 0]
     chig = [x for x in chig if x != 0]
     return comp, tors, rca4, chig, torc
+
 
 def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
     """
@@ -99,151 +102,161 @@ def add_to_mae(filename, output, comp, tors, rca4, chig, torc):
                abs(max) value of a torsion.
     """
     structure_reader = sch_struct.StructureReader(filename)
-    structure_writer = sch_struct.StructureWriter('TEMP.mae')
+    structure_writer = sch_struct.StructureWriter("TEMP.mae")
 
     tors_set = [set(x) for x in tors]
 
     for structure in structure_reader:
-
         # Copy over which atoms should go with COMP.
-        print('SETUP COMP:')
+        print("SETUP COMP:")
         for one_comp in comp:
             atom = structure.atom[one_comp]
-            atom.property['b_cs_comp'] = 1
-            print(f' *        {atom.index:>4}/{atom.atom_type_name:2}')
+            atom.property["b_cs_comp"] = 1
+            print(f" *        {atom.index:>4}/{atom.atom_type_name:2}")
 
         # Copy over which atoms should go with CHIG.
-        print('SETUP CHIG:')
+        print("SETUP CHIG:")
         for one_chig in chig:
             atom = structure.atom[one_chig]
-            atom.property['b_cs_chig'] = 1
-            print(f' *        {atom.index:>4}/{atom.atom_type_name:2}')
+            atom.property["b_cs_chig"] = 1
+            print(f" *        {atom.index:>4}/{atom.atom_type_name:2}")
 
         # Set all remaining b_cs_comp and b_cs_chig to 0.
         for atom in structure.atom:
             if atom.index not in comp:
-                atom.property['b_cs_comp'] = 0
+                atom.property["b_cs_comp"] = 0
             if atom.index not in chig:
-                atom.property['b_cs_chig'] = 0
+                atom.property["b_cs_chig"] = 0
 
-        print('SETUP TORS:')
+        print("SETUP TORS:")
         for one_tors in tors:
             bond = structure.getBond(one_tors[0], one_tors[1])
-            bond.property['b_cs_tors'] = 1
-            print(f' *        {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2}')
+            bond.property["b_cs_tors"] = 1
+            print(
+                f" *        {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2}"
+            )
 
         # Add RCA4 properties.
-        print('SETUP RCA4:')
+        print("SETUP RCA4:")
         for one_rca4 in rca4:
             bond = structure.getBond(one_rca4[1], one_rca4[2])
-            bond.property['i_cs_rca4_1'] = one_rca4[0]
-            bond.property['i_cs_rca4_2'] = one_rca4[3]
-            print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-                      bond.property['i_cs_rca4_1'],
-                      bond.atom1.index,
-                      bond.atom1.atom_type_name,
-                      bond.atom2.index,
-                      bond.atom2.atom_type_name,
-                      bond.property['i_cs_rca4_2']))
+            bond.property["i_cs_rca4_1"] = one_rca4[0]
+            bond.property["i_cs_rca4_2"] = one_rca4[3]
+            print(
+                " * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}".format(
+                    bond.property["i_cs_rca4_1"],
+                    bond.atom1.index,
+                    bond.atom1.atom_type_name,
+                    bond.atom2.index,
+                    bond.atom2.atom_type_name,
+                    bond.property["i_cs_rca4_2"],
+                )
+            )
 
-        print('SETUP TORC:')
+        print("SETUP TORC:")
         for one_torc in torc:
             bond = structure.getBond(one_torc[1], one_torc[2])
-            if 'i_cs_torc_a1' not in bond.property or \
-               not bond.property['i_cs_torc_a1']:
-                bond.property['i_cs_torc_a1'] = one_torc[0]
-                bond.property['i_cs_torc_a4'] = one_torc[3]
-                bond.property['r_cs_torc_a5'] = one_torc[4]
-                bond.property['r_cs_torc_a6'] = one_torc[5]
+            if "i_cs_torc_a1" not in bond.property or not bond.property["i_cs_torc_a1"]:
+                bond.property["i_cs_torc_a1"] = one_torc[0]
+                bond.property["i_cs_torc_a4"] = one_torc[3]
+                bond.property["r_cs_torc_a5"] = one_torc[4]
+                bond.property["r_cs_torc_a6"] = one_torc[5]
                 # Might be nice to expand this to include the min and max torsion
                 # values.
-                print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-                    bond.property['i_cs_torc_a1'],
-                    bond.atom1.index,
-                    bond.atom1.atom_type_name,
-                    bond.atom2.index,
-                    bond.atom2.atom_type_name,
-                    bond.property['i_cs_torc_a4']))
+                print(
+                    " * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}".format(
+                        bond.property["i_cs_torc_a1"],
+                        bond.atom1.index,
+                        bond.atom1.atom_type_name,
+                        bond.atom2.index,
+                        bond.atom2.atom_type_name,
+                        bond.property["i_cs_torc_a4"],
+                    )
+                )
             else:
-                bond.property['i_cs_torc_b1'] = one_torc[0]
-                bond.property['i_cs_torc_b4'] = one_torc[3]
-                bond.property['r_cs_torc_b5'] = one_torc[4]
-                bond.property['r_cs_torc_b6'] = one_torc[5]
+                bond.property["i_cs_torc_b1"] = one_torc[0]
+                bond.property["i_cs_torc_b4"] = one_torc[3]
+                bond.property["r_cs_torc_b5"] = one_torc[4]
+                bond.property["r_cs_torc_b6"] = one_torc[5]
                 # Might be nice to expand this to include the min and max torsion
                 # values.
-                print(' * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}'.format(
-                    bond.property['i_cs_torc_b1'],
-                    bond.atom1.index,
-                    bond.atom1.atom_type_name,
-                    bond.atom2.index,
-                    bond.atom2.atom_type_name,
-                    bond.property['i_cs_torc_b4']))
+                print(
+                    " * {:>4}   {:>4}/{:2} {:>4}/{:2} {:>4}".format(
+                        bond.property["i_cs_torc_b1"],
+                        bond.atom1.index,
+                        bond.atom1.atom_type_name,
+                        bond.atom2.index,
+                        bond.atom2.atom_type_name,
+                        bond.property["i_cs_torc_b4"],
+                    )
+                )
         # Set i_cs_rca4_1, i_cs_rca4_2 and b_cs_tors to 0 for all other bonds.
         for bond in structure.bond:
-            if 'i_cs_rca4_1' not in bond.property:
-                bond.property['i_cs_rca4_1'] = 0
-            if 'i_cs_rca4_2' not in bond.property:
-                bond.property['i_cs_rca4_2'] = 0
-            if 'b_cs_tors' not in bond.property:
-                bond.property['b_cs_tors'] = 0
-            if 'i_cs_torc_a1' not in bond.property:
-                bond.property['i_cs_torc_a1'] = 0
-            if 'i_cs_torc_a4' not in bond.property:
-                bond.property['i_cs_torc_a4'] = 0
-            if 'r_cs_torc_a5' not in bond.property:
-                bond.property['r_cs_torc_a5'] = 0
-            if 'r_cs_torc_a6' not in bond.property:
-                bond.property['r_cs_torc_a6'] = 0
-            if 'i_cs_torc_b1' not in bond.property:
-                bond.property['i_cs_torc_b1'] = 0
-            if 'i_cs_torc_b4' not in bond.property:
-                bond.property['i_cs_torc_b4'] = 0
-            if 'r_cs_torc_b5' not in bond.property:
-                bond.property['r_cs_torc_b5'] = 0
-            if 'r_cs_torc_b6' not in bond.property:
-                bond.property['r_cs_torc_b6'] = 0
+            if "i_cs_rca4_1" not in bond.property:
+                bond.property["i_cs_rca4_1"] = 0
+            if "i_cs_rca4_2" not in bond.property:
+                bond.property["i_cs_rca4_2"] = 0
+            if "b_cs_tors" not in bond.property:
+                bond.property["b_cs_tors"] = 0
+            if "i_cs_torc_a1" not in bond.property:
+                bond.property["i_cs_torc_a1"] = 0
+            if "i_cs_torc_a4" not in bond.property:
+                bond.property["i_cs_torc_a4"] = 0
+            if "r_cs_torc_a5" not in bond.property:
+                bond.property["r_cs_torc_a5"] = 0
+            if "r_cs_torc_a6" not in bond.property:
+                bond.property["r_cs_torc_a6"] = 0
+            if "i_cs_torc_b1" not in bond.property:
+                bond.property["i_cs_torc_b1"] = 0
+            if "i_cs_torc_b4" not in bond.property:
+                bond.property["i_cs_torc_b4"] = 0
+            if "r_cs_torc_b5" not in bond.property:
+                bond.property["r_cs_torc_b5"] = 0
+            if "r_cs_torc_b6" not in bond.property:
+                bond.property["r_cs_torc_b6"] = 0
         structure_writer.append(structure)
 
     structure_writer.close()
     structure_reader.close()
 
-    os.rename('TEMP.mae', output)
-    print(f'WROTE: {output}')
+    os.rename("TEMP.mae", output)
+    print(f"WROTE: {output}")
+
 
 def return_parser():
     """
     Returns the argument parser for setup_mae_for_cs.py.
     """
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        'com', type=str,
-        help='MacroModel *.com file from which to get the conformational '
-        'search options.')
+        "com", type=str, help="MacroModel *.com file from which to get the conformational search options."
+    )
+    parser.add_argument("mae", type=str, help="MacroModel *.mae file to add properties to.")
     parser.add_argument(
-        'mae', type=str,
-        help='MacroModel *.mae file to add properties to.')
-    parser.add_argument(
-        'out', type=str, nargs='?', default=None,
-        help='Name of MacroModel *.mae output file. If left blank, this script '
-        'will overwrite the original *.mae file.')
+        "out",
+        type=str,
+        nargs="?",
+        default=None,
+        help="Name of MacroModel *.mae output file. If left blank, this script will overwrite the original *.mae file.",
+    )
     return parser
+
 
 def main(com, mae, out=None):
     # Rewrite input *.mae if the output filename isn't provided.
     if not out:
         out = mae
     comp, tors, rca4, chig, torc = read_com(com)
-    print(f'READ: {com}')
-    print(f' * COMP: {comp}')
-    print(f' * TORS: {tors}')
-    print(f' * RCA4: {rca4}')
-    print(f' * CHIG: {chig}')
-    print(f' * TORC: {torc}')
+    print(f"READ: {com}")
+    print(f" * COMP: {comp}")
+    print(f" * TORS: {tors}")
+    print(f" * RCA4: {rca4}")
+    print(f" * CHIG: {chig}")
+    print(f" * TORC: {torc}")
     add_to_mae(mae, out, comp, tors, rca4, chig, torc)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = return_parser()
     opts = parser.parse_args(sys.argv[1:])
     main(opts.com, opts.mae, opts.out)

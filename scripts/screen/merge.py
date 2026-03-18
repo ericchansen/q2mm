@@ -33,6 +33,7 @@ Bond Properties
 ---------------
 See atom properties.
 """
+
 # This whole script could be made a lot more efficient by creating a class
 # containing struct_1 and struct_2 and creating some sort of dictionary to look
 # up the atom indices in the merged structure. This whole process is repeated
@@ -46,40 +47,35 @@ import sys
 from schrodinger import structure as sch_struct
 from schrodinger.structutils import analyze, measure, rmsd, build
 
-ATOMS_TO_MOVE = ['RU','IR','RH','D1']
+ATOMS_TO_MOVE = ["RU", "IR", "RH", "D1"]
 
 DEBUG = False
+
 
 def return_parser():
     """
     Parser for merge.
     """
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-g", "--group", type=str, nargs="+", action="append", help="Groups of structures to merge.")
+    parser.add_argument("-o", "--output", type=str, help="Write all output structures to one file.")
     parser.add_argument(
-        '-g', '--group',
-        type=str, nargs='+', action='append',
-        help='Groups of structures to merge.')
+        "-d", "--directory", type=str, help="Write all output structures individually to this directory."
+    )
     parser.add_argument(
-        '-o', '--output',
-        type=str,
-        help='Write all output structures to one file.')
-    parser.add_argument(
-        '-d', '--directory',
-        type=str,
-        help='Write all output structures individually to this directory.')
-    parser.add_argument(
-        '-m', '--mini',
-        action='store_true',
-        help='Attempt to minimize merged structures using MacroModel and '
-        'MM3*. This is a completely unrestrained minimization with the final, '
-        'completed, merged structures. Several other optimizations will take '
-        'place during the merging procedure regardless of whether this option '
-        'is used. I have found that this option can sometimes be harmful. Use '
-        'it at your own risk. It does have potential though. Just requires '
-        'some more testing before I\'ll recommend it.')
+        "-m",
+        "--mini",
+        action="store_true",
+        help="Attempt to minimize merged structures using MacroModel and "
+        "MM3*. This is a completely unrestrained minimization with the final, "
+        "completed, merged structures. Several other optimizations will take "
+        "place during the merging procedure regardless of whether this option "
+        "is used. I have found that this option can sometimes be harmful. Use "
+        "it at your own risk. It does have potential though. Just requires "
+        "some more testing before I'll recommend it.",
+    )
     return parser
+
 
 def main(opts):
     """
@@ -90,8 +86,8 @@ def main(opts):
     list of Schrodinger structures
     """
     structures = merge_many_filenames(opts.group)
-    print('-' * 80)
-    print(f'END NUMBER STRUCTURES: {len(structures)}')
+    print("-" * 80)
+    print(f"END NUMBER STRUCTURES: {len(structures)}")
     if opts.mini:
         structures = mini(structures)
     new_structures = []
@@ -101,24 +97,22 @@ def main(opts):
     # All output below.
     # Write structures to a single file.
     if opts.output:
-        print(f'OUTPUT FILE: {opts.output}')
+        print(f"OUTPUT FILE: {opts.output}")
         sch_writer = sch_struct.StructureWriter(opts.output)
         sch_writer.extend(structures)
         sch_writer.close()
     # Write structures to a directory.
     if opts.directory:
-        print(f'OUTPUT DIRECTORY: {opts.directory}')
+        print(f"OUTPUT DIRECTORY: {opts.directory}")
         for structure in structures:
-            path = make_unique_filename(
-                os.path.join(
-                    opts.directory,
-                    structure.property['s_m_title'] + '.mae'))
+            path = make_unique_filename(os.path.join(opts.directory, structure.property["s_m_title"] + ".mae"))
             filename = os.path.basename(path)
-            print(f' * WRITING : {filename}')
+            print(f" * WRITING : {filename}")
             sch_writer = sch_struct.StructureWriter(path)
             sch_writer.append(structure)
             sch_writer.close()
     return structures
+
 
 def merge_many_filenames(list_of_lists):
     """
@@ -132,7 +126,7 @@ def merge_many_filenames(list_of_lists):
     structures = []
     for filename in list_of_lists[0]:
         structures.extend(read_filename(filename))
-    print(f'TOTAL NUM. STRUCTURES: {len(structures)}')
+    print(f"TOTAL NUM. STRUCTURES: {len(structures)}")
     # Iterate over groups of filenames/structures.
     for filenames in list_of_lists[1:]:
         new_structures = []
@@ -142,8 +136,9 @@ def merge_many_filenames(list_of_lists):
         # structures.
 
         structures = list(merge_many_structures(structures, new_structures))
-        print(f'TOTAL NUM. STRUCTURES: {len(structures)}')
+        print(f"TOTAL NUM. STRUCTURES: {len(structures)}")
     return list(structures)
+
 
 def read_filename(filename):
     """
@@ -157,15 +152,16 @@ def read_filename(filename):
     -------
     list of Schrodinger structure objects
     """
-    print(f'>>> filename: {filename}')
+    print(f">>> filename: {filename}")
     structures = []
     sch_reader = sch_struct.StructureReader(filename)
     for structure in sch_reader:
         for enantiomer in load_enantiomers(structure):
             structures.append(enantiomer)
     sch_reader.close()
-    print(f'{filename} : {len(structures)} structures (including enantiomers)')
+    print(f"{filename} : {len(structures)} structures (including enantiomers)")
     return structures
+
 
 def load_enantiomers(structure):
     """
@@ -189,14 +185,14 @@ def load_enantiomers(structure):
     """
     # I dunno if I like this style. Seems to work though.
     yield structure
-    if structure.property.get('b_cs_both_enantiomers', False):
-        print(' - LOADING OTHER ENANTIOMER: {}'.format(
-            structure.property['s_m_title']))
+    if structure.property.get("b_cs_both_enantiomers", False):
+        print(" - LOADING OTHER ENANTIOMER: {}".format(structure.property["s_m_title"]))
         other_enantiomer = copy.deepcopy(structure)
         for coords in other_enantiomer.getXYZ(copy=False):
             coords[0] = -coords[0]
         structures = [other_enantiomer]
         yield structures[0]
+
 
 def merge_many_structures(structures_1, structures_2):
     """
@@ -215,6 +211,7 @@ def merge_many_structures(structures_1, structures_2):
         for structure_2 in structures_2:
             for structure in merge(structure_1, structure_2):
                 yield structure
+
 
 def merge(struct_1, struct_2):
     """
@@ -235,34 +232,37 @@ def merge(struct_1, struct_2):
     """
     # Determine the structures that overlap.
     match_1s, match_2s = get_overlapping_atoms_in_both(struct_1, struct_2)
-    print(f'MATCHES FROM STRUCTURE 1: {match_1s}')
-    print(f'MATCHES FROM STRUCTURE 2: {match_2s}')
+    print(f"MATCHES FROM STRUCTURE 1: {match_1s}")
+    print(f"MATCHES FROM STRUCTURE 2: {match_2s}")
     seen = set()
     for match_1 in match_1s:
         # Eliminate duplicates 1st.
         for match_2 in match_2s:
-            print('-' * 80)
+            print("-" * 80)
             # Remove the zero's if they exist.
-            new_match_1, new_match_2 = remove_index_from_both_if_equals_zero(
-                match_1, match_2)
-            print(f'TRIMMED: {new_match_1} {new_match_2}')
+            new_match_1, new_match_2 = remove_index_from_both_if_equals_zero(match_1, match_2)
+            print(f"TRIMMED: {new_match_1} {new_match_2}")
             tup = tuple(new_match_2)
             if tup not in seen:
                 seen.add(tup)
-                if struct_2.property.get('b_cs_first_match_only', False):
+                if struct_2.property.get("b_cs_first_match_only", False):
                     seen.add(tup[::-1])
-                    print(' - Unique! Continuing.')
+                    print(" - Unique! Continuing.")
                     # Just to look good.
-                print('-' * 80)
-                print(' * ALIGNING:')
-                print(f'   * {struct_1.title:<30} {new_match_1} {[struct_1.atom[x].atom_type_name for x in new_match_1]}')
-                print(f'   * {struct_2.title:<30} {new_match_2} {[struct_2.atom[x].atom_type_name for x in new_match_2]}')
-                    # Real work below.
+                print("-" * 80)
+                print(" * ALIGNING:")
+                print(
+                    f"   * {struct_1.title:<30} {new_match_1} {[struct_1.atom[x].atom_type_name for x in new_match_1]}"
+                )
+                print(
+                    f"   * {struct_2.title:<30} {new_match_2} {[struct_2.atom[x].atom_type_name for x in new_match_2]}"
+                )
+                # Real work below.
                 rmsd.superimpose(struct_1, new_match_1, struct_2, new_match_2)
-                yield merge_structures_from_matching_atoms(
-                    struct_1, new_match_1, struct_2, new_match_2)
+                yield merge_structures_from_matching_atoms(struct_1, new_match_1, struct_2, new_match_2)
             else:
-                print(' - Not unique! Skipping.')
+                print(" - Not unique! Skipping.")
+
 
 def get_overlapping_atoms_in_both(struct_1, struct_2):
     """
@@ -285,33 +285,33 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     match_struct_2 : list of list of integers
     """
     # Use the patterns from struct_2.
-    patterns = list(search_dic_keys(struct_2.property, 'pattern'))
+    patterns = list(search_dic_keys(struct_2.property, "pattern"))
     # Determine whether to use analyze.evaluate_smarts or
     # analyze.evaluate_substructure from struct_2 (this needs to match the
     # pattern from struct_2).
-    use_substructure = struct_2.property.get('b_cs_use_substructure', False)
-    print(f' * PATTERNS: {patterns}')
+    use_substructure = struct_2.property.get("b_cs_use_substructure", False)
+    print(f" * PATTERNS: {patterns}")
     for pattern in patterns:
-        print(f'   * CHECKING: {pattern}')
+        print(f"   * CHECKING: {pattern}")
         match_struct_1 = get_atom_numbers_from_structure_with_pattern(
             struct_1,
             pattern,
-            first_match_only=struct_1.property.get(
-                'b_cs_first_match_only', False),
-            use_substructure=use_substructure)
+            first_match_only=struct_1.property.get("b_cs_first_match_only", False),
+            use_substructure=use_substructure,
+        )
         if match_struct_1:
-            print(f'     * FOUND IN: {struct_1.title}')
+            print(f"     * FOUND IN: {struct_1.title}")
             match_struct_2 = get_atom_numbers_from_structure_with_pattern(
                 struct_2,
                 pattern,
-                first_match_only=struct_2.property.get(
-                    'b_cs_first_match_only', False),
-                use_substructure=use_substructure)
+                first_match_only=struct_2.property.get("b_cs_first_match_only", False),
+                use_substructure=use_substructure,
+            )
             if match_struct_2:
-                print(f'     * FOUND IN: {struct_2.title}')
+                print(f"     * FOUND IN: {struct_2.title}")
             break
         else:
-            print(f'     * COULDN\'T FIND IN: {struct_2.title}')
+            print(f"     * COULDN'T FIND IN: {struct_2.title}")
             continue
     # This is an interesting way to ensure we have actually found something for
     # match_struct_1 and match_struct_2.
@@ -319,30 +319,28 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
         match_struct_1
         match_struct_2
     except UnboundLocalError as e:
-        print('ERROR: {} {}'.format(
-            struct_1.property['s_m_title'],
-            struct_2.property['s_m_title']))
+        print("ERROR: {} {}".format(struct_1.property["s_m_title"], struct_2.property["s_m_title"]))
         raise e
 
     # 1.) Eliminate all with zero if b_cs_full_match_only.
-    print(f'>>> match_struct_1: {match_struct_1}')
-    print(f'>>> match_struct_2: {match_struct_2}')
-    if struct_1.property.get('b_cs_full_match_only', False):
+    print(f">>> match_struct_1: {match_struct_1}")
+    print(f">>> match_struct_2: {match_struct_2}")
+    if struct_1.property.get("b_cs_full_match_only", False):
         new_match_struct_1 = []
         for match in match_struct_1:
             if 0 not in match:
                 new_match_struct_1.append(match)
     else:
         new_match_struct_1 = match_struct_1
-    if struct_2.property.get('b_cs_full_match_only', False):
+    if struct_2.property.get("b_cs_full_match_only", False):
         new_match_struct_2 = []
         for match in match_struct_2:
             if 0 not in match:
                 new_match_struct_2.append(match)
     else:
         new_match_struct_2 = match_struct_2
-    print(f'>>> new_match_struct_1: {new_match_struct_1}')
-    print(f'>>> new_match_struct_2: {new_match_struct_2}')
+    print(f">>> new_match_struct_1: {new_match_struct_1}")
+    print(f">>> new_match_struct_2: {new_match_struct_2}")
 
     # Sometimes a match is made that isn't what is wanted by the user and
     # incorporates an aromatic where it should not be. This prevents aryl
@@ -359,7 +357,7 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                     matched_atoms_in_ring += 1
             if matched_atoms_in_ring >= 2:
                 if ring.isAromatic():
-                    if not struct_1.property.get('b_cs_accept_aromatic', False):
+                    if not struct_1.property.get("b_cs_accept_aromatic", False):
                         use_match = False
         if use_match:
             new_new_match_struct_1.append(match)
@@ -375,12 +373,12 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
                     matched_atoms_in_ring += 1
             if matched_atoms_in_ring >= 2:
                 if ring.isAromatic():
-                    if not struct_2.property.get('b_cs_accept_aromatic', False):
+                    if not struct_2.property.get("b_cs_accept_aromatic", False):
                         use_match = False
         if use_match:
             new_new_match_struct_2.append(match)
-    print(f'>>> new_new_match_struct_1: {new_new_match_struct_1}')
-    print(f'>>> new_new_match_struct_2: {new_new_match_struct_2}')
+    print(f">>> new_new_match_struct_1: {new_new_match_struct_1}")
+    print(f">>> new_new_match_struct_2: {new_new_match_struct_2}")
 
     # 2.) Eliminate zeroes indices from within lists.
     # Actually, maybe it's best to do this upon application in a case by case
@@ -402,10 +400,8 @@ def get_overlapping_atoms_in_both(struct_1, struct_2):
     # print('>>> new_match_struct_2: {}'.format(new_match_struct_2))
     return new_new_match_struct_1, new_new_match_struct_2
 
-def get_atom_numbers_from_structure_with_pattern(structure,
-                                                 pattern,
-                                                 first_match_only=False,
-                                                 use_substructure=False):
+
+def get_atom_numbers_from_structure_with_pattern(structure, pattern, first_match_only=False, use_substructure=False):
     """
     Gets the atom indices inside a structure that match a pattern.
 
@@ -437,10 +433,7 @@ def get_atom_numbers_from_structure_with_pattern(structure,
     # print(">>> first_match_only: {}".format(first_match_only))
     # print(">>> use_substructure: {}".format(use_substructure))
     if use_substructure:
-        atom_numbers = analyze.evaluate_substructure(
-            structure,
-            pattern,
-            first_match_only=first_match_only)
+        atom_numbers = analyze.evaluate_substructure(structure, pattern, first_match_only=first_match_only)
         # I'm not sure how the logic for Schrodinger's first match function
         # works, but in the case for evaluate_substructure() it does not
         # always returns a single match. The following logic should correct
@@ -450,11 +443,9 @@ def get_atom_numbers_from_structure_with_pattern(structure,
         if first_match_only and len(atom_numbers) > 1:
             del atom_numbers[1:]
     else:
-        atom_numbers = analyze.evaluate_smarts(
-            structure,
-            pattern,
-            unique_sets=first_match_only)
+        atom_numbers = analyze.evaluate_smarts(structure, pattern, unique_sets=first_match_only)
     return atom_numbers
+
 
 def remove_index_from_both_if_equals_zero(a, b):
     """
@@ -482,6 +473,7 @@ def remove_index_from_both_if_equals_zero(a, b):
             a.pop(i)
             b.pop(i)
     return a, b
+
 
 def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     """
@@ -515,20 +507,21 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     common_atoms_2 = [merge.atom[x] for x in common_atoms_2]
     common_atoms_1 = [merge.atom[x] for x in match_1]
 
-    print(' * AFTER MERGE:')
-    print(f'   * {struct_2.title:<30} {[x.index for x in common_atoms_2]} {[x.atom_type_name for x in common_atoms_2]}')
-    print(f'ATOMS IN ORIGINAL STRUCTURE: {num_atoms:>5}')
-    print(f'ATOMS IN MERGED STRUCTURE:   {len(merge.atom):>5}')
-    print(f'ATOMS IN NEW STRUCTURE:      {len(merge.atom) - len(common_atoms_1):>5}')
-    print('-' * 80)
+    print(" * AFTER MERGE:")
+    print(f"   * {struct_2.title:<30} {[x.index for x in common_atoms_2]} {[x.atom_type_name for x in common_atoms_2]}")
+    print(f"ATOMS IN ORIGINAL STRUCTURE: {num_atoms:>5}")
+    print(f"ATOMS IN MERGED STRUCTURE:   {len(merge.atom):>5}")
+    print(f"ATOMS IN NEW STRUCTURE:      {len(merge.atom) - len(common_atoms_1):>5}")
+    print("-" * 80)
     # Look at all the common atoms in struct_2.
-    for i, (common_atom_1, common_atom_2) in enumerate(
-            zip(common_atoms_1, common_atoms_2)):
-        print(f'CHECKING COMMON ATOM {i + 1}:')
-        print(f' * ORIGINAL ATOM:      {common_atom_1.index:>4}/{common_atom_1.atom_type_name}')
+    for i, (common_atom_1, common_atom_2) in enumerate(zip(common_atoms_1, common_atoms_2)):
+        print(f"CHECKING COMMON ATOM {i + 1}:")
+        print(f" * ORIGINAL ATOM:      {common_atom_1.index:>4}/{common_atom_1.atom_type_name}")
         for original_bond in common_atom_1.bond:
-            print(f'   * BOND:             {original_bond.atom1.index:>4}/{original_bond.atom1.atom_type_name} {original_bond.atom2.index:>4}/{original_bond.atom2.atom_type_name}')
-        print(f' * MATCHING ATOM:           {common_atom_2.index:>4}/{common_atom_2.atom_type_name}')
+            print(
+                f"   * BOND:             {original_bond.atom1.index:>4}/{original_bond.atom1.atom_type_name} {original_bond.atom2.index:>4}/{original_bond.atom2.atom_type_name}"
+            )
+        print(f" * MATCHING ATOM:           {common_atom_2.index:>4}/{common_atom_2.atom_type_name}")
         # If a user is templating struct2 onto struct1, but struct1 has a wild
         # card indicated for one of the matching atoms then we need to replace
         # the atom type with that of struct2. This allows more variablity and
@@ -536,17 +529,17 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         if common_atom_1.atom_type == 64:
             common_atom_2.atom_type = common_atom_1.atom_type
             common_atom_1.color = common_atom_2.color
-        #common_atom_1.atom_type = common_atom_2.atom_type
+        # common_atom_1.atom_type = common_atom_2.atom_type
         common_atom_1.color = common_atom_2.color
-        #For somereason the rest of the properties of the atom class aren't
-        #updated when the atom_type is changed. Here we set the atom type to
-        #what the atom type is, which is redundant, but it resets the atomic
-        #number and weight. The AtomName isn't important, but it makes it look
-        #pretty in the final mae file.
+        # For somereason the rest of the properties of the atom class aren't
+        # updated when the atom_type is changed. Here we set the atom type to
+        # what the atom type is, which is redundant, but it resets the atomic
+        # number and weight. The AtomName isn't important, but it makes it look
+        # pretty in the final mae file.
 
-        common_atom_1.atom_name = (str(common_atom_1.element) + str(common_atom_1.index))
-        #common_atom_1._setAtomType(common_atom_1.atom_type)
-        #common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
+        common_atom_1.atom_name = str(common_atom_1.element) + str(common_atom_1.index)
+        # common_atom_1._setAtomType(common_atom_1.atom_type)
+        # common_atom_1._setAtomName(str(common_atom_1.element) + str(common_atom_1.index))
 
         # Below are alternatives options for which atoms to keep. Currently, the
         # coordinates of the atoms from struct_1 are kept.
@@ -563,13 +556,14 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
         # common_atom_1.z = (common_atom_1.z + common_atom_2.z) / 2
 
         for merge_bond in common_atom_2.bond:
-            print(f'   * BOND:             {merge_bond.atom1.index:>4}/{merge_bond.atom1.atom_type_name} {merge_bond.atom2.index:>4}/{merge_bond.atom2.atom_type_name}')
+            print(
+                f"   * BOND:             {merge_bond.atom1.index:>4}/{merge_bond.atom1.atom_type_name} {merge_bond.atom2.index:>4}/{merge_bond.atom2.atom_type_name}"
+            )
 
             # This is the atom in struct_1 that matches the 1st atom of the bond
             # in struct_2.
             # Actually, is this necessary? Isn't this just common_atom_1?
-            atom1 = common_atoms_1[
-                common_atoms_2.index(merge_bond.atom1)]
+            atom1 = common_atoms_1[common_atoms_2.index(merge_bond.atom1)]
 
             # These bonds already exist in the original structure.
 
@@ -579,22 +573,27 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
             # We want to copy any new properties from the bonds in the merged
             # structure into the original bonds.
             if merge_bond.atom2 in common_atoms_2:
-                atom2 = common_atoms_1[
-                    common_atoms_2.index(merge_bond.atom2)]
+                atom2 = common_atoms_1[common_atoms_2.index(merge_bond.atom2)]
                 # Bond that we want to copy properties to.
                 # Surprise! This can return None. You'd think that should raise
                 # an exception.
                 bond = merge.getBond(atom1, atom2)
                 if bond is None:
                     atom1.addBond(atom2.index, merge_bond.order)
-                    print(f'     * ADDED:         {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}')
+                    print(
+                        f"     * ADDED:         {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}"
+                    )
                 else:
-                    print(f'     * UPDATED:       {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}')
+                    print(
+                        f"     * UPDATED:       {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}"
+                    )
             # If the bond doesn't exist in struct_1, we want to make a new one.
             else:
                 atom2 = merge_bond.atom2
                 atom1.addBond(atom2.index, merge_bond.order)
-                print(f'     * ADDED:         {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}')
+                print(
+                    f"     * ADDED:         {atom1.index:>4}/{atom1.atom_type_name} {atom2.index:>4}/{atom2.atom_type_name}"
+                )
 
             bond = merge.getBond(atom1, atom2)
             for k, v in merge_bond.property.items():
@@ -606,34 +605,24 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
                     # important is that values like i_cs_torc_a5 get copied.
                     # (because these values don't get changed by atom number).
                     bond.property.update({k: v})
-        #if common_atom_1.atom_type != common_atom_2.atom_type:
-            #common_atom_1.atom_type = common_atom_2.atom_type
-            #common_atom_1.color = common_atom_2.color
+        # if common_atom_1.atom_type != common_atom_2.atom_type:
+        # common_atom_1.atom_type = common_atom_2.atom_type
+        # common_atom_1.color = common_atom_2.color
 
-    print('-' * 80)
+    print("-" * 80)
     fix_torsions = get_torc(struct_1, struct_2, match_1, match_2)
-    print(f'TORSION RESTRAINTS: {fix_torsions}')
+    print(f"TORSION RESTRAINTS: {fix_torsions}")
 
     # Delete duplicate atoms once you copied all the data.
     merge.deleteAtoms(common_atoms_2)
     # This code is so dumb.
-    merge = add_bond_prop(merge,
-                          struct_1, match_1,
-                          struct_2, match_2,
-                          name='rca4')
-    merge = add_bond_prop(merge,
-                          struct_1, match_1,
-                          struct_2, match_2,
-                          name='torca')
-    merge = add_bond_prop(merge,
-                          struct_1, match_1,
-                          struct_2, match_2,
-                          name='torcb')
+    merge = add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name="rca4")
+    merge = add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name="torca")
+    merge = add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name="torcb")
 
-    merge.property['s_m_title'] += '_' + struct_2.property['s_m_title']
-    if hasattr(struct_2, 's_m_entry_name'):
-        merge.property['s_m_entry_name'] += \
-            '_' + struct_2.property['s_m_entry_name']
+    merge.property["s_m_title"] += "_" + struct_2.property["s_m_title"]
+    if hasattr(struct_2, "s_m_entry_name"):
+        merge.property["s_m_entry_name"] += "_" + struct_2.property["s_m_entry_name"]
 
     # I have encoutered problems in macromodel for metal centers with
     # multiple bond (e.g. M-Cp or M-Ph). In order for macromodel to read
@@ -651,23 +640,22 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
             original_wo_interest.append(atom.index)
     reordered_atoms.extend(original_wo_interest)
     reordered_atoms.extend(interest)
-    merge = build.reorder_atoms(merge,reordered_atoms)
+    merge = build.reorder_atoms(merge, reordered_atoms)
 
-#    print(reordered_atoms)
+    #    print(reordered_atoms)
     for bond in merge.bond:
         for prop in bond.property:
             initial_index = bond.property[prop]
-            if 'i_cs' in prop and initial_index:
-                for i,old_atom_index in enumerate(reordered_atoms):
+            if "i_cs" in prop and initial_index:
+                for i, old_atom_index in enumerate(reordered_atoms):
                     if old_atom_index == initial_index:
-                        bond.property[prop] = i+1
+                        bond.property[prop] = i + 1
     frozen_atoms = []
-    for frozen_atom_index in range(1, num_atoms+1):
+    for frozen_atom_index in range(1, num_atoms + 1):
         initial_index = frozen_atom_index
-        for i,old_atom_index in enumerate(reordered_atoms):
+        for i, old_atom_index in enumerate(reordered_atoms):
             if old_atom_index == initial_index:
-                frozen_atoms.append(i+1)
-
+                frozen_atoms.append(i + 1)
 
     # Minimize the structure.
     # Freeze atoms in struct_1.
@@ -675,23 +663,21 @@ def merge_structures_from_matching_atoms(struct_1, match_1, struct_2, match_2):
     merge = mini(
         [merge],
         frozen_atoms=range(1, num_atoms + 1),
-        #frozen_atoms=frozen_atoms,
-        fix_torsions=fix_torsions)[0]
+        # frozen_atoms=frozen_atoms,
+        fix_torsions=fix_torsions,
+    )[0]
     # Short conformational sampling.
-    merge = mcmm(
-        [merge],
-        frozen_atoms=range(1, num_atoms + 1))[0]
-    #frozen_atoms=frozen_atoms)[0]
-#    # Do another minimization, this time without frozen atoms.
-    #if fix_torsions:
+    merge = mcmm([merge], frozen_atoms=range(1, num_atoms + 1))[0]
+    # frozen_atoms=frozen_atoms)[0]
+    #    # Do another minimization, this time without frozen atoms.
+    # if fix_torsions:
     #    merge = mini(
     #        [merge],
     #        fix_torsions=fix_torsions)[0]
-    merge = mini(
-        [merge],
-        fix_torsions=fix_torsions)[0]
+    merge = mini([merge], fix_torsions=fix_torsions)[0]
     merge = mcmm([merge])[0]
     return merge
+
 
 def add_chirality(structure):
     """
@@ -699,12 +685,13 @@ def add_chirality(structure):
     that information to the title and entry name of structures.
     """
     chirality_dic = analyze.get_chiral_atoms(structure)
-    string = '_'
+    string = "_"
     for key, value in chirality_dic.items():
-        string += f'{key}{value.lower()}'
-    structure.property['s_m_title'] += string
-    structure.property['s_m_entry_name'] += string
+        string += f"{key}{value.lower()}"
+    structure.property["s_m_title"] += string
+    structure.property["s_m_entry_name"] += string
     return structure
+
 
 def search_dic_keys(dic, lookup):
     """
@@ -720,6 +707,7 @@ def search_dic_keys(dic, lookup):
         if lookup in key:
             yield value
 
+
 def get_torc(struct_1, struct_2, match_1, match_2):
     """
     Generates FXTA commands for MacroModel from TORC commands.
@@ -731,15 +719,9 @@ def get_torc(struct_1, struct_2, match_1, match_2):
     new_match_2 = [x + num_atoms for x in match_2]
     fix_torsions = []
     for bond in struct_2.bond:
-        if bond.property['i_cs_torc_a1']:
-            atoms = [
-                bond.property['i_cs_torc_a1'],
-                bond.atom1.index,
-                bond.atom2.index,
-                bond.property['i_cs_torc_a4']
-                ]
-            torsion = struct_2.measure(
-                atoms[0], atoms[1], atoms[2], atoms[3])
+        if bond.property["i_cs_torc_a1"]:
+            atoms = [bond.property["i_cs_torc_a1"], bond.atom1.index, bond.atom2.index, bond.property["i_cs_torc_a4"]]
+            torsion = struct_2.measure(atoms[0], atoms[1], atoms[2], atoms[3])
             # Update atom numbers.
             new_atoms = []
             for atom in atoms:
@@ -747,26 +729,14 @@ def get_torc(struct_1, struct_2, match_1, match_2):
                     new_atoms.append(match_1[match_2.index(atom)])
                 else:
                     new_index = atom + num_atoms
-                    atoms_in_str_2_before_this_one = \
-                        sum(i < new_index for i in new_match_2)
+                    atoms_in_str_2_before_this_one = sum(i < new_index for i in new_match_2)
                     new_index -= atoms_in_str_2_before_this_one
                     new_atoms.append(new_index)
-            fix_torsions.append((
-                new_atoms[0],
-                new_atoms[1],
-                new_atoms[2],
-                new_atoms[3],
-                torsion))
+            fix_torsions.append((new_atoms[0], new_atoms[1], new_atoms[2], new_atoms[3], torsion))
         # Both can happen.
-        if bond.property['i_cs_torc_b1']:
-            atoms = [
-                bond.property['i_cs_torc_b1'],
-                bond.atom1.index,
-                bond.atom2.index,
-                bond.property['i_cs_torc_b4']
-                ]
-            torsion = struct_2.measure(
-                atoms[0], atoms[1], atoms[2], atoms[3])
+        if bond.property["i_cs_torc_b1"]:
+            atoms = [bond.property["i_cs_torc_b1"], bond.atom1.index, bond.atom2.index, bond.property["i_cs_torc_b4"]]
+            torsion = struct_2.measure(atoms[0], atoms[1], atoms[2], atoms[3])
             # Update atom numbers.
             new_atoms = []
             for atom in atoms:
@@ -774,17 +744,12 @@ def get_torc(struct_1, struct_2, match_1, match_2):
                     new_atoms.append(match_1[match_2.index(atom)])
                 else:
                     new_index = atom + num_atoms
-                    atoms_in_str_2_before_this_one = \
-                        sum(i < new_index for i in new_match_2)
+                    atoms_in_str_2_before_this_one = sum(i < new_index for i in new_match_2)
                     new_index -= atoms_in_str_2_before_this_one
                     new_atoms.append(new_index)
-            fix_torsions.append((
-                new_atoms[0],
-                new_atoms[1],
-                new_atoms[2],
-                new_atoms[3],
-                torsion))
+            fix_torsions.append((new_atoms[0], new_atoms[1], new_atoms[2], new_atoms[3], torsion))
     return fix_torsions
+
 
 def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name=None):
     """
@@ -819,34 +784,30 @@ def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name=None):
     -------
     merge : Updated bonds with new RCA4 properties
     """
-    if name == 'rca4':
-        string = 'RCA4'
-        str1 = 'i_cs_rca4_1'
-        str2 = 'i_cs_rca4_2'
-    elif name == 'torca':
-        string = 'TORC'
-        str1 = 'i_cs_torc_a1'
-        str2 = 'i_cs_torc_a4'
-    elif name == 'torcb':
-        string = 'TORC'
-        str1 = 'i_cs_torc_b1'
-        str2 = 'i_cs_torc_b4'
+    if name == "rca4":
+        string = "RCA4"
+        str1 = "i_cs_rca4_1"
+        str2 = "i_cs_rca4_2"
+    elif name == "torca":
+        string = "TORC"
+        str1 = "i_cs_torc_a1"
+        str2 = "i_cs_torc_a4"
+    elif name == "torcb":
+        string = "TORC"
+        str1 = "i_cs_torc_b1"
+        str2 = "i_cs_torc_b4"
     lists_of_atoms = []
     for bond in struct_2.bond:
         try:
             bond.property[str1]
             bond.property[str2]
         except KeyError as e:
-            print('ERROR! NO {}: {}'.format(
-                string, struct_2.property['s_m_title']))
+            print("ERROR! NO {}: {}".format(string, struct_2.property["s_m_title"]))
             raise e
         if bond.property[str1]:
-            atoms = [bond.property[str1],
-                     bond.atom1.index,
-                     bond.atom2.index,
-                     bond.property[str2]]
+            atoms = [bond.property[str1], bond.atom1.index, bond.atom2.index, bond.property[str2]]
             lists_of_atoms.append(atoms)
-    print(f'{string}:     {lists_of_atoms}')
+    print(f"{string}:     {lists_of_atoms}")
 
     # Now update the RCA4 and TORC atom indices to match the structure post
     # merging and deletion.
@@ -872,22 +833,25 @@ def add_bond_prop(merge, struct_1, match_1, struct_2, match_2, name=None):
                 # If matching/duplicate/common atoms occur in the list before
                 # this one, those atoms are going to get deleted. We need to
                 # account for them disappearing.
-                atoms_in_str_2_before_this_one = \
-                    sum(i < new_index for i in new_match_2)
+                atoms_in_str_2_before_this_one = sum(i < new_index for i in new_match_2)
                 new_index -= atoms_in_str_2_before_this_one
                 new_atoms.append(new_index)
         new_lists_of_atoms.append(new_atoms)
-    print(f'{string} NEW: {new_lists_of_atoms}')
+    print(f"{string} NEW: {new_lists_of_atoms}")
 
-    print(f' * UPDATING {string}:')
+    print(f" * UPDATING {string}:")
     # Now have to update the bonds RCA4 properties.
     for atoms in new_lists_of_atoms:
         bond = merge.getBond(atoms[1], atoms[2])
-        print(f'   * BOND:     {bond.property[str1]:>4}    {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2} {bond.property[str2]:>4}')
+        print(
+            f"   * BOND:     {bond.property[str1]:>4}    {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2} {bond.property[str2]:>4}"
+        )
         bond.property[str1] = atoms[0]
         bond.property[str2] = atoms[3]
-        print('     * UPDATE: '
-              f'{merge.atom[bond.property[str1]].index:>4}/{merge.atom[bond.property[str1]].atom_type_name:2} {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2} {merge.atom[bond.property[str2]].index:>4}/{merge.atom[bond.property[str2]].atom_type_name:2}')
+        print(
+            "     * UPDATE: "
+            f"{merge.atom[bond.property[str1]].index:>4}/{merge.atom[bond.property[str1]].atom_type_name:2} {bond.atom1.index:>4}/{bond.atom1.atom_type_name:2} {bond.atom2.index:>4}/{bond.atom2.atom_type_name:2} {merge.atom[bond.property[str2]].index:>4}/{merge.atom[bond.property[str2]].atom_type_name:2}"
+        )
     return merge
 
 
@@ -907,41 +871,44 @@ def mini(structures, frozen_atoms=None, fix_torsions=None):
     import schrodinger.application.macromodel.utils as mmodutils
     import schrodinger.job.jobcontrol as jobcontrol
     from setup_com_from_mae import MyComUtil
-    print(' - ATTEMPTING MINI')
-    sch_writer = sch_struct.StructureWriter('TEMP.mae')
+
+    print(" - ATTEMPTING MINI")
+    sch_writer = sch_struct.StructureWriter("TEMP.mae")
     sch_writer.extend(structures)
     sch_writer.close()
     # Setup the minimization.
     com_setup = MyComUtil()
     com_setup.my_mini(
-        mae_file='TEMP.mae',
-        com_file='TEMP.com',
-        out_file='TEMP_OUT.mae',
+        mae_file="TEMP.mae",
+        com_file="TEMP.com",
+        out_file="TEMP_OUT.mae",
         frozen_atoms=frozen_atoms,
-        fix_torsions=fix_torsions)
-    command = ['bmin', '-WAIT', 'TEMP']
+        fix_torsions=fix_torsions,
+    )
+    command = ["bmin", "-WAIT", "TEMP"]
     # Run the minimization.
     job = jobcontrol.launch_job(command)
     job.wait()
     # Read the minimized structures.
-    sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
+    sch_reader = sch_struct.StructureReader("TEMP_OUT.mae")
     new_structures = []
     for structure in sch_reader:
         new_structures.append(structure)
     sch_reader.close()
     if len(new_structures) > 0:
-        print(' - MINI SUCCEEDED')
+        print(" - MINI SUCCEEDED")
         structures = [new_structures[0]]
     else:
-        print(' - MINI FAILED. CONTINUING W/O MINI')
+        print(" - MINI FAILED. CONTINUING W/O MINI")
     if DEBUG:
-        raw_input('Press any button to continue.')
+        raw_input("Press any button to continue.")
     # Remove temporary files.
-    os.remove('TEMP.mae')
-    os.remove('TEMP.com')
-    os.remove('TEMP_OUT.mae')
-    os.remove('TEMP.log')
+    os.remove("TEMP.mae")
+    os.remove("TEMP.com")
+    os.remove("TEMP_OUT.mae")
+    os.remove("TEMP.log")
     return structures
+
 
 def mcmm(structures, frozen_atoms=None):
     """
@@ -958,38 +925,37 @@ def mcmm(structures, frozen_atoms=None):
     import schrodinger.application.macromodel.utils as mmodutils
     import schrodinger.job.jobcontrol as jobcontrol
     from setup_com_from_mae import MyComUtil
-    print(' - ATTEMPTING MCMM')
-    sch_writer = sch_struct.StructureWriter('TEMP.mae')
+
+    print(" - ATTEMPTING MCMM")
+    sch_writer = sch_struct.StructureWriter("TEMP.mae")
     sch_writer.extend(structures)
     sch_writer.close()
     com_setup = MyComUtil()
     com_setup.my_mcmm(
-        mae_file='TEMP.mae',
-        com_file='TEMP.com',
-        out_file='TEMP_OUT.mae',
-        nsteps=50,
-        frozen_atoms=frozen_atoms)
-    command = ['bmin', '-WAIT', 'TEMP']
+        mae_file="TEMP.mae", com_file="TEMP.com", out_file="TEMP_OUT.mae", nsteps=50, frozen_atoms=frozen_atoms
+    )
+    command = ["bmin", "-WAIT", "TEMP"]
     job = jobcontrol.launch_job(command)
     job.wait()
-    sch_reader = sch_struct.StructureReader('TEMP_OUT.mae')
+    sch_reader = sch_struct.StructureReader("TEMP_OUT.mae")
     new_structures = []
     for structure in sch_reader:
         new_structures.append(structure)
     sch_reader.close()
     if len(new_structures) > 0:
-        print(' - MCMM SUCCEEDED')
+        print(" - MCMM SUCCEEDED")
         structures = [new_structures[0]]
     else:
-        print(' - MCMM FAILED. CONTINUING W/O MCMM')
+        print(" - MCMM FAILED. CONTINUING W/O MCMM")
     if DEBUG:
-        raw_input('Press any button to continue.')
+        raw_input("Press any button to continue.")
     # Remove temporary files.
-    os.remove('TEMP.mae')
-    os.remove('TEMP.com')
-    os.remove('TEMP_OUT.mae')
-    os.remove('TEMP.log')
+    os.remove("TEMP.mae")
+    os.remove("TEMP.com")
+    os.remove("TEMP_OUT.mae")
+    os.remove("TEMP.log")
     return structures
+
 
 def make_unique_filename(path):
     """
@@ -1011,7 +977,7 @@ def make_unique_filename(path):
         if os.path.isfile(path):
             name, ext = os.path.splitext(path)
             # Does the filename (without the extension) end in digits?
-            m = re.search(r'\d+$', name)
+            m = re.search(r"\d+$", name)
             if m:
                 # Digits at the end of the file.
                 string = m.group()
@@ -1020,17 +986,18 @@ def make_unique_filename(path):
                 # New number.
                 number = int(string) + 1
                 # Remove the existing digits.
-                name = name[:-(len_digits + 1)]
+                name = name[: -(len_digits + 1)]
                 # Add on the new number with the same number of digits.
-                name += '_{0:0{1}d}'.format(number, len_digits)
+                name += "_{0:0{1}d}".format(number, len_digits)
                 path = name + ext
             else:
-                name += '_{0:0{1}d}'.format(1, len_digits)
+                name += "_{0:0{1}d}".format(1, len_digits)
                 path = name + ext
         # Hooray! It's a unique filename!
         else:
             break
     return path
+
 
 def remove_uplicates(iterable):
     """
@@ -1047,7 +1014,8 @@ def remove_uplicates(iterable):
             seen.add(tup)
             yield item
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     parser = return_parser()
     opts = parser.parse_args(sys.argv[1:])
     structures = main(opts)

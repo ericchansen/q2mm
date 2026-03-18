@@ -11,9 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/setup-python@v5
         with:
-          args: check q2mm/ test/ scripts/
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: python -m ruff check q2mm/ test/ scripts/
+      - run: python -m ruff format --check q2mm test scripts examples
 
   test:
     runs-on: ubuntu-latest

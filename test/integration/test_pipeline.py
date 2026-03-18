@@ -5,6 +5,7 @@ method to estimate force field parameters.
 
 This test uses saved QM fixtures (no Psi4/Tinker needed at runtime).
 """
+
 import unittest
 from pathlib import Path
 import numpy as np
@@ -13,10 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
 
 
-@unittest.skipUnless(
-    (QM_REF / "sn2-ts-hessian.npy").exists(),
-    "SN2 TS fixtures not found"
-)
+@unittest.skipUnless((QM_REF / "sn2-ts-hessian.npy").exists(), "SN2 TS fixtures not found")
 class TestHessianAnalysis(unittest.TestCase):
     """Test that we can load and analyze the QM Hessian."""
 
@@ -38,11 +36,11 @@ class TestHessianAnalysis(unittest.TestCase):
     def test_eigenvalue_decomposition_roundtrip(self):
         """Decompose and reform Hessian, verify roundtrip."""
         from q2mm.core import linalg
+
         eigenvalues, eigenvectors = linalg.decompose(self.hessian)
         reformed = linalg.reform_hessian(eigenvalues, eigenvectors)
         np.testing.assert_allclose(
-            self.hessian, reformed, atol=1e-8,
-            err_msg="Hessian decompose/reform roundtrip failed"
+            self.hessian, reformed, atol=1e-8, err_msg="Hessian decompose/reform roundtrip failed"
         )
 
 
@@ -50,7 +48,7 @@ class TestHessianAnalysis(unittest.TestCase):
     (QM_REF / "sn2-ts-hessian.npy").exists()
     and (QM_REF / "sn2-ts-frequencies.txt").exists()
     and (QM_REF / "ch3f-frequencies.txt").exists(),
-    "SN2 TS fixtures not found"
+    "SN2 TS fixtures not found",
 )
 class TestFrequencyFixtures(unittest.TestCase):
     """Validate the saved frequency fixtures."""

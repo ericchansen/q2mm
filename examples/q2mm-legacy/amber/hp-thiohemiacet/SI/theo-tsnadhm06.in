@@ -1,6 +1,0 @@
-source leaprc.gaff
-source leaprc.protein.ff14SB
-loadamberparams theo-tsnadhm06.frcmod
-mol = loadmol2 theo-tsnadhm06.mol2
-saveamberparm mol calc/prmtop calc/inpcrd
-quit

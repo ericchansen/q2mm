@@ -1,0 +1,477 @@
+#!/usr/bin/env python3
+"""Validate current Q2MM behavior against pinned fixtures or live upstream code."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import asdict, dataclass, field
+import json
+import logging
+import numbers
+from pathlib import Path
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
+from typing import Callable, Literal
+
+import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from q2mm.models.forcefield import ForceField
+from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
+from q2mm.schrod_indep_filetypes import JaguarIn, MacroModel, Mol2
+
+DEFAULT_WORKTREE = REPO_ROOT.parent / f"{REPO_ROOT.name}-upstream-worktree"
+FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
+
+RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
+SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
+
+RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
+MM3_PATH = RH_DIR / "mm3.fld"
+MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
+JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
+MOL2_PATH = TRAINING_SET_DIR / "mol2" / "1_zdmp.mol2"
+RH_DIRECT_HESSIAN_PATH = JAG_DIR / "1ZDMPfromJCTCSI_loner1.01.in"
+
+SN2_QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
+SN2_XYZ_PATH = SN2_QM_REF / "sn2-ts-optimized.xyz"
+SN2_HESSIAN_PATH = SN2_QM_REF / "sn2-ts-hessian.npy"
+
+
+Mode = Literal["fixture", "live"]
+Status = Literal["passed", "failed", "blocked"]
+
+
+@dataclass(frozen=True)
+class CaseDefinition:
+    case_id: str
+    description: str
+    category: str
+    supported_modes: tuple[Mode, ...]
+    fixture_systems: tuple[str, ...] = ()
+    blocked_reason: str | None = None
+
+
+@dataclass
+class CaseResult:
+    case_id: str
+    description: str
+    category: str
+    mode: str
+    status: Status
+    metrics: dict[str, float | int | str | None] = field(default_factory=dict)
+    details: list[str] = field(default_factory=list)
+    blocked_reason: str | None = None
+
+
+CASE_MATRIX: dict[str, CaseDefinition] = {
+    "seminario-sn2-bond": CaseDefinition(
+        case_id="seminario-sn2-bond",
+        description="SN2 direct bond projections match legacy references.",
+        category="seminario",
+        supported_modes=("fixture", "live"),
+        fixture_systems=("sn2",),
+    ),
+    "seminario-rh-direct-bond": CaseDefinition(
+        case_id="seminario-rh-direct-bond",
+        description="Rh-enamide direct bond projections match legacy references.",
+        category="seminario",
+        supported_modes=("fixture", "live"),
+        fixture_systems=("rh-enamide",),
+    ),
+    "seminario-rh-pipeline": CaseDefinition(
+        case_id="seminario-rh-pipeline",
+        description="Rh-enamide full parameter pipeline matches legacy references.",
+        category="seminario",
+        supported_modes=("fixture", "live"),
+        fixture_systems=("rh-enamide",),
+    ),
+    "calculate-compare-d_rhod": CaseDefinition(
+        case_id="calculate-compare-d_rhod",
+        description="Legacy calculate.py / compare.py workflow on d_rhod fixtures.",
+        category="objective",
+        supported_modes=(),
+        blocked_reason=(
+            "Blocked in this environment: requires Schrödinger MacroModel runtime and the d_rhod fixture directory."
+        ),
+    ),
+    "optimization-endpoint": CaseDefinition(
+        case_id="optimization-endpoint",
+        description="Optimization endpoint comparison (objective, energy, geometry).",
+        category="optimization",
+        supported_modes=(),
+        blocked_reason=(
+            "Blocked until a shared old/new optimization workflow is wrapped in the "
+            "validation harness with agreed endpoint tolerances."
+        ),
+    ),
+}
+
+
+def _load_json(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def _int_keyed_map(values: dict[str, float | None]) -> dict[int, float | None]:
+    return {int(key): value for key, value in values.items()}
+
+
+class _DisableLogging:
+    def __enter__(self):
+        self._previous = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        logging.disable(self._previous)
+        return False
+
+
+def _blocked_result(case: CaseDefinition, mode: str, reason: str | None = None) -> CaseResult:
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="blocked",
+        blocked_reason=reason or case.blocked_reason,
+    )
+
+
+def _run_sn2_bond_case(fixture_dir: Path, mode: Mode) -> CaseResult:
+    case = CASE_MATRIX["seminario-sn2-bond"]
+    fixture = _load_json(fixture_dir / "sn2_reference.json")
+    molecule = Q2MMMolecule.from_xyz(SN2_XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
+    hessian = np.load(str(SN2_HESSIAN_PATH))
+    scaling = float(fixture["metadata"]["dft_scaling"])
+
+    max_abs_diff = 0.0
+    details: list[str] = []
+    for bond in fixture["bonds"]:
+        actual = seminario_bond_fc(
+            bond["atom_i"],
+            bond["atom_j"],
+            molecule.geometry,
+            hessian,
+            au_units=True,
+            dft_scaling=scaling,
+        )
+        expected = float(bond["legacy_force_constant_mdyn_a"])
+        diff = abs(actual - expected)
+        max_abs_diff = max(max_abs_diff, diff)
+        if diff >= 1e-8:
+            details.append(f"{bond['label']}: expected {expected:.12f}, got {actual:.12f}, diff {diff:.3e}")
+
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="passed" if not details else "failed",
+        metrics={
+            "compared_bonds": len(fixture["bonds"]),
+            "max_abs_diff_mdyn_a": max_abs_diff,
+            "upstream_commit": fixture["metadata"]["upstream_commit"],
+        },
+        details=details,
+    )
+
+
+def _run_rh_direct_case(fixture_dir: Path, mode: Mode) -> CaseResult:
+    case = CASE_MATRIX["seminario-rh-direct-bond"]
+    fixture = _load_json(fixture_dir / "rh_enamide_reference.json")
+    structure = Mol2(str(MOL2_PATH)).structures[0]
+    hessian = JaguarIn(str(RH_DIRECT_HESSIAN_PATH)).get_hessian(len(structure.atoms))
+    coordinates = np.array([[atom.x, atom.y, atom.z] for atom in structure.atoms], dtype=float)
+    scaling = float(fixture["metadata"]["dft_scaling"])
+
+    max_abs_diff = 0.0
+    details: list[str] = []
+    for bond in fixture["direct_bonds"]:
+        actual = seminario_bond_fc(
+            bond["atom_i"],
+            bond["atom_j"],
+            coordinates,
+            hessian,
+            au_units=True,
+            dft_scaling=scaling,
+        )
+        expected = float(bond["legacy_force_constant_mdyn_a"])
+        diff = abs(actual - expected)
+        max_abs_diff = max(max_abs_diff, diff)
+        if diff >= 1e-8:
+            details.append(f"{bond['label']}: expected {expected:.12f}, got {actual:.12f}, diff {diff:.3e}")
+
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="passed" if not details else "failed",
+        metrics={
+            "compared_bonds": len(fixture["direct_bonds"]),
+            "max_abs_diff_mdyn_a": max_abs_diff,
+            "upstream_commit": fixture["metadata"]["upstream_commit"],
+        },
+        details=details,
+    )
+
+
+def _run_rh_pipeline_case(fixture_dir: Path, mode: Mode) -> CaseResult:
+    case = CASE_MATRIX["seminario-rh-pipeline"]
+    fixture = _load_json(fixture_dir / "rh_enamide_reference.json")
+    structures = MacroModel(str(MMO_PATH)).structures
+    hessian_files = sorted(JAG_DIR.glob("*.in"))
+    hessians = [
+        JaguarIn(str(path)).get_hessian(len(structure.atoms)) for structure, path in zip(structures, hessian_files)
+    ]
+    molecules = [
+        Q2MMMolecule.from_structure(
+            structure,
+            hessian=hessian,
+            name=f"rh_enamide_{index + 1}",
+        )
+        for index, (structure, hessian) in enumerate(zip(structures, hessians))
+    ]
+    clean_start = ForceField.from_mm3_fld(MM3_PATH)
+    with _DisableLogging():
+        clean_estimated = estimate_force_constants(
+            molecules,
+            forcefield=clean_start,
+            zero_torsions=True,
+            au_hessian=True,
+            invalid_policy="skip",
+        )
+
+    fixture_bf = _int_keyed_map(fixture["parameters"]["bond_force_constants_mdyn_a"])
+    fixture_be = _int_keyed_map(fixture["parameters"]["bond_equilibria_angstrom"])
+    fixture_af = _int_keyed_map(fixture["parameters"]["angle_force_constants_mdyn_a_rad2"])
+    fixture_ae = _int_keyed_map(fixture["parameters"]["angle_equilibria_degrees"])
+    starting_bonds = {param.ff_row: param for param in clean_start.bonds}
+    starting_angles = {param.ff_row: param for param in clean_start.angles}
+
+    max_bond_fc_diff = 0.0
+    max_bond_eq_diff = 0.0
+    max_angle_fc_diff = 0.0
+    max_angle_eq_diff = 0.0
+    details: list[str] = []
+
+    for bond_param in clean_estimated.bonds:
+        assert bond_param.ff_row is not None
+        fixture_force_constant = fixture_bf[bond_param.ff_row]
+        expected_fc = (
+            starting_bonds[bond_param.ff_row].force_constant
+            if fixture_force_constant is None
+            else fixture_force_constant
+        )
+        fc_diff = abs(bond_param.force_constant - expected_fc)
+        eq_diff = abs(bond_param.equilibrium - fixture_be[bond_param.ff_row])
+        max_bond_fc_diff = max(max_bond_fc_diff, fc_diff)
+        max_bond_eq_diff = max(max_bond_eq_diff, eq_diff)
+        if fc_diff >= 1e-8 or eq_diff >= 1e-8:
+            details.append(f"bond row {bond_param.ff_row}: fc diff {fc_diff:.3e}, eq diff {eq_diff:.3e}")
+
+    for angle_param in clean_estimated.angles:
+        assert angle_param.ff_row is not None
+        fixture_force_constant = fixture_af[angle_param.ff_row]
+        expected_fc = (
+            starting_angles[angle_param.ff_row].force_constant
+            if fixture_force_constant is None
+            else fixture_force_constant
+        )
+        fc_diff = abs(angle_param.force_constant - expected_fc)
+        eq_diff = abs(angle_param.equilibrium - fixture_ae[angle_param.ff_row])
+        max_angle_fc_diff = max(max_angle_fc_diff, fc_diff)
+        max_angle_eq_diff = max(max_angle_eq_diff, eq_diff)
+        if fc_diff >= 1e-8 or eq_diff >= 1e-8:
+            details.append(f"angle row {angle_param.ff_row}: fc diff {fc_diff:.3e}, eq diff {eq_diff:.3e}")
+
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="passed" if not details else "failed",
+        metrics={
+            "bond_param_count": len(clean_estimated.bonds),
+            "angle_param_count": len(clean_estimated.angles),
+            "max_bond_force_constant_diff": max_bond_fc_diff,
+            "max_bond_equilibrium_diff": max_bond_eq_diff,
+            "max_angle_force_constant_diff": max_angle_fc_diff,
+            "max_angle_equilibrium_diff": max_angle_eq_diff,
+            "upstream_commit": fixture["metadata"]["upstream_commit"],
+        },
+        details=details,
+    )
+
+
+CASE_RUNNERS: dict[str, Callable[[Path, Mode], CaseResult]] = {
+    "seminario-sn2-bond": _run_sn2_bond_case,
+    "seminario-rh-direct-bond": _run_rh_direct_case,
+    "seminario-rh-pipeline": _run_rh_pipeline_case,
+}
+
+
+def _fixture_systems_for_cases(case_ids: list[str]) -> list[str]:
+    systems: list[str] = []
+    for case_id in case_ids:
+        for system in CASE_MATRIX[case_id].fixture_systems:
+            if system not in systems:
+                systems.append(system)
+    return systems
+
+
+def _ensure_live_fixture_dir(case_ids: list[str], worktree: Path, output_dir: Path) -> Path:
+    systems = _fixture_systems_for_cases(case_ids)
+    args = [
+        sys.executable,
+        str(REPO_ROOT / "scripts" / "regenerate_parity_fixtures.py"),
+        "--worktree",
+        str(worktree),
+        "--output-dir",
+        str(output_dir),
+    ]
+    if systems:
+        args.extend(["--systems", *systems])
+    completed = subprocess.run(args, check=False, capture_output=True, text=True)
+    if completed.returncode != 0:
+        if completed.stdout:
+            print(completed.stdout, file=sys.stderr)
+        if completed.stderr:
+            print(completed.stderr, file=sys.stderr)
+        raise subprocess.CalledProcessError(completed.returncode, args)
+    return output_dir
+
+
+def _selected_case_ids(requested: list[str] | None) -> list[str]:
+    if requested:
+        unknown = [case_id for case_id in requested if case_id not in CASE_MATRIX]
+        if unknown:
+            raise ValueError(f"Unknown case ids: {', '.join(unknown)}")
+        return requested
+    return list(CASE_MATRIX)
+
+
+def _run_mode(case_ids: list[str], mode: Mode, fixture_dir: Path) -> list[CaseResult]:
+    results: list[CaseResult] = []
+    for case_id in case_ids:
+        case = CASE_MATRIX[case_id]
+        if mode not in case.supported_modes:
+            results.append(_blocked_result(case, mode))
+            continue
+        results.append(CASE_RUNNERS[case_id](fixture_dir, mode))
+    return results
+
+
+def _summarize(results: list[CaseResult]) -> dict[str, int]:
+    return {
+        "passed": sum(result.status == "passed" for result in results),
+        "failed": sum(result.status == "failed" for result in results),
+        "blocked": sum(result.status == "blocked" for result in results),
+    }
+
+
+def _print_results(results: list[CaseResult]) -> None:
+    print("=" * 78)
+    print("Old-vs-New Validation Summary")
+    print("=" * 78)
+    print(f"{'Case':<28} {'Mode':<8} {'Status':<8} Details")
+    print("-" * 78)
+    for result in results:
+        numeric_diffs = [
+            float(value) for key, value in result.metrics.items() if "diff" in key and isinstance(value, numbers.Real)
+        ]
+        detail = result.blocked_reason or (f"max diff {max(numeric_diffs):.3e}" if numeric_diffs else "")
+        print(f"{result.case_id:<28} {result.mode:<8} {result.status:<8} {detail}")
+        for line in result.details[:5]:
+            print(f"{'':<48} {line}")
+        if len(result.details) > 5:
+            print(f"{'':<48} ... {len(result.details) - 5} more")
+    print("-" * 78)
+    summary = _summarize(results)
+    print(f"Passed: {summary['passed']}  Failed: {summary['failed']}  Blocked: {summary['blocked']}")
+
+
+def _write_report(path: Path, results: list[CaseResult]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "summary": _summarize(results),
+        "results": [asdict(result) for result in results],
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        choices=("fixture", "live", "both"),
+        default="fixture",
+        help="Validation mode: pinned fixtures, live upstream, or both.",
+    )
+    parser.add_argument(
+        "--case",
+        action="append",
+        dest="cases",
+        help="Run only a specific case id (repeatable).",
+    )
+    parser.add_argument(
+        "--worktree",
+        type=Path,
+        default=DEFAULT_WORKTREE,
+        help="Path to upstream worktree for live mode.",
+    )
+    parser.add_argument(
+        "--report-json",
+        type=Path,
+        help="Optional path for a structured JSON report.",
+    )
+    parser.add_argument(
+        "--list-cases",
+        action="store_true",
+        help="List validation cases and exit.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.list_cases:
+        for case in CASE_MATRIX.values():
+            modes = ",".join(case.supported_modes) if case.supported_modes else "blocked"
+            print(f"{case.case_id}: [{modes}] {case.description}")
+        return 0
+
+    case_ids = _selected_case_ids(args.cases)
+    results: list[CaseResult] = []
+
+    if args.mode in ("fixture", "both"):
+        results.extend(_run_mode(case_ids, "fixture", FIXTURE_DIR))
+
+    if args.mode in ("live", "both"):
+        if not args.worktree.exists():
+            for case_id in case_ids:
+                case = CASE_MATRIX[case_id]
+                reason = f"Live mode requested but worktree does not exist: {args.worktree}"
+                results.append(_blocked_result(case, "live", reason))
+        else:
+            with TemporaryDirectory() as tempdir:
+                fixture_dir = _ensure_live_fixture_dir(
+                    [case_id for case_id in case_ids if "live" in CASE_MATRIX[case_id].supported_modes],
+                    args.worktree,
+                    Path(tempdir),
+                )
+                results.extend(_run_mode(case_ids, "live", fixture_dir))
+
+    _print_results(results)
+    if args.report_json:
+        _write_report(args.report_json, results)
+
+    return 1 if any(result.status == "failed" for result in results) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

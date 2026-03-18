@@ -5,6 +5,7 @@ energy, hessian, geometry optimization, and vibrational frequencies.
 
 Requires: conda install psi4 -c conda-forge
 """
+
 from __future__ import annotations
 
 import os
@@ -16,6 +17,7 @@ from q2mm.backends.base import QMEngine
 
 try:
     import psi4 as _psi4
+
     _HAS_PSI4 = True
 except ImportError:
     _psi4 = None
@@ -29,15 +31,14 @@ def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
     n_atoms = int(lines[0].strip())
     atoms = []
     coords = []
-    for line in lines[2:2 + n_atoms]:
+    for line in lines[2 : 2 + n_atoms]:
         parts = line.split()
         atoms.append(parts[0])
         coords.append([float(x) for x in parts[1:4]])
     return atoms, np.array(coords)
 
 
-def _make_psi4_geometry(atoms: list[str], coords: np.ndarray,
-                        charge: int = 0, multiplicity: int = 1):
+def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1):
     """Create a Psi4 molecule object from atoms and coordinates."""
     geom_str = f"    {charge} {multiplicity}\n"
     for atom, (x, y, z) in zip(atoms, coords):
@@ -57,13 +58,17 @@ class Psi4Engine(QMEngine):
         multiplicity: Spin multiplicity (default: 1)
     """
 
-    def __init__(self, method: str = "b3lyp", basis: str = "6-31+G(d)",
-                 memory: str = "2 GB", n_threads: int = 4,
-                 charge: int = 0, multiplicity: int = 1):
+    def __init__(
+        self,
+        method: str = "b3lyp",
+        basis: str = "6-31+G(d)",
+        memory: str = "2 GB",
+        n_threads: int = 4,
+        charge: int = 0,
+        multiplicity: int = 1,
+    ):
         if not _HAS_PSI4:
-            raise ImportError(
-                "Psi4 is not installed. Install via: conda install psi4 -c conda-forge"
-            )
+            raise ImportError("Psi4 is not installed. Install via: conda install psi4 -c conda-forge")
         self._method = method
         self._basis = basis
         self._charge = charge
@@ -72,9 +77,7 @@ class Psi4Engine(QMEngine):
         _psi4.set_num_threads(n_threads)
         # Suppress output by default
         self._tmpdir = tempfile.mkdtemp(prefix="q2mm_psi4_")
-        _psi4.core.set_output_file(
-            os.path.join(self._tmpdir, "psi4_output.dat"), False
-        )
+        _psi4.core.set_output_file(os.path.join(self._tmpdir, "psi4_output.dat"), False)
 
     @property
     def name(self) -> str:
@@ -115,8 +118,7 @@ class Psi4Engine(QMEngine):
         _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
         return np.array(wfn.hessian())
 
-    def optimize(self, structure, method: str = None, basis: str = None,
-                 opt_type: str = "min"):
+    def optimize(self, structure, method: str = None, basis: str = None, opt_type: str = "min"):
         """Optimize geometry. Returns (energy, atoms, coords_angstrom).
 
         Args:
@@ -144,7 +146,7 @@ class Psi4Engine(QMEngine):
 
     def close(self):
         """Clean up temporary files."""
-        if hasattr(self, '_tmpdir') and os.path.exists(self._tmpdir):
+        if hasattr(self, "_tmpdir") and os.path.exists(self._tmpdir):
             shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def __enter__(self):
