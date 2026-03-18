@@ -29,6 +29,8 @@ class BondParam:
     equilibrium: float           # Angstrom
     force_constant: float        # mdyn/A (MM3 units)
     label: str = ""              # Human-readable label
+    env_id: str = ""             # Environment ID for disambiguating same-element params
+                                 # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
 
     @property
     def key(self) -> tuple[str, str]:
@@ -42,6 +44,7 @@ class AngleParam:
     equilibrium: float              # degrees
     force_constant: float           # mdyn*A/rad^2
     label: str = ""
+    env_id: str = ""             # Environment ID for disambiguating same-element params
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -80,23 +83,36 @@ class ForceField:
 
     @property
     def n_params(self) -> int:
-        """Number of adjustable scalar parameters (2 per bond, 2 per angle)."""
-        return 2 * len(self.bonds) + 2 * len(self.angles) + len(self.torsions)
+        """Number of adjustable scalar parameters in get_param_vector().
 
-    def get_bond(self, elem1: str, elem2: str) -> BondParam | None:
-        """Find bond parameter by element pair."""
+        Currently: 2 per bond (k, r0) + 2 per angle (k, theta0).
+        Torsions not yet included in the parameter vector.
+        """
+        return 2 * len(self.bonds) + 2 * len(self.angles)
+
+    def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
+        """Find bond parameter by element pair and optional environment ID."""
         key = tuple(sorted([elem1, elem2]))
         for b in self.bonds:
             if b.key == key:
+                if env_id and b.env_id and b.env_id != env_id:
+                    continue
                 return b
         return None
 
-    def get_angle(self, elem1: str, elem_center: str, elem2: str) -> AngleParam | None:
-        """Find angle parameter by element triple."""
+    def get_bonds(self, elem1: str, elem2: str) -> list[BondParam]:
+        """Find ALL bond parameters matching an element pair."""
+        key = tuple(sorted([elem1, elem2]))
+        return [b for b in self.bonds if b.key == key]
+
+    def get_angle(self, elem1: str, elem_center: str, elem2: str, env_id: str = "") -> AngleParam | None:
+        """Find angle parameter by element triple and optional environment ID."""
         outer = tuple(sorted([elem1, elem2]))
         key = (outer[0], elem_center, outer[1])
         for a in self.angles:
             if a.key == key:
+                if env_id and a.env_id and a.env_id != env_id:
+                    continue
                 return a
         return None
 
@@ -158,26 +174,31 @@ class ForceField:
 
             if param.ptype == "bf" and len(atom_types) >= 2:
                 elems = tuple(_extract_element(t) for t in atom_types[:2])
+                env_id = "-".join(atom_types[:2])
                 eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
                 bonds.append(BondParam(
                     elements=elems,
                     equilibrium=eq_val,
                     force_constant=param.value,
                     label=f"MM3 row {param.ff_row}",
+                    env_id=env_id,
                 ))
 
             elif param.ptype == "af" and len(atom_types) >= 2:
                 # Angle: extract center and outer elements
                 if len(atom_types) >= 3:
                     elems = tuple(_extract_element(t) for t in atom_types[:3])
+                    env_id = "-".join(atom_types[:3])
                 else:
                     elems = (_extract_element(atom_types[0]), _extract_element(atom_types[1]), "?")
+                    env_id = "-".join(atom_types[:2])
                 eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
                 angles.append(AngleParam(
                     elements=elems,
                     equilibrium=eq_val,
                     force_constant=param.value,
                     label=f"MM3 row {param.ff_row}",
+                    env_id=env_id,
                 ))
 
         return cls(
