@@ -45,7 +45,7 @@ pip install -e ".[amber]" # With parmed (AMBER support)
 
 | Backend | Type | License | Install |
 |---------|------|---------|---------|
-| **OpenMM** | MM | MIT/LGPL-like open source | `pip install openmm` |
+| **OpenMM** | MM | [MIT](https://github.com/openmm/openmm/blob/master/licenses/Licenses.txt) | `pip install openmm` |
 | **Psi4** | QM | BSD-3 (open source) | `conda install psi4 -c conda-forge` |
 | **Tinker** | MM | Free (academic) | [download](https://dasher.wustl.edu/tinker/) |
 | **Gaussian** | QM | Commercial | Site license |
