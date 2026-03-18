@@ -1,18 +1,20 @@
 """
 Constants and variables used throughout Q2MM.
+
+This module contains unit conversions, atomic masses, logging configuration,
+and other physical constants. Optimization defaults (WEIGHTS, STEPS) have been
+moved to q2mm.optimizers.defaults; regex patterns to q2mm.parsers._patterns;
+MacroModel constants to q2mm.parsers.macromodel. Backward-compatible re-exports
+are provided at the bottom of this module.
 """
 
-import re
 import logging
 from collections import OrderedDict
 
-# GAUSSIAN_ENERGIES = ['HF', 'ZeroPoint']
+# GAUSSIAN ENERGIES
 GAUSSIAN_ENERGIES = ["HF"]
 
 # LOGGING SETTINGS
-# Settings loaded using logging.config.
-# Really, I wish that this could have some directory argument to change the
-# location of root.log. Perhaps something like this can be done with __init__.
 LOG_SETTINGS = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -23,11 +25,7 @@ LOG_SETTINGS = {
     },
     "handlers": {
         "console": {"class": "logging.StreamHandler", "formatter": "bare", "level": logging.INFO},
-        # 'class': 'logging.StreamHandler', 'formatter': 'basic',
-        # 'level': 1},
         "root_file_handler": {
-            # 'class': 'logging.FileHandler', 'filename': 'root.log',
-            # 'formatter': 'bare', 'level': 1} #20}
             "class": "logging.FileHandler",
             "filename": "root.log",
             "formatter": "basic",
@@ -49,203 +47,35 @@ LOG_SETTINGS = {
         "seminario": {"level": 20, "propagate": True},
         "schrod_indep_filetypes": {"level": 20, "propagate": True},
     },
-    #  debug logger
-    # 'loggers': {'__main__': {'level': 1, 'propagate': True},
-    #             'calculate': {'level': 1, 'propagate': True},
-    #             'compare': {'level': 1, 'propagate': True},
-    #             'constants': {'level': 1, 'propagate': True},
-    #             'datatypes': {'level': 1,' propagate': True},
-    #             'filetypes': {'level': 1, 'propagate': True},
-    #             'gradient': {'level': 1, 'propagate': True},
-    #             'loop': {'level': 1, 'propagate': True},
-    #             'opt': {'level': 1, 'propagate': True},
-    #             'parameters': {'level': 1, 'propagate': True},
-    #             'simplex': {'level': 1, 'propagate': True}
-    #             },
     "root": {"level": "NOTSET", "propagate": True, "handlers": ["console", "root_file_handler"]},
 }
 
-# STEPS
-# These are the initial step sizes used in numerical differentiation for all
-# the different parameter types. Floats/integers or strings are accepted.
-#
-# When a float/integer step size is provided, the new, stepped parameter value
-# is determined by simply adding or subtracting the step size for incrementing
-# or decrementing, respectively.
-#     x_new = x +/- step
-#
-# Instead, if a string is provided (by placing the number in single or double
-# quotes), the new parameter value will be decremented or incremented by a
-# percentage of its current value.
-#     x_new = x +/- (x * step)
-STEPS = {
-    "ae": 1.0,
-    "af": 0.1,
-    "be": 0.02,
-    "bf": 0.1,
-    "df": 0.1,
-    "imp1": 0.2,
-    "imp2": 0.2,
-    "op_b": 0.2,
-    "sb": 0.2,
-    "q": 0.1,
-    "q_p": 0.05,
-    "vdwr": 0.1,
-    "vdwfc": 0.02,
-}
-
-# WEIGHTS
-WEIGHTS = {
-    "a": 2.00,
-    "b": 100.00,
-    "t": 1.00,
-    "h": 0.031,
-    "h12": 0.031,
-    "h13": 0.031,
-    "h14": 0.31,
-    "eig_i": 0.00,  # Weight of 1st e4622117715igenvalue.
-    "eig_d_low": 0.10,  # Weight of low mode diagonal elements
-    "eig_d_high": 0.10,  # Weight of high mode diagonal elemetns
-    "eig_o": 0.05,  # Weight of off diagonals in eigenmatrix.
-    "e": 20.00,
-    "e1": 20.00,
-    "eo": 100.00,
-    "e1o": 100.00,
-    "ea": 20.00,
-    "eao": 100.00,
-    "q": 10.00,
-    "qh": 10.00,
-    "qa": 10.00,
-    "esp": 10.00,
-    "p": 10.00,
-}
-
 # UNIT CONVERSIONS
-# Force constants from Jaguar frequency (mdyn A**-1) to au.
 FORCE_CONVERSION = 15.569141
-# Eigenvalues of mass-weighted Hessian to cm**-1.
 EIGENVALUE_CONVERSION = 53.0883777868
-# Hessian elements in au (Hartree Bohr**-2) from Jaguar to
-# kJ mol**-1 A**-2 (used by MacroModel).
 HESSIAN_CONVERSION = 9375.829222
-# Hartree to kJ mol**-1.
 HARTREE_TO_KJMOL = 2625.5
-# Hartree to J
 HARTREE_TO_J = 4.359744650e-18
-# Hartree to kcal mol**-1
 HARTREE_TO_KCALMOL = 627.51
-# mol**-1
 AVO = 6.022140857e23
-BOHR_TO_ANG = 0.5291772086  # 0.52917721092 according to some places, shouldn't make a difference though
-# AU Hartree Bohr**-2 to mdyn A**-1 Force Constant Bond
+BOHR_TO_ANG = 0.5291772086
 AU_TO_MDYNA = 15.569141
-# AU Hartree Radian**-2 to mdyn Force Constant Angle MM3
 AU_TO_MDYN_ANGLE = 4.3598
-# kJ to dyne*cm, 1kJ = 10**10 DYNCM
 KJ_TO_DYNCM = 10**10
-# cm to Angstrom, 1cm = 10^7 Angstrom
 CM_TO_ANG = 10**8
-# kJ/(mol*Ang^2) to millidyne/Ang = KJ_TO_DYNCM * CM_TO_ANG / AVO
 KJMOLA2_TO_MDYNA = 1.0 / (6.022140857e3)
 MDYNA_TO_KJMOLA2 = 6.022140857e2
-# kJ/(mol*Ang) to millidyne
 KJMOLA_TO_MDYN = 1.0 / (6.022140857e2)
-# MDYNA to KJMOLA according to MM3
 MM3_STR = 601.99392
 
-# UNIT SYSTEMS
-AMBERFF = "KCALMOLA"  # force constant (kcal/mol) (A**-2), (kcal/mol); length in Angstrom
-MM3FF = "MDYNA"  # force constant (millidyne) (A**-1), (millidyne); length in Angstrom
-TINKERFF = "NOT IMPLEMENTED"  # TODO
-GAUSSIAN = "AU"  # atomic units, so energy (Hartree), length (Bohr), force constant (Hartree/Bohr**2), (Hartree/Bohr)
+# UNIT SYSTEM LABELS
+AMBERFF = "KCALMOLA"
+MM3FF = "MDYNA"
+TINKERFF = "NOT IMPLEMENTED"
+GAUSSIAN = "AU"
 KJMOLA = "KJMOLA"
 
-
-# SCRIPTS
-NABC_HESSIAN = """#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "sff.h"
-FILE* nabout;
-
-int main(int argc, char* argv[] )
-{
-    nabout = stdout;
-
-    molecule m;
-    float x[4000], fret;
-
-    m = getpdb( argv[2]);
-    readparm(m, argv[1]);
-
-    PARMSTRUCT_T* prm = rdparm( argv[1] );
-    int natm = prm->Natom;
-
-    m = getpdb( argv[2] );
-
-    setxyz_from_mol( m, NULL, x );
-
-    mm_options( "cut=15., ntpr=1, nsnb=99999, diel = C, dielc = 80.40" );
-
-    // nothing frozen or constrained
-    int* frozen = parseMaskString( "@ZZZ", prm, xyz, 2 );
-    int* constrained = parseMaskString( "@ZZZ", prm, xyz, 2 );
-
-    mme_init_sff( prm, frozen, constrained, NULL, NULL );
-
-    int nm = nmode( x, prm->Nat3, mme2, 0, 0, 0.0, 0.0, 0 );
-    printf("nmode returns %d\n", nm);
-}"""
-
-# REGEX
-# COMMON
-# Match any float in a string.
-RE_FLOAT = r"[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-
-# MM3.FLD RELATED
-# Match SMARTS notation used by MM3* substructures.
-# More from import_ff could be added here.
-RE_SMILES = r"[\w\-\=\(\)\.\+\[\]\*]+"
-# Possible symbols used to split atoms in SMARTS notation.
-RE_SPLIT_ATOMS = r"[\s\-\(\)\=\.\[\]\*]+"
-# Name of MM3* substructures.
-RE_SUB = r"[\w\s\-\.\*\(\)\%\=\,]+"
-
-# .MMO RELATED
-# Match bonds in lines of a .mmo file.
-RE_BOND = re.compile(
-    rf"\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+({RE_FLOAT})\s+{RE_FLOAT}\s+\w+" rf"\s+\d+\s+({RE_SUB})\s+(\d+)"
-)
-# Match angles in lines of a .mmo file.
-RE_ANGLE = re.compile(
-    rf"\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+"
-    rf"({RE_FLOAT})\s+{RE_FLOAT}\s+{RE_FLOAT}\s+\w+\s+\d+\s+({RE_SUB})\s+(\d+)"
-)
-# Match torsions in lines of a .mmo file.
-RE_TORSION = re.compile(
-    rf"\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+"
-    rf"({RE_FLOAT})\s+{RE_FLOAT}\s+\w+\s+\d+({RE_SUB})\s+(\d+)"
-)
-
-# VARIABLES FOR RUNNING MACROMODEL
-# String format used when writing MacroModel .com files.
-COM_FORM = " {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n"
-# When you use "$SCHRODINGER/utilities/licutil -used -verbose", many token
-# allocations appear, but these are the 2 we care about.
-LABEL_SUITE = r"SUITE_\w+"  # Ex.) SUITE_26NOV2012
-LABEL_MACRO = "MMOD_MACROMODEL"
-# Some regex to pick out the number of available tokens.
-LIC_SUITE = re.compile(rf"(?<!_){LABEL_SUITE}\s+(\d+)\sof\s\d+\s" r"tokens\savailable")
-LIC_MACRO = re.compile(rf"{LABEL_MACRO}\s+(\d+)\sof\s\d+\stokens\s" "available")
-# Minimum number of tokens required to run MacrModel calculations.
-MIN_SUITE_TOKENS = 2
-MIN_MACRO_TOKENS = 2
-
-# Match the filename and atoms for a torsion label
-RE_T_LBL = re.compile(r"\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)")
-
 # MASSES
-# Used for mass weighting.
 MASSES = OrderedDict(
     [
         ("H", 1.007825032),
@@ -355,14 +185,10 @@ MASSES = OrderedDict(
     ]
 )
 
-
 # ELECTRONIC STRUCTURE METHODS
 gaussian_methods = ["b3lyp", "m06", "m062x", "m06L"]
 
-
-# CHELPG NEEDED RADII
-# These are a combination of the default values in Gaussian09 (first and second
-# row?) and values we have used in the past for metals.
+# CHELPG RADII
 CHELPG_RADII = OrderedDict(
     [
         ("H", 1.45),
@@ -377,3 +203,54 @@ CHELPG_RADII = OrderedDict(
         ("S", 2.00),
     ]
 )
+
+# ---------------------------------------------------------------------------
+# Backward-compatible re-exports
+# ---------------------------------------------------------------------------
+# STEPS and WEIGHTS are now in q2mm.optimizers.defaults.
+# Regex patterns are now in q2mm.parsers._patterns.
+# MacroModel constants are now in q2mm.parsers.macromodel.
+#
+# These cannot be re-exported here because the parsers package imports
+# constants, creating circular dependencies.  Import from the canonical
+# locations instead:
+#   from q2mm.optimizers.defaults import STEPS, WEIGHTS
+#   from q2mm.parsers._patterns import RE_FLOAT, RE_BOND, ...
+#   from q2mm.parsers.macromodel import COM_FORM, ...
+#
+# For the most common case (co.STEPS / co.WEIGHTS), we re-export only
+# optimizers.defaults since it has no dependency on parsers.
+from q2mm.optimizers.defaults import STEPS, WEIGHTS  # noqa: E402, F401
+
+# ---------------------------------------------------------------------------
+# Regex patterns — canonical location is q2mm.parsers._patterns,
+# but defined here too for backward compatibility with old code using co.RE_*
+# ---------------------------------------------------------------------------
+import re  # noqa: E402
+
+RE_FLOAT = r"[+-]?\s*(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+RE_SMILES = r"[\w\-\=\(\)\.\+\[\]\*]+"
+RE_SPLIT_ATOMS = r"[\s\-\(\)\=\.\[\]\*]+"
+RE_SUB = r"[\w\s\-\.\*\(\)\%\=\,]+"
+RE_BOND = re.compile(
+    rf"\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+({RE_FLOAT})\s+{RE_FLOAT}\s+\w+"
+    rf"\s+\d+\s+({RE_SUB})\s+(\d+)"
+)
+RE_ANGLE = re.compile(
+    rf"\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+"
+    rf"({RE_FLOAT})\s+{RE_FLOAT}\s+{RE_FLOAT}\s+\w+\s+\d+\s+({RE_SUB})\s+(\d+)"
+)
+RE_TORSION = re.compile(
+    rf"\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+"
+    rf"({RE_FLOAT})\s+{RE_FLOAT}\s+\w+\s+\d+({RE_SUB})\s+(\d+)"
+)
+RE_T_LBL = re.compile(r"\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)")
+
+# MacroModel constants — canonical location is q2mm.parsers.macromodel
+COM_FORM = " {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n"
+LABEL_SUITE = r"SUITE_\w+"
+LABEL_MACRO = "MMOD_MACROMODEL"
+LIC_SUITE = re.compile(rf"(?<!_){LABEL_SUITE}\s+(\d+)\sof\s\d+\s" r"tokens\savailable")
+LIC_MACRO = re.compile(rf"{LABEL_MACRO}\s+(\d+)\sof\s\d+\stokens\s" "available")
+MIN_SUITE_TOKENS = 2
+MIN_MACRO_TOKENS = 2

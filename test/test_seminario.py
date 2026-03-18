@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 import numpy as np
 
-from q2mm.schrod_indep_filetypes import MM3, GaussLog, Mol2, mass_weight_hessian
+from q2mm.parsers import MM3, GaussLog, Mol2, mass_weight_hessian
 from q2mm import constants as co
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

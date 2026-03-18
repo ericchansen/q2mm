@@ -5,8 +5,9 @@ Re-exports force field classes and label matchers:
     from q2mm.forcefields import MM3, AmberFF, match_mm3_bond
 """
 
-from q2mm.datatypes import MM3, AmberFF, TinkerFF, TinkerMM3A
-from q2mm.datatypes import (
+from q2mm.parsers import (  # noqa: F401
+    MM3,
+    AmberFF,
     match_mm3_label,
     match_mm3_bond,
     match_mm3_angle,
@@ -17,3 +18,4 @@ from q2mm.datatypes import (
     match_mm3_improper,
     match_mm3_vdw,
 )
+from q2mm.parsers.tinker_ff import TinkerFF, TinkerMM3A  # noqa: F401
