@@ -170,7 +170,7 @@ class TinkerEngine(MMEngine):
                 )
             else:
                 # Programmatic FF — write standalone .prm with atom defs
-                self._write_standalone_prm(forcefield, exported_prm, atom_type_numbers)
+                self._write_standalone_prm(forcefield, exported_prm, atoms, atom_type_numbers)
             params_path = exported_prm
 
         # Write key file
@@ -220,7 +220,7 @@ class TinkerEngine(MMEngine):
         "Br": (35, 79.904, 1),
     }
 
-    def _write_standalone_prm(self, ff, prm_path: str, atom_type_numbers: list[int]):
+    def _write_standalone_prm(self, ff, prm_path: str, atoms: list[str], atom_type_numbers: list[int]):
         """Write a complete standalone Tinker .prm for a programmatic ForceField.
 
         Generates a self-contained parameter file with atom definitions,
@@ -228,33 +228,41 @@ class TinkerEngine(MMEngine):
         defined in the ForceField. This ensures Tinker evaluates exactly
         the same terms as OpenMM for cross-backend parity.
 
-        Uses the same atom_type_numbers assigned to atoms in _write_tinker_xyz
-        to guarantee XYZ ↔ PRM consistency.
+        Args:
+            ff: ForceField model with bonds, angles, vdws.
+            prm_path: Output path for the .prm file.
+            atoms: Element symbols for each atom (same order as .xyz).
+            atom_type_numbers: Tinker type numbers assigned in _write_tinker_xyz
+                (guarantees XYZ ↔ PRM consistency).
 
         Note: This approach maps one Tinker type per element. Force fields
         that distinguish same-element params by env_id should use the
         template-based export path (source_format="tinker_prm").
         """
-        # Build element → type_number map from the actual atom_type_numbers
+        # Build element → type_number map from the actual atoms + type numbers
         # used in the .xyz file (guarantees XYZ ↔ PRM consistency).
-        _default_type_map = {
-            "C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13,
-            "N": 8, "O": 6, "S": 15, "P": 25,
-        }
-        type_map = getattr(ff, "atom_type_map", None) or _default_type_map
-
-        # Derive elem_to_type from type_map (same source _write_tinker_xyz uses)
         elem_to_type: dict[str, int] = {}
-        all_elements: set[str] = set()
+        for elem, tnum in zip(atoms, atom_type_numbers, strict=False):
+            if elem in elem_to_type and elem_to_type[elem] != tnum:
+                raise ValueError(
+                    f"Inconsistent type assignment for element {elem}: "
+                    f"got {tnum} but previously assigned {elem_to_type[elem]}"
+                )
+            elem_to_type[elem] = tnum
+
+        # Ensure all FF elements are covered (bonds/angles/vdws may reference
+        # elements not in the molecule — raise rather than silently default)
         for b in ff.bonds:
-            all_elements.update(b.elements)
+            for el in b.elements:
+                if el not in elem_to_type:
+                    raise ValueError(f"FF bond references element '{el}' not present in molecule atoms")
         for a in ff.angles:
-            all_elements.update(a.elements)
+            for el in a.elements:
+                if el not in elem_to_type:
+                    raise ValueError(f"FF angle references element '{el}' not present in molecule atoms")
         for vdw in ff.vdws:
-            if vdw.element:
-                all_elements.add(vdw.element)
-        for elem in all_elements:
-            elem_to_type[elem] = type_map.get(elem, 1)
+            if vdw.element and vdw.element not in elem_to_type:
+                raise ValueError(f"FF vdW references element '{vdw.element}' not present in molecule atoms")
 
         with open(prm_path, "w") as f:
             # MM3 functional form header (matches mm3.prm conventions)
@@ -271,24 +279,23 @@ class TinkerEngine(MMEngine):
             # Atom definitions (MM3 format: type, symbol, "description", anum, mass, valence)
             for elem, tnum in sorted(elem_to_type.items(), key=lambda x: x[1]):
                 anum, mass, valence = self._ATOMIC_DATA.get(elem, (0, 0.0, 1))
-                f.write(f'atom   {tnum:5d}    {elem:2s}    "{elem:<20s}"'
-                        f'{anum:7d}   {mass:8.3f}    {valence}\n')
+                f.write(f'atom   {tnum:5d}    {elem:2s}    "{elem:<20s}"{anum:7d}   {mass:8.3f}    {valence}\n')
             f.write("\n")
 
             # Bond parameters
             for bond in ff.bonds:
-                t1 = elem_to_type.get(bond.elements[0], 1)
-                t2 = elem_to_type.get(bond.elements[1], 1)
-                f.write(f"bond   {t1:5d} {t2:5d}         {bond.force_constant:8.4f}   "
-                        f"{bond.equilibrium:8.4f}\n")
+                t1 = elem_to_type[bond.elements[0]]
+                t2 = elem_to_type[bond.elements[1]]
+                f.write(f"bond   {t1:5d} {t2:5d}         {bond.force_constant:8.4f}   {bond.equilibrium:8.4f}\n")
 
             # Angle parameters
             for angle in ff.angles:
-                t1 = elem_to_type.get(angle.elements[0], 1)
-                t2 = elem_to_type.get(angle.elements[1], 1)
-                t3 = elem_to_type.get(angle.elements[2], 1)
-                f.write(f"angle  {t1:5d} {t2:5d} {t3:5d}         {angle.force_constant:8.4f}   "
-                        f"{angle.equilibrium:8.4f}\n")
+                t1 = elem_to_type[angle.elements[0]]
+                t2 = elem_to_type[angle.elements[1]]
+                t3 = elem_to_type[angle.elements[2]]
+                f.write(
+                    f"angle  {t1:5d} {t2:5d} {t3:5d}         {angle.force_constant:8.4f}   {angle.equilibrium:8.4f}\n"
+                )
 
             # vdW parameters
             for vdw in ff.vdws:
@@ -297,7 +304,7 @@ class TinkerEngine(MMEngine):
                 try:
                     t = int(vdw.atom_type)
                 except (ValueError, TypeError):
-                    t = elem_to_type.get(vdw.element, 1)
+                    t = elem_to_type[vdw.element]
                 f.write(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
 
     def _run_tinker(
