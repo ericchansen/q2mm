@@ -737,7 +737,13 @@ def _parse_generic_tinker_prm(path: Path) -> tuple[list[BondParam], list[AnglePa
         record = parts[0].lower()
 
         if record == "atom" and len(parts) >= 3:
-            atom_elements[parts[1]] = _extract_element(parts[2])
+            # Standard Tinker: atom <type> <symbol> "desc" <anum> <mass> <val>
+            # AMOEBA-style:    atom <type> <class> <symbol> "desc" ...
+            # Distinguish: if parts[2] is purely numeric, it's a class field.
+            symbol_col = 2
+            if parts[2].isdigit() and len(parts) >= 4:
+                symbol_col = 3
+            atom_elements[parts[1]] = _extract_element(parts[symbol_col])
             continue
 
         if record.startswith("bond") and len(parts) >= 5:
@@ -818,8 +824,8 @@ def _update_tinker_vdw_lines(path: Path, vdws: list[VdwParam]):
             match = by_type.get(parts[1].strip())
         if match is None:
             continue
-        tail = " ".join(parts[4:]) if len(parts) > 4 else ""
-        lines[index] = f"vdw    {match.atom_type:>4} {match.radius:10.4f} {match.epsilon:10.4f}" + (
-            f" {tail}" if tail else ""
-        )
+        base = f"vdw    {match.atom_type:>4} {match.radius:10.4f} {match.epsilon:10.4f}"
+        if match.reduction != 0.0:
+            base += f" {match.reduction:10.4f}"
+        lines[index] = base
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

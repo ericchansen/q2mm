@@ -152,11 +152,25 @@ class TinkerEngine(MMEngine):
                 bond_str = "     ".join(bonded)
                 f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
 
+        # Determine which parameter file to use
+        params_path = self._params_file or ""
+
+        # If a ForceField model was supplied, export its (possibly modified)
+        # parameters to a workdir .prm so Tinker evaluates the updated values.
+        from q2mm.models.forcefield import ForceField
+
+        if isinstance(forcefield, ForceField):
+            exported_prm = os.path.join(workdir, "molecule.prm")
+            forcefield.to_tinker_prm(
+                exported_prm,
+                template_path=forcefield.source_path or self._params_file,
+            )
+            params_path = exported_prm
+
         # Write key file
         key_path = os.path.join(workdir, "molecule.key")
-        params = self._params_file or ""
         with open(key_path, "w") as f:
-            f.write(f"parameters {params}\n")
+            f.write(f"parameters {params_path}\n")
 
         return txyz_path
 
