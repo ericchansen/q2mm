@@ -37,6 +37,7 @@ print(f"Parameters: {len(ff.params)}")
 ```bash
 pip install -e .          # Basic
 pip install -e ".[dev]"   # With pytest + ruff
+pip install -e ".[openmm]" # With OpenMM backend
 pip install -e ".[amber]" # With parmed (AMBER support)
 ```
 
@@ -44,6 +45,7 @@ pip install -e ".[amber]" # With parmed (AMBER support)
 
 | Backend | Type | License | Install |
 |---------|------|---------|---------|
+| **OpenMM** | MM | MIT/LGPL-like open source | `pip install openmm` |
 | **Psi4** | QM | BSD-3 (open source) | `conda install psi4 -c conda-forge` |
 | **Tinker** | MM | Free (academic) | [download](https://dasher.wustl.edu/tinker/) |
 | **Gaussian** | QM | Commercial | Site license |
@@ -90,6 +92,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\validate_against_upstream.ps1
 
 For overlapping old/new behavior, do not treat work as complete until the
 relevant validation case passes.
+
+The current OpenMM backend supports MM3-style bonded terms plus the primary
+atom-type vdW table carried by MM3/Tinker force fields.
 
 ## Citations
 

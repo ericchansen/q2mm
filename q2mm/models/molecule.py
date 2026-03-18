@@ -7,6 +7,7 @@ charge, multiplicity, connectivity) with Q2MM-specific extensions
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
@@ -112,6 +113,7 @@ class Q2MMMolecule:
 
     symbols: list[str]
     geometry: np.ndarray  # Shape (N, 3), Angstrom
+    atom_types: list[str] | None = None
     charge: int = 0
     multiplicity: int = 1
     name: str = ""
@@ -119,6 +121,16 @@ class Q2MMMolecule:
     hessian: np.ndarray | None = None  # Shape (3N, 3N), Hartree/Bohr^2
     _bonds: list[DetectedBond] | None = field(default=None, repr=False)
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        self.symbols = [str(symbol) for symbol in self.symbols]
+        if self.atom_types is None:
+            self.atom_types = list(self.symbols)
+        else:
+            self.atom_types = [str(atom_type) for atom_type in self.atom_types]
+        if len(self.atom_types) != len(self.symbols):
+            raise ValueError("atom_types must have the same length as symbols.")
+        self.geometry = np.asarray(self.geometry, dtype=float)
 
     @property
     def n_atoms(self) -> int:
@@ -153,6 +165,7 @@ class Q2MMMolecule:
                             atom_j=j,
                             elements=(self.symbols[i], self.symbols[j]),
                             length=dist,
+                            env_id=canonicalize_bond_env_id([self.atom_types[i], self.atom_types[j]]),
                         )
                     )
         return bonds
@@ -182,6 +195,9 @@ class Q2MMMolecule:
                             atom_k=b,
                             elements=(self.symbols[a], self.symbols[center], self.symbols[b]),
                             value=angle_val,
+                            env_id=canonicalize_angle_env_id(
+                                [self.atom_types[a], self.atom_types[center], self.atom_types[b]]
+                            ),
                         )
                     )
         return angles
@@ -211,6 +227,7 @@ class Q2MMMolecule:
             coords.append([float(x) for x in parts[1:4]])
         return cls(
             symbols=symbols,
+            atom_types=list(symbols),
             geometry=np.array(coords),
             charge=charge,
             multiplicity=multiplicity,
@@ -231,17 +248,19 @@ class Q2MMMolecule:
     ) -> Q2MMMolecule:
         """Create from a legacy Structure while preserving bond/angle metadata."""
         symbols = []
+        atom_types = []
         coords = []
         for atom in structure.atoms:
             atom_label = atom.atom_type_name or atom.element or ""
             symbols.append(_extract_element(atom_label))
+            atom_types.append(atom_label.strip() or _extract_element(atom_label))
             coords.append(atom.coords)
 
         bonds = []
         for bond in structure.bonds:
             atoms = structure.get_atoms_in_DOF(bond)
-            atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
-            elements = tuple(_extract_element(atom_type) for atom_type in atom_types[:2])
+            dof_atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
+            elements = tuple(_extract_element(atom_type) for atom_type in dof_atom_types[:2])
             length = bond.value
             if length is None:
                 length = np.linalg.norm(atoms[0].coords - atoms[1].coords)
@@ -251,7 +270,7 @@ class Q2MMMolecule:
                     atom_j=bond.atom_nums[1] - 1,
                     elements=elements,
                     length=float(length),
-                    env_id=canonicalize_bond_env_id(atom_types),
+                    env_id=canonicalize_bond_env_id(dof_atom_types),
                     ff_row=bond.ff_row,
                 )
             )
@@ -259,8 +278,8 @@ class Q2MMMolecule:
         angles = []
         for angle in structure.angles:
             atoms = structure.get_atoms_in_DOF(angle)
-            atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
-            elements = tuple(_extract_element(atom_type) for atom_type in atom_types[:3])
+            dof_atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
+            elements = tuple(_extract_element(atom_type) for atom_type in dof_atom_types[:3])
             angle_value = angle.value
             if angle_value is None:
                 v1 = atoms[0].coords - atoms[1].coords
@@ -274,13 +293,14 @@ class Q2MMMolecule:
                     atom_k=angle.atom_nums[2] - 1,
                     elements=elements,
                     value=float(angle_value),
-                    env_id=canonicalize_angle_env_id(atom_types),
+                    env_id=canonicalize_angle_env_id(dof_atom_types),
                     ff_row=angle.ff_row,
                 )
             )
 
         return cls(
             symbols=symbols,
+            atom_types=atom_types,
             geometry=np.array(coords, dtype=float),
             charge=charge,
             multiplicity=multiplicity,
@@ -300,6 +320,7 @@ class Q2MMMolecule:
         coords_ang = coords_bohr * qcel.constants.bohr2angstroms
         return cls(
             symbols=list(mol.symbols),
+            atom_types=list(mol.symbols),
             geometry=coords_ang,
             charge=mol.molecular_charge,
             multiplicity=mol.molecular_multiplicity,
@@ -326,12 +347,15 @@ class Q2MMMolecule:
         """Return a copy with Hessian attached."""
         return Q2MMMolecule(
             symbols=self.symbols,
+            atom_types=list(self.atom_types),
             geometry=self.geometry.copy(),
             charge=self.charge,
             multiplicity=self.multiplicity,
             name=self.name,
             bond_tolerance=self.bond_tolerance,
             hessian=hessian,
+            _bonds=copy.deepcopy(self._bonds) if self._bonds is not None else None,
+            _angles=copy.deepcopy(self._angles) if self._angles is not None else None,
         )
 
     def __repr__(self) -> str:

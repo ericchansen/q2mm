@@ -83,13 +83,24 @@ def _format_tinker_angle_line(atom_types: list[str], force_constant: float, equi
     )
 
 
+def _format_tinker_vdw_line(atom_type: str, radius: float, epsilon: float, reduction: float = 0.0) -> str:
+    return f"vdw    {atom_type:>4} {radius:10.4f} {epsilon:10.4f} {reduction:10.4f}\n"
+
+
 def _clean_atom_types(atom_types: list[str] | tuple[str, ...] | None, expected_len: int) -> list[str]:
     if atom_types is None:
         return []
+    if isinstance(atom_types, str):
+        atom_types = [atom_types]
     cleaned = [
         str(atom_type).strip() for atom_type in atom_types if str(atom_type).strip() and str(atom_type).strip() != "-"
     ]
     return cleaned[:expected_len]
+
+
+def _clean_atom_type(atom_types: list[str] | tuple[str, ...] | str | None) -> str:
+    cleaned = _clean_atom_types(atom_types, 1)
+    return cleaned[0] if cleaned else ""
 
 
 def _build_bond_maps(bonds: list[BondParam]) -> tuple[dict[int, BondParam], dict[str, BondParam]]:
@@ -102,6 +113,12 @@ def _build_angle_maps(angles: list[AngleParam]) -> tuple[dict[int, AngleParam], 
     by_row = {angle.ff_row: angle for angle in angles if angle.ff_row is not None}
     by_env = {angle.env_id: angle for angle in angles if angle.env_id}
     return by_row, by_env
+
+
+def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
+    by_row = {vdw.ff_row: vdw for vdw in vdws if vdw.ff_row is not None}
+    by_type = {vdw.atom_type: vdw for vdw in vdws if vdw.atom_type}
+    return by_row, by_type
 
 
 def _match_bond_for_export(
@@ -175,6 +192,24 @@ class TorsionParam:
 
 
 @dataclass
+class VdwParam:
+    """An atom-type van der Waals parameter."""
+
+    atom_type: str
+    radius: float  # Angstrom
+    epsilon: float  # kcal/mol
+    element: str = ""
+    reduction: float = 0.0
+    label: str = ""
+    ff_row: int | None = None
+
+    def __post_init__(self):
+        self.atom_type = str(self.atom_type).strip()
+        if not self.element:
+            self.element = _extract_element(self.atom_type)
+
+
+@dataclass
 class ForceField:
     """Format-agnostic force field representation.
 
@@ -192,6 +227,7 @@ class ForceField:
     bonds: list[BondParam] = field(default_factory=list)
     angles: list[AngleParam] = field(default_factory=list)
     torsions: list[TorsionParam] = field(default_factory=list)
+    vdws: list[VdwParam] = field(default_factory=list)
     source_path: Path | None = field(default=None, repr=False)
     source_format: Literal["mm3_fld", "tinker_prm"] | None = field(default=None, repr=False)
 
@@ -202,7 +238,7 @@ class ForceField:
         Currently: 2 per bond (k, r0) + 2 per angle (k, theta0).
         Torsions not yet included in the parameter vector.
         """
-        return 2 * len(self.bonds) + 2 * len(self.angles)
+        return 2 * len(self.bonds) + 2 * len(self.angles) + 2 * len(self.vdws)
 
     def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
         """Find bond parameter by element pair and optional environment ID."""
@@ -230,6 +266,19 @@ class ForceField:
                 return a
         return None
 
+    def get_vdw(self, atom_type: str = "", element: str = "") -> VdwParam | None:
+        if atom_type:
+            normalized = atom_type.strip()
+            for vdw in self.vdws:
+                if vdw.atom_type == normalized:
+                    return vdw
+        if element:
+            normalized = _extract_element(element)
+            matches = [vdw for vdw in self.vdws if vdw.element == normalized]
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
     def get_param_vector(self) -> np.ndarray:
         """Get all adjustable parameters as a flat vector.
 
@@ -241,6 +290,8 @@ class ForceField:
             values.extend([b.force_constant, b.equilibrium])
         for a in self.angles:
             values.extend([a.force_constant, a.equilibrium])
+        for vdw in self.vdws:
+            values.extend([vdw.radius, vdw.epsilon])
         return np.array(values)
 
     def set_param_vector(self, vec: np.ndarray):
@@ -253,6 +304,10 @@ class ForceField:
         for a in self.angles:
             a.force_constant = vec[idx]
             a.equilibrium = vec[idx + 1]
+            idx += 2
+        for vdw in self.vdws:
+            vdw.radius = vec[idx]
+            vdw.epsilon = vec[idx + 1]
             idx += 2
 
     def copy(self) -> ForceField:
@@ -275,6 +330,7 @@ class ForceField:
 
         bonds = []
         angles = []
+        vdws = _parse_mm3_vdw_params(Path(path))
 
         # Pre-build lookup for equilibrium values by (ptype, ff_row)
         eq_lookup = {}
@@ -325,6 +381,7 @@ class ForceField:
             name=f"MM3 from {Path(path).name}",
             bonds=bonds,
             angles=angles,
+            vdws=vdws,
             source_path=Path(path),
             source_format="mm3_fld",
         )
@@ -337,8 +394,20 @@ class ForceField:
         parser = TinkerFF(str(path))
         parser.import_ff()
 
+        if not parser.params:
+            bonds, angles, vdws = _parse_generic_tinker_prm(Path(path))
+            return cls(
+                name=f"Tinker from {Path(path).name}",
+                bonds=bonds,
+                angles=angles,
+                vdws=vdws,
+                source_path=Path(path),
+                source_format="tinker_prm",
+            )
+
         bonds = []
         angles = []
+        vdws = _parse_tinker_vdw_params(Path(path))
 
         eq_lookup: dict[tuple[str, int], float] = {}
         for param in parser.params:
@@ -381,6 +450,7 @@ class ForceField:
             name=f"Tinker from {Path(path).name}",
             bonds=bonds,
             angles=angles,
+            vdws=vdws,
             source_path=Path(path),
             source_format="tinker_prm",
         )
@@ -425,7 +495,10 @@ class ForceField:
                     if angle is not None:
                         param.value = angle.force_constant if param.ptype == "af" else angle.equilibrium
 
-            parser.export_ff(path=str(output_path), params=updated_params, lines=list(parser.lines))
+            updated_lines = list(parser.lines)
+            parser.export_ff(path=str(output_path), params=updated_params, lines=updated_lines)
+            if self.vdws:
+                _update_mm3_vdw_lines(output_path, self.vdws)
             return output_path
 
         lines = [f" C  {substructure_name}\n", f" 9  {smiles}\n"]
@@ -442,6 +515,11 @@ class ForceField:
                 )
             )
         lines.append("-3\n")
+        if self.vdws:
+            lines.extend(["-6\n"])
+            for vdw in self.vdws:
+                lines.append(_format_mm3_vdw_line(vdw))
+            lines.extend([" END OF NONBONDED INTERACTIONS\n", "-2\n"])
         output_path.write_text("".join(lines), encoding="utf-8")
         return output_path
 
@@ -486,7 +564,10 @@ class ForceField:
                     if angle is not None:
                         param.value = angle.equilibrium
 
-            parser.export_ff(path=str(output_path), params=updated_params, lines=list(parser.lines))
+            updated_lines = list(parser.lines)
+            parser.export_ff(path=str(output_path), params=updated_params, lines=updated_lines)
+            if self.vdws:
+                _update_tinker_vdw_lines(output_path, self.vdws)
             return output_path
 
         lines = ["# Q2MM\n", f"# {section_name}\n"]
@@ -502,6 +583,8 @@ class ForceField:
                     _tinker_atom_types(angle.env_id, angle.elements), angle.force_constant, angle.equilibrium
                 )
             )
+        for vdw in self.vdws:
+            lines.append(_format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction))
         output_path.write_text("".join(lines), encoding="utf-8")
         return output_path
 
@@ -566,5 +649,177 @@ class ForceField:
         return (
             f"ForceField('{self.name}', "
             f"{len(self.bonds)} bonds, {len(self.angles)} angles, "
-            f"{len(self.torsions)} torsions)"
+            f"{len(self.torsions)} torsions, {len(self.vdws)} vdW)"
         )
+
+
+def _format_mm3_vdw_line(vdw: VdwParam) -> str:
+    return f"  {vdw.atom_type:<3} {vdw.radius:10.4f} {vdw.epsilon:10.4f} {vdw.reduction:10.4f}                                   0000    O 1\n"
+
+
+def _parse_mm3_vdw_params(path: Path) -> list[VdwParam]:
+    vdws: list[VdwParam] = []
+    in_vdw_section = False
+    for row, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = raw_line.strip()
+        if stripped == "-6":
+            in_vdw_section = True
+            continue
+        if not in_vdw_section:
+            continue
+        if stripped.startswith("-2") or "END OF NONBONDED INTERACTIONS" in stripped:
+            break
+        parts = raw_line.split()
+        if len(parts) < 3:
+            continue
+        try:
+            radius = float(parts[1])
+            epsilon = float(parts[2])
+        except ValueError:
+            continue
+        atom_type = parts[0]
+        vdws.append(
+            VdwParam(
+                atom_type=atom_type,
+                radius=radius,
+                epsilon=epsilon,
+                reduction=float(parts[3]) if len(parts) > 3 else 0.0,
+                label=f"MM3 row {row}",
+                ff_row=row,
+            )
+        )
+    return vdws
+
+
+def _parse_tinker_vdw_params(path: Path) -> list[VdwParam]:
+    vdws: list[VdwParam] = []
+    q2mm_sec = False
+    gather_data = False
+    for row, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if not q2mm_sec and "# Q2MM" in raw_line:
+            q2mm_sec = True
+            continue
+        if q2mm_sec and raw_line.startswith("#"):
+            gather_data = "OPT" in raw_line
+            continue
+        if not gather_data:
+            continue
+        parts = raw_line.split()
+        if not parts or parts[0] != "vdw" or len(parts) < 4:
+            continue
+        vdws.append(
+            VdwParam(
+                atom_type=parts[1],
+                radius=float(parts[2]),
+                epsilon=float(parts[3]),
+                reduction=float(parts[4]) if len(parts) > 4 else 0.0,
+                label=f"Tinker row {row}",
+                ff_row=row,
+            )
+        )
+    return vdws
+
+
+def _parse_generic_tinker_prm(path: Path) -> tuple[list[BondParam], list[AngleParam], list[VdwParam]]:
+    bonds: list[BondParam] = []
+    angles: list[AngleParam] = []
+    vdws: list[VdwParam] = []
+    atom_elements: dict[str, str] = {}
+
+    for row, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = raw_line.split()
+        record = parts[0].lower()
+
+        if record == "atom" and len(parts) >= 3:
+            atom_elements[parts[1]] = _extract_element(parts[2])
+            continue
+
+        if record.startswith("bond") and len(parts) >= 5:
+            atom_types = parts[1:3]
+            elements = tuple(atom_elements.get(atom_type, _extract_element(atom_type)) for atom_type in atom_types)
+            bonds.append(
+                BondParam(
+                    elements=elements,
+                    equilibrium=float(parts[4]),
+                    force_constant=float(parts[3]),
+                    label=f"Tinker row {row}",
+                    env_id=canonicalize_bond_env_id(atom_types),
+                    ff_row=row,
+                )
+            )
+            continue
+
+        if record.startswith("angle") and len(parts) >= 6:
+            atom_types = parts[1:4]
+            elements = tuple(atom_elements.get(atom_type, _extract_element(atom_type)) for atom_type in atom_types)
+            angles.append(
+                AngleParam(
+                    elements=elements,
+                    equilibrium=float(parts[5]),
+                    force_constant=float(parts[4]),
+                    label=f"Tinker row {row}",
+                    env_id=canonicalize_angle_env_id(atom_types),
+                    ff_row=row,
+                )
+            )
+            continue
+
+        if record == "vdw" and len(parts) >= 4:
+            atom_type = parts[1]
+            vdws.append(
+                VdwParam(
+                    atom_type=atom_type,
+                    radius=float(parts[2]),
+                    epsilon=float(parts[3]),
+                    reduction=float(parts[4]) if len(parts) > 4 else 0.0,
+                    label=f"Tinker row {row}",
+                    ff_row=row,
+                    element=atom_elements.get(atom_type, _extract_element(atom_type)),
+                )
+            )
+
+    return bonds, angles, vdws
+
+
+def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    by_row, by_type = _build_vdw_maps(vdws)
+    for index, line in enumerate(lines):
+        row = index + 1
+        match = by_row.get(row)
+        parts = line.split()
+        if match is None and parts:
+            match = by_type.get(parts[0].strip())
+        if match is None:
+            continue
+        tail = " ".join(parts[4:]) if len(parts) > 4 else ""
+        lines[index] = f"  {match.atom_type:<3} {match.radius:10.4f} {match.epsilon:10.4f} {match.reduction:10.4f}" + (
+            f" {tail}" if tail else ""
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _update_tinker_vdw_lines(path: Path, vdws: list[VdwParam]):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    by_row, by_type = _build_vdw_maps(vdws)
+    for index, line in enumerate(lines):
+        row = index + 1
+        parts = line.split()
+        if not parts or parts[0] != "vdw":
+            continue
+        match = by_row.get(row)
+        if match is None and len(parts) > 1:
+            match = by_type.get(parts[1].strip())
+        if match is None:
+            continue
+        tail = " ".join(parts[4:]) if len(parts) > 4 else ""
+        lines[index] = f"vdw    {match.atom_type:>4} {match.radius:10.4f} {match.epsilon:10.4f}" + (
+            f" {tail}" if tail else ""
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")

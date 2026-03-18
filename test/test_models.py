@@ -7,7 +7,7 @@ import pytest
 
 from q2mm import datatypes
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField, BondParam, AngleParam, _extract_element
+from q2mm.models.forcefield import ForceField, BondParam, AngleParam, VdwParam, _extract_element
 from q2mm.models.seminario import estimate_force_constants
 
 # Fixture paths
@@ -78,6 +78,21 @@ class TestMoleculeFromXYZ:
         center_elements = {a.elements[1] for a in angles}
         assert "C" in center_elements
 
+    def test_detected_env_ids_use_atom_types(self):
+        mol = Q2MMMolecule(
+            symbols=["C", "H", "H"],
+            atom_types=["1", "5", "5"],
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.09, 0.0, 0.0],
+                    [-0.36, 1.03, 0.0],
+                ]
+            ),
+        )
+        assert any(bond.env_id == "1-5" for bond in mol.bonds)
+        assert any(angle.env_id == "5-1-5" for angle in mol.angles)
+
 
 # ---- ForceField ----
 
@@ -93,6 +108,7 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 5.0)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
         )
         vec = ff.get_param_vector()
         assert ff.n_params == len(vec)
@@ -101,6 +117,7 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 5.0)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
         )
         vec = ff.get_param_vector()
         ff2 = ff.copy()
@@ -130,6 +147,22 @@ class TestForceField:
         assert angle.force_constant == pytest.approx(0.55)
         assert angle.equilibrium == pytest.approx(109.7)
 
+    def test_mm3_vdw_roundtrip_generic(self, tmp_path):
+        ff = ForceField(name="Generic MM3", vdws=[VdwParam("F0", 1.71, 0.075), VdwParam("H1", 1.62, 0.02)])
+        out_path = tmp_path / "generated_vdw.fld"
+
+        ff.to_mm3_fld(out_path)
+        roundtrip = ForceField.from_mm3_fld(out_path)
+
+        fluorine = roundtrip.get_vdw(atom_type="F0")
+        hydrogen = roundtrip.get_vdw(atom_type="H1")
+        assert fluorine is not None
+        assert hydrogen is not None
+        assert fluorine.radius == pytest.approx(1.71)
+        assert fluorine.epsilon == pytest.approx(0.075)
+        assert hydrogen.radius == pytest.approx(1.62)
+        assert hydrogen.epsilon == pytest.approx(0.02)
+
     def test_mm3_export_updates_template(self, tmp_path):
         ff = ForceField.from_mm3_fld(RH_MM3)
         first_bond = ff.bonds[0]
@@ -144,6 +177,18 @@ class TestForceField:
         assert updated.force_constant == pytest.approx(first_bond.force_constant)
         assert updated.equilibrium == pytest.approx(first_bond.equilibrium)
 
+    def test_mm3_imports_vdw_table(self):
+        ff = ForceField.from_mm3_fld(RH_MM3)
+
+        rh = ff.get_vdw(atom_type="RH")
+        fluorine = ff.get_vdw(atom_type="F0")
+        assert rh is not None
+        assert fluorine is not None
+        assert rh.radius == pytest.approx(2.69)
+        assert rh.epsilon == pytest.approx(0.14)
+        assert fluorine.radius == pytest.approx(1.71)
+        assert fluorine.epsilon == pytest.approx(0.075)
+
     def test_tinker_import_export_roundtrip(self, tmp_path):
         prm_path = tmp_path / "sample.prm"
         prm_path.write_text(
@@ -154,6 +199,7 @@ class TestForceField:
                     "# OPT Synthetic",
                     "bond     C1   F1     5.0000     1.3800",
                     "angle    H1   C1   F1     0.5000   109.5000   111.0000   112.0000",
+                    "vdw      F1   1.4700     0.0610     0.0000",
                     "",
                 ]
             ),
@@ -172,6 +218,10 @@ class TestForceField:
         assert bond.equilibrium == pytest.approx(1.38)
         assert angle.force_constant == pytest.approx(0.5)
         assert angle.equilibrium == pytest.approx(109.5)
+        vdw = ff.get_vdw(atom_type="F1")
+        assert vdw is not None
+        assert vdw.radius == pytest.approx(1.47)
+        assert vdw.epsilon == pytest.approx(0.061)
 
         generic_out = tmp_path / "generated.prm"
         ff.to_tinker_prm(generic_out, template_path=None)
@@ -182,6 +232,41 @@ class TestForceField:
         assert generic_angle is not None
         assert generic_bond.force_constant == pytest.approx(5.0)
         assert generic_angle.equilibrium == pytest.approx(109.5)
+        generic_vdw = generic_roundtrip.get_vdw(atom_type="F1")
+        assert generic_vdw is not None
+        assert generic_vdw.radius == pytest.approx(1.47)
+        assert generic_vdw.epsilon == pytest.approx(0.061)
+
+    def test_tinker_import_generic_prm_without_q2mm_section(self, tmp_path):
+        prm_path = tmp_path / "generic.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    'atom      1    C     "CSP3 ALKANE"                  6    12.000    4',
+                    'atom      5    H     "EXCEPT ON N,O,S"             1     1.008    1',
+                    "bond      1    5           4.740     1.1120",
+                    "angle     5    1    5      0.550     107.60     107.80     109.47",
+                    "vdw       1               2.0400     0.0270",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        ff = ForceField.from_tinker_prm(prm_path)
+
+        bond = ff.get_bond("C", "H", env_id="1-5")
+        angle = ff.get_angle("H", "C", "H", env_id="5-1-5")
+        vdw = ff.get_vdw(atom_type="1")
+        assert bond is not None
+        assert angle is not None
+        assert vdw is not None
+        assert bond.force_constant == pytest.approx(4.74)
+        assert bond.equilibrium == pytest.approx(1.1120)
+        assert angle.force_constant == pytest.approx(0.55)
+        assert angle.equilibrium == pytest.approx(107.60)
+        assert vdw.radius == pytest.approx(2.0400)
+        assert vdw.epsilon == pytest.approx(0.0270)
 
     def test_tinker_export_updates_primary_angle_only(self, tmp_path):
         prm_path = tmp_path / "sample.prm"
@@ -193,6 +278,7 @@ class TestForceField:
                     "# OPT Synthetic",
                     "bond     C1   F1     5.0000     1.3800",
                     "angle    H1   C1   F1     0.5000   109.5000   111.0000   112.0000",
+                    "vdw      F1   1.4700     0.0610     0.0000",
                     "",
                 ]
             ),
@@ -213,6 +299,33 @@ class TestForceField:
         assert angle_fcs == [pytest.approx(0.75)]
         assert angle_eqs[0] == pytest.approx(108.25)
         assert angle_eqs[1:] == [pytest.approx(111.0), pytest.approx(112.0)]
+
+    def test_tinker_export_updates_vdw(self, tmp_path):
+        prm_path = tmp_path / "sample_vdw.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    "# Example parameter file",
+                    "# Q2MM",
+                    "# OPT Synthetic",
+                    "vdw      F1   1.4700     0.0610     0.0000",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        ff = ForceField.from_tinker_prm(prm_path)
+        ff.vdws[0].radius = 1.55
+        ff.vdws[0].epsilon = 0.081
+
+        out_path = tmp_path / "updated_vdw.prm"
+        ff.to_tinker_prm(out_path)
+
+        roundtrip = ForceField.from_tinker_prm(out_path)
+        updated = roundtrip.get_vdw(atom_type="F1")
+        assert updated is not None
+        assert updated.radius == pytest.approx(1.55)
+        assert updated.epsilon == pytest.approx(0.081)
 
 
 # ---- Seminario force constant estimation ----

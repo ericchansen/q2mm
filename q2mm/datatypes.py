@@ -731,7 +731,7 @@ class TinkerFF(FF):
                     linesplit[5 + col] = value
                     const = "".join([format(el, ">12") for el in linesplit[5:]])
                 elif "vdw" in line:
-                    atoms = format(split[1]) + space5 * 3
+                    atoms = format(linesplit[1], ">5") + space5 * 3
                     linesplit[2 + col] = value
                     const = "".join([format(el, ">12") for el in linesplit[2:]])
                 lines[param.ff_row - 1] = par + atoms + const + "\n"

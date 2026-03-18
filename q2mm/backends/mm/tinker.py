@@ -17,6 +17,7 @@ import shutil
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.models.molecule import Q2MMMolecule
 
 
 def _find_tinker_dir() -> str | None:
@@ -111,27 +112,42 @@ class TinkerEngine(MMEngine):
         else:
             type_map = getattr(forcefield, "atom_type_map", {"C": 1, "H": 5, "F": 11})
 
-        # Read standard XYZ
-        with open(structure) as f:
-            lines = f.readlines()
-        n_atoms = int(lines[0].strip())
-        atoms = []
-        coords = []
-        for line in lines[2 : 2 + n_atoms]:
-            parts = line.split()
-            atoms.append(parts[0])
-            coords.append([float(x) for x in parts[1:4]])
+        if isinstance(structure, Q2MMMolecule):
+            atoms = list(structure.symbols)
+            coords = np.asarray(structure.geometry, dtype=float).tolist()
+            n_atoms = len(atoms)
+            bonds = {i: [] for i in range(n_atoms)}
+            for bond in structure.bonds:
+                bonds[bond.atom_i].append(bond.atom_j)
+                bonds[bond.atom_j].append(bond.atom_i)
+            atom_type_numbers = []
+            for atom, atom_type in zip(atoms, structure.atom_types, strict=False):
+                try:
+                    atom_type_numbers.append(int(atom_type))
+                except (TypeError, ValueError):
+                    atom_type_numbers.append(type_map.get(atom, 1))
+        else:
+            # Read standard XYZ
+            with open(structure) as f:
+                lines = f.readlines()
+            n_atoms = int(lines[0].strip())
+            atoms = []
+            coords = []
+            for line in lines[2 : 2 + n_atoms]:
+                parts = line.split()
+                atoms.append(parts[0])
+                coords.append([float(x) for x in parts[1:4]])
 
-        # Build connectivity (simple distance-based)
-        coords_arr = np.array(coords)
-        bonds = self._detect_bonds(atoms, coords_arr)
+            # Build connectivity (simple distance-based)
+            coords_arr = np.array(coords)
+            bonds = self._detect_bonds(atoms, coords_arr)
+            atom_type_numbers = [type_map.get(atom, 1) for atom in atoms]
 
         # Write Tinker XYZ
         txyz_path = os.path.join(workdir, "molecule.xyz")
         with open(txyz_path, "w") as f:
             f.write(f"     {n_atoms}  Q2MM Tinker input\n")
-            for i, (atom, (x, y, z)) in enumerate(zip(atoms, coords)):
-                atype = type_map.get(atom, 1)
+            for i, (atom, (x, y, z), atype) in enumerate(zip(atoms, coords, atom_type_numbers, strict=False)):
                 bonded = [str(j + 1) for j in bonds.get(i, [])]
                 bond_str = "     ".join(bonded)
                 f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
