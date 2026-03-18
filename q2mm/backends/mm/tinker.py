@@ -105,12 +105,13 @@ class TinkerEngine(MMEngine):
             Path to the Tinker XYZ file
         """
         # Default MM3 atom type mapping
+        _default_type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
         if forcefield is None or isinstance(forcefield, str):
-            type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
+            type_map = _default_type_map
         elif isinstance(forcefield, dict):
             type_map = forcefield
         else:
-            type_map = getattr(forcefield, "atom_type_map", {"C": 1, "H": 5, "F": 11})
+            type_map = getattr(forcefield, "atom_type_map", _default_type_map)
 
         if isinstance(structure, Q2MMMolecule):
             atoms = list(structure.symbols)
@@ -161,10 +162,15 @@ class TinkerEngine(MMEngine):
 
         if isinstance(forcefield, ForceField):
             exported_prm = os.path.join(workdir, "molecule.prm")
-            forcefield.to_tinker_prm(
-                exported_prm,
-                template_path=forcefield.source_path or self._params_file,
-            )
+            if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
+                # FF came from a .prm file — use template-based export
+                forcefield.to_tinker_prm(
+                    exported_prm,
+                    template_path=forcefield.source_path or self._params_file,
+                )
+            else:
+                # Programmatic FF — write standalone .prm with atom defs
+                self._write_standalone_prm(forcefield, exported_prm, atom_type_numbers)
             params_path = exported_prm
 
         # Write key file
@@ -198,6 +204,86 @@ class TinkerEngine(MMEngine):
                     bonds[i].append(j)
                     bonds[j].append(i)
         return bonds
+
+    # Atomic numbers and masses for standalone .prm generation
+    _ATOMIC_DATA: dict[str, tuple[int, float, int]] = {
+        # element: (atomic_number, mass, default_valence)
+        "H": (1, 1.008, 1),
+        "He": (2, 4.003, 0),
+        "C": (6, 12.011, 4),
+        "N": (7, 14.007, 3),
+        "O": (8, 15.999, 2),
+        "F": (9, 18.998, 1),
+        "P": (15, 30.974, 3),
+        "S": (16, 32.060, 2),
+        "Cl": (17, 35.453, 1),
+        "Br": (35, 79.904, 1),
+    }
+
+    def _write_standalone_prm(self, ff, prm_path: str, atom_type_numbers: list[int]):
+        """Write a complete standalone Tinker .prm for a programmatic ForceField.
+
+        Generates a self-contained parameter file with atom definitions,
+        MM3 functional form headers, and only the bond/angle/vdW terms
+        defined in the ForceField. This ensures Tinker evaluates exactly
+        the same terms as OpenMM for cross-backend parity.
+        """
+        from q2mm.models.forcefield import ForceField
+
+        # Build element → type_number map from the atom_type_numbers used in .xyz
+        # Must use the same default type_map as _write_tinker_xyz
+        elem_to_type: dict[str, int] = {}
+        type_map = getattr(ff, "atom_type_map", None) or {
+            "C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25
+        }
+        # Collect all unique types referenced by the FF
+        for b in ff.bonds:
+            for e in b.elements:
+                if e not in elem_to_type:
+                    elem_to_type[e] = type_map.get(e, len(elem_to_type) + 1)
+        for a in ff.angles:
+            for e in a.elements:
+                if e not in elem_to_type:
+                    elem_to_type[e] = type_map.get(e, len(elem_to_type) + 1)
+
+        with open(prm_path, "w") as f:
+            # MM3 functional form header (matches mm3.prm conventions)
+            f.write("forcefield          Q2MM-Custom\n\n")
+            f.write("bondunit                71.94\n")
+            f.write("bond-cubic              -2.55\n")
+            f.write("bond-quartic            3.793125\n")
+            f.write("angleunit               0.02191418\n")
+            f.write("angle-cubic             -0.014\n")
+            f.write("angle-quartic           0.000056\n")
+            f.write("angle-pentic            -0.0000007\n")
+            f.write("angle-sextic            0.000000022\n\n")
+
+            # Atom definitions (MM3 format: type, symbol, "description", anum, mass, valence)
+            for elem, tnum in sorted(elem_to_type.items(), key=lambda x: x[1]):
+                anum, mass, valence = self._ATOMIC_DATA.get(elem, (0, 0.0, 1))
+                f.write(f'atom   {tnum:5d}    {elem:2s}    "{elem:<20s}"'
+                        f'{anum:7d}   {mass:8.3f}    {valence}\n')
+            f.write("\n")
+
+            # Bond parameters
+            for bond in ff.bonds:
+                t1 = elem_to_type.get(bond.elements[0], 1)
+                t2 = elem_to_type.get(bond.elements[1], 1)
+                f.write(f"bond   {t1:5d} {t2:5d}         {bond.force_constant:8.4f}   "
+                        f"{bond.equilibrium:8.4f}\n")
+
+            # Angle parameters
+            for angle in ff.angles:
+                t1 = elem_to_type.get(angle.elements[0], 1)
+                t2 = elem_to_type.get(angle.elements[1], 1)
+                t3 = elem_to_type.get(angle.elements[2], 1)
+                f.write(f"angle  {t1:5d} {t2:5d} {t3:5d}         {angle.force_constant:8.4f}   "
+                        f"{angle.equilibrium:8.4f}\n")
+
+            # vdW parameters
+            for vdw in ff.vdws:
+                t = vdw.atom_type or elem_to_type.get(vdw.elements[0] if vdw.elements else "", 1)
+                f.write(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
 
     def _run_tinker(
         self, exe_name: str, xyz_path: str, args: list = None, stdin: str = None
