@@ -13,8 +13,9 @@ FIXTURE_DIR = REPO_ROOT / "examples" / "sn2-test"
 QM_REF = FIXTURE_DIR / "qm-reference"
 
 try:
-    from q2mm.backends.qm.psi4 import Psi4Engine, _HAS_PSI4
-    HAS_PSI4 = _HAS_PSI4
+    import psi4  # noqa: F401
+    from q2mm.backends.qm.psi4 import Psi4Engine
+    HAS_PSI4 = True
 except ImportError:
     HAS_PSI4 = False
 

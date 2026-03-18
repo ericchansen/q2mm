@@ -47,7 +47,9 @@ class TestHessianAnalysis(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    (QM_REF / "sn2-ts-hessian.npy").exists(),
+    (QM_REF / "sn2-ts-hessian.npy").exists()
+    and (QM_REF / "sn2-ts-frequencies.txt").exists()
+    and (QM_REF / "ch3f-frequencies.txt").exists(),
     "SN2 TS fixtures not found"
 )
 class TestFrequencyFixtures(unittest.TestCase):
