@@ -7,19 +7,16 @@ pairs/triples, not format-specific atom type strings or line numbers.
 from __future__ import annotations
 
 import copy
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 import numpy as np
 
-
-def _extract_element(atom_type: str) -> str:
-    """Extract element symbol from MM3 atom type (e.g., 'Cl1' -> 'Cl', 'C3' -> 'C')."""
-    s = atom_type.strip()
-    if len(s) >= 2 and s[0].isupper() and s[1].islower():
-        return s[:2]
-    return s[0] if s and s[0].isalpha() else s
+from q2mm.models.identifiers import (
+    _extract_element,
+    canonicalize_angle_env_id,
+    canonicalize_bond_env_id,
+)
 
 
 @dataclass
@@ -31,6 +28,7 @@ class BondParam:
     label: str = ""              # Human-readable label
     env_id: str = ""             # Environment ID for disambiguating same-element params
                                  # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
+    ff_row: int | None = None    # Source force-field row for exact legacy parity
 
     @property
     def key(self) -> tuple[str, str]:
@@ -45,6 +43,7 @@ class AngleParam:
     force_constant: float           # mdyn*A/rad^2
     label: str = ""
     env_id: str = ""             # Environment ID for disambiguating same-element params
+    ff_row: int | None = None    # Source force-field row for exact legacy parity
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -174,7 +173,7 @@ class ForceField:
 
             if param.ptype == "bf" and len(atom_types) >= 2:
                 elems = tuple(_extract_element(t) for t in atom_types[:2])
-                env_id = "-".join(atom_types[:2])
+                env_id = canonicalize_bond_env_id(atom_types[:2])
                 eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
                 bonds.append(BondParam(
                     elements=elems,
@@ -182,16 +181,17 @@ class ForceField:
                     force_constant=param.value,
                     label=f"MM3 row {param.ff_row}",
                     env_id=env_id,
+                    ff_row=param.ff_row,
                 ))
 
             elif param.ptype == "af" and len(atom_types) >= 2:
                 # Angle: extract center and outer elements
                 if len(atom_types) >= 3:
                     elems = tuple(_extract_element(t) for t in atom_types[:3])
-                    env_id = "-".join(atom_types[:3])
+                    env_id = canonicalize_angle_env_id(atom_types[:3])
                 else:
                     elems = (_extract_element(atom_types[0]), _extract_element(atom_types[1]), "?")
-                    env_id = "-".join(atom_types[:2])
+                    env_id = canonicalize_angle_env_id(atom_types[:2])
                 eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
                 angles.append(AngleParam(
                     elements=elems,
@@ -199,6 +199,7 @@ class ForceField:
                     force_constant=param.value,
                     label=f"MM3 row {param.ff_row}",
                     env_id=env_id,
+                    ff_row=param.ff_row,
                 ))
 
         return cls(
