@@ -7,8 +7,8 @@ import os
 import subprocess
 import numpy as np
 
-TINKER_BIN = r"C:\Users\ericc\tinker\bin-windows"
-TINKER_PARAMS = r"C:\Users\ericc\tinker\params\mm3.prm"
+TINKER_BIN = os.environ.get("TINKER_BIN", os.path.join(os.path.expanduser("~"), "tinker", "bin-windows"))
+TINKER_PARAMS = os.environ.get("TINKER_PARAMS", os.path.join(os.path.expanduser("~"), "tinker", "params", "mm3.prm"))
 QM_DIR = os.path.join(os.path.dirname(__file__), "qm-reference")
 MM_DIR = os.path.join(os.path.dirname(__file__), "mm-reference")
 os.makedirs(MM_DIR, exist_ok=True)

@@ -1,7 +1,8 @@
 """Compute F- energy and barrier height for literature comparison."""
+import os
 import psi4
 psi4.set_memory('1 GB')
-psi4.core.set_output_file('NUL', False)
+psi4.core.set_output_file(os.devnull, False)
 
 f_minus = psi4.geometry("""
     -1 1
