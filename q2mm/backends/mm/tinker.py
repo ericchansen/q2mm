@@ -227,24 +227,34 @@ class TinkerEngine(MMEngine):
         MM3 functional form headers, and only the bond/angle/vdW terms
         defined in the ForceField. This ensures Tinker evaluates exactly
         the same terms as OpenMM for cross-backend parity.
-        """
-        from q2mm.models.forcefield import ForceField
 
-        # Build element → type_number map from the atom_type_numbers used in .xyz
-        # Must use the same default type_map as _write_tinker_xyz
-        elem_to_type: dict[str, int] = {}
-        type_map = getattr(ff, "atom_type_map", None) or {
-            "C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25
+        Uses the same atom_type_numbers assigned to atoms in _write_tinker_xyz
+        to guarantee XYZ ↔ PRM consistency.
+
+        Note: This approach maps one Tinker type per element. Force fields
+        that distinguish same-element params by env_id should use the
+        template-based export path (source_format="tinker_prm").
+        """
+        # Build element → type_number map from the actual atom_type_numbers
+        # used in the .xyz file (guarantees XYZ ↔ PRM consistency).
+        _default_type_map = {
+            "C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13,
+            "N": 8, "O": 6, "S": 15, "P": 25,
         }
-        # Collect all unique types referenced by the FF
+        type_map = getattr(ff, "atom_type_map", None) or _default_type_map
+
+        # Derive elem_to_type from type_map (same source _write_tinker_xyz uses)
+        elem_to_type: dict[str, int] = {}
+        all_elements: set[str] = set()
         for b in ff.bonds:
-            for e in b.elements:
-                if e not in elem_to_type:
-                    elem_to_type[e] = type_map.get(e, len(elem_to_type) + 1)
+            all_elements.update(b.elements)
         for a in ff.angles:
-            for e in a.elements:
-                if e not in elem_to_type:
-                    elem_to_type[e] = type_map.get(e, len(elem_to_type) + 1)
+            all_elements.update(a.elements)
+        for vdw in ff.vdws:
+            if vdw.element:
+                all_elements.add(vdw.element)
+        for elem in all_elements:
+            elem_to_type[elem] = type_map.get(elem, 1)
 
         with open(prm_path, "w") as f:
             # MM3 functional form header (matches mm3.prm conventions)
@@ -282,7 +292,12 @@ class TinkerEngine(MMEngine):
 
             # vdW parameters
             for vdw in ff.vdws:
-                t = vdw.atom_type or elem_to_type.get(vdw.elements[0] if vdw.elements else "", 1)
+                # atom_type is a string (element or Tinker type label);
+                # convert to numeric Tinker type via elem_to_type
+                try:
+                    t = int(vdw.atom_type)
+                except (ValueError, TypeError):
+                    t = elem_to_type.get(vdw.element, 1)
                 f.write(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
 
     def _run_tinker(
