@@ -11,7 +11,7 @@ import pytest
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
-from q2mm.schrod_indep_filetypes import JaguarIn, MacroModel
+from q2mm.parsers import JaguarIn, MacroModel
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"

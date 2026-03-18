@@ -9,7 +9,7 @@ import sys
 import unittest
 import numpy as np
 from q2mm import constants
-from q2mm.schrod_indep_filetypes import FF, Structure
+from q2mm.parsers import FF, Structure
 
 src_dir = os.path.abspath("q2mm")
 sys.path.append(src_dir)

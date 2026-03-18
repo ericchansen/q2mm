@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from abc import abstractmethod
+import logging
+import logging.config
+import os
+from typing import List
+
+from q2mm import constants as co
+
+logging.config.dictConfig(co.LOG_SETTINGS)
+logger = logging.getLogger(__file__)
+
+
+class File:
+    """
+    Base for every other filetype class. Identical to filetypes.py version,
+    ported over for schrodinger independence in seminario.py
+    """
+
+    __slots__ = ["_lines", "path", "directory", "filename"]
+
+    def __init__(self, path: str):
+        """Instantiates a file object fro the file at the location path passed.
+
+        Populates the directory and filename properties as well.
+
+        Args:
+            path (str): location of the file
+        """
+        self._lines = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
+        # self.name = os.path.splitext(self.filename)[0]
+
+    @property
+    def lines(self) -> List[str]:
+        """Returns the lines of the file.
+
+        Returns:
+            List[str]: lines of the file
+        """
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path, lines=None):
+        """Writes lines to file at path.
+
+        Args:
+            path (str): location of file to write
+            lines (List[str], optional): lines to write to file. Defaults to None, which then writes self.lines.
+        """
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line)
+
+
+class FF:
+    """Base class for force field representations.
+
+    Attributes:
+        path: Path to the force field file.
+        data: List of Datum objects.
+        method: String describing method used to generate this FF.
+        params: List of Param objects.
+        score: Float objective function score.
+    """
+
+    __slots__ = ["path", "data", "method", "params", "score"]
+
+    def __init__(self, path=None, data=None, method=None, params=None, score=None):
+        self.path = path
+        self.data = data
+        self.method = method
+        self.params = params
+        self.score = score
+
+    def copy_attributes(self, ff):
+        ff.path = self.path
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}[{self.method}]({self.score})"
+
+    @abstractmethod
+    def get_DOFs_by_param(self, structs: List) -> dict:
+        raise NotImplementedError

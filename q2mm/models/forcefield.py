@@ -359,7 +359,7 @@ class ForceField:
         Parses bond and angle parameters from the substructure sections,
         extracting element letters from MM3 atom type codes.
         """
-        from q2mm.schrod_indep_filetypes import MM3 as MM3Parser
+        from q2mm.parsers.mm3 import MM3 as MM3Parser
 
         parser = MM3Parser(str(path))
         parser.import_ff()
@@ -425,7 +425,7 @@ class ForceField:
     @classmethod
     def from_tinker_prm(cls, path: str | Path) -> ForceField:
         """Load bond and angle parameters from a Tinker .prm file."""
-        from q2mm.datatypes import TinkerFF
+        from q2mm.parsers.tinker_ff import TinkerFF
 
         parser = TinkerFF(str(path))
         parser.import_ff()
@@ -513,7 +513,7 @@ class ForceField:
             template = self.source_path
 
         if template is not None:
-            from q2mm.datatypes import MM3
+            from q2mm.parsers.mm3 import MM3
 
             parser = MM3(str(template))
             parser.import_ff()
@@ -578,7 +578,7 @@ class ForceField:
             template = self.source_path
 
         if template is not None:
-            from q2mm.datatypes import TinkerFF
+            from q2mm.parsers.tinker_ff import TinkerFF
 
             parser = TinkerFF(str(template))
             parser.import_ff()
