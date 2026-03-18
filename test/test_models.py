@@ -327,6 +327,50 @@ class TestForceField:
         assert updated.radius == pytest.approx(1.55)
         assert updated.epsilon == pytest.approx(0.081)
 
+    def test_tinker_export_preserves_vdw_reduction(self, tmp_path):
+        """Regression: _update_tinker_vdw_lines must write match.reduction,
+        not copy the old tail from the file."""
+        prm_path = tmp_path / "vdw_reduction.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    "# Q2MM",
+                    "# OPT Synthetic",
+                    "vdw      H1   1.6200     0.0200     0.0000",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        ff = ForceField.from_tinker_prm(prm_path)
+        ff.vdws[0].reduction = 0.923
+
+        out_path = tmp_path / "updated_reduction.prm"
+        ff.to_tinker_prm(out_path)
+
+        roundtrip = ForceField.from_tinker_prm(out_path)
+        assert roundtrip.vdws[0].reduction == pytest.approx(0.923)
+
+    def test_generic_prm_amoeba_style_atom_records(self, tmp_path):
+        """Parser must handle AMOEBA-style atom records with a class column."""
+        prm_path = tmp_path / "amoeba_style.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    'atom          1    1    N     "Glycine N"        7    14.003    3',
+                    'atom          5    5    H     "Amide H"          1     1.008    1',
+                    "bond          1    5     5.0000     1.0100",
+                    "vdw           1   1.8200     0.1700",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        ff = ForceField.from_tinker_prm(prm_path)
+        assert len(ff.bonds) == 1
+        assert ff.bonds[0].elements == ("N", "H")
+        assert ff.vdws[0].element == "N"
+
 
 # ---- Seminario force constant estimation ----
 
