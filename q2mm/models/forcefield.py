@@ -310,6 +310,24 @@ class ForceField:
             vdw.epsilon = vec[idx + 1]
             idx += 2
 
+    def get_bounds(self) -> list[tuple[float, float]]:
+        """Get (min, max) bounds for each element of the param vector.
+
+        Matches the layout of :meth:`get_param_vector`:
+        bond (k, r0), angle (k, theta0), vdw (radius, epsilon).
+        """
+        bounds: list[tuple[float, float]] = []
+        for _b in self.bonds:
+            bounds.append((0.0, 50.0))  # force constant (mdyn/A)
+            bounds.append((0.5, 3.0))  # equilibrium length (A)
+        for _a in self.angles:
+            bounds.append((0.0, 5.0))  # force constant (mdyn*A/rad^2)
+            bounds.append((60.0, 180.0))  # equilibrium angle (deg)
+        for _v in self.vdws:
+            bounds.append((1.0, 4.0))  # radius (A)
+            bounds.append((0.001, 1.0))  # epsilon (kcal/mol)
+        return bounds
+
     def copy(self) -> ForceField:
         """Deep copy."""
         return copy.deepcopy(self)
