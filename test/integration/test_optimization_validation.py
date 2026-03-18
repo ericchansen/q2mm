@@ -11,6 +11,7 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -33,10 +34,24 @@ QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
 CH3F_XYZ = QM_REF / "ch3f-optimized.xyz"
 CH3F_HESS = QM_REF / "ch3f-hessian.npy"
 
-# Tinker availability — used to gate cross-backend tests
-_TINKER_DIR = Path(r"C:\Users\ericc\tinker\bin-windows")
-_TINKER_PRM = Path(r"C:\Users\ericc\tinker\params\mm3.prm")
-_HAS_TINKER = _TINKER_DIR.exists() and _TINKER_PRM.exists()
+# Tinker availability — auto-detect or use env vars
+_TINKER_DIR = Path(os.environ.get("TINKER_DIR", "")) if os.environ.get("TINKER_DIR") else None
+_TINKER_PRM = Path(os.environ.get("TINKER_PRM", "")) if os.environ.get("TINKER_PRM") else None
+
+if _TINKER_DIR is None or _TINKER_PRM is None:
+    # Auto-detect from TinkerEngine's built-in search
+    from q2mm.backends.mm.tinker import _find_tinker_dir
+
+    _auto_dir = _find_tinker_dir()
+    if _auto_dir and _TINKER_DIR is None:
+        _TINKER_DIR = Path(_auto_dir)
+    if _TINKER_DIR and _TINKER_PRM is None:
+        # Look for mm3.prm relative to bin dir (../params/mm3.prm)
+        _candidate = _TINKER_DIR.parent / "params" / "mm3.prm"
+        if _candidate.exists():
+            _TINKER_PRM = _candidate
+
+_HAS_TINKER = _TINKER_DIR is not None and _TINKER_DIR.exists() and _TINKER_PRM is not None and _TINKER_PRM.exists()
 
 
 def _tinker_engine():
