@@ -15,14 +15,12 @@ import copy
 import logging
 import numpy as np
 
+from q2mm.constants import AU_TO_MDYNA as HARTREE_BOHR2_TO_MDYNE_A
+from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.molecule import Q2MMMolecule, DetectedBond, DetectedAngle
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam
 
 logger = logging.getLogger(__name__)
-
-# Unit conversions
-HARTREE_BOHR2_TO_MDYNE_A = 15.569  # Hartree/Bohr^2 -> mdyn/A
-BOHR_TO_ANG = 0.529177
 
 
 def seminario_bond_fc(atom_i: int, atom_j: int,
@@ -212,13 +210,18 @@ def estimate_force_constants(
             k = seminario_bond_fc(
                 bond.atom_i, bond.atom_j, coords, hessian, au_units=au_hessian
             )
-            if k > 0 and not np.iscomplex(k):
+            if not np.iscomplex(k):
                 force_constants.append(k)
                 equilibria.append(bond.length)
+                if k < 0:
+                    logger.warning(
+                        f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): "
+                        f"negative FC = {k:.4f} (TS reaction coordinate?)"
+                    )
             else:
                 logger.warning(
                     f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): "
-                    f"negative/complex FC = {k:.4f} (TS reaction coordinate?)"
+                    f"complex FC = {k} — skipped"
                 )
 
         if force_constants:
@@ -244,12 +247,16 @@ def estimate_force_constants(
                 angle.atom_i, angle.atom_j, angle.atom_k,
                 coords, hessian, au_units=au_hessian
             )
-            if k > 0 and not np.iscomplex(k):
+            if not np.iscomplex(k):
                 force_constants.append(k)
                 equilibria.append(angle.value)
+                if k < 0:
+                    logger.warning(
+                        f"  Angle {angle.elements}: negative FC = {k:.4f}"
+                    )
             else:
                 logger.warning(
-                    f"  Angle {angle.elements}: negative/complex FC = {k:.4f}"
+                    f"  Angle {angle.elements}: complex FC = {k} — skipped"
                 )
 
         if force_constants:

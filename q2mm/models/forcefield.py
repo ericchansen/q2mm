@@ -14,6 +14,14 @@ from typing import Literal
 import numpy as np
 
 
+def _extract_element(atom_type: str) -> str:
+    """Extract element symbol from MM3 atom type (e.g., 'Cl1' -> 'Cl', 'C3' -> 'C')."""
+    s = atom_type.strip()
+    if len(s) >= 2 and s[0].isupper() and s[1].islower():
+        return s[:2]
+    return s[0] if s and s[0].isalpha() else s
+
+
 @dataclass
 class BondParam:
     """A bond force field parameter."""
@@ -63,7 +71,7 @@ class ForceField:
     Usage:
         ff = ForceField.from_mm3_fld("mm3.fld")
         ff = ForceField(bonds=[BondParam(('C', 'F'), 1.38, 5.0)])
-        ff.to_mm3_fld("output.fld")
+        # Export to MM3 .fld is planned but not yet implemented.
     """
     name: str = "Q2MM Force Field"
     bonds: list[BondParam] = field(default_factory=list)
@@ -72,7 +80,8 @@ class ForceField:
 
     @property
     def n_params(self) -> int:
-        return len(self.bonds) + len(self.angles) + len(self.torsions)
+        """Number of adjustable scalar parameters (2 per bond, 2 per angle)."""
+        return 2 * len(self.bonds) + 2 * len(self.angles) + len(self.torsions)
 
     def get_bond(self, elem1: str, elem2: str) -> BondParam | None:
         """Find bond parameter by element pair."""
@@ -137,18 +146,19 @@ class ForceField:
         bonds = []
         angles = []
 
+        # Pre-build lookup for equilibrium values by (ptype, ff_row)
+        eq_lookup = {}
+        for p in parser.params:
+            if p.ptype in ("be", "ae"):
+                eq_lookup[(p.ptype, p.ff_row)] = p.value
+
         for param in parser.params:
             # Extract element letters from atom type (e.g., 'C1' -> 'C', ' F' -> 'F')
             atom_types = [t.strip() for t in param.atom_types if t.strip() and t.strip() != '-']
 
             if param.ptype == "bf" and len(atom_types) >= 2:
-                elems = tuple(t[0] if t[0].isalpha() else t for t in atom_types[:2])
-                # Find matching be param for equilibrium
-                eq_val = 0.0
-                for p2 in parser.params:
-                    if p2.ptype == "be" and p2.ff_row == param.ff_row:
-                        eq_val = p2.value
-                        break
+                elems = tuple(_extract_element(t) for t in atom_types[:2])
+                eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
                 bonds.append(BondParam(
                     elements=elems,
                     equilibrium=eq_val,
@@ -159,14 +169,10 @@ class ForceField:
             elif param.ptype == "af" and len(atom_types) >= 2:
                 # Angle: extract center and outer elements
                 if len(atom_types) >= 3:
-                    elems = tuple(t[0] for t in atom_types[:3])
+                    elems = tuple(_extract_element(t) for t in atom_types[:3])
                 else:
-                    elems = (atom_types[0][0], atom_types[1][0], "?")
-                eq_val = 0.0
-                for p2 in parser.params:
-                    if p2.ptype == "ae" and p2.ff_row == param.ff_row:
-                        eq_val = p2.value
-                        break
+                    elems = (_extract_element(atom_types[0]), _extract_element(atom_types[1]), "?")
+                eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
                 angles.append(AngleParam(
                     elements=elems,
                     equilibrium=eq_val,

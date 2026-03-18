@@ -19,12 +19,17 @@ dependencies = [
 amber = [
     "parmed",
 ]
+qcel = [
+    "qcelemental",
+]
 dev = [
     "pytest",
     "ruff",
+    "qcelemental",
 ]
 all = [
     "parmed",
+    "qcelemental",
 ]
 
 [project.urls]
