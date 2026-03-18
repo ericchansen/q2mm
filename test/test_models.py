@@ -29,6 +29,8 @@ class TestExtractElement:
         assert _extract_element("Br") == "Br"
         assert _extract_element("Rh2") == "Rh"
         assert _extract_element("Pt") == "Pt"
+        assert _extract_element("RH1") == "Rh"
+        assert _extract_element("CL") == "Cl"
 
     def test_whitespace(self):
         assert _extract_element("  Cl1") == "Cl"

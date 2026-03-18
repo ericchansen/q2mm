@@ -10,6 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
 
+from q2mm.models.identifiers import (
+    _extract_element,
+    canonicalize_angle_env_id,
+    canonicalize_bond_env_id,
+)
+
 try:
     import qcelemental as qcel
     _HAS_QCEL = True
@@ -38,6 +44,8 @@ class DetectedBond:
     atom_j: int          # 0-based index
     elements: tuple[str, str]
     length: float        # Angstrom
+    env_id: str = ""
+    ff_row: int | None = None
 
     @property
     def element_pair(self) -> tuple[str, str]:
@@ -53,6 +61,8 @@ class DetectedAngle:
     atom_k: int          # 0-based (outer)
     elements: tuple[str, str, str]
     value: float         # degrees
+    env_id: str = ""
+    ff_row: int | None = None
 
     @property
     def element_triple(self) -> tuple[str, str, str]:
@@ -169,6 +179,75 @@ class Q2MMMolecule:
             multiplicity=multiplicity,
             name=name or path.stem,
             bond_tolerance=bond_tolerance,
+        )
+
+    @classmethod
+    def from_structure(
+        cls,
+        structure,
+        *,
+        charge: int = 0,
+        multiplicity: int = 1,
+        name: str = "",
+        bond_tolerance: float = 1.3,
+        hessian: np.ndarray | None = None,
+    ) -> Q2MMMolecule:
+        """Create from a legacy Structure while preserving bond/angle metadata."""
+        symbols = []
+        coords = []
+        for atom in structure.atoms:
+            atom_label = atom.atom_type_name or atom.element or ""
+            symbols.append(_extract_element(atom_label))
+            coords.append(atom.coords)
+
+        bonds = []
+        for bond in structure.bonds:
+            atoms = structure.get_atoms_in_DOF(bond)
+            atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
+            elements = tuple(_extract_element(atom_type) for atom_type in atom_types[:2])
+            length = bond.value
+            if length is None:
+                length = np.linalg.norm(atoms[0].coords - atoms[1].coords)
+            bonds.append(DetectedBond(
+                atom_i=bond.atom_nums[0] - 1,
+                atom_j=bond.atom_nums[1] - 1,
+                elements=elements,
+                length=float(length),
+                env_id=canonicalize_bond_env_id(atom_types),
+                ff_row=bond.ff_row,
+            ))
+
+        angles = []
+        for angle in structure.angles:
+            atoms = structure.get_atoms_in_DOF(angle)
+            atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
+            elements = tuple(_extract_element(atom_type) for atom_type in atom_types[:3])
+            angle_value = angle.value
+            if angle_value is None:
+                v1 = atoms[0].coords - atoms[1].coords
+                v2 = atoms[2].coords - atoms[1].coords
+                cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+                angle_value = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
+            angles.append(DetectedAngle(
+                atom_i=angle.atom_nums[0] - 1,
+                atom_j=angle.atom_nums[1] - 1,
+                atom_k=angle.atom_nums[2] - 1,
+                elements=elements,
+                value=float(angle_value),
+                env_id=canonicalize_angle_env_id(atom_types),
+                ff_row=angle.ff_row,
+            ))
+
+        return cls(
+            symbols=symbols,
+            geometry=np.array(coords, dtype=float),
+            charge=charge,
+            multiplicity=multiplicity,
+            name=name or structure.origin_name,
+            bond_tolerance=bond_tolerance,
+            hessian=hessian,
+            _bonds=bonds,
+            _angles=angles,
         )
 
     @classmethod

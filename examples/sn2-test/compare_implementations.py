@@ -133,20 +133,20 @@ else:
 print("\n--- Sub-block Hessian eigenvalue comparison ---")
 for i, j in bond_pairs:
     label = f"{symbols[i]}{i+1}-{symbols[j]}{j+1}"
-    
+
     # Upstream: uses eig (general)
     i3_up, j3_up = 3 * (old_atoms[i].index - 1), 3 * (old_atoms[j].index - 1)
     h_up = -hessian[i3_up:i3_up+3, j3_up:j3_up+3]
     evals_up = np.sort(np.linalg.eig(h_up)[0].real)
-    
+
     # New: also uses eig now (after fix)
     i3_nw, j3_nw = 3 * i, 3 * j
     h_nw = -hessian[i3_nw:i3_nw+3, j3_nw:j3_nw+3]
     evals_nw = np.sort(np.linalg.eig(h_nw)[0].real)
-    
+
     # Check sub-block symmetry
     asym = np.max(np.abs(h_up - h_up.T))
-    
+
     print(f"  {label}: asymmetry={asym:.2e}")
     print(f"    upstream eig: {evals_up}")
     print(f"    new eig:      {evals_nw}")
