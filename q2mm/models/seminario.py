@@ -23,53 +23,63 @@ from q2mm.models.forcefield import ForceField, BondParam, AngleParam
 logger = logging.getLogger(__name__)
 
 
-def seminario_bond_fc(atom_i: int, atom_j: int,
-                      coords: np.ndarray, hessian: np.ndarray,
-                      au_units: bool = True) -> float:
-    """Estimate bond stretching force constant via Seminario method.
+def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int,
+                           coords: np.ndarray, au_units: bool) -> float:
+    """Project a single Hessian sub-block onto the bond vector.
 
-    Projects the Hessian onto the bond vector using eigenvalue decomposition
-    of the sub-block Hessian.
-
-    Args:
-        atom_i, atom_j: 0-based atom indices
-        coords: Atomic coordinates, shape (N, 3) in Angstrom
-        hessian: Full Cartesian Hessian, shape (3N, 3N)
-        au_units: If True, Hessian is in Hartree/Bohr^2 (Gaussian/Psi4 default)
-
-    Returns:
-        Force constant in mdyn/A
+    Returns the projected force constant in atomic units (Hartree/Bohr^2)
+    or input units if au_units=False.
     """
-    # Convert coordinates to Bohr if Hessian is in atomic units
     if au_units:
         coords_work = coords / BOHR_TO_ANG
     else:
         coords_work = coords.copy()
 
-    # Bond unit vector
     r_vec = coords_work[atom_j] - coords_work[atom_i]
     r_len = np.linalg.norm(r_vec)
     if r_len < 1e-10:
         return 0.0
     r_hat = r_vec / r_len
 
-    # Extract the 3x3 sub-block Hessian for the atom pair
-    # H_ij = -d²E/(dr_i dr_j)  (off-diagonal block, negated)
     i3, j3 = 3 * atom_i, 3 * atom_j
     h_sub = -hessian[i3:i3 + 3, j3:j3 + 3]
 
     # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric)
     eigenvalues, eigenvectors = np.linalg.eig(h_sub)
-    # Use real parts (imaginary components are numerical noise for real Hessians)
     eigenvalues = eigenvalues.real
     eigenvectors = eigenvectors.real
 
-    # Project eigenvalues onto bond vector
-    # k_bond = sum_n (lambda_n * (e_n · r_hat)^2)
-    k_bond = 0.0
+    # Seminario projection: k = sum_n |lambda_n| * |e_n · r_hat|
+    # Using |dot| (not dot^2) to match upstream Q2MM and Seminario 1996
+    k = 0.0
     for n in range(3):
-        projection = np.dot(eigenvectors[:, n], r_hat) ** 2
-        k_bond += eigenvalues[n] * projection
+        k += eigenvalues[n] * abs(np.dot(eigenvectors[:, n], r_hat))
+    return k
+
+
+def seminario_bond_fc(atom_i: int, atom_j: int,
+                      coords: np.ndarray, hessian: np.ndarray,
+                      au_units: bool = True,
+                      dft_scaling: float = 0.963) -> float:
+    """Estimate bond stretching force constant via Seminario method.
+
+    Averages the i->j and j->i projections (bidirectional) to match
+    the original Seminario method and upstream Q2MM implementation.
+
+    Args:
+        atom_i, atom_j: 0-based atom indices
+        coords: Atomic coordinates, shape (N, 3) in Angstrom
+        hessian: Full Cartesian Hessian, shape (3N, 3N)
+        au_units: If True, Hessian is in Hartree/Bohr^2 (Gaussian/Psi4 default)
+        dft_scaling: Scaling factor for DFT Hessians (default 0.963)
+
+    Returns:
+        Force constant in mdyn/A (scaled)
+    """
+    # Bidirectional: compute i->j and j->i, then average
+    f_ij = _project_hessian_block(hessian, atom_i, atom_j, coords, au_units)
+    f_ji = _project_hessian_block(hessian, atom_j, atom_i, coords, au_units)
+    k_bond = 0.5 * (f_ij + f_ji) * dft_scaling
 
     # Convert to mdyn/A
     if au_units:
@@ -80,10 +90,12 @@ def seminario_bond_fc(atom_i: int, atom_j: int,
 
 def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
                        coords: np.ndarray, hessian: np.ndarray,
-                       au_units: bool = True) -> float:
+                       au_units: bool = True,
+                       dft_scaling: float = 0.963) -> float:
     """Estimate angle bending force constant via modified Seminario method.
 
     Uses the Q2MM approximation for angles (FUERZA overestimates by ~2x).
+    Uses |dot| projection and DFT scaling to match upstream Q2MM.
 
     Args:
         atom_i: outer atom (0-based)
@@ -92,9 +104,10 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
         coords: Atomic coordinates, shape (N, 3) in Angstrom
         hessian: Full Cartesian Hessian, shape (3N, 3N)
         au_units: If True, Hessian is in Hartree/Bohr^2
+        dft_scaling: Scaling factor for DFT Hessians (default 0.963)
 
     Returns:
-        Force constant in mdyn*A/rad^2
+        Force constant in mdyn*A/rad^2 (scaled)
     """
     if au_units:
         coords_work = coords / BOHR_TO_ANG
@@ -132,7 +145,7 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     u_kj = np.cross(n_hat, r_kj_hat)
     u_kj /= np.linalg.norm(u_kj)
 
-    # Sub-block Hessians
+    # Sub-block Hessians — using |dot| projection to match upstream
     i3, j3, k3 = 3 * atom_i, 3 * atom_j, 3 * atom_k
 
     # For i-j interaction
@@ -141,8 +154,7 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     evals_ij, evecs_ij = evals_ij.real, evecs_ij.real
     k_ij = 0.0
     for n in range(3):
-        proj = np.dot(evecs_ij[:, n], u_ij) ** 2
-        k_ij += evals_ij[n] * proj
+        k_ij += evals_ij[n] * abs(np.dot(evecs_ij[:, n], u_ij))
 
     # For k-j interaction
     h_kj = -hessian[k3:k3 + 3, j3:j3 + 3]
@@ -150,8 +162,7 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     evals_kj, evecs_kj = evals_kj.real, evecs_kj.real
     k_kj = 0.0
     for n in range(3):
-        proj = np.dot(evecs_kj[:, n], u_kj) ** 2
-        k_kj += evals_kj[n] * proj
+        k_kj += evals_kj[n] * abs(np.dot(evecs_kj[:, n], u_kj))
 
     # Combine: 1/k_angle = 1/(k_ij * r_ij^2) + 1/(k_kj * r_kj^2)
     # Q2MM approximation (avoids FUERZA's 2x overestimate for angles)
@@ -162,6 +173,9 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
         return 0.0
 
     k_angle = 1.0 / (1.0 / denom_ij + 1.0 / denom_kj)
+
+    # Apply DFT scaling
+    k_angle *= dft_scaling
 
     # Convert: Hartree/rad^2 -> mdyn*A/rad^2
     if au_units:
