@@ -153,15 +153,19 @@ class ScipyOptimizer:
         options: dict = {"maxiter": self.maxiter}
 
         # Method-specific convergence tolerance and step size
-        if self.method in ("Nelder-Mead", "Powell"):
+        if self.method == "Nelder-Mead":
             options["fatol"] = self.ftol
             options["xatol"] = self.ftol
+        elif self.method == "Powell":
+            options["ftol"] = self.ftol
+            options["xtol"] = self.ftol
+        elif self.method == "trust-constr":
+            options["gtol"] = self.ftol
         else:
             options["ftol"] = self.ftol
-            # Finite-difference step for gradient-based methods.
-            # Force field parameters have magnitudes ~0.5-10, so the
-            # default scipy eps (~1e-8) produces sub-machine-precision
-            # energy changes. A step of ~1e-3 is appropriate.
+
+        # Finite-difference step for gradient-based methods
+        if self.method not in ("Nelder-Mead", "Powell"):
             options["eps"] = self.eps
 
         # Only pass bounds for methods that support them

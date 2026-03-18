@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 
@@ -310,22 +310,40 @@ class ForceField:
             vdw.epsilon = vec[idx + 1]
             idx += 2
 
-    def get_bounds(self) -> list[tuple[float, float]]:
+    # Default bounds per parameter type (min, max)
+    DEFAULT_BOUNDS: ClassVar[dict[str, tuple[float, float]]] = {
+        "bond_k": (0.0, 50.0),
+        "bond_eq": (0.5, 3.0),
+        "angle_k": (0.0, 5.0),
+        "angle_eq": (30.0, 180.0),
+        "vdw_radius": (0.5, 5.0),
+        "vdw_epsilon": (0.001, 2.0),
+    }
+
+    def get_bounds(self, overrides: dict[str, tuple[float, float]] | None = None) -> list[tuple[float, float]]:
         """Get (min, max) bounds for each element of the param vector.
 
         Matches the layout of :meth:`get_param_vector`:
         bond (k, r0), angle (k, theta0), vdw (radius, epsilon).
+
+        Parameters
+        ----------
+        overrides : dict, optional
+            Override default bounds per type. Keys: ``bond_k``,
+            ``bond_eq``, ``angle_k``, ``angle_eq``, ``vdw_radius``,
+            ``vdw_epsilon``.
         """
+        b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
         bounds: list[tuple[float, float]] = []
-        for _b in self.bonds:
-            bounds.append((0.0, 50.0))  # force constant (mdyn/A)
-            bounds.append((0.5, 3.0))  # equilibrium length (A)
-        for _a in self.angles:
-            bounds.append((0.0, 5.0))  # force constant (mdyn*A/rad^2)
-            bounds.append((60.0, 180.0))  # equilibrium angle (deg)
-        for _v in self.vdws:
-            bounds.append((1.0, 4.0))  # radius (A)
-            bounds.append((0.001, 1.0))  # epsilon (kcal/mol)
+        for _bond in self.bonds:
+            bounds.append(b["bond_k"])
+            bounds.append(b["bond_eq"])
+        for _angle in self.angles:
+            bounds.append(b["angle_k"])
+            bounds.append(b["angle_eq"])
+        for _vdw in self.vdws:
+            bounds.append(b["vdw_radius"])
+            bounds.append(b["vdw_epsilon"])
         return bounds
 
     def copy(self) -> ForceField:

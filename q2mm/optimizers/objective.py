@@ -64,9 +64,9 @@ class ReferenceData:
         self,
         value: float,
         *,
+        data_idx: int,
         weight: float = 1.0,
         molecule_idx: int = 0,
-        data_idx: int = 0,
         label: str = "",
     ):
         self.values.append(
@@ -84,9 +84,9 @@ class ReferenceData:
         self,
         value: float,
         *,
+        data_idx: int,
         weight: float = 1.0,
         molecule_idx: int = 0,
-        data_idx: int = 0,
         label: str = "",
     ):
         self.values.append(
@@ -104,9 +104,9 @@ class ReferenceData:
         self,
         value: float,
         *,
+        data_idx: int,
         weight: float = 1.0,
         molecule_idx: int = 0,
-        data_idx: int = 0,
         label: str = "",
     ):
         self.values.append(
@@ -178,7 +178,10 @@ class ObjectiveFunction:
     def residuals(self, param_vector: np.ndarray) -> np.ndarray:
         """Compute weighted residual vector (for least-squares methods)."""
         self.forcefield.set_param_vector(param_vector)
-        return self._compute_residuals()
+        r = self._compute_residuals()
+        self.n_eval += 1
+        self.history.append(float(np.sum(r**2)))
+        return r
 
     def _compute_residuals(self) -> np.ndarray:
         """Compute weighted residuals for all reference observations."""
@@ -211,11 +214,27 @@ class ObjectiveFunction:
         if "frequency" in needed:
             result["frequencies"] = self.engine.frequencies(mol, self.forcefield)
 
-        if "bond_length" in needed:
-            result["bond_lengths"] = [b.length for b in mol.bonds]
+        if "bond_length" in needed or "bond_angle" in needed:
+            # Geometry observables require MM-minimized structures to be
+            # meaningful (the input geometry is fixed). Minimize first.
+            _energy, _atoms, opt_coords = self.engine.minimize(mol, self.forcefield)
+            import copy
 
-        if "bond_angle" in needed:
-            result["bond_angles"] = [a.angle for a in mol.angles]
+            opt_mol = copy.copy(mol)
+            object.__setattr__(opt_mol, "geometry", opt_coords)
+            object.__setattr__(opt_mol, "_bonds", None)
+            object.__setattr__(opt_mol, "_angles", None)
+            opt_mol = Q2MMMolecule(
+                symbols=mol.symbols,
+                geometry=opt_coords,
+                name=mol.name,
+                atom_types=list(mol.atom_types),
+                bond_tolerance=mol.bond_tolerance,
+            )
+            if "bond_length" in needed:
+                result["bond_lengths"] = [b.length for b in opt_mol.bonds]
+            if "bond_angle" in needed:
+                result["bond_angles"] = [a.value for a in opt_mol.angles]
 
         return result
 
@@ -227,17 +246,26 @@ class ObjectiveFunction:
         elif ref.kind == "frequency":
             freqs = calc["frequencies"]
             if ref.data_idx >= len(freqs):
-                return 0.0
+                raise IndexError(
+                    f"Frequency data_idx={ref.data_idx} out of range "
+                    f"(molecule has {len(freqs)} modes). Label: {ref.label!r}"
+                )
             return freqs[ref.data_idx]
         elif ref.kind == "bond_length":
             lengths = calc["bond_lengths"]
             if ref.data_idx >= len(lengths):
-                return 0.0
+                raise IndexError(
+                    f"Bond data_idx={ref.data_idx} out of range "
+                    f"(molecule has {len(lengths)} bonds). Label: {ref.label!r}"
+                )
             return lengths[ref.data_idx]
         elif ref.kind == "bond_angle":
             angles = calc["bond_angles"]
             if ref.data_idx >= len(angles):
-                return 0.0
+                raise IndexError(
+                    f"Angle data_idx={ref.data_idx} out of range "
+                    f"(molecule has {len(angles)} angles). Label: {ref.label!r}"
+                )
             return angles[ref.data_idx]
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")

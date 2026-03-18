@@ -188,6 +188,19 @@ class TestObjectiveFunction:
         score = obj(ff.get_param_vector())
         assert score == pytest.approx(0.0, abs=1e-6)
 
+    def test_out_of_range_data_idx_raises(self):
+        """Out-of-range data_idx raises IndexError, not silent zero."""
+        mol = _diatomic(0.74)
+        ff = _h2_ff(5.0, 0.74)
+        engine = OpenMMEngine()
+
+        ref = ReferenceData()
+        ref.add_frequency(1000.0, data_idx=999)
+
+        obj = ObjectiveFunction(ff, engine, [mol], ref)
+        with pytest.raises(IndexError, match="data_idx=999 out of range"):
+            obj(ff.get_param_vector())
+
 
 # ---- ForceField.get_bounds ----
 
