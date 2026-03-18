@@ -46,15 +46,16 @@ def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int,
 
     # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric)
     eigenvalues, eigenvectors = np.linalg.eig(h_sub)
-    eigenvalues = eigenvalues.real
-    eigenvectors = eigenvectors.real
+    # Keep complex eigenpairs through projection — only take real at the end
+    # (upstream seminario_sum uses np.abs on complex dot products)
 
-    # Seminario projection: k = sum_n |lambda_n| * |e_n · r_hat|
-    # Using |dot| (not dot^2) to match upstream Q2MM and Seminario 1996
+    # Seminario projection: k = sum_n lambda_n * |e_n · r_hat|
+    # np.abs handles complex dot products correctly (returns magnitude)
     k = 0.0
     for n in range(3):
-        k += eigenvalues[n] * abs(np.dot(eigenvectors[:, n], r_hat))
-    return k
+        k += eigenvalues[n] * np.abs(np.dot(eigenvectors[:, n], r_hat))
+    # Result should be real (imaginary parts cancel in conjugate pairs)
+    return k.real
 
 
 def seminario_bond_fc(atom_i: int, atom_j: int,
@@ -145,24 +146,24 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
     u_kj = np.cross(n_hat, r_kj_hat)
     u_kj /= np.linalg.norm(u_kj)
 
-    # Sub-block Hessians — using |dot| projection to match upstream
+    # Sub-block Hessians — keep complex eigenpairs through projection
     i3, j3, k3 = 3 * atom_i, 3 * atom_j, 3 * atom_k
 
     # For i-j interaction
     h_ij = -hessian[i3:i3 + 3, j3:j3 + 3]
     evals_ij, evecs_ij = np.linalg.eig(h_ij)
-    evals_ij, evecs_ij = evals_ij.real, evecs_ij.real
     k_ij = 0.0
     for n in range(3):
-        k_ij += evals_ij[n] * abs(np.dot(evecs_ij[:, n], u_ij))
+        k_ij += evals_ij[n] * np.abs(np.dot(evecs_ij[:, n], u_ij))
+    k_ij = k_ij.real
 
     # For k-j interaction
     h_kj = -hessian[k3:k3 + 3, j3:j3 + 3]
     evals_kj, evecs_kj = np.linalg.eig(h_kj)
-    evals_kj, evecs_kj = evals_kj.real, evecs_kj.real
     k_kj = 0.0
     for n in range(3):
-        k_kj += evals_kj[n] * abs(np.dot(evecs_kj[:, n], u_kj))
+        k_kj += evals_kj[n] * np.abs(np.dot(evecs_kj[:, n], u_kj))
+    k_kj = k_kj.real
 
     # Combine: 1/k_angle = 1/(k_ij * r_ij^2) + 1/(k_kj * r_kj^2)
     # Q2MM approximation (avoids FUERZA's 2x overestimate for angles)
