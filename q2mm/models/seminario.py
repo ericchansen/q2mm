@@ -58,8 +58,11 @@ def seminario_bond_fc(atom_i: int, atom_j: int,
     i3, j3 = 3 * atom_i, 3 * atom_j
     h_sub = -hessian[i3:i3 + 3, j3:j3 + 3]
 
-    # Eigenvalue decomposition
-    eigenvalues, eigenvectors = np.linalg.eigh(h_sub)
+    # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric)
+    eigenvalues, eigenvectors = np.linalg.eig(h_sub)
+    # Use real parts (imaginary components are numerical noise for real Hessians)
+    eigenvalues = eigenvalues.real
+    eigenvectors = eigenvectors.real
 
     # Project eigenvalues onto bond vector
     # k_bond = sum_n (lambda_n * (e_n · r_hat)^2)
@@ -134,7 +137,8 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
 
     # For i-j interaction
     h_ij = -hessian[i3:i3 + 3, j3:j3 + 3]
-    evals_ij, evecs_ij = np.linalg.eigh(h_ij)
+    evals_ij, evecs_ij = np.linalg.eig(h_ij)
+    evals_ij, evecs_ij = evals_ij.real, evecs_ij.real
     k_ij = 0.0
     for n in range(3):
         proj = np.dot(evecs_ij[:, n], u_ij) ** 2
@@ -142,7 +146,8 @@ def seminario_angle_fc(atom_i: int, atom_j: int, atom_k: int,
 
     # For k-j interaction
     h_kj = -hessian[k3:k3 + 3, j3:j3 + 3]
-    evals_kj, evecs_kj = np.linalg.eigh(h_kj)
+    evals_kj, evecs_kj = np.linalg.eig(h_kj)
+    evals_kj, evecs_kj = evals_kj.real, evecs_kj.real
     k_kj = 0.0
     for n in range(3):
         proj = np.dot(evecs_kj[:, n], u_kj) ** 2

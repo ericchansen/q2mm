@@ -193,13 +193,15 @@ class Q2MMMolecule:
             raise ImportError("qcelemental required: pip install qcelemental")
         coords_bohr = self.geometry / qcel.constants.bohr2angstroms
         conn = [(b.atom_i, b.atom_j, 1) for b in self.bonds]
-        return qcel.models.Molecule(
-            symbols=self.symbols,
-            geometry=coords_bohr.flatten().tolist(),
-            molecular_charge=self.charge,
-            molecular_multiplicity=self.multiplicity,
-            connectivity=conn,
-        )
+        kwargs = {
+            "symbols": self.symbols,
+            "geometry": coords_bohr.flatten().tolist(),
+            "molecular_charge": self.charge,
+            "molecular_multiplicity": self.multiplicity,
+        }
+        if conn:
+            kwargs["connectivity"] = conn
+        return qcel.models.Molecule(**kwargs)
 
     def with_hessian(self, hessian: np.ndarray) -> Q2MMMolecule:
         """Return a copy with Hessian attached."""
