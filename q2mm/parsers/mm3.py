@@ -37,7 +37,7 @@ class MM3(FF):
 
     __slots__ = ["smiles", "sub_names", "_atom_types", "_lines", "atom_type_equivalencies"]
 
-    def __init__(self, path=None, data=None, method=None, params: list[Param] = None, score=None):
+    def __init__(self, path=None, data=None, method=None, params: list[Param] | None = None, score=None):
         super().__init__(path, data, method, params, score)
         self.smiles = []
         self.sub_names = []
