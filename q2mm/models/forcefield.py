@@ -182,13 +182,20 @@ class AngleParam:
 
 @dataclass
 class TorsionParam:
-    """A torsion/dihedral force field parameter."""
+    """A torsion/dihedral force field parameter.
+
+    Each object represents a single Fourier component (V_n).  An MM3
+    torsion line with V1, V2, V3 produces three ``TorsionParam``
+    objects with ``periodicity`` 1, 2, 3 respectively.
+    """
 
     elements: tuple[str, str, str, str]
     periodicity: int = 1
     force_constant: float = 0.0  # kcal/mol
     phase: float = 0.0  # degrees
     label: str = ""
+    env_id: str = ""  # Environment ID for disambiguating same-element params
+    ff_row: int | None = None  # Source force-field row for legacy parity
 
 
 @dataclass
@@ -235,10 +242,10 @@ class ForceField:
     def n_params(self) -> int:
         """Number of adjustable scalar parameters in get_param_vector().
 
-        Currently: 2 per bond (k, r0) + 2 per angle (k, theta0).
-        Torsions not yet included in the parameter vector.
+        Layout: 2 per bond (k, r0) + 2 per angle (k, theta0)
+        + 1 per torsion (k) + 2 per vdw (radius, epsilon).
         """
-        return 2 * len(self.bonds) + 2 * len(self.angles) + 2 * len(self.vdws)
+        return 2 * len(self.bonds) + 2 * len(self.angles) + len(self.torsions) + 2 * len(self.vdws)
 
     def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
         """Find bond parameter by element pair and optional environment ID."""
@@ -279,17 +286,34 @@ class ForceField:
                 return matches[0]
         return None
 
+    def get_torsion(
+        self, elem1: str, elem2: str, elem3: str, elem4: str, periodicity: int | None = None, env_id: str = ""
+    ) -> TorsionParam | None:
+        """Find torsion parameter by element quad and optional periodicity/env_id."""
+        target = (elem1, elem2, elem3, elem4)
+        target_rev = (elem4, elem3, elem2, elem1)
+        for t in self.torsions:
+            if t.elements not in (target, target_rev):
+                continue
+            if periodicity is not None and t.periodicity != periodicity:
+                continue
+            if env_id and t.env_id and t.env_id != env_id:
+                continue
+            return t
+        return None
+
     def get_param_vector(self) -> np.ndarray:
         """Get all adjustable parameters as a flat vector.
 
-        Order: bond force constants, bond equilibria,
-               angle force constants, angle equilibria.
+        Order: bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon).
         """
         values = []
         for b in self.bonds:
             values.extend([b.force_constant, b.equilibrium])
         for a in self.angles:
             values.extend([a.force_constant, a.equilibrium])
+        for t in self.torsions:
+            values.append(t.force_constant)
         for vdw in self.vdws:
             values.extend([vdw.radius, vdw.epsilon])
         return np.array(values)
@@ -307,17 +331,23 @@ class ForceField:
             a.force_constant = vec[idx]
             a.equilibrium = vec[idx + 1]
             idx += 2
+        for t in self.torsions:
+            t.force_constant = vec[idx]
+            idx += 1
         for vdw in self.vdws:
             vdw.radius = vec[idx]
             vdw.epsilon = vec[idx + 1]
             idx += 2
 
-    # Default bounds per parameter type (min, max)
+    # Default bounds per parameter type (min, max).
+    # bond_k allows negative values for transition-state force fields (TSFF),
+    # where reaction-coordinate bonds have negative force constants.
     DEFAULT_BOUNDS: ClassVar[dict[str, tuple[float, float]]] = {
-        "bond_k": (0.0, 50.0),
+        "bond_k": (-50.0, 50.0),
         "bond_eq": (0.5, 3.0),
-        "angle_k": (0.0, 5.0),
+        "angle_k": (-10.0, 10.0),
         "angle_eq": (30.0, 180.0),
+        "torsion_k": (-20.0, 20.0),
         "vdw_radius": (0.5, 5.0),
         "vdw_epsilon": (0.001, 2.0),
     }
@@ -326,14 +356,14 @@ class ForceField:
         """Get (min, max) bounds for each element of the param vector.
 
         Matches the layout of :meth:`get_param_vector`:
-        bond (k, r0), angle (k, theta0), vdw (radius, epsilon).
+        bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon).
 
         Parameters
         ----------
         overrides : dict, optional
             Override default bounds per type. Keys: ``bond_k``,
-            ``bond_eq``, ``angle_k``, ``angle_eq``, ``vdw_radius``,
-            ``vdw_epsilon``.
+            ``bond_eq``, ``angle_k``, ``angle_eq``, ``torsion_k``,
+            ``vdw_radius``, ``vdw_epsilon``.
         """
         b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
         bounds: list[tuple[float, float]] = []
@@ -343,6 +373,8 @@ class ForceField:
         for _angle in self.angles:
             bounds.append(b["angle_k"])
             bounds.append(b["angle_eq"])
+        for _torsion in self.torsions:
+            bounds.append(b["torsion_k"])
         for _vdw in self.vdws:
             bounds.append(b["vdw_radius"])
             bounds.append(b["vdw_epsilon"])

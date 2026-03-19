@@ -2,6 +2,26 @@
 
 Wraps the ForceField ↔ MM-engine ↔ reference-data loop into a single
 callable that :func:`scipy.optimize.minimize` can drive.
+
+Scoring approach
+----------------
+This module uses **raw weighted residuals** (modern approach):
+
+.. math:: r_i = w_i (x_{ref,i} - x_{calc,i})
+
+The objective value is ``sum(r_i**2)``.  This is the standard form expected
+by ``scipy.optimize.least_squares`` and gradient-based minimizers.
+
+The legacy code in ``q2mm.optimizers.scoring`` uses a different normalisation
+inherited from upstream ``compare.py``:
+
+- Energies are zero-referenced via ``correlate_energies()`` before scoring
+- A denominator based on the *total* count of energy-type data points is
+  applied (see ``compare_data()``).
+
+For migration validation, use :func:`q2mm.optimizers.scoring.compare_data`
+directly — it is importable and usable standalone to cross-check scores
+against the upstream code path.
 """
 
 from __future__ import annotations
@@ -23,7 +43,7 @@ from q2mm.models.molecule import Q2MMMolecule
 class ReferenceValue:
     """A single reference observation (QM or experimental)."""
 
-    kind: Literal["energy", "frequency", "bond_length", "bond_angle"]
+    kind: Literal["energy", "frequency", "bond_length", "bond_angle", "torsion_angle"]
     value: float
     weight: float = 1.0
     label: str = ""
@@ -130,9 +150,58 @@ class ReferenceData:
             )
         )
 
+    def add_torsion_angle(
+        self,
+        value: float,
+        *,
+        data_idx: int = -1,
+        atom_indices: tuple[int, int, int, int] | None = None,
+        weight: float = 1.0,
+        molecule_idx: int = 0,
+        label: str = "",
+    ):
+        if atom_indices is None and data_idx < 0:
+            raise ValueError("Either atom_indices or data_idx must be provided for torsion_angle.")
+        self.values.append(
+            ReferenceValue(
+                kind="torsion_angle",
+                value=value,
+                weight=weight,
+                molecule_idx=molecule_idx,
+                data_idx=max(data_idx, 0),
+                atom_indices=atom_indices,
+                label=label,
+            )
+        )
+
     @property
     def n_observations(self) -> int:
         return len(self.values)
+
+
+# ---- Geometry helpers ----
+
+
+def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
+    """Compute dihedral angle (degrees) for four points.
+
+    Uses the atan2 formulation that returns values in [-180, 180].
+    """
+    b1 = np.asarray(p1) - np.asarray(p0)
+    b2 = np.asarray(p2) - np.asarray(p1)
+    b3 = np.asarray(p3) - np.asarray(p2)
+    n1 = np.cross(b1, b2)
+    n2 = np.cross(b2, b3)
+    n1_norm = np.linalg.norm(n1)
+    n2_norm = np.linalg.norm(n2)
+    if n1_norm < 1e-10 or n2_norm < 1e-10:
+        return 0.0
+    n1 = n1 / n1_norm
+    n2 = n2 / n2_norm
+    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
+    x = float(np.dot(n1, n2))
+    y = float(np.dot(m1, n2))
+    return float(np.degrees(np.arctan2(y, x)))
 
 
 # ---- Objective function ----
@@ -209,7 +278,11 @@ class ObjectiveFunction:
 
             calc = calc_cache[mol_idx]
             calc_value = self._extract_value(calc, ref)
-            residual = ref.weight * (ref.value - calc_value)
+            diff = ref.value - calc_value
+            # Torsion angles wrap around 360°
+            if ref.kind == "torsion_angle":
+                diff = (diff + 180.0) % 360.0 - 180.0
+            residual = ref.weight * diff
             residuals.append(residual)
 
         return np.array(residuals)
@@ -244,7 +317,7 @@ class ObjectiveFunction:
         if "frequency" in needed:
             result["frequencies"] = self.engine.frequencies(structure, self.forcefield)
 
-        if "bond_length" in needed or "bond_angle" in needed:
+        if "bond_length" in needed or "bond_angle" in needed or "torsion_angle" in needed:
             # Geometry observables require MM-minimized structures to be
             # meaningful (the input geometry is fixed). Minimize first.
             # Pass the raw molecule (not cached handle) because minimize()
@@ -265,6 +338,8 @@ class ObjectiveFunction:
             if "bond_angle" in needed:
                 result["bond_angles"] = [a.value for a in opt_mol.angles]
                 result["bond_angles_by_atoms"] = {(a.atom_i, a.atom_j, a.atom_k): a.value for a in opt_mol.angles}
+            if "torsion_angle" in needed:
+                result["torsion_coords"] = opt_coords
 
         return result
 
@@ -322,6 +397,16 @@ class ObjectiveFunction:
                     f"(molecule has {len(angles)} angles). Label: {ref.label!r}"
                 )
             return angles[ref.data_idx]
+        elif ref.kind == "torsion_angle":
+            if ref.atom_indices is None or len(ref.atom_indices) < 4:
+                raise ValueError(f"torsion_angle requires atom_indices with 4 atoms. Label: {ref.label!r}")
+            coords = calc["torsion_coords"]
+            return _dihedral_angle(
+                coords[ref.atom_indices[0]],
+                coords[ref.atom_indices[1]],
+                coords[ref.atom_indices[2]],
+                coords[ref.atom_indices[3]],
+            )
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 

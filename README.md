@@ -100,6 +100,24 @@ relevant validation case passes.
 The current OpenMM backend supports MM3-style bonded terms plus the primary
 atom-type vdW table carried by MM3/Tinker force fields.
 
+## Optimization Methods
+
+The refactored optimizer uses `scipy.optimize` and supports:
+
+| Method | Type | Best for |
+|--------|------|----------|
+| `L-BFGS-B` | Quasi-Newton | Smooth problems (default) |
+| `Nelder-Mead` | Simplex | Derivative-free, robust |
+| `trust-constr` | Trust-region | Constrained optimization |
+| `Powell` | Direction-set | Derivative-free |
+| `least_squares` | Levenberg-Marquardt | Residual-based fitting |
+
+The upstream code's five custom gradient methods (`central_diff`,
+`forward_diff`, `lstsq`, `lagrange`, `svd`) are **not ported** as
+standalone functions — scipy provides equivalent or superior
+implementations.  See `q2mm/optimizers/scipy_opt.py` docstring for the
+detailed mapping.  Legacy code is preserved in `q2mm/legacy/`.
+
 ## Citations
 
 If you use Q2MM in your research, please cite the relevant publications:

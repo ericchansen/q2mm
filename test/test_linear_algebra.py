@@ -71,9 +71,28 @@ class TestLinearAlgebra(unittest.TestCase):
         ]
         np.testing.assert_allclose(
             multi_neg_evals_repl,
-            linear_algebra.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True),
+            linear_algebra.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
             err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
         )
+
+    def test_multi_neg_eigenvalue_strict_raises(self):
+        """Multiple negative eigenvalues should raise ValueError by default."""
+        multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
+        with self.assertRaises(ValueError, msg="Should raise on multiple negative eigenvalues"):
+            linear_algebra.replace_neg_eigenvalue(multi_neg)
+
+    def test_multi_neg_eigenvalue_nonstrict_warns(self):
+        """Multiple negative eigenvalues with strict=False should warn, not raise."""
+        import warnings
+
+        multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = linear_algebra.replace_neg_eigenvalue(multi_neg, strict=False)
+            self.assertEqual(len(w), 1)
+            self.assertIn("negative eigenvalues", str(w[0].message))
+        # Most negative (-5.0) should be replaced
+        self.assertGreater(result[0], 0.0)
 
     def test_reform_hessian(self):
         evals, evecs = linear_algebra.decompose(example_sq3)
