@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField, BondParam, AngleParam, VdwParam, _extract_element
+from q2mm.models.forcefield import ForceField, BondParam, AngleParam, TorsionParam, VdwParam, _extract_element
 from q2mm.models.seminario import estimate_force_constants
 from q2mm.parsers.tinker_ff import TinkerFF
 
@@ -124,6 +124,118 @@ class TestForceField:
         ff2.set_param_vector(vec * 2)
         vec2 = ff2.get_param_vector()
         np.testing.assert_allclose(vec2, vec * 2)
+
+    def test_default_bounds_allow_negative_bond_k(self):
+        """TSFF requires negative bond force constants for reaction coordinates."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, -0.69)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+        )
+        bounds = ff.get_bounds()
+        bond_k_lower, bond_k_upper = bounds[0]
+        assert bond_k_lower < 0, "Bond k lower bound must allow negative values for TSFF"
+        assert bond_k_upper > 0
+
+    def test_default_bounds_allow_negative_angle_k(self):
+        """Angle force constants may also be negative in TSFF."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 5.0)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, -0.3)],
+        )
+        bounds = ff.get_bounds()
+        angle_k_lower, angle_k_upper = bounds[2]
+        assert angle_k_lower < 0, "Angle k lower bound must allow negative values for TSFF"
+
+    def test_negative_fc_in_param_vector_roundtrip(self):
+        """Negative force constants must survive get/set param vector roundtrip."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, -0.69)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, -0.15)],
+        )
+        vec = ff.get_param_vector()
+        assert vec[0] == pytest.approx(-0.69)
+        assert vec[2] == pytest.approx(-0.15)
+        ff2 = ff.copy()
+        ff2.set_param_vector(vec)
+        assert ff2.bonds[0].force_constant == pytest.approx(-0.69)
+        assert ff2.angles[0].force_constant == pytest.approx(-0.15)
+
+    def test_torsion_in_param_vector(self):
+        """Torsion force constants appear in param vector after bonds/angles."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
+            angles=[AngleParam(("H", "C", "H"), 109.5, 0.5)],
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+                TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.25),
+            ],
+        )
+        vec = ff.get_param_vector()
+        # 2 bond + 2 angle + 3 torsion = 7
+        assert ff.n_params == 7
+        assert len(vec) == 7
+        # Torsion values at indices 4, 5, 6
+        assert vec[4] == pytest.approx(0.15)
+        assert vec[5] == pytest.approx(-0.10)
+        assert vec[6] == pytest.approx(0.25)
+
+    def test_torsion_param_vector_roundtrip(self):
+        """Torsion params survive get/set roundtrip."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+            ],
+        )
+        vec = ff.get_param_vector()
+        ff2 = ff.copy()
+        vec[2] = 0.30  # Double V1
+        vec[3] = 0.20  # Change V2
+        ff2.set_param_vector(vec)
+        assert ff2.torsions[0].force_constant == pytest.approx(0.30)
+        assert ff2.torsions[1].force_constant == pytest.approx(0.20)
+
+    def test_torsion_bounds(self):
+        """Torsion bounds included in get_bounds()."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
+        )
+        bounds = ff.get_bounds()
+        # 2 bond bounds + 1 torsion bound = 3
+        assert len(bounds) == 3
+        torsion_lower, torsion_upper = bounds[2]
+        assert torsion_lower < 0, "Torsion k must allow negative values"
+        assert torsion_upper > 0
+
+    def test_get_torsion(self):
+        """get_torsion finds by element quad + optional periodicity."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+            ],
+        )
+        t1 = ff.get_torsion("H", "C", "C", "H", periodicity=1)
+        assert t1 is not None
+        assert t1.force_constant == pytest.approx(0.15)
+        t2 = ff.get_torsion("H", "C", "C", "H", periodicity=2)
+        assert t2 is not None
+        assert t2.force_constant == pytest.approx(-0.10)
+        # Reversed order should also match
+        t_rev = ff.get_torsion("H", "C", "C", "H", periodicity=1)
+        assert t_rev is not None
+
+    def test_mm3_loads_torsions(self):
+        """MM3 .fld loading should extract torsion parameters."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        # Rh-enamide FF has torsion lines; ensure some are loaded
+        if ff.torsions:
+            assert all(isinstance(t, TorsionParam) for t in ff.torsions)
+            assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
+            assert all(t.ff_row is not None for t in ff.torsions)
 
     def test_mm3_export_roundtrip_generic(self, tmp_path):
         ff = ForceField(

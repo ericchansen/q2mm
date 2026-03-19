@@ -184,8 +184,14 @@ def correlate_energies(r_data, c_data):
 
 
 def select_group_of_energies(data):
-    """Yield index arrays for each group of energies in the dataset."""
-    for energy_type in ["e", "eo"]:
+    """Yield index arrays for each group of energies in the dataset.
+
+    Handles all energy types: relative (``e``, ``eo``) and absolute
+    (``ea``, ``eao``).  Previously only ``e``/``eo`` were iterated,
+    so ``ea``/``eao`` silently passed through ``correlate_energies``
+    uncorrelated — a bug inherited from upstream.
+    """
+    for energy_type in ["e", "eo", "ea", "eao"]:
         indices = np.where([x.typ == energy_type for x in data])[0]
         unique_group_nums = set([x.idx_1 for x in data[indices]])
         for unique_group_num in unique_group_nums:

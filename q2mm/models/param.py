@@ -87,7 +87,8 @@ class Param:
             List[float]: [minimum_value, maximum_value]
         """
         if self._allowed_range is None and self.ptype is not None:
-            if self.ptype in ["q", "df"]:
+            if self.ptype in ["q", "df", "bf", "af"]:
+                # bf/af allow negative for transition-state force fields (TSFF)
                 self._allowed_range = [-float("inf"), float("inf")]
             else:
                 self._allowed_range = [0.0, float("inf")]

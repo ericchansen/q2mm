@@ -3,6 +3,29 @@
 Wraps :func:`scipy.optimize.minimize` and :func:`scipy.optimize.least_squares`
 with sensible defaults for force field optimization, bounds from the
 :class:`~q2mm.models.forcefield.ForceField` model, and convergence tracking.
+
+Migration note — upstream optimization methods
+-----------------------------------------------
+The upstream Q2MM code provided five gradient-based methods
+(``gradient.py``):
+
+- **central_diff** — central finite-difference gradient.  Equivalent to
+  scipy L-BFGS-B / trust-constr with ``eps`` finite-difference step.
+- **forward_diff** — forward finite-difference gradient.  Approximated by
+  scipy when using ``'2-point'`` in ``jac_options``.
+- **lstsq** — NumPy least-squares solve (``np.linalg.lstsq``).  Use
+  ``scipy.optimize.least_squares(method='lm')`` for the same capability
+  with better convergence control.
+- **lagrange** — Lagrange multiplier constrained optimization.  Use
+  ``scipy.optimize.minimize(method='trust-constr', constraints=...)``
+  for constrained problems.
+- **svd** — SVD-based parameter update.  Handled internally by scipy's
+  trust-region and Levenberg-Marquardt solvers.
+
+These are *not* ported as standalone functions because scipy provides
+equivalent or superior implementations with better numerical stability,
+convergence diagnostics, and bounds support.  The legacy code is preserved
+in ``q2mm/legacy/`` for reference.
 """
 
 from __future__ import annotations

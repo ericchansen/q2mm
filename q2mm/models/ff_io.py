@@ -13,6 +13,7 @@ from q2mm.models.forcefield import (
     AngleParam,
     BondParam,
     ForceField,
+    TorsionParam,
     VdwParam,
     _build_angle_maps,
     _build_bond_maps,
@@ -53,6 +54,7 @@ def load_mm3_fld(path: str | Path) -> ForceField:
 
     bonds = []
     angles = []
+    torsions = []
     vdws = _parse_mm3_vdw_params(Path(path))
 
     # Pre-build lookup for equilibrium values by (ptype, ff_row)
@@ -100,10 +102,26 @@ def load_mm3_fld(path: str | Path) -> ForceField:
                 )
             )
 
+        elif param.ptype == "df" and len(atom_types) >= 4:
+            elems = tuple(_extract_element(t) for t in atom_types[:4])
+            env_id = "-".join(t.strip() for t in atom_types[:4])
+            periodicity = getattr(param, "ff_col", 1)
+            torsions.append(
+                TorsionParam(
+                    elements=elems,
+                    periodicity=periodicity,
+                    force_constant=param.value,
+                    label=f"MM3 row {param.ff_row} V{periodicity}",
+                    env_id=env_id,
+                    ff_row=param.ff_row,
+                )
+            )
+
     return ForceField(
         name=f"MM3 from {Path(path).name}",
         bonds=bonds,
         angles=angles,
+        torsions=torsions,
         vdws=vdws,
         source_path=Path(path),
         source_format="mm3_fld",
@@ -149,6 +167,8 @@ def save_mm3_fld(
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
                     param.value = angle.force_constant if param.ptype == "af" else angle.equilibrium
+            elif param.ptype == "df":
+                _update_torsion_param(param, ff.torsions)
 
         updated_lines = list(parser.lines)
         parser.export_ff(path=str(output_path), params=updated_params, lines=updated_lines)
@@ -197,6 +217,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
 
     bonds = []
     angles = []
+    torsions = []
     vdws = _parse_tinker_vdw_params(Path(path))
 
     eq_lookup: dict[tuple[str, int], float] = {}
@@ -235,11 +256,26 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                     ff_row=param.ff_row,
                 )
             )
+        elif param.ptype == "df" and len(atom_types) >= 4:
+            elems = tuple(_extract_element(t) for t in atom_types[:4])
+            env_id = "-".join(t.strip() for t in atom_types[:4])
+            periodicity = getattr(param, "ff_col", 1)
+            torsions.append(
+                TorsionParam(
+                    elements=elems,
+                    periodicity=periodicity,
+                    force_constant=param.value,
+                    label=f"Tinker row {param.ff_row} V{periodicity}",
+                    env_id=env_id,
+                    ff_row=param.ff_row,
+                )
+            )
 
     return ForceField(
         name=f"Tinker from {Path(path).name}",
         bonds=bonds,
         angles=angles,
+        torsions=torsions,
         vdws=vdws,
         source_path=Path(path),
         source_format="tinker_prm",
@@ -286,6 +322,8 @@ def save_tinker_prm(
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
                     param.value = angle.equilibrium
+            elif param.ptype == "df":
+                _update_torsion_param(param, ff.torsions)
 
         updated_lines = list(parser.lines)
         parser.export_ff(path=str(output_path), params=updated_params, lines=updated_lines)
@@ -310,3 +348,16 @@ def save_tinker_prm(
         lines.append(_format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction))
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path
+
+
+def _update_torsion_param(param, torsions: list[TorsionParam]) -> None:
+    """Update a legacy ``df`` param from the ForceField's torsion list.
+
+    Matches by ``ff_row`` + ``ff_col`` (periodicity).
+    """
+    periodicity = getattr(param, "ff_col", 1)
+    ff_row = getattr(param, "ff_row", None)
+    for t in torsions:
+        if t.ff_row == ff_row and t.periodicity == periodicity:
+            param.value = t.force_constant
+            return
