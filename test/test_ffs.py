@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from q2mm import constants as co
-from q2mm import datatypes
+from q2mm.parsers.mm3 import MM3
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ FF_PATH = REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
 
 class TestMM3Import(unittest.TestCase):
     def setUp(self):
-        self.ff = datatypes.MM3(str(FF_PATH))
+        self.ff = MM3(str(FF_PATH))
         self.ff.import_ff()
 
     def test_has_substructures(self):
@@ -34,7 +34,7 @@ class TestMM3Import(unittest.TestCase):
 
 class TestMM3Export(unittest.TestCase):
     def setUp(self):
-        self.ff = datatypes.MM3(str(FF_PATH))
+        self.ff = MM3(str(FF_PATH))
         self.ff.import_ff()
         with open(FF_PATH) as f:
             self.ff.lines = f.readlines()
@@ -48,12 +48,12 @@ class TestMM3Export(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def test_export_roundtrip(self):
-        mod_ff = datatypes.MM3(str(self.test_fld))
+        mod_ff = MM3(str(self.test_fld))
         mod_ff.import_ff()
         self.assertEqual(mod_ff.params[0].value, 999.0)
 
     def test_export_preserves_other_params(self):
-        mod_ff = datatypes.MM3(str(self.test_fld))
+        mod_ff = MM3(str(self.test_fld))
         mod_ff.import_ff()
         for orig, exported in zip(self.ff.params[1:], mod_ff.params[1:]):
             self.assertAlmostEqual(orig.value, exported.value, places=4)

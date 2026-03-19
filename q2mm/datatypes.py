@@ -1,10 +1,19 @@
-"""Backward-compatibility shim.
+"""Backward-compatibility shim — import from q2mm.parsers or q2mm.models instead.
 
-All classes and functions formerly in this module have moved to
-``q2mm.parsers`` and ``q2mm.models``.  This file re-exports every
-public name so existing ``from q2mm.datatypes import X`` continues
-to work.
+.. deprecated::
+    This module re-exports symbols for backward compatibility with code that
+    predates the modular package layout. New code should import directly from
+    the canonical modules (q2mm.parsers.mm3, q2mm.models.datum, etc.).
 """
+
+import warnings as _warnings
+
+_warnings.warn(
+    "q2mm.datatypes is deprecated. "
+    "Import from q2mm.parsers or q2mm.models directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import numpy as np  # noqa: F401 — used by replace_minimum below
 
