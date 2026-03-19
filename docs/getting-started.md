@@ -11,11 +11,13 @@
 pip install q2mm                   # core package
 pip install "q2mm[openmm]"         # with OpenMM backend
 pip install "q2mm[amber]"          # with parmed (AMBER support)
-pip install "q2mm[all]"            # all optional backends
+pip install "q2mm[all]"            # all optional dependencies
 ```
 
-> **Pre-release:** the current version is an alpha. Use `pip install --pre q2mm`
-> if a stable release hasn't been published yet.
+> **Pre-release:** the current version is an alpha. Add `--pre` to any
+> install command (e.g. `pip install --pre q2mm` or
+> `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
+> published yet.
 
 ### From source (for development)
 

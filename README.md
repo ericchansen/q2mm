@@ -35,8 +35,10 @@ pip install q2mm                   # from PyPI
 pip install "q2mm[openmm]"         # with OpenMM backend
 ```
 
-> **Pre-release:** the current version is an alpha. Use `pip install --pre q2mm`
-> if a stable release hasn't been published yet.
+> **Pre-release:** the current version is an alpha. Add `--pre` to any
+> install command (e.g. `pip install --pre q2mm` or
+> `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
+> published yet.
 
 For development, clone the repo and install in editable mode:
 

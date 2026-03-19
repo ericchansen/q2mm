@@ -21,6 +21,7 @@ well-defined D₃ₕ-like transition state.
     pip install "q2mm[openmm]"              # Q2MM + OpenMM backend (from PyPI)
     conda install psi4 -c conda-forge       # Psi4 for QM calculations
     ```
+    Add `--pre` to `pip install` if a stable release hasn't been published yet.
 
 **Atom numbering for this tutorial** (0-indexed):
 
