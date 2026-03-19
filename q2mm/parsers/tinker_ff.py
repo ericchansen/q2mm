@@ -1,12 +1,9 @@
 from __future__ import annotations
 import logging
-import logging.config
-from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.models.param import ParamMM3
 
-logging.config.dictConfig(co.LOG_SETTINGS)
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class TinkerFF(FF):

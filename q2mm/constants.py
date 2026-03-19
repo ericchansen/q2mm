@@ -9,12 +9,16 @@ are provided at the bottom of this module.
 """
 
 import logging
+import math
 from collections import OrderedDict
 
 # GAUSSIAN ENERGIES
 GAUSSIAN_ENERGIES = ["HF"]
 
 # LOGGING SETTINGS
+# Kept for backwards compatibility. Do not call logging.config.dictConfig()
+# with this dict at import time — configure logging once in the application
+# entry point instead.
 LOG_SETTINGS = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -50,23 +54,41 @@ LOG_SETTINGS = {
     "root": {"level": "NOTSET", "propagate": True, "handlers": ["console", "root_file_handler"]},
 }
 
-# UNIT CONVERSIONS
-FORCE_CONVERSION = 15.569141
-EIGENVALUE_CONVERSION = 53.0883777868
-HESSIAN_CONVERSION = 9375.829222
+# --- Energy conversions ---
 HARTREE_TO_KJMOL = 2625.5
 HARTREE_TO_J = 4.359744650e-18
 HARTREE_TO_KCALMOL = 627.51
-AVO = 6.022140857e23
+KCAL_TO_KJ = 4.184
+
+# --- Length conversions ---
 BOHR_TO_ANG = 0.5291772086
+CM_TO_ANG = 10**8
+
+# --- Force constant conversions ---
+FORCE_CONVERSION = 15.569141
+EIGENVALUE_CONVERSION = 53.0883777868
+HESSIAN_CONVERSION = 9375.829222
 AU_TO_MDYNA = 15.569141
 AU_TO_MDYN_ANGLE = 4.3598
 KJ_TO_DYNCM = 10**10
-CM_TO_ANG = 10**8
 KJMOLA2_TO_MDYNA = 1.0 / (6.022140857e3)
 MDYNA_TO_KJMOLA2 = 6.022140857e2
 KJMOLA_TO_MDYN = 1.0 / (6.022140857e2)
 MM3_STR = 601.99392
+
+# --- Physical constants ---
+AVO = 6.022140857e23
+AMU_TO_KG = 1.66053906660e-27
+SPEED_OF_LIGHT_MS = 299792458.0
+RAD_TO_DEG = 180.0 / math.pi
+
+# --- MM3 functional form coefficients ---
+MM3_BOND_C3 = 2.55
+MM3_BOND_C4 = (7.0 / 12.0) * 2.55**2
+MM3_ANGLE_C3 = -0.014
+MM3_ANGLE_C4 = 5.6e-5
+MM3_ANGLE_C5 = -7.0e-7
+MM3_ANGLE_C6 = 9.0e-10
 
 # UNIT SYSTEM LABELS
 AMBERFF = "KCALMOLA"
