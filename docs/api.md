@@ -59,11 +59,26 @@ ff = ForceField.from_tinker_prm("mol.prm")   # load from Tinker .prm file
 [source](https://github.com/ericchansen/q2mm/blob/master/q2mm/models/molecule.py)
 
 Molecular structure with coordinates, optional Hessian, and auto-detected
-bonds/angles.
+bonds/angles. Bonds are inferred from covalent radii — see the
+[tutorial](tutorial.md#step-2-build-a-q2mmmolecule) for details on
+`bond_tolerance` and when to increase it for transition states.
+
+**Constructors:**
+
+| Method | Input | Notes |
+|--------|-------|-------|
+| `Q2MMMolecule(...)` | Raw symbols, geometry arrays | Full control, any data source |
+| `Q2MMMolecule.from_xyz(path)` | XYZ file | Simplest option |
+| `Q2MMMolecule.from_structure(s)` | Legacy `Structure` (from Gaussian, MacroModel) | Preserves atom types and bond tables |
+| `Q2MMMolecule.from_qcel(mol)` | QCElemental `Molecule` | For MolSSI ecosystem workflows |
 
 ```python
 from q2mm.models.molecule import Q2MMMolecule
 
+# From XYZ file (most common)
+mol = Q2MMMolecule.from_xyz("ts.xyz", charge=-1, bond_tolerance=1.4)
+
+# From raw arrays
 mol = Q2MMMolecule(
     symbols=["O", "H", "H"],
     geometry=[[0.0, 0.0, 0.0], ...],
@@ -71,9 +86,14 @@ mol = Q2MMMolecule(
     atom_types=["1", "5", "5"],
     bond_tolerance=1.3,
 )
+
+# From a Gaussian log (via parser)
+from q2mm.parsers.gaussian import GaussLog
+log = GaussLog("opt-freq.log", au_hessian=True)
+mol = Q2MMMolecule.from_structure(log.structures[-1], charge=-1)
 ```
 
-**Parameters:**
+**Parameters (raw constructor):**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -81,11 +101,13 @@ mol = Q2MMMolecule(
 | `geometry` | `array-like` | Cartesian coordinates (Å), shape `(N, 3)` |
 | `hessian` | `ndarray`, optional | Hessian matrix, shape `(3N, 3N)` |
 | `atom_types` | `list[str]` | MM atom type labels (default: element symbols) |
-| `bond_tolerance` | `float` | Scaling factor for covalent radii bond detection |
+| `bond_tolerance` | `float` | Multiplier on covalent radii sum for bond detection (default: 1.3; use 1.4+ for TS) |
 
 !!! tip
     Bonds and angles are auto-detected from atomic coordinates using covalent
-    radii — you don't need to specify them manually.
+    radii — you don't need to specify them manually. Formats with explicit
+    bond tables (MOL2, MacroModel `.mmo`) preserve connectivity via
+    `from_structure()`.
 
 ---
 
