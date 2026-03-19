@@ -182,9 +182,7 @@ class TinkerFF(FF):
                 par = format(linesplit[0], "<10")
                 space5 = " " * 5
 
-                if "pibond" in lines:
-                    0
-                elif "bond" in line:
+                if "bond" in line:
                     atoms = "".join([format(el, ">5") for el in linesplit[1:3]]) + space5 * 2
                     linesplit[3 + col] = value
                     const = "".join([format(el, ">12") for el in linesplit[3:]])
@@ -216,7 +214,7 @@ class TinkerMM3A(FF):
     """
 
     def __init__(self, path=None, data=None, method=None, params=None, score=None):
-        super(TinkerFF, self).__init__(path, data, method, params, score)
+        super().__init__(path, data, method, params, score)
         self.sub_names = []
         self._atom_types = None
         self._lines = None

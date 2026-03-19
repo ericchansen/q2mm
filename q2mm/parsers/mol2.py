@@ -161,6 +161,7 @@ class Mol2(File):
                     logging.ERROR,
                     "No BOND flag within mol2 MOLECULE, invalid structure.",
                 )
+                break
 
         # parse number of atoms and number of bonds from line 2 below @<TRIPOS>MOLECULE
         molecule_data = molecule_lines[2].split()
