@@ -247,7 +247,10 @@ class ObjectiveFunction:
         if "bond_length" in needed or "bond_angle" in needed:
             # Geometry observables require MM-minimized structures to be
             # meaningful (the input geometry is fixed). Minimize first.
-            _energy, _atoms, opt_coords = self.engine.minimize(structure, self.forcefield)
+            # Pass the raw molecule (not cached handle) because minimize()
+            # mutates context positions — reusing the cached handle would
+            # corrupt subsequent energy/frequency evaluations.
+            _energy, _atoms, opt_coords = self.engine.minimize(mol, self.forcefield)
             opt_mol = Q2MMMolecule(
                 symbols=mol.symbols,
                 geometry=opt_coords,
