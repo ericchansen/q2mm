@@ -47,6 +47,13 @@ the transition state: an **optimized geometry** and the **Hessian matrix**
 The script `examples/sn2-test/generate_qm_data.py` generates all reference
 files automatically. Here is the essential workflow:
 
+!!! note "Psi4 is a Python library, not a standalone binary"
+    Unlike Gaussian (which produces a `.log` file you parse after the fact),
+    Psi4 runs **inside Python**. You extract the Hessian and frequencies
+    directly from the wavefunction object (`wfn`) during the computation,
+    then save them as NumPy arrays. The `psi4-output.dat` file is a
+    human-readable log — not a data file to parse.
+
 ```python
 import numpy as np
 import psi4
@@ -98,6 +105,25 @@ np.savetxt("qm-reference/sn2-ts-frequencies.txt", frequencies)
     more than one, the geometry has not converged to a first-order saddle
     point.
 
+??? tip "Already have Psi4 results? Skip the computation"
+
+    The `examples/sn2-test/qm-reference/` directory contains pre-computed
+    Psi4 results, so you can jump straight to loading them:
+
+    ```python
+    import numpy as np
+    from pathlib import Path
+
+    QM_REF = Path("examples/sn2-test/qm-reference")
+
+    hessian     = np.load(str(QM_REF / "sn2-ts-hessian.npy"))       # (18, 18)
+    frequencies = np.loadtxt(QM_REF / "sn2-ts-frequencies.txt")     # cm⁻¹
+    # Geometry is loaded in Step 2 via Q2MMMolecule.from_xyz()
+    ```
+
+    This is all you need to proceed to Step 2 -- no Psi4 installation
+    required.
+
 ### Option B — Gaussian
 
 If you have a Gaussian license, run a `opt=(ts,calcfc) freq` job, then parse
@@ -132,84 +158,139 @@ hessian = linear_algebra.reform_hessian(eigenvalues, eigenvectors)
 bonds and angles from covalent radii and stores the QM Hessian alongside the
 geometry.
 
-### From the saved XYZ + Hessian files
+!!! info "Bond detection and `bond_tolerance`"
+    Not all file formats include bond information — XYZ files, for instance,
+    only store atom symbols and Cartesian coordinates. When connectivity is
+    missing, Q2MM infers bonds by comparing every atom–atom distance to the
+    sum of their covalent radii scaled by `bond_tolerance`:
 
-```python
-import numpy as np
-from pathlib import Path
-from q2mm.models.molecule import Q2MMMolecule
+    **bonded if** `distance < bond_tolerance × (r_cov_A + r_cov_B)`
 
-QM_REF = Path("examples/sn2-test/qm-reference")
+    The default `bond_tolerance=1.3` works for ground-state molecules. For
+    **transition states** — where bonds are partially formed or broken — you
+    typically need `1.4` or higher. For example, the C–F distance in the SN2
+    TS (~1.84 Å) is much longer than a typical C–F bond (~1.38 Å). If bonds
+    are missing from your molecule, increase this value.
 
-# Load optimised geometry from XYZ
-mol = Q2MMMolecule.from_xyz(
-    QM_REF / "sn2-ts-optimized.xyz",
-    charge=-1,
-    name="SN2_TS",
-    bond_tolerance=1.4,   # ← 1.4× covalent radii to catch long TS bonds
-)
+    Formats that **do** include explicit bond tables (MOL2, MacroModel `.mmo`)
+    skip detection entirely — use `from_structure()` and the bonds and angles
+    from the file are preserved as-is, with no recalculation.
 
-# Attach the QM Hessian (returns a new immutable copy)
-hessian = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
-mol = mol.with_hessian(hessian)
+???+ example "From an XYZ file (simplest)"
 
-# Inspect auto-detected connectivity
-print(f"Atoms:  {mol.n_atoms}")
-print(f"Bonds:  {len(mol.bonds)}")
-print(f"Angles: {len(mol.angles)}")
+    The XYZ and Hessian files here were saved by Psi4 in Step 1
+    (`ts_mol.save_xyz_file(...)` and `np.save(..., hessian)`). If you
+    skipped that step, the pre-computed files in `examples/sn2-test/qm-reference/`
+    are identical.
 
-for bond in mol.bonds:
-    print(f"  {bond.element_pair}: {bond.length:.4f} Å")
-```
+    ```python
+    import numpy as np
+    from pathlib import Path
+    from q2mm.models.molecule import Q2MMMolecule
 
-Expected output:
+    QM_REF = Path("examples/sn2-test/qm-reference")
 
-```
-Atoms:  6
-Bonds:  5
-Angles: 7
-  ('C', 'F'): 1.8427 Å
-  ('C', 'F'): 1.8427 Å
-  ('C', 'H'): 1.0767 Å
-  ('C', 'H'): 1.0767 Å
-  ('C', 'H'): 1.0767 Å
-```
+    # Load the optimised TS geometry saved by Psi4
+    mol = Q2MMMolecule.from_xyz(
+        QM_REF / "sn2-ts-optimized.xyz",
+        charge=-1,
+        name="SN2_TS",
+        bond_tolerance=1.4,   # ← 1.4× covalent radii to catch long TS bonds
+    )
 
-!!! tip "Bond tolerance for transition states"
-    At a transition state, partially-broken bonds are **longer** than
-    equilibrium.  The C–F distance in the SN2 TS (~1.84 Å) is much longer
-    than a typical C–F bond (~1.38 Å).  Setting `bond_tolerance=1.4` tells
-    Q2MM to accept bonds up to 1.4× the sum of covalent radii, so these
-    stretched bonds are correctly detected.
+    # Attach the QM Hessian (also saved from Psi4's wfn object)
+    hessian = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
+    mol = mol.with_hessian(hessian)
 
-### From raw arrays (manual construction)
+    # Inspect auto-detected connectivity
+    print(f"Atoms:  {mol.n_atoms}")
+    print(f"Bonds:  {len(mol.bonds)}")
+    print(f"Angles: {len(mol.angles)}")
 
-If your data comes from a custom source rather than an XYZ file:
+    for bond in mol.bonds:
+        print(f"  {bond.element_pair}: {bond.length:.4f} Å")
+    ```
 
-```python
-import numpy as np
-from q2mm.models.molecule import Q2MMMolecule
+    Expected output:
 
-coordinates = np.array([
-    [ 0.000000,  0.000000,  0.000000],   # C
-    [ 0.000000,  0.000000,  1.800000],   # F
-    [ 0.000000,  0.000000, -1.800000],   # F
-    [ 1.026720,  0.000000,  0.000000],   # H
-    [-0.513360,  0.889165,  0.000000],   # H
-    [-0.513360, -0.889165,  0.000000],   # H
-])
+    ```
+    Atoms:  6
+    Bonds:  5
+    Angles: 7
+      ('C', 'F'): 1.8427 Å
+      ('C', 'F'): 1.8427 Å
+      ('C', 'H'): 1.0767 Å
+      ('C', 'H'): 1.0767 Å
+      ('C', 'H'): 1.0767 Å
+    ```
 
-mol = Q2MMMolecule(
-    symbols=["C", "F", "F", "H", "H", "H"],
-    geometry=coordinates,
-    charge=-1,
-    name="sn2-ts",
-    bond_tolerance=1.4,
-    hessian=hessian,   # (18×18) array in Hartree/Bohr²
-)
+??? example "From a Gaussian log file"
 
-print(f"Bonds: {len(mol.bonds)}, Angles: {len(mol.angles)}")
-```
+    If you already have a Gaussian `opt freq` log file, you can build the
+    molecule directly from the parsed structures — no separate XYZ file needed:
+
+    ```python
+    from q2mm.parsers.gaussian import GaussLog
+    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm import linear_algebra
+
+    log = GaussLog("sn2-ts.log", au_hessian=True)
+
+    # Build molecule from the last (optimised) structure
+    structure = log.structures[-1]
+    mol = Q2MMMolecule.from_structure(
+        structure,
+        charge=-1,
+        bond_tolerance=1.4,
+        hessian=linear_algebra.reform_hessian(log.evals, log.evecs),
+    )
+    ```
+
+    The `from_structure()` constructor also preserves atom type labels from
+    MacroModel `.mmo` files, which is useful for matching to existing force
+    field parameters.
+
+??? example "From a QCElemental Molecule"
+
+    If you use [QCElemental](https://github.com/MolSSI/QCElemental) in your
+    QM workflow:
+
+    ```python
+    import qcelemental as qcel
+    from q2mm.models.molecule import Q2MMMolecule
+
+    qcel_mol = qcel.models.Molecule(...)
+    mol = Q2MMMolecule.from_qcel(qcel_mol, name="my-molecule")
+    ```
+
+??? example "From raw arrays (manual construction)"
+
+    If your data comes from a custom source rather than an XYZ file:
+
+    ```python
+    import numpy as np
+    from q2mm.models.molecule import Q2MMMolecule
+
+    coordinates = np.array([
+        [ 0.000000,  0.000000,  0.000000],   # C
+        [ 0.000000,  0.000000,  1.800000],   # F
+        [ 0.000000,  0.000000, -1.800000],   # F
+        [ 1.026720,  0.000000,  0.000000],   # H
+        [-0.513360,  0.889165,  0.000000],   # H
+        [-0.513360, -0.889165,  0.000000],   # H
+    ])
+
+    mol = Q2MMMolecule(
+        symbols=["C", "F", "F", "H", "H", "H"],
+        geometry=coordinates,
+        charge=-1,
+        name="sn2-ts",
+        bond_tolerance=1.4,
+        hessian=hessian,   # (18×18) array in Hartree/Bohr²
+    )
+
+    print(f"Bonds: {len(mol.bonds)}, Angles: {len(mol.angles)}")
+    ```
 
 ---
 
@@ -292,67 +373,61 @@ function will try to reproduce. Each entry has a **kind** (energy, frequency,
 bond length, bond angle, torsion angle), a **value**, and a **weight** that
 controls its importance in the fit.
 
+!!! warning "Hessian eigenmatrix as training data — not yet implemented"
+    The legacy Q2MM code used the **full Hessian eigenmatrix** as training
+    data during optimisation — not just vibrational frequencies. The QM
+    Hessian was projected into eigenvector space, and the resulting
+    eigenvalues (including off-diagonal elements) were compared against
+    MM-computed equivalents. For transition states, the most negative
+    eigenvalue (the reaction coordinate) was **inverted** to train the
+    force field to reproduce the correct TS curvature. This is a core
+    capability that is **not yet ported** to the new code — see
+    [Issue tracker](https://github.com/ericchansen/q2mm/issues) for status.
+
+The reference data below is extracted from the molecule and QM output we
+already have. Frequencies come from the QM calculation, while bond lengths
+and angles come from the optimised geometry (already stored in `mol.bonds`
+and `mol.angles`):
+
 ```python
 import numpy as np
 from q2mm.optimizers.objective import ReferenceData
 
 ref = ReferenceData()
 
-# --- Energies ---
-# Relative energy of the TS (in Hartree or kcal/mol, depending on engine)
-ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+# --- Bond lengths and angles from the molecule's detected geometry ---
+for i, bond in enumerate(mol.bonds):
+    ref.add_bond_length(
+        bond.length,
+        atom_indices=(bond.atom_i, bond.atom_j),
+        weight=10.0,
+        label=f"{bond.element_pair} bond",
+    )
 
-# --- Bond lengths (Å) ---
-# C–F transition-state bond (partially broken, ~1.84 Å)
-ref.add_bond_length(
-    1.8427,
-    atom_indices=(0, 1),
-    weight=10.0,
-    label="C-F(1) TS bond",
-)
-ref.add_bond_length(
-    1.8427,
-    atom_indices=(0, 2),
-    weight=10.0,
-    label="C-F(2) TS bond",
-)
-# C–H bonds
-ref.add_bond_length(
-    1.0767,
-    atom_indices=(0, 3),
-    weight=10.0,
-    label="C-H bond",
-)
+for i, angle in enumerate(mol.angles):
+    ref.add_bond_angle(
+        angle.value,
+        atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+        weight=5.0,
+        label=f"{angle.elements} angle",
+    )
 
-# --- Bond angles (degrees) ---
-# F–C–F should be ~180° (linear attack / departure)
-ref.add_bond_angle(
-    180.0,
-    atom_indices=(1, 0, 2),
-    weight=5.0,
-    label="F-C-F angle",
-)
-# H–C–F angle (~90° at the TS)
-ref.add_bond_angle(
-    90.0,
-    atom_indices=(3, 0, 1),
-    weight=5.0,
-    label="H-C-F angle",
-)
-# H–C–H angle (~120° in the equatorial plane)
-ref.add_bond_angle(
-    120.0,
-    atom_indices=(3, 0, 4),
-    weight=5.0,
-    label="H-C-H angle",
-)
-
-# --- Frequencies (cm⁻¹) ---
+# --- Frequencies from the QM output ---
 ts_freqs = np.loadtxt("examples/sn2-test/qm-reference/sn2-ts-frequencies.txt")
 for i, freq in enumerate(ts_freqs):
     ref.add_frequency(freq, data_idx=i, weight=1.0, label=f"mode {i}")
 
+# --- Energy (optional) ---
+ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+
 print(f"Reference observations: {ref.n_observations}")
+```
+
+!!! note "Future: automated reference data"
+    Today, building `ReferenceData` is manual. A future
+    `ReferenceData.from_molecule(mol, frequencies=...)` helper that
+    auto-extracts bond lengths, angles, and frequencies from the molecule
+    is a natural next step. Contributions welcome!
 ```
 
 !!! tip "Choosing weights"
