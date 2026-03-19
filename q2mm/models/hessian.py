@@ -157,8 +157,8 @@ def invert_ts_curvature(hessian_matrix: np.ndarray) -> np.ndarray:
 
     # check_evals = np.diag()
 
-    if not inv_curv_hessian.all() >= 0.0:
-        print("Inverted Hessian has negative values...")
-        print(str(sum(inv_curv_hessian > 0)) + " negative values...")
+    if not (inv_curv_hessian >= 0.0).all():
+        n_neg = int(np.sum(inv_curv_hessian < 0))
+        print(f"Inverted Hessian has {n_neg} negative values...")
 
     return inv_curv_hessian

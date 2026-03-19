@@ -7,10 +7,15 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
   3. OpenMM and Tinker backends produce the same optimized FF
   4. The objective function's scoring relates correctly to the legacy formula
   5. Round-trip recovery of known parameters
+  6. Parameter vector roundtrip (get→set→get identity)
+  7. Atom-identity matching for bond/angle references
+  8. Optimization determinism (same inputs → same outputs)
+  9. Parameter vector length validation
 """
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -25,7 +30,7 @@ from q2mm.parsers import Datum
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData, ReferenceValue
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -427,4 +432,262 @@ class TestOptimizationRoundtrip:
         final_bond_k = final_params[0]
         assert abs(final_bond_k - true_bond_k) / true_bond_k < 0.3, (
             f"Tinker bond k: true={true_bond_k:.3f}, got={final_bond_k:.3f}"
+        )
+
+
+# ---- Force field export/param-vector roundtrip ----
+
+
+class TestForceFieldExportRoundtrip:
+    """Verify optimized parameters survive export/re-import."""
+
+    def test_param_vector_roundtrip(self):
+        """set_param_vector(get_param_vector()) is identity."""
+        ff = _water_ff()
+        original = ff.get_param_vector().copy()
+        ff.set_param_vector(original)
+        roundtripped = ff.get_param_vector()
+        np.testing.assert_array_equal(original, roundtripped)
+
+    def test_param_vector_roundtrip_after_mutation(self):
+        """Roundtrip still works after modifying individual parameters."""
+        ff = _water_ff()
+        vec = ff.get_param_vector().copy()
+        # Perturb each element
+        vec *= 1.1
+        vec[0] += 0.5
+        ff.set_param_vector(vec)
+        roundtripped = ff.get_param_vector()
+        np.testing.assert_array_almost_equal(vec, roundtripped, decimal=15)
+
+    def test_param_vector_roundtrip_optimized_ff(self):
+        """Optimized FF survives get→set→get roundtrip."""
+        true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
+        result = opt.optimize(obj)
+
+        # Apply final params, roundtrip
+        optimized_ff = guess_ff.copy()
+        optimized_ff.set_param_vector(result.final_params)
+        vec_before = optimized_ff.get_param_vector().copy()
+        optimized_ff.set_param_vector(vec_before)
+        vec_after = optimized_ff.get_param_vector()
+        np.testing.assert_array_equal(vec_before, vec_after)
+
+    def test_copy_preserves_params(self):
+        """ForceField.copy() preserves the parameter vector exactly."""
+        ff = _water_ff(bond_k=3.14, bond_r0=1.23, angle_k=0.42, angle_eq=109.5)
+        ff_copy = ff.copy()
+        np.testing.assert_array_equal(
+            ff.get_param_vector(), ff_copy.get_param_vector()
+        )
+        # Mutating the copy should not affect the original
+        vec = ff_copy.get_param_vector()
+        vec[0] = 999.0
+        ff_copy.set_param_vector(vec)
+        assert ff.get_param_vector()[0] != 999.0
+
+
+# ---- Atom-identity matching ----
+
+
+class TestAtomIdentityMatching:
+    """Verify atom-identity matching is order-independent."""
+
+    def test_bond_length_by_atom_indices(self):
+        """_extract_value finds the right bond via atom_indices."""
+        calc = {
+            "bond_lengths": [0.96, 0.97],
+            "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
+        }
+        # Ask for bond (0, 2) via atom_indices
+        ref = ReferenceValue(
+            kind="bond_length", value=0.97, atom_indices=(0, 2)
+        )
+        extracted = ObjectiveFunction._extract_value(calc, ref)
+        assert extracted == pytest.approx(0.97)
+
+    def test_bond_length_atom_indices_order_independent(self):
+        """atom_indices=(2, 0) finds same bond as (0, 2)."""
+        calc = {
+            "bond_lengths": [0.96, 0.97],
+            "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
+        }
+        # Reversed order — _extract_value sorts the key
+        ref = ReferenceValue(
+            kind="bond_length", value=0.97, atom_indices=(2, 0)
+        )
+        extracted = ObjectiveFunction._extract_value(calc, ref)
+        assert extracted == pytest.approx(0.97)
+
+    def test_bond_angle_by_atom_indices(self):
+        """_extract_value finds the right angle via atom_indices."""
+        calc = {
+            "bond_angles": [104.5],
+            "bond_angles_by_atoms": {(1, 0, 2): 104.5},
+        }
+        ref = ReferenceValue(
+            kind="bond_angle", value=104.5, atom_indices=(1, 0, 2)
+        )
+        extracted = ObjectiveFunction._extract_value(calc, ref)
+        assert extracted == pytest.approx(104.5)
+
+    def test_bond_angle_reversed_order(self):
+        """atom_indices=(2, 0, 1) finds same angle as (1, 0, 2)."""
+        calc = {
+            "bond_angles": [104.5],
+            "bond_angles_by_atoms": {(1, 0, 2): 104.5},
+        }
+        # Reversed: (2, 0, 1) — _extract_value tries both orderings
+        ref = ReferenceValue(
+            kind="bond_angle", value=104.5, atom_indices=(2, 0, 1)
+        )
+        extracted = ObjectiveFunction._extract_value(calc, ref)
+        assert extracted == pytest.approx(104.5)
+
+    def test_fallback_to_data_idx(self):
+        """When atom_indices is None, data_idx still works (backwards compat)."""
+        calc = {
+            "bond_lengths": [0.96, 0.97, 0.98],
+            "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97, (1, 2): 0.98},
+        }
+        # Use data_idx=1, no atom_indices
+        ref = ReferenceValue(
+            kind="bond_length", value=0.97, data_idx=1, atom_indices=None
+        )
+        extracted = ObjectiveFunction._extract_value(calc, ref)
+        assert extracted == pytest.approx(0.97)
+
+    def test_missing_atom_indices_raises(self):
+        """KeyError raised for atom pair not in calculated data."""
+        calc = {
+            "bond_lengths": [0.96],
+            "bond_lengths_by_atoms": {(0, 1): 0.96},
+        }
+        ref = ReferenceValue(
+            kind="bond_length", value=1.0, atom_indices=(5, 6)
+        )
+        with pytest.raises(KeyError):
+            ObjectiveFunction._extract_value(calc, ref)
+
+    def test_add_bond_length_requires_idx_or_atoms(self):
+        """ReferenceData.add_bond_length raises without data_idx or atom_indices."""
+        ref = ReferenceData()
+        with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
+            ref.add_bond_length(0.96)
+
+    def test_add_bond_angle_requires_idx_or_atoms(self):
+        """ReferenceData.add_bond_angle raises without data_idx or atom_indices."""
+        ref = ReferenceData()
+        with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
+            ref.add_bond_angle(104.5)
+
+
+# ---- Optimization determinism ----
+
+
+class TestOptimizationDeterminism:
+    """Verify optimization is deterministic."""
+
+    def test_same_result_twice(self):
+        """Running the same optimization twice gives identical parameters."""
+        results = []
+        for _ in range(2):
+            true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+            obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+            opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+            results.append(opt.optimize(obj))
+
+        np.testing.assert_array_almost_equal(
+            results[0].final_params,
+            results[1].final_params,
+            decimal=12,
+            err_msg="Optimization is not deterministic",
+        )
+        assert results[0].final_score == pytest.approx(
+            results[1].final_score, rel=1e-10
+        )
+
+    def test_determinism_nelder_mead(self):
+        """Nelder-Mead is also deterministic (no stochastic elements)."""
+        results = []
+        for _ in range(2):
+            true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+            obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+            opt = ScipyOptimizer(
+                method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False
+            )
+            results.append(opt.optimize(obj))
+
+        np.testing.assert_array_almost_equal(
+            results[0].final_params,
+            results[1].final_params,
+            decimal=12,
+        )
+
+
+# ---- Parameter vector validation ----
+
+
+class TestParamVectorValidation:
+    """Verify set_param_vector rejects wrong-length vectors."""
+
+    def test_short_vector_raises(self):
+        ff = _water_ff()
+        with pytest.raises(ValueError, match="does not match"):
+            ff.set_param_vector(np.array([1.0]))  # too short
+
+    def test_long_vector_raises(self):
+        ff = _water_ff()
+        with pytest.raises(ValueError, match="does not match"):
+            ff.set_param_vector(np.zeros(100))  # too long
+
+    def test_empty_vector_raises(self):
+        ff = _water_ff()
+        with pytest.raises(ValueError, match="does not match"):
+            ff.set_param_vector(np.array([]))
+
+    def test_exact_length_accepted(self):
+        ff = _water_ff()
+        n = len(ff.get_param_vector())
+        ff.set_param_vector(np.ones(n))  # should not raise
+        np.testing.assert_array_equal(ff.get_param_vector(), np.ones(n))
+
+
+# ---- Golden fixture regression ----
+
+
+class TestGoldenFixtureRegression:
+    """Verify current optimization matches saved golden fixture (if present)."""
+
+    GOLDEN_PATH = REPO_ROOT / "test" / "fixtures" / "optimization_golden.json"
+
+    @pytest.mark.skipif(
+        not (Path(__file__).resolve().parent.parent.parent / "test" / "fixtures" / "optimization_golden.json").exists(),
+        reason="Golden fixture not yet generated (run scripts/generate_optimization_fixtures.py)",
+    )
+    def test_matches_golden_fixture(self):
+        """Current optimization reproduces the golden fixture within tolerance."""
+        golden = json.loads(self.GOLDEN_PATH.read_text())
+
+        true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        result = opt.optimize(obj)
+
+        # Scores should match tightly (same code, same inputs → same results)
+        assert result.initial_score == pytest.approx(
+            golden["initial_score"], rel=1e-6
+        ), f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"
+        assert result.final_score == pytest.approx(
+            golden["final_score"], rel=1e-6
+        ), f"Final score drift: {result.final_score} vs {golden['final_score']}"
+
+        # Parameters should match closely
+        np.testing.assert_allclose(
+            result.final_params,
+            golden["final_params"],
+            rtol=1e-6,
+            err_msg="Optimized parameters drifted from golden fixture",
         )

@@ -30,6 +30,8 @@ class ReferenceValue:
     # Indices for matching to calculated data
     molecule_idx: int = 0
     data_idx: int = 0
+    # Atom-identity matching (preferred over positional data_idx for geometry)
+    atom_indices: tuple[int, ...] | None = None
 
 
 @dataclass
@@ -84,18 +86,22 @@ class ReferenceData:
         self,
         value: float,
         *,
-        data_idx: int,
+        data_idx: int = -1,
+        atom_indices: tuple[int, int] | None = None,
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
     ):
+        if atom_indices is None and data_idx < 0:
+            raise ValueError("Either atom_indices or data_idx must be provided for bond_length.")
         self.values.append(
             ReferenceValue(
                 kind="bond_length",
                 value=value,
                 weight=weight,
                 molecule_idx=molecule_idx,
-                data_idx=data_idx,
+                data_idx=max(data_idx, 0),
+                atom_indices=atom_indices,
                 label=label,
             )
         )
@@ -104,18 +110,22 @@ class ReferenceData:
         self,
         value: float,
         *,
-        data_idx: int,
+        data_idx: int = -1,
+        atom_indices: tuple[int, int, int] | None = None,
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
     ):
+        if atom_indices is None and data_idx < 0:
+            raise ValueError("Either atom_indices or data_idx must be provided for bond_angle.")
         self.values.append(
             ReferenceValue(
                 kind="bond_angle",
                 value=value,
                 weight=weight,
                 molecule_idx=molecule_idx,
-                data_idx=data_idx,
+                data_idx=max(data_idx, 0),
+                atom_indices=atom_indices,
                 label=label,
             )
         )
@@ -159,6 +169,10 @@ class ObjectiveFunction:
         self.reference = reference
         self.n_eval = 0
         self.history: list[float] = []
+        # Reusable engine handles for backends that support runtime parameter
+        # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
+        # evaluation — critical for optimization performance.
+        self._handles: dict[int, object] = {}
 
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
@@ -200,30 +214,40 @@ class ObjectiveFunction:
 
         return np.array(residuals)
 
+    def _get_structure(self, mol_idx: int):
+        """Get the structure handle for a molecule, reusing if possible.
+
+        For backends that support runtime parameter updates (OpenMM), this
+        creates the simulation context once and reuses it across evaluations.
+        For stateless backends (Tinker), this returns the raw molecule.
+        """
+        mol = self.molecules[mol_idx]
+        if not self.engine.supports_runtime_params():
+            return mol
+        if mol_idx not in self._handles:
+            # First call — let the engine create its context/handle
+            self._handles[mol_idx] = self.engine.create_context(mol, self.forcefield)
+        return self._handles[mol_idx]
+
     def _evaluate_molecule(self, mol_idx: int) -> dict:
         """Run MM calculations for a single molecule."""
         mol = self.molecules[mol_idx]
+        structure = self._get_structure(mol_idx)
         result: dict = {}
 
         # Determine what data types are needed for this molecule
         needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
 
         if "energy" in needed:
-            result["energy"] = self.engine.energy(mol, self.forcefield)
+            result["energy"] = self.engine.energy(structure, self.forcefield)
 
         if "frequency" in needed:
-            result["frequencies"] = self.engine.frequencies(mol, self.forcefield)
+            result["frequencies"] = self.engine.frequencies(structure, self.forcefield)
 
         if "bond_length" in needed or "bond_angle" in needed:
             # Geometry observables require MM-minimized structures to be
             # meaningful (the input geometry is fixed). Minimize first.
-            _energy, _atoms, opt_coords = self.engine.minimize(mol, self.forcefield)
-            import copy
-
-            opt_mol = copy.copy(mol)
-            object.__setattr__(opt_mol, "geometry", opt_coords)
-            object.__setattr__(opt_mol, "_bonds", None)
-            object.__setattr__(opt_mol, "_angles", None)
+            _energy, _atoms, opt_coords = self.engine.minimize(structure, self.forcefield)
             opt_mol = Q2MMMolecule(
                 symbols=mol.symbols,
                 geometry=opt_coords,
@@ -232,15 +256,29 @@ class ObjectiveFunction:
                 bond_tolerance=mol.bond_tolerance,
             )
             if "bond_length" in needed:
+                # Store both positional list and atom-keyed dict for matching
                 result["bond_lengths"] = [b.length for b in opt_mol.bonds]
+                result["bond_lengths_by_atoms"] = {
+                    tuple(sorted((b.atom_i, b.atom_j))): b.length
+                    for b in opt_mol.bonds
+                }
             if "bond_angle" in needed:
                 result["bond_angles"] = [a.value for a in opt_mol.angles]
+                result["bond_angles_by_atoms"] = {
+                    (a.atom_i, a.atom_j, a.atom_k): a.value
+                    for a in opt_mol.angles
+                }
 
         return result
 
     @staticmethod
     def _extract_value(calc: dict, ref: ReferenceValue) -> float:
-        """Extract a calculated value matching a reference observation."""
+        """Extract a calculated value matching a reference observation.
+
+        For bond_length and bond_angle, prefers atom-identity matching via
+        ``ref.atom_indices`` when available, falling back to positional
+        ``ref.data_idx`` for backwards compatibility.
+        """
         if ref.kind == "energy":
             return calc["energy"]
         elif ref.kind == "frequency":
@@ -252,6 +290,15 @@ class ObjectiveFunction:
                 )
             return freqs[ref.data_idx]
         elif ref.kind == "bond_length":
+            if ref.atom_indices is not None:
+                key = tuple(sorted(ref.atom_indices[:2]))
+                by_atoms = calc.get("bond_lengths_by_atoms", {})
+                if key not in by_atoms:
+                    raise KeyError(
+                        f"No bond found for atoms {key}. "
+                        f"Available bonds: {list(by_atoms.keys())}. Label: {ref.label!r}"
+                    )
+                return by_atoms[key]
             lengths = calc["bond_lengths"]
             if ref.data_idx >= len(lengths):
                 raise IndexError(
@@ -260,6 +307,18 @@ class ObjectiveFunction:
                 )
             return lengths[ref.data_idx]
         elif ref.kind == "bond_angle":
+            if ref.atom_indices is not None:
+                by_atoms = calc.get("bond_angles_by_atoms", {})
+                key = tuple(ref.atom_indices[:3])
+                # Try both orderings: (i, j, k) and (k, j, i)
+                if key not in by_atoms:
+                    key = (key[2], key[1], key[0])
+                if key not in by_atoms:
+                    raise KeyError(
+                        f"No angle found for atoms {ref.atom_indices[:3]}. "
+                        f"Available angles: {list(by_atoms.keys())}. Label: {ref.label!r}"
+                    )
+                return by_atoms[key]
             angles = calc["bond_angles"]
             if ref.data_idx >= len(angles):
                 raise IndexError(
@@ -271,6 +330,7 @@ class ObjectiveFunction:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 
     def reset(self):
-        """Reset evaluation counter and history."""
+        """Reset evaluation counter, history, and cached engine handles."""
         self.n_eval = 0
         self.history.clear()
+        self._handles.clear()
