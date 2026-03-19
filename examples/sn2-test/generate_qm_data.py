@@ -1,8 +1,9 @@
-"""Generate QM reference data for SN2 F- + CH3F transition state.
+"""Generate QM reference data for the SN2 test case.
+
+6-31+G(d) adds diffuse functions critical for F- anion.
+Also computes the ion-dipole complex for standard barrier height.
 
 Run with: conda run -n q2mm python examples/sn2-test/generate_qm_data.py
-
-Outputs saved to examples/sn2-test/qm-reference/
 """
 
 import os
@@ -18,89 +19,34 @@ except ImportError:
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "qm-reference")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Configure Psi4
 psi4.set_memory("2 GB")
 psi4.set_num_threads(4)
 psi4.core.set_output_file(os.path.join(OUTPUT_DIR, "psi4-output.dat"), False)
 
+METHOD = "b3lyp"
+BASIS = "6-31+G(d)"
+
 print("=" * 60)
-print("SN2 F- + CH3F Transition State — QM Reference Data Generation")
+print(f"SN2 F- + CH3F — QM Reference Data ({BASIS})")
 print("=" * 60)
 
 # =====================================================================
-# 1. TS Optimization (saddle point search)
+# 1. F- energy
 # =====================================================================
-print("\n[1/4] Setting up SN2 TS geometry...")
-
-# SN2 TS: F...CH3...F  (charge -1, singlet)
-ts_mol = psi4.geometry("""
+print(f"\n[1/5] F- energy at {METHOD}/{BASIS}...")
+f_minus = psi4.geometry("""
     -1 1
-    C     0.000000    0.000000    0.000000
-    F     0.000000    0.000000    1.800000
-    F     0.000000    0.000000   -1.800000
-    H     1.026720    0.000000    0.000000
-    H    -0.513360    0.889165    0.000000
-    H    -0.513360   -0.889165    0.000000
+    F 0.0 0.0 0.0
 """)
-
-psi4.set_options(
-    {
-        "basis": "6-31G*",
-        "reference": "rhf",
-        "opt_type": "ts",
-        "geom_maxiter": 100,
-    }
-)
-
-print("[2/4] Optimizing TS geometry (saddle point search)...")
-ts_energy = psi4.optimize("b3lyp", molecule=ts_mol)
-print(f"  TS Energy: {ts_energy:.10f} Hartree")
-
-# Save optimized TS geometry as XYZ
-ts_xyz_path = os.path.join(OUTPUT_DIR, "sn2-ts-optimized.xyz")
-ts_mol.save_xyz_file(ts_xyz_path, True)
-print(f"  Saved: {ts_xyz_path}")
+psi4.set_options({"basis": BASIS, "reference": "rhf"})
+f_energy = psi4.energy(METHOD, molecule=f_minus)
+print(f"  F- energy: {f_energy:.12f} Ha")
 
 # =====================================================================
-# 2. Frequency calculation at TS (Hessian)
+# 2. CH3F ground state
 # =====================================================================
-print("\n[3/4] Computing Hessian (frequency calculation) at TS...")
-
-ts_energy_freq, ts_wfn = psi4.frequency("b3lyp", molecule=ts_mol, return_wfn=True)
-
-# Extract Hessian matrix
-hessian = np.array(ts_wfn.hessian())
-hess_path = os.path.join(OUTPUT_DIR, "sn2-ts-hessian.npy")
-np.save(hess_path, hessian)
-print(f"  Hessian shape: {hessian.shape}")
-print(f"  Saved: {hess_path}")
-
-# Extract frequencies
-freqs = np.array(ts_wfn.frequencies())
-freqs_path = os.path.join(OUTPUT_DIR, "sn2-ts-frequencies.txt")
-np.savetxt(freqs_path, freqs, header="Vibrational frequencies (cm^-1)")
-print(f"  Frequencies: {freqs}")
-
-# Check for exactly 1 imaginary frequency
-n_imaginary = np.sum(freqs < 0)
-print(f"  Imaginary frequencies: {n_imaginary}")
-if n_imaginary == 1:
-    print(f"  ✓ Valid transition state! Imaginary freq: {freqs[freqs < 0][0]:.1f} cm^-1")
-else:
-    print(f"  ✗ WARNING: Expected 1 imaginary frequency, got {n_imaginary}")
-
-# Save energy
-energy_path = os.path.join(OUTPUT_DIR, "sn2-ts-energy.txt")
-with open(energy_path, "w") as f:
-    f.write("# SN2 TS energy at B3LYP/6-31G*\n")
-    f.write(f"{ts_energy:.12f}\n")
-
-# =====================================================================
-# 3. CH3F ground state (reactant)
-# =====================================================================
-print("\n[4/4] Optimizing CH3F ground state...")
-
-ch3f_mol = psi4.geometry("""
+print(f"\n[2/5] CH3F ground state optimization at {METHOD}/{BASIS}...")
+ch3f = psi4.geometry("""
     0 1
     C     0.000000    0.000000    0.000000
     F     0.000000    0.000000    1.383000
@@ -108,36 +54,136 @@ ch3f_mol = psi4.geometry("""
     H    -0.513360    0.889165   -0.363000
     H    -0.513360   -0.889165   -0.363000
 """)
+psi4.set_options({"basis": BASIS, "opt_type": "min", "geom_maxiter": 100})
+ch3f_energy = psi4.optimize(METHOD, molecule=ch3f)
+print(f"  CH3F energy: {ch3f_energy:.12f} Ha")
+ch3f.save_xyz_file(os.path.join(OUTPUT_DIR, "ch3f-optimized.xyz"), True)
 
-psi4.set_options({"opt_type": "min"})
-ch3f_energy = psi4.optimize("b3lyp", molecule=ch3f_mol)
-print(f"  CH3F Energy: {ch3f_energy:.10f} Hartree")
-
-ch3f_xyz_path = os.path.join(OUTPUT_DIR, "ch3f-optimized.xyz")
-ch3f_mol.save_xyz_file(ch3f_xyz_path, True)
-
-# Also do frequency calc on CH3F
-ch3f_energy_freq, ch3f_wfn = psi4.frequency("b3lyp", molecule=ch3f_mol, return_wfn=True)
-ch3f_hessian = np.array(ch3f_wfn.hessian())
-np.save(os.path.join(OUTPUT_DIR, "ch3f-hessian.npy"), ch3f_hessian)
+# CH3F frequencies
+ch3f_e2, ch3f_wfn = psi4.frequency(METHOD, molecule=ch3f, return_wfn=True)
+np.save(os.path.join(OUTPUT_DIR, "ch3f-hessian.npy"), np.array(ch3f_wfn.hessian()))
 ch3f_freqs = np.array(ch3f_wfn.frequencies())
-np.savetxt(os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs, header="CH3F vibrational frequencies (cm^-1)")
+np.savetxt(
+    os.path.join(OUTPUT_DIR, "ch3f-frequencies.txt"), ch3f_freqs, header=f"CH3F frequencies (cm^-1) at {METHOD}/{BASIS}"
+)
 
-with open(os.path.join(OUTPUT_DIR, "ch3f-energy.txt"), "w") as f:
-    f.write("# CH3F ground state energy at B3LYP/6-31G*\n")
-    f.write(f"{ch3f_energy:.12f}\n")
+# Extract CH3F geometry
+ch3f_coords = ch3f.geometry().np
+cf_dist = np.linalg.norm(ch3f_coords[0] - ch3f_coords[1]) * 0.529177  # Bohr to Angstrom
+ch_dist = np.linalg.norm(ch3f_coords[0] - ch3f_coords[2]) * 0.529177
+print(f"  C-F: {cf_dist:.4f} A, C-H: {ch_dist:.4f} A")
+
+# =====================================================================
+# 3. TS optimization (start from slightly asymmetric guess to help optimizer)
+# =====================================================================
+print(f"\n[3/5] TS optimization at {METHOD}/{BASIS}...")
+# Use 1.85 A as a better starting guess based on literature
+ts_mol = psi4.geometry("""
+    -1 1
+    C     0.000000    0.000000    0.000000
+    F     0.000000    0.000000    1.850000
+    F     0.000000    0.000000   -1.850000
+    H     1.026720    0.000000    0.000000
+    H    -0.513360    0.889165    0.000000
+    H    -0.513360   -0.889165    0.000000
+""")
+
+psi4.set_options(
+    {
+        "basis": BASIS,
+        "reference": "rhf",
+        "opt_type": "ts",
+        "geom_maxiter": 150,
+        "full_hess_every": 5,
+    }
+)
+
+ts_energy = psi4.optimize(METHOD, molecule=ts_mol)
+print(f"  TS energy: {ts_energy:.12f} Ha")
+ts_mol.save_xyz_file(os.path.join(OUTPUT_DIR, "sn2-ts-optimized.xyz"), True)
+
+# Extract TS geometry
+ts_coords = ts_mol.geometry().np
+cf1 = np.linalg.norm(ts_coords[0] - ts_coords[1]) * 0.529177
+cf2 = np.linalg.norm(ts_coords[0] - ts_coords[2]) * 0.529177
+ch1 = np.linalg.norm(ts_coords[0] - ts_coords[3]) * 0.529177
+print(f"  C-F1: {cf1:.4f} A, C-F2: {cf2:.4f} A, C-H: {ch1:.4f} A")
+
+# =====================================================================
+# 4. Hessian at TS
+# =====================================================================
+print("\n[4/5] Hessian at TS...")
+ts_e2, ts_wfn = psi4.frequency(METHOD, molecule=ts_mol, return_wfn=True)
+
+hessian = np.array(ts_wfn.hessian())
+np.save(os.path.join(OUTPUT_DIR, "sn2-ts-hessian.npy"), hessian)
+
+freqs = np.array(ts_wfn.frequencies())
+np.savetxt(
+    os.path.join(OUTPUT_DIR, "sn2-ts-frequencies.txt"), freqs, header=f"SN2 TS frequencies (cm^-1) at {METHOD}/{BASIS}"
+)
+
+n_imag = np.sum(freqs < 0)
+print(f"  Hessian shape: {hessian.shape}")
+print(f"  Frequencies: {freqs}")
+print(f"  Imaginary: {n_imag} (must be 1)")
+if n_imag == 1:
+    print(f"  OK: imaginary freq = {freqs[freqs < 0][0]:.1f} cm^-1")
+else:
+    print(f"  WARNING: expected 1 imaginary, got {n_imag}")
+
+# =====================================================================
+# 5. Ion-dipole complex (F-...CH3F)
+# =====================================================================
+print("\n[5/5] Ion-dipole complex optimization...")
+# F- approaching CH3F from the backside, ~2.5 A away
+complex_mol = psi4.geometry("""
+    -1 1
+    C     0.000000    0.000000    0.000000
+    F     0.000000    0.000000    1.383000
+    H     1.026720    0.000000   -0.363000
+    H    -0.513360    0.889165   -0.363000
+    H    -0.513360   -0.889165   -0.363000
+    F     0.000000    0.000000   -2.500000
+""")
+
+psi4.set_options({"opt_type": "min", "geom_maxiter": 100, "full_hess_every": -1})
+complex_energy = psi4.optimize(METHOD, molecule=complex_mol)
+print(f"  Complex energy: {complex_energy:.12f} Ha")
+complex_mol.save_xyz_file(os.path.join(OUTPUT_DIR, "complex-optimized.xyz"), True)
 
 # =====================================================================
 # Summary
 # =====================================================================
-print("\n" + "=" * 60)
-print("Done! Reference data saved to:", OUTPUT_DIR)
-print("=" * 60)
-print(f"  TS energy:     {ts_energy:.10f} Ha")
-print(f"  CH3F energy:   {ch3f_energy:.10f} Ha")
-print(f"  Hessian shape: {hessian.shape}")
-print(f"  TS freqs:      {len(freqs)} modes, {n_imaginary} imaginary")
-print("\nFiles:")
-for f in sorted(os.listdir(OUTPUT_DIR)):
-    size = os.path.getsize(os.path.join(OUTPUT_DIR, f))
-    print(f"  {f:40s} {size:>10,} bytes")
+barrier_vs_reactants = (ts_energy - (ch3f_energy + f_energy)) * 627.509
+barrier_vs_complex = (ts_energy - complex_energy) * 627.509
+
+with open(os.path.join(OUTPUT_DIR, "summary.txt"), "w") as f:
+    f.write(f"SN2 F- + CH3F Reference Data at {METHOD}/{BASIS}\n")
+    f.write(f"{'=' * 60}\n\n")
+    f.write(f"F- energy:       {f_energy:.12f} Ha\n")
+    f.write(f"CH3F energy:     {ch3f_energy:.12f} Ha\n")
+    f.write(f"Complex energy:  {complex_energy:.12f} Ha\n")
+    f.write(f"TS energy:       {ts_energy:.12f} Ha\n\n")
+    f.write(f"C-F (TS):        {cf1:.4f} / {cf2:.4f} A\n")
+    f.write(f"C-H (TS):        {ch1:.4f} A\n")
+    f.write(f"C-F (CH3F):      {cf_dist:.4f} A\n\n")
+    f.write(f"Barrier (TS - reactants):  {barrier_vs_reactants:.2f} kcal/mol\n")
+    f.write(f"Barrier (TS - complex):    {barrier_vs_complex:.2f} kcal/mol\n")
+    f.write("  Literature expected:     ~13-15 kcal/mol\n\n")
+    f.write(f"Imaginary freq:  {freqs[freqs < 0][0]:.1f} cm^-1\n")
+    f.write(f"Total freqs:     {len(freqs)} ({n_imag} imaginary)\n")
+
+with open(os.path.join(OUTPUT_DIR, "sn2-ts-energy.txt"), "w") as f:
+    f.write(f"# SN2 TS energy at {METHOD}/{BASIS}\n{ts_energy:.12f}\n")
+with open(os.path.join(OUTPUT_DIR, "ch3f-energy.txt"), "w") as f:
+    f.write(f"# CH3F energy at {METHOD}/{BASIS}\n{ch3f_energy:.12f}\n")
+
+print(f"\n{'=' * 60}")
+print(f"RESULTS at {METHOD}/{BASIS}")
+print(f"{'=' * 60}")
+print(f"  C-F (TS):             {cf1:.4f} / {cf2:.4f} A  (lit: ~1.83-1.85)")
+print(f"  C-F (CH3F):           {cf_dist:.4f} A  (expt: 1.382)")
+print(f"  Imaginary freq:       {freqs[freqs < 0][0]:.1f} cm^-1")
+print(f"  Barrier (vs reactants): {barrier_vs_reactants:.2f} kcal/mol")
+print(f"  Barrier (vs complex):   {barrier_vs_complex:.2f} kcal/mol  (lit: ~13-15)")

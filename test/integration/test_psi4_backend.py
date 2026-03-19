@@ -52,7 +52,7 @@ class TestPsi4EnergyCH3F(unittest.TestCase):
     def test_energy_matches_reference(self):
         """Energy should match the saved reference within 1e-5 Ha."""
         energy = self.engine.energy(self.xyz)
-        # Reference from generate_qm_data_v2.py
+        # Reference from generate_qm_data.py
         ref_energy = -139.751112913417
         self.assertAlmostEqual(energy, ref_energy, places=5, msg=f"Energy {energy} differs from reference {ref_energy}")
 

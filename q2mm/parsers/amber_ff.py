@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-from typing import List
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
@@ -57,7 +56,7 @@ class AmberFF(FF):
         angles = ["angle", "angle3", "angle4", "angle5"]
         torsions = ["torsion", "torsion4", "torsion5"]
         dipoles = ["dipole", "dipole3", "dipole4", "dipole5"]
-        self.params: List[Param] = []
+        self.params: list[Param] = []
         q2mm_sec = False
         gather_data = False
         self.sub_names = []
@@ -211,14 +210,14 @@ class AmberFF(FF):
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
-    def export_ff(self, path=None, params: List[Param] = None, lines=None):
+    def export_ff(self, path=None, params: list[Param] = None, lines=None):
         """
         Exports the force field to a file, typically mm3.fld.
         """
         if path is None:
             path = self.path
         if params is None:
-            params: List[Param] = self.params
+            params: list[Param] = self.params
         if lines is None:
             lines = self.lines
         for param in params:
@@ -274,10 +273,10 @@ class AmberFF(FF):
             f.writelines(lines)
         logger.log(10, f"WROTE: {path}")
 
-    def get_DOFs_by_atom_type(self, structs: List[Structure]) -> dict:
+    def get_DOFs_by_atom_type(self, structs: list[Structure]) -> dict:
         dof_by_param = dict()
         for param in self.params:
-            dof_by_param[param.ff_row]: List[DOF] = []
+            dof_by_param[param.ff_row]: list[DOF] = []
         for struct in structs:
             for bond in struct.bonds:
                 dof_by_param[bond.ff_row].append(bond)
@@ -287,5 +286,5 @@ class AmberFF(FF):
                 dof_by_param[dihed.ff_row].append(dihed)
         return dof_by_param
 
-    def get_DOFs_by_param(self, structs: List[Structure]) -> dict:
+    def get_DOFs_by_param(self, structs: list[Structure]) -> dict:
         return self.get_DOFs_by_atom_type(structs)

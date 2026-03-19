@@ -21,10 +21,9 @@ only needed if you want to regenerate from scratch.
 
 | Script | Description |
 |--------|-------------|
-| `generate_qm_data.py` | Generate QM reference data with Psi4 (B3LYP/6-31G\*) |
-| `generate_qm_data_v2.py` | Improved version using 6-31+G(d) for anion diffuse functions |
+| `generate_qm_data.py` | Generate QM reference data with Psi4 (B3LYP/6-31+G(d)) |
 | `generate_mm_data.py` | Run Tinker MM3 energy/frequency calculations on the TS geometry |
-| `test_new_pipeline.py` | Test Q2MM's model layer: molecule → Seminario → force field |
+| `test_pipeline.py` | Test Q2MM's model layer: molecule → Seminario → force field |
 | `test_backends.py` | Quick smoke test of TinkerEngine and Psi4Engine backends |
 | `run_tsff_pipeline.py` | Full TSFF optimisation pipeline (Seminario init → scipy optimize) |
 | `compare_implementations.py` | Compare SN2 Seminario bond projections against pinned fixtures |
@@ -42,7 +41,7 @@ only needed if you want to regenerate from scratch.
 
 ```bash
 # 1. Generate QM data (requires Psi4; skip if using pre-computed)
-python generate_qm_data_v2.py
+python generate_qm_data.py
 
 # 2. Generate MM data (requires Tinker; skip if using pre-computed)
 python generate_mm_data.py
