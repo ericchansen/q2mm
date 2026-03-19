@@ -5,7 +5,6 @@ Provides a clean, composable optimization framework built on
 """
 
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
-from q2mm.optimizers.scipy_opt import ScipyOptimizer, OptimizationResult
 
 __all__ = [
     "ObjectiveFunction",
@@ -13,3 +12,9 @@ __all__ = [
     "ScipyOptimizer",
     "OptimizationResult",
 ]
+
+# Lazy import: scipy is an optional dependency
+try:
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer, OptimizationResult  # noqa: F401
+except ImportError:
+    pass

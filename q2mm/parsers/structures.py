@@ -125,7 +125,7 @@ class Atom:
     @property
     def element(self):
         if self._element is None:
-            self._element = co.MASSES.items()[self.atomic_num - 1][0]
+            self._element = list(co.MASSES.keys())[self.atomic_num - 1]
         return self._element
 
     @element.setter
@@ -229,8 +229,8 @@ class DOF:
         Returns:
             bool: True if DOF is identical to self, else False.
         """
-        assert other is DOF
-        return all(self.atom_nums == other.atom_nums) or all(reversed(self.atom_nums) == other.atom_nums)
+        assert isinstance(other, DOF)
+        return self.atom_nums == other.atom_nums or list(reversed(self.atom_nums)) == other.atom_nums
 
 
 class Bond(DOF):
@@ -401,7 +401,7 @@ class Structure:
             output = ["\\begin{tabular}{l S[table-format=3.6] S[table-format=3.6] S[table-format=3.6]}"]
             for i, atom in enumerate(self._atoms):
                 if atom.element is None:
-                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
+                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
                     ele = atom.element
                 output.append(f"{ele}{i + 1} & {atom.x:3.6f} & {atom.y:3.6f} & {atom.z:3.6f}\\\\")
@@ -412,7 +412,7 @@ class Structure:
             output = []
             for i, atom in enumerate(self._atoms):
                 if atom.element is None:
-                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
+                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
                     ele = atom.element
                 # Used only for a problem Eric experienced.
@@ -430,7 +430,7 @@ class Structure:
             output = []
             for i, atom in enumerate(self._atoms):
                 if atom.element is None:
-                    ele = co.MASSES.items()[atom.atomic_num - 1][0]
+                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
                     ele = atom.element
                 # Used only for a problem Eric experienced.

@@ -57,10 +57,7 @@ def trim_data(dict1, dict2):
                     to_remove.append(d2)
             for datum in to_remove:
                 if datum in dict1[typ] and datum in dict2[typ]:
-                    raise AssertionError(
-                        "The data point that is flagged to be "
-                        "removed is present in both data sets."
-                    )
+                    raise AssertionError("The data point that is flagged to be removed is present in both data sets.")
                 if datum in dict1[typ]:
                     dict1[typ].remove(datum)
                 if datum in dict2[typ]:
@@ -147,9 +144,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
                     score_typ[c.typ + "-o"] += score
                     num_typ[c.typ + "-o"] += 1
             if c.ff_row is None:
-                strings.append(
-                    f"  {c.lbl:<30}  {r.wht:>7.2f}  {r.val:>11.4f}  {c.val:>11.4f}  {score:>11.4f}  "
-                )
+                strings.append(f"  {c.lbl:<30}  {r.wht:>7.2f}  {r.val:>11.4f}  {c.val:>11.4f}  {score:>11.4f}  ")
             else:
                 strings.append(
                     f"  {c.lbl:<30}  {r.wht:>7.2f}  {r.val:>11.4f}  {c.val:>11.4f}  {score:>11.4f}  {c.ff_row:>5} "
@@ -194,9 +189,7 @@ def select_group_of_energies(data):
         indices = np.where([x.typ == energy_type for x in data])[0]
         unique_group_nums = set([x.idx_1 for x in data[indices]])
         for unique_group_num in unique_group_nums:
-            more_indices = np.where(
-                [x.typ == energy_type and x.idx_1 == unique_group_num for x in data]
-            )[0]
+            more_indices = np.where([x.typ == energy_type and x.idx_1 == unique_group_num for x in data])[0]
             yield more_indices
 
 
