@@ -234,3 +234,5 @@ dmypy.json
 !test/fixtures/
 !test/fixtures/seminario_parity/
 !test/fixtures/seminario_parity/*.json
+
+site/
