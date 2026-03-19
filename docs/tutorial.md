@@ -10,7 +10,7 @@ well-defined D₃ₕ-like transition state.
 ## Prerequisites
 
 !!! note "What you need before starting"
-    - **Python 3.9+** with Q2MM installed (`pip install -e .`)
+    - **Python 3.10+** with Q2MM installed (`pip install q2mm`)
     - **NumPy** and **SciPy** (installed automatically with Q2MM)
     - A **QM engine** — either [Psi4](https://psicode.org/) (`conda install psi4 -c conda-forge`) or [Gaussian](https://gaussian.com/) (commercial license)
     - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`) or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
@@ -18,7 +18,7 @@ well-defined D₃ₕ-like transition state.
 
 !!! tip "Quick install"
     ```bash
-    pip install -e ".[openmm]"              # Q2MM + OpenMM backend
+    pip install "q2mm[openmm]"              # Q2MM + OpenMM backend (from PyPI)
     conda install psi4 -c conda-forge       # Psi4 for QM calculations
     ```
 

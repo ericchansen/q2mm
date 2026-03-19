@@ -8,7 +8,7 @@ parameterisation.
 
 | Software | Required for | Install |
 |----------|-------------|---------|
-| **Q2MM** | All scripts | `pip install -e .` from repo root |
+| **Q2MM** | All scripts | `pip install q2mm` or `pip install -e .` from repo root |
 | **Psi4** | QM data generation | `conda install psi4 -c conda-forge` |
 | **Tinker** | MM reference data | [dasher.wustl.edu/tinker](https://dasher.wustl.edu/tinker/) |
 

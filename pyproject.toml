@@ -22,7 +22,7 @@ keywords = [
     "OpenMM",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
@@ -70,6 +70,9 @@ all = [
 [project.urls]
 Homepage = "https://github.com/ericchansen/q2mm"
 Documentation = "https://ericchansen.github.io/q2mm/"
+Repository = "https://github.com/ericchansen/q2mm"
+Issues = "https://github.com/ericchansen/q2mm/issues"
+Changelog = "https://github.com/ericchansen/q2mm/releases"
 
 [tool.setuptools.packages.find]
 include = ["q2mm*"]

@@ -3,14 +3,26 @@
 ## Installation
 
 !!! note "Requirements"
-    Python **3.9** or newer is required.
+    Python **3.10** or newer is required.
+
+### From PyPI (recommended)
 
 ```bash
-pip install -e .            # Basic
-pip install -e ".[dev]"     # With pytest + ruff
-pip install -e ".[openmm]"  # With OpenMM backend
-pip install -e ".[amber]"   # With parmed (AMBER support)
-pip install -e ".[docs]"    # MkDocs Material for docs
+pip install q2mm                   # core package
+pip install "q2mm[openmm]"         # with OpenMM backend
+pip install "q2mm[amber]"          # with parmed (AMBER support)
+pip install "q2mm[all]"            # all optional backends
+```
+
+> **Pre-release:** the current version is an alpha. Use `pip install --pre q2mm`
+> if a stable release hasn't been published yet.
+
+### From source (for development)
+
+```bash
+git clone https://github.com/ericchansen/q2mm.git
+cd q2mm
+pip install -e ".[dev]"            # editable install with dev tools
 ```
 
 ---
