@@ -29,7 +29,7 @@ jobs:
       - name: Verify version matches tag
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(python -c "import re; print(re.search(r'q2mm-(.+?)\.tar\.gz', ' '.join(__import__('os').listdir('dist'))).group(1))")
+          PKG_VERSION=$(python -c "import os; print(next(f[5:-7] for f in os.listdir('dist') if f.startswith('q2mm-') and f.endswith('.tar.gz')))")
           echo "Tag version: $TAG"
           echo "Package version: $PKG_VERSION"
           if [ "$TAG" != "$PKG_VERSION" ]; then
