@@ -3,6 +3,8 @@
 **Quantum-guided molecular mechanics force field optimization.**
 
 [![CI](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/q2mm)](https://pypi.org/project/q2mm/)
+[![Python](https://img.shields.io/pypi/pyversions/q2mm)](https://pypi.org/project/q2mm/)
 
 Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing
 the difference between MM-calculated properties and quantum mechanics (QM)
@@ -29,7 +31,17 @@ reference data. It is designed for building **transition state force fields
 ## Quick Start
 
 ```bash
-pip install -e .
+pip install q2mm                   # from PyPI
+pip install "q2mm[openmm]"         # with OpenMM backend
+```
+
+> **Pre-release:** the current version is an alpha. Use `pip install --pre q2mm`
+> if a stable release hasn't been published yet.
+
+For development, clone the repo and install in editable mode:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ```python
