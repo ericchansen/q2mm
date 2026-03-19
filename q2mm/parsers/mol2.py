@@ -91,13 +91,23 @@ class Mol2(File):
             if atom_entry == "" or atom_entry.strip() == self.ATOM_FLAG:
                 continue
             atom_split = atom_entry.split()
+            # Mol2 column 2 is the atom name (e.g. "C1", "RH1"), not the
+            # element symbol.  Strip trailing digits and title-case to get
+            # a proper element key that matches constants.MASSES (e.g. "Rh").
+            raw_name = atom_split[1]
+            element = raw_name.rstrip("0123456789").capitalize()
+            # partial_charge (column 9) comes as a string — cast to float
+            try:
+                charge = float(atom_split[8])
+            except (IndexError, ValueError):
+                charge = None
             atoms.append(
                 Atom(
                     index=int(atom_split[0]),
-                    element=atom_split[1],
+                    element=element,
                     coords=atom_split[2:5],
                     atom_type_name=atom_split[5],
-                    partial_charge=atom_split[8],
+                    partial_charge=charge,
                 )
             )
         return atoms
