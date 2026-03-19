@@ -52,7 +52,7 @@ def _load_upstream_modules(worktree_root: Path) -> dict[str, Any]:
         if (
             module_name == "q2mm"
             or module_name.startswith("q2mm.")
-            or module_name in {"constants", "schrod_indep_filetypes", "utilities", "linear_algebra"}
+            or module_name in {"constants", "utilities", "linear_algebra"}
         ):
             del sys.modules[module_name]
 
@@ -62,7 +62,7 @@ def _load_upstream_modules(worktree_root: Path) -> dict[str, Any]:
         sys.modules["parmed"] = types.ModuleType("parmed")
     return {
         "constants": importlib.import_module("q2mm.constants"),
-        "filetypes": importlib.import_module("q2mm.schrod_indep_filetypes"),
+        "filetypes": importlib.import_module("q2mm.filetypes"),
         "seminario": importlib.import_module("q2mm.seminario"),
     }
 
