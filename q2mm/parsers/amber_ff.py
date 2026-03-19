@@ -210,7 +210,7 @@ class AmberFF(FF):
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
-    def export_ff(self, path=None, params: list[Param] = None, lines=None):
+    def export_ff(self, path=None, params: list[Param] | None = None, lines=None):
         """
         Exports the force field to a file, typically mm3.fld.
         """

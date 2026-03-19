@@ -5,7 +5,7 @@
             "name": "Run SN2 Pipeline",
             "type": "debugpy",
             "request": "launch",
-            "module": "examples.sn2-test.run_tsff_pipeline",
+            "program": "${workspaceFolder}/examples/sn2-test/run_tsff_pipeline.py",
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false
