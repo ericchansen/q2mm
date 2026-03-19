@@ -73,6 +73,10 @@ pip install -e ".[dev]"
 python -m pytest -v
 ruff check q2mm/ test/ scripts/
 ruff format --check q2mm test scripts examples
+
+# Optional: install pre-commit hook to catch lint/format issues before commit
+cp hooks/pre-commit .git/hooks/pre-commit    # Unix/macOS
+chmod +x .git/hooks/pre-commit
 ```
 
 To regenerate the pinned upstream Seminario parity fixtures, create a sibling

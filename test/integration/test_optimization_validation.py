@@ -479,9 +479,7 @@ class TestForceFieldExportRoundtrip:
         """ForceField.copy() preserves the parameter vector exactly."""
         ff = _water_ff(bond_k=3.14, bond_r0=1.23, angle_k=0.42, angle_eq=109.5)
         ff_copy = ff.copy()
-        np.testing.assert_array_equal(
-            ff.get_param_vector(), ff_copy.get_param_vector()
-        )
+        np.testing.assert_array_equal(ff.get_param_vector(), ff_copy.get_param_vector())
         # Mutating the copy should not affect the original
         vec = ff_copy.get_param_vector()
         vec[0] = 999.0
@@ -502,9 +500,7 @@ class TestAtomIdentityMatching:
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
         # Ask for bond (0, 2) via atom_indices
-        ref = ReferenceValue(
-            kind="bond_length", value=0.97, atom_indices=(0, 2)
-        )
+        ref = ReferenceValue(kind="bond_length", value=0.97, atom_indices=(0, 2))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -515,9 +511,7 @@ class TestAtomIdentityMatching:
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
         # Reversed order — _extract_value sorts the key
-        ref = ReferenceValue(
-            kind="bond_length", value=0.97, atom_indices=(2, 0)
-        )
+        ref = ReferenceValue(kind="bond_length", value=0.97, atom_indices=(2, 0))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -527,9 +521,7 @@ class TestAtomIdentityMatching:
             "bond_angles": [104.5],
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
-        ref = ReferenceValue(
-            kind="bond_angle", value=104.5, atom_indices=(1, 0, 2)
-        )
+        ref = ReferenceValue(kind="bond_angle", value=104.5, atom_indices=(1, 0, 2))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
@@ -540,9 +532,7 @@ class TestAtomIdentityMatching:
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
         # Reversed: (2, 0, 1) — _extract_value tries both orderings
-        ref = ReferenceValue(
-            kind="bond_angle", value=104.5, atom_indices=(2, 0, 1)
-        )
+        ref = ReferenceValue(kind="bond_angle", value=104.5, atom_indices=(2, 0, 1))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
@@ -553,9 +543,7 @@ class TestAtomIdentityMatching:
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97, (1, 2): 0.98},
         }
         # Use data_idx=1, no atom_indices
-        ref = ReferenceValue(
-            kind="bond_length", value=0.97, data_idx=1, atom_indices=None
-        )
+        ref = ReferenceValue(kind="bond_length", value=0.97, data_idx=1, atom_indices=None)
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -565,9 +553,7 @@ class TestAtomIdentityMatching:
             "bond_lengths": [0.96],
             "bond_lengths_by_atoms": {(0, 1): 0.96},
         }
-        ref = ReferenceValue(
-            kind="bond_length", value=1.0, atom_indices=(5, 6)
-        )
+        ref = ReferenceValue(kind="bond_length", value=1.0, atom_indices=(5, 6))
         with pytest.raises(KeyError):
             ObjectiveFunction._extract_value(calc, ref)
 
@@ -605,9 +591,7 @@ class TestOptimizationDeterminism:
             decimal=12,
             err_msg="Optimization is not deterministic",
         )
-        assert results[0].final_score == pytest.approx(
-            results[1].final_score, rel=1e-10
-        )
+        assert results[0].final_score == pytest.approx(results[1].final_score, rel=1e-10)
 
     def test_determinism_nelder_mead(self):
         """Nelder-Mead is also deterministic (no stochastic elements)."""
@@ -615,9 +599,7 @@ class TestOptimizationDeterminism:
         for _ in range(2):
             true_ff, guess_ff, mols, ref, engine = _make_water_problem()
             obj = ObjectiveFunction(guess_ff, engine, mols, ref)
-            opt = ScipyOptimizer(
-                method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False
-            )
+            opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
             results.append(opt.optimize(obj))
 
         np.testing.assert_array_almost_equal(
@@ -677,12 +659,12 @@ class TestGoldenFixtureRegression:
         result = opt.optimize(obj)
 
         # Scores should match tightly (same code, same inputs → same results)
-        assert result.initial_score == pytest.approx(
-            golden["initial_score"], rel=1e-6
-        ), f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"
-        assert result.final_score == pytest.approx(
-            golden["final_score"], rel=1e-6
-        ), f"Final score drift: {result.final_score} vs {golden['final_score']}"
+        assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-6), (
+            f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"
+        )
+        assert result.final_score == pytest.approx(golden["final_score"], rel=1e-6), (
+            f"Final score drift: {result.final_score} vs {golden['final_score']}"
+        )
 
         # Parameters should match closely
         np.testing.assert_allclose(

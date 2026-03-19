@@ -34,11 +34,13 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     theta = np.deg2rad(angle_deg)
     return Q2MMMolecule(
         symbols=["O", "H", "H"],
-        geometry=np.array([
-            [0.0, 0.0, 0.0],
-            [bond_length, 0.0, 0.0],
-            [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-        ]),
+        geometry=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [bond_length, 0.0, 0.0],
+                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
+            ]
+        ),
         name="water",
         bond_tolerance=1.5,
     )
