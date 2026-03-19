@@ -1,11 +1,19 @@
-"""Backward-compatibility shim.
+"""Backward-compatibility shim — import from q2mm.parsers or q2mm.models instead.
 
-All classes and functions formerly in this module have moved to
-``q2mm.parsers``, ``q2mm.models.datum``, ``q2mm.models.param``,
-and ``q2mm.models.hessian``.  This file re-exports every public name
-so existing ``from q2mm.schrod_indep_filetypes import X`` continues
-to work.
+.. deprecated::
+    This module re-exports symbols for backward compatibility with code that
+    predates the modular package layout. New code should import directly from
+    the canonical modules (q2mm.parsers.gaussian, q2mm.parsers.mol2, etc.).
 """
+
+import warnings as _warnings
+
+_warnings.warn(
+    "q2mm.schrod_indep_filetypes is deprecated. "
+    "Import from q2mm.parsers or q2mm.models directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 # Structures
 from q2mm.parsers.structures import (  # noqa: F401

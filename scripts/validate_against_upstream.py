@@ -23,7 +23,9 @@ if str(REPO_ROOT) not in sys.path:
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
-from q2mm.schrod_indep_filetypes import JaguarIn, MacroModel, Mol2
+from q2mm.parsers.jaguar import JaguarIn
+from q2mm.parsers.macromodel import MacroModel
+from q2mm.parsers.mol2 import Mol2
 
 DEFAULT_WORKTREE = REPO_ROOT.parent / f"{REPO_ROOT.name}-upstream-worktree"
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"

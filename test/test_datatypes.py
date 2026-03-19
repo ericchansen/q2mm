@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import unittest
 
-from q2mm.datatypes import (
+from q2mm.parsers.mm3 import (
     match_mm3_bond,
     match_mm3_angle,
     match_mm3_stretch_bend,

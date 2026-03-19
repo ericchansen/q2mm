@@ -56,9 +56,11 @@ pip install -e ".[amber]" # With parmed (AMBER support)
 ```
 q2mm/
 ├── backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
-├── io/            # File format parsers (Gaussian, Jaguar, MOL2, MAE)
 ├── forcefields/   # Force field types (MM3, AMBER, Tinker)
-└── models/        # Clean molecule/force-field models + Seminario estimation
+├── io/            # Convenience re-exports from parsers
+├── models/        # Clean molecule/force-field models + Seminario estimation
+├── optimizers/    # Objective functions, scoring, and scipy-based optimization
+└── parsers/       # File format parsers (Gaussian, Jaguar, MM3, MOL2, etc.)
 
 examples/          # Supported example workflows and bundled reference inputs
 scripts/           # Utility scripts and screening tools

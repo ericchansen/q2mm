@@ -9,7 +9,7 @@ from q2mm.parsers.structures import Atom
 logger = logging.getLogger(__name__)
 
 
-# Functions from schrod_indep_filetypes.py
+# Functions originally from q2mm.parsers (legacy schrod_indep_filetypes module)
 
 
 def mass_weight_hessian(hess, atoms, reverse=False):

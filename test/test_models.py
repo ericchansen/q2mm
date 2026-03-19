@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from q2mm import datatypes
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam, VdwParam, _extract_element
 from q2mm.models.seminario import estimate_force_constants
+from q2mm.parsers.tinker_ff import TinkerFF
 
 # Fixture paths
 DATA_DIR = Path(__file__).resolve().parent.parent / "examples" / "sn2-test" / "qm-reference"
@@ -291,7 +291,7 @@ class TestForceField:
         out_path = tmp_path / "updated.prm"
         ff.to_tinker_prm(out_path)
 
-        legacy = datatypes.TinkerFF(str(out_path))
+        legacy = TinkerFF(str(out_path))
         legacy.import_ff()
         angle_row = ff.angles[0].ff_row
         angle_fcs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "af"]
