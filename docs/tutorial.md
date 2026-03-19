@@ -483,6 +483,7 @@ for b in optimised_ff.bonds:
           f"r₀ = {b.equilibrium:.4f} Å")
 
 # Convergence history (score at each evaluation)
+# Requires: pip install matplotlib
 import matplotlib.pyplot as plt
 plt.semilogy(result.history)
 plt.xlabel("Evaluation")
