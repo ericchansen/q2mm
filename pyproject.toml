@@ -1,19 +1,46 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=68.0", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "q2mm"
-version = "5.0.0"
+dynamic = ["version"]
 description = "Quantum-guided molecular mechanics force field optimization"
+readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "BSD-3-Clause" }
 authors = [
     { name = "Eric Hansen" },
 ]
+keywords = [
+    "force-field",
+    "molecular-mechanics",
+    "optimization",
+    "transition-state",
+    "computational-chemistry",
+    "Q2MM",
+    "OpenMM",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
 dependencies = [
     "numpy",
 ]
+
+[tool.setuptools_scm]
+# Version derived from git tags: git tag v5.0.0 → version 5.0.0
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 
 [project.optional-dependencies]
 amber = [
@@ -29,6 +56,7 @@ dev = [
     "pytest",
     "ruff",
     "qcelemental",
+    "build",
 ]
 docs = [
     "mkdocs-material",
