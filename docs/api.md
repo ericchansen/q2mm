@@ -68,8 +68,8 @@ mol = Q2MMMolecule(
     symbols=["O", "H", "H"],
     geometry=[[0.0, 0.0, 0.0], ...],
     hessian=hessian_matrix,       # optional, ndarray
-    atom_types=[1, 5, 5],
-    bond_tolerance=1.2,
+    atom_types=["1", "5", "5"],
+    bond_tolerance=1.3,
 )
 ```
 
@@ -80,7 +80,7 @@ mol = Q2MMMolecule(
 | `symbols` | `list[str]` | Element symbols (e.g. `["O", "H", "H"]`) |
 | `geometry` | `array-like` | Cartesian coordinates (Å), shape `(N, 3)` |
 | `hessian` | `ndarray`, optional | Hessian matrix, shape `(3N, 3N)` |
-| `atom_types` | `list[int]` | MM atom type indices |
+| `atom_types` | `list[str]` | MM atom type labels (default: element symbols) |
 | `bond_tolerance` | `float` | Scaling factor for covalent radii bond detection |
 
 !!! tip
@@ -102,7 +102,7 @@ from q2mm.models.seminario import estimate_force_constants
 ff = estimate_force_constants(molecules)
 ```
 
-**Input:** `list[Q2MMMolecule]` — each molecule must have a Hessian.
+**Input:** `Q2MMMolecule` or `list[Q2MMMolecule]` — each molecule must have a Hessian.
 
 **Output:** `ForceField` with estimated bond/angle force constants and
 equilibrium values.
@@ -149,7 +149,7 @@ from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 
 ref = ReferenceData()
 ref.add_energy(value=0.0, weight=1.0)
-ref.add_frequency(value=1648.5, weight=0.1)
+ref.add_frequency(value=1648.5, data_idx=0, weight=0.1)
 ref.add_bond_length(value=0.9572, atom_indices=(0, 1), weight=10.0)
 ref.add_bond_angle(value=104.52, atom_indices=(1, 0, 2), weight=5.0)
 ref.add_torsion_angle(value=180.0, atom_indices=(0, 1, 2, 3), weight=2.0)
@@ -179,7 +179,8 @@ from q2mm.optimizers.objective import ObjectiveFunction
 obj = ObjectiveFunction(
     forcefield=ff,
     engine=engine,
-    reference_data=ref,
+    molecules=[mol],
+    reference=ref,
 )
 
 score = obj(param_vector)  # f(param_vector) -> float
@@ -203,8 +204,8 @@ from q2mm.optimizers.scipy_opt import ScipyOptimizer
 optimizer = ScipyOptimizer(method="L-BFGS-B", eps=1e-3)
 result = optimizer.optimize(objective)
 
-print(result.x)       # optimized parameter vector
-print(result.score)   # final objective value
+print(result.final_params)  # optimized parameter vector
+print(result.final_score)  # final objective value
 ```
 
 **Default:** L-BFGS-B with `eps=1e-3` and bounds from `ForceField.get_bounds()`.
@@ -288,8 +289,9 @@ File format parsers for reading computational chemistry output.
 from q2mm.parsers import GaussLog
 
 log = GaussLog("optimization.log")
-energies = log.energies
-geometries = log.geometries
+structures = log.structures  # list[Structure] — coordinates, atoms
+eigenvalues = log.evals      # frequency eigenvalues
+eigenvectors = log.evecs     # frequency eigenvectors
 ```
 
 ---
