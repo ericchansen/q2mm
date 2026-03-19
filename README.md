@@ -33,20 +33,20 @@ pip install -e .
 ```
 
 ```python
+import numpy as np
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
-from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-# Build molecule from QM data (coordinates + Hessian)
-mol = Q2MMMolecule(symbols=symbols, geometry=coords, hessian=hessian)
+# Load QM data (coordinates + Hessian from your QM package)
+mol = Q2MMMolecule.from_xyz("ts-optimized.xyz")
+mol.hessian = np.load("ts-hessian.npy")  # Hartree/Bohr²
 
-# Initialize force field from QM Hessian (Seminario method)
-ff = estimate_force_constants([mol])
+# Estimate force constants from the QM Hessian (Seminario method)
+ff = estimate_force_constants(mol, au_hessian=True)
 
-# Optimize against reference data
-optimizer = ScipyOptimizer(method="L-BFGS-B")
-result = optimizer.optimize(objective)
-print(result.summary())
+print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
+for b in ff.bonds:
+    print(f"  {b.elements}: k={b.force_constant:.3f} mdyn/Å")
 ```
 
 See the [Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for a
