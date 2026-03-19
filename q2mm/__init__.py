@@ -8,4 +8,9 @@ Subpackages:
     cli         — Command-line interface
 """
 
-__version__ = "5.0.0"
+try:
+    from importlib.metadata import version
+
+    __version__ = version("q2mm")
+except Exception:
+    __version__ = "0.0.0.dev0"  # fallback for editable/uninstalled
