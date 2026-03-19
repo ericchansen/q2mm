@@ -1,3 +1,4 @@
+# Convenience re-exports — canonical imports are from q2mm.parsers
 """Force field representations for Q2MM.
 
 Re-exports force field classes and label matchers:

@@ -30,6 +30,8 @@ FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
 
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
 SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
+OPTIMIZATION_FIXTURE_DIR = REPO_ROOT / "test" / "fixtures"
+OPTIMIZATION_GOLDEN_PATH = OPTIMIZATION_FIXTURE_DIR / "optimization_golden.json"
 
 RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
 TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
@@ -106,11 +108,9 @@ CASE_MATRIX: dict[str, CaseDefinition] = {
         case_id="optimization-endpoint",
         description="Optimization endpoint comparison (objective, energy, geometry).",
         category="optimization",
-        supported_modes=(),
-        blocked_reason=(
-            "Blocked until a shared old/new optimization workflow is wrapped in the "
-            "validation harness with agreed endpoint tolerances."
-        ),
+        supported_modes=("fixture",),
+        blocked_reason=None,
+        requires_worktree=False,
     ),
     "openmm-tinker-mm3-shared": CaseDefinition(
         case_id="openmm-tinker-mm3-shared",
@@ -381,11 +381,115 @@ def _run_openmm_tinker_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     )
 
 
+def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult:
+    """Validate optimization endpoint against golden fixture."""
+    case = CASE_MATRIX["optimization-endpoint"]
+    if not OPTIMIZATION_GOLDEN_PATH.exists():
+        return _blocked_result(
+            case, mode,
+            f"Golden fixture not found at {OPTIMIZATION_GOLDEN_PATH}. "
+            "Run: python scripts/generate_optimization_fixtures.py",
+        )
+
+    try:
+        from q2mm.backends.mm.openmm import OpenMMEngine
+        from q2mm.models.forcefield import AngleParam, BondParam
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    except ImportError as exc:
+        return _blocked_result(case, mode, f"Import error: {exc}")
+
+    golden = _load_json(OPTIMIZATION_GOLDEN_PATH)
+
+    # Reproduce the same water problem used to generate the fixture
+    engine = OpenMMEngine()
+    true_ff = ForceField(
+        name="water-test",
+        bonds=[BondParam(elements=("H", "O"), force_constant=7.0, equilibrium=0.96)],
+        angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.8, equilibrium=104.5)],
+    )
+
+    def _water(angle_deg=104.5, bond_length=0.96):
+        theta = np.deg2rad(angle_deg)
+        return Q2MMMolecule(
+            symbols=["O", "H", "H"],
+            geometry=np.array([
+                [0.0, 0.0, 0.0],
+                [bond_length, 0.0, 0.0],
+                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
+            ]),
+            name="water",
+            bond_tolerance=1.5,
+        )
+
+    mols = [_water(104.5, 0.96), _water(115.0, 0.96), _water(104.5, 1.05)]
+    ref = ReferenceData()
+    for i, mol in enumerate(mols):
+        ref.add_energy(engine.energy(mol, true_ff), weight=1.0, molecule_idx=i)
+    freqs = engine.frequencies(mols[0], true_ff)
+    for j, f in enumerate(freqs):
+        if abs(f) > 50.0:
+            ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
+
+    guess_ff = ForceField(
+        name="water-test",
+        bonds=[BondParam(elements=("H", "O"), force_constant=8.5, equilibrium=1.01)],
+        angles=[AngleParam(elements=("H", "O", "H"), force_constant=1.1, equilibrium=109.5)],
+    )
+
+    obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+    opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+    result = opt.optimize(obj)
+
+    details: list[str] = []
+    score_tol = 1e-6
+    param_tol = 1e-6
+
+    initial_diff = abs(result.initial_score - golden["initial_score"])
+    if initial_diff > score_tol * max(abs(golden["initial_score"]), 1.0):
+        details.append(
+            f"initial_score: expected {golden['initial_score']:.8f}, "
+            f"got {result.initial_score:.8f}, diff {initial_diff:.3e}"
+        )
+
+    final_diff = abs(result.final_score - golden["final_score"])
+    if final_diff > score_tol * max(abs(golden["final_score"]), 1.0):
+        details.append(
+            f"final_score: expected {golden['final_score']:.8f}, "
+            f"got {result.final_score:.8f}, diff {final_diff:.3e}"
+        )
+
+    max_param_diff = 0.0
+    for i, (actual, expected) in enumerate(zip(result.final_params, golden["final_params"])):
+        diff = abs(actual - expected)
+        max_param_diff = max(max_param_diff, diff)
+        denom = max(abs(expected), 1e-8)
+        if diff / denom > param_tol:
+            details.append(f"param[{i}]: expected {expected:.8f}, got {actual:.8f}, diff {diff:.3e}")
+
+    return CaseResult(
+        case_id=case.case_id,
+        description=case.description,
+        category=case.category,
+        mode=mode,
+        status="passed" if not details else "failed",
+        metrics={
+            "initial_score_diff": initial_diff,
+            "final_score_diff": final_diff,
+            "max_param_diff": max_param_diff,
+            "improvement": result.improvement,
+            "n_evaluations": result.n_evaluations,
+        },
+        details=details,
+    )
+
+
 CASE_RUNNERS: dict[str, Callable[[Path, Mode], CaseResult]] = {
     "seminario-sn2-bond": _run_sn2_bond_case,
     "seminario-rh-direct-bond": _run_rh_direct_case,
     "seminario-rh-pipeline": _run_rh_pipeline_case,
     "openmm-tinker-mm3-shared": _run_openmm_tinker_case,
+    "optimization-endpoint": _run_optimization_endpoint_case,
 }
 
 

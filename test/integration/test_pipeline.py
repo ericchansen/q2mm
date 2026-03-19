@@ -35,7 +35,7 @@ class TestHessianAnalysis(unittest.TestCase):
 
     def test_eigenvalue_decomposition_roundtrip(self):
         """Decompose and reform Hessian, verify roundtrip."""
-        from q2mm.core import linalg
+        from q2mm import linear_algebra as linalg
 
         eigenvalues, eigenvectors = linalg.decompose(self.hessian)
         reformed = linalg.reform_hessian(eigenvalues, eigenvectors)

@@ -9,7 +9,12 @@ from pathlib import Path
 import numpy as np
 
 from q2mm.backends.base import MMEngine
-from q2mm.constants import AVO, MASSES, MDYNA_TO_KJMOLA2, MM3_STR
+from q2mm.constants import (
+    AMU_TO_KG, SPEED_OF_LIGHT_MS, MM3_BOND_C3, MM3_BOND_C4,
+    MM3_ANGLE_C3, MM3_ANGLE_C4, MM3_ANGLE_C5, MM3_ANGLE_C6,
+    RAD_TO_DEG, KCAL_TO_KJ, MDYNA_TO_KJMOLA2, MM3_STR,
+    AVO, MASSES,
+)
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
@@ -23,17 +28,6 @@ except ImportError:  # pragma: no cover - exercised when OpenMM is not installed
     unit = None
     _HAS_OPENMM = False
 
-
-_AMU_TO_KG = 1.66053906660e-27
-_SPEED_OF_LIGHT_MS = 299792458.0
-_MM3_BOND_C3 = 2.55
-_MM3_BOND_C4 = (7.0 / 12.0) * _MM3_BOND_C3**2
-_MM3_ANGLE_C3 = -0.014
-_MM3_ANGLE_C4 = 5.6e-5
-_MM3_ANGLE_C5 = -7.0e-7
-_MM3_ANGLE_C6 = 9.0e-10
-_RAD_TO_DEG = 180.0 / np.pi
-_KCAL_TO_KJ = 4.184
 
 
 @dataclass
@@ -115,7 +109,7 @@ def _vdw_radius_to_openmm(radius: float) -> float:
 
 
 def _vdw_epsilon_to_openmm(epsilon: float) -> float:
-    return float(epsilon) * _KCAL_TO_KJ
+    return float(epsilon) * KCAL_TO_KJ
 
 
 def _match_bond(
@@ -198,7 +192,7 @@ class OpenMMEngine(MMEngine):
             system.addParticle(MASSES[symbol] * unit.dalton)
 
         bond_force = mm.CustomBondForce(
-            f"k*(10*(r-r0))^2*(1-c3*(10*(r-r0))+c4*(10*(r-r0))^2);c3={_MM3_BOND_C3};c4={_MM3_BOND_C4}"
+            f"k*(10*(r-r0))^2*(1-c3*(10*(r-r0))+c4*(10*(r-r0))^2);c3={MM3_BOND_C3};c4={MM3_BOND_C4}"
         )
         bond_force.addPerBondParameter("k")
         bond_force.addPerBondParameter("r0")
@@ -210,11 +204,11 @@ class OpenMMEngine(MMEngine):
             "+a5*((theta-theta0)*deg)^3"
             "+a6*((theta-theta0)*deg)^4"
             ");"
-            f"a3={_MM3_ANGLE_C3};"
-            f"a4={_MM3_ANGLE_C4};"
-            f"a5={_MM3_ANGLE_C5};"
-            f"a6={_MM3_ANGLE_C6};"
-            f"deg={_RAD_TO_DEG}"
+            f"a3={MM3_ANGLE_C3};"
+            f"a4={MM3_ANGLE_C4};"
+            f"a5={MM3_ANGLE_C5};"
+            f"a6={MM3_ANGLE_C6};"
+            f"deg={RAD_TO_DEG}"
         )
         angle_force.addPerAngleParameter("k")
         angle_force.addPerAngleParameter("theta0")
@@ -431,11 +425,11 @@ class OpenMMEngine(MMEngine):
         hessian = self.hessian(handle)
 
         hessian_si = hessian * (1000.0 / AVO) * 1.0e18
-        masses = np.array([MASSES[symbol] * _AMU_TO_KG for symbol in handle.molecule.symbols], dtype=float)
+        masses = np.array([MASSES[symbol] * AMU_TO_KG for symbol in handle.molecule.symbols], dtype=float)
         mass_vector = np.repeat(masses, 3)
         mass_weighted = hessian_si / np.sqrt(np.outer(mass_vector, mass_vector))
 
         eigenvalues = np.linalg.eigvalsh(mass_weighted)
         frequencies = np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues))
-        frequencies /= 2.0 * np.pi * _SPEED_OF_LIGHT_MS * 100.0
+        frequencies /= 2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0
         return frequencies.tolist()

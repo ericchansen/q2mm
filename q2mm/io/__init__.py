@@ -1,3 +1,4 @@
+# Convenience re-exports — canonical imports are from q2mm.parsers
 """File format parsers for Q2MM.
 
 Re-exports key parser classes for convenient access:
