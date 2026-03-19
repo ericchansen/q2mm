@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import abstractmethod
 import logging
 import os
-from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ class File:
         # self.name = os.path.splitext(self.filename)[0]
 
     @property
-    def lines(self) -> List[str]:
+    def lines(self) -> list[str]:
         """Returns the lines of the file.
 
         Returns:
@@ -83,5 +82,5 @@ class FF:
         return f"{self.__class__.__name__}[{self.method}]({self.score})"
 
     @abstractmethod
-    def get_DOFs_by_param(self, structs: List) -> dict:
+    def get_DOFs_by_param(self, structs: list) -> dict:
         raise NotImplementedError

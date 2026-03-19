@@ -5,7 +5,6 @@ import numpy as np
 import os
 import re
 import sys
-from typing import List
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
@@ -38,7 +37,7 @@ class MM3(FF):
 
     __slots__ = ["smiles", "sub_names", "_atom_types", "_lines", "atom_type_equivalencies"]
 
-    def __init__(self, path=None, data=None, method=None, params: List[Param] = None, score=None):
+    def __init__(self, path=None, data=None, method=None, params: list[Param] = None, score=None):
         super().__init__(path, data, method, params, score)
         self.smiles = []
         self.sub_names = []
@@ -123,7 +122,7 @@ class MM3(FF):
         """
         if path is None:
             path = self.path
-        self.params: List[Param] = []
+        self.params: list[Param] = []
         self.smiles = []
         self.sub_names = []
         with open(path) as f:
@@ -503,7 +502,7 @@ class MM3(FF):
         """
         if path is None:
             path = self.path
-        self.params: List[Param] = []
+        self.params: list[Param] = []
         self.smiles = []
         self.sub_names = []
         with open(path) as f:
@@ -834,7 +833,7 @@ class MM3(FF):
         if path is None:
             path = self.path
         if params is None:
-            params: List[Param] = self.params
+            params: list[Param] = self.params
         if lines is None:
             lines = self.lines
         for param in params:
@@ -858,10 +857,10 @@ class MM3(FF):
             f.writelines(lines)
         logger.log(10, f"WROTE: {path}")
 
-    def get_DOFs_by_ff_row(self, structs: List[Structure]) -> dict:
+    def get_DOFs_by_ff_row(self, structs: list[Structure]) -> dict:
         dof_by_param = dict()
         for param in self.params:
-            dof_by_param[param.ff_row]: List[DOF] = []
+            dof_by_param[param.ff_row]: list[DOF] = []
         for struct in structs:
             for bond in struct.bonds:
                 dof_by_param[bond.ff_row].append(bond)
@@ -871,7 +870,7 @@ class MM3(FF):
                 dof_by_param[dihed.ff_row].append(dihed)
         return dof_by_param
 
-    def get_DOFs_by_param(self, structs: List[Structure]) -> dict:
+    def get_DOFs_by_param(self, structs: list[Structure]) -> dict:
         return self.get_DOFs_by_ff_row(structs)
 
     def alternate_export_ff(self, path=None, params=None):

@@ -12,7 +12,8 @@ from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
-from typing import Callable, Literal
+from collections.abc import Callable
+from typing import Literal
 
 import numpy as np
 

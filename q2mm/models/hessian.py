@@ -1,7 +1,6 @@
 from __future__ import annotations
 import copy
 import logging
-from typing import List, Tuple
 import numpy as np
 from q2mm import constants as co
 from q2mm.parsers.structures import Atom
@@ -35,7 +34,7 @@ def mass_weight_hessian(hess, atoms, reverse=False):
                 hess[i, j] = hess[i, j] * changes[i] * changes[j]
 
 
-def mass_weight_force_constant(force_const: float, atoms: List[Atom], reverse: bool = False, rm: bool = False) -> float:
+def mass_weight_force_constant(force_const: float, atoms: list[Atom], reverse: bool = False, rm: bool = False) -> float:
     """Mass weights force constant. If reverse is True, it un-mass weights
     the force constant.
 
@@ -83,7 +82,7 @@ def mass_weight_eigenvectors(evecs, atoms, reverse=False):
 # Functions from linear_algebra.py
 
 
-def decompose(matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Decomposes matrix into its eigenvalues and eigenvectors.
 
     Args:

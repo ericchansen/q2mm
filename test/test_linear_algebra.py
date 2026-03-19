@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-from typing import List
 
 import os
 import sys
@@ -103,8 +102,8 @@ class TestLinearAlgebra(unittest.TestCase):
     def test_last(
         self,
         force_field: FF,
-        structures: List[Structure],
-        hessians: List[np.ndarray],
+        structures: list[Structure],
+        hessians: list[np.ndarray],
         zero_out: bool,
         hessian_units=constants.GAUSSIAN,
     ):
