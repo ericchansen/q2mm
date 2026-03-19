@@ -261,16 +261,10 @@ class ObjectiveFunction:
             if "bond_length" in needed:
                 # Store both positional list and atom-keyed dict for matching
                 result["bond_lengths"] = [b.length for b in opt_mol.bonds]
-                result["bond_lengths_by_atoms"] = {
-                    tuple(sorted((b.atom_i, b.atom_j))): b.length
-                    for b in opt_mol.bonds
-                }
+                result["bond_lengths_by_atoms"] = {tuple(sorted((b.atom_i, b.atom_j))): b.length for b in opt_mol.bonds}
             if "bond_angle" in needed:
                 result["bond_angles"] = [a.value for a in opt_mol.angles]
-                result["bond_angles_by_atoms"] = {
-                    (a.atom_i, a.atom_j, a.atom_k): a.value
-                    for a in opt_mol.angles
-                }
+                result["bond_angles_by_atoms"] = {(a.atom_i, a.atom_j, a.atom_k): a.value for a in opt_mol.angles}
 
         return result
 
@@ -298,8 +292,7 @@ class ObjectiveFunction:
                 by_atoms = calc.get("bond_lengths_by_atoms", {})
                 if key not in by_atoms:
                     raise KeyError(
-                        f"No bond found for atoms {key}. "
-                        f"Available bonds: {list(by_atoms.keys())}. Label: {ref.label!r}"
+                        f"No bond found for atoms {key}. Available bonds: {list(by_atoms.keys())}. Label: {ref.label!r}"
                     )
                 return by_atoms[key]
             lengths = calc["bond_lengths"]

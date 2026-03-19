@@ -10,10 +10,20 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.constants import (
-    AMU_TO_KG, SPEED_OF_LIGHT_MS, MM3_BOND_C3, MM3_BOND_C4,
-    MM3_ANGLE_C3, MM3_ANGLE_C4, MM3_ANGLE_C5, MM3_ANGLE_C6,
-    RAD_TO_DEG, KCAL_TO_KJ, MDYNA_TO_KJMOLA2, MM3_STR,
-    AVO, MASSES,
+    AMU_TO_KG,
+    SPEED_OF_LIGHT_MS,
+    MM3_BOND_C3,
+    MM3_BOND_C4,
+    MM3_ANGLE_C3,
+    MM3_ANGLE_C4,
+    MM3_ANGLE_C5,
+    MM3_ANGLE_C6,
+    RAD_TO_DEG,
+    KCAL_TO_KJ,
+    MDYNA_TO_KJMOLA2,
+    MM3_STR,
+    AVO,
+    MASSES,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
@@ -27,7 +37,6 @@ except ImportError:  # pragma: no cover - exercised when OpenMM is not installed
     mm = None
     unit = None
     _HAS_OPENMM = False
-
 
 
 @dataclass

@@ -297,10 +297,7 @@ class ForceField:
     def set_param_vector(self, vec: np.ndarray):
         """Set parameters from a flat vector (inverse of get_param_vector)."""
         if len(vec) != self.n_params:
-            raise ValueError(
-                f"Parameter vector length {len(vec)} does not match "
-                f"expected {self.n_params} parameters."
-            )
+            raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
         idx = 0
         for b in self.bonds:
             b.force_constant = vec[idx]

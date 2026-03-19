@@ -388,7 +388,8 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
     case = CASE_MATRIX["optimization-endpoint"]
     if not OPTIMIZATION_GOLDEN_PATH.exists():
         return _blocked_result(
-            case, mode,
+            case,
+            mode,
             f"Golden fixture not found at {OPTIMIZATION_GOLDEN_PATH}. "
             "Run: python scripts/generate_optimization_fixtures.py",
         )
@@ -415,11 +416,13 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         theta = np.deg2rad(angle_deg)
         return Q2MMMolecule(
             symbols=["O", "H", "H"],
-            geometry=np.array([
-                [0.0, 0.0, 0.0],
-                [bond_length, 0.0, 0.0],
-                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-            ]),
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [bond_length, 0.0, 0.0],
+                    [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
+                ]
+            ),
             name="water",
             bond_tolerance=1.5,
         )
@@ -457,8 +460,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
     final_diff = abs(result.final_score - golden["final_score"])
     if final_diff > score_tol * max(abs(golden["final_score"]), 1.0):
         details.append(
-            f"final_score: expected {golden['final_score']:.8f}, "
-            f"got {result.final_score:.8f}, diff {final_diff:.3e}"
+            f"final_score: expected {golden['final_score']:.8f}, got {result.final_score:.8f}, diff {final_diff:.3e}"
         )
 
     max_param_diff = 0.0

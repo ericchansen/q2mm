@@ -159,9 +159,7 @@ def save_mm3_fld(
     lines = [f" C  {substructure_name}\n", f" 9  {smiles}\n"]
     for bond in ff.bonds:
         lines.append(
-            _format_mm3_bond_line(
-                _mm3_atom_types(bond.env_id, bond.elements), bond.equilibrium, bond.force_constant
-            )
+            _format_mm3_bond_line(_mm3_atom_types(bond.env_id, bond.elements), bond.equilibrium, bond.force_constant)
         )
     for angle in ff.angles:
         lines.append(

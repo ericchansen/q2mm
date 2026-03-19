@@ -1,0 +1,26 @@
+#!/bin/sh
+# Pre-commit hook: run ruff format + check on staged Python files.
+# Install: cp hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+[ -z "$STAGED" ] && exit 0
+
+echo "pre-commit: ruff format"
+python -m ruff format --check $STAGED
+FORMAT_EXIT=$?
+
+echo "pre-commit: ruff check"
+python -m ruff check $STAGED
+LINT_EXIT=$?
+
+if [ $FORMAT_EXIT -ne 0 ]; then
+    echo ""
+    echo "Formatting errors. Run:  python -m ruff format q2mm test scripts examples"
+    exit 1
+fi
+
+if [ $LINT_EXIT -ne 0 ]; then
+    echo ""
+    echo "Lint errors. Run:  python -m ruff check . --fix"
+    exit 1
+fi

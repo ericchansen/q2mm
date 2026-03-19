@@ -49,7 +49,6 @@ LOG_SETTINGS = {
         "parameters": {"level": 20, "propagate": True},
         "simplex": {"level": 5, "propagate": True},
         "seminario": {"level": 20, "propagate": True},
-
     },
     "root": {"level": "NOTSET", "propagate": True, "handlers": ["console", "root_file_handler"]},
 }
