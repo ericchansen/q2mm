@@ -54,6 +54,9 @@ def replace_neg_eigenvalue(
 
     neg_indices = np.argwhere([eval < 0 for eval in eigenvalues])
 
+    if len(neg_indices) == 0:
+        return eigenvalues
+
     if len(neg_indices) > 1:
         msg = (
             f"Hessian has {len(neg_indices)} negative eigenvalues "
@@ -114,7 +117,7 @@ def invert_ts_curvature(hessian_matrix: np.ndarray) -> np.ndarray:
 
     # check_evals = np.diag()
 
-    if not inv_curv_hessian.all() >= 0.0:
+    if not (inv_curv_hessian >= 0.0).all():
         import warnings
 
         n_neg = int(np.sum(inv_curv_hessian < 0))

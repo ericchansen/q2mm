@@ -216,6 +216,7 @@ class TestForceField:
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+                TorsionParam(("C", "C", "N", "H"), periodicity=1, force_constant=0.30),
             ],
         )
         t1 = ff.get_torsion("H", "C", "C", "H", periodicity=1)
@@ -224,18 +225,18 @@ class TestForceField:
         t2 = ff.get_torsion("H", "C", "C", "H", periodicity=2)
         assert t2 is not None
         assert t2.force_constant == pytest.approx(-0.10)
-        # Reversed order should also match
-        t_rev = ff.get_torsion("H", "C", "C", "H", periodicity=1)
+        # Reversed element order should also match
+        t_rev = ff.get_torsion("H", "N", "C", "C", periodicity=1)
         assert t_rev is not None
+        assert t_rev.force_constant == pytest.approx(0.30)
 
     def test_mm3_loads_torsions(self):
         """MM3 .fld loading should extract torsion parameters."""
         ff = ForceField.from_mm3_fld(RH_MM3)
-        # Rh-enamide FF has torsion lines; ensure some are loaded
-        if ff.torsions:
-            assert all(isinstance(t, TorsionParam) for t in ff.torsions)
-            assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
-            assert all(t.ff_row is not None for t in ff.torsions)
+        assert len(ff.torsions) > 0, "Expected torsion parameters from Rh-enamide mm3.fld"
+        assert all(isinstance(t, TorsionParam) for t in ff.torsions)
+        assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
+        assert all(t.ff_row is not None for t in ff.torsions)
 
     def test_mm3_export_roundtrip_generic(self, tmp_path):
         ff = ForceField(

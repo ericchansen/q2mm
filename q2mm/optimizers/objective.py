@@ -154,21 +154,17 @@ class ReferenceData:
         self,
         value: float,
         *,
-        data_idx: int = -1,
-        atom_indices: tuple[int, int, int, int] | None = None,
+        atom_indices: tuple[int, int, int, int],
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
     ):
-        if atom_indices is None and data_idx < 0:
-            raise ValueError("Either atom_indices or data_idx must be provided for torsion_angle.")
         self.values.append(
             ReferenceValue(
                 kind="torsion_angle",
                 value=value,
                 weight=weight,
                 molecule_idx=molecule_idx,
-                data_idx=max(data_idx, 0),
                 atom_indices=atom_indices,
                 label=label,
             )
