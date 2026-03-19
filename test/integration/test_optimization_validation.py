@@ -20,7 +20,7 @@ import pytest
 pytest.importorskip("openmm")
 
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.compare import compare_data
+from q2mm.optimizers.scoring import compare_data
 from q2mm.parsers import Datum
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
