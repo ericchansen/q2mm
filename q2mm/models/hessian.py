@@ -128,6 +128,9 @@ def replace_neg_eigenvalue(
 
     neg_indices = np.argwhere([eval < 0 for eval in eigenvalues])
 
+    if len(neg_indices) == 0:
+        return eigenvalues
+
     if len(neg_indices) > 1:
         msg = (
             f"Hessian has {len(neg_indices)} negative eigenvalues "
