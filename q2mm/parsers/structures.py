@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-import logging.config
 from string import digits
 import numpy as np
 import os
@@ -9,8 +8,7 @@ from q2mm import constants as co
 from q2mm import utilities
 from q2mm.models.datum import Datum
 
-logging.config.dictConfig(co.LOG_SETTINGS)
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class Atom:

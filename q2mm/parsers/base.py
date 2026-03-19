@@ -2,14 +2,10 @@ from __future__ import annotations
 
 from abc import abstractmethod
 import logging
-import logging.config
 import os
 from typing import List
 
-from q2mm import constants as co
-
-logging.config.dictConfig(co.LOG_SETTINGS)
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class File:

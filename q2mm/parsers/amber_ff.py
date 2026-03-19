@@ -1,14 +1,12 @@
 from __future__ import annotations
 import logging
-import logging.config
 from typing import List
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
 from q2mm.models.param import Param, ParAMBER
 
-logging.config.dictConfig(co.LOG_SETTINGS)
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class AmberFF(FF):

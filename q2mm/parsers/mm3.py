@@ -1,7 +1,6 @@
 from __future__ import annotations
 import copy
 import logging
-import logging.config
 import numpy as np
 import os
 import re
@@ -13,8 +12,7 @@ from q2mm.parsers.structures import Structure, DOF
 from q2mm.models.param import Param, ParamMM3, COM_POS_START, P_1_START, P_1_END, P_2_START, P_2_END, P_3_START, P_3_END
 from q2mm.models.datum import Datum
 
-logging.config.dictConfig(co.LOG_SETTINGS)
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 class MM3(FF):
