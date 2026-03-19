@@ -30,6 +30,9 @@ dev = [
     "ruff",
     "qcelemental",
 ]
+docs = [
+    "mkdocs-material",
+]
 all = [
     "openmm",
     "parmed",
@@ -38,6 +41,7 @@ all = [
 
 [project.urls]
 Homepage = "https://github.com/ericchansen/q2mm"
+Documentation = "https://ericchansen.github.io/q2mm/"
 
 [tool.setuptools.packages.find]
 include = ["q2mm*"]

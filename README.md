@@ -2,9 +2,29 @@
 
 **Quantum-guided molecular mechanics force field optimization.**
 
-Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing the difference between MM-calculated properties and quantum mechanics (QM) reference data. It supports multiple QM and MM backends through a plugin architecture.
-
 [![CI](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml)
+
+Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing
+the difference between MM-calculated properties and quantum mechanics (QM)
+reference data. It is designed for building **transition state force fields
+(TSFFs)** that enable rapid virtual screening of enantioselective catalysts.
+
+**📖 [Documentation](https://ericchansen.github.io/q2mm/)**
+
+## Why Q2MM?
+
+- **Hessian-informed initialization** — the Seminario method extracts bond and
+  angle force constants directly from QM Hessians, providing excellent starting
+  parameters before optimization begins.
+- **Open-source backends** — first-class support for [OpenMM](https://openmm.org/)
+  and [Psi4](https://psicode.org/) alongside commercial packages (Gaussian,
+  Schrödinger, Tinker).
+- **Clean, modular architecture** — format-agnostic data models (`ForceField`,
+  `Q2MMMolecule`) decouple algorithms from file formats.
+- **Modern optimization** — powered by `scipy.optimize` with L-BFGS-B,
+  Nelder-Mead, trust-region, and Levenberg-Marquardt methods.
+- **Transition state support** — negative force constants, torsion parameters,
+  and proper eigenvalue handling for saddle-point geometries.
 
 ## Quick Start
 
@@ -13,145 +33,36 @@ pip install -e .
 ```
 
 ```python
-from q2mm.io import GaussLog, Mol2
-from q2mm.forcefields import MM3
+from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.seminario import estimate_force_constants
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-# Parse QM reference data
-log = GaussLog("ethane.log")
-hessian = log.structures[0].hess
+# Build molecule from QM data (coordinates + Hessian)
+mol = Q2MMMolecule(symbols=symbols, geometry=coords, hessian=hessian)
 
-# Parse molecular structure
-mol2 = Mol2("ethane.mol2")
-print(f"Atoms: {len(mol2.structures[0].atoms)}")
+# Initialize force field from QM Hessian (Seminario method)
+ff = estimate_force_constants([mol])
 
-# Load force field
-ff = MM3("mm3.fld")
-ff.import_ff()
-print(f"Parameters: {len(ff.params)}")
+# Optimize against reference data
+optimizer = ScipyOptimizer(method="L-BFGS-B")
+result = optimizer.optimize(objective)
+print(result.summary())
 ```
 
-## Installation
+See the [Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for a
+complete end-to-end workflow.
 
-**Requirements:** Python 3.9+
+## Supported Backends
 
-```bash
-pip install -e .          # Basic
-pip install -e ".[dev]"   # With pytest + ruff
-pip install -e ".[openmm]" # With OpenMM backend
-pip install -e ".[amber]" # With parmed (AMBER support)
-```
-
-### QM/MM Backends
-
-| Backend | Type | License | Install |
-|---------|------|---------|---------|
-| **OpenMM** | MM | [MIT](https://github.com/openmm/openmm/blob/master/licenses/Licenses.txt) | `pip install openmm` |
-| **Psi4** | QM | BSD-3 (open source) | `conda install psi4 -c conda-forge` |
-| **Tinker** | MM | Free (academic) | [download](https://dasher.wustl.edu/tinker/) |
-| **Gaussian** | QM | Commercial | Site license |
-| **Schrodinger** | QM/MM | Commercial | Site license |
-
-## Package Structure
-
-```
-q2mm/
-├── backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
-├── forcefields/   # Force field types (MM3, AMBER, Tinker)
-├── io/            # Convenience re-exports from parsers
-├── models/        # Clean molecule/force-field models + Seminario estimation
-├── optimizers/    # Objective functions, scoring, and scipy-based optimization
-└── parsers/       # File format parsers (Gaussian, Jaguar, MM3, MOL2, etc.)
-
-examples/          # Supported example workflows and bundled reference inputs
-scripts/           # Utility scripts and screening tools
-```
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-python -m pytest -v
-ruff check q2mm/ test/ scripts/
-ruff format --check q2mm test scripts examples
-
-# Optional: install pre-commit hook to catch lint/format issues before commit
-cp hooks/pre-commit .git/hooks/pre-commit    # Unix/macOS
-chmod +x .git/hooks/pre-commit
-```
-
-To regenerate the pinned upstream Seminario parity fixtures, create a sibling
-worktree and run the fixture generator:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_upstream_worktree.ps1
-python .\scripts\regenerate_parity_fixtures.py --worktree ..\q2mm-upstream-worktree
-```
-
-To validate current behavior against pinned fixtures or live upstream code:
-
-```powershell
-python .\scripts\validate_against_upstream.py --mode fixture
-powershell -ExecutionPolicy Bypass -File .\scripts\validate_against_upstream.ps1 -Mode both
-```
-
-For overlapping old/new behavior, do not treat work as complete until the
-relevant validation case passes.
-
-The current OpenMM backend supports MM3-style bonded terms plus the primary
-atom-type vdW table carried by MM3/Tinker force fields.
-
-## Optimization Methods
-
-The refactored optimizer uses `scipy.optimize` and supports:
-
-| Method | Type | Best for |
-|--------|------|----------|
-| `L-BFGS-B` | Quasi-Newton | Smooth problems (default) |
-| `Nelder-Mead` | Simplex | Derivative-free, robust |
-| `trust-constr` | Trust-region | Constrained optimization |
-| `Powell` | Direction-set | Derivative-free |
-| `least_squares` | Levenberg-Marquardt | Residual-based fitting |
-
-The upstream code's five custom gradient methods (`central_diff`,
-`forward_diff`, `lstsq`, `lagrange`, `svd`) are **not ported** as
-standalone functions — scipy provides equivalent or superior
-implementations.  See `q2mm/optimizers/scipy_opt.py` docstring for the
-detailed mapping.
-
-## Citations
-
-If you use Q2MM in your research, please cite the relevant publications:
-
-### Core Method
-
-- Norrby, P.-O. Selectivity in Asymmetric Synthesis from QM-Guided Molecular Mechanics. *J. Mol. Struct. (THEOCHEM)* **2000**, *506*, 9–16. [DOI: 10.1016/S0166-1280(00)00398-5](https://doi.org/10.1016/S0166-1280(00)00398-5)
-
-- Hansen, E.; Rosales, A. R.; Tutkowski, B.; Norrby, P.-O.; Wiest, O. Prediction of Stereochemistry using Q2MM. *Acc. Chem. Res.* **2016**, *49*, 996–1005. [DOI: 10.1021/acs.accounts.6b00037](https://doi.org/10.1021/acs.accounts.6b00037)
-
-- Rosales, A. R.; Quinn, T. R.; Wahlers, J.; Tomberg, A.; Zhang, X.; Helquist, P.; Wiest, O.; Norrby, P.-O. Application of Q2MM to Predictions in Stereoselective Synthesis. *Chem. Commun.* **2018**, *54*, 8294–8301. [DOI: 10.1039/C8CC03695K](https://doi.org/10.1039/C8CC03695K)
-
-### QFUERZA / Seminario Method
-
-- Farrugia, L. M.; Helquist, P.; Norrby, P.-O.; Wiest, O. Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement. *J. Chem. Theory Comput.* **2026**, *22*, 469–476. [DOI: 10.1021/acs.jctc.4c01372](https://doi.org/10.1021/acs.jctc.4c01372)
-
-### Applications
-
-- Rosales, A. R.; Wahlers, J.; Limé, E.; Meadows, R. E.; Leslie, K. W.; Savin, R.; Bell, F.; Hansen, E.; Helquist, P.; Munday, R. H.; Wiest, O.; Norrby, P.-O. Rapid Virtual Screening of Enantioselective Catalysts using CatVS. *Nat. Catal.* **2019**, *2*, 41–45. [DOI: 10.1038/s41929-018-0193-3](https://doi.org/10.1038/s41929-018-0193-3)
-
-- Burai Patrascu, M.; Pottel, J.; Pinus, S.; Bezanson, M.; Norrby, P.-O.; Moitessier, N. Virtual Chemist: Prediction of Enantioselectivity. *Nat. Catal.* **2020**, *3*, 574–584. [DOI: 10.1038/s41929-020-0467-0](https://doi.org/10.1038/s41929-020-0467-0)
-
-- Rosales, A. R.; Ross, S. P.; Helquist, P.; Norrby, P.-O.; Sigman, M. S.; Wiest, O. Transition State Force Field for the Asymmetric Redox-Relay Heck Reaction. *J. Am. Chem. Soc.* **2020**, *142*, 9700–9707. [DOI: 10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979)
-
-- Wahlers, J.; Maloney, M.; Salahi, F.; Rosales, A. R.; Helquist, P.; Norrby, P.-O.; Wiest, O. Stereoselectivity Predictions for the Pd-Catalyzed 1,4-Conjugate Addition. *J. Org. Chem.* **2021**, *86*, 5660–5667. [DOI: 10.1021/acs.joc.0c02918](https://doi.org/10.1021/acs.joc.0c02918)
-
-- Wahlers, J.; Margalef, J.; Hansen, E.; Bayesteh, A.; Helquist, P.; Diéguez, M.; Pàmies, O.; Wiest, O.; Norrby, P.-O. Proofreading Experimentally Assigned Stereochemistry through Q2MM Predictions. *Nat. Commun.* **2021**, *12*, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2)
-
-- Quinn, T. R.; Patel, H. N.; Koh, K. H.; Haines, B. E.; Norrby, P.-O.; Helquist, P.; Wiest, O. Automated Fitting of Transition State Force Fields for Biomolecular Simulations. *PLOS ONE* **2022**, *17*, e0264960. [DOI: 10.1371/journal.pone.0264960](https://doi.org/10.1371/journal.pone.0264960)
-
-- Wahlers, J.; Rosales, A. R.; Berkel, N.; Forbes, A.; Helquist, P.; Norrby, P.-O.; Wiest, O. MM3* Force Field for Ferrocenyl Ligands. *J. Org. Chem.* **2022**, *87*, 12334–12341. [DOI: 10.1021/acs.joc.2c01396](https://doi.org/10.1021/acs.joc.2c01396)
-
-- Maloney, M. P.; Stenfors, B. A.; Helquist, P.; Norrby, P.-O.; Wiest, O. Interplay of Computation and Experiment in Enantioselective Catalysis. *ACS Catal.* **2023**, *13*, 14285–14299. [DOI: 10.1021/acscatal.3c03706](https://doi.org/10.1021/acscatal.3c03706)
+| Backend | Type | License |
+|---------|------|---------|
+| **OpenMM** | MM | MIT |
+| **Psi4** | QM | BSD-3 |
+| **Tinker** | MM | Free (academic) |
+| **Gaussian** | QM | Commercial |
+| **Schrödinger** | QM/MM | Commercial |
 
 ## License
 
 BSD-3-Clause. See [LICENSE](LICENSE).
+

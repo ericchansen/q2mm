@@ -1,0 +1,678 @@
+# Tutorial: Full Workflow
+
+A complete end-to-end guide for optimizing a **Transition State Force Field
+(TSFF)** using Q2MM's clean model layer. We walk through the SN2 reaction
+F⁻ + CH₃F → FCH₃ + F⁻ — a textbook nucleophilic substitution with a
+well-defined D₃ₕ-like transition state.
+
+---
+
+## Prerequisites
+
+!!! note "What you need before starting"
+    - **Python 3.9+** with Q2MM installed (`pip install -e .`)
+    - **NumPy** and **SciPy** (installed automatically with Q2MM)
+    - A **QM engine** — either [Psi4](https://psicode.org/) (`conda install psi4 -c conda-forge`) or [Gaussian](https://gaussian.com/) (commercial license)
+    - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`) or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
+    - The SN2 example files in `examples/sn2-test/`
+
+!!! tip "Quick install"
+    ```bash
+    pip install -e ".[openmm]"              # Q2MM + OpenMM backend
+    conda install psi4 -c conda-forge       # Psi4 for QM calculations
+    ```
+
+**Atom numbering for this tutorial** (0-indexed):
+
+```
+Index   Element   Role
+  0       C       Central carbon
+  1       F       Leaving / attacking fluorine
+  2       F       Leaving / attacking fluorine
+  3       H       Methyl hydrogen
+  4       H       Methyl hydrogen
+  5       H       Methyl hydrogen
+```
+
+---
+
+## Step 1: Obtain QM Reference Data
+
+Every TSFF parameterisation starts with quantum-mechanical reference data for
+the transition state: an **optimized geometry** and the **Hessian matrix**
+(second derivatives of the energy with respect to nuclear coordinates).
+
+### Option A — Psi4 (recommended, open-source)
+
+The script `examples/sn2-test/generate_qm_data.py` generates all reference
+files automatically. Here is the essential workflow:
+
+```python
+import numpy as np
+import psi4
+
+psi4.set_memory("2 GB")
+psi4.set_num_threads(4)
+psi4.core.set_output_file("psi4-output.dat", False)
+
+# Define the SN2 transition-state geometry (charge −1, singlet)
+ts_mol = psi4.geometry("""
+    -1 1
+    C     0.000000    0.000000    0.000000
+    F     0.000000    0.000000    1.800000
+    F     0.000000    0.000000   -1.800000
+    H     1.026720    0.000000    0.000000
+    H    -0.513360    0.889165    0.000000
+    H    -0.513360   -0.889165    0.000000
+""")
+
+# Saddle-point optimisation at B3LYP/6-31G*
+psi4.set_options({
+    "basis": "6-31G*",
+    "reference": "rhf",
+    "opt_type": "ts",          # ← saddle-point search
+    "geom_maxiter": 100,
+})
+ts_energy = psi4.optimize("b3lyp", molecule=ts_mol)
+
+# Frequency calculation → Hessian
+ts_energy_freq, ts_wfn = psi4.frequency(
+    "b3lyp", molecule=ts_mol, return_wfn=True
+)
+hessian = np.array(ts_wfn.hessian())          # shape (3N, 3N), Hartree/Bohr²
+frequencies = np.array(ts_wfn.frequencies())   # cm⁻¹
+
+# Verify: exactly 1 imaginary frequency (negative value) = valid TS
+n_imaginary = np.sum(frequencies < 0)
+assert n_imaginary == 1, f"Expected 1 imaginary freq, got {n_imaginary}"
+
+# Save for later steps
+ts_mol.save_xyz_file("qm-reference/sn2-ts-optimized.xyz", True)
+np.save("qm-reference/sn2-ts-hessian.npy", hessian)
+np.savetxt("qm-reference/sn2-ts-frequencies.txt", frequencies)
+```
+
+!!! warning "Transition-state validation"
+    A valid transition state has **exactly one** imaginary (negative)
+    vibrational frequency — the reaction coordinate.  If you see zero or
+    more than one, the geometry has not converged to a first-order saddle
+    point.
+
+### Option B — Gaussian
+
+If you have a Gaussian license, run a `opt=(ts,calcfc) freq` job, then parse
+the log file with Q2MM's `GaussLog` parser:
+
+```python
+from q2mm.parsers.gaussian import GaussLog
+from q2mm import linear_algebra
+
+log = GaussLog("sn2-ts.log", au_hessian=True)
+
+# Geometry comes from the archive section
+structures = log.structures          # list of Structure objects
+atoms = structures[-1].atoms         # last (optimized) geometry
+
+# Reconstruct the Cartesian Hessian from eigenvalues / eigenvectors
+eigenvalues = log.evals
+eigenvectors = log.evecs
+hessian = linear_algebra.reform_hessian(eigenvalues, eigenvectors)
+```
+
+!!! note "Hessian units"
+    Pass `au_hessian=True` to keep the Hessian in atomic units
+    (Hartree/Bohr²) — the Seminario method expects this. If you omit the
+    flag, GaussLog converts to kJ/(mol·Å²).
+
+---
+
+## Step 2: Build a Q2MMMolecule
+
+`Q2MMMolecule` is Q2MM's format-agnostic molecular structure. It auto-detects
+bonds and angles from covalent radii and stores the QM Hessian alongside the
+geometry.
+
+### From the saved XYZ + Hessian files
+
+```python
+import numpy as np
+from pathlib import Path
+from q2mm.models.molecule import Q2MMMolecule
+
+QM_REF = Path("examples/sn2-test/qm-reference")
+
+# Load optimised geometry from XYZ
+mol = Q2MMMolecule.from_xyz(
+    QM_REF / "sn2-ts-optimized.xyz",
+    charge=-1,
+    name="SN2_TS",
+    bond_tolerance=1.4,   # ← 1.4× covalent radii to catch long TS bonds
+)
+
+# Attach the QM Hessian (returns a new immutable copy)
+hessian = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
+mol = mol.with_hessian(hessian)
+
+# Inspect auto-detected connectivity
+print(f"Atoms:  {mol.n_atoms}")
+print(f"Bonds:  {len(mol.bonds)}")
+print(f"Angles: {len(mol.angles)}")
+
+for bond in mol.bonds:
+    print(f"  {bond.element_pair}: {bond.length:.4f} Å")
+```
+
+Expected output:
+
+```
+Atoms:  6
+Bonds:  5
+Angles: 7
+  ('C', 'F'): 1.8427 Å
+  ('C', 'F'): 1.8427 Å
+  ('C', 'H'): 1.0767 Å
+  ('C', 'H'): 1.0767 Å
+  ('C', 'H'): 1.0767 Å
+```
+
+!!! tip "Bond tolerance for transition states"
+    At a transition state, partially-broken bonds are **longer** than
+    equilibrium.  The C–F distance in the SN2 TS (~1.84 Å) is much longer
+    than a typical C–F bond (~1.38 Å).  Setting `bond_tolerance=1.4` tells
+    Q2MM to accept bonds up to 1.4× the sum of covalent radii, so these
+    stretched bonds are correctly detected.
+
+### From raw arrays (manual construction)
+
+If your data comes from a custom source rather than an XYZ file:
+
+```python
+import numpy as np
+from q2mm.models.molecule import Q2MMMolecule
+
+coordinates = np.array([
+    [ 0.000000,  0.000000,  0.000000],   # C
+    [ 0.000000,  0.000000,  1.800000],   # F
+    [ 0.000000,  0.000000, -1.800000],   # F
+    [ 1.026720,  0.000000,  0.000000],   # H
+    [-0.513360,  0.889165,  0.000000],   # H
+    [-0.513360, -0.889165,  0.000000],   # H
+])
+
+mol = Q2MMMolecule(
+    symbols=["C", "F", "F", "H", "H", "H"],
+    geometry=coordinates,
+    charge=-1,
+    name="sn2-ts",
+    bond_tolerance=1.4,
+    hessian=hessian,   # (18×18) array in Hartree/Bohr²
+)
+
+print(f"Bonds: {len(mol.bonds)}, Angles: {len(mol.angles)}")
+```
+
+---
+
+## Step 3: Initialise the Force Field with the Seminario Method
+
+The **Seminario method** (J. Phys. Chem. A, 1996, 100, 16871) extracts
+harmonic force constants directly from the QM Hessian matrix. For each bond
+or angle, it projects the Hessian onto the internal coordinate's subspace and
+takes the eigenvalue along that direction. This produces excellent initial
+parameter estimates — often within 10–20% of the final optimised values —
+without running a single MM calculation.
+
+### Quick start — auto-create and estimate
+
+```python
+from q2mm.models.seminario import estimate_force_constants
+
+# estimate_force_constants accepts a single molecule or a list
+ff = estimate_force_constants(
+    mol,
+    zero_torsions=True,    # set torsion barriers to zero (common for TS)
+    au_hessian=True,       # Hessian is in Hartree/Bohr²
+    invalid_policy="skip", # skip negative force constants (TS artefacts)
+)
+
+print(f"Bond params:    {len(ff.bonds)}")
+print(f"Angle params:   {len(ff.angles)}")
+print(f"Torsion params: {len(ff.torsions)}")
+
+for b in ff.bonds:
+    print(f"  {b.elements}: k = {b.force_constant:.3f} mdyn/Å, "
+          f"r₀ = {b.equilibrium:.4f} Å")
+for a in ff.angles:
+    print(f"  {a.elements}: k = {a.force_constant:.6f} mdyn·Å/rad², "
+          f"θ₀ = {a.equilibrium:.1f}°")
+```
+
+### With an existing force field template
+
+If you already have an MM3 `.fld` file with initial guesses (or placeholder
+values), pass it so Seminario updates the force constants in place while
+preserving atom types and row numbers:
+
+```python
+from q2mm.models.forcefield import ForceField
+from q2mm.models.seminario import estimate_force_constants
+
+# Load template with initial guesses
+initial_ff = ForceField.from_mm3_fld("sn2-ts-initial.fld")
+
+# Seminario updates force constants, keeps equilibrium values and metadata
+estimated_ff = estimate_force_constants(
+    mol,
+    forcefield=initial_ff,
+    zero_torsions=True,
+    au_hessian=True,
+    invalid_policy="skip",
+)
+
+# Compare before / after
+for i, (old, new) in enumerate(zip(initial_ff.bonds, estimated_ff.bonds)):
+    delta = new.force_constant - old.force_constant
+    print(f"  Bond {old.elements}: {old.force_constant:.3f} → "
+          f"{new.force_constant:.3f} mdyn/Å  (Δ = {delta:+.3f})")
+```
+
+!!! note "What `invalid_policy='skip'` does"
+    At a transition state the reaction-coordinate mode has **negative**
+    curvature.  The Seminario projection can produce negative or complex
+    force constants for bonds along this coordinate.  `invalid_policy="skip"`
+    leaves those parameters unchanged rather than inserting unphysical
+    values.
+
+---
+
+## Step 4: Set Up Reference Data
+
+The `ReferenceData` container holds the QM target values that the objective
+function will try to reproduce. Each entry has a **kind** (energy, frequency,
+bond length, bond angle, torsion angle), a **value**, and a **weight** that
+controls its importance in the fit.
+
+```python
+import numpy as np
+from q2mm.optimizers.objective import ReferenceData
+
+ref = ReferenceData()
+
+# --- Energies ---
+# Relative energy of the TS (in Hartree or kcal/mol, depending on engine)
+ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+
+# --- Bond lengths (Å) ---
+# C–F transition-state bond (partially broken, ~1.84 Å)
+ref.add_bond_length(
+    1.8427,
+    atom_indices=(0, 1),
+    weight=10.0,
+    label="C-F(1) TS bond",
+)
+ref.add_bond_length(
+    1.8427,
+    atom_indices=(0, 2),
+    weight=10.0,
+    label="C-F(2) TS bond",
+)
+# C–H bonds
+ref.add_bond_length(
+    1.0767,
+    atom_indices=(0, 3),
+    weight=10.0,
+    label="C-H bond",
+)
+
+# --- Bond angles (degrees) ---
+# F–C–F should be ~180° (linear attack / departure)
+ref.add_bond_angle(
+    180.0,
+    atom_indices=(1, 0, 2),
+    weight=5.0,
+    label="F-C-F angle",
+)
+# H–C–F angle (~90° at the TS)
+ref.add_bond_angle(
+    90.0,
+    atom_indices=(3, 0, 1),
+    weight=5.0,
+    label="H-C-F angle",
+)
+# H–C–H angle (~120° in the equatorial plane)
+ref.add_bond_angle(
+    120.0,
+    atom_indices=(3, 0, 4),
+    weight=5.0,
+    label="H-C-H angle",
+)
+
+# --- Frequencies (cm⁻¹) ---
+ts_freqs = np.loadtxt("examples/sn2-test/qm-reference/sn2-ts-frequencies.txt")
+for i, freq in enumerate(ts_freqs):
+    ref.add_frequency(freq, data_idx=i, weight=1.0, label=f"mode {i}")
+
+print(f"Reference observations: {ref.n_observations}")
+```
+
+!!! tip "Choosing weights"
+    Weights balance the influence of different data types:
+
+    - **Bond lengths** are in Ångströms (small numbers); give them higher
+      weight (~10) so a 0.01 Å error matters as much as a 1 kcal/mol energy
+      error.
+    - **Angles** are in degrees; weight ~5 is typical.
+    - **Frequencies** can have large absolute values but small relative
+      errors; weight ~1 is usually fine.
+
+    There is no single "correct" weighting — iterate and compare results.
+
+---
+
+## Step 5: Create the Objective Function
+
+The `ObjectiveFunction` ties together the force field, the MM engine, the
+molecular structures, and the reference data into a single callable that
+`scipy.optimize.minimize` can drive.
+
+At each evaluation it:
+
+1. Sets the force-field parameters from the current parameter vector
+2. Runs the MM engine (energy, geometry, frequencies) for each molecule
+3. Computes weighted residuals against the reference data
+4. Returns the sum of squared residuals
+
+```python
+from q2mm.optimizers.objective import ObjectiveFunction
+
+objective = ObjectiveFunction(
+    forcefield=ff,
+    engine=engine,        # your MM backend (see below)
+    molecules=[mol],
+    reference=ref,
+)
+
+# Evaluate at the initial (Seminario) parameters
+initial_params = ff.get_param_vector()
+initial_score = objective(initial_params)
+print(f"Initial score: {initial_score:.6f}")
+print(f"Parameters:    {len(initial_params)}")
+```
+
+!!! note "Setting up an MM engine"
+    The `engine` argument is any object implementing the `MMEngine` abstract
+    base class from `q2mm.backends.base`.  Q2MM ships with backends for
+    OpenMM and Tinker. Check `q2mm/backends/` for available engines:
+
+    ```python
+    from q2mm.backends.mm.openmm_engine import OpenMMEngine
+    engine = OpenMMEngine()
+    ```
+
+    or for Tinker:
+
+    ```python
+    from q2mm.backends.mm.tinker_engine import TinkerEngine
+    engine = TinkerEngine(tinker_path="/usr/local/bin")
+    ```
+
+---
+
+## Step 6: Optimise the Force Field
+
+`ScipyOptimizer` wraps `scipy.optimize.minimize` with sensible defaults for
+force-field fitting. The key choices:
+
+| Setting | Value | Rationale |
+|---------|-------|-----------|
+| `method` | `L-BFGS-B` | Bounded quasi-Newton — fast convergence for smooth, differentiable objectives |
+| `eps` | `1e-3` | Finite-difference step for gradient estimation. FF parameters have magnitudes ~0.5–10, so scipy's default (~1e-8) is far too small and produces noisy gradients |
+| `maxiter` | `500` | Generous iteration budget; most runs converge in 50–200 |
+| `use_bounds` | `True` | Prevents parameters from drifting to unphysical values (e.g., negative bond lengths) |
+
+```python
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+optimizer = ScipyOptimizer(
+    method="L-BFGS-B",
+    maxiter=500,
+    ftol=1e-8,
+    eps=1e-3,
+    use_bounds=True,
+    verbose=True,
+)
+
+result = optimizer.optimize(objective)
+print(result.summary())
+```
+
+Expected output:
+
+```
+Method: L-BFGS-B
+Success: True — CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH
+Score: 0.045321 → 0.001234 (97.3% improvement)
+Iterations: 87, Evaluations: 1043
+```
+
+!!! tip "Alternative optimisers"
+    For noisy or discontinuous landscapes, derivative-free methods can be
+    more robust:
+
+    ```python
+    # Nelder-Mead simplex — no gradients needed
+    optimizer = ScipyOptimizer(method="Nelder-Mead", maxiter=2000)
+
+    # Powell direction-set — good for small parameter counts
+    optimizer = ScipyOptimizer(method="Powell", maxiter=1000)
+
+    # Levenberg-Marquardt least-squares — uses residual vector directly
+    optimizer = ScipyOptimizer(method="least_squares", maxiter=500)
+    ```
+
+### Inspecting the result
+
+```python
+# Fractional improvement (0 = no change, 1 = perfect)
+print(f"Improvement: {result.improvement:.1%}")
+
+# Optimised parameters are already applied to the ForceField
+optimised_ff = objective.forcefield
+for b in optimised_ff.bonds:
+    print(f"  {b.elements}: k = {b.force_constant:.4f} mdyn/Å, "
+          f"r₀ = {b.equilibrium:.4f} Å")
+
+# Convergence history (score at each evaluation)
+import matplotlib.pyplot as plt
+plt.semilogy(result.history)
+plt.xlabel("Evaluation")
+plt.ylabel("Objective")
+plt.title("Convergence")
+plt.savefig("convergence.png")
+```
+
+---
+
+## Step 7: Export the Optimised Force Field
+
+Q2MM can write the optimised parameters to **MM3 `.fld`** format (Schrödinger
+MacroModel) or **Tinker `.prm`** format.
+
+### MM3 format
+
+```python
+from q2mm.models.ff_io import save_mm3_fld
+
+output_path = save_mm3_fld(
+    optimised_ff,
+    "optimized_mm3.fld",
+    template_path="sn2-ts-initial.fld",   # preserves header / metadata
+    substructure_name="SN2 TS Optimized",
+)
+print(f"Saved: {output_path}")
+```
+
+!!! note "Template-based export"
+    When you pass `template_path`, Q2MM reads the original `.fld` file,
+    updates only the bond and angle parameters that were optimised, and
+    writes everything else (headers, VdW parameters, comments) unchanged.
+    This is essential for round-trip compatibility with MacroModel.
+
+### Tinker format
+
+```python
+from q2mm.models.ff_io import save_tinker_prm
+
+save_tinker_prm(
+    optimised_ff,
+    "optimized.prm",
+    template_path="template.prm",
+)
+```
+
+### Using the ForceField methods directly
+
+The `ForceField` object also has built-in I/O methods:
+
+```python
+# Save
+optimised_ff.to_mm3_fld("optimized_mm3.fld")
+optimised_ff.to_tinker_prm("optimized.prm")
+
+# Load
+ff = ForceField.from_mm3_fld("optimized_mm3.fld")
+ff = ForceField.from_tinker_prm("optimized.prm")
+```
+
+---
+
+## Complete Script
+
+Here is the full pipeline in one script. The SN2 example files in
+`examples/sn2-test/` contain pre-computed QM data so you can run the
+Seminario + analysis steps immediately.
+
+```python
+"""Full TSFF pipeline — SN2 F⁻ + CH₃F transition state."""
+
+import numpy as np
+from pathlib import Path
+
+from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.forcefield import ForceField
+from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.ff_io import save_mm3_fld
+from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm import linear_algebra
+
+QM_REF = Path("examples/sn2-test/qm-reference")
+
+# ── Step 1: Load QM data ──────────────────────────────────────────
+mol = Q2MMMolecule.from_xyz(
+    QM_REF / "sn2-ts-optimized.xyz",
+    charge=-1,
+    name="SN2_TS",
+    bond_tolerance=1.4,
+)
+hessian = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
+mol = mol.with_hessian(hessian)
+
+print(f"Loaded: {mol.n_atoms} atoms, {len(mol.bonds)} bonds, "
+      f"{len(mol.angles)} angles")
+
+# ── Step 2: Seminario estimation ──────────────────────────────────
+ff = estimate_force_constants(
+    mol,
+    zero_torsions=True,
+    au_hessian=True,
+    invalid_policy="skip",
+)
+
+print("\nSeminario estimates:")
+for b in ff.bonds:
+    print(f"  Bond {b.elements}: k={b.force_constant:.4f} mdyn/Å, "
+          f"r₀={b.equilibrium:.4f} Å  {b.label}")
+for a in ff.angles:
+    print(f"  Angle {a.elements}: k={a.force_constant:.6f} mdyn·Å/rad², "
+          f"θ₀={a.equilibrium:.1f}°  {a.label}")
+
+# ── Step 3: Reference data ────────────────────────────────────────
+ref = ReferenceData()
+for bond in mol.bonds:
+    ref.add_bond_length(
+        bond.length,
+        atom_indices=(bond.atom_i, bond.atom_j),
+        weight=10.0,
+        label=f"{bond.element_pair} bond",
+    )
+for angle in mol.angles:
+    ref.add_bond_angle(
+        angle.value,
+        atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+        weight=5.0,
+        label=f"{angle.element_triple} angle",
+    )
+print(f"\nReference observations: {ref.n_observations}")
+
+# ── Step 4: Hessian analysis ──────────────────────────────────────
+eigenvalues, eigenvectors = linear_algebra.decompose(hessian)
+n_negative = sum(1 for e in eigenvalues if e < -0.001)
+print(f"\nHessian eigenvalues: {len(eigenvalues)} total, "
+      f"{n_negative} negative (reaction coordinate)")
+
+# ── Step 5: Optimise (requires an MM engine) ──────────────────────
+# Uncomment below when you have an MM backend configured:
+#
+# from q2mm.backends.mm.openmm_engine import OpenMMEngine
+# engine = OpenMMEngine()
+#
+# objective = ObjectiveFunction(
+#     forcefield=ff,
+#     engine=engine,
+#     molecules=[mol],
+#     reference=ref,
+# )
+#
+# optimizer = ScipyOptimizer(
+#     method="L-BFGS-B", maxiter=500, eps=1e-3
+# )
+# result = optimizer.optimize(objective)
+# print(result.summary())
+
+# ── Step 6: Export ────────────────────────────────────────────────
+ff.to_mm3_fld("sn2-ts-seminario.fld")
+print("\nSaved: sn2-ts-seminario.fld")
+```
+
+---
+
+## Next Steps
+
+Once you have completed this tutorial, consider:
+
+- **Multiple conformers** — add ground-state CH₃F alongside the TS to train
+  a force field that reproduces both minima and the saddle point.  Load
+  `qm-reference/ch3f-optimized.xyz` and its Hessian as a second molecule.
+
+- **Frequency matching** — add QM vibrational frequencies to the reference
+  data (Step 4) for a tighter fit of force constants.
+
+- **Torsion scanning** — for systems with soft torsions, run a QM torsion
+  scan and add the energy profile to `ReferenceData` for proper barrier
+  heights.
+
+- **Custom weighting** — experiment with different weights to balance
+  geometry accuracy against energy/frequency reproduction.
+
+- **Larger systems** — the Rh-enamide example in `examples/rh-enamide/`
+  demonstrates TSFF fitting for a transition-metal catalysed reaction with
+  significantly more parameters.
+
+- **Alternative optimisers** — try `Nelder-Mead` for noisy landscapes, or
+  `least_squares` (Levenberg-Marquardt) when you have more observations
+  than parameters.
+
+- **Consult the API reference** — see the [API docs](api.md) for the
+  complete interface of `ForceField`, `Q2MMMolecule`, `ObjectiveFunction`,
+  and all I/O functions.
