@@ -116,7 +116,7 @@ The upstream code's five custom gradient methods (`central_diff`,
 `forward_diff`, `lstsq`, `lagrange`, `svd`) are **not ported** as
 standalone functions — scipy provides equivalent or superior
 implementations.  See `q2mm/optimizers/scipy_opt.py` docstring for the
-detailed mapping.  Legacy code is preserved in `q2mm/legacy/`.
+detailed mapping.
 
 ## Citations
 
