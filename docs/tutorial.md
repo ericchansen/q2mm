@@ -405,15 +405,15 @@ print(f"Parameters:    {len(initial_params)}")
     OpenMM and Tinker. Check `q2mm/backends/` for available engines:
 
     ```python
-    from q2mm.backends.mm.openmm_engine import OpenMMEngine
+    from q2mm.backends.mm.openmm import OpenMMEngine
     engine = OpenMMEngine()
     ```
 
     or for Tinker:
 
     ```python
-    from q2mm.backends.mm.tinker_engine import TinkerEngine
-    engine = TinkerEngine(tinker_path="/usr/local/bin")
+    from q2mm.backends.mm.tinker import TinkerEngine
+    engine = TinkerEngine(tinker_dir="/usr/local/bin")
     ```
 
 ---
@@ -624,7 +624,7 @@ print(f"\nHessian eigenvalues: {len(eigenvalues)} total, "
 # ── Step 5: Optimise (requires an MM engine) ──────────────────────
 # Uncomment below when you have an MM backend configured:
 #
-# from q2mm.backends.mm.openmm_engine import OpenMMEngine
+# from q2mm.backends.mm.openmm import OpenMMEngine
 # engine = OpenMMEngine()
 #
 # objective = ObjectiveFunction(
