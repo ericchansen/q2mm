@@ -24,8 +24,7 @@ The upstream Q2MM code provided five gradient-based methods
 
 These are *not* ported as standalone functions because scipy provides
 equivalent or superior implementations with better numerical stability,
-convergence diagnostics, and bounds support.  The legacy code is preserved
-in ``q2mm/legacy/`` for reference.
+convergence diagnostics, and bounds support.
 """
 
 from __future__ import annotations
