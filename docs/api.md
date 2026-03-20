@@ -216,6 +216,16 @@ ref = ReferenceData.from_molecules([mol1, mol2], frequencies_list=[f1, f2])
 | `skip_imaginary` | `bool` | `False` | Skip imaginary frequencies |
 | `au_hessian` | `bool` | `True` | Keep Hessian in atomic units (Hartree/Bohr²) |
 
+**`from_fchk()` parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | `str` or `Path` | *(required)* | Path to the Gaussian `.fchk` file |
+| `weights` | `dict`, optional | see above | Weight overrides |
+| `bond_tolerance` | `float` | `1.3` | Covalent-radii multiplier for bond detection |
+| `charge` | `int` | `0` | Molecular charge (overridden by file value if present) |
+| `multiplicity` | `int` | `1` | Spin multiplicity (overridden by file value if present) |
+
 **Bulk loaders** — add data in batch to an existing `ReferenceData`:
 
 ```python
@@ -252,6 +262,8 @@ Each `ReferenceValue` has:
 | `value` | `float` | Target value |
 | `weight` | `float` | Relative importance in the objective |
 | `atom_indices` | `tuple[int, ...]`, optional | Atoms involved (for geometric properties) |
+| `data_idx` | `int` | Index into the raw data array (for matching frequencies/eigenvalues when `atom_indices` is not applicable) |
+| `label` | `str` | Human-readable label (used in error messages and debugging) |
 | `molecule_idx` | `int` | Index into the molecules list (default: 0) |
 
 **Properties:**
