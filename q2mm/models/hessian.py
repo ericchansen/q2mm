@@ -131,9 +131,12 @@ def replace_neg_eigenvalue(
 
     Implements "Method C" from Limé & Norrby (J. Comput. Chem. 2015, 36, 1130,
     DOI:10.1002/jcc.23797): the reaction coordinate eigenvalue is forced to a
-    large positive value (default 1.0 Hartree·bohr⁻²·amu⁻¹ ≈ 9376
-    kJ·mol⁻¹·Å⁻²·amu⁻¹) so that the TS is treated as an energy minimum by
+    large positive value so that the TS is treated as an energy minimum by
     the MM force field.
+
+    The default replacement is 1.0 Hartree/Bohr², converted to
+    kJ/mol/Å² via ``constants.HESSIAN_CONVERSION`` (≈ 9376).  This operates
+    on **Cartesian** Hessian eigenvalues — not mass-weighted ones.
 
     Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
     without forced replacement) gives ~13× lower RMS error, but can produce
@@ -142,21 +145,20 @@ def replace_neg_eigenvalue(
     for details and issue #75 for implementation status.
 
     Args:
-        eigenvalues (np.ndarray): Eigenvalues from mass-weighted Hessian.
-        replace_with (float, optional): Replacement value in atomic units
-            (Hartree·bohr⁻²·amu⁻¹). Defaults to 1.0.
-        zer_out_neg (bool, optional): If True, zero out remaining negative
-            eigenvalues after replacing the most negative. Defaults to False.
+        eigenvalues: Eigenvalues from Cartesian Hessian decomposition.
+        replace_with: Replacement value in Hartree/Bohr². Defaults to 1.0.
+        zer_out_neg: If True, zero out remaining negative eigenvalues after
+            replacing the most negative. Defaults to False.
         units: Target units for the replacement. If ``co.KJMOLA`` (default),
             *replace_with* is converted via ``constants.HESSIAN_CONVERSION``.
-        strict (bool, optional): If True, raise ValueError when more than one
-            negative eigenvalue is found (indicates a higher-order saddle point
-            or corrupted Hessian).  If False, proceed with a warning. Defaults
+        strict: If True, raise ValueError when more than one negative
+            eigenvalue is found (indicates a higher-order saddle point or
+            corrupted Hessian).  If False, proceed with a warning. Defaults
             to True.
 
     Returns:
-        np.ndarray: Eigenvalues with most negative eigenvalue replaced and,
-            if requested, remaining negative values zeroed out.
+        Eigenvalues with most negative eigenvalue replaced and, if requested,
+        remaining negative values zeroed out.
 
     Raises:
         ValueError: When *strict* is True and more than one negative eigenvalue
@@ -222,7 +224,13 @@ def invert_ts_curvature(
 
     Returns:
         Modified Hessian matrix.
+
+    Raises:
+        ValueError: If *method* is not ``"C"`` or ``"D"``.
     """
+    if method not in ("C", "D"):
+        raise ValueError(f"Unknown method {method!r}. Supported: 'C', 'D'.")
+
     eigenvalues, eigenvectors = decompose(hessian_matrix)
 
     if method == "D":
@@ -230,13 +238,7 @@ def invert_ts_curvature(
     else:
         modified_evals = replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False)
 
-    inv_curv_hessian = reform_hessian(modified_evals, eigenvectors)
-
-    if not (inv_curv_hessian >= 0.0).all() and method == "C":
-        n_neg = int(np.sum(inv_curv_hessian < 0))
-        warnings.warn(f"Inverted Hessian has {n_neg} negative values.", stacklevel=2)
-
-    return inv_curv_hessian
+    return reform_hessian(modified_evals, eigenvectors)
 
 
 # ---- Method D: Natural eigenvalue fitting ----
@@ -264,59 +266,76 @@ def detect_problematic_params(
     forcefield,
     *,
     fc_threshold: float = 0.0,
-) -> dict[str, list[int]]:
+) -> dict[str, set[tuple]]:
     """Detect force field parameters with zero or negative force constants.
 
     After fitting with Method D, some parameters may converge to physically
-    unreasonable values. This function identifies them so they can be locked
-    for Method E re-optimization.
+    unreasonable values. This function identifies them by their canonical key
+    so they can be re-set for Method E re-optimization.
 
     Args:
         forcefield: ForceField with estimated parameters.
         fc_threshold: Force constants at or below this value are flagged.
 
     Returns:
-        Dict with 'bonds' and 'angles' keys, each containing a list of
-        indices into the ForceField parameter lists.
+        Dict with ``"bonds"`` and ``"angles"`` keys, each containing a set
+        of canonical parameter keys (element tuples from ``param.key``).
     """
-    problematic: dict[str, list[int]] = {"bonds": [], "angles": []}
+    problematic: dict[str, set[tuple]] = {"bonds": set(), "angles": set()}
 
-    for i, bond in enumerate(forcefield.bonds):
+    for bond in forcefield.bonds:
         if bond.force_constant <= fc_threshold:
             logger.info(f"Problematic bond {bond.key}: fc={bond.force_constant:.4f} (<= {fc_threshold})")
-            problematic["bonds"].append(i)
+            problematic["bonds"].add(bond.key)
 
-    for i, angle in enumerate(forcefield.angles):
+    for angle in forcefield.angles:
         if angle.force_constant <= fc_threshold:
             logger.info(f"Problematic angle {angle.key}: fc={angle.force_constant:.4f} (<= {fc_threshold})")
-            problematic["angles"].append(i)
+            problematic["angles"].add(angle.key)
 
     return problematic
 
 
 def lock_params(
     forcefield,
-    lock_indices: dict[str, list[int]],
+    lock_keys: dict[str, set[tuple]],
     source_ff,
 ) -> None:
-    """Lock problematic parameters to values from a reference force field.
+    """Reset problematic parameters to values from a reference force field.
 
     Copies force constant and equilibrium values from *source_ff* to
-    *forcefield* at the specified indices. These parameters are then
-    "frozen" during subsequent optimization.
+    *forcefield* for parameters whose keys appear in *lock_keys*.
+
+    Note: this only copies values — it does **not** prevent a subsequent
+    optimizer from overwriting them.  To truly freeze parameters during
+    optimization, exclude them from the parameter vector (see
+    ``ForceField.get_param_vector`` / ``set_param_vector``).
 
     Args:
         forcefield: ForceField to modify in-place.
-        lock_indices: Dict from ``detect_problematic_params()``.
+        lock_keys: Dict from ``detect_problematic_params()``, keyed by
+            ``"bonds"`` and ``"angles"`` with sets of canonical keys.
         source_ff: Reference ForceField to copy values from (typically
             the Method D result or a standard force field).
     """
-    for i in lock_indices.get("bonds", []):
-        forcefield.bonds[i].force_constant = source_ff.bonds[i].force_constant
-        forcefield.bonds[i].equilibrium = source_ff.bonds[i].equilibrium
-        logger.info(f"Locked bond {forcefield.bonds[i].key} to fc={source_ff.bonds[i].force_constant:.4f}")
+    bond_keys = lock_keys.get("bonds", set())
+    angle_keys = lock_keys.get("angles", set())
 
-    for i in lock_indices.get("angles", []):
-        forcefield.angles[i].force_constant = source_ff.angles[i].force_constant
-        forcefield.angles[i].equilibrium = source_ff.angles[i].equilibrium
-        logger.info(f"Locked angle {forcefield.angles[i].key} to fc={source_ff.angles[i].force_constant:.4f}")
+    source_bonds = {b.key: b for b in source_ff.bonds}
+    source_angles = {a.key: a for a in source_ff.angles}
+
+    for bond in forcefield.bonds:
+        if bond.key in bond_keys:
+            src = source_bonds.get(bond.key)
+            if src is not None:
+                bond.force_constant = src.force_constant
+                bond.equilibrium = src.equilibrium
+                logger.info(f"Reset bond {bond.key} to fc={src.force_constant:.4f}")
+
+    for angle in forcefield.angles:
+        if angle.key in angle_keys:
+            src = source_angles.get(angle.key)
+            if src is not None:
+                angle.force_constant = src.force_constant
+                angle.equilibrium = src.equilibrium
+                logger.info(f"Reset angle {angle.key} to fc={src.force_constant:.4f}")

@@ -5,9 +5,8 @@ upstream Seminario results to within 1e-8 tolerance for both the
 rh-enamide and SN2 systems, plus runtime benchmarks.
 """
 
-from __future__ import annotations
-
 import json
+import re
 import time
 from pathlib import Path
 
@@ -40,6 +39,11 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def _natural_sort_key(path: Path):
+    """Sort key that handles numeric components correctly (e.g. 2.in < 10.in)."""
+    return [int(s) if s.isdigit() else s.lower() for s in re.split(r"(\d+)", path.name)]
+
+
 def _int_keyed_map(values: dict[str, float | None]) -> dict[int, float | None]:
     return {int(key): value for key, value in values.items()}
 
@@ -57,7 +61,7 @@ def sn2_fixture():
 @pytest.fixture(scope="module")
 def rh_enamide_clean_results():
     structures = MacroModel(str(MMO_PATH)).structures
-    hessian_files = sorted(JAG_DIR.glob("*.in"))
+    hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)
     assert len(structures) == len(hessian_files)
 
     hessians = [
@@ -205,7 +209,7 @@ _RH_DATA_AVAILABLE = MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists(
 def test_rh_enamide_forcefield_roundtrip():
     """Loading, estimating, and re-loading FF gives consistent params."""
     structures = MacroModel(str(MMO_PATH)).structures
-    hessian_files = sorted(JAG_DIR.glob("*.in"))
+    hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)
     molecules = [
         Q2MMMolecule.from_structure(
             s,
@@ -277,7 +281,7 @@ def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fix
 def test_rh_enamide_seminario_benchmark(rh_enamide_clean_results, capsys):
     """Benchmark: time the full rh-enamide Seminario pipeline (informational)."""
     structures = MacroModel(str(MMO_PATH)).structures
-    hessian_files = sorted(JAG_DIR.glob("*.in"))
+    hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)
 
     # Time parsing
     t0 = time.perf_counter()

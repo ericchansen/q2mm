@@ -11,8 +11,6 @@ DOI: 10.1002/jcc.23797
 Covers issue #75.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 
@@ -139,32 +137,40 @@ class TestDetectProblematicParams:
     def test_no_problems(self):
         ff = self._make_ff([5.0, 3.0], [0.6, 0.8])
         result = detect_problematic_params(ff)
-        assert result["bonds"] == []
-        assert result["angles"] == []
+        assert result["bonds"] == set()
+        assert result["angles"] == set()
 
     def test_negative_bond_fc(self):
         ff = self._make_ff([5.0, -0.1], [0.6, 0.8])
         result = detect_problematic_params(ff)
-        assert result["bonds"] == [1]
-        assert result["angles"] == []
+        assert ("C", "H") in result["bonds"]
+        assert result["angles"] == set()
 
     def test_zero_angle_fc(self):
         ff = self._make_ff([5.0, 3.0], [0.6, 0.0])
         result = detect_problematic_params(ff)
-        assert result["bonds"] == []
-        assert result["angles"] == [1]
+        assert result["bonds"] == set()
+        assert ("H", "C", "H") in result["angles"]
 
     def test_custom_threshold(self):
         ff = self._make_ff([5.0, 0.05], [0.6, 0.01])
         result = detect_problematic_params(ff, fc_threshold=0.1)
-        assert result["bonds"] == [1]
-        assert result["angles"] == [1]
+        assert ("C", "H") in result["bonds"]
+        assert ("H", "C", "H") in result["angles"]
 
     def test_all_problematic(self):
         ff = self._make_ff([-1.0, -2.0], [0.0, -0.5])
         result = detect_problematic_params(ff)
-        assert result["bonds"] == [0, 1]
-        assert result["angles"] == [0, 1]
+        assert ("C", "H") in result["bonds"]
+        assert ("H", "C", "H") in result["angles"]
+
+    def test_invalid_method_raises(self):
+        """Unsupported method string must raise ValueError, not silently fall through."""
+        H = np.eye(6)
+        with pytest.raises(ValueError, match="Unknown method"):
+            invert_ts_curvature(H, method="E")
+        with pytest.raises(ValueError, match="Unknown method"):
+            invert_ts_curvature(H, method="X")
 
 
 # ---------------------------------------------------------------------------
@@ -183,25 +189,25 @@ class TestLockParams:
     def test_lock_bond(self):
         target = self._make_ff(-0.5, 1.09, 0.6, 109.5)
         source = self._make_ff(5.0, 1.10, 0.7, 108.0)
-        lock_params(target, {"bonds": [0], "angles": []}, source)
+        lock_params(target, {"bonds": {("C", "H")}, "angles": set()}, source)
         assert target.bonds[0].force_constant == 5.0
         assert target.bonds[0].equilibrium == 1.10
 
     def test_lock_angle(self):
         target = self._make_ff(5.0, 1.09, -0.1, 109.5)
         source = self._make_ff(3.0, 1.10, 0.7, 108.0)
-        lock_params(target, {"bonds": [], "angles": [0]}, source)
+        lock_params(target, {"bonds": set(), "angles": {("H", "C", "H")}}, source)
         assert target.angles[0].force_constant == 0.7
         assert target.angles[0].equilibrium == 108.0
 
     def test_lock_preserves_unlocked(self):
         target = self._make_ff(5.0, 1.09, 0.6, 109.5)
         source = self._make_ff(3.0, 1.10, 0.7, 108.0)
-        lock_params(target, {"bonds": [], "angles": []}, source)
+        lock_params(target, {"bonds": set(), "angles": set()}, source)
         assert target.bonds[0].force_constant == 5.0
         assert target.angles[0].force_constant == 0.6
 
-    def test_lock_empty_indices(self):
+    def test_lock_empty_keys(self):
         target = self._make_ff(5.0, 1.09, 0.6, 109.5)
         source = self._make_ff(3.0, 1.10, 0.7, 108.0)
         lock_params(target, {}, source)
