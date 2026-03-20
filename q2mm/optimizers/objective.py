@@ -267,17 +267,19 @@ class ReferenceData:
         molecule_idx: int = 0,
         weights: dict[str, float] | None = None,
         skip_first: bool = True,
-        freq_threshold: float = 1100.0,
+        eigenvalue_threshold: float = 0.1173,
     ) -> int:
         """Bulk-load eigenmatrix training data from a QM Hessian.
 
         Decomposes the Hessian, computes the eigenmatrix, and adds all
         elements as reference values with the legacy weight scheme.
 
+        The Hessian should be in canonical units (Hartree/Bohr²).
+
         Parameters
         ----------
         hessian : np.ndarray
-            QM Hessian matrix ``(3N, 3N)``.
+            QM Hessian matrix ``(3N, 3N)`` in Hartree/Bohr².
         diagonal_only : bool
             If True, add only diagonal elements (eigenvalues).
             If False, add all lower-triangular elements.
@@ -294,9 +296,12 @@ class ReferenceData:
             If True, the first eigenvalue gets weight ``eig_i``
             (default 0.0, effectively skipping it). This is standard
             for TS fitting where the first mode is imaginary.
-        freq_threshold : float
-            Eigenvalue threshold separating low/high frequency modes
-            for weight assignment (legacy default: 1100.0).
+        eigenvalue_threshold : float
+            Eigenvalue threshold (Hartree/Bohr²) separating low/high
+            frequency modes for weight assignment.  The default 0.1173
+            corresponds to the legacy threshold of 1100 kJ/(mol·Å²),
+            which roughly separates modes below/above ~1100 cm⁻¹ when
+            mass-weighted.
 
         Returns
         -------
@@ -319,7 +324,7 @@ class ReferenceData:
                 # Diagonal element
                 if row == 0 and skip_first:
                     weight = w["eig_i"]
-                elif abs(value) < freq_threshold:
+                elif value < eigenvalue_threshold:
                     weight = w["eig_d_low"]
                 else:
                     weight = w["eig_d_high"]
@@ -970,7 +975,8 @@ class ObjectiveFunction:
         if "eig_diagonal" in needed or "eig_offdiagonal" in needed:
             from q2mm.models.hessian import decompose, transform_to_eigenmatrix
 
-            # Compute MM Hessian and project onto QM eigenvectors
+            # Compute MM Hessian (engine returns canonical Hartree/Bohr²)
+            # and project onto QM eigenvectors for eigenmatrix comparison.
             mm_hess = self.engine.hessian(structure, self.forcefield)
 
             # Cache QM eigenvectors (fixed across evaluations)

@@ -217,8 +217,24 @@ class TestReferenceDataEigenvalues:
             weights={"eig_d_low": 0.5, "eig_d_high": 0.8},
         )
 
-        # Both eigenvalues should use the custom weights
-        assert all(rv.weight in (0.5, 0.8) for rv in ref.values)
+        # Both eigenvalues (~2.38, ~4.62) are above default threshold (0.1173)
+        assert all(rv.weight == 0.8 for rv in ref.values)
+
+    def test_eigenvalue_threshold_separates_weights(self):
+        """eigenvalue_threshold correctly splits diagonal weights."""
+        # eigenvalues of [[4, 1], [1, 3]] are ~2.38 and ~4.62
+        hess = np.array([[4.0, 1.0], [1.0, 3.0]])
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(
+            hess,
+            diagonal_only=True,
+            skip_first=False,
+            eigenvalue_threshold=3.5,  # splits: 2.38 < 3.5, 4.62 ≥ 3.5
+            weights={"eig_d_low": 0.2, "eig_d_high": 0.9},
+        )
+
+        weights = sorted(rv.weight for rv in ref.values)
+        assert weights == [0.2, 0.9]
 
     @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_eigenmatrix_reference_data(self, sn2_hessian):
@@ -285,3 +301,58 @@ class TestObjectiveFunctionEigenmatrix:
 
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 0.3  # eigenmatrix[2, 1]
+
+    @pytest.mark.skipif(not _ETHANE_DATA_AVAILABLE, reason="Ethane fchk not found")
+    def test_evaluate_molecule_eigenmatrix_projection_and_caching(self):
+        """_evaluate_molecule computes eigenmatrix from engine.hessian using cached QM eigenvectors."""
+        from q2mm.optimizers.objective import ObjectiveFunction
+
+        ref_data, mol = ReferenceData.from_fchk(str(_ETHANE_FCHK))
+        assert mol.hessian is not None
+
+        qm_hessian = np.array(mol.hessian, dtype=float)
+
+        class StubMMEngine:
+            """Stub MM engine returning a fixed Hessian in canonical units."""
+
+            name = "stub"
+
+            def __init__(self, hessian):
+                self._hessian = np.array(hessian, dtype=float)
+                self.hessian_calls = 0
+
+            def hessian(self, structure, forcefield=None):
+                self.hessian_calls += 1
+                return self._hessian
+
+            def supports_runtime_params(self):
+                return False
+
+        # Build reference data with eigenmatrix entries
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
+
+        # Use MM Hessian == QM Hessian → self-projection should be diagonal
+        engine = StubMMEngine(qm_hessian)
+        obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
+
+        result = obj._evaluate_molecule(0)
+        assert "eigenmatrix" in result
+
+        eigmat = np.array(result["eigenmatrix"], dtype=float)
+        assert eigmat.shape == qm_hessian.shape
+
+        # Self-projection → eigenmatrix should be diagonal
+        diag_only = np.diag(np.diag(eigmat))
+        assert np.allclose(eigmat, diag_only, atol=1e-8)
+        assert engine.hessian_calls == 1
+
+        # Second call: swap in a scaled engine, eigenvectors stay cached
+        engine2 = StubMMEngine(2.0 * qm_hessian)
+        obj.engine = engine2
+        result2 = obj._evaluate_molecule(0)
+        eigmat2 = np.array(result2["eigenmatrix"], dtype=float)
+
+        # Diagonal should scale by 2
+        assert np.allclose(np.diag(eigmat2), 2.0 * np.diag(eigmat), atol=1e-8)
+        assert engine2.hessian_calls == 1

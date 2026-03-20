@@ -11,6 +11,8 @@ import numpy as np
 from q2mm.backends.base import MMEngine
 from q2mm.constants import (
     AMU_TO_KG,
+    BOHR_TO_ANG,
+    HARTREE_TO_J,
     SPEED_OF_LIGHT_MS,
     MM3_BOND_C3,
     MM3_BOND_C4,
@@ -20,6 +22,7 @@ from q2mm.constants import (
     MM3_ANGLE_C6,
     RAD_TO_DEG,
     KCAL_TO_KJ,
+    KJMOLNM2_TO_HESSIAN_AU,
     MDYNA_TO_KJMOLA2,
     MM3_STR,
     AVO,
@@ -392,7 +395,12 @@ class OpenMMEngine(MMEngine):
         return energy, list(handle.molecule.symbols), coords
 
     def hessian(self, structure, forcefield: ForceField | None = None, step: float = 1.0e-4) -> np.ndarray:
-        """Finite-difference Hessian in kJ/mol/nm^2."""
+        """Finite-difference Hessian in canonical units (Hartree/Bohr²).
+
+        Internally computed in kJ/mol/nm² (OpenMM native) and converted
+        to Hartree/Bohr² before returning, matching the canonical unit
+        contract defined in :class:`~q2mm.backends.base.MMEngine`.
+        """
         handle = self._prepare_handle(structure, forcefield)
         positions = np.array(
             handle.context.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(unit.nanometer)
@@ -426,14 +434,20 @@ class OpenMMEngine(MMEngine):
                 hessian[:, column] = -((forces_plus - forces_minus) / (2.0 * step)).reshape(-1)
 
         handle.context.setPositions(positions * unit.nanometer)
-        return 0.5 * (hessian + hessian.T)
+        hessian_symmetric = 0.5 * (hessian + hessian.T)
+
+        # Convert from OpenMM native kJ/mol/nm² to canonical Hartree/Bohr²
+        return hessian_symmetric * KJMOLNM2_TO_HESSIAN_AU
 
     def frequencies(self, structure, forcefield: ForceField | None = None) -> list[float]:
         """Approximate harmonic frequencies in cm^-1 from the numerical Hessian."""
         handle = self._prepare_handle(structure, forcefield)
-        hessian = self.hessian(handle)
+        hessian_au = self.hessian(handle)  # Hartree/Bohr²
 
-        hessian_si = hessian * (1000.0 / AVO) * 1.0e18
+        # Convert Hartree/Bohr² → J/m² (per molecule, not per mol)
+        bohr_to_m = BOHR_TO_ANG * 1e-10
+        hessian_si = hessian_au * HARTREE_TO_J / (bohr_to_m**2)
+
         masses = np.array([MASSES[symbol] * AMU_TO_KG for symbol in handle.molecule.symbols], dtype=float)
         mass_vector = np.repeat(masses, 3)
         mass_weighted = hessian_si / np.sqrt(np.outer(mass_vector, mass_vector))

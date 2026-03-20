@@ -422,9 +422,11 @@ ref = ReferenceData.from_molecule(
 )
 # Eigenvalue weights follow the legacy scheme:
 #   eig_i=0.0 (first/imaginary mode),
-#   eig_d_low=0.1 (diagonal < 1100),
-#   eig_d_high=0.1 (diagonal ≥ 1100),
+#   eig_d_low=0.1 (eigenvalue < 0.1173 Hartree/Bohr²),
+#   eig_d_high=0.1 (eigenvalue ≥ 0.1173 Hartree/Bohr²),
 #   eig_o=0.05 (off-diagonal)
+# The 0.1173 threshold corresponds to the legacy 1100 kJ/(mol·Å²)
+# cutoff, roughly separating modes below/above ~1100 cm⁻¹.
 ```
 
 Or add eigenmatrix data manually with fine-grained control:

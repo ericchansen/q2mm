@@ -67,7 +67,6 @@ CM_TO_ANG = 10**8
 # --- Force constant conversions ---
 FORCE_CONVERSION = 15.569141
 EIGENVALUE_CONVERSION = 53.0883777868
-HESSIAN_CONVERSION = 9375.829222
 AU_TO_MDYNA = 15.569141
 AU_TO_MDYN_ANGLE = 4.3598
 KJ_TO_DYNCM = 10**10
@@ -75,6 +74,22 @@ KJMOLA2_TO_MDYNA = 1.0 / (6.022140857e3)
 MDYNA_TO_KJMOLA2 = 6.022140857e2
 KJMOLA_TO_MDYN = 1.0 / (6.022140857e2)
 MM3_STR = 601.99392
+
+# --- Derived Hessian unit conversions ---
+# All derived from base CODATA constants above to avoid inconsistency.
+# Canonical internal Hessian unit: Hartree/Bohr² (atomic units).
+ANG_TO_BOHR = 1.0 / BOHR_TO_ANG
+
+# Hartree/Bohr² ↔ kJ/(mol·Å²)
+HESSIAN_AU_TO_KJMOLA2 = HARTREE_TO_KJMOL / (BOHR_TO_ANG**2)
+KJMOLA2_TO_HESSIAN_AU = 1.0 / HESSIAN_AU_TO_KJMOLA2
+
+# Hartree/Bohr² ↔ kJ/mol/nm² (OpenMM native; 1 nm = 10 Å → 1 nm² = 100 Å²)
+HESSIAN_AU_TO_KJMOLNM2 = HESSIAN_AU_TO_KJMOLA2 * 100.0
+KJMOLNM2_TO_HESSIAN_AU = 1.0 / HESSIAN_AU_TO_KJMOLNM2
+
+# Legacy alias (deprecated — prefer HESSIAN_AU_TO_KJMOLA2)
+HESSIAN_CONVERSION = HESSIAN_AU_TO_KJMOLA2
 
 # --- Physical constants ---
 AVO = 6.022140857e23
