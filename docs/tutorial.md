@@ -385,51 +385,114 @@ controls its importance in the fit.
     capability that is **not yet ported** to the new code — see
     [Issue tracker](https://github.com/ericchansen/q2mm/issues) for status.
 
-The reference data below is extracted from the molecule and QM output we
-already have. Frequencies come from the QM calculation, while bond lengths
-and angles come from the optimised geometry (already stored in `mol.bonds`
-and `mol.angles`):
+### Quick start — auto-populate from a molecule
+
+The simplest approach auto-extracts bond lengths and angles from the
+molecule we already built, and optionally adds frequencies from the QM
+calculation:
 
 ```python
 import numpy as np
 from q2mm.optimizers.objective import ReferenceData
 
-ref = ReferenceData()
-
-# --- Bond lengths and angles from the molecule's detected geometry ---
-for i, bond in enumerate(mol.bonds):
-    ref.add_bond_length(
-        bond.length,
-        atom_indices=(bond.atom_i, bond.atom_j),
-        weight=10.0,
-        label=f"{bond.element_pair} bond",
-    )
-
-for i, angle in enumerate(mol.angles):
-    ref.add_bond_angle(
-        angle.value,
-        atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
-        weight=5.0,
-        label=f"{angle.elements} angle",
-    )
-
-# --- Frequencies from the QM output ---
+# Load frequencies from QM output
 ts_freqs = np.loadtxt("examples/sn2-test/qm-reference/sn2-ts-frequencies.txt")
-for i, freq in enumerate(ts_freqs):
-    ref.add_frequency(freq, data_idx=i, weight=1.0, label=f"mode {i}")
 
-# --- Energy (optional) ---
-ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+# One call populates everything
+ref = ReferenceData.from_molecule(
+    mol,
+    frequencies=ts_freqs,
+    skip_imaginary=True,  # skip the imaginary TS mode
+)
 
 print(f"Reference observations: {ref.n_observations}")
+# → bonds + angles + real frequencies
 ```
 
-!!! note "Future: automated reference data"
-    Today, building `ReferenceData` is manual. A future
-    `ReferenceData.from_molecule(mol, frequencies=...)` helper that
-    auto-extracts bond lengths, angles, and frequencies from the molecule
-    is a natural next step. Contributions welcome!
+Default weights are `bond_length=10.0`, `bond_angle=5.0`,
+`frequency=1.0`.  Override with the `weights` parameter:
+
+```python
+ref = ReferenceData.from_molecule(
+    mol,
+    frequencies=ts_freqs,
+    weights={"bond_length": 50.0, "bond_angle": 25.0, "frequency": 2.0},
+)
 ```
+
+??? example "Auto-populate from a Gaussian .fchk file"
+
+    If you have a Gaussian formatted checkpoint file (`.fchk`), you can
+    build both the molecule and reference data in one step:
+
+    ```python
+    ref, mol = ReferenceData.from_fchk(
+        "examples/ethane/GS.fchk",
+        bond_tolerance=1.3,
+    )
+    print(f"Molecule: {mol}")
+    print(f"Observations: {ref.n_observations}")
+    # The molecule has the Hessian attached automatically
+    print(f"Hessian shape: {mol.hessian.shape}")
+    ```
+
+??? example "Auto-populate from a Gaussian .log file"
+
+    For Gaussian log files from `opt freq` jobs:
+
+    ```python
+    ref, mol = ReferenceData.from_gaussian(
+        "sn2-ts.log",
+        bond_tolerance=1.4,
+        charge=-1,
+        include_frequencies=True,
+        skip_imaginary=True,
+    )
+    ```
+
+??? example "Multi-molecule training sets"
+
+    For optimising against multiple conformers or molecules:
+
+    ```python
+    ref = ReferenceData.from_molecules(
+        [mol_gs, mol_ts],
+        frequencies_list=[freqs_gs, freqs_ts],
+        skip_imaginary=True,
+    )
+    # Each molecule gets a sequential molecule_idx (0, 1, ...)
+    ```
+
+??? example "Manual construction (full control)"
+
+    You can still build `ReferenceData` entry by entry when you need
+    complete control over what goes in:
+
+    ```python
+    ref = ReferenceData()
+
+    for bond in mol.bonds:
+        ref.add_bond_length(
+            bond.length,
+            atom_indices=(bond.atom_i, bond.atom_j),
+            weight=10.0,
+            label=f"{bond.element_pair} bond",
+        )
+
+    for angle in mol.angles:
+        ref.add_bond_angle(
+            angle.value,
+            atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+            weight=5.0,
+            label=f"{angle.elements} angle",
+        )
+
+    # Bulk-add frequencies
+    ref.add_frequencies_from_array(ts_freqs, weight=1.0, skip_imaginary=True)
+
+    # Add an energy target
+    ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+    ```
 
 !!! tip "Choosing weights"
     Weights balance the influence of different data types:

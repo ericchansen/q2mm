@@ -27,13 +27,17 @@ against the upstream code path.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
+
+if TYPE_CHECKING:
+    from q2mm.parsers.gaussian import GaussLog
 
 
 # ---- Reference data containers ----
@@ -174,8 +178,440 @@ class ReferenceData:
     def n_observations(self) -> int:
         return len(self.values)
 
+    # ---- Bulk loaders ----
 
-# ---- Geometry helpers ----
+    def add_frequencies_from_array(
+        self,
+        frequencies: np.ndarray | list[float],
+        *,
+        weight: float = 1.0,
+        molecule_idx: int = 0,
+        skip_imaginary: bool = False,
+    ) -> int:
+        """Add all frequencies from a 1-D array.
+
+        Parameters
+        ----------
+        frequencies : array-like
+            Vibrational frequencies (cm⁻¹). Imaginary modes should be
+            negative values.
+        weight : float
+            Weight applied to every frequency entry.
+        molecule_idx : int
+            Index into the molecules list for multi-structure fits.
+        skip_imaginary : bool
+            If True, negative frequencies (imaginary modes) are skipped.
+
+        Returns
+        -------
+        int
+            Number of frequency entries added.
+        """
+        freqs = np.asarray(frequencies, dtype=float).ravel()
+        added = 0
+        for i, freq in enumerate(freqs):
+            if skip_imaginary and freq < 0:
+                continue
+            self.add_frequency(
+                float(freq),
+                data_idx=i,
+                weight=weight,
+                molecule_idx=molecule_idx,
+                label=f"mode {i}",
+            )
+            added += 1
+        return added
+
+    # ---- Factory methods ----
+
+    @classmethod
+    def from_molecule(
+        cls,
+        mol: Q2MMMolecule,
+        *,
+        weights: dict[str, float] | None = None,
+        molecule_idx: int = 0,
+        frequencies: np.ndarray | list[float] | None = None,
+        skip_imaginary: bool = False,
+    ) -> ReferenceData:
+        """Auto-populate reference data from a molecule's detected geometry.
+
+        Extracts all auto-detected bond lengths and bond angles from the
+        molecule. Optionally adds vibrational frequencies.
+
+        Parameters
+        ----------
+        mol : Q2MMMolecule
+            Molecule with geometry (bonds/angles auto-detected).
+        weights : dict, optional
+            Weight overrides keyed by data type. Supported keys:
+            ``"bond_length"``, ``"bond_angle"``, ``"frequency"``.
+            Defaults: ``{"bond_length": 10.0, "bond_angle": 5.0,
+            "frequency": 1.0}``.
+        molecule_idx : int
+            Index for multi-molecule fits.
+        frequencies : array-like, optional
+            Vibrational frequencies (cm⁻¹) to include.
+        skip_imaginary : bool
+            If True, negative frequencies are skipped.
+
+        Returns
+        -------
+        ReferenceData
+            Populated with bond lengths, angles, and (optionally) frequencies.
+        """
+        w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
+        if weights:
+            w.update(weights)
+
+        ref = cls()
+
+        for bond in mol.bonds:
+            ref.add_bond_length(
+                bond.length,
+                atom_indices=(bond.atom_i, bond.atom_j),
+                weight=w["bond_length"],
+                molecule_idx=molecule_idx,
+                label=f"{bond.element_pair} bond",
+            )
+
+        for angle in mol.angles:
+            ref.add_bond_angle(
+                angle.value,
+                atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+                weight=w["bond_angle"],
+                molecule_idx=molecule_idx,
+                label=f"{angle.elements} angle",
+            )
+
+        if frequencies is not None:
+            ref.add_frequencies_from_array(
+                frequencies,
+                weight=w["frequency"],
+                molecule_idx=molecule_idx,
+                skip_imaginary=skip_imaginary,
+            )
+
+        return ref
+
+    @classmethod
+    def from_molecules(
+        cls,
+        molecules: list[Q2MMMolecule],
+        *,
+        weights: dict[str, float] | None = None,
+        frequencies_list: list[np.ndarray | list[float]] | None = None,
+        skip_imaginary: bool = False,
+    ) -> ReferenceData:
+        """Auto-populate reference data from multiple molecules.
+
+        Each molecule is assigned a sequential ``molecule_idx`` starting
+        from 0.
+
+        Parameters
+        ----------
+        molecules : list[Q2MMMolecule]
+            Training set molecules.
+        weights : dict, optional
+            Weight overrides (same keys as :meth:`from_molecule`).
+        frequencies_list : list of array-like, optional
+            Per-molecule frequencies. Must have the same length as
+            *molecules* if provided.
+        skip_imaginary : bool
+            If True, negative frequencies are skipped.
+
+        Returns
+        -------
+        ReferenceData
+            Combined reference data for all molecules.
+        """
+        if frequencies_list is not None and len(frequencies_list) != len(molecules):
+            raise ValueError(
+                f"frequencies_list length ({len(frequencies_list)}) must match molecules length ({len(molecules)})."
+            )
+
+        ref = cls()
+        w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
+        if weights:
+            w.update(weights)
+
+        for idx, mol in enumerate(molecules):
+            for bond in mol.bonds:
+                ref.add_bond_length(
+                    bond.length,
+                    atom_indices=(bond.atom_i, bond.atom_j),
+                    weight=w["bond_length"],
+                    molecule_idx=idx,
+                    label=f"{bond.element_pair} bond",
+                )
+            for angle in mol.angles:
+                ref.add_bond_angle(
+                    angle.value,
+                    atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+                    weight=w["bond_angle"],
+                    molecule_idx=idx,
+                    label=f"{angle.elements} angle",
+                )
+            if frequencies_list is not None:
+                ref.add_frequencies_from_array(
+                    frequencies_list[idx],
+                    weight=w["frequency"],
+                    molecule_idx=idx,
+                    skip_imaginary=skip_imaginary,
+                )
+
+        return ref
+
+    @classmethod
+    def from_gaussian(
+        cls,
+        path: str | Path,
+        *,
+        weights: dict[str, float] | None = None,
+        bond_tolerance: float = 1.3,
+        charge: int = 0,
+        multiplicity: int = 1,
+        include_frequencies: bool = True,
+        skip_imaginary: bool = False,
+        au_hessian: bool = True,
+    ) -> tuple[ReferenceData, Q2MMMolecule]:
+        """Build reference data from a Gaussian log file.
+
+        Parses the log file for the optimised geometry and vibrational
+        frequencies, then auto-populates bond lengths, angles, and
+        (optionally) frequencies.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the Gaussian ``.log`` file (from an ``opt freq`` job).
+        weights : dict, optional
+            Weight overrides (same keys as :meth:`from_molecule`).
+        bond_tolerance : float
+            Multiplier for covalent-radii bond detection. Use 1.4+ for TS.
+        charge, multiplicity : int
+            Molecular charge and spin multiplicity.
+        include_frequencies : bool
+            Whether to add frequency data from the log file.
+        skip_imaginary : bool
+            If True, negative frequencies are skipped.
+        au_hessian : bool
+            Keep Hessian in atomic units (Hartree/Bohr²).
+
+        Returns
+        -------
+        (ReferenceData, Q2MMMolecule)
+            Populated reference data and the parsed molecule (with Hessian
+            attached if available).
+        """
+        from q2mm.parsers.gaussian import GaussLog
+        from q2mm import linear_algebra
+
+        log = GaussLog(str(path), au_hessian=au_hessian)
+
+        # Build molecule from the last (optimised) structure
+        structure = log.structures[-1]
+        hessian = None
+        if log.evals and log.evecs:
+            hessian = linear_algebra.reform_hessian(log.evals, log.evecs)
+
+        mol = Q2MMMolecule.from_structure(
+            structure,
+            charge=charge,
+            multiplicity=multiplicity,
+            bond_tolerance=bond_tolerance,
+            hessian=hessian,
+        )
+
+        # Frequencies from the eigenvalues (force constants → cm⁻¹-like)
+        frequencies = None
+        if include_frequencies and log.evals:
+            frequencies = np.array(log.evals)
+
+        ref = cls.from_molecule(
+            mol,
+            weights=weights,
+            frequencies=frequencies,
+            skip_imaginary=skip_imaginary,
+        )
+
+        return ref, mol
+
+    @classmethod
+    def from_fchk(
+        cls,
+        path: str | Path,
+        *,
+        weights: dict[str, float] | None = None,
+        bond_tolerance: float = 1.3,
+        charge: int = 0,
+        multiplicity: int = 1,
+    ) -> tuple[ReferenceData, Q2MMMolecule]:
+        """Build reference data from a Gaussian formatted checkpoint file.
+
+        Parses the ``.fchk`` file for geometry, Cartesian Force Constants
+        (Hessian), and atom data. Auto-populates bond lengths and angles.
+
+        Parameters
+        ----------
+        path : str or Path
+            Path to the Gaussian ``.fchk`` file.
+        weights : dict, optional
+            Weight overrides (same keys as :meth:`from_molecule`).
+        bond_tolerance : float
+            Multiplier for covalent-radii bond detection.
+        charge, multiplicity : int
+            Molecular charge and spin multiplicity (overridden by file
+            values if present).
+
+        Returns
+        -------
+        (ReferenceData, Q2MMMolecule)
+            Populated reference data and the parsed molecule with Hessian.
+        """
+        path = Path(path)
+        symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
+
+        mol = Q2MMMolecule(
+            symbols=symbols,
+            geometry=coords_ang,
+            charge=file_charge if file_charge is not None else charge,
+            multiplicity=file_mult if file_mult is not None else multiplicity,
+            name=path.stem,
+            bond_tolerance=bond_tolerance,
+            hessian=hessian,
+        )
+
+        ref = cls.from_molecule(mol, weights=weights)
+
+        return ref, mol
+
+
+# ---- .fchk parser (minimal, self-contained) ----
+
+# Atomic numbers → element symbols
+_ATOMIC_SYMBOLS = {
+    1: "H",
+    2: "He",
+    3: "Li",
+    4: "Be",
+    5: "B",
+    6: "C",
+    7: "N",
+    8: "O",
+    9: "F",
+    10: "Ne",
+    11: "Na",
+    12: "Mg",
+    13: "Al",
+    14: "Si",
+    15: "P",
+    16: "S",
+    17: "Cl",
+    18: "Ar",
+    19: "K",
+    20: "Ca",
+    26: "Fe",
+    27: "Co",
+    28: "Ni",
+    29: "Cu",
+    30: "Zn",
+    35: "Br",
+    44: "Ru",
+    45: "Rh",
+    46: "Pd",
+    53: "I",
+    77: "Ir",
+    78: "Pt",
+}
+
+_BOHR_TO_ANG = 0.529177249
+
+
+def _parse_fchk(path: Path) -> tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
+    """Parse a Gaussian .fchk file for geometry and Hessian.
+
+    Returns (symbols, coords_angstrom, hessian_au_or_None, charge, multiplicity).
+    The Hessian is in Hartree/Bohr² (atomic units) — the native .fchk format.
+    """
+    with open(path) as f:
+        lines = f.readlines()
+
+    n_atoms = None
+    charge = None
+    multiplicity = None
+    atomic_numbers: list[int] = []
+    coords_bohr: list[float] = []
+    hessian_flat: list[float] = []
+    reading = None  # tracks which array section we're in
+    expected = 0
+
+    for line in lines:
+        # Scalar integer fields
+        if line.startswith("Number of atoms"):
+            n_atoms = int(line.split()[-1])
+            continue
+        if line.startswith("Charge"):
+            charge = int(line.split()[-1])
+            continue
+        if line.startswith("Multiplicity"):
+            multiplicity = int(line.split()[-1])
+            continue
+
+        # Array section headers
+        if line.startswith("Atomic numbers") and "N=" in line:
+            reading = "atomic_numbers"
+            expected = int(line.split("N=")[1].strip())
+            continue
+        if line.startswith("Current cartesian coordinates") and "N=" in line:
+            reading = "coords"
+            expected = int(line.split("N=")[1].strip())
+            continue
+        if line.startswith("Cartesian Force Constants") and "N=" in line:
+            reading = "hessian"
+            expected = int(line.split("N=")[1].strip())
+            continue
+
+        # Other array headers end the current section
+        if len(line) > 40 and ("N=" in line[40:] or ("I" in line[40:50] and line[40:50].strip() in ("I", "R"))):
+            if reading:
+                reading = None
+            continue
+
+        # Read array data
+        if reading == "atomic_numbers" and len(atomic_numbers) < expected:
+            atomic_numbers.extend(int(x) for x in line.split())
+            if len(atomic_numbers) >= expected:
+                reading = None
+        elif reading == "coords" and len(coords_bohr) < expected:
+            coords_bohr.extend(float(x) for x in line.split())
+            if len(coords_bohr) >= expected:
+                reading = None
+        elif reading == "hessian" and len(hessian_flat) < expected:
+            hessian_flat.extend(float(x) for x in line.split())
+            if len(hessian_flat) >= expected:
+                reading = None
+
+    if not atomic_numbers or not coords_bohr:
+        raise ValueError(f"Could not parse atomic numbers or coordinates from {path}")
+
+    symbols = [_ATOMIC_SYMBOLS.get(z, f"X{z}") for z in atomic_numbers]
+    coords_ang = np.array(coords_bohr).reshape(-1, 3) * _BOHR_TO_ANG
+
+    hessian = None
+    if hessian_flat:
+        n = len(symbols)
+        dim = 3 * n
+        # .fchk stores lower triangle in row-major order
+        hessian = np.zeros((dim, dim))
+        idx = 0
+        for i in range(dim):
+            for j in range(i + 1):
+                hessian[i, j] = hessian_flat[idx]
+                hessian[j, i] = hessian_flat[idx]
+                idx += 1
+
+    return symbols, coords_ang, hessian, charge, multiplicity
 
 
 def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:

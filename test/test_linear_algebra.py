@@ -36,10 +36,21 @@ evec_normd_sq3 = np.array([evec / np.linalg.norm(evec) for evec in evec_sq3])
 
 
 class TestLinearAlgebra(unittest.TestCase):
-    @unittest.expectedFailure  # Pre-existing: expected values don't match algorithm output
     def test_replace_neg_eigenvalue(self):
+        """Replacement uses 1.0 a.u. converted to kJ/(mol·Å²·amu).
+
+        Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
+        Method C forces the reaction coordinate eigenvalue to 1 Hartree·bohr⁻²·amu⁻¹
+        = 9376 kJ·mol⁻¹·Å⁻²·amu⁻¹.  The default units=co.KJMOLA triggers this
+        conversion via constants.HESSIAN_CONVERSION.
+        """
         repl_evals = linear_algebra.replace_neg_eigenvalue(evals_sq3)
-        np.testing.assert_allclose([1.0, evals_sq3[1], evals_sq3[2]], repl_evals)
+        expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
+        np.testing.assert_allclose(
+            [expected_replacement, evals_sq3[1], evals_sq3[2]],
+            repl_evals,
+            err_msg="Most negative eigenvalue should be replaced with 1.0 a.u. in kJ/(mol·Å²·amu) units.",
+        )
         multi_neg_evals = [
             -5,
             -2.45,
@@ -55,7 +66,7 @@ class TestLinearAlgebra(unittest.TestCase):
             9.87456,
         ]
         multi_neg_evals_repl = [
-            1.0,
+            expected_replacement,  # most negative replaced with 1.0 a.u. converted
             0.0,
             0.0,
             0.0,
