@@ -302,12 +302,18 @@ def estimate_force_constants(
         raise ValueError("Molecule must have a Hessian attached. Use molecule.with_hessian(hess)")
 
     # Pre-process Hessians for TS eigenvalue treatment (Method C or D)
-    if ts_method is not None:
+    if ts_method == "C":
+        # Method C: replace the reaction-coordinate eigenvalue before projection
         processed_hessians: dict[int, np.ndarray] = {}
         for mol in molecules:
-            processed_hessians[id(mol)] = invert_ts_curvature(mol.hessian, method=ts_method)
-    else:
+            processed_hessians[id(mol)] = invert_ts_curvature(mol.hessian, method="C")
+    elif ts_method == "D":
+        # Method D: keep the natural eigenvalue; use the raw Hessian unchanged
+        processed_hessians = {id(mol): mol.hessian for mol in molecules}
+    elif ts_method is None:
         processed_hessians = None
+    else:
+        raise ValueError(f"Unsupported ts_method {ts_method!r}; expected 'C', 'D', or None")
 
     # Create or copy force field
     if forcefield is None:
@@ -433,7 +439,10 @@ def estimate_force_constants_method_e(
 
     Args:
         molecule: Molecule(s) with Hessian attached.
-        forcefield: Starting force field (if None, auto-creates).
+        forcefield: Starting force field.  When ``None``, a force field is
+            auto-created from the molecule — but this only works for a
+            **single** molecule.  Multiple molecules require an explicit
+            force field (a ``ValueError`` is raised otherwise).
         zero_torsions: Whether to zero out torsional parameters.
         au_hessian: Whether Hessian is in atomic units.
         invalid_policy: How to handle negative projected force constants.
