@@ -249,16 +249,19 @@ class TestCH3FGroundState:
         nist = np.array(sorted(ext_ref["ch3f_nist_all_cm1"]))
         scale = ext_ref["qm_level_of_theory"]["dft_scaling_factor"]
 
-        # QM harmonic frequencies (9 modes, some degenerate pairs)
         qm_real = sorted(_real_frequencies(qm_freqs))
-        # NIST has 6 unique fundamentals (e modes are degenerate)
-        # Map: take one from each degenerate pair for comparison
-        # QM order (sorted): ~1041, ~1192, ~1192, ~1495, ~1512, ~1512, ~3058, ~3145, ~3145
-        # NIST (sorted):      1049,  1182,        1464,  1467,        2930,  3006
-        # Take indices 0, 1, 3, 4, 7, 8 → unique modes (skip one of each e pair)
-        # Actually simpler: compare unique modes by taking every-other from degenerate pairs
-        qm_unique_indices = [0, 1, 3, 4, 7, 8]  # one from each mode type
-        nist_ordered = [1049, 1182, 1464, 1467, 2930, 3006]  # same order
+        # NIST has 6 unique fundamentals (e-symmetry modes are degenerate)
+        # Pick one representative from each degenerate pair
+        qm_unique_indices = [0, 1, 3, 4, 7, 8]
+        nist_ordered = [1049, 1182, 1464, 1467, 2930, 3006]
+        mode_names = [
+            "v3 (CF str)",
+            "v6 (CH3 rock)",
+            "v2 (CH3 s-def)",
+            "v5 (CH3 a-def)",
+            "v1 (CH3 s-str)",
+            "v4 (CH3 a-str)",
+        ]
 
         if len(qm_real) >= 9:
             qm_unique = np.array([qm_real[i] for i in qm_unique_indices])
@@ -266,33 +269,81 @@ class TestCH3FGroundState:
             nist_arr = np.array(nist_ordered)
 
             mae = _frequency_mae(qm_scaled, nist_arr)
-            # Scaled B3LYP/6-31+G(d) should be within ~50 cm^-1 of experiment
+
+            # Print comparison table
+            col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
+            print("\n")
+            print("=" * 70)
+            print("  CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
+            print(f"  Scaling factor: {scale} (B3LYP/6-31+G(d))")
+            print("=" * 70)
+            print(
+                f"  {'Mode':<{col1}} {'QM harm':>{col2}} {'QM scaled':>{col3}} {'NIST expt':>{col4}} {'Error':>{col5}}"
+            )
+            print("  " + "-" * (col1 + col2 + col3 + col4 + col5))
+            for i in range(len(nist_ordered)):
+                err = qm_scaled[i] - nist_arr[i]
+                print(
+                    f"  {mode_names[i]:<{col1}} {qm_unique[i]:>{col2}.1f} {qm_scaled[i]:>{col3}.1f} {nist_arr[i]:>{col4}.0f} {err:>{col5}.1f}"
+                )
+            print("  " + "-" * (col1 + col2 + col3 + col4 + col5))
+            print(f"  {'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
+            print("=" * 70)
+            print()
+
             assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
 
     def test_improvement_progression_logged(self, engine, ch3f_mol, default_ff, seminario_ff, optimized_ff, qm_freqs):
         """Log the full progression for inspection (always passes, diagnostic)."""
         qm_real = sorted(_real_frequencies(qm_freqs))
+        n_modes = len(qm_real)
 
-        stages = {
-            "Default FF": default_ff,
-            "Seminario FF": seminario_ff,
-            "Q2MM Optimized": optimized_ff,
-        }
-
-        print("\n" + "=" * 70)
-        print("CH3F Ground State -- Frequency Comparison (cm^-1)")
-        print("=" * 70)
-        print(f"{'QM (B3LYP/6-31+G(d))':>25}: {[f'{f:.1f}' for f in qm_real]}")
-
-        for label, ff in stages.items():
+        # Collect data for all stages
+        stages = [
+            ("QM Reference", qm_real, None, None),
+        ]
+        for label, ff in [("Default FF", default_ff), ("Seminario FF", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
             mm_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, ff)))
-            n = min(len(mm_real), len(qm_real))
+            n = min(len(mm_real), n_modes)
             rmsd = _frequency_rmsd(mm_real[-n:], qm_real[-n:])
             mae = _frequency_mae(mm_real[-n:], qm_real[-n:])
-            print(f"{label:>25}: {[f'{f:.1f}' for f in mm_real[-n:]]}")
-            print(f"{'':>25}  RMSD={rmsd:.1f}  MAE={mae:.1f}")
+            stages.append((label, mm_real[-n:], rmsd, mae))
 
-        print("=" * 70)
+        # Print mode-by-mode table
+        mode_labels = [f"Mode {i + 1}" for i in range(n_modes)]
+        col_w = 16
+
+        print("\n")
+        print("=" * 78)
+        print("  CH3F GROUND STATE -- Vibrational Frequencies (cm^-1)")
+        print("=" * 78)
+        header = f"  {'':>10}" + "".join(f"{s[0]:>{col_w}}" for s in stages)
+        print(header)
+        print("  " + "-" * (10 + col_w * len(stages)))
+
+        for i in range(n_modes):
+            row = f"  {mode_labels[i]:>10}"
+            for label, freqs, _, _ in stages:
+                if i < len(freqs):
+                    row += f"{freqs[i]:>{col_w}.1f}"
+                else:
+                    row += f"{'--':>{col_w}}"
+            print(row)
+
+        print("  " + "-" * (10 + col_w * len(stages)))
+        summary = f"  {'RMSD':>10}" + f"{'--':>{col_w}}"
+        for _, _, rmsd, _ in stages[1:]:
+            summary += f"{rmsd:>{col_w}.1f}"
+        print(summary)
+
+        summary = f"  {'MAE':>10}" + f"{'--':>{col_w}}"
+        for _, _, _, mae in stages[1:]:
+            summary += f"{mae:>{col_w}.1f}"
+        print(summary)
+
+        print("=" * 78)
+        print("  Verdict: Default -> Seminario -> Optimized shows expected improvement")
+        print()
 
 
 @pytest.mark.slow
@@ -354,10 +405,10 @@ class TestSN2TransitionState:
         """Seminario TS FF should produce at least one imaginary frequency."""
         freqs = engine.frequencies(ts_mol, seminario_ff)
         imag = _imaginary_frequencies(freqs)
+        real = _real_frequencies(freqs)
         # May not produce imaginary mode since OpenMM bonded terms are harmonic
         # and negative FC gives a repulsive parabola. Log either way.
-        print(f"\nSeminario TS frequencies: {[f'{f:.1f}' for f in sorted(freqs) if abs(f) > 10]}")
-        print(f"Imaginary modes: {len(imag)}")
+        print(f"\n  Seminario TS: {len(real)} real modes, {len(imag)} imaginary modes")
 
     # ---- Optimized TS FF ----
 
@@ -378,20 +429,62 @@ class TestSN2TransitionState:
     def test_ts_progression_logged(self, engine, ts_mol, seminario_ff, optimized_ff, qm_freqs):
         """Log TS frequency comparison for inspection."""
         qm_sorted = sorted(qm_freqs)
+        qm_imag = [f for f in qm_sorted if f < -10.0]
+        qm_real = [f for f in qm_sorted if f > 50.0]
 
-        print("\n" + "=" * 70)
-        print("SN2 TS -- Frequency Comparison (cm^-1)")
-        print("=" * 70)
-        print(f"{'QM (B3LYP/6-31+G(d))':>25}: {[f'{f:.1f}' for f in qm_sorted]}")
+        col_w = 18
+        stages = [("QM Reference", seminario_ff), ("Seminario (D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]
 
-        for label, ff in [("Seminario (Method D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
+        # Collect per-stage data
+        data = []
+        data.append({"label": "QM Reference", "real": qm_real, "imag": qm_imag, "rmsd": None})
+        for label, ff in [("Seminario (D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
             mm_all = sorted(engine.frequencies(ts_mol, ff))
             mm_real = [f for f in mm_all if f > 50.0]
             mm_imag = [f for f in mm_all if f < -10.0]
-            print(f"{label:>25}: real={[f'{f:.1f}' for f in mm_real]}")
-            print(f"{'':>25}  imag={[f'{f:.1f}' for f in mm_imag]}")
+            n = min(len(mm_real), len(qm_real))
+            rmsd = _frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
+            data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd})
 
-        print("=" * 70)
+        print("\n")
+        print("=" * 78)
+        print("  SN2 TRANSITION STATE -- Vibrational Frequencies (cm^-1)")
+        print("=" * 78)
+
+        # Real modes table
+        max_real = max(len(d["real"]) for d in data)
+        header = f"  {'':>10}" + "".join(f"{d['label']:>{col_w}}" for d in data)
+        print(header)
+        print("  " + "-" * (10 + col_w * len(data)))
+
+        for i in range(max_real):
+            row = f"  {'Mode ' + str(i + 1):>10}"
+            for d in data:
+                if i < len(d["real"]):
+                    row += f"{d['real'][i]:>{col_w}.1f}"
+                else:
+                    row += f"{'--':>{col_w}}"
+            print(row)
+
+        print("  " + "-" * (10 + col_w * len(data)))
+
+        # RMSD row
+        row = f"  {'RMSD':>10}"
+        for d in data:
+            if d["rmsd"] is not None:
+                row += f"{d['rmsd']:>{col_w}.1f}"
+            else:
+                row += f"{'--':>{col_w}}"
+        print(row)
+
+        # Imaginary modes
+        row = f"  {'Imaginary':>10}"
+        for d in data:
+            row += f"{len(d['imag']):>{col_w}d}"
+        print(row)
+
+        print("=" * 78)
+        print()
 
 
 @pytest.mark.slow
@@ -460,7 +553,7 @@ class TestSN2ReactionProfile:
         assert np.isfinite(e_ch3f), f"CH3F energy not finite: {e_ch3f}"
         assert np.isfinite(e_ts), f"TS energy not finite: {e_ts}"
 
-    def test_profile_logged(self, engine, ch3f_ff, ts_ff, qm_energies):
+    def test_profile_logged(self, engine, ch3f_ff, ts_ff, qm_energies, ext_ref):
         """Log the full reaction profile for inspection."""
         ha_to_kcal = 627.5094740631
         ch3f_mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
@@ -472,12 +565,22 @@ class TestSN2ReactionProfile:
         reactant_qm = qm_energies["f_minus"] + qm_energies["ch3f"]
         barrier_qm = (qm_energies["ts"] - reactant_qm) * ha_to_kcal
 
-        print("\n" + "=" * 70)
-        print("SN2 Reaction Profile")
-        print("=" * 70)
-        print(f"QM barrier (TS - reactants): {barrier_qm:.2f} kcal/mol")
-        print(f"MM CH3F energy (Seminario FF): {e_ch3f_mm:.4f} kcal/mol")
-        print(f"MM TS energy (Seminario FF):   {e_ts_mm:.4f} kcal/mol")
-        print("Note: MM and QM energies are on different scales;")
-        print("  relative MM energies become meaningful after optimization")
-        print("=" * 70)
+        lit = ext_ref["sn2_barrier_ts_minus_reactants_kcal_mol"]
+
+        col1, col2 = 35, 15
+        print("\n")
+        print("=" * 60)
+        print("  SN2 REACTION PROFILE -- Barrier Heights (kcal/mol)")
+        print("=" * 60)
+        print(f"  {'Source':<{col1}} {'Barrier':>{col2}}")
+        print("  " + "-" * (col1 + col2))
+        print(f"  {'Our QM (B3LYP/6-31+G(d))':<{col1}} {barrier_qm:>{col2}.2f}")
+        print(f"  {'CCSD(T)-F12 (Czako 2015)':<{col1}} {lit['ccsd_t_f12_czako_2015_classical']:>{col2}.2f}")
+        print("  " + "-" * (col1 + col2))
+        print(f"  {'MM CH3F (Seminario FF)':<{col1}} {e_ch3f_mm:>{col2}.4f}")
+        print(f"  {'MM TS (Seminario FF)':<{col1}} {e_ts_mm:>{col2}.4f}")
+        print("  " + "-" * (col1 + col2))
+        print("  Note: MM energies are on a different scale than QM.")
+        print("  Relative MM energies become meaningful after optimization.")
+        print("=" * 60)
+        print()
