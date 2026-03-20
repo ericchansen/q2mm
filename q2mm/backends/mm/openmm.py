@@ -370,6 +370,47 @@ class OpenMMEngine(MMEngine):
                 )
             handle.vdw_force.updateParametersInContext(handle.context)
 
+    def export_system_xml(
+        self,
+        path: str | Path,
+        structure,
+        forcefield: ForceField | None = None,
+    ) -> Path:
+        """Serialize the OpenMM System to XML.
+
+        Produces a topology-specific XML file containing the exact
+        ``CustomBondForce``, ``CustomAngleForce``, and
+        ``CustomNonbondedForce`` objects with all per-term parameters.
+        The file can be loaded back with
+        ``openmm.XmlSerializer.deserialize()``.
+
+        Args:
+            path: Output file path.
+            structure: A :class:`~q2mm.models.molecule.Q2MMMolecule`,
+                path to an XYZ file, or an existing :class:`OpenMMHandle`.
+            forcefield: Force field to apply.  Ignored when *structure*
+                is already an :class:`OpenMMHandle`.
+
+        Returns:
+            The resolved output path.
+        """
+        handle = self._prepare_handle(structure, forcefield)
+        xml_string = mm.XmlSerializer.serialize(handle.system)
+        output = Path(path)
+        output.write_text(xml_string, encoding="utf-8")
+        return output
+
+    @staticmethod
+    def load_system_xml(path: str | Path):
+        """Deserialize an OpenMM System from XML.
+
+        Returns:
+            An ``openmm.System`` object.
+        """
+        _ensure_openmm()
+        xml_string = Path(path).read_text(encoding="utf-8")
+        return mm.XmlSerializer.deserialize(xml_string)
+
     def _prepare_handle(self, structure, forcefield: ForceField | None = None) -> OpenMMHandle:
         if isinstance(structure, OpenMMHandle):
             handle = structure

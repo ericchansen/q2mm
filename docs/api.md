@@ -52,6 +52,15 @@ ff = ForceField.from_mm3_fld("mol.fld")      # load from MM3 .fld file
 ff = ForceField.from_tinker_prm("mol.prm")   # load from Tinker .prm file
 ```
 
+**Export methods:**
+
+```python
+ff.to_mm3_fld("optimized.fld")               # export to MM3 .fld
+ff.to_tinker_prm("optimized.prm")            # export to Tinker .prm
+ff.to_openmm_xml("forcefield.xml")            # export to OpenMM XML
+ff.to_openmm_xml("forcefield.xml", mol)       # with AtomTypes/Residues
+```
+
 ---
 
 ### `Q2MMMolecule`
@@ -143,6 +152,7 @@ Read and write force field files in different formats.
 from q2mm.models.ff_io import (
     load_mm3_fld, save_mm3_fld,
     load_tinker_prm, save_tinker_prm,
+    save_openmm_xml,
 )
 ```
 
@@ -152,6 +162,48 @@ from q2mm.models.ff_io import (
 | `save_mm3_fld(ff, path)` | Write a ForceField to an MM3 `.fld` file |
 | `load_tinker_prm(path)` | Load a ForceField from a Tinker `.prm` file |
 | `save_tinker_prm(ff, path)` | Write a ForceField to a Tinker `.prm` file |
+| `save_openmm_xml(ff, path, molecule=None)` | Write a ForceField to an OpenMM ForceField XML file |
+
+### OpenMM XML Export
+
+Two export modes are available for OpenMM:
+
+**ForceField XML** — standalone format loadable by `openmm.app.ForceField()`:
+
+```python
+from q2mm.models.ff_io import save_openmm_xml
+
+# Without topology (force definitions only)
+save_openmm_xml(ff, "forcefield.xml")
+
+# With topology (includes AtomTypes and Residues)
+save_openmm_xml(ff, "forcefield.xml", molecule=mol)
+```
+
+**System XML** — serialize an exact OpenMM System (topology-specific):
+
+```python
+from q2mm.backends.mm.openmm import OpenMMEngine
+
+engine = OpenMMEngine()
+engine.export_system_xml("system.xml", molecule, ff)
+
+# Load back
+system = OpenMMEngine.load_system_xml("system.xml")
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ff` | `ForceField` | *(required)* | Force field to export |
+| `path` | `str` or `Path` | *(required)* | Output file path |
+| `molecule` | `Q2MMMolecule`, optional | `None` | Molecule(s) for `<AtomTypes>` and `<Residues>` sections |
+
+!!! note "Custom MM3 force definitions"
+    The exported XML uses `CustomBondForce`, `CustomAngleForce`, and
+    `CustomNonbondedForce` with MM3 functional forms (cubic bond stretch,
+    sextic angle bend, buffered 14-7 vdW). This preserves the exact
+    physics of the Q2MM force field — standard harmonic approximations
+    are **not** used.
 
 ---
 
@@ -463,6 +515,70 @@ structures = log.structures  # list[Structure] — coordinates, atoms
 eigenvalues = log.evals      # frequency eigenvalues
 eigenvectors = log.evecs     # frequency eigenvectors
 ```
+
+---
+
+## Software Compatibility
+
+Feature support across force field formats and compute backends.
+
+### Force Field Formats
+
+| Capability | MM3 `.fld` | Tinker `.prm` | OpenMM XML | AMBER `.frcmod` |
+|------------|:----------:|:-------------:|:----------:|:---------------:|
+| **Read** (load parameters) | ✅ | ✅ | — | ⚠️ legacy only |
+| **Write** (standalone) | ✅ | ✅ | ✅ | ❌ |
+| **Write** (template-based) | ✅ | ✅ | — | ❌ |
+| Bond stretch | ✅ | ✅ | ✅ | ⚠️ |
+| Angle bend | ✅ | ✅ | ✅ | ⚠️ |
+| Torsion (dihedral) | ✅ template | ✅ template | ✅ | ❌ |
+| van der Waals | ✅ | ✅ | ✅ | ❌ |
+| MM3 functional forms | ✅ native | ✅ native | ✅ custom forces | ❌ |
+
+!!! info "Template-based vs standalone export"
+    **Template-based** export updates parameters in an existing file, preserving
+    headers, comments, and parameters that weren't optimised. Use this for
+    round-trip compatibility with the original software.
+
+    **Standalone** export writes a minimal file from scratch — useful when no
+    template exists (e.g., Seminario-estimated parameters).
+
+### MM Backends
+
+| Capability | OpenMM | Tinker |
+|------------|:------:|:------:|
+| Single-point energy | ✅ | ✅ |
+| Energy minimisation | ✅ | ✅ |
+| Numerical Hessian | ✅ | ✅ |
+| Vibrational frequencies | ✅ | ✅ |
+| Runtime parameter update | ✅ `update_forcefield()` | ❌ (re-writes files) |
+| System XML export | ✅ `export_system_xml()` | — |
+| Install | `pip install openmm` | System binary |
+
+### QM Backends
+
+| Capability | Gaussian | Psi4 |
+|------------|:--------:|:----:|
+| Parse optimised geometry | ✅ `.log` / `.fchk` | ✅ via QCElemental |
+| Parse Hessian | ✅ | ✅ |
+| Parse frequencies | ✅ | ✅ |
+| Live QM engine | ❌ (file-based) | ✅ `Psi4Engine` |
+
+### Seminario Method
+
+| Feature | Supported |
+|---------|:---------:|
+| Bond force constants | ✅ |
+| Angle force constants | ✅ |
+| Transition states (imaginary mode handling) | ✅ Methods C, D, E |
+| Multiple molecules (ensemble averaging) | ✅ |
+| Eigenmatrix training data | ✅ |
+
+!!! tip "Quick reference"
+    For the best out-of-the-box experience, use **OpenMM** as your MM backend
+    and **Gaussian `.fchk`** or **Psi4** for QM reference data. This combination
+    gives you fast runtime parameter updates, full Hessian access, and
+    export to both System XML and ForceField XML.
 
 ---
 

@@ -668,7 +668,7 @@ plt.savefig("convergence.png")
 ## Step 7: Export the Optimised Force Field
 
 Q2MM can write the optimised parameters to **MM3 `.fld`** format (Schrödinger
-MacroModel) or **Tinker `.prm`** format.
+MacroModel), **Tinker `.prm`** format, or **OpenMM ForceField XML** format.
 
 ### MM3 format
 
@@ -710,11 +710,44 @@ The `ForceField` object also has built-in I/O methods:
 # Save
 optimised_ff.to_mm3_fld("optimized_mm3.fld")
 optimised_ff.to_tinker_prm("optimized.prm")
+optimised_ff.to_openmm_xml("forcefield.xml")
 
 # Load
 ff = ForceField.from_mm3_fld("optimized_mm3.fld")
 ff = ForceField.from_tinker_prm("optimized.prm")
 ```
+
+### OpenMM XML format
+
+Export to OpenMM's native XML format for direct use in OpenMM simulations:
+
+```python
+from q2mm.models.ff_io import save_openmm_xml
+
+# Standalone ForceField XML (with AtomTypes and Residues)
+save_openmm_xml(optimised_ff, "forcefield.xml", molecule=mol)
+
+# Or use the convenience method
+optimised_ff.to_openmm_xml("forcefield.xml", molecule=mol)
+```
+
+You can also serialize the exact OpenMM `System` object:
+
+```python
+from q2mm.backends.mm.openmm import OpenMMEngine
+
+engine = OpenMMEngine()
+engine.export_system_xml("system.xml", mol, optimised_ff)
+```
+
+!!! note "System XML vs ForceField XML"
+    **System XML** serializes the exact OpenMM `System` with all particles
+    and forces — it's topology-specific and meant for archival or
+    reloading the same system later.
+
+    **ForceField XML** produces a standalone force field definition loadable
+    by `openmm.app.ForceField()` — it's more portable and can be applied
+    to different topologies.
 
 ---
 
