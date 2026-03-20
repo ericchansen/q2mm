@@ -23,6 +23,11 @@ from q2mm.constants import AU_TO_MDYN_ANGLE
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.molecule import Q2MMMolecule, DetectedBond, DetectedAngle
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam
+from q2mm.models.hessian import (
+    detect_problematic_params,
+    invert_ts_curvature,
+    lock_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -268,6 +273,7 @@ def estimate_force_constants(
     zero_torsions: bool = True,
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
+    ts_method: Literal["C", "D"] | None = None,
 ) -> ForceField:
     """Estimate force constants from one or more QM Hessians using Seminario.
 
@@ -281,6 +287,12 @@ def estimate_force_constants(
         invalid_policy: Whether to keep negative force constants ("keep") or
             mimic legacy MM3 Seminario averaging by skipping non-positive
             estimates ("skip")
+        ts_method: Eigenvalue treatment for transition-state Hessians.
+            ``"C"`` replaces the reaction-coordinate eigenvalue with a large
+            positive value before Seminario projection (Method C from Limé &
+            Norrby 2015).  ``"D"`` keeps the natural eigenvalue (Method D).
+            ``None`` (default) uses the Hessian as-is, which is correct for
+            ground-state molecules.
 
     Returns:
         ForceField with estimated parameters
@@ -288,6 +300,14 @@ def estimate_force_constants(
     molecules = _coerce_molecules(molecule)
     if any(item.hessian is None for item in molecules):
         raise ValueError("Molecule must have a Hessian attached. Use molecule.with_hessian(hess)")
+
+    # Pre-process Hessians for TS eigenvalue treatment (Method C or D)
+    if ts_method is not None:
+        processed_hessians: dict[int, np.ndarray] = {}
+        for mol in molecules:
+            processed_hessians[id(mol)] = invert_ts_curvature(mol.hessian, method=ts_method)
+    else:
+        processed_hessians = None
 
     # Create or copy force field
     if forcefield is None:
@@ -311,11 +331,12 @@ def estimate_force_constants(
         force_constants = []
         equilibria = [bond.length for _, bond in matching_bonds]
         for molecule_item, bond in matching_bonds:
+            hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
             k = seminario_bond_fc(
                 bond.atom_i,
                 bond.atom_j,
                 molecule_item.geometry,
-                molecule_item.hessian,
+                hess,
                 au_units=au_hessian,
             )
             if _should_keep_force_constant(k, invalid_policy):
@@ -349,12 +370,13 @@ def estimate_force_constants(
         force_constants = []
         equilibria = [angle.value for _, angle in matching_angles]
         for molecule_item, angle in matching_angles:
+            hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
             k = seminario_angle_fc(
                 angle.atom_i,
                 angle.atom_j,
                 angle.atom_k,
                 molecule_item.geometry,
-                molecule_item.hessian,
+                hess,
                 au_units=au_hessian,
             )
             if _should_keep_force_constant(k, invalid_policy):
@@ -383,3 +405,72 @@ def estimate_force_constants(
             t.force_constant = 0.0
 
     return ff
+
+
+# ---------------------------------------------------------------------------
+# Method E: Hybrid D/C pipeline
+# ---------------------------------------------------------------------------
+
+
+def estimate_force_constants_method_e(
+    molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
+    forcefield: ForceField | None = None,
+    zero_torsions: bool = True,
+    au_hessian: bool = True,
+    invalid_policy: Literal["keep", "skip"] = "keep",
+    fc_threshold: float = 0.0,
+) -> tuple[ForceField, dict]:
+    """Estimate force constants using Method E (hybrid D/C).
+
+    Implements "Method E" from Limé & Norrby (J. Comput. Chem. 2015, 36,
+    1130): run Method D (natural eigenvalues) first, identify parameters
+    that converge to physically unreasonable values, then replace those
+    with Method C estimates.
+
+    This gives the accuracy benefits of Method D (~13× lower RMS error)
+    where possible, while falling back to Method C for parameters that
+    become unstable.
+
+    Args:
+        molecule: Molecule(s) with Hessian attached.
+        forcefield: Starting force field (if None, auto-creates).
+        zero_torsions: Whether to zero out torsional parameters.
+        au_hessian: Whether Hessian is in atomic units.
+        invalid_policy: How to handle negative projected force constants.
+        fc_threshold: Force constants at or below this value are
+            considered problematic and replaced with Method C values.
+
+    Returns:
+        Tuple of:
+          - ForceField with Method E hybrid parameters.
+          - Diagnostics dict with keys:
+            ``"method_d"`` — ForceField from Method D,
+            ``"method_c"`` — ForceField from Method C,
+            ``"problematic"`` — dict from ``detect_problematic_params``.
+    """
+    common_kwargs = dict(
+        forcefield=forcefield,
+        zero_torsions=zero_torsions,
+        au_hessian=au_hessian,
+        invalid_policy=invalid_policy,
+    )
+
+    ff_d = estimate_force_constants(molecule, ts_method="D", **common_kwargs)
+    ff_c = estimate_force_constants(molecule, ts_method="C", **common_kwargs)
+
+    problematic = detect_problematic_params(ff_d, fc_threshold=fc_threshold)
+    n_problematic = sum(len(v) for v in problematic.values())
+
+    # Start from Method D result, override problematic params with C values
+    ff_e = ff_d.copy()
+    if n_problematic > 0:
+        logger.info(f"Method E: {n_problematic} problematic param(s) detected, replacing with Method C values")
+        lock_params(ff_e, problematic, ff_c)
+    else:
+        logger.info("Method E: no problematic params — using pure Method D result")
+
+    return ff_e, {
+        "method_d": ff_d,
+        "method_c": ff_c,
+        "problematic": problematic,
+    }
