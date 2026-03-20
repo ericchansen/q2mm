@@ -1,16 +1,32 @@
 """Canonical location for Hessian and eigenvalue operations.
 
 Consolidated from the former ``q2mm.linear_algebra`` module.
+
+Implements eigenvalue manipulation methods from Limé & Norrby
+(J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797):
+
+- **Method C** (``replace_neg_eigenvalue``): Force reaction coordinate
+  eigenvalue to a large positive value. Simple but distorts the eigenspectrum.
+- **Method D** (``keep_natural_eigenvalue``): Keep the natural (negative)
+  eigenvalue — gives ~13× lower RMS error but may produce unstable FFs.
+- **Method E** (``hybrid_eigenvalue_pipeline``): Run D first, detect
+  problematic parameters (zero/negative force constants), lock those, and
+  reoptimize with C.
 """
+
+from __future__ import annotations
 
 import copy
 import logging
 import warnings
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.parsers.structures import Atom
+
+if TYPE_CHECKING:
+    from q2mm.parsers.structures import Atom
 
 logger = logging.getLogger(__name__)
 
@@ -189,23 +205,118 @@ def reform_hessian(eigenvalues: np.ndarray, eigenvectors: np.ndarray) -> np.ndar
     return reformed_hessian
 
 
-def invert_ts_curvature(hessian_matrix: np.ndarray) -> np.ndarray:
-    """Inverts the curvature of the Hessian matrix.
+def invert_ts_curvature(
+    hessian_matrix: np.ndarray,
+    method: Literal["C", "D"] = "C",
+) -> np.ndarray:
+    """Invert the curvature of a TS Hessian matrix.
 
     Args:
-        hessian_matrix (np.ndarray): hessian matrix whose curvature to invert
+        hessian_matrix: Hessian matrix whose curvature to invert.
+        method: Eigenvalue treatment method.
+
+            - ``"C"`` (default): Replace reaction coordinate eigenvalue with a
+              large positive value (Method C from Limé & Norrby 2015).
+            - ``"D"``: Keep the natural eigenvalue without replacement
+              (Method D). Produces better fits but may yield unstable FFs.
 
     Returns:
-        np.ndarray: inverted hessian matrix
+        Modified Hessian matrix.
     """
     eigenvalues, eigenvectors = decompose(hessian_matrix)
-    inv_curv_hessian = reform_hessian(
-        replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False),
-        eigenvectors,
-    )
 
-    if not (inv_curv_hessian >= 0.0).all():
+    if method == "D":
+        modified_evals = keep_natural_eigenvalue(eigenvalues)
+    else:
+        modified_evals = replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False)
+
+    inv_curv_hessian = reform_hessian(modified_evals, eigenvectors)
+
+    if not (inv_curv_hessian >= 0.0).all() and method == "C":
         n_neg = int(np.sum(inv_curv_hessian < 0))
         warnings.warn(f"Inverted Hessian has {n_neg} negative values.", stacklevel=2)
 
     return inv_curv_hessian
+
+
+# ---- Method D: Natural eigenvalue fitting ----
+
+
+def keep_natural_eigenvalue(eigenvalues: np.ndarray) -> np.ndarray:
+    """Return eigenvalues unchanged (Method D).
+
+    Method D from Limé & Norrby (J. Comput. Chem. 2015, 36, 1130): keeps
+    the natural (negative) reaction coordinate eigenvalue during fitting.
+    This avoids the large distortion introduced by Method C and produces
+    ~13× lower RMS error, but the resulting force field may have zero or
+    negative bending constants that lead to unphysical MM minima.
+
+    Args:
+        eigenvalues: Eigenvalues from Hessian decomposition.
+
+    Returns:
+        Unmodified eigenvalues (a copy for safety).
+    """
+    return eigenvalues.copy()
+
+
+def detect_problematic_params(
+    forcefield,
+    *,
+    fc_threshold: float = 0.0,
+) -> dict[str, list[int]]:
+    """Detect force field parameters with zero or negative force constants.
+
+    After fitting with Method D, some parameters may converge to physically
+    unreasonable values. This function identifies them so they can be locked
+    for Method E re-optimization.
+
+    Args:
+        forcefield: ForceField with estimated parameters.
+        fc_threshold: Force constants at or below this value are flagged.
+
+    Returns:
+        Dict with 'bonds' and 'angles' keys, each containing a list of
+        indices into the ForceField parameter lists.
+    """
+    problematic: dict[str, list[int]] = {"bonds": [], "angles": []}
+
+    for i, bond in enumerate(forcefield.bonds):
+        if bond.force_constant <= fc_threshold:
+            logger.info(f"Problematic bond {bond.key}: fc={bond.force_constant:.4f} (<= {fc_threshold})")
+            problematic["bonds"].append(i)
+
+    for i, angle in enumerate(forcefield.angles):
+        if angle.force_constant <= fc_threshold:
+            logger.info(f"Problematic angle {angle.key}: fc={angle.force_constant:.4f} (<= {fc_threshold})")
+            problematic["angles"].append(i)
+
+    return problematic
+
+
+def lock_params(
+    forcefield,
+    lock_indices: dict[str, list[int]],
+    source_ff,
+) -> None:
+    """Lock problematic parameters to values from a reference force field.
+
+    Copies force constant and equilibrium values from *source_ff* to
+    *forcefield* at the specified indices. These parameters are then
+    "frozen" during subsequent optimization.
+
+    Args:
+        forcefield: ForceField to modify in-place.
+        lock_indices: Dict from ``detect_problematic_params()``.
+        source_ff: Reference ForceField to copy values from (typically
+            the Method D result or a standard force field).
+    """
+    for i in lock_indices.get("bonds", []):
+        forcefield.bonds[i].force_constant = source_ff.bonds[i].force_constant
+        forcefield.bonds[i].equilibrium = source_ff.bonds[i].equilibrium
+        logger.info(f"Locked bond {forcefield.bonds[i].key} to fc={source_ff.bonds[i].force_constant:.4f}")
+
+    for i in lock_indices.get("angles", []):
+        forcefield.angles[i].force_constant = source_ff.angles[i].force_constant
+        forcefield.angles[i].equilibrium = source_ff.angles[i].equilibrium
+        logger.info(f"Locked angle {forcefield.angles[i].key} to fc={source_ff.angles[i].force_constant:.4f}")
