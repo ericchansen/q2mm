@@ -16,7 +16,7 @@ try:
 except ImportError:
     _HAS_JAX = False
 
-pytestmark = pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed")
+pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pytest.mark.jax]
 
 from q2mm.backends.mm.jax_engine import JaxEngine, _build_vdw_pairs
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam

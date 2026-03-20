@@ -7,6 +7,7 @@ Skipped automatically if Tinker is not found.
 import unittest
 from pathlib import Path
 import numpy as np
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_DIR = REPO_ROOT / "examples" / "sn2-test"
@@ -19,6 +20,8 @@ try:
     HAS_TINKER = _engine.is_available()
 except (ImportError, FileNotFoundError):
     HAS_TINKER = False
+
+pytestmark = pytest.mark.tinker
 
 
 @unittest.skipUnless(HAS_TINKER, "Tinker not installed")

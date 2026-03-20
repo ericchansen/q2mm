@@ -7,6 +7,7 @@ import pytest
 from pathlib import Path
 
 pytest.importorskip("openmm")
+pytestmark = pytest.mark.openmm
 
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.constants import MDYNA_TO_KJMOLA2, MM3_STR

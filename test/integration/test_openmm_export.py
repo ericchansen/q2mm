@@ -9,6 +9,7 @@ import pytest
 from pathlib import Path
 
 pytest.importorskip("openmm")
+pytestmark = pytest.mark.openmm
 
 from openmm import openmm as mm
 
