@@ -31,14 +31,12 @@ reference data. It is designed for building **transition state force fields
 ## Quick Start
 
 ```bash
-pip install q2mm                   # from PyPI
-pip install "q2mm[openmm]"         # with OpenMM backend
+pip install "q2mm[openmm,optimize]"   # OpenMM backend + scipy optimizer
 ```
 
 > **Pre-release:** the current version is an alpha. Add `--pre` to any
-> install command (e.g. `pip install --pre q2mm` or
-> `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
-> published yet.
+> install command (e.g. `pip install --pre "q2mm[openmm,optimize]"`) if a
+> stable release hasn't been published yet.
 
 For development, clone the repo and install in editable mode:
 
