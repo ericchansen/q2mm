@@ -12,6 +12,11 @@ Implements eigenvalue manipulation methods from Limé & Norrby
 - **Method E** (``hybrid_eigenvalue_pipeline``): Run D first, detect
   problematic parameters (zero/negative force constants), lock those, and
   reoptimize with C.
+
+Also provides the **eigenmatrix training data** pipeline:
+
+- ``transform_to_eigenmatrix``: project a Hessian into an eigenvector basis
+- ``extract_eigenmatrix_data``: extract diagonal/off-diagonal training data
 """
 
 from __future__ import annotations
@@ -205,6 +210,78 @@ def reform_hessian(eigenvalues: np.ndarray, eigenvectors: np.ndarray) -> np.ndar
     """
     reformed_hessian = eigenvectors.dot(np.diag(eigenvalues).dot(eigenvectors.T))
     return reformed_hessian
+
+
+# ---- Eigenmatrix operations ----
+
+
+def transform_to_eigenmatrix(
+    hessian: np.ndarray,
+    eigenvectors: np.ndarray,
+) -> np.ndarray:
+    """Project a Hessian into an eigenvector basis.
+
+    Computes ``eigenvectors.T @ hessian @ eigenvectors`` (using the
+    ``np.linalg.eigh`` convention where eigenvectors are **columns**).
+    When the eigenvectors come from the *same* Hessian the result is
+    diagonal (the eigenvalues).  When they come from a *different*
+    Hessian (e.g. projecting an MM Hessian onto QM eigenvectors) the
+    off-diagonal elements measure how well the second Hessian reproduces
+    the first's mode structure.
+
+    This is the core operation behind the eigenmatrix training data
+    approach in Q2MM — see the ``-jeigz`` / ``-mjeig`` commands in
+    upstream ``calculate.py``.
+
+    Args:
+        hessian: ``(3N, 3N)`` Hessian matrix.
+        eigenvectors: ``(3N, 3N)`` matrix whose **columns** are
+            eigenvectors (the convention returned by ``np.linalg.eigh``).
+
+    Returns:
+        ``(3N, 3N)`` eigenmatrix.
+
+    Note:
+        The legacy code used ``evec @ hess @ evec.T`` because Jaguar
+        stored eigenvectors as **rows**.  With numpy's column convention
+        the equivalent is ``evec.T @ hess @ evec``.
+
+        Both the Hessian and eigenvectors should be in the same unit
+        system (typically mass-weighted Hartree/Bohr² after calling
+        :func:`mass_weight_hessian` and :func:`mass_weight_eigenvectors`).
+    """
+    return eigenvectors.T @ hessian @ eigenvectors
+
+
+def extract_eigenmatrix_data(
+    eigenmatrix: np.ndarray,
+    *,
+    diagonal_only: bool = False,
+) -> list[tuple[int, int, float]]:
+    """Extract elements from an eigenmatrix as ``(row, col, value)`` tuples.
+
+    Returns the lower-triangular elements (including the diagonal) by
+    default, matching the legacy ``-mjeig`` command.  Set
+    ``diagonal_only=True`` to return only diagonal elements (matching
+    ``-jeigz``).
+
+    Args:
+        eigenmatrix: Square eigenmatrix from :func:`transform_to_eigenmatrix`.
+        diagonal_only: If True, return only diagonal elements.
+
+    Returns:
+        List of ``(row, col, value)`` tuples with 0-based indices.
+    """
+    n = eigenmatrix.shape[0]
+    data = []
+    if diagonal_only:
+        for i in range(n):
+            data.append((i, i, float(eigenmatrix[i, i])))
+    else:
+        for i in range(n):
+            for j in range(i + 1):
+                data.append((i, j, float(eigenmatrix[i, j])))
+    return data
 
 
 def invert_ts_curvature(

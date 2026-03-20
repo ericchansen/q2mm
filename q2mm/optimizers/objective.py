@@ -48,7 +48,15 @@ if TYPE_CHECKING:
 class ReferenceValue:
     """A single reference observation (QM or experimental)."""
 
-    kind: Literal["energy", "frequency", "bond_length", "bond_angle", "torsion_angle"]
+    kind: Literal[
+        "energy",
+        "frequency",
+        "bond_length",
+        "bond_angle",
+        "torsion_angle",
+        "eig_diagonal",
+        "eig_offdiagonal",
+    ]
     value: float
     weight: float = 1.0
     label: str = ""
@@ -175,6 +183,166 @@ class ReferenceData:
             )
         )
 
+    def add_hessian_eigenvalue(
+        self,
+        value: float,
+        *,
+        mode_idx: int,
+        weight: float = 0.1,
+        molecule_idx: int = 0,
+        label: str = "",
+    ):
+        """Add a diagonal element (eigenvalue) of the eigenmatrix.
+
+        Parameters
+        ----------
+        value : float
+            QM eigenvalue for this mode.
+        mode_idx : int
+            0-based index of the vibrational mode.
+        weight : float
+            Weight for this entry. Legacy defaults: 0.10 for both low-
+            and high-frequency modes, 0.00 for the first (imaginary) mode.
+        molecule_idx : int
+            Index into the molecules list.
+        label : str
+            Human-readable label.
+        """
+        self.values.append(
+            ReferenceValue(
+                kind="eig_diagonal",
+                value=value,
+                weight=weight,
+                molecule_idx=molecule_idx,
+                data_idx=mode_idx,
+                label=label,
+            )
+        )
+
+    def add_hessian_offdiagonal(
+        self,
+        value: float,
+        *,
+        row: int,
+        col: int,
+        weight: float = 0.05,
+        molecule_idx: int = 0,
+        label: str = "",
+    ):
+        """Add an off-diagonal element of the eigenmatrix.
+
+        Off-diagonal elements measure cross-coupling between modes.
+        They should be close to zero when the MM Hessian closely
+        reproduces the QM eigenvector structure.
+
+        Parameters
+        ----------
+        value : float
+            QM eigenmatrix element (typically 0.0 for the QM self-projection).
+        row, col : int
+            0-based row and column indices into the eigenmatrix.
+        weight : float
+            Weight for this entry. Legacy default: 0.05.
+        molecule_idx : int
+            Index into the molecules list.
+        label : str
+            Human-readable label.
+        """
+        self.values.append(
+            ReferenceValue(
+                kind="eig_offdiagonal",
+                value=value,
+                weight=weight,
+                molecule_idx=molecule_idx,
+                atom_indices=(row, col),
+                label=label,
+            )
+        )
+
+    def add_eigenmatrix_from_hessian(
+        self,
+        hessian: np.ndarray,
+        *,
+        diagonal_only: bool = False,
+        molecule_idx: int = 0,
+        weights: dict[str, float] | None = None,
+        skip_first: bool = True,
+        freq_threshold: float = 1100.0,
+    ) -> int:
+        """Bulk-load eigenmatrix training data from a QM Hessian.
+
+        Decomposes the Hessian, computes the eigenmatrix, and adds all
+        elements as reference values with the legacy weight scheme.
+
+        Parameters
+        ----------
+        hessian : np.ndarray
+            QM Hessian matrix ``(3N, 3N)``.
+        diagonal_only : bool
+            If True, add only diagonal elements (eigenvalues).
+            If False, add all lower-triangular elements.
+        molecule_idx : int
+            Index into the molecules list.
+        weights : dict, optional
+            Weight overrides. Keys: ``"eig_i"`` (1st eigenvalue),
+            ``"eig_d_low"`` (diagonal, value < threshold),
+            ``"eig_d_high"`` (diagonal, value ≥ threshold),
+            ``"eig_o"`` (off-diagonal).
+            Defaults match legacy: ``{eig_i: 0.0, eig_d_low: 0.1,
+            eig_d_high: 0.1, eig_o: 0.05}``.
+        skip_first : bool
+            If True, the first eigenvalue gets weight ``eig_i``
+            (default 0.0, effectively skipping it). This is standard
+            for TS fitting where the first mode is imaginary.
+        freq_threshold : float
+            Eigenvalue threshold separating low/high frequency modes
+            for weight assignment (legacy default: 1100.0).
+
+        Returns
+        -------
+        int
+            Number of entries added.
+        """
+        from q2mm.models.hessian import decompose, transform_to_eigenmatrix, extract_eigenmatrix_data
+
+        w = {"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.05}
+        if weights:
+            w.update(weights)
+
+        eigenvalues, eigenvectors = decompose(hessian)
+        eigenmatrix = transform_to_eigenmatrix(hessian, eigenvectors)
+        elements = extract_eigenmatrix_data(eigenmatrix, diagonal_only=diagonal_only)
+
+        added = 0
+        for row, col, value in elements:
+            if row == col:
+                # Diagonal element
+                if row == 0 and skip_first:
+                    weight = w["eig_i"]
+                elif abs(value) < freq_threshold:
+                    weight = w["eig_d_low"]
+                else:
+                    weight = w["eig_d_high"]
+                self.add_hessian_eigenvalue(
+                    value,
+                    mode_idx=row,
+                    weight=weight,
+                    molecule_idx=molecule_idx,
+                    label=f"eig[{row}]",
+                )
+            else:
+                # Off-diagonal element
+                self.add_hessian_offdiagonal(
+                    value,
+                    row=row,
+                    col=col,
+                    weight=w["eig_o"],
+                    molecule_idx=molecule_idx,
+                    label=f"eig[{row},{col}]",
+                )
+            added += 1
+        return added
+
     @property
     def n_observations(self) -> int:
         return len(self.values)
@@ -234,11 +402,14 @@ class ReferenceData:
         molecule_idx: int = 0,
         frequencies: np.ndarray | list[float] | None = None,
         skip_imaginary: bool = False,
+        include_eigenmatrix: bool = False,
+        eigenmatrix_diagonal_only: bool = False,
     ) -> ReferenceData:
         """Auto-populate reference data from a molecule's detected geometry.
 
         Extracts all auto-detected bond lengths and bond angles from the
-        molecule. Optionally adds vibrational frequencies.
+        molecule. Optionally adds vibrational frequencies and/or Hessian
+        eigenmatrix training data.
 
         Parameters
         ----------
@@ -246,7 +417,9 @@ class ReferenceData:
             Molecule with geometry (bonds/angles auto-detected).
         weights : dict, optional
             Weight overrides keyed by data type. Supported keys:
-            ``"bond_length"``, ``"bond_angle"``, ``"frequency"``.
+            ``"bond_length"``, ``"bond_angle"``, ``"frequency"``,
+            and the eigenmatrix keys ``"eig_i"``, ``"eig_d_low"``,
+            ``"eig_d_high"``, ``"eig_o"``.
             Defaults: ``{"bond_length": 10.0, "bond_angle": 5.0,
             "frequency": 1.0}``.
         molecule_idx : int
@@ -255,11 +428,17 @@ class ReferenceData:
             Vibrational frequencies (cm⁻¹) to include.
         skip_imaginary : bool
             If True, negative frequencies are skipped.
+        include_eigenmatrix : bool
+            If True and the molecule has a Hessian, add eigenmatrix
+            training data (diagonal and optionally off-diagonal elements).
+        eigenmatrix_diagonal_only : bool
+            If True, only diagonal eigenmatrix elements are added.
 
         Returns
         -------
         ReferenceData
-            Populated with bond lengths, angles, and (optionally) frequencies.
+            Populated with bond lengths, angles, and (optionally)
+            frequencies and eigenmatrix data.
         """
         w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
         if weights:
@@ -291,6 +470,15 @@ class ReferenceData:
                 weight=w["frequency"],
                 molecule_idx=molecule_idx,
                 skip_imaginary=skip_imaginary,
+            )
+
+        if include_eigenmatrix and mol.hessian is not None:
+            eig_weights = {k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w}
+            ref.add_eigenmatrix_from_hessian(
+                mol.hessian,
+                diagonal_only=eigenmatrix_diagonal_only,
+                molecule_idx=molecule_idx,
+                weights=eig_weights or None,
             )
 
         return ref
@@ -677,6 +865,9 @@ class ObjectiveFunction:
         # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
         # evaluation — critical for optimization performance.
         self._handles: dict[int, object] = {}
+        # Cached QM eigenvectors per molecule (precomputed once for
+        # eigenmatrix comparisons — the QM basis is fixed).
+        self._qm_eigenvectors: dict[int, np.ndarray] = {}
 
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
@@ -776,6 +967,26 @@ class ObjectiveFunction:
             if "torsion_angle" in needed:
                 result["torsion_coords"] = opt_coords
 
+        if "eig_diagonal" in needed or "eig_offdiagonal" in needed:
+            from q2mm.models.hessian import decompose, transform_to_eigenmatrix
+
+            # Compute MM Hessian and project onto QM eigenvectors
+            mm_hess = self.engine.hessian(structure, self.forcefield)
+
+            # Cache QM eigenvectors (fixed across evaluations)
+            if mol_idx not in self._qm_eigenvectors:
+                if mol.hessian is None:
+                    raise ValueError(
+                        f"Molecule {mol_idx} ({mol.name}) has no QM Hessian. "
+                        "Eigenmatrix training requires a QM Hessian for the eigenvector basis."
+                    )
+                _, qm_evecs = decompose(mol.hessian)
+                self._qm_eigenvectors[mol_idx] = qm_evecs
+
+            qm_evecs = self._qm_eigenvectors[mol_idx]
+            eigenmatrix = transform_to_eigenmatrix(mm_hess, qm_evecs)
+            result["eigenmatrix"] = eigenmatrix
+
         return result
 
     @staticmethod
@@ -842,6 +1053,13 @@ class ObjectiveFunction:
                 coords[ref.atom_indices[2]],
                 coords[ref.atom_indices[3]],
             )
+        elif ref.kind == "eig_diagonal":
+            eigenmatrix = calc["eigenmatrix"]
+            return float(eigenmatrix[ref.data_idx, ref.data_idx])
+        elif ref.kind == "eig_offdiagonal":
+            eigenmatrix = calc["eigenmatrix"]
+            row, col = ref.atom_indices[:2]
+            return float(eigenmatrix[row, col])
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 
@@ -850,3 +1068,4 @@ class ObjectiveFunction:
         self.n_eval = 0
         self.history.clear()
         self._handles.clear()
+        self._qm_eigenvectors.clear()
