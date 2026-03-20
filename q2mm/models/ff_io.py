@@ -366,8 +366,8 @@ def save_openmm_xml(
 
     A *molecule* (or iterable of molecules) can be provided to generate
     ``<Residues>`` and ``<AtomTypes>`` sections.  If omitted, only the
-    ``<CustomBondForce>``, ``<CustomAngleForce>``, and
-    ``<CustomNonbondedForce>`` definitions are written — the user must
+    ``<CustomBondForce>``, ``<CustomAngleForce>``, ``<CustomTorsionForce>``,
+    and ``<CustomNonbondedForce>`` definitions are written — the user must
     supply their own topology when loading.
 
     Args:
@@ -416,8 +416,16 @@ def save_openmm_xml(
             for symbol, atype in zip(mol.symbols, mol.atom_types):
                 type_name = atype if atype else symbol
                 if type_name not in seen_types:
-                    mass = MASSES.get(symbol, 0.0)
-                    seen_types[type_name] = (symbol, mass)
+                    if symbol not in MASSES:
+                        raise ValueError(f"No atomic mass for element '{symbol}' when building <AtomTypes>.")
+                    seen_types[type_name] = (symbol, MASSES[symbol])
+                else:
+                    prev_symbol, _ = seen_types[type_name]
+                    if prev_symbol != symbol:
+                        raise ValueError(
+                            f"Inconsistent element for atom type '{type_name}': "
+                            f"seen both '{prev_symbol}' and '{symbol}' across exported molecules."
+                        )
 
         for type_name, (element, mass) in sorted(seen_types.items()):
             ET.SubElement(
@@ -463,23 +471,14 @@ def save_openmm_xml(
             k_openmm = 0.5 * float(bond.force_constant) * MDYNA_TO_KJMOLA2
             r0_nm = float(bond.equilibrium) * 0.1
 
-            if molecules:
-                # Add typed bonds (class1/class2 matching)
-                env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
-                class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
-                class2 = env_parts[1] if len(env_parts) >= 2 else bond.elements[1]
-                bond_el = ET.SubElement(bond_force_el, "Bond")
-                bond_el.set("class1", class1)
-                bond_el.set("class2", class2)
-                bond_el.set("k", f"{k_openmm:.6f}")
-                bond_el.set("r0", f"{r0_nm:.6f}")
-            else:
-                bond_el = ET.SubElement(bond_force_el, "Bond")
-                env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
-                bond_el.set("class1", env_parts[0] if len(env_parts) >= 2 else bond.elements[0])
-                bond_el.set("class2", env_parts[1] if len(env_parts) >= 2 else bond.elements[1])
-                bond_el.set("k", f"{k_openmm:.6f}")
-                bond_el.set("r0", f"{r0_nm:.6f}")
+            env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
+            class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
+            class2 = env_parts[1] if len(env_parts) >= 2 else bond.elements[1]
+            bond_el = ET.SubElement(bond_force_el, "Bond")
+            bond_el.set("class1", class1)
+            bond_el.set("class2", class2)
+            bond_el.set("k", f"{k_openmm:.6f}")
+            bond_el.set("r0", f"{r0_nm:.6f}")
 
     # ---- Custom angle force (MM3 sextic bend) ----
     if ff.angles:

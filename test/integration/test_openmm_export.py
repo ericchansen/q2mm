@@ -307,6 +307,45 @@ class TestForceFieldXMLExport:
         ff = ForceField(source_format="openmm_xml")
         assert ff.source_format == "openmm_xml"
 
+    def test_forcefield_xml_loadable_by_openmm_app(self, tmp_path):
+        """Verify exported XML is loadable by openmm.app.ForceField and can create a System."""
+        from openmm import app, unit
+
+        molecule = _water()
+        ff = ForceField(
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            vdws=[VdwParam("O", radius=1.52, epsilon=0.21), VdwParam("H", radius=1.20, epsilon=0.02)],
+        )
+
+        xml_path = ff.to_openmm_xml(tmp_path / "loadable.xml", molecule=molecule)
+
+        # Load via openmm.app.ForceField
+        omm_ff = app.ForceField(str(xml_path))
+
+        # Build topology
+        topology = app.Topology()
+        chain = topology.addChain()
+        residue = topology.addResidue("Q2MM", chain)
+        atoms = []
+        for i, symbol in enumerate(molecule.symbols):
+            elem = app.Element.getBySymbol(symbol)
+            atoms.append(topology.addAtom(f"{symbol}{i + 1}", elem, residue))
+        for bond in molecule.bonds:
+            topology.addBond(atoms[bond.atom_i], atoms[bond.atom_j])
+
+        # createSystem should succeed
+        system = omm_ff.createSystem(topology, nonbondedMethod=app.NoCutoff)
+        assert system.getNumParticles() == 3
+
+        # Compute energy and verify it's finite
+        integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
+        context = mm.Context(system, integrator)
+        context.setPositions(np.asarray(molecule.geometry, dtype=float) * unit.angstrom)
+        state = context.getState(getEnergy=True)
+        energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
+        assert np.isfinite(energy)
+
     @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
     def test_sn2_forcefield_xml_export(self, tmp_path):
         """Export Seminario-estimated SN2 force field to ForceField XML."""
