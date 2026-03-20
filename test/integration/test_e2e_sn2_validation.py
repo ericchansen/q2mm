@@ -18,6 +18,7 @@ References
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 from pathlib import Path
@@ -44,6 +45,8 @@ CH3F_XYZ = QM_REF / "ch3f-optimized.xyz"
 CH3F_HESS = QM_REF / "ch3f-hessian.npy"
 CH3F_FREQS = QM_REF / "ch3f-frequencies.txt"
 CH3F_ENERGY = QM_REF / "ch3f-energy.txt"
+
+CH3F_MODES = QM_REF / "ch3f-normal-modes.npz"
 
 TS_XYZ = QM_REF / "sn2-ts-optimized.xyz"
 TS_HESS = QM_REF / "sn2-ts-hessian.npy"
@@ -100,6 +103,99 @@ def _imaginary_frequencies(freqs: list[float] | np.ndarray) -> np.ndarray:
     """Extract imaginary (negative) frequencies."""
     arr = np.asarray(freqs)
     return arr[arr < -10.0]
+
+
+def _load_normal_modes(path: Path) -> dict:
+    """Load pre-computed normal mode decomposition from .npz file.
+
+    Returns dict with eigenvalues, eigenvectors, masses_amu, symbols.
+    """
+    data = np.load(path, allow_pickle=False)
+    return {
+        "eigenvalues": data["eigenvalues"],
+        "eigenvectors": data["eigenvectors"],
+        "masses_amu": data["masses_amu"],
+    }
+
+
+def _compute_distortions(
+    mol: Q2MMMolecule,
+    ff: ForceField,
+    engine: OpenMMEngine,
+    modes: dict,
+    target_norms_ang: list[float] | None = None,
+) -> tuple[list[dict], float, float]:
+    """Displace molecule along QM normal modes, compare MM vs QM harmonic energy.
+
+    Returns (results, e_eq, elapsed) where results is a list of dicts per mode.
+    """
+    from q2mm.constants import (
+        AMU_TO_KG,
+        BOHR_TO_ANG,
+        HARTREE_TO_J,
+        SPEED_OF_LIGHT_MS,
+    )
+
+    if target_norms_ang is None:
+        target_norms_ang = [0.05, 0.10, 0.15]
+
+    eigenvalues = modes["eigenvalues"]
+    eigenvectors = modes["eigenvectors"]
+    masses_amu = modes["masses_amu"]
+
+    ha_to_kcal = 627.5094740631
+    bohr_to_m = BOHR_TO_ANG * 1e-10
+    sqrt_m = np.sqrt(np.repeat(masses_amu, 3))
+
+    # Identify real vibrational modes (skip 6 trans/rot near zero)
+    real_mode_indices = [i for i, ev in enumerate(eigenvalues) if ev > 1e-3]
+
+    # Equilibrium energy
+    e_eq = engine.energy(mol, ff)
+
+    t0 = time.perf_counter()
+    results = []
+
+    for mi in real_mode_indices:
+        ev = eigenvalues[mi]
+        evec_mw = eigenvectors[:, mi]
+
+        # Eigenvalue -> frequency for labeling
+        ev_si = ev * HARTREE_TO_J / (bohr_to_m**2 * AMU_TO_KG)
+        freq_cm1 = np.sqrt(ev_si) / (2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0)
+
+        # Un-mass-weight eigenvector to get Cartesian direction
+        v_cart = evec_mw / sqrt_m  # Bohr (per unit q)
+        v_cart_ang = v_cart * BOHR_TO_ANG  # Angstrom
+        v_norm = np.linalg.norm(v_cart_ang)
+
+        displacements = []
+        for d_ang in target_norms_ang:
+            # Scale q so Cartesian displacement norm = d_ang
+            q = d_ang / v_norm  # Bohr * sqrt(amu)
+
+            # QM harmonic energy: E = 0.5 * eigenvalue * q^2
+            e_qm = 0.5 * ev * q**2 * ha_to_kcal  # kcal/mol
+
+            # MM energy at displaced geometry
+            delta_xyz = (q * v_cart * BOHR_TO_ANG).reshape(-1, 3)
+            disp_mol = Q2MMMolecule(
+                symbols=mol.symbols,
+                geometry=mol.geometry + delta_xyz,
+                atom_types=mol.atom_types,
+                charge=mol.charge,
+                multiplicity=mol.multiplicity,
+                bond_tolerance=mol.bond_tolerance,
+            )
+            e_mm = engine.energy(disp_mol, ff) - e_eq
+
+            pct_err = ((e_mm - e_qm) / e_qm * 100.0) if abs(e_qm) > 1e-8 else 0.0
+            displacements.append({"d_ang": d_ang, "e_qm": e_qm, "e_mm": e_mm, "pct_err": pct_err})
+
+        results.append({"mode_idx": mi, "freq_cm1": freq_cm1, "displacements": displacements})
+
+    elapsed = time.perf_counter() - t0
+    return results, e_eq, elapsed
 
 
 # ---- Test class ----
@@ -374,10 +470,101 @@ class TestCH3FGroundState:
         print("=" * 78)
         print()
 
+    # ---- PES distortion: MM vs QM harmonic along normal modes ----
+
+    @pytest.fixture(scope="class")
+    def normal_modes(self):
+        return _load_normal_modes(CH3F_MODES)
+
+    @pytest.fixture(scope="class")
+    def distortion_results(self, engine, ch3f_mol, seminario_ff, optimized_ff, normal_modes):
+        """Compute PES distortions for both Seminario and optimized FFs."""
+        sem_results, e_eq_sem, t_sem = _compute_distortions(ch3f_mol, seminario_ff, engine, normal_modes)
+        opt_results, e_eq_opt, t_opt = _compute_distortions(ch3f_mol, optimized_ff, engine, normal_modes)
+        return {
+            "seminario": {"results": sem_results, "e_eq": e_eq_sem, "elapsed": t_sem},
+            "optimized": {"results": opt_results, "e_eq": e_eq_opt, "elapsed": t_opt},
+        }
+
+    def test_pes_distortion_small_displacement(self, distortion_results):
+        """At small displacements (0.05 Ang), most modes should roughly track QM.
+
+        This tests whether the optimized FF reproduces not just frequencies
+        (curvature at the minimum) but the actual PES shape along each mode.
+        Some modes can show large errors because:
+        - The optimizer adjusts force constants to match frequencies, which
+          shifts equilibrium geometries and alters mode coupling
+        - QM normal modes involve specific internal coordinate mixtures that
+          differ from the MM mode structure
+        - A displacement along one QM mode can activate multiple MM terms
+
+        We check that the MEDIAN error is reasonable, tolerating outliers.
+        """
+        opt = distortion_results["optimized"]["results"]
+        errors = [abs(m["displacements"][0]["pct_err"]) for m in opt]
+        median_err = float(np.median(errors))
+
+        # Median error at 0.05 Ang should be modest
+        assert median_err < 30.0, f"Median PES distortion error at 0.05 Ang too high: {median_err:.1f}%"
+        # Most modes should be within 50%
+        n_ok = sum(1 for e in errors if e < 50.0)
+        assert n_ok >= len(errors) // 2, f"Too many modes with >50% error: {len(errors) - n_ok}/{len(errors)}"
+
+    def test_pes_distortion_logged(self, distortion_results, normal_modes):
+        """Log the full PES distortion comparison table (diagnostic)."""
+        target_norms = [0.05, 0.10, 0.15]
+
+        for ff_label, key in [("Seminario FF", "seminario"), ("Q2MM Optimized", "optimized")]:
+            data = distortion_results[key]
+            results = data["results"]
+            elapsed = data["elapsed"]
+
+            print("\n")
+            print("=" * 95)
+            print(f"  PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
+            print("=" * 95)
+
+            # Sub-header with column labels
+            sub = f"  {'Mode':>6} {'Freq':>8}"
+            for d in target_norms:
+                sub += f" | {'QM':>7} {'MM':>7} {'Err':>6}"
+            sub += f" | {'MaxErr':>7}"
+            print(sub)
+
+            units = f"  {'':>6} {'(cm-1)':>8}"
+            for d in target_norms:
+                units += f" |   d={d:.2f} Ang       "
+            units += f" | {'':>7}"
+            print(units)
+            print("  " + "-" * 91)
+
+            all_pct_errors = []
+            for m in results:
+                row = f"  {m['mode_idx'] - 5:>6d} {m['freq_cm1']:>8.1f}"
+                mode_max_err = 0.0
+                for disp in m["displacements"]:
+                    row += f" | {disp['e_qm']:>7.3f} {disp['e_mm']:>7.3f} {disp['pct_err']:>+5.1f}%"
+                    mode_max_err = max(mode_max_err, abs(disp["pct_err"]))
+                    all_pct_errors.append(abs(disp["pct_err"]))
+                row += f" | {mode_max_err:>6.1f}%"
+                print(row)
+
+            print("  " + "-" * 91)
+            median_err = float(np.median(all_pct_errors))
+            max_err = float(np.max(all_pct_errors))
+            print(f"  Median |error|: {median_err:.1f}%    Max |error|: {max_err:.1f}%")
+            print(
+                f"  Distortion eval time: {elapsed * 1000:.1f} ms"
+                f" ({len(results)} modes x {len(target_norms)} amplitudes)"
+            )
+            print("  Eigendecomposition: pre-computed from QM Hessian (< 0.2 ms)")
+            print("=" * 95)
+            print()
+
 
 @pytest.mark.slow
 class TestSN2TransitionState:
-    """Validate the pipeline on the SN2 F⁻ + CH₃F transition state.
+    """Validate the pipeline on the SN2 F- + CH3F transition state.
 
     Transition states require special handling (Seminario Method D/E)
     and must preserve the imaginary mode through optimization.
