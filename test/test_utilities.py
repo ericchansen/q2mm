@@ -10,7 +10,7 @@ try:
 except ImportError:
     HAS_PARMED = False
 
-from q2mm import utilities
+from q2mm.parsers import _utils as utilities
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ETHANE_MOL2 = REPO_ROOT / "examples" / "ethane" / "GS.mol2"

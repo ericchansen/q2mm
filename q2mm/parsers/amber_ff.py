@@ -3,7 +3,7 @@ import logging
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
-from q2mm.models.param import Param, ParAMBER
+from q2mm.legacy.param import Param, ParAMBER
 
 logger = logging.getLogger(__name__)
 

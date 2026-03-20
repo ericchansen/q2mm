@@ -11,7 +11,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from q2mm import linear_algebra
+from q2mm.models.hessian import decompose, reform_hessian
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
@@ -172,7 +172,7 @@ def main():
     # ------------------------------------------------------------------
     print("\n[5/5] Hessian eigenvalue analysis...")
 
-    eigenvalues, eigenvectors = linear_algebra.decompose(hessian)
+    eigenvalues, eigenvectors = decompose(hessian)
 
     # Sort by magnitude
     sorted_idx = np.argsort(eigenvalues)
@@ -186,7 +186,7 @@ def main():
         print(f"    [{i + 1:2d}] {ev:12.6f}{label}")
 
     # Reform and verify
-    reformed = linear_algebra.reform_hessian(eigenvalues, eigenvectors)
+    reformed = reform_hessian(eigenvalues, eigenvectors)
     roundtrip_err = np.max(np.abs(hessian - reformed))
     print(f"\n  Decompose/reform roundtrip error: {roundtrip_err:.2e}")
 

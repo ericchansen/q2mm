@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from q2mm import constants
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
@@ -405,7 +406,7 @@ class ReferenceData:
             attached if available).
         """
         from q2mm.parsers.gaussian import GaussLog
-        from q2mm import linear_algebra
+        from q2mm.models.hessian import reform_hessian
 
         log = GaussLog(str(path), au_hessian=au_hessian)
 
@@ -413,7 +414,7 @@ class ReferenceData:
         structure = log.structures[-1]
         hessian = None
         if log.evals and log.evecs:
-            hessian = linear_algebra.reform_hessian(log.evals, log.evecs)
+            hessian = reform_hessian(log.evals, log.evecs)
 
         mol = Q2MMMolecule.from_structure(
             structure,
@@ -423,10 +424,12 @@ class ReferenceData:
             hessian=hessian,
         )
 
-        # Frequencies from the eigenvalues (force constants → cm⁻¹-like)
+        # Frequencies in cm⁻¹ from the Gaussian log
+        # Note: log.evals are eigenvalues (mass-weighted force constants in
+        # atomic units), NOT frequencies.  Use log.frequencies for cm⁻¹ values.
         frequencies = None
-        if include_frequencies and log.evals:
-            frequencies = np.array(log.evals)
+        if include_frequencies and log.frequencies is not None and len(log.frequencies):
+            frequencies = np.array(log.frequencies)
 
         ref = cls.from_molecule(
             mol,
@@ -525,7 +528,7 @@ _ATOMIC_SYMBOLS = {
     78: "Pt",
 }
 
-_BOHR_TO_ANG = 0.529177249
+_BOHR_TO_ANG = constants.BOHR_TO_ANG
 
 
 def _parse_fchk(path: Path) -> tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:

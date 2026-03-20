@@ -41,7 +41,7 @@ LOG_SETTINGS = {
         "calculate": {"level": 20, "propagate": True},
         "compare": {"level": 10, "propagate": True},
         "constants": {"level": 20, "propagate": True},
-        "datatypes": {"level": 20, " propagate": True},
+        "datatypes": {"level": 20, "propagate": True},
         "filetypes": {"level": 20, "propagate": True},
         "gradient": {"level": 20, "propagate": True},
         "loop": {"level": 5, "propagate": True},
@@ -60,7 +60,7 @@ HARTREE_TO_KCALMOL = 627.51
 KCAL_TO_KJ = 4.184
 
 # --- Length conversions ---
-BOHR_TO_ANG = 0.5291772086
+BOHR_TO_ANG = 0.529177210903  # CODATA 2018 exact
 CM_TO_ANG = 10**8
 
 # --- Force constant conversions ---

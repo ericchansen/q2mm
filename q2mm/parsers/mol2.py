@@ -4,7 +4,7 @@ import numpy as np
 import os
 import re
 from q2mm import constants as co
-from q2mm import utilities
+from q2mm.parsers import _utils as utilities
 from q2mm.parsers.base import File
 from q2mm.parsers.structures import Atom, Bond, Structure
 

@@ -35,10 +35,10 @@ class TestHessianAnalysis(unittest.TestCase):
 
     def test_eigenvalue_decomposition_roundtrip(self):
         """Decompose and reform Hessian, verify roundtrip."""
-        from q2mm import linear_algebra as linalg
+        from q2mm.models.hessian import decompose, reform_hessian
 
-        eigenvalues, eigenvectors = linalg.decompose(self.hessian)
-        reformed = linalg.reform_hessian(eigenvalues, eigenvectors)
+        eigenvalues, eigenvectors = decompose(self.hessian)
+        reformed = reform_hessian(eigenvalues, eigenvectors)
         np.testing.assert_allclose(
             self.hessian, reformed, atol=1e-8, err_msg="Hessian decompose/reform roundtrip failed"
         )
