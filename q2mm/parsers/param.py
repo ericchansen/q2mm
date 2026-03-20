@@ -82,11 +82,35 @@ class Param:
         return f"Param[{self.ptype}]({val})"
 
     def __eq__(self, other: object) -> bool:
+        if self is other:
+            return True
         if not isinstance(other, Param):
+            return NotImplemented
+        # Parameters with incomplete identity are not meaningfully comparable.
+        if (
+            self.ptype is None
+            or self.ff_row is None
+            or self.ff_col is None
+            or other.ptype is None
+            or other.ff_row is None
+            or other.ff_col is None
+        ):
             return NotImplemented
         return (self.ptype, self.ff_row, self.ff_col) == (other.ptype, other.ff_row, other.ff_col)
 
     def __hash__(self) -> int:
+        """Hash based on (ptype, ff_row, ff_col) identity.
+
+        These fields are set at construction by the FF parsers and should not
+        be mutated after the Param is used in a set or as a dict key.
+
+        Raises:
+            TypeError: If any identity field is None (incomplete parameter).
+        """
+        if self.ptype is None or self.ff_row is None or self.ff_col is None:
+            raise TypeError(
+                f"Param with incomplete identity ({self.ptype}, {self.ff_row}, {self.ff_col}) is unhashable"
+            )
         return hash((self.ptype, self.ff_row, self.ff_col))
 
     @property

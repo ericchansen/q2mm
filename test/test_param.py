@@ -46,6 +46,24 @@ class TestParamEquality:
         assert p != "not a param"
         assert p != 42
 
+    def test_identity_shortcut(self):
+        p = Param(ptype="bf", ff_row=5, ff_col=1)
+        assert p == p  # noqa: PLR0124
+
+    def test_incomplete_identity_not_comparable(self):
+        """Params with None in identity fields fall back to identity comparison."""
+        a = Param(ptype="ae")
+        b = Param(ptype="ae")
+        # NotImplemented from __eq__ causes Python to fall back to `is`
+        assert not (a == b)
+        assert a == a  # noqa: PLR0124
+
+    def test_incomplete_identity_not_hashable(self):
+        with pytest.raises(TypeError, match="unhashable"):
+            hash(Param())
+        with pytest.raises(TypeError, match="unhashable"):
+            hash(Param(ptype="bf"))
+
 
 class TestParamConstruction:
     """Verify default construction and None handling."""
