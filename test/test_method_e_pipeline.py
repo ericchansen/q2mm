@@ -89,8 +89,14 @@ class TestTSMethodParam:
         for a_raw, a_d in zip(ff_raw.angles, ff_d.angles):
             np.testing.assert_allclose(a_raw.force_constant, a_d.force_constant, atol=1e-10)
 
-    def test_method_c_all_positive_bonds(self, sn2_mol):
-        """Method C should produce all-positive bond FCs (TS curvature inverted)."""
+    def test_method_c_positive_bonds_on_sn2(self, sn2_mol):
+        """Method C produces positive bond FCs for the SN2 TS system.
+
+        Note: positivity is not a general guarantee of Method C (the
+        Seminario sub-block projection can still yield negative values
+        for some systems), but for SN2 the TS curvature inversion is
+        sufficient to make all bond FCs positive.
+        """
         ff_c = estimate_force_constants(sn2_mol, ts_method="C")
         for bond in ff_c.bonds:
             assert bond.force_constant > 0, f"Bond {bond.key} has negative FC with Method C"
@@ -107,8 +113,8 @@ class TestTSMethodParam:
 
     @pytest.mark.skipif(not _ETHANE_DATA_AVAILABLE, reason="Ethane fchk not found")
     def test_invalid_ts_method_raises(self, ethane_mol):
-        """Invalid ts_method should raise ValueError (from invert_ts_curvature)."""
-        with pytest.raises(ValueError, match="Unknown method"):
+        """Invalid ts_method should raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported ts_method"):
             estimate_force_constants(ethane_mol, ts_method="X")
 
 
