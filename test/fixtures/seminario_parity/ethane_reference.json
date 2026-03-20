@@ -1,0 +1,547 @@
+{
+  "metadata": {
+    "description": "Ethane Seminario reference values from refactored Q2MM",
+    "method": "B3LYP/6-31G(d)",
+    "note": "GS=staggered minimum, TS=eclipsed rotation barrier"
+  },
+  "GS": {
+    "n_atoms": 8,
+    "symbols": [
+      "H",
+      "C",
+      "H",
+      "C",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "bond_tolerance": 1.3,
+    "averaged_bonds": [
+      {
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.686858538644001,
+        "equilibrium": 1.0961641117160783
+      },
+      {
+        "elements": [
+          "C",
+          "C"
+        ],
+        "force_constant": 3.03996303915628,
+        "equilibrium": 1.5305183582847186
+      }
+    ],
+    "averaged_angles": [
+      {
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6512276237608031,
+        "equilibrium": 107.52693785163198
+      },
+      {
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.779660799573016,
+        "equilibrium": 111.3517902735976
+      }
+    ],
+    "individual_bonds": [
+      {
+        "atom_i": 0,
+        "atom_j": 1,
+        "elements": [
+          "H",
+          "C"
+        ],
+        "force_constant": 4.687112856533364,
+        "equilibrium": 1.0961597324807366
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 2,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.685979185426852,
+        "equilibrium": 1.0961701888228812
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 3,
+        "elements": [
+          "C",
+          "C"
+        ],
+        "force_constant": 3.03996303915628,
+        "equilibrium": 1.5305183582847186
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 4,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.687483578851162,
+        "equilibrium": 1.0961624152335565
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 5,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.68748357102003,
+        "equilibrium": 1.0961624127926757
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 6,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.685979181551451,
+        "equilibrium": 1.0961701879611192
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 7,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.687112858481147,
+        "equilibrium": 1.0961597330055002
+      }
+    ],
+    "individual_angles": [
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 2,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.65033115938293,
+        "equilibrium": 107.52534397661266
+      },
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 3,
+        "elements": [
+          "H",
+          "C",
+          "C"
+        ],
+        "force_constant": 0.797128315720252,
+        "equilibrium": 111.35323020133916
+      },
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6510404260668945,
+        "equilibrium": 107.52831181740129
+      },
+      {
+        "atom_i": 2,
+        "atom_center": 1,
+        "atom_j": 3,
+        "elements": [
+          "H",
+          "C",
+          "C"
+        ],
+        "force_constant": 0.7873405692816947,
+        "equilibrium": 111.35087906518567
+      },
+      {
+        "atom_i": 2,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6523112938003311,
+        "equilibrium": 107.52715762479224
+      },
+      {
+        "atom_i": 3,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7545135624809567,
+        "equilibrium": 111.35126168184199
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 5,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7545135231385276,
+        "equilibrium": 111.35126155318217
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 6,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7873406554020955,
+        "equilibrium": 111.35087894648325
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7971281714145698,
+        "equilibrium": 111.35323019355333
+      },
+      {
+        "atom_i": 5,
+        "atom_center": 3,
+        "atom_j": 6,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6523112705289437,
+        "equilibrium": 107.52715753691123
+      },
+      {
+        "atom_i": 5,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6510404367580569,
+        "equilibrium": 107.52831259878604
+      },
+      {
+        "atom_i": 6,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6503311560276628,
+        "equilibrium": 107.52534355528833
+      }
+    ]
+  },
+  "TS": {
+    "n_atoms": 8,
+    "symbols": [
+      "H",
+      "C",
+      "H",
+      "C",
+      "H",
+      "H",
+      "H",
+      "H"
+    ],
+    "bond_tolerance": 1.4,
+    "averaged_bonds": [
+      {
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736733087004688,
+        "equilibrium": 1.0950521488932596
+      },
+      {
+        "elements": [
+          "C",
+          "C"
+        ],
+        "force_constant": 2.877181805494433,
+        "equilibrium": 1.544779384673058
+      }
+    ],
+    "averaged_angles": [
+      {
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.636977468239301,
+        "equilibrium": 107.03554837616792
+      },
+      {
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.748456072794638,
+        "equilibrium": 111.80907790584297
+      }
+    ],
+    "individual_bonds": [
+      {
+        "atom_i": 0,
+        "atom_j": 1,
+        "elements": [
+          "H",
+          "C"
+        ],
+        "force_constant": 4.736732919073274,
+        "equilibrium": 1.0950521475960706
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 2,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736733170970395,
+        "equilibrium": 1.0950521495418541
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 3,
+        "elements": [
+          "C",
+          "C"
+        ],
+        "force_constant": 2.877181805494433,
+        "equilibrium": 1.544779384673058
+      },
+      {
+        "atom_i": 1,
+        "atom_j": 4,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736733170970396,
+        "equilibrium": 1.095052149541854
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 5,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736733170970396,
+        "equilibrium": 1.0950521495418537
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 6,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736732919073268,
+        "equilibrium": 1.0950521475960706
+      },
+      {
+        "atom_i": 3,
+        "atom_j": 7,
+        "elements": [
+          "C",
+          "H"
+        ],
+        "force_constant": 4.736733170970396,
+        "equilibrium": 1.0950521495418544
+      }
+    ],
+    "individual_angles": [
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 2,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6369780568995391,
+        "equilibrium": 107.0355483424653
+      },
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 3,
+        "elements": [
+          "H",
+          "C",
+          "C"
+        ],
+        "force_constant": 0.7123249081915699,
+        "equilibrium": 111.80907793300234
+      },
+      {
+        "atom_i": 0,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6369780568996236,
+        "equilibrium": 107.0355483424653
+      },
+      {
+        "atom_i": 2,
+        "atom_center": 1,
+        "atom_j": 3,
+        "elements": [
+          "H",
+          "C",
+          "C"
+        ],
+        "force_constant": 0.7665216564286633,
+        "equilibrium": 111.80907789226328
+      },
+      {
+        "atom_i": 2,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6369762909187405,
+        "equilibrium": 107.03554844357318
+      },
+      {
+        "atom_i": 3,
+        "atom_center": 1,
+        "atom_j": 4,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7665216545971112,
+        "equilibrium": 111.80907789226332
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 5,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7665216542174745,
+        "equilibrium": 111.80907789226333
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 6,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7123249065247094,
+        "equilibrium": 111.80907793300234
+      },
+      {
+        "atom_i": 1,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "C",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.7665216568083001,
+        "equilibrium": 111.80907789226328
+      },
+      {
+        "atom_i": 5,
+        "atom_center": 3,
+        "atom_j": 6,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.63697805689961,
+        "equilibrium": 107.0355483424653
+      },
+      {
+        "atom_i": 5,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6369762909187408,
+        "equilibrium": 107.03554844357318
+      },
+      {
+        "atom_i": 6,
+        "atom_center": 3,
+        "atom_j": 7,
+        "elements": [
+          "H",
+          "C",
+          "H"
+        ],
+        "force_constant": 0.6369780568995523,
+        "equilibrium": 107.03554834246532
+      }
+    ]
+  }
+}
