@@ -8,8 +8,8 @@ import sys
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
-from q2mm.models.param import Param, ParamMM3, COM_POS_START, P_1_START, P_1_END, P_2_START, P_2_END, P_3_START, P_3_END
-from q2mm.models.datum import Datum
+from q2mm.legacy.param import Param, ParamMM3, COM_POS_START, P_1_START, P_1_END, P_2_START, P_2_END, P_3_START, P_3_END
+from q2mm.legacy.datum import Datum
 
 logger = logging.getLogger(__name__)
 

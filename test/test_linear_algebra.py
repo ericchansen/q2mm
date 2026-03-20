@@ -1,18 +1,13 @@
 from __future__ import annotations
 
 import copy
-
-import os
-import sys
-
 import unittest
-import numpy as np
-from q2mm import constants
-from q2mm.parsers import FF, Structure
 
-src_dir = os.path.abspath("q2mm")
-sys.path.append(src_dir)
-from q2mm import linear_algebra
+import numpy as np
+
+from q2mm import constants
+from q2mm.models import hessian
+from q2mm.parsers import FF, Structure
 
 
 class MakeHessian:
@@ -44,7 +39,7 @@ class TestLinearAlgebra(unittest.TestCase):
         = 9376 kJ·mol⁻¹·Å⁻²·amu⁻¹.  The default units=co.KJMOLA triggers this
         conversion via constants.HESSIAN_CONVERSION.
         """
-        repl_evals = linear_algebra.replace_neg_eigenvalue(evals_sq3)
+        repl_evals = hessian.replace_neg_eigenvalue(evals_sq3)
         expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
         np.testing.assert_allclose(
             [expected_replacement, evals_sq3[1], evals_sq3[2]],
@@ -81,7 +76,7 @@ class TestLinearAlgebra(unittest.TestCase):
         ]
         np.testing.assert_allclose(
             multi_neg_evals_repl,
-            linear_algebra.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
+            hessian.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
             err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
         )
 
@@ -89,7 +84,7 @@ class TestLinearAlgebra(unittest.TestCase):
         """Multiple negative eigenvalues should raise ValueError by default."""
         multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
         with self.assertRaises(ValueError, msg="Should raise on multiple negative eigenvalues"):
-            linear_algebra.replace_neg_eigenvalue(multi_neg)
+            hessian.replace_neg_eigenvalue(multi_neg)
 
     def test_multi_neg_eigenvalue_nonstrict_warns(self):
         """Multiple negative eigenvalues with strict=False should warn, not raise."""
@@ -98,15 +93,15 @@ class TestLinearAlgebra(unittest.TestCase):
         multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            result = linear_algebra.replace_neg_eigenvalue(multi_neg, strict=False)
+            result = hessian.replace_neg_eigenvalue(multi_neg, strict=False)
             self.assertEqual(len(w), 1)
             self.assertIn("negative eigenvalues", str(w[0].message))
         # Most negative (-5.0) should be replaced
         self.assertGreater(result[0], 0.0)
 
     def test_reform_hessian(self):
-        evals, evecs = linear_algebra.decompose(example_sq3)
-        reformed_sq3 = linear_algebra.reform_hessian(evals, evecs)
+        evals, evecs = hessian.decompose(example_sq3)
+        reformed_sq3 = hessian.reform_hessian(evals, evecs)
         np.testing.assert_allclose(example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly.")
 
     @unittest.skip("Incomplete — requires refactoring (upstream TODO)")

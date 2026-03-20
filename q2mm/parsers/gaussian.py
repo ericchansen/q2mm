@@ -25,6 +25,7 @@ class GaussLog(File):
         "filename",
         "_evals",
         "_evecs",
+        "_frequencies_cm",
         "_structures",
         "_esp_rms",
         "_au_hessian",
@@ -44,6 +45,7 @@ class GaussLog(File):
         super().__init__(path)
         self._evals = None
         self._evecs = None
+        self._frequencies_cm = None
         self._structures = None
         self._esp_rms = None
         self._au_hessian = au_hessian
@@ -65,12 +67,29 @@ class GaussLog(File):
         """Returns eigenvalues of frequency analysis if applicable.  If not yet parsed,
         parses them from the log body, not the archive.
 
+        These are mass-weighted force constants in atomic units
+        (sign × force_constant / (reduced_mass × AU_TO_MDYNA)), NOT vibrational
+        frequencies in cm⁻¹.  Use :attr:`frequencies` for cm⁻¹ values.
+
         Returns:
             TODO : eigenvalues of Gaussian frequency analysis
         """
         if self._evals is None:
             self.read_out()
         return self._evals
+
+    @property
+    def frequencies(self):
+        """Vibrational frequencies in cm⁻¹ from the Gaussian frequency analysis.
+
+        Negative values indicate imaginary modes (transition states).
+
+        Returns:
+            np.ndarray | None: Frequencies in cm⁻¹, or None if not a frequency job.
+        """
+        if self._frequencies_cm is None:
+            self.read_out()
+        return self._frequencies_cm
 
     @property
     def structures(self) -> List[Structure]:
@@ -105,6 +124,7 @@ class GaussLog(File):
         logger.log(5, f"READING: {self.filename}")
         self._evals = []
         self._evecs = []
+        self._frequencies_cm = []
         self._structures = []
         force_constants = []
         evecs = []
@@ -178,6 +198,8 @@ class GaussLog(File):
                     # either 5 or 3.
                     cols = line.split()
                     for frequency in map(float, cols[2:]):
+                        # Store actual frequency in cm⁻¹
+                        self._frequencies_cm.append(frequency)
                         # Has 1. or -1. depending on the sign of the frequency.
                         if frequency < 0.0:
                             force_constants.append(-1.0)
@@ -316,6 +338,7 @@ class GaussLog(File):
                     evec[i] *= element
             self._evals = np.array(self._evals)
             self._evecs = np.array(self._evecs)
+            self._frequencies_cm = np.array(self._frequencies_cm)
             logger.log(1, f">>> self._evals: {self._evals}")
             logger.log(1, f">>> self._evecs: {self._evecs}")
             logger.log(5, f"  -- {len(self.structures)} structures found.")

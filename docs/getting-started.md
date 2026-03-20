@@ -54,8 +54,7 @@ A minimal script that reads QM reference data, loads a structure, and inspects
 an MM3 force field:
 
 ```python
-from q2mm.io import GaussLog, Mol2
-from q2mm.forcefields import MM3
+from q2mm.parsers import GaussLog, Mol2, MM3
 
 # Parse a Gaussian log for the Hessian
 log = GaussLog("ethane.log")

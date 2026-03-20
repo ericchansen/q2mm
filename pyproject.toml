@@ -49,12 +49,16 @@ amber = [
 openmm = [
     "openmm",
 ]
+optimize = [
+    "scipy",
+]
 qcel = [
     "qcelemental",
 ]
 dev = [
     "pytest",
     "ruff",
+    "scipy",
     "qcelemental",
     "build",
 ]
@@ -64,6 +68,7 @@ docs = [
 all = [
     "openmm",
     "parmed",
+    "scipy",
     "qcelemental",
 ]
 

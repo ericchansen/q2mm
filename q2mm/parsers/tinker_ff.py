@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from q2mm.parsers.base import FF
-from q2mm.models.param import ParamMM3
+from q2mm.legacy.param import ParamMM3
 
 logger = logging.getLogger(__name__)
 

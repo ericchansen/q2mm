@@ -45,8 +45,8 @@ from q2mm.parsers.amber_ff import AmberFF  # noqa: F401
 from q2mm.parsers.tinker_ff import TinkerFF, TinkerMM3A  # noqa: F401
 
 # Legacy re-exports from q2mm.models — prefer importing directly from q2mm.models
-from q2mm.models.datum import Datum, remove_none, datum_sort_key  # noqa: F401
-from q2mm.models.param import Param, ParamMM3, ParAMBER  # noqa: F401
+from q2mm.legacy.datum import Datum, remove_none, datum_sort_key  # noqa: F401
+from q2mm.legacy.param import Param, ParamMM3, ParAMBER  # noqa: F401
 from q2mm.models.hessian import (  # noqa: F401
     mass_weight_hessian,
     mass_weight_eigenvectors,
