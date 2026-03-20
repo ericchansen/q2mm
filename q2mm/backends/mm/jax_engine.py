@@ -1,7 +1,9 @@
 """JAX-based differentiable MM backend for analytical gradients.
 
 Provides a pure-JAX molecular mechanics engine using standard OPLSAA-style
-functional forms (harmonic bond/angle, Fourier torsion, 12-6 Lennard-Jones).
+functional forms (harmonic bond/angle, 12-6 Lennard-Jones).  Torsion energy
+functions are implemented but not yet wired for ``Q2MMMolecule`` (which lacks
+torsion detection); they will activate once torsion matching is added.
 All energy functions are differentiable via ``jax.grad``, enabling analytical
 gradient computation for force field parameter optimization.
 
@@ -85,7 +87,7 @@ def _safe_arccos(x):
 
 def _normalize(x, axis=-1):
     """Unit-normalize vectors along axis."""
-    return x / _safe_norm(x, axis=axis, keepdims=True) if x.ndim > 1 else x / _safe_norm(x)
+    return x / _safe_norm_keepdims(x, axis=axis) if x.ndim > 1 else x / _safe_norm(x)
 
 
 def _safe_norm_keepdims(x, axis=-1):
@@ -379,7 +381,8 @@ class JaxEngine(MMEngine):
                 angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
                 angle_param_map.append(idx)
 
-        # Match torsions
+        # Match torsions (NOTE: Q2MMMolecule does not yet detect torsions,
+        # so this loop will be empty until torsion matching is added.)
         torsion_atom_indices = []
         torsion_param_map = []
         for i_tor, torsion in enumerate(molecule.torsions if hasattr(molecule, "torsions") else []):
@@ -397,6 +400,21 @@ class JaxEngine(MMEngine):
                 atom_vdw_map.append(idx)
             else:
                 atom_vdw_map.append(-1)
+
+        # Validate vdW mapping: if the force field defines vdW parameters,
+        # warn about unmatched atoms.  Using -1 as an index would silently
+        # select the last vdW entry via JAX negative indexing.  When there
+        # are matched AND unmatched atoms, the -1 entries would corrupt
+        # the energy, so raise.  When NO atoms match (e.g. FF has no vdW
+        # params), vdW energy is zero regardless — no harm from -1 values.
+        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1]
+        matched = len(atom_vdw_map) - len(unmatched)
+        if unmatched and matched > 0:
+            raise ValueError(
+                f"Unmatched vdW parameters for atoms at indices {unmatched}. "
+                "Ensure all atom types/elements have corresponding vdW "
+                "parameters in the force field."
+            )
 
         # Build vdW pair list with 1-2 and 1-3 exclusions
         vdw_pairs = _build_vdw_pairs(
