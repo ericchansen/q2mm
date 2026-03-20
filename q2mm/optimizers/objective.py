@@ -931,6 +931,12 @@ class ObjectiveFunction:
 
         ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
 
+        .. note::
+           This method does **not** increment ``n_eval`` or append to
+           ``history``.  SciPy's ``minimize`` calls ``fun(x)`` and ``jac(x)``
+           separately, so tracking state here would double-count evaluations.
+           Evaluation counting is handled exclusively in ``__call__``.
+
         Parameters
         ----------
         param_vector : np.ndarray
@@ -982,14 +988,6 @@ class ObjectiveFunction:
             diff = ref.value - calc_value
             # d(score)/d(p) = -2 * w^2 * (ref - calc) * d(calc)/d(p)
             total_grad += -2.0 * ref.weight**2 * diff * calc_grad
-
-        # Track evaluation
-        self.n_eval += 1
-        # Also compute the score for history
-        score = sum(
-            (ref.weight * (ref.value - energy_cache[ref.molecule_idx][0])) ** 2 for ref in self.reference.values
-        )
-        self.history.append(float(score))
 
         return total_grad
 
