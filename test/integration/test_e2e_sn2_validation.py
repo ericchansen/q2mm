@@ -105,6 +105,45 @@ def _imaginary_frequencies(freqs: list[float] | np.ndarray) -> np.ndarray:
     return arr[arr < -10.0]
 
 
+class _TablePrinter:
+    """Collect lines, then print with = and - bars sized to the widest line."""
+
+    def __init__(self):
+        self._entries: list[tuple[str, str | None]] = []
+
+    def title(self, text: str):
+        self._entries.append(("text", f"  {text}"))
+
+    def row(self, text: str):
+        self._entries.append(("text", f"  {text}"))
+
+    def bar(self):
+        """Full-width ===== section delimiter."""
+        self._entries.append(("bar", None))
+
+    def sep(self):
+        """Content-width ----- sub-separator."""
+        self._entries.append(("sep", None))
+
+    def blank(self):
+        self._entries.append(("blank", None))
+
+    def flush(self):
+        """Print everything with bars dynamically sized to content."""
+        text_lines = [text for _, text in self._entries if text is not None]
+        w = max(len(line) for line in text_lines) if text_lines else 60
+        for kind, text in self._entries:
+            if kind == "bar":
+                print("=" * w)
+            elif kind == "sep":
+                print("  " + "-" * (w - 2))
+            elif kind == "blank":
+                print()
+            else:
+                print(text)
+        self._entries.clear()
+
+
 def _load_normal_modes(path: Path) -> dict:
     """Load pre-computed normal mode decomposition from .npz file.
 
@@ -383,24 +422,24 @@ class TestCH3FGroundState:
 
             # Print comparison table
             col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
-            print("\n")
-            print("=" * 70)
-            print("  CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
-            print(f"  Scaling factor: {scale} (B3LYP/6-31+G(d))")
-            print("=" * 70)
-            print(
-                f"  {'Mode':<{col1}} {'QM harm':>{col2}} {'QM scaled':>{col3}} {'NIST expt':>{col4}} {'Error':>{col5}}"
-            )
-            print("  " + "-" * (col1 + col2 + col3 + col4 + col5))
+            t = _TablePrinter()
+            t.blank()
+            t.bar()
+            t.title("CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
+            t.title(f"Scaling factor: {scale} (B3LYP/6-31+G(d))")
+            t.bar()
+            t.row(f"{'Mode':<{col1}} {'QM harm':>{col2}} {'QM scaled':>{col3}} {'NIST expt':>{col4}} {'Error':>{col5}}")
+            t.sep()
             for i in range(len(nist_ordered)):
                 err = qm_scaled[i] - nist_arr[i]
-                print(
-                    f"  {mode_names[i]:<{col1}} {qm_unique[i]:>{col2}.1f} {qm_scaled[i]:>{col3}.1f} {nist_arr[i]:>{col4}.0f} {err:>{col5}.1f}"
+                t.row(
+                    f"{mode_names[i]:<{col1}} {qm_unique[i]:>{col2}.1f} {qm_scaled[i]:>{col3}.1f} {nist_arr[i]:>{col4}.0f} {err:>{col5}.1f}"
                 )
-            print("  " + "-" * (col1 + col2 + col3 + col4 + col5))
-            print(f"  {'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
-            print("=" * 70)
-            print()
+            t.sep()
+            t.row(f"{'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
+            t.bar()
+            t.blank()
+            t.flush()
 
             assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
 
@@ -427,48 +466,45 @@ class TestCH3FGroundState:
 
         # Print mode-by-mode table
         col_w = 16
-
-        print("\n")
-        print("=" * 78)
-        print("  CH3F GROUND STATE -- Vibrational Frequencies (cm^-1)")
-        print("=" * 78)
-        header = f"  {'':>10}" + "".join(f"{s[0]:>{col_w}}" for s in stages)
-        print(header)
-        print("  " + "-" * (10 + col_w * len(stages)))
+        t = _TablePrinter()
+        t.blank()
+        t.bar()
+        t.title("CH3F GROUND STATE -- Vibrational Frequencies (cm^-1)")
+        t.bar()
+        t.row(f"{'':>10}" + "".join(f"{s[0]:>{col_w}}" for s in stages))
+        t.sep()
 
         for i in range(n_modes):
-            row = f"  {f'Mode {i + 1}':>10}"
+            row = f"{f'Mode {i + 1}':>10}"
             for _, freqs, _, _, _ in stages:
                 if i < len(freqs):
                     row += f"{freqs[i]:>{col_w}.1f}"
                 else:
                     row += f"{'--':>{col_w}}"
-            print(row)
+            t.row(row)
 
-        print("  " + "-" * (10 + col_w * len(stages)))
-        row = f"  {'RMSD':>10}" + f"{'--':>{col_w}}"
+        t.sep()
+        row = f"{'RMSD':>10}" + f"{'--':>{col_w}}"
         for _, _, rmsd, _, _ in stages[1:]:
             row += f"{rmsd:>{col_w}.1f}"
-        print(row)
+        t.row(row)
 
-        row = f"  {'MAE':>10}" + f"{'--':>{col_w}}"
+        row = f"{'MAE':>10}" + f"{'--':>{col_w}}"
         for _, _, _, mae, _ in stages[1:]:
             row += f"{mae:>{col_w}.1f}"
-        print(row)
+        t.row(row)
 
         # Timing section
-        print("=" * 78)
-        print("  TIMING")
-        print("  " + "-" * 68)
-        print(f"  {'Seminario estimation:':<40} {t_seminario * 1000:>8.1f} ms")
-        print(f"  {'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
-        for _, freqs_label, _, _, t_freq in stages[1:]:
-            pass
-        # Print per-stage freq eval time
+        t.bar()
+        t.title("TIMING")
+        t.sep()
+        t.row(f"{'Seminario estimation:':<40} {t_seminario * 1000:>8.1f} ms")
+        t.row(f"{'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
         for label, _, _, _, t_freq in stages[1:]:
-            print(f"  {'Freq eval (' + label + '):':<40} {t_freq * 1000:>8.1f} ms")
-        print("=" * 78)
-        print()
+            t.row(f"{'Freq eval (' + label + '):':<40} {t_freq * 1000:>8.1f} ms")
+        t.bar()
+        t.blank()
+        t.flush()
 
     # ---- PES distortion: MM vs QM harmonic along normal modes ----
 
@@ -519,47 +555,48 @@ class TestCH3FGroundState:
             results = data["results"]
             elapsed = data["elapsed"]
 
-            print("\n")
-            print("=" * 95)
-            print(f"  PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
-            print("=" * 95)
+            t = _TablePrinter()
+            t.blank()
+            t.bar()
+            t.title(f"PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
+            t.bar()
 
             # Sub-header with column labels
-            sub = f"  {'Mode':>6} {'Freq':>8}"
+            sub = f"{'Mode':>6} {'Freq':>8}"
             for d in target_norms:
                 sub += f" | {'QM':>7} {'MM':>7} {'Err':>6}"
             sub += f" | {'MaxErr':>7}"
-            print(sub)
+            t.row(sub)
 
-            units = f"  {'':>6} {'(cm-1)':>8}"
+            units = f"{'':>6} {'(cm-1)':>8}"
             for d in target_norms:
                 units += f" |   d={d:.2f} Ang       "
             units += f" | {'':>7}"
-            print(units)
-            print("  " + "-" * 91)
+            t.row(units)
+            t.sep()
 
             all_pct_errors = []
             for m in results:
-                row = f"  {m['mode_idx'] - 5:>6d} {m['freq_cm1']:>8.1f}"
+                row = f"{m['mode_idx'] - 5:>6d} {m['freq_cm1']:>8.1f}"
                 mode_max_err = 0.0
                 for disp in m["displacements"]:
                     row += f" | {disp['e_qm']:>7.3f} {disp['e_mm']:>7.3f} {disp['pct_err']:>+5.1f}%"
                     mode_max_err = max(mode_max_err, abs(disp["pct_err"]))
                     all_pct_errors.append(abs(disp["pct_err"]))
                 row += f" | {mode_max_err:>6.1f}%"
-                print(row)
+                t.row(row)
 
-            print("  " + "-" * 91)
+            t.sep()
             median_err = float(np.median(all_pct_errors))
             max_err = float(np.max(all_pct_errors))
-            print(f"  Median |error|: {median_err:.1f}%    Max |error|: {max_err:.1f}%")
-            print(
-                f"  Distortion eval time: {elapsed * 1000:.1f} ms"
-                f" ({len(results)} modes x {len(target_norms)} amplitudes)"
+            t.row(f"Median |error|: {median_err:.1f}%    Max |error|: {max_err:.1f}%")
+            t.row(
+                f"Distortion eval time: {elapsed * 1000:.1f} ms ({len(results)} modes x {len(target_norms)} amplitudes)"
             )
-            print("  Eigendecomposition: pre-computed from QM Hessian (< 0.2 ms)")
-            print("=" * 95)
-            print()
+            t.row("Eigendecomposition: pre-computed from QM Hessian (< 0.2 ms)")
+            t.bar()
+            t.blank()
+            t.flush()
 
 
 @pytest.mark.slow
@@ -681,53 +718,54 @@ class TestSN2TransitionState:
             rmsd = _frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
             data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd, "t_freq": t_freq})
 
-        print("\n")
-        print("=" * 78)
-        print("  SN2 TRANSITION STATE -- Vibrational Frequencies (cm^-1)")
-        print("=" * 78)
+        t = _TablePrinter()
+        t.blank()
+        t.bar()
+        t.title("SN2 TRANSITION STATE -- Vibrational Frequencies (cm^-1)")
+        t.bar()
 
         # Real modes table
         max_real = max(len(d["real"]) for d in data)
-        header = f"  {'':>10}" + "".join(f"{d['label']:>{col_w}}" for d in data)
-        print(header)
-        print("  " + "-" * (10 + col_w * len(data)))
+        t.row(f"{'':>10}" + "".join(f"{d['label']:>{col_w}}" for d in data))
+        t.sep()
 
         for i in range(max_real):
-            row = f"  {f'Mode {i + 1}':>10}"
+            row = f"{f'Mode {i + 1}':>10}"
             for d in data:
                 if i < len(d["real"]):
                     row += f"{d['real'][i]:>{col_w}.1f}"
                 else:
                     row += f"{'--':>{col_w}}"
-            print(row)
+            t.row(row)
 
-        print("  " + "-" * (10 + col_w * len(data)))
+        t.sep()
 
         # RMSD row
-        row = f"  {'RMSD':>10}"
+        row = f"{'RMSD':>10}"
         for d in data:
             if d["rmsd"] is not None:
                 row += f"{d['rmsd']:>{col_w}.1f}"
             else:
                 row += f"{'--':>{col_w}}"
-        print(row)
+        t.row(row)
 
         # Imaginary modes
-        row = f"  {'Imaginary':>10}"
+        row = f"{'Imaginary':>10}"
         for d in data:
             row += f"{len(d['imag']):>{col_w}d}"
-        print(row)
+        t.row(row)
 
         # Timing
-        print("=" * 78)
-        print("  TIMING")
-        print("  " + "-" * 68)
-        print(f"  {'Seminario (Method D):':<40} {t_seminario * 1000:>8.1f} ms")
-        print(f"  {'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
+        t.bar()
+        t.title("TIMING")
+        t.sep()
+        t.row(f"{'Seminario (Method D):':<40} {t_seminario * 1000:>8.1f} ms")
+        t.row(f"{'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
         for d in data[1:]:
-            print(f"  {'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")
-        print("=" * 78)
-        print()
+            t.row(f"{'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")
+        t.bar()
+        t.blank()
+        t.flush()
 
 
 @pytest.mark.slow
@@ -818,27 +856,27 @@ class TestSN2ReactionProfile:
         lit_complex = ext_ref["sn2_barrier_ts_minus_complex_kcal_mol"]
 
         col1, col2, col3 = 35, 15, 15
-        print("\n")
-        print("=" * 70)
-        print("  SN2 REACTION PROFILE -- QM Energetics (kcal/mol)")
-        print("=" * 70)
-        print(f"  {'':>{col1}} {'Our B3LYP':>{col2}} {'Literature':>{col3}}")
-        print("  " + "-" * (col1 + col2 + col3))
-        print(f"  {'F- + CH3F -> complex':<{col1}} {complexation_e:>{col2}.2f} {'--':>{col3}}")
-        print(
-            f"  {'TS - reactants':<{col1}} {barrier_vs_react:>{col2}.2f} {lit_react['ccsd_t_f12_czako_2015_classical']:>{col3}.2f}"
+        t = _TablePrinter()
+        t.blank()
+        t.bar()
+        t.title("SN2 REACTION PROFILE -- QM Energetics (kcal/mol)")
+        t.bar()
+        t.row(f"{'':>{col1}} {'Our B3LYP':>{col2}} {'Literature':>{col3}}")
+        t.sep()
+        t.row(f"{'F- + CH3F -> complex':<{col1}} {complexation_e:>{col2}.2f} {'--':>{col3}}")
+        t.row(
+            f"{'TS - reactants':<{col1}} {barrier_vs_react:>{col2}.2f} {lit_react['ccsd_t_f12_czako_2015_classical']:>{col3}.2f}"
         )
-        print(
-            f"  {'TS - complex':<{col1}} {barrier_vs_complex:>{col2}.2f} {lit_complex['vb_benchmark_shaik_1992']:>{col3}.1f}"
+        t.row(
+            f"{'TS - complex':<{col1}} {barrier_vs_complex:>{col2}.2f} {lit_complex['vb_benchmark_shaik_1992']:>{col3}.1f}"
         )
-        print("  " + "-" * (col1 + col2 + col3))
-        print(f"  {'':>{col1}} {'B3LYP/6-31+G(d)':>{col2}} {'CCSD(T)/VB':>{col3}}")
-        print("=" * 70)
-        print("  Note: MM barrier heights cannot be computed here because CH3F")
-        print("  and TS use separate force fields with different connectivity.")
-        print("  Each FF has an arbitrary energy zero. A meaningful MM barrier")
-        print("  requires a reactive potential (EVB, ReaxFF, etc.).")
-        print("=" * 70)
-        print()
-        print("=" * 60)
-        print()
+        t.sep()
+        t.row(f"{'':>{col1}} {'B3LYP/6-31+G(d)':>{col2}} {'CCSD(T)/VB':>{col3}}")
+        t.bar()
+        t.row("Note: MM barrier heights cannot be computed here because CH3F")
+        t.row("and TS use separate force fields with different connectivity.")
+        t.row("Each FF has an arbitrary energy zero. A meaningful MM barrier")
+        t.row("requires a reactive potential (EVB, ReaxFF, etc.).")
+        t.bar()
+        t.blank()
+        t.flush()
