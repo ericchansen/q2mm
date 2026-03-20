@@ -18,7 +18,6 @@ References
 
 from __future__ import annotations
 
-import copy
 import json
 import time
 from pathlib import Path
@@ -30,6 +29,8 @@ pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm
 
 from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, frequency_rmsd, load_normal_modes
+from q2mm.diagnostics.benchmark import real_frequencies
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
@@ -82,160 +83,10 @@ def _load_external_reference() -> dict:
     return json.loads(EXT_REF.read_text())
 
 
-def _frequency_rmsd(freqs_a, freqs_b) -> float:
-    """RMSD between two frequency arrays (must be same length)."""
-    a, b = np.asarray(freqs_a, dtype=float), np.asarray(freqs_b, dtype=float)
-    return float(np.sqrt(np.mean((a - b) ** 2)))
-
-
-def _frequency_mae(freqs_a, freqs_b) -> float:
-    """Mean absolute error between two frequency arrays."""
-    a, b = np.asarray(freqs_a, dtype=float), np.asarray(freqs_b, dtype=float)
-    return float(np.mean(np.abs(a - b)))
-
-
-def _real_frequencies(freqs: list[float] | np.ndarray, threshold: float = 50.0) -> np.ndarray:
-    """Extract real (non-imaginary, non-translational) frequencies."""
-    arr = np.asarray(freqs)
-    return arr[arr > threshold]
-
-
 def _imaginary_frequencies(freqs: list[float] | np.ndarray) -> np.ndarray:
     """Extract imaginary (negative) frequencies."""
     arr = np.asarray(freqs)
     return arr[arr < -10.0]
-
-
-class _TablePrinter:
-    """Collect lines, then print with = and - bars sized to the widest line."""
-
-    def __init__(self):
-        self._entries: list[tuple[str, str | None]] = []
-
-    def title(self, text: str):
-        self._entries.append(("text", f"  {text}"))
-
-    def row(self, text: str):
-        self._entries.append(("text", f"  {text}"))
-
-    def bar(self):
-        """Full-width ===== section delimiter."""
-        self._entries.append(("bar", None))
-
-    def sep(self):
-        """Content-width ----- sub-separator."""
-        self._entries.append(("sep", None))
-
-    def blank(self):
-        self._entries.append(("blank", None))
-
-    def flush(self):
-        """Print everything with bars dynamically sized to content."""
-        text_lines = [text for _, text in self._entries if text is not None]
-        w = max(len(line) for line in text_lines) if text_lines else 60
-        for kind, text in self._entries:
-            if kind == "bar":
-                print("=" * w)
-            elif kind == "sep":
-                print("  " + "-" * (w - 2))
-            elif kind == "blank":
-                print()
-            else:
-                print(text)
-        self._entries.clear()
-
-
-def _load_normal_modes(path: Path) -> dict:
-    """Load pre-computed normal mode decomposition from .npz file.
-
-    Returns dict with eigenvalues, eigenvectors, masses_amu, symbols.
-    """
-    data = np.load(path, allow_pickle=False)
-    return {
-        "eigenvalues": data["eigenvalues"],
-        "eigenvectors": data["eigenvectors"],
-        "masses_amu": data["masses_amu"],
-    }
-
-
-def _compute_distortions(
-    mol: Q2MMMolecule,
-    ff: ForceField,
-    engine: OpenMMEngine,
-    modes: dict,
-    target_norms_ang: list[float] | None = None,
-) -> tuple[list[dict], float, float]:
-    """Displace molecule along QM normal modes, compare MM vs QM harmonic energy.
-
-    Returns (results, e_eq, elapsed) where results is a list of dicts per mode.
-    """
-    from q2mm.constants import (
-        AMU_TO_KG,
-        BOHR_TO_ANG,
-        HARTREE_TO_J,
-        SPEED_OF_LIGHT_MS,
-    )
-
-    if target_norms_ang is None:
-        target_norms_ang = [0.05, 0.10, 0.15]
-
-    eigenvalues = modes["eigenvalues"]
-    eigenvectors = modes["eigenvectors"]
-    masses_amu = modes["masses_amu"]
-
-    ha_to_kcal = 627.5094740631
-    bohr_to_m = BOHR_TO_ANG * 1e-10
-    sqrt_m = np.sqrt(np.repeat(masses_amu, 3))
-
-    # Identify real vibrational modes (skip 6 trans/rot near zero)
-    real_mode_indices = [i for i, ev in enumerate(eigenvalues) if ev > 1e-3]
-
-    # Equilibrium energy
-    e_eq = engine.energy(mol, ff)
-
-    t0 = time.perf_counter()
-    results = []
-
-    for mi in real_mode_indices:
-        ev = eigenvalues[mi]
-        evec_mw = eigenvectors[:, mi]
-
-        # Eigenvalue -> frequency for labeling
-        ev_si = ev * HARTREE_TO_J / (bohr_to_m**2 * AMU_TO_KG)
-        freq_cm1 = np.sqrt(ev_si) / (2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0)
-
-        # Un-mass-weight eigenvector to get Cartesian direction
-        v_cart = evec_mw / sqrt_m  # Bohr (per unit q)
-        v_cart_ang = v_cart * BOHR_TO_ANG  # Angstrom
-        v_norm = np.linalg.norm(v_cart_ang)
-
-        displacements = []
-        for d_ang in target_norms_ang:
-            # Scale q so Cartesian displacement norm = d_ang
-            q = d_ang / v_norm  # Bohr * sqrt(amu)
-
-            # QM harmonic energy: E = 0.5 * eigenvalue * q^2
-            e_qm = 0.5 * ev * q**2 * ha_to_kcal  # kcal/mol
-
-            # MM energy at displaced geometry
-            delta_xyz = (q * v_cart * BOHR_TO_ANG).reshape(-1, 3)
-            disp_mol = Q2MMMolecule(
-                symbols=mol.symbols,
-                geometry=mol.geometry + delta_xyz,
-                atom_types=mol.atom_types,
-                charge=mol.charge,
-                multiplicity=mol.multiplicity,
-                bond_tolerance=mol.bond_tolerance,
-            )
-            e_mm = engine.energy(disp_mol, ff) - e_eq
-
-            pct_err = ((e_mm - e_qm) / e_qm * 100.0) if abs(e_qm) > 1e-8 else 0.0
-            displacements.append({"d_ang": d_ang, "e_qm": e_qm, "e_mm": e_mm, "pct_err": pct_err})
-
-        results.append({"mode_idx": mi, "freq_cm1": freq_cm1, "displacements": displacements})
-
-    elapsed = time.perf_counter() - t0
-    return results, e_eq, elapsed
 
 
 # ---- Test class ----
@@ -318,15 +169,15 @@ class TestCH3FGroundState:
     def test_default_ff_frequencies_exist(self, engine, ch3f_mol, default_ff):
         """Default FF can compute frequencies without crashing."""
         freqs = engine.frequencies(ch3f_mol, default_ff)
-        real = _real_frequencies(freqs)
+        real = real_frequencies(freqs)
         assert len(real) >= 6, f"Expected at least 6 real modes, got {len(real)}"
 
     def test_default_ff_vs_qm_is_poor(self, engine, ch3f_mol, default_ff, qm_freqs):
         """Default (generic) FF should be a poor match to QM — establishing baseline."""
-        mm_freqs = _real_frequencies(engine.frequencies(ch3f_mol, default_ff))
-        qm_real = _real_frequencies(qm_freqs)
+        mm_freqs = real_frequencies(engine.frequencies(ch3f_mol, default_ff))
+        qm_real = real_frequencies(qm_freqs)
         n = min(len(mm_freqs), len(qm_real))
-        rmsd = _frequency_rmsd(sorted(mm_freqs)[-n:], sorted(qm_real)[-n:])
+        rmsd = frequency_rmsd(sorted(mm_freqs)[-n:], sorted(qm_real)[-n:])
         # Generic FF should be noticeably off -- RMSD > 100 cm^-1
         assert rmsd > 50.0, f"Default FF unexpectedly good (RMSD={rmsd:.1f} cm^-1)"
 
@@ -343,14 +194,14 @@ class TestCH3FGroundState:
 
     def test_seminario_better_than_default(self, engine, ch3f_mol, default_ff, seminario_ff, qm_freqs):
         """Seminario FF should improve frequency match over generic defaults."""
-        qm_real = sorted(_real_frequencies(qm_freqs))
+        qm_real = sorted(real_frequencies(qm_freqs))
 
-        default_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, default_ff)))
-        seminario_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
+        default_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, default_ff)))
+        seminario_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
 
         n = min(len(default_real), len(seminario_real), len(qm_real))
-        rmsd_default = _frequency_rmsd(default_real[-n:], qm_real[-n:])
-        rmsd_seminario = _frequency_rmsd(seminario_real[-n:], qm_real[-n:])
+        rmsd_default = frequency_rmsd(default_real[-n:], qm_real[-n:])
+        rmsd_seminario = frequency_rmsd(seminario_real[-n:], qm_real[-n:])
 
         assert rmsd_seminario < rmsd_default, (
             f"Seminario should be better than default: "
@@ -366,14 +217,14 @@ class TestCH3FGroundState:
 
     def test_optimized_better_than_seminario(self, engine, ch3f_mol, seminario_ff, optimized_ff, qm_freqs):
         """Q2MM-optimized FF should improve on Seminario initial guess."""
-        qm_real = sorted(_real_frequencies(qm_freqs))
+        qm_real = sorted(real_frequencies(qm_freqs))
 
-        sem_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
-        opt_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
+        sem_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
+        opt_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
 
         n = min(len(sem_real), len(opt_real), len(qm_real))
-        rmsd_sem = _frequency_rmsd(sem_real[-n:], qm_real[-n:])
-        rmsd_opt = _frequency_rmsd(opt_real[-n:], qm_real[-n:])
+        rmsd_sem = frequency_rmsd(sem_real[-n:], qm_real[-n:])
+        rmsd_opt = frequency_rmsd(opt_real[-n:], qm_real[-n:])
 
         assert rmsd_opt <= rmsd_sem, (
             f"Optimized should be at least as good as Seminario: "
@@ -382,10 +233,10 @@ class TestCH3FGroundState:
 
     def test_optimized_frequency_rmsd_acceptable(self, engine, ch3f_mol, optimized_ff, qm_freqs):
         """Optimized FF frequencies should be within reasonable RMSD of QM."""
-        qm_real = sorted(_real_frequencies(qm_freqs))
-        opt_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
+        qm_real = sorted(real_frequencies(qm_freqs))
+        opt_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
         n = min(len(opt_real), len(qm_real))
-        rmsd = _frequency_rmsd(opt_real[-n:], qm_real[-n:])
+        rmsd = frequency_rmsd(opt_real[-n:], qm_real[-n:])
         # Optimized FF should reproduce QM frequencies reasonably well
         assert rmsd < 200.0, f"Optimized FF frequency RMSD too high: {rmsd:.1f} cm^-1"
 
@@ -400,7 +251,7 @@ class TestCH3FGroundState:
         nist = np.array(sorted(ext_ref["ch3f_nist_all_cm1"]))
         scale = ext_ref["qm_level_of_theory"]["dft_scaling_factor"]
 
-        qm_real = sorted(_real_frequencies(qm_freqs))
+        qm_real = sorted(real_frequencies(qm_freqs))
         # NIST has 6 unique fundamentals (e-symmetry modes are degenerate)
         # Pick one representative from each degenerate pair
         qm_unique_indices = [0, 1, 3, 4, 7, 8]
@@ -419,11 +270,11 @@ class TestCH3FGroundState:
             qm_scaled = qm_unique * scale
             nist_arr = np.array(nist_ordered)
 
-            mae = _frequency_mae(qm_scaled, nist_arr)
+            mae = frequency_mae(qm_scaled, nist_arr)
 
             # Print comparison table
             col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
-            t = _TablePrinter()
+            t = TablePrinter()
             t.blank()
             t.bar()
             t.title("CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
@@ -451,23 +302,23 @@ class TestCH3FGroundState:
         seminario_ff, t_seminario = seminario_result
         optimized_ff, t_optimize, n_eval = optimized_result
 
-        qm_real = sorted(_real_frequencies(qm_freqs))
+        qm_real = sorted(real_frequencies(qm_freqs))
         n_modes = len(qm_real)
 
         # Time frequency evaluations for each stage
         stages = [("QM Reference", qm_real, None, None, None)]
         for label, ff in [("Default FF", default_ff), ("Seminario FF", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
             t0 = time.perf_counter()
-            mm_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, ff)))
+            mm_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, ff)))
             t_freq = time.perf_counter() - t0
             n = min(len(mm_real), n_modes)
-            rmsd = _frequency_rmsd(mm_real[-n:], qm_real[-n:])
-            mae = _frequency_mae(mm_real[-n:], qm_real[-n:])
+            rmsd = frequency_rmsd(mm_real[-n:], qm_real[-n:])
+            mae = frequency_mae(mm_real[-n:], qm_real[-n:])
             stages.append((label, mm_real[-n:], rmsd, mae, t_freq))
 
         # Print mode-by-mode table
         col_w = 16
-        t = _TablePrinter()
+        t = TablePrinter()
         t.blank()
         t.bar()
         t.title("CH3F GROUND STATE -- Vibrational Frequencies (cm^-1)")
@@ -511,13 +362,13 @@ class TestCH3FGroundState:
 
     @pytest.fixture(scope="class")
     def normal_modes(self):
-        return _load_normal_modes(CH3F_MODES)
+        return load_normal_modes(CH3F_MODES)
 
     @pytest.fixture(scope="class")
     def distortion_results(self, engine, ch3f_mol, seminario_ff, optimized_ff, normal_modes):
         """Compute PES distortions for both Seminario and optimized FFs."""
-        sem_results, e_eq_sem, t_sem = _compute_distortions(ch3f_mol, seminario_ff, engine, normal_modes)
-        opt_results, e_eq_opt, t_opt = _compute_distortions(ch3f_mol, optimized_ff, engine, normal_modes)
+        sem_results, e_eq_sem, t_sem = compute_distortions(ch3f_mol, seminario_ff, engine, normal_modes)
+        opt_results, e_eq_opt, t_opt = compute_distortions(ch3f_mol, optimized_ff, engine, normal_modes)
         return {
             "seminario": {"results": sem_results, "e_eq": e_eq_sem, "elapsed": t_sem},
             "optimized": {"results": opt_results, "e_eq": e_eq_opt, "elapsed": t_opt},
@@ -556,7 +407,7 @@ class TestCH3FGroundState:
             results = data["results"]
             elapsed = data["elapsed"]
 
-            t = _TablePrinter()
+            t = TablePrinter()
             t.blank()
             t.bar()
             t.title(f"PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
@@ -680,7 +531,7 @@ class TestSN2TransitionState:
         """Seminario TS FF should produce at least one imaginary frequency."""
         freqs = engine.frequencies(ts_mol, seminario_ff)
         imag = _imaginary_frequencies(freqs)
-        real = _real_frequencies(freqs)
+        real = real_frequencies(freqs)
         # May not produce imaginary mode since OpenMM bonded terms are harmonic
         # and negative FC gives a repulsive parabola. Log either way.
         print(f"\n  Seminario TS: {len(real)} real modes, {len(imag)} imaginary modes")
@@ -694,11 +545,11 @@ class TestSN2TransitionState:
 
     def test_ts_optimized_real_freqs_match_qm(self, engine, ts_mol, optimized_ff, qm_freqs):
         """Optimized TS FF real frequencies should reasonably match QM."""
-        qm_real = sorted(_real_frequencies(qm_freqs))
-        mm_real = sorted(_real_frequencies(engine.frequencies(ts_mol, optimized_ff)))
+        qm_real = sorted(real_frequencies(qm_freqs))
+        mm_real = sorted(real_frequencies(engine.frequencies(ts_mol, optimized_ff)))
         n = min(len(mm_real), len(qm_real))
         if n > 0:
-            rmsd = _frequency_rmsd(mm_real[-n:], qm_real[-n:])
+            rmsd = frequency_rmsd(mm_real[-n:], qm_real[-n:])
             assert rmsd < 500.0, f"TS frequency RMSD too high: {rmsd:.1f} cm^-1"
 
     def test_ts_progression_logged(self, engine, ts_mol, seminario_result, optimized_result, qm_freqs):
@@ -724,10 +575,10 @@ class TestSN2TransitionState:
             mm_real = [f for f in mm_all if f > 50.0]
             mm_imag = [f for f in mm_all if f < -10.0]
             n = min(len(mm_real), len(qm_real))
-            rmsd = _frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
+            rmsd = frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
             data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd, "t_freq": t_freq})
 
-        t = _TablePrinter()
+        t = TablePrinter()
         t.blank()
         t.bar()
         t.title("SN2 TRANSITION STATE -- Vibrational Frequencies (cm^-1)")
@@ -865,7 +716,7 @@ class TestSN2ReactionProfile:
         lit_complex = ext_ref["sn2_barrier_ts_minus_complex_kcal_mol"]
 
         col1, col2, col3 = 35, 15, 15
-        t = _TablePrinter()
+        t = TablePrinter()
         t.blank()
         t.bar()
         t.title("SN2 REACTION PROFILE -- QM Energetics (kcal/mol)")

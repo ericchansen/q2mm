@@ -108,19 +108,22 @@ class BenchmarkResult:
         )
 
 
-def _frequency_rmsd(a, b) -> float:
+def frequency_rmsd(a, b) -> float:
+    """RMSD between two frequency arrays (truncates to shorter)."""
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.sqrt(np.mean((arr_a[:n] - arr_b[:n]) ** 2)))
 
 
-def _frequency_mae(a, b) -> float:
+def frequency_mae(a, b) -> float:
+    """Mean absolute error between two frequency arrays."""
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.mean(np.abs(arr_a[:n] - arr_b[:n])))
 
 
-def _real_frequencies(freqs, threshold: float = 50.0) -> np.ndarray:
+def real_frequencies(freqs, threshold: float = 50.0) -> np.ndarray:
+    """Extract and sort real (non-imaginary, non-translational) frequencies."""
     arr = np.asarray(freqs)
     return np.sort(arr[arr > threshold])
 
@@ -222,11 +225,11 @@ def run_benchmark(
     # --- Default FF baseline ---
     default_ff = ForceField.create_for_molecule(molecule, name=f"{molecule_name} default")
     default_freqs_all = engine.frequencies(molecule, default_ff)
-    default_real = _real_frequencies(default_freqs_all)
+    default_real = real_frequencies(default_freqs_all)
     result.default_ff = {
         "frequencies_cm1": default_real.tolist(),
-        "rmsd": _frequency_rmsd(qm_real, default_real),
-        "mae": _frequency_mae(qm_real, default_real),
+        "rmsd": frequency_rmsd(qm_real, default_real),
+        "mae": frequency_mae(qm_real, default_real),
     }
 
     # --- Seminario estimation ---
@@ -238,11 +241,11 @@ def run_benchmark(
         sem_elapsed = time.perf_counter() - t0
 
         sem_freqs_all = engine.frequencies(molecule, seminario_ff)
-        sem_real = _real_frequencies(sem_freqs_all)
+        sem_real = real_frequencies(sem_freqs_all)
         result.seminario = {
             "frequencies_cm1": sem_real.tolist(),
-            "rmsd": _frequency_rmsd(qm_real, sem_real),
-            "mae": _frequency_mae(qm_real, sem_real),
+            "rmsd": frequency_rmsd(qm_real, sem_real),
+            "mae": frequency_mae(qm_real, sem_real),
             "elapsed_s": sem_elapsed,
         }
     else:
@@ -272,7 +275,7 @@ def run_benchmark(
     opt_elapsed = time.perf_counter() - t0
 
     opt_freqs_all = engine.frequencies(molecule, ff_to_optimize)
-    opt_real = _real_frequencies(opt_freqs_all)
+    opt_real = real_frequencies(opt_freqs_all)
 
     # Collect parameter info
     param_names = _param_names(ff_to_optimize)
@@ -281,8 +284,8 @@ def run_benchmark(
 
     result.optimized = {
         "frequencies_cm1": opt_real.tolist(),
-        "rmsd": _frequency_rmsd(qm_real, opt_real),
-        "mae": _frequency_mae(qm_real, opt_real),
+        "rmsd": frequency_rmsd(qm_real, opt_real),
+        "mae": frequency_mae(qm_real, opt_real),
         "elapsed_s": opt_elapsed,
         "n_eval": opt_result.n_evaluations,
         "converged": opt_result.success,
