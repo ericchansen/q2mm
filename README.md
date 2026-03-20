@@ -47,24 +47,30 @@ pip install -e ".[dev]"
 ```
 
 ```python
-import numpy as np
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.optimizers.objective import ReferenceData, ObjectiveFunction
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from q2mm.models.seminario import estimate_force_constants
+from q2mm.backends.mm import OpenMMEngine
 
-# Load QM data (coordinates + Hessian from your QM package)
-mol = Q2MMMolecule.from_xyz("ts-optimized.xyz")
-mol.hessian = np.load("ts-hessian.npy")  # Hartree/Bohr²
+# 1. Load QM reference data and molecule from a Gaussian checkpoint
+ref, mol = ReferenceData.from_fchk("ts-optimized.fchk", bond_tolerance=1.4)
 
-# Estimate force constants from the QM Hessian (Seminario method)
+# 2. Estimate initial force field from the QM Hessian (Seminario method)
 ff = estimate_force_constants(mol, au_hessian=True)
 
-print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
-for b in ff.bonds:
-    print(f"  {b.elements}: k={b.force_constant:.3f} mdyn/Å")
+# 3. Set up the objective function and optimize
+engine = OpenMMEngine()
+obj = ObjectiveFunction(ff, engine, [mol], ref)
+result = ScipyOptimizer(method="L-BFGS-B").optimize(obj)
+
+print(result.summary())
 ```
 
-See the [Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for a
-complete end-to-end workflow.
+`ReferenceData.from_fchk()` auto-extracts bond lengths and angles from the
+QM geometry. You can also use `from_gaussian()` for `.log` files, or
+`from_molecule()` for maximum control. See the
+[Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for the full
+workflow including frequencies, eigenmatrix data, and multi-molecule fits.
 
 ## Supported Backends
 
