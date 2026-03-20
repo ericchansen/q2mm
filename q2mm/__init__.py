@@ -6,7 +6,6 @@ backends    — QM and MM engine integrations (OpenMM, Tinker)
 models      — Clean domain objects (molecules, force fields, parameters)
 optimizers  — Objective functions and scipy-based optimizers
 parsers     — File format parsers (Gaussian, Jaguar, Mol2, MM3, AMBER, Tinker)
-legacy      — Backward-compatible data structures (Datum, Param, etc.)
 """
 
 try:
