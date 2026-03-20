@@ -81,6 +81,14 @@ class Param:
             return f"Param[{self.ptype}][{self.ff_row},{self.ff_col}]({val})"
         return f"Param[{self.ptype}]({val})"
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Param):
+            return NotImplemented
+        return (self.ptype, self.ff_row, self.ff_col) == (other.ptype, other.ff_row, other.ff_col)
+
+    def __hash__(self) -> int:
+        return hash((self.ptype, self.ff_row, self.ff_col))
+
     @property
     def allowed_range(self) -> tuple[float, float]:
         """Allowed value range based on parameter type.
