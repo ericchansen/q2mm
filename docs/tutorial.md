@@ -374,16 +374,14 @@ function will try to reproduce. Each entry has a **kind** (energy, frequency,
 bond length, bond angle, torsion angle), a **value**, and a **weight** that
 controls its importance in the fit.
 
-!!! warning "Hessian eigenmatrix as training data — not yet implemented"
-    The legacy Q2MM code used the **full Hessian eigenmatrix** as training
-    data during optimisation — not just vibrational frequencies. The QM
-    Hessian was projected into eigenvector space, and the resulting
-    eigenvalues (including off-diagonal elements) were compared against
-    MM-computed equivalents. For transition states, the most negative
-    eigenvalue (the reaction coordinate) was **inverted** to train the
-    force field to reproduce the correct TS curvature. This is a core
-    capability that is **not yet ported** to the new code — see
-    [Issue tracker](https://github.com/ericchansen/q2mm/issues) for status.
+!!! success "Hessian eigenmatrix as training data"
+    The full Hessian eigenmatrix is now supported as training data, matching
+    the legacy Q2MM approach. The QM Hessian is projected into eigenvector
+    space via `transform_to_eigenmatrix()`, and the diagonal (eigenvalues)
+    and off-diagonal elements can be added as reference data.  During
+    optimisation the MM Hessian is projected onto the **QM eigenvectors**
+    so that element-by-element comparison measures how well the MM force
+    field reproduces each QM mode.
 
 ### Quick start — auto-populate from a molecule
 
@@ -407,6 +405,38 @@ ref = ReferenceData.from_molecule(
 
 print(f"Reference observations: {ref.n_observations}")
 # → bonds + angles + real frequencies
+```
+
+### Adding Hessian eigenmatrix training data
+
+For TS force fields, adding eigenmatrix data captures cross-coupling
+between modes that frequencies alone miss:
+
+```python
+# Include eigenmatrix data (requires a Hessian on the molecule)
+ref = ReferenceData.from_molecule(
+    mol,
+    frequencies=ts_freqs,
+    include_eigenmatrix=True,           # add eigenvalue data
+    eigenmatrix_diagonal_only=False,    # include off-diagonal elements
+)
+# Eigenvalue weights follow the legacy scheme:
+#   eig_i=0.0 (first/imaginary mode),
+#   eig_d_low=0.1 (diagonal < 1100),
+#   eig_d_high=0.1 (diagonal ≥ 1100),
+#   eig_o=0.05 (off-diagonal)
+```
+
+Or add eigenmatrix data manually with fine-grained control:
+
+```python
+ref = ReferenceData()
+ref.add_eigenmatrix_from_hessian(
+    mol.hessian,
+    diagonal_only=True,      # just eigenvalues, not cross-coupling
+    skip_first=True,          # zero-weight the imaginary mode
+    weights={"eig_d_low": 0.2, "eig_d_high": 0.15},
+)
 ```
 
 Default weights are `bond_length=10.0`, `bond_angle=5.0`,
