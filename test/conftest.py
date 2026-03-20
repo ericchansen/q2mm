@@ -16,9 +16,46 @@ slower tiers::
     pytest                     # fast only (~13s)
     pytest --run-medium        # fast + medium (~49s)
     pytest --run-slow          # everything (~330s)
+
+Backend markers
+---------------
+Tests can be tagged with ``@pytest.mark.openmm``, ``@pytest.mark.tinker``,
+or ``@pytest.mark.jax`` to indicate which MM backend they require.  Tests
+are **auto-skipped** when the corresponding dependency is not installed.
+
+Use ``-m`` to filter::
+
+    pytest -m openmm           # only OpenMM tests
+    pytest -m "not tinker"     # skip Tinker tests
+    pytest -m "openmm and slow"  # slow OpenMM tests only
 """
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# Backend availability detection (runs once at collection time)
+# ---------------------------------------------------------------------------
+
+try:
+    import openmm  # noqa: F401
+
+    _HAS_OPENMM = True
+except ImportError:
+    _HAS_OPENMM = False
+
+try:
+    from q2mm.backends.mm.tinker import TinkerEngine
+
+    _HAS_TINKER = TinkerEngine().is_available()
+except (ImportError, FileNotFoundError, OSError):
+    _HAS_TINKER = False
+
+try:
+    import jax  # noqa: F401
+
+    _HAS_JAX = True
+except ImportError:
+    _HAS_JAX = False
 
 
 def pytest_addoption(parser):
@@ -39,6 +76,9 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line("markers", "slow: marks tests as slow (>10s each)")
     config.addinivalue_line("markers", "medium: marks tests as medium speed (1-10s each)")
+    config.addinivalue_line("markers", "openmm: requires OpenMM backend")
+    config.addinivalue_line("markers", "tinker: requires Tinker backend")
+    config.addinivalue_line("markers", "jax: requires JAX backend")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -56,3 +96,16 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "medium" in item.keywords:
                 item.add_marker(skip_medium)
+
+    # Auto-skip tests that require a missing backend
+    _backend_checks = {
+        "openmm": (_HAS_OPENMM, "OpenMM not installed"),
+        "tinker": (_HAS_TINKER, "Tinker not installed or not found"),
+        "jax": (_HAS_JAX, "JAX not installed"),
+    }
+    for marker_name, (available, reason) in _backend_checks.items():
+        if not available:
+            skip_marker = pytest.mark.skip(reason=reason)
+            for item in items:
+                if marker_name in item.keywords:
+                    item.add_marker(skip_marker)

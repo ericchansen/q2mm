@@ -27,6 +27,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("openmm")
+pytestmark = pytest.mark.openmm
 
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import ForceField
