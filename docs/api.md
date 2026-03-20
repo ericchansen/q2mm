@@ -212,9 +212,10 @@ system = OpenMMEngine.load_system_xml("system.xml")
 [source](https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_engine.py)
 
 Differentiable MM backend using JAX with OPLSAA-style energy functions
-(harmonic bond/angle, Fourier torsion, 12-6 Lennard-Jones). Provides
-analytical gradients of the energy with respect to force field parameters
-via `jax.grad`, eliminating finite differences in parameter optimisation.
+(harmonic bond/angle, 12-6 Lennard-Jones). Provides analytical gradients of
+the energy with respect to force field parameters via `jax.grad`,
+eliminating finite differences in parameter optimisation. Torsion energy
+functions are implemented but not yet active for `Q2MMMolecule`.
 
 ```python
 from q2mm.backends.mm.jax_engine import JaxEngine

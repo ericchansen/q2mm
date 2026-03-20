@@ -103,10 +103,9 @@ class ScipyOptimizer:
         Jacobian computation strategy:
         - ``None`` (default): Use scipy's built-in finite differences.
         - ``'analytical'``: Use ``ObjectiveFunction.gradient()`` for exact
-          analytical gradients via JAX autodiff. Requires a
-          :class:`~q2mm.backends.mm.jax_engine.JaxEngine` backend and
-          energy-only reference data. Falls back to finite differences
-          otherwise.
+          analytical gradients via JAX autodiff. Requires an engine that
+          ``supports_analytical_gradients()`` (e.g. ``JaxEngine``) and
+          energy-only reference data.  Raises if conditions are not met.
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}

@@ -923,10 +923,11 @@ class ObjectiveFunction:
 
         Uses the engine's ``energy_and_param_grad()`` method (available on
         :class:`~q2mm.backends.mm.jax_engine.JaxEngine`) to compute exact
-        derivatives for energy reference data. Falls back to finite differences
-        for reference data types that require Hessians or minimized geometries.
+        derivatives for energy reference data.  Raises ``NotImplementedError``
+        for reference data types that require Hessians or minimized geometries;
+        use ``jac=None`` (finite differences) for mixed reference data.
 
-        The score is ``sum(w_i * (ref_i - calc_i))^2``, so:
+        The score is ``sum_i (w_i * (ref_i - calc_i))**2``, so:
 
         ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
 
