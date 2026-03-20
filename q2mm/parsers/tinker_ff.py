@@ -93,7 +93,7 @@ class TinkerFF(FF):
                                 Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
                                 # I think this second value is the position of the
                                 # dipole along the bond. I've only seen 0.5 which
-                                # indicates the dipole is posititioned at the center
+                                # indicates the dipole is positioned at the center
                                 # of the bond.
                                 Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
@@ -288,7 +288,7 @@ class TinkerMM3A(FF):
                                 Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
                                 # I think this second value is the position of the
                                 # dipole along the bond. I've only seen 0.5 which
-                                # indicates the dipole is posititioned at the center
+                                # indicates the dipole is positioned at the center
                                 # of the bond.
                                 Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
