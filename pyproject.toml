@@ -52,6 +52,11 @@ openmm = [
 optimize = [
     "scipy",
 ]
+jax = [
+    "jax",
+    "jaxlib",
+    "scipy",
+]
 qcel = [
     "qcelemental",
 ]
