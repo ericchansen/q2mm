@@ -135,7 +135,7 @@ def replace_neg_eigenvalue(
     the MM force field.
 
     The default replacement is 1.0 Hartree/Bohr², converted to
-    kJ/mol/Å² via ``constants.HESSIAN_CONVERSION`` (≈ 9376).  This operates
+    kJ/mol/Å² via ``co.HESSIAN_CONVERSION`` (≈ 9376).  This operates
     on **Cartesian** Hessian eigenvalues — not mass-weighted ones.
 
     Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
@@ -323,6 +323,13 @@ def lock_params(
 
     source_bonds = {b.key: b for b in source_ff.bonds}
     source_angles = {a.key: a for a in source_ff.angles}
+
+    missing_bonds = bond_keys - source_bonds.keys()
+    missing_angles = angle_keys - source_angles.keys()
+    if missing_bonds:
+        logger.warning(f"Source FF missing bond keys requested for locking: {missing_bonds}")
+    if missing_angles:
+        logger.warning(f"Source FF missing angle keys requested for locking: {missing_angles}")
 
     for bond in forcefield.bonds:
         if bond.key in bond_keys:

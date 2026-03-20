@@ -159,10 +159,19 @@ class TestDetectProblematicParams:
         assert ("H", "C", "H") in result["angles"]
 
     def test_all_problematic(self):
-        ff = self._make_ff([-1.0, -2.0], [0.0, -0.5])
+        """Multiple distinct problematic param types are all reported."""
+        bonds = [
+            BondParam(elements=("C", "H"), force_constant=-1.0, equilibrium=1.09),
+            BondParam(elements=("C", "C"), force_constant=-2.0, equilibrium=1.53),
+        ]
+        angles = [
+            AngleParam(elements=("H", "C", "H"), force_constant=0.0, equilibrium=109.5),
+            AngleParam(elements=("C", "C", "H"), force_constant=-0.5, equilibrium=111.0),
+        ]
+        ff = ForceField(name="test", bonds=bonds, angles=angles)
         result = detect_problematic_params(ff)
-        assert ("C", "H") in result["bonds"]
-        assert ("H", "C", "H") in result["angles"]
+        assert result["bonds"] == {("C", "H"), ("C", "C")}
+        assert result["angles"] == {("C", "C", "H"), ("H", "C", "H")}
 
     def test_invalid_method_raises(self):
         """Unsupported method string must raise ValueError, not silently fall through."""
