@@ -102,6 +102,30 @@ class MMEngine(ABC):
         """
         return False
 
+    def energy_and_param_grad(self, structure, forcefield) -> tuple[float, np.ndarray]:
+        """Compute energy and analytical gradient w.r.t. MM parameters.
+
+        Must be implemented by engines for which
+        :meth:`supports_analytical_gradients` returns ``True``.
+
+        Parameters
+        ----------
+        structure
+            Molecular structure or engine-specific context.
+        forcefield
+            Force field or parameter set used for the calculation.
+
+        Returns
+        -------
+        tuple[float, np.ndarray]
+            ``(energy, grad)`` where ``energy`` is the MM energy in kcal/mol
+            and ``grad`` is a 1-D array of ``dE/dp`` derivatives.
+        """
+        raise NotImplementedError(
+            f"{self.name} does not implement energy_and_param_grad(). "
+            "Override this method when supports_analytical_gradients() returns True."
+        )
+
     def create_context(self, structure, forcefield):
         """Create a reusable engine context/handle for a molecule.
 

@@ -43,7 +43,12 @@ try:
     import jax
     import jax.numpy as jnp
 
-    jax.config.update("jax_enable_x64", True)
+    # JAX defaults to float32 which is insufficient for MM parameter
+    # optimization (energy differences ~1e-6 kcal/mol matter).  This is
+    # standard practice in JAX-based chemistry packages.  Guard: only set
+    # if not already configured (respects JAX_ENABLE_X64 env var).
+    if not jax.config.jax_enable_x64:
+        jax.config.update("jax_enable_x64", True)
     _HAS_JAX = True
 except ImportError:  # pragma: no cover
     jax = None  # type: ignore[assignment]
@@ -402,18 +407,18 @@ class JaxEngine(MMEngine):
                 atom_vdw_map.append(-1)
 
         # Validate vdW mapping: if the force field defines vdW parameters,
-        # warn about unmatched atoms.  Using -1 as an index would silently
-        # select the last vdW entry via JAX negative indexing.  When there
-        # are matched AND unmatched atoms, the -1 entries would corrupt
-        # the energy, so raise.  When NO atoms match (e.g. FF has no vdW
-        # params), vdW energy is zero regardless — no harm from -1 values.
+        # disallow any unmatched atoms.  Using -1 as an index would silently
+        # select the last vdW entry via JAX negative indexing, corrupting
+        # the energy and gradients.  When the force field defines no vdW
+        # terms at all, vdW energy is effectively disabled and unmatched
+        # atoms are safe.
         unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1]
-        matched = len(atom_vdw_map) - len(unmatched)
-        if unmatched and matched > 0:
+        if getattr(forcefield, "vdws", None) and unmatched:
             raise ValueError(
                 f"Unmatched vdW parameters for atoms at indices {unmatched}. "
                 "Ensure all atom types/elements have corresponding vdW "
-                "parameters in the force field."
+                "parameters in the force field, or remove vdW terms from "
+                "the force field if vdW interactions are not intended."
             )
 
         # Build vdW pair list with 1-2 and 1-3 exclusions
@@ -625,13 +630,16 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
             E = E + _harmonic_angle_energy(k, theta0, coords, _angle_indices)
 
         if has_torsions:
-            tor_k = params[torsion_offset : torsion_offset + n_tt]
-            k = tor_k[_torsion_map]
-            # Periodicity and phase are not in the param vector (they're fixed)
-            # For now, default to periodicity=1, phase=0
-            n_vals = jnp.ones_like(k)
-            gamma = jnp.zeros_like(k)
-            E = E + _fourier_torsion_energy(k, n_vals, gamma, coords, _torsion_indices)
+            # Torsion terms are not yet correctly supported in the JAX backend:
+            # - Periodicity and phase from the ForceField are not plumbed through.
+            # - The dihedral computation uses arccos which loses the sign of phi.
+            # Disable explicitly until a full atan2-based implementation is added.
+            raise NotImplementedError(
+                "Torsion energies are not yet supported in the JAX backend. "
+                "Q2MMMolecule does not detect torsions, so this block is normally "
+                "unreachable. If you reach this, implement proper periodicity/phase "
+                "handling and a signed dihedral (atan2) formulation first."
+            )
 
         if has_vdw:
             vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)

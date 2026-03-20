@@ -106,6 +106,8 @@ class ScipyOptimizer:
           analytical gradients via JAX autodiff. Requires an engine that
           ``supports_analytical_gradients()`` (e.g. ``JaxEngine``) and
           energy-only reference data.  Raises if conditions are not met.
+          Only applies to ``scipy.optimize.minimize`` paths; not supported
+          for ``method='least_squares'`` (raises ``ValueError``).
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
@@ -156,6 +158,12 @@ class ScipyOptimizer:
             )
 
         if self.method == "least_squares":
+            if self.jac == "analytical":
+                raise ValueError(
+                    "jac='analytical' is not supported with method='least_squares'. "
+                    "Use a minimize-based method (e.g. 'L-BFGS-B') for analytical gradients, "
+                    "or set jac=None for least_squares."
+                )
             result = self._run_least_squares(objective, x0, bounds)
         else:
             result = self._run_minimize(objective, x0, bounds)
