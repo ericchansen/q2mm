@@ -30,20 +30,36 @@ def replace_neg_eigenvalue(
     units=co.KJMOLA,
     strict=True,
 ) -> np.ndarray:
-    """Replaces the most negative eigenvalue with a strong positive value to invert the curvature of the Potential Energy Surface.
+    """Replace the most negative eigenvalue to invert TS curvature (Method C).
+
+    Implements "Method C" from Limé & Norrby (J. Comput. Chem. 2015, 36, 1130,
+    DOI:10.1002/jcc.23797): the reaction coordinate eigenvalue is forced to a
+    large positive value (default 1.0 Hartree·bohr⁻²·amu⁻¹ ≈ 9376
+    kJ·mol⁻¹·Å⁻²·amu⁻¹) so that the TS is treated as an energy minimum by
+    the MM force field.
+
+    Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
+    without forced replacement) gives ~13× lower RMS error, but can produce
+    unstable force fields. Their recommended "Method E" is a hybrid: use D
+    first, lock problematic parameters, then reoptimize with C. See the paper
+    for details and issue #75 for implementation status.
 
     Args:
-        eigenvalues (np.ndarray): Eigenvalues
-        replace_with (float, optional): Value which should replace the most negative eigenvalue. Defaults to 1.0.
-        zer_out_neg (bool, optional): If True, will zero out remaining negative eigenvalues. Defaults to False.
-        units (_type_, optional): Units in which replaced eigenvalue should be returned. Defaults to co.KJMOLA.
+        eigenvalues (np.ndarray): Eigenvalues from mass-weighted Hessian.
+        replace_with (float, optional): Replacement value in atomic units
+            (Hartree·bohr⁻²·amu⁻¹). Defaults to 1.0.
+        zer_out_neg (bool, optional): If True, zero out remaining negative
+            eigenvalues after replacing the most negative. Defaults to False.
+        units: Target units for the replacement. If ``co.KJMOLA`` (default),
+            *replace_with* is converted via ``constants.HESSIAN_CONVERSION``.
         strict (bool, optional): If True, raise ValueError when more than one
             negative eigenvalue is found (indicates a higher-order saddle point
             or corrupted Hessian).  If False, proceed with a warning. Defaults
             to True.
 
     Returns:
-        np.ndarray: Eigenvalues with most negative eigenvalue replaced and, if requested, remaining negative values zeroed out.
+        np.ndarray: Eigenvalues with most negative eigenvalue replaced and,
+            if requested, remaining negative values zeroed out.
 
     Raises:
         ValueError: When *strict* is True and more than one negative eigenvalue

@@ -305,6 +305,7 @@ class TestScipyOptimizer:
         assert "L-BFGS-B" in summary
         assert "Score" in summary
 
+    @pytest.mark.medium
     def test_water_bond_and_angle(self):
         """Optimizer can recover both bond and angle parameters."""
         mol = _water()

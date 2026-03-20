@@ -178,6 +178,7 @@ class TestSeminarioOptimizePipeline:
         assert isinstance(energy, float)
         assert np.isfinite(energy)
 
+    @pytest.mark.medium
     def test_optimize_improves_seminario_ff(self, ch3f_seminario_ff):
         """Optimizing Seminario FF against QM frequencies improves the score."""
         ff, mol = ch3f_seminario_ff
@@ -212,7 +213,7 @@ class TestSeminarioOptimizePipeline:
 class TestCrossBackendOptimization:
     """Optimize the same problem with OpenMM and Tinker, compare results."""
 
-    def test_openmm_vs_tinker_energy_parity(self):
+    def test_openmm_vs_tinker_energy_parity(self):  # ~0.3s — fast
         """OpenMM and Tinker agree on energy for the same FF + geometry."""
         mol = _water()
         ff = _water_ff()
@@ -227,6 +228,7 @@ class TestCrossBackendOptimization:
         # empirically within ~0.003 kcal/mol, we use 0.01 as tolerance.
         assert e_openmm == pytest.approx(e_tinker, abs=0.01), f"OpenMM={e_openmm:.6f} vs Tinker={e_tinker:.6f}"
 
+    @pytest.mark.slow
     def test_openmm_vs_tinker_optimization_convergence(self):
         """Both backends converge to similar optimized parameters."""
         results = {}
@@ -254,6 +256,7 @@ class TestCrossBackendOptimization:
 class TestMultiMethodConvergence:
     """Verify multiple scipy methods converge to the same optimum."""
 
+    @pytest.mark.medium
     def test_three_methods_agree(self):
         """L-BFGS-B, Nelder-Mead, and least_squares all improve significantly."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
@@ -381,6 +384,7 @@ class TestScoreParity:
 class TestOptimizationRoundtrip:
     """Verify optimizer can recover known parameters from perturbed start."""
 
+    @pytest.mark.medium
     def test_recover_bond_force_constant(self):
         """Optimizer recovers correct bond k from energy data."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
@@ -399,6 +403,7 @@ class TestOptimizationRoundtrip:
             f"Bond k: true={true_bond_k:.3f}, got={final_bond_k:.3f}"
         )
 
+    @pytest.mark.medium
     def test_convergence_history_monotonic(self):
         """Score history should be roughly monotonically decreasing."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
@@ -414,6 +419,7 @@ class TestOptimizationRoundtrip:
         assert result.final_score <= result.initial_score
         assert min(result.history) <= result.history[0]
 
+    @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_TINKER, reason="Tinker not installed")
     def test_recover_params_with_tinker(self):
         """Tinker backend also recovers correct parameters."""
@@ -460,6 +466,7 @@ class TestForceFieldExportRoundtrip:
         roundtripped = ff.get_param_vector()
         np.testing.assert_array_almost_equal(vec, roundtripped, decimal=15)
 
+    @pytest.mark.medium
     def test_param_vector_roundtrip_optimized_ff(self):
         """Optimized FF survives get→set→get roundtrip."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
@@ -576,6 +583,7 @@ class TestAtomIdentityMatching:
 class TestOptimizationDeterminism:
     """Verify optimization is deterministic."""
 
+    @pytest.mark.medium
     def test_same_result_twice(self):
         """Running the same optimization twice gives identical parameters."""
         results = []
@@ -593,6 +601,7 @@ class TestOptimizationDeterminism:
         )
         assert results[0].final_score == pytest.approx(results[1].final_score, rel=1e-10)
 
+    @pytest.mark.medium
     def test_determinism_nelder_mead(self):
         """Nelder-Mead is also deterministic (no stochastic elements)."""
         results = []
@@ -645,6 +654,7 @@ class TestGoldenFixtureRegression:
 
     GOLDEN_PATH = REPO_ROOT / "test" / "fixtures" / "optimization_golden.json"
 
+    @pytest.mark.medium
     @pytest.mark.skipif(
         not (Path(__file__).resolve().parent.parent.parent / "test" / "fixtures" / "optimization_golden.json").exists(),
         reason="Golden fixture not yet generated (run scripts/generate_optimization_fixtures.py)",
