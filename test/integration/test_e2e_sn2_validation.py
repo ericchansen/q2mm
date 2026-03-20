@@ -545,12 +545,18 @@ class TestSN2TransitionState:
 
 @pytest.mark.slow
 class TestSN2ReactionProfile:
-    """Validate energetics across the reaction coordinate.
+    """Validate QM energetics across the reaction coordinate.
 
-    Compares MM barrier heights to QM values at:
-    - Separated reactants (F⁻ + CH₃F)
+    Compares our QM barrier heights to published values at:
+    - Separated reactants (F- + CH3F)
     - Ion-dipole complex
     - Transition state
+
+    Note: MM barrier heights are not meaningful here because CH3F and TS
+    use separate molecule-specific force fields with different atom counts
+    and connectivity.  Each FF's energy zero is arbitrary, so comparing
+    energies across FFs is apples-to-oranges.  A meaningful MM barrier
+    requires a reactive force field on a single PES (e.g., EVB or ReaxFF).
     """
 
     @pytest.fixture(scope="class")
@@ -567,12 +573,13 @@ class TestSN2ReactionProfile:
         return {
             "f_minus": -99.859696300127,  # from summary.txt
             "ch3f": _load_qm_energy(CH3F_ENERGY),
+            "complex": -239.632665168590,  # from summary.txt
             "ts": _load_qm_energy(TS_ENERGY),
         }
 
     @pytest.fixture(scope="class")
     def ch3f_ff(self):
-        """Seminario FF for CH₃F ground state."""
+        """Seminario FF for CH3F ground state."""
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
         hess = np.load(CH3F_HESS)
         return estimate_force_constants(mol.with_hessian(hess))
@@ -609,34 +616,42 @@ class TestSN2ReactionProfile:
         assert np.isfinite(e_ch3f), f"CH3F energy not finite: {e_ch3f}"
         assert np.isfinite(e_ts), f"TS energy not finite: {e_ts}"
 
-    def test_profile_logged(self, engine, ch3f_ff, ts_ff, qm_energies, ext_ref):
-        """Log the full reaction profile for inspection."""
+    def test_profile_logged(self, qm_energies, ext_ref):
+        """Log the QM reaction profile for inspection."""
         ha_to_kcal = 627.5094740631
-        ch3f_mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
-        ts_mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
+        reactant_e = qm_energies["f_minus"] + qm_energies["ch3f"]
+        complex_e = qm_energies["complex"]
+        ts_e = qm_energies["ts"]
 
-        e_ch3f_mm = engine.energy(ch3f_mol, ch3f_ff)
-        e_ts_mm = engine.energy(ts_mol, ts_ff)
+        barrier_vs_react = (ts_e - reactant_e) * ha_to_kcal
+        barrier_vs_complex = (ts_e - complex_e) * ha_to_kcal
+        complexation_e = (complex_e - reactant_e) * ha_to_kcal
 
-        reactant_qm = qm_energies["f_minus"] + qm_energies["ch3f"]
-        barrier_qm = (qm_energies["ts"] - reactant_qm) * ha_to_kcal
+        lit_react = ext_ref["sn2_barrier_ts_minus_reactants_kcal_mol"]
+        lit_complex = ext_ref["sn2_barrier_ts_minus_complex_kcal_mol"]
 
-        lit = ext_ref["sn2_barrier_ts_minus_reactants_kcal_mol"]
-
-        col1, col2 = 35, 15
+        col1, col2, col3 = 35, 15, 15
         print("\n")
-        print("=" * 60)
-        print("  SN2 REACTION PROFILE -- Barrier Heights (kcal/mol)")
-        print("=" * 60)
-        print(f"  {'Source':<{col1}} {'Barrier':>{col2}}")
-        print("  " + "-" * (col1 + col2))
-        print(f"  {'Our QM (B3LYP/6-31+G(d))':<{col1}} {barrier_qm:>{col2}.2f}")
-        print(f"  {'CCSD(T)-F12 (Czako 2015)':<{col1}} {lit['ccsd_t_f12_czako_2015_classical']:>{col2}.2f}")
-        print("  " + "-" * (col1 + col2))
-        print(f"  {'MM CH3F (Seminario FF)':<{col1}} {e_ch3f_mm:>{col2}.4f}")
-        print(f"  {'MM TS (Seminario FF)':<{col1}} {e_ts_mm:>{col2}.4f}")
-        print("  " + "-" * (col1 + col2))
-        print("  Note: MM energies are on a different scale than QM.")
-        print("  Relative MM energies become meaningful after optimization.")
+        print("=" * 70)
+        print("  SN2 REACTION PROFILE -- QM Energetics (kcal/mol)")
+        print("=" * 70)
+        print(f"  {'':>{col1}} {'Our B3LYP':>{col2}} {'Literature':>{col3}}")
+        print("  " + "-" * (col1 + col2 + col3))
+        print(f"  {'F- + CH3F -> complex':<{col1}} {complexation_e:>{col2}.2f} {'--':>{col3}}")
+        print(
+            f"  {'TS - reactants':<{col1}} {barrier_vs_react:>{col2}.2f} {lit_react['ccsd_t_f12_czako_2015_classical']:>{col3}.2f}"
+        )
+        print(
+            f"  {'TS - complex':<{col1}} {barrier_vs_complex:>{col2}.2f} {lit_complex['vb_benchmark_shaik_1992']:>{col3}.1f}"
+        )
+        print("  " + "-" * (col1 + col2 + col3))
+        print(f"  {'':>{col1}} {'B3LYP/6-31+G(d)':>{col2}} {'CCSD(T)/VB':>{col3}}")
+        print("=" * 70)
+        print("  Note: MM barrier heights cannot be computed here because CH3F")
+        print("  and TS use separate force fields with different connectivity.")
+        print("  Each FF has an arbitrary energy zero. A meaningful MM barrier")
+        print("  requires a reactive potential (EVB, ReaxFF, etc.).")
+        print("=" * 70)
+        print()
         print("=" * 60)
         print()
