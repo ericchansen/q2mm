@@ -166,9 +166,76 @@ Classes for defining objectives and running parameter optimization.
 Container for QM or experimental reference observations used as optimization
 targets.
 
-```python
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
+**Factory methods** — auto-populate from QM outputs:
 
+```python
+from q2mm.optimizers.objective import ReferenceData
+
+# From a Gaussian formatted checkpoint (returns ref data + molecule)
+ref, mol = ReferenceData.from_fchk("opt-freq.fchk", bond_tolerance=1.4)
+
+# From a Gaussian log file (with optional frequencies)
+ref, mol = ReferenceData.from_gaussian("opt-freq.log", include_frequencies=True)
+
+# From an already-constructed molecule
+ref = ReferenceData.from_molecule(mol, frequencies=freqs)
+
+# Multi-molecule training set
+ref = ReferenceData.from_molecules([mol1, mol2], frequencies_list=[f1, f2])
+```
+
+| Factory | Input | Returns | What it extracts |
+|---------|-------|---------|-----------------|
+| `from_fchk(path)` | `.fchk` file | `(ReferenceData, Q2MMMolecule)` | Bond lengths, angles, Hessian |
+| `from_gaussian(path)` | `.log` file | `(ReferenceData, Q2MMMolecule)` | Bond lengths, angles, frequencies, Hessian |
+| `from_molecule(mol)` | `Q2MMMolecule` | `ReferenceData` | Bond lengths, angles; optionally frequencies and eigenmatrix |
+| `from_molecules(mols)` | `list[Q2MMMolecule]` | `ReferenceData` | Same as `from_molecule` for each, with sequential `molecule_idx` |
+
+**`from_molecule()` parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `mol` | `Q2MMMolecule` | *(required)* | Molecule with geometry |
+| `weights` | `dict`, optional | `{"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}` | Weight overrides by data type |
+| `molecule_idx` | `int` | `0` | Index for multi-molecule fits |
+| `frequencies` | `array-like`, optional | `None` | Vibrational frequencies (cm⁻¹) |
+| `skip_imaginary` | `bool` | `False` | Skip negative frequencies |
+| `include_eigenmatrix` | `bool` | `False` | Add Hessian eigenmatrix training data |
+| `eigenmatrix_diagonal_only` | `bool` | `False` | Only diagonal eigenmatrix elements |
+
+**`from_gaussian()` parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `path` | `str` or `Path` | *(required)* | Path to Gaussian `.log` file |
+| `weights` | `dict`, optional | see above | Weight overrides |
+| `bond_tolerance` | `float` | `1.3` | Covalent-radii multiplier for bond detection (use 1.4+ for TS) |
+| `charge` | `int` | `0` | Molecular charge |
+| `multiplicity` | `int` | `1` | Spin multiplicity |
+| `include_frequencies` | `bool` | `True` | Add frequency data from the log |
+| `skip_imaginary` | `bool` | `False` | Skip imaginary frequencies |
+| `au_hessian` | `bool` | `True` | Keep Hessian in atomic units (Hartree/Bohr²) |
+
+**Bulk loaders** — add data in batch to an existing `ReferenceData`:
+
+```python
+ref = ReferenceData()
+
+# Add all frequencies from an array
+n = ref.add_frequencies_from_array(freqs, weight=1.0, skip_imaginary=True)
+
+# Add eigenmatrix elements from a QM Hessian
+n = ref.add_eigenmatrix_from_hessian(mol.hessian, diagonal_only=False)
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `add_frequencies_from_array(freqs)` | `int` (count added) | Bulk-add all vibrational frequencies from a 1-D array |
+| `add_eigenmatrix_from_hessian(hessian)` | `int` (count added) | Decompose Hessian, extract eigenmatrix, add diagonal + off-diagonal elements with legacy weight scheme |
+
+**Manual entry** — add individual observations:
+
+```python
 ref = ReferenceData()
 ref.add_energy(value=0.0, weight=1.0)
 ref.add_frequency(value=1648.5, data_idx=0, weight=0.1)
@@ -181,10 +248,18 @@ Each `ReferenceValue` has:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `kind` | `str` | Type of observation (energy, frequency, etc.) |
+| `kind` | `str` | Type of observation (energy, frequency, bond_length, bond_angle, torsion_angle, eig_diagonal, eig_offdiagonal) |
 | `value` | `float` | Target value |
 | `weight` | `float` | Relative importance in the objective |
 | `atom_indices` | `tuple[int, ...]`, optional | Atoms involved (for geometric properties) |
+| `molecule_idx` | `int` | Index into the molecules list (default: 0) |
+
+**Properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `n_observations` | `int` | Total number of reference entries |
+| `values` | `list[ReferenceValue]` | All reference observations |
 
 ---
 
@@ -212,6 +287,25 @@ score = obj(param_vector)  # f(param_vector) -> float
 - Computes weighted sum-of-squares of residuals
 - Caches MM engine handles for performance
 
+**Methods:**
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `__call__(param_vector)` | `ndarray → float` | Evaluate objective (sum of squared residuals). This is what `scipy.optimize.minimize` calls. |
+| `residuals(param_vector)` | `ndarray → ndarray` | Compute weighted residual vector. Used by `least_squares` method. |
+| `reset()` | `→ None` | Reset evaluation counter, history, and cached engine handles. Called automatically by `ScipyOptimizer.optimize()`. |
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `forcefield` | `ForceField` | The force field being optimized |
+| `engine` | `MMEngine` | MM backend (OpenMM, Tinker, etc.) |
+| `molecules` | `list[Q2MMMolecule]` | Training set structures |
+| `reference` | `ReferenceData` | QM/experimental reference observations |
+| `n_eval` | `int` | Number of objective evaluations so far |
+| `history` | `list[float]` | Score at each evaluation (for convergence tracking) |
+
 ---
 
 ### `ScipyOptimizer`
@@ -226,11 +320,20 @@ from q2mm.optimizers.scipy_opt import ScipyOptimizer
 optimizer = ScipyOptimizer(method="L-BFGS-B", eps=1e-3)
 result = optimizer.optimize(objective)
 
-print(result.final_params)  # optimized parameter vector
-print(result.final_score)  # final objective value
+print(result.summary())
+print(f"Improvement: {result.improvement:.1%}")
 ```
 
-**Default:** L-BFGS-B with `eps=1e-3` and bounds from `ForceField.get_bounds()`.
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `method` | `str` | `"L-BFGS-B"` | Optimization algorithm (see table below) |
+| `maxiter` | `int` | `500` | Maximum iterations |
+| `ftol` | `float` | `1e-8` | Function tolerance for convergence |
+| `eps` | `float` | `1e-3` | Finite-difference step size (scipy default ~1e-8 is too small for FF parameters) |
+| `use_bounds` | `bool` | `True` | Use parameter bounds from `ForceField.get_bounds()` |
+| `verbose` | `bool` | `True` | Log progress during optimization |
 
 ### Optimization Methods
 
@@ -246,6 +349,39 @@ print(result.final_score)  # final objective value
     **L-BFGS-B** is the best starting point for most problems. Switch to
     **Nelder-Mead** if the objective is noisy or non-smooth. Use
     **least_squares** when you have many residuals and few parameters.
+
+### `OptimizationResult`
+
+Returned by `ScipyOptimizer.optimize()`.
+
+```python
+result = optimizer.optimize(objective)
+print(result.summary())          # human-readable summary
+print(result.improvement)        # fractional improvement (0–1)
+print(result.history)            # score at each evaluation
+```
+
+**Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `success` | `bool` | Whether the optimizer converged |
+| `message` | `str` | Convergence status message from scipy |
+| `initial_score` | `float` | Objective value before optimization |
+| `final_score` | `float` | Objective value after optimization |
+| `n_iterations` | `int` | Number of optimizer iterations |
+| `n_evaluations` | `int` | Total objective function evaluations |
+| `initial_params` | `ndarray` | Starting parameter vector |
+| `final_params` | `ndarray` | Optimized parameter vector |
+| `history` | `list[float]` | Score at each evaluation |
+| `method` | `str` | Optimization method used |
+
+**Properties and methods:**
+
+| Member | Returns | Description |
+|--------|---------|-------------|
+| `improvement` | `float` | Fractional improvement: `(initial - final) / initial`. 0 = no change, 1 = perfect. |
+| `summary()` | `str` | Human-readable summary (method, scores, improvement, eval count) |
 
 ---
 
