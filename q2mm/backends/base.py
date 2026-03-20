@@ -95,6 +95,13 @@ class MMEngine(ABC):
         """Whether parameters can be updated without rebuilding engine state."""
         return False
 
+    def supports_analytical_gradients(self) -> bool:
+        """Whether this engine provides analytical parameter gradients.
+
+        Engines returning ``True`` must implement ``energy_and_param_grad()``.
+        """
+        return False
+
     def create_context(self, structure, forcefield):
         """Create a reusable engine context/handle for a molecule.
 

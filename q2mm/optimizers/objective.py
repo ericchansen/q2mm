@@ -948,10 +948,10 @@ class ObjectiveFunction:
             If the reference data contains types other than ``energy``
             (Hessian/frequency/geometry gradient support is planned).
         """
-        if not hasattr(self.engine, "energy_and_param_grad"):
+        if not self.engine.supports_analytical_gradients():
             raise TypeError(
-                f"{self.engine.name} does not support energy_and_param_grad(). "
-                "Use a JaxEngine for analytical gradients."
+                f"{self.engine.name} does not support analytical gradients. "
+                "Use a JaxEngine or another differentiable engine."
             )
 
         self.forcefield.set_param_vector(param_vector)

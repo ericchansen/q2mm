@@ -352,6 +352,9 @@ class JaxEngine(MMEngine):
     def supports_runtime_params(self) -> bool:
         return True
 
+    def supports_analytical_gradients(self) -> bool:
+        return True
+
     def create_context(self, structure, forcefield: ForceField | None = None) -> JaxHandle:
         """Build topology and compile energy function for a molecule."""
         molecule = _as_molecule(structure)
