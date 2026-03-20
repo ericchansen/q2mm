@@ -918,6 +918,80 @@ class ObjectiveFunction:
 
         return np.array(residuals)
 
+    def gradient(self, param_vector: np.ndarray) -> np.ndarray:
+        """Compute analytical gradient of the score w.r.t. parameters.
+
+        Uses the engine's ``energy_and_param_grad()`` method (available on
+        :class:`~q2mm.backends.mm.jax_engine.JaxEngine`) to compute exact
+        derivatives for energy reference data. Falls back to finite differences
+        for reference data types that require Hessians or minimized geometries.
+
+        The score is ``sum(w_i * (ref_i - calc_i))^2``, so:
+
+        ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
+
+        Parameters
+        ----------
+        param_vector : np.ndarray
+            Flat parameter vector (same as :meth:`__call__`).
+
+        Returns
+        -------
+        np.ndarray
+            Gradient of the score with respect to each parameter.
+
+        Raises
+        ------
+        TypeError
+            If the engine does not support ``energy_and_param_grad()``.
+        NotImplementedError
+            If the reference data contains types other than ``energy``
+            (Hessian/frequency/geometry gradient support is planned).
+        """
+        if not hasattr(self.engine, "energy_and_param_grad"):
+            raise TypeError(
+                f"{self.engine.name} does not support energy_and_param_grad(). "
+                "Use a JaxEngine for analytical gradients."
+            )
+
+        self.forcefield.set_param_vector(param_vector)
+
+        # Check which data types are needed
+        all_kinds = {ref.kind for ref in self.reference.values}
+        unsupported = all_kinds - {"energy"}
+        if unsupported:
+            raise NotImplementedError(
+                f"Analytical gradients not yet supported for data types: {unsupported}. "
+                "Only 'energy' references are supported. Use finite differences (jac=None) "
+                "for mixed reference data, or contribute Hessian/geometry gradient support."
+            )
+
+        # Compute energy + gradient for each molecule
+        n_params = len(param_vector)
+        total_grad = np.zeros(n_params)
+        energy_cache: dict[int, tuple[float, np.ndarray]] = {}
+
+        for ref in self.reference.values:
+            mol_idx = ref.molecule_idx
+            if mol_idx not in energy_cache:
+                structure = self._get_structure(mol_idx)
+                energy_cache[mol_idx] = self.engine.energy_and_param_grad(structure, self.forcefield)
+
+            calc_value, calc_grad = energy_cache[mol_idx]
+            diff = ref.value - calc_value
+            # d(score)/d(p) = -2 * w^2 * (ref - calc) * d(calc)/d(p)
+            total_grad += -2.0 * ref.weight**2 * diff * calc_grad
+
+        # Track evaluation
+        self.n_eval += 1
+        # Also compute the score for history
+        score = sum(
+            (ref.weight * (ref.value - energy_cache[ref.molecule_idx][0])) ** 2 for ref in self.reference.values
+        )
+        self.history.append(float(score))
+
+        return total_grad
+
     def _get_structure(self, mol_idx: int):
         """Get the structure handle for a molecule, reusing if possible.
 

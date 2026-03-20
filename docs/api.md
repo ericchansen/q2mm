@@ -207,6 +207,48 @@ system = OpenMMEngine.load_system_xml("system.xml")
 
 ---
 
+### `JaxEngine` — Differentiable MM
+
+[source](https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_engine.py)
+
+Differentiable MM backend using JAX with OPLSAA-style energy functions
+(harmonic bond/angle, Fourier torsion, 12-6 Lennard-Jones). Provides
+analytical gradients of the energy with respect to force field parameters
+via `jax.grad`, eliminating finite differences in parameter optimisation.
+
+```python
+from q2mm.backends.mm.jax_engine import JaxEngine
+
+engine = JaxEngine()
+
+# Standard MMEngine methods work as expected
+energy = engine.energy(molecule, forcefield)
+hessian = engine.hessian(molecule, forcefield)  # analytical via jax.hessian
+freqs = engine.frequencies(molecule, forcefield)
+
+# NEW: analytical parameter gradients (not available in OpenMM/Tinker)
+energy, grad = engine.energy_and_param_grad(molecule, forcefield)
+# grad is dE/d(param_vector) — same shape as forcefield.get_param_vector()
+```
+
+**Using analytical gradients with the optimizer:**
+
+```python
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+# Pass jac='analytical' to use JAX gradients instead of finite differences
+optimizer = ScipyOptimizer(method="L-BFGS-B", jac="analytical")
+result = optimizer.optimize(objective)
+```
+
+!!! warning "Functional form differences"
+    JaxEngine uses standard OPLSAA forms (harmonic bonds/angles, 12-6 LJ),
+    not MM3 forms (cubic stretch, sextic bend, buffered 14-7). Near
+    equilibrium geometries the results are very similar, but for exact
+    MM3 parity use `OpenMMEngine`. See issue #91 for planned MM3 JAX forms.
+
+---
+
 ## Optimizers (`q2mm.optimizers`)
 
 Classes for defining objectives and running parameter optimization.
@@ -467,7 +509,7 @@ class MMEngine(ABC):
     def hessian(self, structure, forcefield) -> ndarray: ...
 ```
 
-**Implementations:** `OpenMMEngine`, `TinkerEngine`
+**Implementations:** `OpenMMEngine`, `TinkerEngine`, `JaxEngine`
 
 ---
 
@@ -545,15 +587,18 @@ Feature support across force field formats and compute backends.
 
 ### MM Backends
 
-| Capability | OpenMM | Tinker |
-|------------|:------:|:------:|
-| Single-point energy | ✅ | ✅ |
-| Energy minimisation | ✅ | ✅ |
-| Numerical Hessian | ✅ | ✅ |
-| Vibrational frequencies | ✅ | ✅ |
-| Runtime parameter update | ✅ `update_forcefield()` | ❌ (re-writes files) |
-| System XML export | ✅ `export_system_xml()` | — |
-| Install | `pip install openmm` | System binary |
+| Capability | OpenMM | Tinker | JAX |
+|------------|:------:|:------:|:---:|
+| Single-point energy | ✅ | ✅ | ✅ |
+| Energy minimisation | ✅ | ✅ | ✅ |
+| Numerical Hessian | ✅ | ✅ | — |
+| Analytical Hessian | — | — | ✅ `jax.hessian` |
+| Vibrational frequencies | ✅ | ✅ | ✅ |
+| Runtime parameter update | ✅ `update_forcefield()` | ❌ (re-writes files) | ✅ (all JIT-compiled) |
+| Analytical param gradients | — | — | ✅ `energy_and_param_grad()` |
+| System XML export | ✅ `export_system_xml()` | — | — |
+| Functional forms | MM3 (cubic/sextic/14-7) | MM3 | OPLSAA (harmonic/LJ) |
+| Install | `pip install openmm` | System binary | `pip install "q2mm[jax]"` |
 
 ### QM Backends
 
@@ -579,6 +624,10 @@ Feature support across force field formats and compute backends.
     and **Gaussian `.fchk`** or **Psi4** for QM reference data. This combination
     gives you fast runtime parameter updates, full Hessian access, and
     export to both System XML and ForceField XML.
+
+    For **fastest optimisation**, use the **JAX** backend with
+    `ScipyOptimizer(jac='analytical')` to get exact analytical gradients —
+    no finite differences needed. Install with `pip install "q2mm[jax]"`.
 
 ---
 

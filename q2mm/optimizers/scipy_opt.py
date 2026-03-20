@@ -99,6 +99,14 @@ class ScipyOptimizer:
         Whether to use parameter bounds from ForceField.get_bounds().
     verbose : bool
         Log progress during optimization.
+    jac : str or None
+        Jacobian computation strategy:
+        - ``None`` (default): Use scipy's built-in finite differences.
+        - ``'analytical'``: Use ``ObjectiveFunction.gradient()`` for exact
+          analytical gradients via JAX autodiff. Requires a
+          :class:`~q2mm.backends.mm.jax_engine.JaxEngine` backend and
+          energy-only reference data. Falls back to finite differences
+          otherwise.
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
@@ -111,6 +119,7 @@ class ScipyOptimizer:
         eps: float = 1e-3,
         use_bounds: bool = True,
         verbose: bool = True,
+        jac: str | None = None,
     ):
         self.method = method
         self.maxiter = maxiter
@@ -118,6 +127,7 @@ class ScipyOptimizer:
         self.eps = eps
         self.use_bounds = use_bounds
         self.verbose = verbose
+        self.jac = jac
 
     def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
         """Run the optimization.
@@ -187,7 +197,7 @@ class ScipyOptimizer:
             options["ftol"] = self.ftol
 
         # Finite-difference step for gradient-based methods
-        if self.method not in ("Nelder-Mead", "Powell"):
+        if self.method not in ("Nelder-Mead", "Powell") and self.jac != "analytical":
             options["eps"] = self.eps
 
         # Only pass bounds for methods that support them
@@ -195,10 +205,18 @@ class ScipyOptimizer:
 
         callback = self._make_callback(objective) if self.verbose else None
 
+        # Analytical Jacobian via JAX
+        jac = None
+        if self.jac == "analytical":
+            jac = objective.gradient
+            if self.verbose:
+                logger.info("  Using analytical JAX gradients (jac='analytical')")
+
         scipy_result = optimize.minimize(
             objective,
             x0,
             method=self.method,
+            jac=jac,
             bounds=effective_bounds,
             options=options,
             callback=callback,
