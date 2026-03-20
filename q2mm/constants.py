@@ -60,7 +60,8 @@ HARTREE_TO_KCALMOL = 627.51
 KCAL_TO_KJ = 4.184
 
 # --- Length conversions ---
-BOHR_TO_ANG = 0.529177210903  # CODATA 2018 exact
+# CODATA 2018: https://physics.nist.gov/cgi-bin/cuu/Value?bohrrada0
+BOHR_TO_ANG = 0.529177210903
 CM_TO_ANG = 10**8
 
 # --- Force constant conversions ---
