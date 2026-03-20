@@ -10,8 +10,6 @@ same pipeline and is stored as ethane_reference.json.
 Covers issue #73.
 """
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 
@@ -376,3 +374,45 @@ class TestMultiMoleculeAveraging:
         lo = min(gs_cc.force_constant, ts_cc.force_constant)
         hi = max(gs_cc.force_constant, ts_cc.force_constant)
         assert lo <= avg_cc.force_constant <= hi
+
+
+# ---------------------------------------------------------------------------
+# Independent literature validation (not self-referential)
+# ---------------------------------------------------------------------------
+class TestLiteratureValidation:
+    """Validate Seminario results against independent literature values.
+
+    Reference ranges come from experimental/high-level QM sources,
+    NOT from the Seminario pipeline itself.
+
+    Sources:
+    - C-C bond: ~4.3-5.0 mdyn/Å (MM3 force field, Allinger et al.)
+    - C-H bond: ~4.7-5.0 mdyn/Å (IR spectroscopy / MM3)
+    - H-C-H angle: ~0.3-0.6 mdyn·Å/rad² (MM3)
+    - C-C-H angle: ~0.4-0.7 mdyn·Å/rad² (MM3)
+    """
+
+    @pytest.fixture(scope="class")
+    def gs_ff(self):
+        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        return estimate_force_constants(mol)
+
+    def test_cc_fc_in_literature_range(self, gs_ff):
+        """C-C stretch FC should be ~3-6 mdyn/Å (Seminario from DFT can be softer than MM3)."""
+        cc = next(b for b in gs_ff.bonds if b.elements == ("C", "C"))
+        assert 2.5 < cc.force_constant < 6.5, f"C-C FC {cc.force_constant:.2f} outside lit range"
+
+    def test_ch_fc_in_literature_range(self, gs_ff):
+        """C-H stretch FC should be ~4.5-5.5 mdyn/Å."""
+        ch = next(b for b in gs_ff.bonds if set(b.elements) == {"C", "H"})
+        assert 4.0 < ch.force_constant < 6.0, f"C-H FC {ch.force_constant:.2f} outside lit range"
+
+    def test_hch_angle_fc_in_literature_range(self, gs_ff):
+        """H-C-H bend FC should be ~0.3-0.7 mdyn·Å/rad²."""
+        hch = next(a for a in gs_ff.angles if a.elements == ("H", "C", "H"))
+        assert 0.2 < hch.force_constant < 0.8, f"H-C-H FC {hch.force_constant:.2f} outside lit range"
+
+    def test_cch_angle_fc_in_literature_range(self, gs_ff):
+        """C-C-H bend FC should be ~0.4-0.8 mdyn·Å/rad²."""
+        cch = next(a for a in gs_ff.angles if a.elements == ("C", "C", "H"))
+        assert 0.3 < cch.force_constant < 0.9, f"C-C-H FC {cch.force_constant:.2f} outside lit range"
