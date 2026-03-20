@@ -274,13 +274,11 @@ def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fix
         max_angle_k_diff = max(max_angle_k_diff, abs(a.force_constant - expected_k))
         max_angle_eq_diff = max(max_angle_eq_diff, abs(a.equilibrium - fixture_ae[a.ff_row]))
 
-    assert max_bond_k_diff / max(abs(b.force_constant) for b in estimated.bonds) < 1e-6, (
-        f"Bond FC max relative diff: {max_bond_k_diff}"
-    )
+    bond_rel = max_bond_k_diff / max(abs(b.force_constant) for b in estimated.bonds)
+    assert bond_rel < 1e-6, f"Bond FC max diff: abs={max_bond_k_diff}, rel={bond_rel}"
     assert max_bond_eq_diff < 1e-8, f"Bond eq max diff: {max_bond_eq_diff}"
-    assert max_angle_k_diff / max(abs(a.force_constant) for a in estimated.angles) < 1e-6, (
-        f"Angle FC max relative diff: {max_angle_k_diff}"
-    )
+    angle_rel = max_angle_k_diff / max(abs(a.force_constant) for a in estimated.angles)
+    assert angle_rel < 1e-6, f"Angle FC max diff: abs={max_angle_k_diff}, rel={angle_rel}"
     assert max_angle_eq_diff < 1e-8, f"Angle eq max diff: {max_angle_eq_diff}"
 
 

@@ -61,7 +61,7 @@ class MMEngine(ABC):
 
     @abstractmethod
     def energy(self, structure, forcefield) -> float:
-        """Calculate MM energy in Hartrees."""
+        """Calculate MM energy in kcal/mol."""
         ...
 
     @abstractmethod
