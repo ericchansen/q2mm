@@ -413,7 +413,7 @@ class ReferenceData:
         # Build molecule from the last (optimised) structure
         structure = log.structures[-1]
         hessian = None
-        if log.evals and log.evecs:
+        if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
             hessian = reform_hessian(log.evals, log.evecs)
 
         mol = Q2MMMolecule.from_structure(

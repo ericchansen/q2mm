@@ -121,20 +121,26 @@ class Param:
 
     @property
     def value(self) -> float | None:
-        if self._value is not None and self.ptype == "ae" and self._value > 180.0:
-            # Fold equilibrium angle back into [0, 180] range.
-            v = self._value % 360.0
-            self._value = 360.0 - v if v > 180.0 else v
         return self._value
 
     @value.setter
     def value(self, value: float | None) -> None:
-        """Set parameter value after range validation."""
+        """Set parameter value after range validation and normalization."""
         if value is None:
             self._value = None
             return
+        if self.ptype == "ae":
+            value = self._normalize_angle(value)
         if self.value_in_range(value):
             self._value = value
+
+    @staticmethod
+    def _normalize_angle(value: float) -> float:
+        """For equilibrium angles, fold values back into [0, 180]."""
+        if value > 180.0:
+            v = value % 360.0
+            return 360.0 - v if v > 180.0 else v
+        return value
 
     def convert_and_set(self, value: float, units: str) -> None:
         """Convert a force constant from kJ/(mol·Å²) and set as the parameter value.

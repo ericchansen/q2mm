@@ -85,7 +85,8 @@ class Datum:
             b = re.split(r"[.]+", self.src_1)[0] if self.src_1 else None
             c = "-".join(str(x) for x in remove_none(self.idx_1, self.idx_2))
             d = "-".join(str(x) for x in remove_none(self.atm_1, self.atm_2, self.atm_3, self.atm_4))
-            self._lbl = "_".join(remove_none(a, b, c, d))
+            parts = remove_none(a, b, c, d)
+            self._lbl = "_".join(parts) if parts else "Datum"
         return self._lbl
 
 
