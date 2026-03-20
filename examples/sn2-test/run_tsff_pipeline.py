@@ -1,7 +1,5 @@
 """Full TSFF pipeline using the clean Q2MM models API."""
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 import sys
@@ -14,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from q2mm.models.hessian import decompose, reform_hessian
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import estimate_force_constants, estimate_force_constants_method_e
 
 QM_REF = Path(__file__).parent / "qm-reference"
 
@@ -191,6 +189,48 @@ def main():
     print(f"\n  Decompose/reform roundtrip error: {roundtrip_err:.2e}")
 
     # ------------------------------------------------------------------
+    # Step 6: Method E hybrid fitting (Limé & Norrby 2015)
+    # ------------------------------------------------------------------
+    print("\n[6/7] Method E hybrid fitting...")
+
+    ff_e, diag = estimate_force_constants_method_e(
+        molecule,
+        forcefield=initial_ff,
+        zero_torsions=True,
+        au_hessian=True,
+        invalid_policy="skip",
+    )
+
+    n_problematic = sum(len(v) for v in diag["problematic"].values())
+    print(f"  Method D result: {len(diag['method_d'].bonds)} bonds, {len(diag['method_d'].angles)} angles")
+    print(f"  Method C result: {len(diag['method_c'].bonds)} bonds, {len(diag['method_c'].angles)} angles")
+    print(f"  Problematic params (Method D): {n_problematic}")
+    if diag["problematic"]["bonds"]:
+        print(f"    Bonds:  {diag['problematic']['bonds']}")
+    if diag["problematic"]["angles"]:
+        print(f"    Angles: {diag['problematic']['angles']}")
+
+    print("\n  Method comparison (bond force constants, mdyn/A):")
+    print(f"  {'Elements':20s} {'Method C':>10s} {'Method D':>10s} {'Method E':>10s} {'Source':>8s}")
+    print(f"  {'-' * 20} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 8}")
+    for bc, bd, be in zip(diag["method_c"].bonds, diag["method_d"].bonds, ff_e.bonds):
+        source = "D" if be.force_constant == bd.force_constant else "C"
+        print(
+            f"  {str(bc.elements):20s} {bc.force_constant:10.4f} "
+            f"{bd.force_constant:10.4f} {be.force_constant:10.4f} {source:>8s}"
+        )
+
+    print("\n  Method comparison (angle force constants, mdyn*A/rad^2):")
+    print(f"  {'Elements':20s} {'Method C':>10s} {'Method D':>10s} {'Method E':>10s} {'Source':>8s}")
+    print(f"  {'-' * 20} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 8}")
+    for ac, ad, ae in zip(diag["method_c"].angles, diag["method_d"].angles, ff_e.angles):
+        source = "D" if ae.force_constant == ad.force_constant else "C"
+        print(
+            f"  {str(ac.elements):20s} {ac.force_constant:10.4f} "
+            f"{ad.force_constant:10.4f} {ae.force_constant:10.4f} {source:>8s}"
+        )
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     print("\n" + "=" * 70)
@@ -204,6 +244,7 @@ def main():
     print(f"  FF parameters:    {len(initial_ff.bonds) + len(initial_ff.angles)}")
     print(f"  Imaginary freq:   {min(ts_freqs):.1f} cm^-1")
     print(f"  Hessian eigenvals: {len(eigenvalues)} ({sum(1 for e in eigenvalues if e < -0.001)} negative)")
+    print(f"  Method E: {n_problematic} param(s) from Method C, rest from Method D")
 
     if results:
         print("\n  Force constant estimates from the clean Seminario pipeline:")
