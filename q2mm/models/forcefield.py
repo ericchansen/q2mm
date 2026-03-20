@@ -236,7 +236,7 @@ class ForceField:
     torsions: list[TorsionParam] = field(default_factory=list)
     vdws: list[VdwParam] = field(default_factory=list)
     source_path: Path | None = field(default=None, repr=False)
-    source_format: Literal["mm3_fld", "tinker_prm"] | None = field(default=None, repr=False)
+    source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml"] | None = field(default=None, repr=False)
 
     @property
     def n_params(self) -> int:
@@ -424,6 +424,30 @@ class ForceField:
         from q2mm.models.ff_io import save_tinker_prm
 
         return save_tinker_prm(self, path, template_path, section_name=section_name)
+
+    def to_openmm_xml(
+        self,
+        path: str | Path,
+        molecule=None,
+    ) -> Path:
+        """Export to OpenMM ForceField XML format.
+
+        Produces a standalone ``<ForceField>`` XML file loadable by
+        ``openmm.app.ForceField(path)``.  Uses custom force definitions
+        with MM3 functional forms (cubic bond, sextic angle, buffered
+        14-7 vdW).
+
+        Args:
+            path: Output file path.
+            molecule: Optional molecule(s) for generating
+                ``<AtomTypes>`` and ``<Residues>`` sections.
+
+        Returns:
+            The resolved output path.
+        """
+        from q2mm.models.ff_io import save_openmm_xml
+
+        return save_openmm_xml(self, path, molecule=molecule)
 
     @classmethod
     def create_for_molecule(
