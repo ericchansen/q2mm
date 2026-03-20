@@ -8,8 +8,17 @@ import sys
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
-from q2mm.legacy.param import Param, ParamMM3, COM_POS_START, P_1_START, P_1_END, P_2_START, P_2_END, P_3_START, P_3_END
-from q2mm.legacy.datum import Datum
+from q2mm.parsers.param import Param
+from q2mm.parsers.datum import Datum
+
+# MM3 fixed-format column positions
+COM_POS_START = 96
+P_1_START = 23
+P_1_END = 33
+P_2_START = 34
+P_2_END = 44
+P_3_START = 45
+P_3_END = 55
 
 logger = logging.getLogger(__name__)
 
@@ -184,14 +193,14 @@ class MM3(FF):
                     eps = line[16:26]
                     self.params.extend(
                         (
-                            ParamMM3(
+                            Param(
                                 atom_types=atm,
                                 ptype="vdwr",
                                 ff_col=1,
                                 ff_row=i + 1,
                                 value=float(rad),
                             ),
-                            ParamMM3(
+                            Param(
                                 atom_types=atm,
                                 ptype="vdwe",
                                 ff_col=2,
@@ -217,35 +226,35 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="be",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="bf",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
                             )
                         )
                         try:
                             self.params.append(
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="q",
                                     ff_col=3,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[2],
                                 )
                             )
@@ -270,22 +279,22 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="ae",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="af",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
                             )
@@ -310,13 +319,13 @@ class MM3(FF):
                         parm_cols = line[P_1_START:P_3_END]
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.append(
-                            ParamMM3(
+                            Param(
                                 atom_labels=atm_lbls,
                                 atom_types=atm_typs,
                                 ptype="sb",
                                 ff_col=1,
                                 ff_row=i + 1,
-                                mm3_label=line[:2],
+                                label=line[:2],
                                 value=parm_cols[0],
                             )
                         )
@@ -341,31 +350,31 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=3,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[2],
                                 ),
                             )
@@ -384,31 +393,31 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=3,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[2],
                                 ),
                             )
@@ -434,22 +443,22 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="imp1",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="imp2",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
                             )
@@ -465,22 +474,22 @@ class MM3(FF):
                         parm_cols = [float(x) for x in parm_cols.split()]
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="vdwr",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[0],
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="vdwfc",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=line[:2],
+                                    label=line[:2],
                                     value=parm_cols[1],
                                 ),
                             )
@@ -552,12 +561,12 @@ class MM3(FF):
                 #     rad = line[5:15]
                 #     eps = line[16:26]
                 #     self.params.extend((
-                #             ParamMM3(atom_types = atm,
+                #             Param(atom_types = atm,
                 #                      ptype = 'vdwr',
                 #                      ff_col = 1,
                 #                      ff_row = i + 1,
                 #                      value = float(rad)),
-                #             ParamMM3(atom_types = atm,
+                #             Param(atom_types = atm,
                 #                      ptype = 'vdwe',
                 #                      ff_col = 2,
                 #                      ff_row = i + 1,
@@ -578,35 +587,35 @@ class MM3(FF):
                             # self.sub_names.append(comment)
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="be",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[3]),
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="bf",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[4]),
                                 ),
                             )
                         )
                         try:
                             self.params.append(
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="q",
                                     ff_col=3,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[5]),
                                 )
                             )
@@ -633,22 +642,22 @@ class MM3(FF):
                         # parm_cols = map(float, parm_cols.split())
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="ae",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[4]),
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="af",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[5]),
                                 ),
                             )
@@ -675,7 +684,7 @@ class MM3(FF):
                     #     parm_cols = line[P_1_START:P_3_END]
                     #     parm_cols = map(float, parm_cols.split())
                     #     self.params.append(
-                    #         ParamMM3(atom_labels = atm_lbls,
+                    #         Param(atom_labels = atm_lbls,
                     #                  atom_types = atm_typs,
                     #                  ptype = 'sb',
                     #                  ff_col = 1,
@@ -705,31 +714,31 @@ class MM3(FF):
                         # parm_cols = map(float, parm_cols.split())
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[5]),
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[6]),
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="df",
                                     ff_col=3,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[7]),
                                 ),
                             )
@@ -746,21 +755,21 @@ class MM3(FF):
                     #     parm_cols = line[P_1_START:P_3_END]
                     #     parm_cols = map(float, parm_cols.split())
                     #     self.params.extend((
-                    #         ParamMM3(atom_labels = atm_lbls,
+                    #         Param(atom_labels = atm_lbls,
                     #                  atom_types = atm_typs,
                     #                  ptype = 'df',
                     #                  ff_col = 1,
                     #                  ff_row = i + 1,
                     #                  mm3_label = cols[0],
                     #                  value = parm_cols[0]),
-                    #         ParamMM3(atom_labels = atm_lbls,
+                    #         Param(atom_labels = atm_lbls,
                     #                  atom_types = atm_typs,
                     #                  ptype = 'df',
                     #                  ff_col = 2,
                     #                  ff_row = i + 1,
                     #                  mm3_label = cols[0],
                     #                  value = parm_cols[1]),
-                    #         ParamMM3(atom_labels = atm_lbls,
+                    #         Param(atom_labels = atm_lbls,
                     #                  atom_types = atm_typs,
                     #                  ptype = 'df',
                     #                  ff_col = 3,
@@ -790,22 +799,22 @@ class MM3(FF):
                         # parm_cols = map(float, parm_cols.split())
                         self.params.extend(
                             (
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="imp1",
                                     ff_col=1,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[5]),
                                 ),
-                                ParamMM3(
+                                Param(
                                     atom_labels=atm_lbls,
                                     atom_types=atm_typs,
                                     ptype="imp2",
                                     ff_col=2,
                                     ff_row=i + 1,
-                                    mm3_label=cols[0],
+                                    label=cols[0],
                                     value=float(cols[6]),
                                 ),
                             )

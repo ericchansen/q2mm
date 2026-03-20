@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from q2mm.parsers.base import FF
-from q2mm.legacy.param import ParamMM3
+from q2mm.parsers.param import Param
 
 logger = logging.getLogger(__name__)
 
@@ -82,20 +82,20 @@ class TinkerFF(FF):
                         at = [split[1], split[2]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                ParamMM3(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in dipoles:
                         at = [split[1], split[2]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
                                 # I think this second value is the position of the
                                 # dipole along the bond. I've only seen 0.5 which
                                 # indicates the dipole is posititioned at the center
                                 # of the bond.
-                                ParamMM3(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in pibonds:
@@ -106,8 +106,8 @@ class TinkerFF(FF):
                         # and pi_t being for torsions.
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                ParamMM3(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in angles:
@@ -117,34 +117,34 @@ class TinkerFF(FF):
                         # or 2 additional hydrogens on the central atom.
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
-                                ParamMM3(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
+                                Param(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
                             )
                         )
                         if len(split) == 8:
                             self.params.extend(
                                 (
-                                    ParamMM3(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
-                                    ParamMM3(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
+                                    Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
+                                    Param(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
                                 )
                             )
                         elif len(split) == 7:
                             self.params.append(
-                                ParamMM3(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
+                                Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
                             )
                     if split[0] in torsions:
                         at = [split[1], split[2], split[3], split[4]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
-                                ParamMM3(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
-                                ParamMM3(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
+                                Param(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
+                                Param(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
+                                Param(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
                             )
                         )
                     if split[0] == "opbend":
                         at = [split[1], split[2], split[3], split[4]]
                         self.params.append(
-                            ParamMM3(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
+                            Param(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
                         )
                     if split[0] == "vdw":
                         # The first float is the vdw radius, the second has to do
@@ -153,7 +153,7 @@ class TinkerFF(FF):
                         # any of these except for the first one).
                         at = [split[1]]
                         self.params.append(
-                            ParamMM3(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
+                            Param(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
@@ -277,20 +277,20 @@ class TinkerMM3A(FF):
                         at = [split[1], split[2]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                ParamMM3(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in dipoles:
                         at = [split[1], split[2]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
                                 # I think this second value is the position of the
                                 # dipole along the bond. I've only seen 0.5 which
                                 # indicates the dipole is posititioned at the center
                                 # of the bond.
-                                ParamMM3(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in pibonds:
@@ -301,8 +301,8 @@ class TinkerMM3A(FF):
                         # and pi_t being for torsions.
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                ParamMM3(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                                Param(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
                             )
                         )
                     if split[0] in angles:
@@ -312,34 +312,34 @@ class TinkerMM3A(FF):
                         # or 2 additional hydrogens on the central atom.
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
-                                ParamMM3(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
+                                Param(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
+                                Param(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
                             )
                         )
                         if len(split) == 8:
                             self.params.extend(
                                 (
-                                    ParamMM3(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
-                                    ParamMM3(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
+                                    Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
+                                    Param(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
                                 )
                             )
                         elif len(split) == 7:
                             self.params.append(
-                                ParamMM3(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
+                                Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
                             )
                     if split[0] in torsions:
                         at = [split[1], split[2], split[3], split[4]]
                         self.params.extend(
                             (
-                                ParamMM3(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
-                                ParamMM3(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
-                                ParamMM3(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
+                                Param(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
+                                Param(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
+                                Param(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
                             )
                         )
                     if split[0] == "opbend":
                         at = [split[1], split[2], split[3], split[4]]
                         self.params.append(
-                            ParamMM3(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
+                            Param(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
                         )
                     if split[0] == "vdw":
                         # The first float is the vdw radius, the second has to do
@@ -348,7 +348,7 @@ class TinkerMM3A(FF):
                         # any of these except for the first one).
                         at = [split[1]]
                         self.params.append(
-                            ParamMM3(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
+                            Param(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 

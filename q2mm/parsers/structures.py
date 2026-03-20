@@ -6,7 +6,7 @@ import os
 import re
 from q2mm import constants as co
 from q2mm.parsers import _utils as utilities
-from q2mm.legacy.datum import Datum
+from q2mm.parsers.datum import Datum
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ import logging
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
-from q2mm.legacy.param import Param, ParAMBER
+from q2mm.parsers.param import Param
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +20,9 @@ class AmberFF(FF):
         self.sub_names = []
         self._atom_types = None
         self._lines = None
-        # change constant
-        co.STEPS["bf"] = 10.00
-        co.STEPS["af"] = 10.0
-        co.STEPS["df"] = 10.0
+
+    # AMBER-specific step sizes that differ from the global defaults.
+    AMBER_STEPS = {"bf": 10.0, "af": 10.0, "df": 10.0}
 
     def copy_attributes(self, ff):
         """
@@ -100,14 +99,14 @@ class AmberFF(FF):
                         at = [AA[0], AA[1]]
                         self.params.extend(
                             (
-                                ParAMBER(
+                                Param(
                                     atom_types=at,
                                     ptype="bf",
                                     ff_col=1,
                                     ff_row=i + 1,
                                     value=float(BB[0]),
                                 ),
-                                ParAMBER(
+                                Param(
                                     atom_types=at,
                                     ptype="be",
                                     ff_col=2,
@@ -126,14 +125,14 @@ class AmberFF(FF):
                         at = [AA[0], AA[1], AA[2]]
                         self.params.extend(
                             (
-                                ParAMBER(
+                                Param(
                                     atom_types=at,
                                     ptype="af",
                                     ff_col=1,
                                     ff_row=i + 1,
                                     value=float(BB[0]),
                                 ),
-                                ParAMBER(
+                                Param(
                                     atom_types=at,
                                     ptype="ae",
                                     ff_col=2,
@@ -154,7 +153,7 @@ class AmberFF(FF):
                         BB = line[nl:].split()
                         at = [AA[0], AA[1], AA[2], AA[3]]
                         self.params.append(
-                            ParAMBER(
+                            Param(
                                 atom_types=at,
                                 ptype="df",
                                 ff_col=1,
@@ -173,7 +172,7 @@ class AmberFF(FF):
                         BB = line[nl:].split()
                         at = [AA[0], AA[1], AA[2], AA[3]]
                         self.params.append(
-                            ParAMBER(
+                            Param(
                                 atom_types=at,
                                 ptype="imp1",
                                 ff_col=1,
@@ -200,7 +199,7 @@ class AmberFF(FF):
                         # any of these except for the first one).
                         at = [split[1]]
                         self.params.append(
-                            ParAMBER(
+                            Param(
                                 atom_types=at,
                                 ptype="vdw",
                                 ff_col=1,
@@ -209,6 +208,10 @@ class AmberFF(FF):
                             )
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
+        # Apply AMBER-specific step sizes (differ from global defaults).
+        for param in self.params:
+            if param.ptype in self.AMBER_STEPS:
+                param.step = self.AMBER_STEPS[param.ptype]
 
     def export_ff(self, path=None, params: list[Param] | None = None, lines=None):
         """
