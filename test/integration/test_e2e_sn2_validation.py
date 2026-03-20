@@ -242,7 +242,7 @@ class TestCH3FGroundState:
 
     # ---- NIST experimental comparison ----
 
-    def test_qm_frequencies_vs_nist(self, qm_freqs, ext_ref):
+    def test_qm_frequencies_vs_nist(self, qm_freqs, ext_ref, capsys):
         """Sanity check: QM harmonic frequencies vs NIST (with scaling factor).
 
         This validates our QM reference itself. Scaled QM harmonics should
@@ -291,12 +291,13 @@ class TestCH3FGroundState:
             t.row(f"{'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
             t.bar()
             t.blank()
-            t.flush()
+            with capsys.disabled():
+                t.flush()
 
             assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
 
     def test_improvement_progression_logged(
-        self, engine, ch3f_mol, default_ff, seminario_result, optimized_result, qm_freqs
+        self, engine, ch3f_mol, default_ff, seminario_result, optimized_result, qm_freqs, capsys
     ):
         """Log the full progression for inspection (always passes, diagnostic)."""
         seminario_ff, t_seminario = seminario_result
@@ -356,7 +357,8 @@ class TestCH3FGroundState:
             t.row(f"{'Freq eval (' + label + '):':<40} {t_freq * 1000:>8.1f} ms")
         t.bar()
         t.blank()
-        t.flush()
+        with capsys.disabled():
+            t.flush()
 
     # ---- PES distortion: MM vs QM harmonic along normal modes ----
 
@@ -398,7 +400,7 @@ class TestCH3FGroundState:
         n_ok = sum(1 for e in errors if e < 50.0)
         assert n_ok >= len(errors) // 2, f"Too many modes with >50% error: {len(errors) - n_ok}/{len(errors)}"
 
-    def test_pes_distortion_logged(self, distortion_results, normal_modes):
+    def test_pes_distortion_logged(self, distortion_results, normal_modes, capsys):
         """Log the full PES distortion comparison table (diagnostic)."""
         target_norms = [0.05, 0.10, 0.15]
 
@@ -456,7 +458,8 @@ class TestCH3FGroundState:
             t.row("Eigendecomposition: pre-computed from QM Hessian (< 0.2 ms)")
             t.bar()
             t.blank()
-            t.flush()
+            with capsys.disabled():
+                t.flush()
 
 
 @pytest.mark.slow
@@ -552,7 +555,7 @@ class TestSN2TransitionState:
             rmsd = frequency_rmsd(mm_real[-n:], qm_real[-n:])
             assert rmsd < 500.0, f"TS frequency RMSD too high: {rmsd:.1f} cm^-1"
 
-    def test_ts_progression_logged(self, engine, ts_mol, seminario_result, optimized_result, qm_freqs):
+    def test_ts_progression_logged(self, engine, ts_mol, seminario_result, optimized_result, qm_freqs, capsys):
         """Log TS frequency comparison for inspection."""
         _, t_seminario = seminario_result
         _, t_optimize, n_eval = optimized_result
@@ -625,7 +628,8 @@ class TestSN2TransitionState:
             t.row(f"{'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")
         t.bar()
         t.blank()
-        t.flush()
+        with capsys.disabled():
+            t.flush()
 
 
 @pytest.mark.slow
@@ -701,7 +705,7 @@ class TestSN2ReactionProfile:
         assert np.isfinite(e_ch3f), f"CH3F energy not finite: {e_ch3f}"
         assert np.isfinite(e_ts), f"TS energy not finite: {e_ts}"
 
-    def test_profile_logged(self, qm_energies, ext_ref):
+    def test_profile_logged(self, qm_energies, ext_ref, capsys):
         """Log the QM reaction profile for inspection."""
         ha_to_kcal = 627.5094740631
         reactant_e = qm_energies["f_minus"] + qm_energies["ch3f"]
@@ -739,4 +743,5 @@ class TestSN2ReactionProfile:
         t.row("requires a reactive potential (EVB, ReaxFF, etc.).")
         t.bar()
         t.blank()
-        t.flush()
+        with capsys.disabled():
+            t.flush()
