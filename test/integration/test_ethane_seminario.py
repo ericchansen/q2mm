@@ -399,20 +399,24 @@ class TestLiteratureValidation:
 
     def test_cc_fc_in_literature_range(self, gs_ff):
         """C-C stretch FC should be ~3-6 mdyn/Å (Seminario from DFT can be softer than MM3)."""
-        cc = next(b for b in gs_ff.bonds if b.elements == ("C", "C"))
+        cc = next((b for b in gs_ff.bonds if b.elements == ("C", "C")), None)
+        assert cc is not None, "No C-C bond found in force field"
         assert 2.5 < cc.force_constant < 6.5, f"C-C FC {cc.force_constant:.2f} outside lit range"
 
     def test_ch_fc_in_literature_range(self, gs_ff):
         """C-H stretch FC should be ~4.5-5.5 mdyn/Å."""
-        ch = next(b for b in gs_ff.bonds if set(b.elements) == {"C", "H"})
+        ch = next((b for b in gs_ff.bonds if set(b.elements) == {"C", "H"}), None)
+        assert ch is not None, "No C-H bond found in force field"
         assert 4.0 < ch.force_constant < 6.0, f"C-H FC {ch.force_constant:.2f} outside lit range"
 
     def test_hch_angle_fc_in_literature_range(self, gs_ff):
         """H-C-H bend FC should be ~0.3-0.7 mdyn·Å/rad²."""
-        hch = next(a for a in gs_ff.angles if a.elements == ("H", "C", "H"))
+        hch = next((a for a in gs_ff.angles if a.elements == ("H", "C", "H")), None)
+        assert hch is not None, "No H-C-H angle found in force field"
         assert 0.2 < hch.force_constant < 0.8, f"H-C-H FC {hch.force_constant:.2f} outside lit range"
 
     def test_cch_angle_fc_in_literature_range(self, gs_ff):
         """C-C-H bend FC should be ~0.4-0.8 mdyn·Å/rad²."""
-        cch = next(a for a in gs_ff.angles if a.elements == ("C", "C", "H"))
+        cch = next((a for a in gs_ff.angles if a.elements == ("C", "C", "H")), None)
+        assert cch is not None, "No C-C-H angle found in force field"
         assert 0.3 < cch.force_constant < 0.9, f"C-C-H FC {cch.force_constant:.2f} outside lit range"
