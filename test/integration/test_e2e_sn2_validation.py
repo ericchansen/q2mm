@@ -19,6 +19,7 @@ References
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -130,18 +131,25 @@ class TestCH3FGroundState:
 
     @pytest.fixture(scope="class")
     def default_ff(self, ch3f_mol):
-        """Generic FF with default force constants — the poor baseline."""
+        """Generic FF with default force constants -- the poor baseline."""
         return ForceField.create_for_molecule(ch3f_mol, name="CH3F default")
 
     @pytest.fixture(scope="class")
-    def seminario_ff(self, ch3f_mol):
-        """Seminario-estimated FF from QM Hessian."""
+    def seminario_result(self, ch3f_mol):
+        """Seminario-estimated FF from QM Hessian, with timing."""
         hess = np.load(CH3F_HESS)
         mol_h = ch3f_mol.with_hessian(hess)
-        return estimate_force_constants(mol_h)
+        t0 = time.perf_counter()
+        ff = estimate_force_constants(mol_h)
+        elapsed = time.perf_counter() - t0
+        return ff, elapsed
 
     @pytest.fixture(scope="class")
-    def optimized_ff(self, ch3f_mol, seminario_ff, engine, qm_freqs):
+    def seminario_ff(self, seminario_result):
+        return seminario_result[0]
+
+    @pytest.fixture(scope="class")
+    def optimized_result(self, ch3f_mol, seminario_ff, engine, qm_freqs):
         """Q2MM-optimized FF: Seminario starting point -> optimize to match QM."""
         ff = seminario_ff.copy()
 
@@ -159,8 +167,15 @@ class TestCH3FGroundState:
 
         obj = ObjectiveFunction(ff, engine, [ch3f_mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        t0 = time.perf_counter()
         opt.optimize(obj)
-        return ff  # modified in-place by optimizer
+        elapsed = time.perf_counter() - t0
+        n_eval = obj.n_eval
+        return ff, elapsed, n_eval  # ff modified in-place by optimizer
+
+    @pytest.fixture(scope="class")
+    def optimized_ff(self, optimized_result):
+        return optimized_result[0]
 
     # ---- Stage 1: Default FF baseline ----
 
@@ -293,24 +308,28 @@ class TestCH3FGroundState:
 
             assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
 
-    def test_improvement_progression_logged(self, engine, ch3f_mol, default_ff, seminario_ff, optimized_ff, qm_freqs):
+    def test_improvement_progression_logged(
+        self, engine, ch3f_mol, default_ff, seminario_result, optimized_result, qm_freqs
+    ):
         """Log the full progression for inspection (always passes, diagnostic)."""
+        seminario_ff, t_seminario = seminario_result
+        optimized_ff, t_optimize, n_eval = optimized_result
+
         qm_real = sorted(_real_frequencies(qm_freqs))
         n_modes = len(qm_real)
 
-        # Collect data for all stages
-        stages = [
-            ("QM Reference", qm_real, None, None),
-        ]
+        # Time frequency evaluations for each stage
+        stages = [("QM Reference", qm_real, None, None, None)]
         for label, ff in [("Default FF", default_ff), ("Seminario FF", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
+            t0 = time.perf_counter()
             mm_real = sorted(_real_frequencies(engine.frequencies(ch3f_mol, ff)))
+            t_freq = time.perf_counter() - t0
             n = min(len(mm_real), n_modes)
             rmsd = _frequency_rmsd(mm_real[-n:], qm_real[-n:])
             mae = _frequency_mae(mm_real[-n:], qm_real[-n:])
-            stages.append((label, mm_real[-n:], rmsd, mae))
+            stages.append((label, mm_real[-n:], rmsd, mae, t_freq))
 
         # Print mode-by-mode table
-        mode_labels = [f"Mode {i + 1}" for i in range(n_modes)]
         col_w = 16
 
         print("\n")
@@ -322,8 +341,8 @@ class TestCH3FGroundState:
         print("  " + "-" * (10 + col_w * len(stages)))
 
         for i in range(n_modes):
-            row = f"  {mode_labels[i]:>10}"
-            for label, freqs, _, _ in stages:
+            row = f"  {f'Mode {i + 1}':>10}"
+            for _, freqs, _, _, _ in stages:
                 if i < len(freqs):
                     row += f"{freqs[i]:>{col_w}.1f}"
                 else:
@@ -331,18 +350,28 @@ class TestCH3FGroundState:
             print(row)
 
         print("  " + "-" * (10 + col_w * len(stages)))
-        summary = f"  {'RMSD':>10}" + f"{'--':>{col_w}}"
-        for _, _, rmsd, _ in stages[1:]:
-            summary += f"{rmsd:>{col_w}.1f}"
-        print(summary)
+        row = f"  {'RMSD':>10}" + f"{'--':>{col_w}}"
+        for _, _, rmsd, _, _ in stages[1:]:
+            row += f"{rmsd:>{col_w}.1f}"
+        print(row)
 
-        summary = f"  {'MAE':>10}" + f"{'--':>{col_w}}"
-        for _, _, _, mae in stages[1:]:
-            summary += f"{mae:>{col_w}.1f}"
-        print(summary)
+        row = f"  {'MAE':>10}" + f"{'--':>{col_w}}"
+        for _, _, _, mae, _ in stages[1:]:
+            row += f"{mae:>{col_w}.1f}"
+        print(row)
 
+        # Timing section
         print("=" * 78)
-        print("  Verdict: Default -> Seminario -> Optimized shows expected improvement")
+        print("  TIMING")
+        print("  " + "-" * 68)
+        print(f"  {'Seminario estimation:':<40} {t_seminario * 1000:>8.1f} ms")
+        print(f"  {'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
+        for _, freqs_label, _, _, t_freq in stages[1:]:
+            pass
+        # Print per-stage freq eval time
+        for label, _, _, _, t_freq in stages[1:]:
+            print(f"  {'Freq eval (' + label + '):':<40} {t_freq * 1000:>8.1f} ms")
+        print("=" * 78)
         print()
 
 
@@ -368,14 +397,21 @@ class TestSN2TransitionState:
         return _load_qm_frequencies(TS_FREQS)
 
     @pytest.fixture(scope="class")
-    def seminario_ff(self, ts_mol):
+    def seminario_result(self, ts_mol):
         """Seminario FF with Method D for TS eigenvalue treatment."""
         hess = np.load(TS_HESS)
         mol_h = ts_mol.with_hessian(hess)
-        return estimate_force_constants(mol_h, ts_method="D")
+        t0 = time.perf_counter()
+        ff = estimate_force_constants(mol_h, ts_method="D")
+        elapsed = time.perf_counter() - t0
+        return ff, elapsed
 
     @pytest.fixture(scope="class")
-    def optimized_ff(self, ts_mol, seminario_ff, engine, qm_freqs):
+    def seminario_ff(self, seminario_result):
+        return seminario_result[0]
+
+    @pytest.fixture(scope="class")
+    def optimized_result(self, ts_mol, seminario_ff, engine, qm_freqs):
         """Q2MM-optimized TS FF."""
         ff = seminario_ff.copy()
 
@@ -391,8 +427,14 @@ class TestSN2TransitionState:
 
         obj = ObjectiveFunction(ff, engine, [ts_mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        t0 = time.perf_counter()
         opt.optimize(obj)
-        return ff
+        elapsed = time.perf_counter() - t0
+        return ff, elapsed, obj.n_eval
+
+    @pytest.fixture(scope="class")
+    def optimized_ff(self, optimized_result):
+        return optimized_result[0]
 
     # ---- Seminario on TS ----
 
@@ -426,25 +468,31 @@ class TestSN2TransitionState:
             rmsd = _frequency_rmsd(mm_real[-n:], qm_real[-n:])
             assert rmsd < 500.0, f"TS frequency RMSD too high: {rmsd:.1f} cm^-1"
 
-    def test_ts_progression_logged(self, engine, ts_mol, seminario_ff, optimized_ff, qm_freqs):
+    def test_ts_progression_logged(self, engine, ts_mol, seminario_result, optimized_result, qm_freqs):
         """Log TS frequency comparison for inspection."""
+        _, t_seminario = seminario_result
+        _, t_optimize, n_eval = optimized_result
+        seminario_ff = seminario_result[0]
+        optimized_ff = optimized_result[0]
+
         qm_sorted = sorted(qm_freqs)
         qm_imag = [f for f in qm_sorted if f < -10.0]
         qm_real = [f for f in qm_sorted if f > 50.0]
 
         col_w = 18
-        stages = [("QM Reference", seminario_ff), ("Seminario (D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]
 
         # Collect per-stage data
         data = []
         data.append({"label": "QM Reference", "real": qm_real, "imag": qm_imag, "rmsd": None})
         for label, ff in [("Seminario (D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
+            t0 = time.perf_counter()
             mm_all = sorted(engine.frequencies(ts_mol, ff))
+            t_freq = time.perf_counter() - t0
             mm_real = [f for f in mm_all if f > 50.0]
             mm_imag = [f for f in mm_all if f < -10.0]
             n = min(len(mm_real), len(qm_real))
             rmsd = _frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
-            data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd})
+            data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd, "t_freq": t_freq})
 
         print("\n")
         print("=" * 78)
@@ -458,7 +506,7 @@ class TestSN2TransitionState:
         print("  " + "-" * (10 + col_w * len(data)))
 
         for i in range(max_real):
-            row = f"  {'Mode ' + str(i + 1):>10}"
+            row = f"  {f'Mode {i + 1}':>10}"
             for d in data:
                 if i < len(d["real"]):
                     row += f"{d['real'][i]:>{col_w}.1f}"
@@ -483,6 +531,14 @@ class TestSN2TransitionState:
             row += f"{len(d['imag']):>{col_w}d}"
         print(row)
 
+        # Timing
+        print("=" * 78)
+        print("  TIMING")
+        print("  " + "-" * 68)
+        print(f"  {'Seminario (Method D):':<40} {t_seminario * 1000:>8.1f} ms")
+        print(f"  {'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
+        for d in data[1:]:
+            print(f"  {'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")
         print("=" * 78)
         print()
 
