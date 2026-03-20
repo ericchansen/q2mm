@@ -19,7 +19,13 @@ class QMEngine(ABC):
 
     @abstractmethod
     def hessian(self, structure, method: str = "b3lyp", basis: str = "def2-svp") -> np.ndarray:
-        """Calculate Hessian matrix (second derivatives of energy)."""
+        """Calculate Hessian matrix (second derivatives of energy).
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
+        """
         ...
 
     @abstractmethod
@@ -55,7 +61,7 @@ class MMEngine(ABC):
 
     @abstractmethod
     def energy(self, structure, forcefield) -> float:
-        """Calculate MM energy."""
+        """Calculate MM energy in Hartrees."""
         ...
 
     @abstractmethod
@@ -65,7 +71,15 @@ class MMEngine(ABC):
 
     @abstractmethod
     def hessian(self, structure, forcefield) -> np.ndarray:
-        """Calculate MM Hessian matrix."""
+        """Calculate MM Hessian matrix.
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
+            Implementors must convert from engine-native units before
+            returning (e.g. OpenMM kJ/mol/nm² → Hartree/Bohr²).
+        """
         ...
 
     @abstractmethod

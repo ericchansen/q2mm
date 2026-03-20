@@ -118,8 +118,9 @@ def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     Returns:
         (np.ndarray, np.ndarray): (eigenvalues, eigenvectors) where eigenvalues
-         is of shape (1,n) and eigenvectors is of shape (n,n) with n rows of
-         eigenvectors of length n.
+         is of shape ``(n,)`` and eigenvectors is of shape ``(n, n)`` with
+         eigenvectors stored as **columns** (the ``np.linalg.eigh`` convention).
+         That is, ``eigenvectors[:, i]`` is the eigenvector for ``eigenvalues[i]``.
     """
     eigenvalues, eigenvectors = np.linalg.eigh(matrix)
     return eigenvalues, eigenvectors
