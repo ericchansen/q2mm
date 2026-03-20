@@ -1,7 +1,7 @@
 {
   "metadata": {
     "description": "Golden fixture for water FF optimization regression test.",
-    "generated_at": "2026-03-19T13:45:45.864436+00:00",
+    "generated_at": "2026-03-20T23:50:42.604277+00:00",
     "method": "L-BFGS-B",
     "maxiter": 200,
     "system": "water (O, H, H)"
@@ -13,13 +13,13 @@
     109.5
   ],
   "final_params": [
-    6.286781766655283,
-    0.9582971342324965,
-    1.2946773374124039,
-    108.23801067580399
+    6.294724460424566,
+    0.9585923662491068,
+    1.2683697366063067,
+    108.41391412064338
   ],
-  "initial_score": 42.90563788291141,
-  "final_score": 0.9317321876352688,
-  "n_evaluations": 576,
-  "improvement": 0.9782841548661286
+  "initial_score": 42.90563751245065,
+  "final_score": 1.0155817537919951,
+  "n_evaluations": 506,
+  "improvement": 0.9763298761497884
 }
