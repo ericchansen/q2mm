@@ -561,17 +561,23 @@ class TestCH3FGroundState:
             t.title(f"PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
             t.bar()
 
-            # Sub-header with column labels
+            # Column widths (QM/MM values, error strings, max-error)
+            W_E = 8  # energy values (e.g. " 19.384")
+            W_ERR = 8  # error strings (e.g. "+208.6%")
+            W_ME = 8  # max-error strings (e.g. " 208.6%")
+            W_GRP = W_E + 1 + W_E + 1 + W_ERR  # group body
+
             sub = f"{'Mode':>6} {'Freq':>8}"
             for d in target_norms:
-                sub += f" | {'QM':>7} {'MM':>7} {'Err':>6}"
-            sub += f" | {'MaxErr':>7}"
+                sub += f" | {'QM':>{W_E}} {'MM':>{W_E}} {'Err':>{W_ERR}}"
+            sub += f" | {'MaxErr':>{W_ME}}"
             t.row(sub)
 
             units = f"{'':>6} {'(cm-1)':>8}"
             for d in target_norms:
-                units += f" |   d={d:.2f} Ang       "
-            units += f" | {'':>7}"
+                label = f"d={d:.2f} Ang"
+                units += f" | {label:^{W_GRP}}"
+            units += f" | {'':>{W_ME}}"
             t.row(units)
             t.sep()
 
@@ -580,10 +586,12 @@ class TestCH3FGroundState:
                 row = f"{m['mode_idx'] - 5:>6d} {m['freq_cm1']:>8.1f}"
                 mode_max_err = 0.0
                 for disp in m["displacements"]:
-                    row += f" | {disp['e_qm']:>7.3f} {disp['e_mm']:>7.3f} {disp['pct_err']:>+5.1f}%"
+                    err_s = f"{disp['pct_err']:+.1f}%"
+                    row += f" | {disp['e_qm']:>{W_E}.3f} {disp['e_mm']:>{W_E}.3f} {err_s:>{W_ERR}}"
                     mode_max_err = max(mode_max_err, abs(disp["pct_err"]))
                     all_pct_errors.append(abs(disp["pct_err"]))
-                row += f" | {mode_max_err:>6.1f}%"
+                me_s = f"{mode_max_err:.1f}%"
+                row += f" | {me_s:>{W_ME}}"
                 t.row(row)
 
             t.sep()
