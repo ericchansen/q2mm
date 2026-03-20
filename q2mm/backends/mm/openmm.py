@@ -388,8 +388,13 @@ class OpenMMEngine(MMEngine):
             path: Output file path.
             structure: A :class:`~q2mm.models.molecule.Q2MMMolecule`,
                 path to an XYZ file, or an existing :class:`OpenMMHandle`.
-            forcefield: Force field to apply.  Ignored when *structure*
-                is already an :class:`OpenMMHandle`.
+            forcefield: Force field to apply.  When *structure* is not an
+                :class:`OpenMMHandle`, this is used to build the OpenMM
+                system.  When *structure* is an existing
+                :class:`OpenMMHandle`, providing a non-None *forcefield*
+                updates the per-term parameters of that handle; if
+                *forcefield* is None, the handle's current parameters are
+                used unchanged.
 
         Returns:
             The resolved output path.
