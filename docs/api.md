@@ -569,14 +569,14 @@ Feature support across force field formats and compute backends.
 
 | Capability | MM3 `.fld` | Tinker `.prm` | OpenMM XML | AMBER `.frcmod` |
 |------------|:----------:|:-------------:|:----------:|:---------------:|
-| **Read** (load parameters) | ✅ | ✅ | — | ⚠️ legacy only |
-| **Write** (standalone) | ✅ | ✅ | ✅ | ❌ |
-| **Write** (template-based) | ✅ | ✅ | — | ❌ |
-| Bond stretch | ✅ | ✅ | ✅ | ⚠️ |
-| Angle bend | ✅ | ✅ | ✅ | ⚠️ |
-| Torsion (dihedral) | ✅ template | ✅ template | ✅ | ❌ |
-| van der Waals | ✅ | ✅ | ✅ | ❌ |
-| MM3 functional forms | ✅ native | ✅ native | ✅ custom forces | ❌ |
+| **Read** (load parameters) | ✅ | ✅ | — | ✅ |
+| **Write** (standalone) | ✅ | ✅ | ✅ | ✅ |
+| **Write** (template-based) | ✅ | ✅ | — | ✅ |
+| Bond stretch | ✅ | ✅ | ✅ | ✅ |
+| Angle bend | ✅ | ✅ | ✅ | ✅ |
+| Torsion (dihedral) | ✅ | ✅ | ✅ | ✅ |
+| van der Waals | ✅ | ✅ | ✅ | ✅ |
+| MM3 functional forms | ✅ native | ✅ native | ✅ custom forces | — |
 
 !!! info "Template-based vs standalone export"
     **Template-based** export updates parameters in an existing file, preserving

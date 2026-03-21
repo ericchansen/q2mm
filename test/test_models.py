@@ -273,6 +273,66 @@ class TestForceField:
         assert hydrogen.radius == pytest.approx(1.62)
         assert hydrogen.epsilon == pytest.approx(0.02)
 
+    def test_mm3_standalone_torsion_roundtrip(self, tmp_path):
+        """Standalone MM3 export should include torsion parameters."""
+        ff = ForceField(
+            name="Torsion Test",
+            bonds=[BondParam(("C", "C"), 1.525, 4.49, env_id="C3-C3")],
+            angles=[AngleParam(("H", "C", "C"), 111.0, 0.636, env_id="H1-C3-C3")],
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.0, env_id="H1-C3-C3-H1"),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.0, env_id="H1-C3-C3-H1"),
+                TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.238, env_id="H1-C3-C3-H1"),
+                TorsionParam(("C", "C", "C", "H"), periodicity=1, force_constant=0.185, env_id="C3-C3-C3-H1"),
+                TorsionParam(("C", "C", "C", "H"), periodicity=3, force_constant=0.52, env_id="C3-C3-C3-H1"),
+            ],
+        )
+        out_path = tmp_path / "torsion_test.fld"
+        ff.to_mm3_fld(out_path)
+
+        roundtrip = ForceField.from_mm3_fld(out_path)
+        assert len(roundtrip.torsions) == 6, "Should have 6 torsion params (3 per line × 2 lines)"
+
+        # Check specific values round-tripped correctly
+        hcch_v3 = [t for t in roundtrip.torsions if t.periodicity == 3 and t.env_id == "H1-C3-C3-H1"]
+        assert len(hcch_v3) == 1
+        assert hcch_v3[0].force_constant == pytest.approx(0.238)
+
+        ccch_v1 = [t for t in roundtrip.torsions if t.periodicity == 1 and t.env_id == "C3-C3-C3-H1"]
+        assert len(ccch_v1) == 1
+        assert ccch_v1[0].force_constant == pytest.approx(0.185)
+
+        # V2 was not provided for CCCH, should default to 0.0
+        ccch_v2 = [t for t in roundtrip.torsions if t.periodicity == 2 and t.env_id == "C3-C3-C3-H1"]
+        assert len(ccch_v2) == 1
+        assert ccch_v2[0].force_constant == pytest.approx(0.0)
+
+    def test_mm3_standalone_full_roundtrip(self, tmp_path):
+        """Standalone MM3 export with bonds, angles, torsions, and vdW."""
+        ff = ForceField(
+            name="Full Test",
+            bonds=[BondParam(("C", "F"), 1.381, 5.25, env_id="C1-F1")],
+            angles=[AngleParam(("H", "C", "F"), 109.7, 0.55, env_id="H1-C1-F1")],
+            torsions=[
+                TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=-0.5, env_id="H1-C1-C1-F1"),
+                TorsionParam(("H", "C", "C", "F"), periodicity=2, force_constant=1.2, env_id="H1-C1-C1-F1"),
+                TorsionParam(("H", "C", "C", "F"), periodicity=3, force_constant=0.0, env_id="H1-C1-C1-F1"),
+            ],
+            vdws=[VdwParam("F0", 1.71, 0.075)],
+        )
+        out_path = tmp_path / "full_test.fld"
+        ff.to_mm3_fld(out_path)
+
+        roundtrip = ForceField.from_mm3_fld(out_path)
+        assert len(roundtrip.bonds) == 1
+        assert len(roundtrip.angles) == 1
+        assert len(roundtrip.torsions) == 3
+        assert len(roundtrip.vdws) == 1
+
+        # Negative torsion values should survive
+        v1 = [t for t in roundtrip.torsions if t.periodicity == 1][0]
+        assert v1.force_constant == pytest.approx(-0.5)
+
     def test_mm3_export_updates_template(self, tmp_path):
         ff = ForceField.from_mm3_fld(RH_MM3)
         first_bond = ff.bonds[0]
@@ -480,6 +540,99 @@ class TestForceField:
         assert len(ff.bonds) == 1
         assert ff.bonds[0].elements == ("N", "H")
         assert ff.vdws[0].element == "N"
+
+
+# ---- AMBER .frcmod I/O ----
+
+SAMPLE_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "sample.frcmod"
+
+
+class TestAmberFrcmod:
+    def test_load_bonds(self):
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        assert len(ff.bonds) == 3
+        assert ff.source_format == "amber_frcmod"
+        b = ff.get_bond("C", "P")
+        assert b is not None
+        assert b.force_constant == pytest.approx(380.74)
+        assert b.equilibrium == pytest.approx(1.7631)
+
+    def test_load_angles(self):
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        assert len(ff.angles) == 7
+
+    def test_load_dihedrals(self):
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        proper = [t for t in ff.torsions if "(improper)" not in t.label]
+        assert len(proper) == 8
+
+    def test_load_impropers(self):
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        improper = [t for t in ff.torsions if "(improper)" in t.label]
+        assert len(improper) == 3
+        assert improper[0].force_constant == pytest.approx(10.5)
+
+    def test_load_vdw(self):
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        assert len(ff.vdws) == 1
+        assert ff.vdws[0].atom_type == "c4"
+
+    def test_element_from_mass_section(self):
+        """MASS section should inform element identification."""
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        # c4 has mass 12.010 → element C
+        b = ff.bonds[0]
+        assert all(e == "C" for e in b.elements)
+
+    def test_standalone_roundtrip(self, tmp_path):
+        """Standalone save → reload should preserve all values."""
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        # Clear source info to force standalone mode
+        ff_clean = ForceField(
+            name=ff.name,
+            bonds=ff.bonds,
+            angles=ff.angles,
+            torsions=ff.torsions,
+            vdws=ff.vdws,
+        )
+        out = tmp_path / "standalone.frcmod"
+        ff_clean.to_amber_frcmod(out)
+        rt = ForceField.from_amber_frcmod(out)
+
+        assert len(rt.bonds) == len(ff.bonds)
+        assert len(rt.angles) == len(ff.angles)
+        assert len(rt.torsions) == len(ff.torsions)
+        assert len(rt.vdws) == len(ff.vdws)
+
+        for orig, new in zip(ff.bonds, rt.bonds):
+            assert orig.force_constant == pytest.approx(new.force_constant)
+            assert orig.equilibrium == pytest.approx(new.equilibrium)
+
+        for orig, new in zip(ff.torsions, rt.torsions):
+            assert orig.force_constant == pytest.approx(new.force_constant, abs=0.01)
+
+    def test_template_roundtrip(self, tmp_path):
+        """Template-based save should update values in-place."""
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff.bonds[0].force_constant = 999.0
+        ff.bonds[0].equilibrium = 1.234
+
+        out = tmp_path / "updated.frcmod"
+        ff.to_amber_frcmod(out)
+        rt = ForceField.from_amber_frcmod(out)
+
+        assert rt.bonds[0].force_constant == pytest.approx(999.0)
+        assert rt.bonds[0].equilibrium == pytest.approx(1.234)
+        # Other bonds unchanged
+        assert rt.bonds[1].force_constant == pytest.approx(ff.bonds[1].force_constant)
+
+    def test_template_preserves_comments(self, tmp_path):
+        """Template mode should preserve the remark line."""
+        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        out = tmp_path / "preserved.frcmod"
+        ff.to_amber_frcmod(out)
+        content = out.read_text()
+        assert content.startswith("Remark line goes here")
 
 
 # ---- Seminario force constant estimation ----

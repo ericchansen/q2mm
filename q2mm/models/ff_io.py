@@ -20,6 +20,7 @@ from q2mm.models.forcefield import (
     _clean_atom_types,
     _format_mm3_angle_line,
     _format_mm3_bond_line,
+    _format_mm3_torsion_line,
     _format_mm3_vdw_line,
     _format_tinker_angle_line,
     _format_tinker_bond_line,
@@ -187,6 +188,19 @@ def save_mm3_fld(
                 _mm3_atom_types(angle.env_id, angle.elements), angle.equilibrium, angle.force_constant
             )
         )
+    if ff.torsions:
+        # Group torsions by env_id to combine V1/V2/V3 on one line
+        torsion_groups: dict[str, dict[int, float]] = {}
+        torsion_elements: dict[str, tuple[str, ...]] = {}
+        for tor in ff.torsions:
+            key = tor.env_id or "-".join(tor.elements)
+            if key not in torsion_groups:
+                torsion_groups[key] = {}
+                torsion_elements[key] = tor.elements
+            torsion_groups[key][tor.periodicity] = tor.force_constant
+        for key, vs in torsion_groups.items():
+            atom_types = _mm3_atom_types(key, torsion_elements[key])
+            lines.append(_format_mm3_torsion_line(atom_types, vs.get(1, 0.0), vs.get(2, 0.0), vs.get(3, 0.0)))
     lines.append("-3\n")
     if ff.vdws:
         lines.extend(["-6\n"])
@@ -571,6 +585,397 @@ def save_openmm_xml(
     tree = ET.ElementTree(root)
     output_path = Path(path)
     tree.write(output_path, encoding="unicode", xml_declaration=True)
+    return output_path
+
+
+# ---- AMBER .frcmod I/O ----
+
+# Approximate atomic mass → element symbol (for MASS section parsing)
+_MASS_TO_ELEMENT: dict[int, str] = {
+    1: "H",
+    4: "He",
+    7: "Li",
+    9: "Be",
+    11: "B",
+    12: "C",
+    14: "N",
+    16: "O",
+    19: "F",
+    23: "Na",
+    24: "Mg",
+    27: "Al",
+    28: "Si",
+    31: "P",
+    32: "S",
+    35: "Cl",
+    39: "K",
+    40: "Ca",
+    52: "Cr",
+    55: "Mn",
+    56: "Fe",
+    59: "Co",
+    58: "Ni",
+    64: "Cu",
+    65: "Zn",
+    80: "Br",
+    96: "Mo",
+    101: "Ru",
+    103: "Rh",
+    106: "Pd",
+    108: "Ag",
+    112: "Cd",
+    119: "Sn",
+    127: "I",
+    184: "W",
+    190: "Os",
+    192: "Ir",
+    195: "Pt",
+    197: "Au",
+}
+
+_FRCMOD_SECTIONS = frozenset({"MASS", "BOND", "ANGLE", "ANGL", "DIHE", "IMPROPER", "NONBON", "NONB"})
+
+
+def _amber_type_to_element(atom_type: str, mass_map: dict[str, float] | None = None) -> str:
+    """Infer element from AMBER/GAFF atom type.
+
+    Uses *mass_map* (from the MASS section) when available, otherwise
+    falls back to the GAFF convention: element = first character uppercased.
+    """
+    t = atom_type.strip()
+    if not t:
+        return "X"
+    if mass_map and t in mass_map:
+        rounded = round(mass_map[t])
+        if rounded in _MASS_TO_ELEMENT:
+            return _MASS_TO_ELEMENT[rounded]
+    return t[0].upper()
+
+
+def _parse_amber_types(line: str, n_types: int) -> tuple[list[str], str]:
+    """Extract *n_types* AMBER atom types from the start of *line*.
+
+    Each type occupies 2 characters, separated by ``-``.  Returns the
+    list of stripped type strings and the remainder of the line.
+    """
+    end = n_types * 3 - 1  # 2 chars per type + 1 dash between each pair
+    types = [line[i * 3 : i * 3 + 2].strip() for i in range(n_types)]
+    return types, line[end:]
+
+
+def _parse_floats(text: str) -> list[float]:
+    """Parse leading numeric tokens from *text*, stopping at comments."""
+    vals: list[float] = []
+    for token in text.split():
+        try:
+            vals.append(float(token))
+        except ValueError:
+            break
+    return vals
+
+
+def load_amber_frcmod(path: str | Path) -> ForceField:
+    """Load from standard AMBER .frcmod file.
+
+    Parses MASS, BOND, ANGLE/ANGL, DIHE, IMPROPER, and NONBON sections.
+    Atom type → element mapping uses the MASS section when present,
+    falling back to the GAFF convention (first character).
+    """
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    bonds: list[BondParam] = []
+    angles: list[AngleParam] = []
+    torsions: list[TorsionParam] = []
+    vdws: list[VdwParam] = []
+    mass_map: dict[str, float] = {}
+
+    section: str | None = None
+    for row, line in enumerate(lines, start=1):
+        stripped = line.strip()
+
+        # Section headers
+        if stripped in _FRCMOD_SECTIONS:
+            section = stripped
+            if section in ("ANGL",):
+                section = "ANGLE"
+            if section == "NONB":
+                section = "NONBON"
+            continue
+
+        # Blank line ends section
+        if not stripped:
+            section = None
+            continue
+
+        # Skip comments and the remark line (row 1 before any section)
+        if stripped.startswith("#") or section is None:
+            continue
+
+        if section == "MASS":
+            parts = stripped.split()
+            if len(parts) >= 2:
+                try:
+                    mass_map[parts[0]] = float(parts[1])
+                except ValueError:
+                    pass
+
+        elif section == "BOND":
+            types, rest = _parse_amber_types(line, 2)
+            vals = _parse_floats(rest)
+            if len(types) == 2 and all(types) and len(vals) >= 2:
+                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                bonds.append(
+                    BondParam(
+                        elements=elems,
+                        equilibrium=vals[1],
+                        force_constant=vals[0],
+                        env_id="-".join(types),
+                        ff_row=row,
+                        label=f"frcmod row {row}",
+                    )
+                )
+
+        elif section == "ANGLE":
+            types, rest = _parse_amber_types(line, 3)
+            vals = _parse_floats(rest)
+            if len(types) == 3 and all(types) and len(vals) >= 2:
+                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                angles.append(
+                    AngleParam(
+                        elements=elems,
+                        equilibrium=vals[1],
+                        force_constant=vals[0],
+                        env_id="-".join(types),
+                        ff_row=row,
+                        label=f"frcmod row {row}",
+                    )
+                )
+
+        elif section == "DIHE":
+            types, rest = _parse_amber_types(line, 4)
+            vals = _parse_floats(rest)
+            # vals: IDIVF, barrier, phase, periodicity
+            if len(types) == 4 and all(types) and len(vals) >= 4:
+                idivf = int(vals[0]) if vals[0] != 0 else 1
+                barrier = vals[1]
+                phase = vals[2]
+                periodicity = abs(int(vals[3]))
+                k = barrier / idivf
+                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                torsions.append(
+                    TorsionParam(
+                        elements=elems,
+                        periodicity=periodicity or 1,
+                        force_constant=k,
+                        phase=phase,
+                        env_id="-".join(types),
+                        ff_row=row,
+                        label=f"frcmod row {row}",
+                    )
+                )
+
+        elif section == "IMPROPER":
+            types, rest = _parse_amber_types(line, 4)
+            vals = _parse_floats(rest)
+            # vals: barrier, phase, periodicity (no IDIVF)
+            if len(types) == 4 and all(types) and len(vals) >= 3:
+                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                periodicity = abs(int(vals[2]))
+                torsions.append(
+                    TorsionParam(
+                        elements=elems,
+                        periodicity=periodicity or 1,
+                        force_constant=vals[0],
+                        phase=vals[1],
+                        env_id="-".join(types),
+                        ff_row=row,
+                        label=f"frcmod row {row} (improper)",
+                    )
+                )
+
+        elif section == "NONBON":
+            parts = stripped.split()
+            if len(parts) >= 3:
+                try:
+                    atype = parts[0]
+                    radius, epsilon = float(parts[1]), float(parts[2])
+                    elem = _amber_type_to_element(atype, mass_map)
+                    vdws.append(
+                        VdwParam(
+                            atom_type=atype,
+                            radius=radius,
+                            epsilon=epsilon,
+                            element=elem,
+                            ff_row=row,
+                            label=f"frcmod row {row}",
+                        )
+                    )
+                except ValueError:
+                    pass
+
+    return ForceField(
+        name=f"AMBER from {path.name}",
+        bonds=bonds,
+        angles=angles,
+        torsions=torsions,
+        vdws=vdws,
+        source_path=path,
+        source_format="amber_frcmod",
+    )
+
+
+def save_amber_frcmod(
+    ff: ForceField,
+    path: str | Path,
+    template_path: str | Path | None = None,
+    *,
+    remark: str = "Q2MM generated frcmod",
+) -> Path:
+    """Write the force field to AMBER .frcmod format.
+
+    If *template_path* is provided (or the ForceField was loaded from a
+    .frcmod file), the template is updated in-place, preserving comments
+    and unrelated sections.  Otherwise a standalone file is generated.
+    """
+    output_path = Path(path)
+    template = Path(template_path) if template_path is not None else None
+    if template is None and ff.source_format == "amber_frcmod" and ff.source_path is not None:
+        template = ff.source_path
+
+    if template is not None:
+        return _save_amber_frcmod_template(ff, output_path, template)
+
+    return _save_amber_frcmod_standalone(ff, output_path, remark)
+
+
+def _format_amber_bond_line(types: list[str], k: float, r0: float) -> str:
+    return f"{types[0]:<2}-{types[1]:<2} {k:12.4f} {r0:10.4f}\n"
+
+
+def _format_amber_angle_line(types: list[str], k: float, theta0: float) -> str:
+    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2} {k:12.4f} {theta0:10.4f}\n"
+
+
+def _format_amber_dihe_line(types: list[str], k: float, phase: float, periodicity: int) -> str:
+    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2}   1 {k:10.4f} {phase:8.3f} {float(periodicity):8.3f}\n"
+
+
+def _format_amber_improper_line(types: list[str], k: float, phase: float, periodicity: int) -> str:
+    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2} {k:10.4f} {phase:8.1f} {float(periodicity):8.1f}\n"
+
+
+def _format_amber_nonbon_line(atom_type: str, radius: float, epsilon: float) -> str:
+    return f"{atom_type:<2} {radius:10.4f} {epsilon:10.4f}\n"
+
+
+def _amber_env_types(env_id: str, elements: tuple[str, ...]) -> list[str]:
+    """Get AMBER-style atom types from env_id, falling back to element symbols."""
+    parts = [p.strip() for p in env_id.split("-") if p.strip()] if env_id else []
+    if len(parts) == len(elements):
+        return parts
+    return [e.lower() for e in elements]
+
+
+def _save_amber_frcmod_standalone(ff: ForceField, output_path: Path, remark: str) -> Path:
+    """Generate a standalone .frcmod file from scratch."""
+    lines = [f"{remark}\n"]
+
+    if ff.bonds:
+        lines.append("BOND\n")
+        for bond in ff.bonds:
+            types = _amber_env_types(bond.env_id, bond.elements)
+            lines.append(_format_amber_bond_line(types, bond.force_constant, bond.equilibrium))
+        lines.append("\n")
+
+    if ff.angles:
+        lines.append("ANGLE\n")
+        for angle in ff.angles:
+            types = _amber_env_types(angle.env_id, angle.elements)
+            lines.append(_format_amber_angle_line(types, angle.force_constant, angle.equilibrium))
+        lines.append("\n")
+
+    if ff.torsions:
+        proper = [t for t in ff.torsions if "(improper)" not in t.label]
+        improper = [t for t in ff.torsions if "(improper)" in t.label]
+        if proper:
+            lines.append("DIHE\n")
+            for tor in proper:
+                types = _amber_env_types(tor.env_id, tor.elements)
+                lines.append(_format_amber_dihe_line(types, tor.force_constant, tor.phase, tor.periodicity))
+            lines.append("\n")
+        if improper:
+            lines.append("IMPROPER\n")
+            for tor in improper:
+                types = _amber_env_types(tor.env_id, tor.elements)
+                lines.append(_format_amber_improper_line(types, tor.force_constant, tor.phase, tor.periodicity))
+            lines.append("\n")
+
+    if ff.vdws:
+        lines.append("NONBON\n")
+        for vdw in ff.vdws:
+            lines.append(_format_amber_nonbon_line(vdw.atom_type, vdw.radius, vdw.epsilon))
+        lines.append("\n")
+
+    output_path.write_text("".join(lines), encoding="utf-8")
+    return output_path
+
+
+def _save_amber_frcmod_template(ff: ForceField, output_path: Path, template: Path) -> Path:
+    """Update parameter values in an existing .frcmod template."""
+    src_lines = template.read_text(encoding="utf-8").splitlines(keepends=True)
+    bond_by_row, bond_by_env = _build_bond_maps(ff.bonds)
+    angle_by_row, angle_by_env = _build_angle_maps(ff.angles)
+    torsion_by_row = {t.ff_row: t for t in ff.torsions if t.ff_row is not None}
+    vdw_by_row = {v.ff_row: v for v in ff.vdws if v.ff_row is not None}
+
+    section: str | None = None
+    out_lines: list[str] = []
+    for row, line in enumerate(src_lines, start=1):
+        stripped = line.strip()
+
+        if stripped in _FRCMOD_SECTIONS:
+            section = stripped
+            if section in ("ANGL",):
+                section = "ANGLE"
+            if section == "NONB":
+                section = "NONBON"
+            out_lines.append(line)
+            continue
+
+        if not stripped:
+            section = None
+            out_lines.append(line)
+            continue
+
+        updated = False
+        if section == "BOND" and row in bond_by_row:
+            b = bond_by_row[row]
+            types, _ = _parse_amber_types(line, 2)
+            out_lines.append(_format_amber_bond_line(types, b.force_constant, b.equilibrium))
+            updated = True
+        elif section == "ANGLE" and row in angle_by_row:
+            a = angle_by_row[row]
+            types, _ = _parse_amber_types(line, 3)
+            out_lines.append(_format_amber_angle_line(types, a.force_constant, a.equilibrium))
+            updated = True
+        elif section in ("DIHE", "IMPROPER") and row in torsion_by_row:
+            t = torsion_by_row[row]
+            types, _ = _parse_amber_types(line, 4)
+            if section == "IMPROPER":
+                out_lines.append(_format_amber_improper_line(types, t.force_constant, t.phase, t.periodicity))
+            else:
+                out_lines.append(_format_amber_dihe_line(types, t.force_constant, t.phase, t.periodicity))
+            updated = True
+        elif section == "NONBON" and row in vdw_by_row:
+            v = vdw_by_row[row]
+            out_lines.append(_format_amber_nonbon_line(v.atom_type, v.radius, v.epsilon))
+            updated = True
+
+        if not updated:
+            out_lines.append(line)
+
+    output_path.write_text("".join(out_lines), encoding="utf-8")
     return output_path
 
 
