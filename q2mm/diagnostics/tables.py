@@ -195,7 +195,7 @@ def pes_distortion_table(
     t.title(title)
     t.bar()
 
-    # Header
+    # Header — use group label to indicate units
     sub = f"{'Mode':>6} {'Freq':>8}"
     for d in target_norms:
         sub += f" | {'QM':>{W_E}} {'MM':>{W_E}} {'Err':>{W_ERR}}"
@@ -208,11 +208,17 @@ def pes_distortion_table(
         units += f" | {label:^{W_GRP}}"
     units += f" | {'':>{W_ME}}"
     t.row(units)
+
+    energy_units = f"{'':>6} {'':>8}"
+    for _ in target_norms:
+        energy_units += f" | {'(kcal/mol)':^{W_GRP}}"
+    energy_units += f" | {'':>{W_ME}}"
+    t.row(energy_units)
     t.sep()
 
     all_pct_errors: list[float] = []
-    for m in distortion_results:
-        row = f"{m['mode_idx']:>6d} {m['freq_cm1']:>8.1f}"
+    for i, m in enumerate(distortion_results, 1):
+        row = f"{i:>6d} {m['freq_cm1']:>8.1f}"
         mode_max_err = 0.0
         for disp in m["displacements"]:
             err_s = f"{disp['pct_err']:+.1f}%"
