@@ -350,17 +350,12 @@ class ForceField:
         return self.get_angle(elements[0], elements[1], elements[2])
 
     def match_vdw(self, atom_type: str = "", element: str = "", ff_row: int | None = None) -> VdwParam | None:
-        """Match a vdW parameter using ff_row, then atom_type, then element."""
+        """Match a vdW parameter using ff_row, then atom_type/element lookup (with fallback)."""
         if ff_row is not None:
             for vdw in self.vdws:
                 if vdw.ff_row == ff_row:
                     return vdw
-        matched = self.get_vdw(atom_type=atom_type, element=element)
-        if matched is not None:
-            return matched
-        if element:
-            return self.get_vdw(element=element)
-        return None
+        return self.get_vdw(atom_type=atom_type, element=element)
 
     def set_param_vector(self, vec: np.ndarray):
         """Set parameters from a flat vector (inverse of get_param_vector)."""

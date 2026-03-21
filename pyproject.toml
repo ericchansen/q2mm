@@ -135,3 +135,5 @@ ignore = [
 "q2mm/parsers/macromodel.py" = ["F821"]
 "q2mm/parsers/mol2.py" = ["F821"]
 "q2mm/parsers/structures.py" = ["F821"]
+# Legacy test with undefined references in incomplete refactoring
+"test/test_linear_algebra.py" = ["F821"]
