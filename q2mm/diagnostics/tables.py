@@ -193,27 +193,24 @@ def pes_distortion_table(
     t.blank()
     t.bar()
     t.title(title)
+    t.row("  Displace molecule along each QM normal mode; compare QM vs MM energy.")
+    t.row("  E(QM) = harmonic energy from QM Hessian.  E(MM) = MM single-point energy.")
     t.bar()
 
     # Header — use group label to indicate units
     sub = f"{'Mode':>6} {'Freq':>8}"
     for d in target_norms:
-        sub += f" | {'QM':>{W_E}} {'MM':>{W_E}} {'Err':>{W_ERR}}"
+        sub += f" | {'E(QM)':>{W_E}} {'E(MM)':>{W_E}} {'Err':>{W_ERR}}"
     sub += f" | {'MaxErr':>{W_ME}}"
     t.row(sub)
 
     units = f"{'':>6} {'(cm-1)':>8}"
     for d in target_norms:
-        label = f"d={d:.2f} Ang"
-        units += f" | {label:^{W_GRP}}"
+        label = f"d={d:.2f} Å"
+        grp = f"{label} (kcal/mol)"
+        units += f" | {grp:^{W_GRP}}"
     units += f" | {'':>{W_ME}}"
     t.row(units)
-
-    energy_units = f"{'':>6} {'':>8}"
-    for _ in target_norms:
-        energy_units += f" | {'(kcal/mol)':^{W_GRP}}"
-    energy_units += f" | {'':>{W_ME}}"
-    t.row(energy_units)
     t.sep()
 
     all_pct_errors: list[float] = []
