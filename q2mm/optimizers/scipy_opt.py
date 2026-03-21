@@ -321,7 +321,7 @@ class ScipyOptimizer:
         # Mutable flag so _run_minimize can detect callback-triggered stops
         state = {"abandoned": False}
 
-        def callback(xk):
+        def callback(xk, *args, **kwargs):
             nonlocal diverge_count
             score = objective.history[-1] if objective.history else float("nan")
 

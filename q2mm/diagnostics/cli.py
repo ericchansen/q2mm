@@ -60,14 +60,10 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("Nelder-Mead", {"method": "Nelder-Mead"}),
         ("Powell", {"method": "Powell"}),
     ]
-
-    try:
-        import jax  # noqa: F401
-
-        configs.append(("L-BFGS-B+analytical", {"method": "L-BFGS-B", "jac": "analytical"}))
-    except ImportError:
-        pass
-
+    # Note: L-BFGS-B+analytical is omitted because the benchmark uses
+    # frequency reference data and ObjectiveFunction.gradient() only
+    # supports energy-type references. Once frequency gradients are
+    # implemented, this can be re-enabled.
     return configs
 
 
@@ -133,13 +129,6 @@ def _run_matrix(
 
         for opt_label, opt_config in optimizers:
             idx += 1
-
-            # Skip analytical gradient configs for engines that don't support them
-            if opt_config.get("jac") == "analytical":
-                if not hasattr(engine, "supports_analytical_gradients") or not engine.supports_analytical_gradients():
-                    print(f"  [{idx}/{total}] {backend_name} + {opt_label} ... SKIPPED (no analytical gradients)")
-                    continue
-
             combo = f"{backend_name} + {opt_label}"
             print(f"  [{idx}/{total}] {combo} ...", end=" ", flush=True)
 
