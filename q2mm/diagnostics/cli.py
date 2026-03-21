@@ -161,14 +161,25 @@ def _run_matrix(
                 # Build status tag for progress line
                 opt = r.optimized or {}
                 msg = (opt.get("message") or "").lower()
+                rmsd = opt.get("rmsd", float("nan"))
+
+                # Get starting RMSD for quality check
+                start_rmsd = None
+                if r.seminario and r.seminario.get("rmsd") is not None:
+                    start_rmsd = r.seminario["rmsd"]
+                elif r.default_ff and r.default_ff.get("rmsd") is not None:
+                    start_rmsd = r.default_ff["rmsd"]
+
                 if "abandoned" in msg:
                     status_tag = "ABANDONED"
                 elif opt.get("converged"):
-                    status_tag = "OK"
+                    if start_rmsd is not None and rmsd > start_rmsd:
+                        status_tag = "POOR RESULT"
+                    else:
+                        status_tag = "OK"
                 else:
                     status_tag = "maxiter" if ("iteration" in msg or "maxiter" in msg) else "no conv"
 
-                rmsd = opt.get("rmsd", float("nan"))
                 print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)  [{status_tag}]")
 
                 # Stream detailed tables immediately
@@ -329,6 +340,12 @@ def main(argv: list[str] | None = None) -> int:
     for r in results:
         meta = r.metadata
         opt = r.optimized or {}
+        # Starting RMSD: Seminario if available, else default FF
+        initial_rmsd = float("nan")
+        if r.seminario and r.seminario.get("rmsd") is not None:
+            initial_rmsd = r.seminario["rmsd"]
+        elif r.default_ff and r.default_ff.get("rmsd") is not None:
+            initial_rmsd = r.default_ff["rmsd"]
         rows.append(
             {
                 "backend": meta.get("backend", "?"),
@@ -341,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
                 "converged": opt.get("converged", False),
                 "message": opt.get("message", ""),
                 "error": meta.get("error", ""),
+                "initial_rmsd": initial_rmsd,
             }
         )
     if rows:

@@ -86,6 +86,7 @@ def colorize_status(text: str, status: str) -> str:
         "converged": "32",  # green
         "maxiter": "33",  # yellow
         "not converged": "33",  # yellow
+        "poor result": "31",  # red
         "abandoned": "31",  # red
         "error": "31",  # red
     }
@@ -446,6 +447,9 @@ def convergence_table(
     message: str = "",
     *,
     title: str = "CONVERGENCE",
+    initial_rmsd: float | None = None,
+    final_rmsd: float | None = None,
+    elapsed_s: float | None = None,
 ) -> TablePrinter:
     """Build a convergence summary table."""
     t = TablePrinter()
@@ -455,15 +459,51 @@ def convergence_table(
     t.bar()
 
     improvement = (1.0 - final_score / initial_score) * 100 if initial_score > 0 else 0.0
-    status = "converged" if converged else "NOT converged"
 
-    t.row(f"Initial score:     {initial_score:.6f}")
-    t.row(f"Final score:       {final_score:.6f}")
-    t.row(f"Improvement:       {improvement:.1f}%")
+    # Quality-aware status
+    msg_lower = (message or "").lower()
+    if "abandoned" in msg_lower:
+        status = "ABANDONED (diverged)"
+    elif converged:
+        if initial_rmsd is not None and final_rmsd is not None and final_rmsd > initial_rmsd:
+            status = "POOR RESULT (converged to worse fit)"
+        else:
+            status = "CONVERGED"
+    elif "iteration" in msg_lower or "maxiter" in msg_lower or "limit" in msg_lower:
+        status = "HIT ITERATION LIMIT"
+    else:
+        status = "NOT CONVERGED"
+
+    use_color = _color_enabled()
+
+    status_display = status
+    if use_color:
+        if status == "CONVERGED":
+            status_display = _ansi("32", status)
+        elif "POOR" in status or "ABANDONED" in status:
+            status_display = _ansi("31", status)
+        elif "LIMIT" in status:
+            status_display = _ansi("33", status)
+        else:
+            status_display = _ansi("33", status)
+
+    t.row(f"Status:            {status_display}")
+
+    if initial_rmsd is not None and final_rmsd is not None:
+        arrow = "→"
+        rmsd_init = f"{initial_rmsd:.1f}"
+        rmsd_final = f"{final_rmsd:.1f}"
+        if use_color:
+            rmsd_init = colorize_rmsd(rmsd_init, initial_rmsd)
+            rmsd_final = colorize_rmsd(rmsd_final, final_rmsd)
+        t.row(f"RMSD (cm⁻¹):       {rmsd_init} {arrow} {rmsd_final}")
+
+    t.row(f"Score:             {initial_score:.6f} → {final_score:.6f}  ({improvement:+.1f}%)")
     t.row(f"Function evals:    {n_eval}")
-    t.row(f"Status:            {status}")
+    if elapsed_s is not None:
+        t.row(f"Wall time:         {elapsed_s:.1f}s")
     if message:
-        t.row(f"Message:           {message}")
+        t.row(f"Optimizer msg:     {message}")
 
     t.bar()
     t.blank()
@@ -481,7 +521,7 @@ def leaderboard_table(
     ----------
     rows : list[dict]
         Each dict has keys: backend, optimizer, rmsd, mae, time_s,
-        n_eval, final_score, converged, message, error.
+        n_eval, final_score, converged, message, error, initial_rmsd.
     """
     t = TablePrinter()
     t.blank()
@@ -502,7 +542,14 @@ def leaderboard_table(
         if r.get("error"):
             status = "error"
         elif r["converged"]:
-            status = "converged"
+            # Quality check: did RMSD actually improve vs starting point?
+            initial_rmsd = r.get("initial_rmsd", float("nan"))
+            import math
+
+            if not math.isnan(initial_rmsd) and not math.isnan(r["rmsd"]) and r["rmsd"] > initial_rmsd:
+                status = "poor result"
+            else:
+                status = "converged"
         else:
             msg = (r.get("message") or "").lower()
             if "abandoned" in msg:
