@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -18,44 +16,31 @@ except ImportError:
 
 pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pytest.mark.jax]
 
+from test._shared import SN2_QM_REF as QM_REF, make_diatomic, make_water, make_noble_gas_pair
+
 from q2mm.backends.mm.jax_engine import JaxEngine, _build_vdw_pairs
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
-
 
 # ---------------------------------------------------------------------------
-# Molecule factories
+# Molecule factories (thin wrappers preserving original defaults)
 # ---------------------------------------------------------------------------
 
 
 def _diatomic(distance: float = 0.74) -> Q2MMMolecule:
     """H2 molecule at specified bond distance."""
-    return Q2MMMolecule(
-        symbols=["H", "H"],
-        geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
-        name="H2",
-        bond_tolerance=1.5,
-    )
+    return make_diatomic(distance=distance, bond_tolerance=1.5)
 
 
 def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     """Water molecule at specified geometry."""
-    theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
-        symbols=["O", "H", "H"],
-        geometry=np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [bond_length, 0.0, 0.0],
-                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-            ]
-        ),
-        name="water",
-        bond_tolerance=1.5,
-    )
+    return make_water(angle_deg=angle_deg, bond_length=bond_length)
+
+
+def _noble_gas_pair(distance: float = 3.0) -> Q2MMMolecule:
+    """Two noble gas atoms for vdW testing (no bonds)."""
+    return make_noble_gas_pair(distance=distance)
 
 
 def _h2_ff(bond_k: float = 5.0, bond_r0: float = 0.74) -> ForceField:
@@ -77,17 +62,6 @@ def _water_ff(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
-    )
-
-
-def _noble_gas_pair(distance: float = 3.0) -> Q2MMMolecule:
-    """Two noble gas atoms for vdW testing (no bonds)."""
-    return Q2MMMolecule(
-        symbols=["He", "He"],
-        atom_types=["He", "He"],
-        geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
-        name="He2",
-        bond_tolerance=0.5,  # No bonds detected
     )
 
 

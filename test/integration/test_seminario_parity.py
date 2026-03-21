@@ -20,12 +20,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from test._shared import REPO_ROOT, SN2_QM_REF, SN2_XYZ, SN2_HESSIAN
+
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
 from q2mm.parsers import JaguarIn, MacroModel
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
 
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
@@ -37,9 +38,8 @@ MM3_PATH = RH_DIR / "mm3.fld"
 MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
 JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
 
-SN2_QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
-SN2_XYZ_PATH = SN2_QM_REF / "sn2-ts-optimized.xyz"
-SN2_HESSIAN_PATH = SN2_QM_REF / "sn2-ts-hessian.npy"
+SN2_XYZ_PATH = SN2_XYZ
+SN2_HESSIAN_PATH = SN2_HESSIAN
 
 
 def _load_json(path: Path) -> dict:

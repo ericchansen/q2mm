@@ -9,10 +9,10 @@ Also tests the ts_method parameter on estimate_force_constants().
 Covers issue #75.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pytest
+
+from test._shared import GS_FCHK, SN2_DATA_AVAILABLE, SN2_HESSIAN, SN2_XYZ
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.hessian import decompose
@@ -25,12 +25,6 @@ from q2mm.models.seminario import (
 # ---------------------------------------------------------------------------
 # Fixtures: data paths
 # ---------------------------------------------------------------------------
-SN2_QM_REF = Path(__file__).resolve().parents[1] / "examples" / "sn2-test" / "qm-reference"
-SN2_XYZ = SN2_QM_REF / "sn2-ts-optimized.xyz"
-SN2_HESSIAN = SN2_QM_REF / "sn2-ts-hessian.npy"
-GS_FCHK = Path(__file__).resolve().parents[1] / "examples" / "ethane" / "GS.fchk"
-
-_SN2_DATA_AVAILABLE = SN2_XYZ.exists() and SN2_HESSIAN.exists()
 _ETHANE_DATA_AVAILABLE = GS_FCHK.exists()
 
 
@@ -54,7 +48,7 @@ def ethane_mol():
 # ---------------------------------------------------------------------------
 # ts_method parameter tests
 # ---------------------------------------------------------------------------
-@pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+@pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
 class TestTSMethodParam:
     """Test ts_method parameter on estimate_force_constants."""
 
@@ -121,7 +115,7 @@ class TestTSMethodParam:
 # ---------------------------------------------------------------------------
 # Method E pipeline tests
 # ---------------------------------------------------------------------------
-@pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+@pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
 class TestMethodEPipeline:
     """Full Method E hybrid pipeline tests."""
 

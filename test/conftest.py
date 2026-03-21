@@ -33,6 +33,32 @@ Use ``-m`` to filter::
 
 import pytest
 
+# Re-export shared constants and factories so conftest fixtures can use them.
+# Test files should import directly from ``test._shared``.
+from test._shared import (  # noqa: F401
+    CH3F_DATA_AVAILABLE,
+    CH3F_ENERGY,
+    CH3F_FREQS,
+    CH3F_HESS,
+    CH3F_MODES,
+    CH3F_XYZ,
+    COMPLEX_XYZ,
+    ETHANE_DIR,
+    EXAMPLES_DIR,
+    GS_FCHK,
+    REPO_ROOT,
+    SN2_DATA_AVAILABLE,
+    SN2_ENERGY,
+    SN2_FREQS,
+    SN2_HESSIAN,
+    SN2_QM_REF,
+    SN2_XYZ,
+    TS_FCHK,
+    make_diatomic,
+    make_noble_gas_pair,
+    make_water,
+)
+
 # ---------------------------------------------------------------------------
 # Backend availability detection (runs once at collection time)
 # ---------------------------------------------------------------------------

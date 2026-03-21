@@ -5,10 +5,10 @@ extract_eigenmatrix_data) and the ReferenceData/ObjectiveFunction
 integration in objective.py.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pytest
+
+from test._shared import GS_FCHK, SN2_DATA_AVAILABLE, SN2_QM_REF
 
 from q2mm.models.hessian import (
     decompose,
@@ -20,10 +20,7 @@ from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 
 # ---- Fixtures ----
 
-_SN2_REF = Path(__file__).resolve().parent.parent / "examples" / "sn2-test" / "qm-reference"
-_SN2_DATA_AVAILABLE = (_SN2_REF / "sn2-ts-hessian.npy").exists()
-
-_ETHANE_FCHK = Path(__file__).resolve().parent.parent / "examples" / "ethane" / "GS.fchk"
+_ETHANE_FCHK = GS_FCHK
 _ETHANE_DATA_AVAILABLE = _ETHANE_FCHK.exists()
 
 
@@ -35,9 +32,9 @@ def symmetric_matrix():
 
 @pytest.fixture
 def sn2_hessian():
-    if not _SN2_DATA_AVAILABLE:
+    if not SN2_DATA_AVAILABLE:
         pytest.skip("SN2 data not available")
-    return np.load(str(_SN2_REF / "sn2-ts-hessian.npy"))
+    return np.load(str(SN2_QM_REF / "sn2-ts-hessian.npy"))
 
 
 # ---- transform_to_eigenmatrix ----
@@ -74,7 +71,7 @@ class TestTransformToEigenmatrix:
         reformed = reform_hessian(diagonal_evals, evecs)
         np.testing.assert_allclose(reformed, symmetric_matrix, atol=1e-12)
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_self_projection(self, sn2_hessian):
         """SN2 TS Hessian self-projection should be diagonal with eigenvalues."""
         evals, evecs = decompose(sn2_hessian)
@@ -85,7 +82,7 @@ class TestTransformToEigenmatrix:
         off_diag_norm = np.linalg.norm(eigenmatrix - np.diag(np.diag(eigenmatrix)))
         assert off_diag_norm < 1e-10
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_has_negative_eigenvalue(self, sn2_hessian):
         """SN2 TS should have a negative eigenvalue (reaction coordinate)."""
         evals, evecs = decompose(sn2_hessian)
@@ -128,7 +125,7 @@ class TestExtractEigenmatrixData:
         data = extract_eigenmatrix_data(mat)
         assert len(data) == 6  # n*(n+1)/2
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_diagonal_count(self, sn2_hessian):
         """SN2 has 6 atoms → 18x18 Hessian → 18 diagonal eigenvalues."""
         evals, evecs = decompose(sn2_hessian)
@@ -136,7 +133,7 @@ class TestExtractEigenmatrixData:
         data = extract_eigenmatrix_data(eigenmatrix, diagonal_only=True)
         assert len(data) == 18
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_full_count(self, sn2_hessian):
         """18x18 lower triangle = 18*19/2 = 171 elements."""
         evals, evecs = decompose(sn2_hessian)
@@ -236,7 +233,7 @@ class TestReferenceDataEigenvalues:
         weights = sorted(rv.weight for rv in ref.values)
         assert weights == [0.2, 0.9]
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_eigenmatrix_reference_data(self, sn2_hessian):
         """SN2 bulk loader produces 18 diagonal + 153 off-diagonal = 171 entries."""
         ref = ReferenceData()
@@ -248,7 +245,7 @@ class TestReferenceDataEigenvalues:
         assert diag_count == 18
         assert offdiag_count == 153
 
-    @pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 data not found")
+    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_first_eigenvalue_weight_zero(self, sn2_hessian):
         """For the SN2 TS, the first eigenvalue (imaginary mode) gets weight 0."""
         ref = ReferenceData()

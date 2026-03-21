@@ -28,6 +28,20 @@ import pytest
 pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm
 
+from test._shared import (
+    CH3F_ENERGY,
+    CH3F_FREQS,
+    CH3F_HESS,
+    CH3F_MODES,
+    CH3F_XYZ,
+    COMPLEX_XYZ,
+    REPO_ROOT,
+    SN2_ENERGY,
+    SN2_FREQS,
+    SN2_HESSIAN,
+    SN2_XYZ,
+)
+
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, frequency_rmsd, load_normal_modes
 from q2mm.diagnostics.benchmark import real_frequencies
@@ -37,25 +51,15 @@ from q2mm.models.seminario import estimate_force_constants
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-# ---- Paths ----
+# ---- Paths (test-specific) ----
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
 FIXTURES = REPO_ROOT / "test" / "fixtures"
 
-CH3F_XYZ = QM_REF / "ch3f-optimized.xyz"
-CH3F_HESS = QM_REF / "ch3f-hessian.npy"
-CH3F_FREQS = QM_REF / "ch3f-frequencies.txt"
-CH3F_ENERGY = QM_REF / "ch3f-energy.txt"
+TS_XYZ = SN2_XYZ
+TS_HESS = SN2_HESSIAN
+TS_FREQS = SN2_FREQS
+TS_ENERGY = SN2_ENERGY
 
-CH3F_MODES = QM_REF / "ch3f-normal-modes.npz"
-
-TS_XYZ = QM_REF / "sn2-ts-optimized.xyz"
-TS_HESS = QM_REF / "sn2-ts-hessian.npy"
-TS_FREQS = QM_REF / "sn2-ts-frequencies.txt"
-TS_ENERGY = QM_REF / "sn2-ts-energy.txt"
-
-COMPLEX_XYZ = QM_REF / "complex-optimized.xyz"
 EXT_REF = FIXTURES / "sn2_external_reference.json"
 
 
