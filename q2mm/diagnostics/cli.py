@@ -133,6 +133,13 @@ def _run_matrix(
 
         for opt_label, opt_config in optimizers:
             idx += 1
+
+            # Skip analytical gradient configs for engines that don't support them
+            if opt_config.get("jac") == "analytical":
+                if not hasattr(engine, "supports_analytical_gradients") or not engine.supports_analytical_gradients():
+                    print(f"  [{idx}/{total}] {backend_name} + {opt_label} ... SKIPPED (no analytical gradients)")
+                    continue
+
             combo = f"{backend_name} + {opt_label}"
             print(f"  [{idx}/{total}] {combo} ...", end=" ", flush=True)
 
