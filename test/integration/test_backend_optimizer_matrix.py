@@ -1,28 +1,26 @@
-"""Cross-product benchmark: every (backend x optimizer) on CH3F.
+"""Validate the diagnostics library: serialization, reports, and CLI.
 
-Runs the full Q2MM pipeline for each available backend and optimizer
-method, collects timing and accuracy metrics, and produces:
+These tests verify that the ``q2mm.diagnostics`` package works correctly
+without re-running the expensive benchmark matrix (use ``q2mm-benchmark``
+for that).  Only one fast (backend, optimizer) combo is run to produce
+a real ``BenchmarkResult``; the rest of the library is tested with
+synthetic data.
 
-1. A summary leaderboard (Table 1)
-2. Detailed SI tables per combination (frequency progression, PES
-   distortion, timing, parameters, convergence)
-3. Saved JSON result files for later comparison
-
-This is a slow test (~minutes) and requires ``--run-slow``.
+Requires ``--run-medium`` and OpenMM.
 """
 
 from __future__ import annotations
 
-import sys
+import json
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
-from q2mm.diagnostics.pes_distortion import load_normal_modes
-from q2mm.diagnostics.report import full_report
+from q2mm.diagnostics.benchmark import BenchmarkResult, frequency_mae, frequency_rmsd, real_frequencies
+from q2mm.diagnostics.report import detailed_report, full_report
+from q2mm.diagnostics.tables import TablePrinter
 
 # ---- Paths ----
 
@@ -34,234 +32,209 @@ CH3F_HESS = QM_REF / "ch3f-hessian.npy"
 CH3F_FREQS = QM_REF / "ch3f-frequencies.txt"
 CH3F_MODES = QM_REF / "ch3f-normal-modes.npz"
 
-# ---- Backend discovery ----
-
-_BACKENDS: list[tuple[str, type, str]] = []  # (name, engine_class, marker)
-
-try:
-    import openmm  # noqa: F401
-
-    from q2mm.backends.mm.openmm import OpenMMEngine
-
-    _BACKENDS.append(("OpenMM", OpenMMEngine, "openmm"))
-except ImportError:
-    pass
-
-try:
-    from q2mm.backends.mm.tinker import TinkerEngine
-
-    if TinkerEngine().is_available():
-        _BACKENDS.append(("Tinker", TinkerEngine, "tinker"))
-except (ImportError, FileNotFoundError, OSError):
-    pass
-
-try:
-    import jax  # noqa: F401
-
-    from q2mm.backends.mm.jax_engine import JaxEngine
-
-    _BACKENDS.append(("JAX", JaxEngine, "jax"))
-except ImportError:
-    pass
-
-# ---- Optimizer configs ----
-
-_OPTIMIZERS: list[tuple[str, dict]] = [
-    ("L-BFGS-B", {"method": "L-BFGS-B"}),
-    ("Nelder-Mead", {"method": "Nelder-Mead"}),
-    ("Powell", {"method": "Powell"}),
-]
-
-# Add JAX analytical gradient variant if JAX is available
-try:
-    import jax  # noqa: F811
-
-    _OPTIMIZERS.append(("L-BFGS-B+analytical", {"method": "L-BFGS-B", "jac": "analytical"}))
-except ImportError:
-    pass
-
-# ---- Fixtures ----
-
 _FIXTURE_FILES = [CH3F_XYZ, CH3F_HESS, CH3F_FREQS]
 _missing = [str(f) for f in _FIXTURE_FILES if not f.exists()]
 
 
-@pytest.mark.slow
+# ---------------------------------------------------------------------------
+# Unit-level tests for diagnostics helpers (fast, no backend needed)
+# ---------------------------------------------------------------------------
+
+
+class TestDiagnosticsHelpers:
+    """Fast tests for frequency metrics, TablePrinter, and BenchmarkResult serialization."""
+
+    def test_frequency_rmsd_identical(self):
+        a = [100.0, 200.0, 300.0]
+        assert frequency_rmsd(a, a) == pytest.approx(0.0)
+
+    def test_frequency_rmsd_known(self):
+        a = [100.0, 200.0]
+        b = [110.0, 220.0]
+        expected = np.sqrt((10**2 + 20**2) / 2)
+        assert frequency_rmsd(a, b) == pytest.approx(expected)
+
+    def test_frequency_mae_known(self):
+        a = [100.0, 200.0]
+        b = [110.0, 220.0]
+        assert frequency_mae(a, b) == pytest.approx(15.0)
+
+    def test_real_frequencies_filters(self):
+        freqs = [-300.0, -5.0, 0.0, 10.0, 49.0, 100.0, 500.0]
+        real = real_frequencies(freqs)
+        np.testing.assert_array_equal(real, [100.0, 500.0])
+
+    def test_table_printer_to_string(self):
+        t = TablePrinter()
+        t.bar()
+        t.title("TEST")
+        t.bar()
+        s = t.to_string()
+        assert "TEST" in s
+        assert s.count("=") > 0
+
+    def test_benchmark_result_roundtrip(self):
+        """BenchmarkResult survives JSON serialization."""
+        r = BenchmarkResult(
+            metadata={"backend": "TestBackend", "optimizer": "L-BFGS-B", "molecule": "H2O"},
+            qm_reference={"frequencies_cm1": [1600.0, 3700.0, 3800.0]},
+            default_ff={"frequencies_cm1": [1500.0, 3500.0, 3600.0], "rmsd": 180.0, "mae": 166.7},
+            optimized={
+                "frequencies_cm1": [1590.0, 3680.0, 3790.0],
+                "rmsd": 12.0,
+                "mae": 10.0,
+                "elapsed_s": 1.5,
+                "n_eval": 100,
+                "converged": True,
+                "initial_score": 50.0,
+                "final_score": 0.5,
+                "message": "converged",
+                "param_names": ["kb", "r0"],
+                "param_initial": [1.0, 1.0],
+                "param_final": [1.5, 0.96],
+            },
+        )
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = Path(f.name)
+
+        try:
+            r.to_json(path)
+            loaded = BenchmarkResult.from_json(path)
+            assert loaded.metadata["backend"] == "TestBackend"
+            assert loaded.optimized["rmsd"] == pytest.approx(12.0)
+            assert loaded.optimized["param_final"] == [1.5, 0.96]
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_benchmark_result_from_upstream(self):
+        r = BenchmarkResult.from_upstream([100.0, 200.0, 300.0], molecule="CH3F", label="legacy")
+        assert r.metadata["backend"] == "legacy"
+        assert r.optimized["frequencies_cm1"] == [100.0, 200.0, 300.0]
+
+    def test_detailed_report_produces_tables(self):
+        """detailed_report() should return TablePrinter objects for a complete result."""
+        r = BenchmarkResult(
+            metadata={"backend": "Fake", "optimizer": "L-BFGS-B"},
+            qm_reference={"frequencies_cm1": [1000.0, 2000.0, 3000.0]},
+            default_ff={"frequencies_cm1": [900.0, 1800.0, 2700.0], "rmsd": 200.0, "mae": 200.0},
+            optimized={
+                "frequencies_cm1": [990.0, 1990.0, 2990.0],
+                "rmsd": 10.0,
+                "mae": 10.0,
+                "elapsed_s": 2.0,
+                "n_eval": 50,
+                "converged": True,
+                "initial_score": 100.0,
+                "final_score": 1.0,
+                "message": "ok",
+                "param_names": ["k1", "r1"],
+                "param_initial": [1.0, 1.0],
+                "param_final": [1.1, 0.95],
+            },
+        )
+        tables = detailed_report(r)
+        assert len(tables) >= 3  # frequency, timing, convergence at minimum
+        for t in tables:
+            assert isinstance(t, TablePrinter)
+            s = t.to_string()
+            assert len(s) > 0
+
+    def test_full_report_no_crash(self):
+        """full_report() shouldn't crash on a list of results."""
+        results = [
+            BenchmarkResult(
+                metadata={"backend": "A", "optimizer": "X"},
+                qm_reference={"frequencies_cm1": [1000.0]},
+                optimized={
+                    "frequencies_cm1": [990.0],
+                    "rmsd": 10.0,
+                    "mae": 10.0,
+                    "elapsed_s": 1.0,
+                    "n_eval": 10,
+                    "converged": True,
+                    "initial_score": 50.0,
+                    "final_score": 1.0,
+                    "message": "ok",
+                    "param_names": [],
+                    "param_initial": [],
+                    "param_final": [],
+                },
+            )
+        ]
+        # Should not raise
+        full_report(results)
+
+
+# ---------------------------------------------------------------------------
+# Integration: one real benchmark run to validate the pipeline end-to-end
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.medium
+@pytest.mark.openmm
 @pytest.mark.skipif(bool(_missing), reason=f"Missing fixtures: {_missing}")
-@pytest.mark.skipif(not _BACKENDS, reason="No MM backends available")
-class TestBackendOptimizerMatrix:
-    """Run all (backend x optimizer) combos on CH3F ground state."""
+class TestBenchmarkPipeline:
+    """Run one real (OpenMM, L-BFGS-B) benchmark to validate run_benchmark().
+
+    This does NOT duplicate the E2E test: that test validates the full
+    Seminario -> optimize -> frequency pipeline in detail.  This test
+    validates that ``run_benchmark()`` (the function the CLI calls)
+    produces a correct, serializable ``BenchmarkResult``.
+    """
 
     @pytest.fixture(scope="class")
-    def molecule(self):
+    def result(self):
+        from q2mm.backends.mm.openmm import OpenMMEngine
+        from q2mm.diagnostics.benchmark import run_benchmark
         from q2mm.models.molecule import Q2MMMolecule
 
-        return Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
+        molecule = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
+        qm_freqs = np.loadtxt(CH3F_FREQS)
+        qm_hessian = np.load(CH3F_HESS)
 
-    @pytest.fixture(scope="class")
-    def qm_freqs(self):
-        return np.loadtxt(CH3F_FREQS)
-
-    @pytest.fixture(scope="class")
-    def qm_hessian(self):
-        return np.load(CH3F_HESS)
-
-    @pytest.fixture(scope="class")
-    def normal_modes(self):
-        if CH3F_MODES.exists():
-            return load_normal_modes(CH3F_MODES)
-        return None
-
-    @pytest.fixture(scope="class")
-    def all_results(self, molecule, qm_freqs, qm_hessian, normal_modes, capsys):
-        """Run every (backend x optimizer) combo, collect results."""
-        results: list[BenchmarkResult] = []
-
-        for backend_name, engine_cls, marker in _BACKENDS:
-            engine = engine_cls()
-
-            for opt_label, opt_config in _OPTIMIZERS:
-                # Skip analytical gradients for non-JAX backends
-                if opt_config.get("jac") == "analytical" and backend_name != "JAX":
-                    continue
-
-                combo = f"{backend_name} + {opt_label}"
-
-                try:
-                    method = opt_config["method"]
-                    extra_kwargs = {k: v for k, v in opt_config.items() if k != "method"}
-
-                    # Tinker has no Hessian -> skip PES distortion
-                    modes = normal_modes
-                    hess = qm_hessian
-                    if backend_name == "Tinker":
-                        modes = None
-
-                    r = run_benchmark(
-                        engine=engine,
-                        molecule=molecule,
-                        qm_freqs=qm_freqs,
-                        qm_hessian=hess,
-                        normal_modes=modes,
-                        optimizer_method=method,
-                        optimizer_kwargs=extra_kwargs,
-                        maxiter=200,
-                        backend_name=backend_name,
-                        molecule_name="CH3F",
-                        level_of_theory="B3LYP/6-31+G(d)",
-                    )
-                    results.append(r)
-                    with capsys.disabled():
-                        print(f"  {combo}: RMSD={r.optimized['rmsd']:.1f}  {r.optimized['elapsed_s']:.1f}s")
-
-                except Exception as e:
-                    with capsys.disabled():
-                        print(f"  {combo}: FAILED ({e})", file=sys.stderr)
-                    results.append(
-                        BenchmarkResult(
-                            metadata={
-                                "backend": backend_name,
-                                "optimizer": opt_label,
-                                "molecule": "CH3F",
-                                "source": "q2mm",
-                            },
-                            qm_reference={"frequencies_cm1": qm_freqs.tolist()},
-                            optimized={
-                                "frequencies_cm1": [],
-                                "rmsd": float("nan"),
-                                "mae": float("nan"),
-                                "elapsed_s": 0.0,
-                                "n_eval": 0,
-                                "converged": False,
-                                "initial_score": None,
-                                "final_score": None,
-                                "message": str(e),
-                                "param_names": [],
-                                "param_initial": [],
-                                "param_final": [],
-                            },
-                        )
-                    )
-
-        return results
-
-    @pytest.fixture(scope="class")
-    def saved_results_dir(self, all_results):
-        """Save all results to a temp directory."""
-        tmpdir = Path(tempfile.mkdtemp(prefix="q2mm_benchmark_"))
-        for i, r in enumerate(all_results):
-            meta = r.metadata
-            filename = f"{meta.get('backend', 'unk')}_{meta.get('optimizer', 'unk')}_{i:02d}.json"
-            filename = filename.replace("+", "_").replace(" ", "_")
-            r.to_json(tmpdir / filename)
-        return tmpdir
-
-    # ---- Tests ----
-
-    def test_full_report(self, all_results, capsys):
-        """Print the complete leaderboard + SI tables."""
-        with capsys.disabled():
-            print()
-            full_report(all_results)
-
-    def test_results_saved(self, saved_results_dir, capsys):
-        """Verify all result JSONs were saved and can be reloaded."""
-        json_files = list(saved_results_dir.glob("*.json"))
-        assert len(json_files) > 0, "No result files saved"
-
-        with capsys.disabled():
-            print(f"\n  Results saved to: {saved_results_dir}")
-            for jf in json_files:
-                loaded = BenchmarkResult.from_json(jf)
-                assert loaded.metadata.get("backend"), f"Missing backend in {jf.name}"
-                print(f"    {jf.name}")
-
-    def test_all_optimizations_improved(self, all_results):
-        """Every combo that genuinely converged should improve over default.
-
-        Known issue: Powell and Nelder-Mead don't support parameter bounds
-        in scipy.  Without bounds, these methods can wander into non-physical
-        parameter space, which invalidates the fixed-index frequency mapping
-        used by the objective function.  The optimizer reports "converged"
-        (the mapped objective decreased) but the actual sorted-frequency
-        RMSD is worse because the mode ordering changed.
-
-        Combos where this happens are collected and reported; the test only
-        hard-fails if a *bounded* method (L-BFGS-B, trust-constr) degrades.
-        """
-        unbounded_methods = {"Powell", "Nelder-Mead"}
-        hard_failures = []
-        expected_failures = []
-
-        for r in all_results:
-            opt = r.optimized
-            if not opt or not opt.get("converged"):
-                continue
-            combo = f"{r.metadata['backend']} + {r.metadata['optimizer']}"
-            default_rmsd = r.default_ff["rmsd"] if r.default_ff else float("inf")
-            opt_rmsd = opt["rmsd"]
-
-            if opt_rmsd >= default_rmsd:
-                msg = f"{combo}: RMSD {default_rmsd:.1f} -> {opt_rmsd:.1f} (worse)"
-                if r.metadata["optimizer"] in unbounded_methods:
-                    expected_failures.append(msg)
-                else:
-                    hard_failures.append(msg)
-
-        if expected_failures:
-            import warnings
-
-            warnings.warn(
-                "Unbounded optimizer(s) degraded RMSD (no bounds support):\n  " + "\n  ".join(expected_failures),
-                stacklevel=1,
-            )
-
-        assert not hard_failures, "Bounded optimizer(s) degraded RMSD despite convergence:\n  " + "\n  ".join(
-            hard_failures
+        return run_benchmark(
+            engine=OpenMMEngine(),
+            molecule=molecule,
+            qm_freqs=qm_freqs,
+            qm_hessian=qm_hessian,
+            normal_modes=None,  # skip PES distortion for speed
+            optimizer_method="L-BFGS-B",
+            maxiter=200,
+            backend_name="OpenMM",
+            molecule_name="CH3F",
+            level_of_theory="B3LYP/6-31+G(d)",
         )
 
-    def test_at_least_one_backend_ran(self, all_results):
-        """At least one backend must have produced results."""
-        assert len(all_results) > 0, "No benchmark results collected"
-        converged = [r for r in all_results if r.optimized and r.optimized.get("converged")]
-        assert len(converged) > 0, "No optimizations converged"
+    def test_result_has_all_sections(self, result):
+        assert result.metadata["backend"] == "OpenMM"
+        assert result.qm_reference["frequencies_cm1"]
+        assert result.default_ff is not None
+        assert result.seminario is not None
+        assert result.optimized is not None
+
+    def test_optimization_converged(self, result):
+        assert result.optimized["converged"]
+        assert result.optimized["final_score"] < result.optimized["initial_score"]
+
+    def test_optimized_rmsd_better_than_default(self, result):
+        assert result.optimized["rmsd"] < result.default_ff["rmsd"]
+
+    def test_json_roundtrip(self, result):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            path = Path(f.name)
+        try:
+            result.to_json(path)
+            loaded = BenchmarkResult.from_json(path)
+            assert loaded.optimized["rmsd"] == pytest.approx(result.optimized["rmsd"])
+            assert loaded.metadata == result.metadata
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_report_generation(self, result, capsys):
+        """detailed_report + full_report work on real data."""
+        tables = detailed_report(result)
+        assert len(tables) >= 3
+        with capsys.disabled():
+            print()
+            for t in tables:
+                t.flush()
