@@ -142,8 +142,7 @@ class GaussLog(File):
             while True:
                 try:
                     line = next(file_iterator)
-                except:
-                    # End of file.
+                except StopIteration:
                     break
                 if "Charges from ESP fit" in line:
                     pattern = re.compile(rf"RMS=\s+({co.RE_FLOAT})")

@@ -127,41 +127,19 @@ def _vdw_epsilon_to_openmm(epsilon: float) -> float:
 def _match_bond(
     forcefield: ForceField, elements: tuple[str, str], env_id: str = "", ff_row: int | None = None
 ) -> BondParam | None:
-    for bond in forcefield.bonds:
-        if ff_row is not None and bond.ff_row == ff_row:
-            return bond
-    if env_id:
-        matched = forcefield.get_bond(elements[0], elements[1], env_id=env_id)
-        if matched is not None:
-            return matched
-    return forcefield.get_bond(elements[0], elements[1])
+    return forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
 
 
 def _match_angle(
     forcefield: ForceField, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
 ) -> AngleParam | None:
-    for angle in forcefield.angles:
-        if ff_row is not None and angle.ff_row == ff_row:
-            return angle
-    if env_id:
-        matched = forcefield.get_angle(elements[0], elements[1], elements[2], env_id=env_id)
-        if matched is not None:
-            return matched
-    return forcefield.get_angle(elements[0], elements[1], elements[2])
+    return forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
 
 
 def _match_vdw(
     forcefield: ForceField, atom_type: str = "", element: str = "", ff_row: int | None = None
 ) -> VdwParam | None:
-    for vdw in forcefield.vdws:
-        if ff_row is not None and vdw.ff_row == ff_row:
-            return vdw
-    matched = forcefield.get_vdw(atom_type=atom_type, element=element)
-    if matched is not None:
-        return matched
-    if element:
-        return forcefield.get_vdw(element=element)
-    return None
+    return forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
 
 
 class OpenMMEngine(MMEngine):

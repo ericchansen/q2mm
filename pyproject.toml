@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Quantum-guided molecular mechanics force field optimization"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "BSD-3-Clause" }
+license = { text = "MIT" }
 authors = [
     { name = "Eric Hansen" },
 ]
@@ -24,7 +24,7 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: BSD License",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -111,14 +111,12 @@ ignore = [
     "E402",   # module-import-not-at-top (conditional imports)
     "E501",   # line too long (let formatter handle)
     "E701",   # multiple statements on one line
-    "E722",   # bare except (used for optional Schrödinger import)
     "E741",   # ambiguous variable name (common in scientific code)
     "F401",   # unused imports (many are re-exports or conditional)
     "F402",   # import shadowed by loop variable (accepted in existing code)
     "F403",   # import star
     "F405",   # undefined from import star
     "F811",   # redefined while unused
-    "F821",   # undefined name (Schrödinger-dependent code paths)
     "F841",   # unused variable (common in scientific iteration)
     "UP028",  # yield-in-for-loop
     "SIM102", # collapsible-if (readability preference)
@@ -129,3 +127,11 @@ ignore = [
     "SIM115", # open-file-with-context-handler
     "SIM201", # negate-equal-op
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Legacy parsers use unimported List type hints and have scoping quirks
+"q2mm/parsers/gaussian.py" = ["F821"]
+"q2mm/parsers/jaguar.py" = ["F821"]
+"q2mm/parsers/macromodel.py" = ["F821"]
+"q2mm/parsers/mol2.py" = ["F821"]
+"q2mm/parsers/structures.py" = ["F821"]

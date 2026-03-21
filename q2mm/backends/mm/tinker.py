@@ -182,23 +182,14 @@ class TinkerEngine(MMEngine):
 
     @staticmethod
     def _detect_bonds(atoms: list[str], coords: np.ndarray) -> dict:
-        """Simple distance-based bond detection."""
-        cov_radii = {
-            "H": 0.31,
-            "C": 0.76,
-            "N": 0.71,
-            "O": 0.66,
-            "F": 0.57,
-            "Cl": 0.99,
-            "Br": 1.14,
-            "S": 1.05,
-            "P": 1.07,
-        }
+        """Simple distance-based bond detection using shared covalent radii."""
+        from q2mm.models.molecule import COVALENT_RADII
+
         bonds = {i: [] for i in range(len(atoms))}
         for i in range(len(atoms)):
             for j in range(i + 1, len(atoms)):
-                ri = cov_radii.get(atoms[i], 0.76)
-                rj = cov_radii.get(atoms[j], 0.76)
+                ri = COVALENT_RADII.get(atoms[i], 0.76)
+                rj = COVALENT_RADII.get(atoms[j], 0.76)
                 dist = np.linalg.norm(coords[i] - coords[j])
                 if dist < 1.3 * (ri + rj):
                     bonds[i].append(j)

@@ -282,44 +282,23 @@ class JaxHandle:
 
 
 def _match_bond(forcefield, elements, env_id="", ff_row=None):
-    for i, bond in enumerate(forcefield.bonds):
-        if ff_row is not None and bond.ff_row == ff_row:
-            return i, bond
-    if env_id:
-        matched = forcefield.get_bond(elements[0], elements[1], env_id=env_id)
-        if matched is not None:
-            return forcefield.bonds.index(matched), matched
-    matched = forcefield.get_bond(elements[0], elements[1])
+    matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
         return forcefield.bonds.index(matched), matched
     return None, None
 
 
 def _match_angle(forcefield, elements, env_id="", ff_row=None):
-    for i, angle in enumerate(forcefield.angles):
-        if ff_row is not None and angle.ff_row == ff_row:
-            return i, angle
-    if env_id:
-        matched = forcefield.get_angle(elements[0], elements[1], elements[2], env_id=env_id)
-        if matched is not None:
-            return forcefield.angles.index(matched), matched
-    matched = forcefield.get_angle(elements[0], elements[1], elements[2])
+    matched = forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
         return forcefield.angles.index(matched), matched
     return None, None
 
 
 def _match_vdw(forcefield, atom_type="", element="", ff_row=None):
-    for i, vdw in enumerate(forcefield.vdws):
-        if ff_row is not None and vdw.ff_row == ff_row:
-            return i, vdw
-    matched = forcefield.get_vdw(atom_type=atom_type, element=element)
+    matched = forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
     if matched is not None:
         return forcefield.vdws.index(matched), matched
-    if element:
-        matched = forcefield.get_vdw(element=element)
-        if matched is not None:
-            return forcefield.vdws.index(matched), matched
     return None, None
 
 
