@@ -284,6 +284,7 @@ def parameter_table(
     optimized_values: list[float],
     *,
     title: str = "OPTIMIZED PARAMETERS",
+    initial_label: str = "Initial",
 ) -> TablePrinter:
     """Build a parameter comparison table (initial vs optimized)."""
     t = TablePrinter()
@@ -295,7 +296,7 @@ def parameter_table(
     W_NAME = max(len(n) for n in param_names) + 1 if param_names else 12
     W_VAL = 10
 
-    hdr = f"{'Parameter':>{W_NAME}} {'Initial':>{W_VAL}} {'Optimized':>{W_VAL}} {'Change%':>8}"
+    hdr = f"{'Parameter':>{W_NAME}} {initial_label:>{W_VAL}} {'Optimized':>{W_VAL}} {'Change%':>8}"
     t.row(hdr)
     t.sep()
 

@@ -88,12 +88,16 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
         initial = result.optimized.get("param_initial", [])
         final = result.optimized.get("param_final", [])
         if names and initial and final and len(names) == len(initial) == len(final):
+            # Label reflects starting point: Seminario if Hessian was available
+            has_seminario = result.seminario is not None
+            initial_label = "Seminario" if has_seminario else "Default"
             tables.append(
                 parameter_table(
                     names,
                     initial,
                     final,
                     title=f"OPTIMIZED PARAMETERS [{combo_label}]",
+                    initial_label=initial_label,
                 )
             )
 
