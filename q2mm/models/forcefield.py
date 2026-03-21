@@ -399,6 +399,87 @@ class ForceField:
         "vdw_epsilon": (0.001, 2.0),
     }
 
+    # Maps ForceField param-vector slot types to legacy STEPS keys for
+    # per-type differentiation step sizes (upstream constants.py).
+    _PARAM_TYPE_TO_STEP_KEY: ClassVar[dict[str, str]] = {
+        "bond_k": "bf",
+        "bond_eq": "be",
+        "angle_k": "af",
+        "angle_eq": "ae",
+        "torsion_k": "df",
+        "vdw_radius": "vdwr",
+        "vdw_epsilon": "vdwfc",
+    }
+
+    def get_param_indices_by_type(self) -> dict[str, list[int]]:
+        """Map parameter type names to their indices in the param vector.
+
+        Returns a dict with keys ``bond_k``, ``bond_eq``, ``angle_k``,
+        ``angle_eq``, ``torsion_k``, ``vdw_radius``, ``vdw_epsilon`` and
+        values that are lists of integer indices into
+        :meth:`get_param_vector`.
+        """
+        idx = 0
+        result: dict[str, list[int]] = {
+            "bond_k": [],
+            "bond_eq": [],
+            "angle_k": [],
+            "angle_eq": [],
+            "torsion_k": [],
+            "vdw_radius": [],
+            "vdw_epsilon": [],
+        }
+        for _ in self.bonds:
+            result["bond_k"].append(idx)
+            result["bond_eq"].append(idx + 1)
+            idx += 2
+        for _ in self.angles:
+            result["angle_k"].append(idx)
+            result["angle_eq"].append(idx + 1)
+            idx += 2
+        for _ in self.torsions:
+            result["torsion_k"].append(idx)
+            idx += 1
+        for _ in self.vdws:
+            result["vdw_radius"].append(idx)
+            result["vdw_epsilon"].append(idx + 1)
+            idx += 2
+        return result
+
+    def get_param_type_labels(self) -> list[str]:
+        """Return the type label for each element of the param vector.
+
+        Same length as :meth:`get_param_vector`, useful for mapping each
+        scalar to its per-type step size or bounds category.
+        """
+        labels: list[str] = []
+        for _ in self.bonds:
+            labels.extend(["bond_k", "bond_eq"])
+        for _ in self.angles:
+            labels.extend(["angle_k", "angle_eq"])
+        for _ in self.torsions:
+            labels.append("torsion_k")
+        for _ in self.vdws:
+            labels.extend(["vdw_radius", "vdw_epsilon"])
+        return labels
+
+    def get_step_sizes(self) -> np.ndarray:
+        """Per-element differentiation step sizes for the param vector.
+
+        Uses the legacy ``STEPS`` dictionary values from
+        :mod:`q2mm.optimizers.defaults`, mapped via
+        :attr:`_PARAM_TYPE_TO_STEP_KEY`.
+
+        Returns
+        -------
+        np.ndarray
+            Array of step sizes, same length as :meth:`get_param_vector`.
+        """
+        from q2mm.optimizers.defaults import STEPS
+
+        labels = self.get_param_type_labels()
+        return np.array([STEPS[self._PARAM_TYPE_TO_STEP_KEY[lbl]] for lbl in labels])
+
     def get_bounds(self, overrides: dict[str, tuple[float, float]] | None = None) -> list[tuple[float, float]]:
         """Get (min, max) bounds for each element of the param vector.
 

@@ -18,3 +18,22 @@ try:
     __all__ += ["ScipyOptimizer", "OptimizationResult"]
 except ImportError:
     pass
+
+try:
+    from q2mm.optimizers.cycling import (  # noqa: F401
+        OptimizationLoop,
+        LoopResult,
+        SubspaceObjective,
+        SensitivityResult,
+        compute_sensitivity,
+    )
+
+    __all__ += [
+        "OptimizationLoop",
+        "LoopResult",
+        "SubspaceObjective",
+        "SensitivityResult",
+        "compute_sensitivity",
+    ]
+except ImportError:
+    pass
