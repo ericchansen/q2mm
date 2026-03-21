@@ -84,3 +84,8 @@ workflow including frequencies, eigenmatrix data, and multi-molecule fits.
 
 MIT. See [LICENSE](LICENSE).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing with
+Docker, and submitting changes.
+
