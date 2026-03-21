@@ -11,12 +11,14 @@ cd q2mm
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extras include pytest, ruff, and other development tools.
-Backend-specific extras can be added as needed:
+The `[dev]` extras include pytest, ruff, other development tools, and core
+backend/optimizer dependencies such as `openmm` and `scipy`.
+
+If you need *all* optional backends for local testing, you can install the
+broader `all` extra:
 
 ```bash
-pip install -e ".[dev,openmm,optimize]"   # OpenMM + scipy
-pip install -e ".[dev,all]"               # everything (OpenMM, JAX, scipy)
+pip install -e ".[dev,all]"               # everything (OpenMM, JAX, scipy, etc.)
 ```
 
 ## Running Tests
@@ -74,11 +76,10 @@ docker run --rm -v $PWD:/workspace -w /workspace \
 On Windows (PowerShell), replace `$PWD` with `${PWD}`.
 
 Images are built from `.github/docker/Dockerfile` using environment files in
-`.github/envs/`. To rebuild locally:
+`.github/envs/`. To rebuild locally from the repository root:
 
 ```bash
-cd .github/docker
-docker build --build-arg ENV_FILE=openmm.yml -t q2mm-openmm .
+docker build -f .github/docker/Dockerfile --build-arg ENV_FILE=openmm.yml -t q2mm-openmm .
 ```
 
 ## Code Style
@@ -103,7 +104,7 @@ ruff format q2mm/ test/ scripts/
 
 Pull requests trigger two CI tiers automatically:
 
-- **Fast tier** — lint + pure-Python tests on Python 3.10–3.13 (no backends)
+- **Fast tier** — lint on Python 3.12 + pure-Python tests on Python 3.10–3.13 (no backends)
 - **Backend tier** — OpenMM, Tinker, JAX, and Psi4 tests in Docker containers
 
 Both tiers must pass before merging.
