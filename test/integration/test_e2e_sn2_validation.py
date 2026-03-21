@@ -264,36 +264,36 @@ class TestCH3FGroundState:
             "v4 (CH3 a-str)",
         ]
 
-        if len(qm_real) >= 9:
-            qm_unique = np.array([qm_real[i] for i in qm_unique_indices])
-            qm_scaled = qm_unique * scale
-            nist_arr = np.array(nist_ordered)
+        assert len(qm_real) >= 9, f"Expected at least 9 vibrational modes for CH3F (3N-6), got {len(qm_real)}"
+        qm_unique = np.array([qm_real[i] for i in qm_unique_indices])
+        qm_scaled = qm_unique * scale
+        nist_arr = np.array(nist_ordered)
 
-            mae = frequency_mae(qm_scaled, nist_arr)
+        mae = frequency_mae(qm_scaled, nist_arr)
 
-            # Print comparison table
-            col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
-            t = TablePrinter()
-            t.blank()
-            t.bar()
-            t.title("CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
-            t.title(f"Scaling factor: {scale} (B3LYP/6-31+G(d))")
-            t.bar()
-            t.row(f"{'Mode':<{col1}} {'QM harm':>{col2}} {'QM scaled':>{col3}} {'NIST expt':>{col4}} {'Error':>{col5}}")
-            t.sep()
-            for i in range(len(nist_ordered)):
-                err = qm_scaled[i] - nist_arr[i]
-                t.row(
-                    f"{mode_names[i]:<{col1}} {qm_unique[i]:>{col2}.1f} {qm_scaled[i]:>{col3}.1f} {nist_arr[i]:>{col4}.0f} {err:>{col5}.1f}"
-                )
-            t.sep()
-            t.row(f"{'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
-            t.bar()
-            t.blank()
-            with capsys.disabled():
-                t.flush()
+        # Print comparison table
+        col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
+        t = TablePrinter()
+        t.blank()
+        t.bar()
+        t.title("CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
+        t.title(f"Scaling factor: {scale} (B3LYP/6-31+G(d))")
+        t.bar()
+        t.row(f"{'Mode':<{col1}} {'QM harm':>{col2}} {'QM scaled':>{col3}} {'NIST expt':>{col4}} {'Error':>{col5}}")
+        t.sep()
+        for i in range(len(nist_ordered)):
+            err = qm_scaled[i] - nist_arr[i]
+            t.row(
+                f"{mode_names[i]:<{col1}} {qm_unique[i]:>{col2}.1f} {qm_scaled[i]:>{col3}.1f} {nist_arr[i]:>{col4}.0f} {err:>{col5}.1f}"
+            )
+        t.sep()
+        t.row(f"{'MAE':<{col1}} {'':>{col2}} {'':>{col3}} {'':>{col4}} {mae:>{col5}.1f}")
+        t.bar()
+        t.blank()
+        with capsys.disabled():
+            t.flush()
 
-            assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
+        assert mae < 80.0, f"Scaled QM vs NIST MAE too high: {mae:.1f} cm^-1"
 
     def test_improvement_progression_logged(
         self, engine, ch3f_mol, default_ff, seminario_result, optimized_result, qm_freqs, capsys
