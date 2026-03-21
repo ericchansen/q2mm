@@ -1,21 +1,25 @@
 #!/usr/bin/env python
-"""Generate Psi4 QM reference data for ethane GS/TS.
+"""Generate Psi4 QM reference data for rh-enamide (issue #74, D2).
 
-Computes Hessians and frequencies using Psi4 at B3LYP/6-31G* and saves
-results as NumPy fixtures for cross-validation against Gaussian .fchk.
+Computes Hessians for the 9 rh-enamide training-set structures using Psi4
+at B3LYP/def2-SVP (comparable to Jaguar's B3LYP/LACVP**). def2-SVP includes
+built-in ECPs for heavy elements like Rh, matching the Hay-Wadt ECP approach
+used by LACVP**.
 
-Usage::
+Usage (inside Psi4 Docker container)::
 
-    python scripts/generate_psi4_reference.py
+    docker run --rm -v C:\\Users\\ericc\\repos\\q2mm:/q2mm -w /q2mm \\
+        ghcr.io/ericchansen/q2mm/ci-psi4:latest \\
+        python scripts/generate_psi4_reference.py
 
-Outputs are saved to ``test/fixtures/full_loop/psi4_ethane/``.
-
-Requirements: ``pip install q2mm[psi4]`` (needs psi4 from conda-forge).
+Outputs saved to ``examples/rh-enamide/psi4_reference/``.
 """
 
 from __future__ import annotations
 
 import json
+import re
+import time
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +27,7 @@ import numpy as np
 try:
     import psi4  # noqa: F401
 except ImportError:
-    raise SystemExit("Psi4 not installed — run: conda install -c conda-forge psi4")
+    raise SystemExit("Psi4 not installed — run in the ci-psi4 Docker container")
 
 from q2mm.backends.qm.psi4 import Psi4Engine
 from q2mm.constants import (
@@ -34,13 +38,14 @@ from q2mm.constants import (
     SPEED_OF_LIGHT_MS,
 )
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
-from q2mm.optimizers.objective import ReferenceData
+from q2mm.parsers import JaguarIn, MacroModel
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop" / "psi4_ethane"
-GS_FCHK = REPO_ROOT / "examples" / "ethane" / "GS.fchk"
-TS_FCHK = REPO_ROOT / "examples" / "ethane" / "TS.fchk"
+RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+TRAINING = RH_DIR / "rh_enamide_training_set"
+MMO = TRAINING / "rh_enamide_training_set.mmo"
+JAG_DIR = TRAINING / "jaguar_spe_freq_in_out"
+OUT_DIR = RH_DIR / "psi4_reference"
 
 
 def qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> np.ndarray:
@@ -56,89 +61,92 @@ def qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> n
     return freqs
 
 
-def generate_for_system(fchk_path: Path, label: str) -> dict:
-    """Run Psi4 on a system and return comparison data."""
-    print(f"\n{'=' * 60}")
-    print(f"Generating Psi4 reference for {label}")
-    print(f"{'=' * 60}")
-
-    ref, mol = ReferenceData.from_fchk(str(fchk_path), bond_tolerance=1.4)
-    print(f"  Atoms: {len(mol.symbols)}, Bonds: {len(mol.bonds)}")
-    print(f"  Gaussian Hessian shape: {mol.hessian.shape}")
-
-    # Compute Psi4 Hessian
-    with Psi4Engine(method="b3lyp", basis="6-31g*") as engine:
-        psi4_hessian = engine.hessian(mol)
-        psi4_energy = engine.energy(mol)
-
-    # Compare Hessians
-    gauss_hessian = mol.hessian
-    hess_diff = np.abs(psi4_hessian - gauss_hessian)
-    print(f"  Hessian max abs diff: {hess_diff.max():.6e}")
-    print(f"  Hessian mean abs diff: {hess_diff.mean():.6e}")
-
-    # Compare frequencies
-    psi4_freqs = qm_frequencies_from_hessian(psi4_hessian, mol.symbols)
-    gauss_freqs = qm_frequencies_from_hessian(gauss_hessian, mol.symbols)
-    psi4_real = sorted(f for f in psi4_freqs if f > 50.0)
-    gauss_real = sorted(f for f in gauss_freqs if f > 50.0)
-    freq_mae = np.mean(np.abs(np.array(psi4_real) - np.array(gauss_real)))
-    print(f"  Frequency MAE: {freq_mae:.2f} cm⁻¹")
-
-    # Seminario comparison
-    mol_psi4 = Q2MMMolecule(
-        symbols=mol.symbols,
-        geometry=mol.geometry,
-        name=f"{label}-psi4",
-        bond_tolerance=1.4,
-        hessian=psi4_hessian,
-    )
-    ff_psi4 = estimate_force_constants(mol_psi4, au_hessian=True)
-    ff_gauss = estimate_force_constants(mol, au_hessian=True)
-
-    param_diff = np.abs(ff_psi4.get_param_vector() - ff_gauss.get_param_vector())
-    print(f"  Seminario param max diff: {param_diff.max():.6e}")
-
-    # Save outputs
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    np.save(OUT_DIR / f"{label}-psi4-hessian.npy", psi4_hessian)
-
-    result = {
-        "system": label,
-        "method": "b3lyp",
-        "basis": "6-31g*",
-        "psi4_energy_hartree": float(psi4_energy),
-        "hessian_max_abs_diff": float(hess_diff.max()),
-        "hessian_mean_abs_diff": float(hess_diff.mean()),
-        "frequency_mae_cm1": float(freq_mae),
-        "psi4_real_freqs": [round(f, 4) for f in psi4_real],
-        "gauss_real_freqs": [round(f, 4) for f in gauss_real],
-        "psi4_seminario_params": ff_psi4.get_param_vector().tolist(),
-        "gauss_seminario_params": ff_gauss.get_param_vector().tolist(),
-        "seminario_param_max_diff": float(param_diff.max()),
-    }
-    return result
-
-
 def main():
-    results = {}
+    print("Loading rh-enamide structures...")
+    mm = MacroModel(str(MMO))
+    jag_files = sorted(
+        JAG_DIR.glob("*.in"),
+        key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
+    )
+    assert len(mm.structures) == len(jag_files) == 9
 
-    if GS_FCHK.exists():
-        results["ethane_gs"] = generate_for_system(GS_FCHK, "ethane-gs")
-    else:
-        print(f"Skipping GS: {GS_FCHK} not found")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    results = []
 
-    if TS_FCHK.exists():
-        results["ethane_ts"] = generate_for_system(TS_FCHK, "ethane-ts")
-    else:
-        print(f"Skipping TS: {TS_FCHK} not found")
+    # Configure Psi4 memory (threads set per-engine via n_threads=16)
+    psi4.set_memory("8 GB")
+
+    for i, (struct, jag_path) in enumerate(zip(mm.structures, jag_files)):
+        label = jag_path.stem
+        print(f"\n{'=' * 60}")
+        print(f"[{i + 1}/9] {label} ({len(struct.atoms)} atoms)")
+        print(f"{'=' * 60}")
+
+        # Load Jaguar reference
+        jag = JaguarIn(str(jag_path))
+        jag_hessian = jag.get_hessian(len(struct.atoms))
+        mol = Q2MMMolecule.from_structure(struct, hessian=jag_hessian)
+
+        # Compute Psi4 Hessian at B3LYP/def2-SVP (charge=+1 for cationic Rh complex)
+        structure = (list(mol.symbols), mol.geometry)
+        t0 = time.perf_counter()
+        with Psi4Engine(method="b3lyp", basis="def2-svp", charge=1, n_threads=16) as engine:
+            psi4_hessian = engine.hessian(structure)
+            psi4_energy = engine.energy(structure)
+        elapsed = time.perf_counter() - t0
+        print(f"  Psi4 Hessian computed in {elapsed:.1f}s")
+
+        # Save Hessian as .npy
+        np.save(OUT_DIR / f"{label}_hessian.npy", psi4_hessian)
+
+        # Compare to Jaguar
+        hess_diff = np.abs(psi4_hessian - jag_hessian)
+        psi4_freqs = qm_frequencies_from_hessian(psi4_hessian, mol.symbols)
+        jag_freqs = qm_frequencies_from_hessian(jag_hessian, mol.symbols)
+        psi4_real = sorted(f for f in psi4_freqs if f > 50.0)
+        jag_real = sorted(f for f in jag_freqs if f > 50.0)
+        n = min(len(psi4_real), len(jag_real))
+        freq_mae = float(np.mean(np.abs(np.array(psi4_real[:n]) - np.array(jag_real[:n]))))
+
+        print(f"  Hessian max diff: {hess_diff.max():.6e}")
+        print(f"  Freq MAE: {freq_mae:.1f} cm⁻¹ ({n} modes)")
+
+        results.append(
+            {
+                "structure": label,
+                "n_atoms": len(mol.symbols),
+                "method": "b3lyp",
+                "basis": "def2-svp",
+                "psi4_energy_hartree": float(psi4_energy),
+                "elapsed_s": round(elapsed, 1),
+                "hessian_max_abs_diff": float(hess_diff.max()),
+                "hessian_mean_abs_diff": float(hess_diff.mean()),
+                "n_psi4_real_freqs": len(psi4_real),
+                "n_jaguar_real_freqs": len(jag_real),
+                "frequency_mae_cm1": round(freq_mae, 2),
+                "psi4_real_freqs_cm1": [round(f, 2) for f in psi4_real],
+                "jaguar_real_freqs_cm1": [round(f, 2) for f in jag_real],
+            }
+        )
 
     # Save summary
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    summary_path = OUT_DIR / "cross_validation_summary.json"
+    summary = {
+        "description": "Psi4 B3LYP/def2-SVP Hessians for rh-enamide training set",
+        "jaguar_level": "B3LYP/LACVP**",
+        "psi4_level": "B3LYP/def2-SVP",
+        "n_structures": len(results),
+        "structures": results,
+    }
+    summary_path = OUT_DIR / "psi4_reference_summary.json"
     with open(summary_path, "w") as f:
-        json.dump(results, f, indent=2)
-    print(f"\nSummary saved to {summary_path}")
+        json.dump(summary, f, indent=2)
+
+    print(f"\n{'=' * 60}")
+    print(f"Done! {len(results)} structures processed.")
+    print(f"Hessians: {OUT_DIR}/*_hessian.npy")
+    print(f"Summary:  {summary_path}")
+    total_time = sum(r["elapsed_s"] for r in results)
+    print(f"Total Psi4 time: {total_time:.0f}s ({total_time / 60:.1f} min)")
 
 
 if __name__ == "__main__":

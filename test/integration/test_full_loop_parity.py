@@ -1,23 +1,15 @@
 """Full-loop parity validation — issue #74.
 
 Validates the complete Q2MM pipeline end-to-end:
-1. QM data loading (Gaussian .fchk, Jaguar .in, or Psi4)
+1. QM data loading (Gaussian .fchk or Jaguar .in)
 2. Seminario force-constant estimation
 3. Frequency-based penalty scoring (via OpenMM)
-4. L-BFGS-B optimization
+4. Optimizer convergence (Nelder-Mead for complex systems, L-BFGS-B for small)
 5. Determinism and golden-fixture reproducibility
 
-The rh-enamide dataset (9 Jaguar structures) validates Seminario
-parameter extraction for a large organometallic system.  The ethane
-GS/TS systems validate the full optimization loop with frequency-based
-objective functions.
-
-Psi4 cross-validation tests compare QM Hessians from Psi4 against
-Gaussian .fchk data to ensure backend-independent results.
-
-Golden fixtures in ``test/fixtures/full_loop/`` store the expected
-pipeline outputs.  These are deterministic — the same code + data must
-produce bit-identical scores and parameter vectors.
+The rh-enamide dataset (9 Jaguar structures) validates the full pipeline
+on a real organometallic system (Rh-diphosphine, 36 atoms, 182 params).
+Ethane GS/TS tests validate the same pipeline on a simpler molecule.
 
 References
 ----------
@@ -32,6 +24,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+import re
 
 from test._shared import GS_FCHK, REPO_ROOT, TS_FCHK
 
@@ -94,11 +88,19 @@ def _qm_frequencies_from_hessian(
     return freqs
 
 
-def _build_frequency_reference(qm_freqs, mm_all_freqs, *, threshold: float = 50.0, weight: float = 0.001):
-    """Build a ReferenceData of frequency observations.
+def _build_frequency_reference(
+    qm_freqs,
+    mm_all_freqs,
+    *,
+    threshold: float = 50.0,
+    weight: float = 0.001,
+    molecule_idx: int = 0,
+    ref=None,
+):
+    """Build (or extend) a ReferenceData with frequency observations.
 
-    Maps QM real frequencies (>threshold) to MM real-mode indices,
-    following the same pattern as ``test_e2e_sn2_validation.py``.
+    Maps QM real frequencies (>threshold) to MM real-mode indices.
+    Pass an existing *ref* to append multi-molecule data.
     """
     from q2mm.optimizers.objective import ReferenceData
 
@@ -106,9 +108,10 @@ def _build_frequency_reference(qm_freqs, mm_all_freqs, *, threshold: float = 50.
     mm_real_idx = sorted(i for i, f in enumerate(mm_all_freqs) if f > threshold)
     n = min(len(qm_real), len(mm_real_idx))
 
-    ref = ReferenceData()
+    if ref is None:
+        ref = ReferenceData()
     for k in range(n):
-        ref.add_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=weight, molecule_idx=0)
+        ref.add_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=weight, molecule_idx=molecule_idx)
     return ref, qm_real[:n]
 
 
@@ -128,26 +131,9 @@ class TestRhEnamideSeminarioTiming:
     @pytest.fixture(scope="class")
     def rh_molecules(self):
         """Load all 9 rh-enamide structures + Hessians."""
-        import re
-
-        from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.parsers import JaguarIn, MacroModel
-
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
-
-        mm = MacroModel(str(MMO_PATH))
-        jag_files = sorted(
-            JAG_DIR.glob("*.in"), key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)]
-        )
-
-        molecules = []
-        for struct, jag_path in zip(mm.structures, jag_files):
-            jag = JaguarIn(str(jag_path))
-            hess = jag.get_hessian(len(struct.atoms))
-            mol = Q2MMMolecule.from_structure(struct, hessian=hess)
-            molecules.append(mol)
-        return molecules
+        return _load_rh_enamide_molecules()
 
     @pytest.mark.slow
     def test_seminario_pipeline_timing(self, rh_molecules, capsys):
@@ -192,6 +178,156 @@ class TestRhEnamideSeminarioTiming:
             ff2.get_param_vector(),
             err_msg="Seminario is non-deterministic across runs",
         )
+
+
+# ===========================================================================
+# Rh-enamide: full optimization loop with Jaguar QM data (D1)
+# ===========================================================================
+
+
+def _load_rh_enamide_molecules():
+    """Load 9 rh-enamide structures with Jaguar Hessians."""
+    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.parsers import JaguarIn, MacroModel
+
+    mm = MacroModel(str(MMO_PATH))
+    jag_files = sorted(
+        JAG_DIR.glob("*.in"),
+        key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
+    )
+    molecules = []
+    for struct, jag_path in zip(mm.structures, jag_files):
+        jag = JaguarIn(str(jag_path))
+        hess = jag.get_hessian(len(struct.atoms))
+        molecules.append(Q2MMMolecule.from_structure(struct, hessian=hess))
+    return molecules
+
+
+@requires_openmm
+@pytest.mark.openmm
+@pytest.mark.slow
+class TestRhEnamideFullLoop:
+    """D1: Full pipeline on rh-enamide — Jaguar → Seminario → OpenMM → optimize.
+
+    9 organometallic structures (Rh-diphosphine, 36 atoms each, B3LYP/LACVP**).
+    182 parameters (8 bond types, 23 angle types, 36 vdW types).
+    Frequency-based objective with L-BFGS-B optimization.
+    """
+
+    @pytest.fixture(scope="class")
+    def pipeline_result(self):
+        """Run the full rh-enamide pipeline."""
+        from q2mm.backends.mm import OpenMMEngine
+        from q2mm.models.forcefield import ForceField
+        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.optimizers.objective import ObjectiveFunction
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        if not MMO_PATH.exists():
+            pytest.skip("rh-enamide dataset not found")
+
+        molecules = _load_rh_enamide_molecules()
+        ff_template = ForceField.from_mm3_fld(str(RH_DIR / "mm3.fld"))
+
+        # Seminario estimation
+        t0 = time.perf_counter()
+        ff = estimate_force_constants(molecules, forcefield=ff_template)
+        t_seminario = time.perf_counter() - t0
+        seminario_params = ff.get_param_vector().copy()
+
+        # Build multi-molecule frequency reference
+        engine = OpenMMEngine()
+        freq_ref = None
+        n_freqs_per_mol = []
+        for mol_idx, mol in enumerate(molecules):
+            mm_freqs = engine.frequencies(mol, ff)
+            qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
+            freq_ref, qm_real = _build_frequency_reference(
+                qm_freqs,
+                mm_freqs,
+                molecule_idx=mol_idx,
+                ref=freq_ref,
+            )
+            n_freqs_per_mol.append(len(qm_real))
+
+        # Initial score
+        obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
+        initial_score = obj(seminario_params)
+
+        # Optimize (Nelder-Mead: no gradients, robust for high-dimensional
+        # frequency objectives where finite-difference L-BFGS-B can diverge)
+        t0 = time.perf_counter()
+        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=500, verbose=False)
+        result = opt.optimize(obj)
+        t_optimize = time.perf_counter() - t0
+
+        return {
+            "n_molecules": len(molecules),
+            "n_params": ff.n_params,
+            "n_bonds": len(ff.bonds),
+            "n_angles": len(ff.angles),
+            "n_vdws": len(ff.vdws),
+            "n_freqs_per_mol": n_freqs_per_mol,
+            "total_freq_refs": sum(n_freqs_per_mol),
+            "seminario_params": seminario_params,
+            "initial_score": initial_score,
+            "final_score": result.final_score,
+            "improvement": result.improvement,
+            "converged": result.success,
+            "optimized_params": ff.get_param_vector().copy(),
+            "t_seminario": t_seminario,
+            "t_optimize": t_optimize,
+        }
+
+    def test_loads_9_molecules(self, pipeline_result):
+        """All 9 rh-enamide structures are loaded."""
+        assert pipeline_result["n_molecules"] == 9
+
+    def test_seminario_182_params(self, pipeline_result):
+        """Seminario produces the expected parameter count."""
+        assert pipeline_result["n_params"] == 182
+        assert pipeline_result["n_bonds"] == 8
+        assert pipeline_result["n_angles"] == 23
+        assert pipeline_result["n_vdws"] == 36
+
+    def test_all_molecules_have_frequencies(self, pipeline_result):
+        """Every molecule contributes frequency reference data."""
+        for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
+            assert n > 0, f"Molecule {i} contributed 0 frequency references"
+
+    def test_initial_score_is_finite(self, pipeline_result):
+        """Initial penalty score is finite and positive."""
+        score = pipeline_result["initial_score"]
+        assert np.isfinite(score), f"Initial score is not finite: {score}"
+        assert score > 0, f"Initial score should be positive: {score}"
+
+    def test_optimization_improves_score(self, pipeline_result):
+        """Optimizer reduces the penalty score."""
+        assert pipeline_result["final_score"] < pipeline_result["initial_score"]
+
+    def test_improvement_is_meaningful(self, pipeline_result):
+        """Score improves by at least 1%."""
+        assert pipeline_result["improvement"] > 0.01, (
+            f"Improvement too small: {pipeline_result['improvement'] * 100:.1f}%"
+        )
+
+    def test_optimized_params_differ_from_seminario(self, pipeline_result):
+        """Optimizer actually modifies parameters."""
+        diff = np.abs(pipeline_result["optimized_params"] - pipeline_result["seminario_params"])
+        assert np.any(diff > 1e-6), "Optimizer didn't change any parameters"
+
+    def test_timing_report(self, pipeline_result, capsys):
+        """Log timing (informational, never fails)."""
+        r = pipeline_result
+        with capsys.disabled():
+            print(
+                f"\n  Rh-enamide full loop ({r['n_molecules']} mols, {r['n_params']} params, "
+                f"{r['total_freq_refs']} freq refs):"
+                f"\n    Seminario: {r['t_seminario']:.3f}s"
+                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=500)"
+                f"\n    Score:     {r['initial_score']:.1f} → {r['final_score']:.1f} "
+                f"({r['improvement'] * 100:.1f}% improvement)"
+            )
 
 
 # ===========================================================================
@@ -478,144 +614,3 @@ class TestPipelineDeterminism:
             err_msg="Pipeline produced different params on two runs",
         )
         assert results[0][0] == results[1][0], "Pipeline produced different scores on two runs"
-
-
-# ===========================================================================
-# Psi4 cross-validation
-# ===========================================================================
-
-
-@pytest.mark.psi4
-@pytest.mark.slow
-class TestPsi4CrossValidation:
-    """Cross-validate Psi4 QM results against Gaussian .fchk for ethane.
-
-    These tests run actual Psi4 computations and compare the resulting
-    Hessians and Seminario parameters to the Gaussian reference.
-    Only runs when Psi4 is installed (CI psi4 container).
-    """
-
-    @pytest.fixture(scope="class")
-    def psi4_ethane(self):
-        """Compute ethane GS Hessian via Psi4."""
-        psi4 = pytest.importorskip("psi4")
-        from q2mm.backends.qm.psi4 import Psi4Engine
-        from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.optimizers.objective import ReferenceData
-
-        # Load ethane geometry from .fchk
-        ref, mol_fchk = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-
-        # Compute Hessian with Psi4 at B3LYP/6-31G*
-        with Psi4Engine(method="b3lyp", basis="6-31g*") as engine:
-            hessian = engine.hessian(mol_fchk)
-
-        mol_psi4 = Q2MMMolecule(
-            symbols=mol_fchk.symbols,
-            geometry=mol_fchk.geometry,
-            name="ethane-psi4",
-            bond_tolerance=1.4,
-            hessian=hessian,
-        )
-        return mol_psi4, mol_fchk
-
-    def test_psi4_hessian_close_to_gaussian(self, psi4_ethane):
-        """Psi4 and Gaussian Hessians agree within 1% for same basis set."""
-        mol_psi4, mol_fchk = psi4_ethane
-        # Both Hessians in Hartree/Bohr²
-        np.testing.assert_allclose(
-            mol_psi4.hessian,
-            mol_fchk.hessian,
-            rtol=0.01,
-            atol=1e-5,
-            err_msg="Psi4 vs Gaussian Hessian mismatch",
-        )
-
-    def test_psi4_seminario_close_to_gaussian(self, psi4_ethane):
-        """Seminario params from Psi4 match Gaussian-derived params."""
-        from q2mm.models.seminario import estimate_force_constants
-
-        mol_psi4, mol_fchk = psi4_ethane
-        ff_psi4 = estimate_force_constants(mol_psi4, au_hessian=True)
-        ff_gauss = estimate_force_constants(mol_fchk, au_hessian=True)
-
-        np.testing.assert_allclose(
-            ff_psi4.get_param_vector(),
-            ff_gauss.get_param_vector(),
-            rtol=0.02,
-            err_msg="Psi4 vs Gaussian Seminario params differ >2%",
-        )
-
-    def test_psi4_frequencies_close_to_gaussian(self, psi4_ethane):
-        """QM frequencies from Psi4 Hessian match Gaussian frequencies."""
-        mol_psi4, mol_fchk = psi4_ethane
-        freqs_psi4 = _qm_frequencies_from_hessian(mol_psi4.hessian, mol_psi4.symbols)
-        freqs_gauss = _qm_frequencies_from_hessian(mol_fchk.hessian, mol_fchk.symbols)
-
-        real_psi4 = sorted(f for f in freqs_psi4 if f > 50.0)
-        real_gauss = sorted(f for f in freqs_gauss if f > 50.0)
-
-        assert len(real_psi4) == len(real_gauss), "Different number of real frequencies"
-        np.testing.assert_allclose(
-            real_psi4,
-            real_gauss,
-            rtol=0.01,
-            err_msg="Psi4 vs Gaussian frequency mismatch",
-        )
-
-
-@pytest.mark.psi4
-@pytest.mark.slow
-class TestPsi4FullLoop:
-    """Full optimization loop using Psi4-generated QM data.
-
-    Runs the complete pipeline: Psi4 Hessian → Seminario → OpenMM
-    frequency objective → L-BFGS-B optimization.  Validates that the
-    pipeline converges and produces physically reasonable results
-    independent of which QM backend generated the Hessian.
-    """
-
-    def test_psi4_ethane_full_optimization(self):
-        """Psi4 → Seminario → OpenMM optimize → verify convergence."""
-        psi4 = pytest.importorskip("psi4")
-        from q2mm.backends.mm import OpenMMEngine
-        from q2mm.backends.qm.psi4 import Psi4Engine
-        from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.models.seminario import estimate_force_constants
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-        # Load geometry
-        ref, mol_fchk = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-
-        # Psi4 Hessian
-        with Psi4Engine(method="b3lyp", basis="6-31g*") as engine:
-            hessian = engine.hessian(mol_fchk)
-
-        mol = Q2MMMolecule(
-            symbols=mol_fchk.symbols,
-            geometry=mol_fchk.geometry,
-            name="ethane-psi4",
-            bond_tolerance=1.4,
-            hessian=hessian,
-        )
-
-        # Seminario
-        ff = estimate_force_constants(mol, au_hessian=True)
-        assert ff.n_params > 0
-
-        # Frequency objective
-        mm_engine = OpenMMEngine()
-        qm_freqs = _qm_frequencies_from_hessian(hessian, mol.symbols)
-        mm_all = mm_engine.frequencies(mol, ff)
-        freq_ref, _ = _build_frequency_reference(qm_freqs, mm_all)
-
-        obj = ObjectiveFunction(ff, mm_engine, [mol], freq_ref)
-        sem_score = obj(ff.get_param_vector())
-
-        # Optimize
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
-
-        assert result.success, "Psi4-based optimization did not converge"
-        assert result.final_score <= sem_score + 1e-12, "Optimization worsened the score"

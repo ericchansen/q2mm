@@ -115,5 +115,5 @@ The recent refactoring modernized Q2MM around three goals:
 | [Getting Started](getting-started.md) | Installation, prerequisites, and first run |
 | [Tutorial](tutorial.md) | End-to-end walkthrough: QM data → optimized force field |
 | [API Overview](api.md) | Module reference for parsers, models, optimizers, and backends |
-| [Performance](performance.md) | Benchmarks for backends, optimizers, and the Seminario method |
+| [Benchmarks](benchmarks/index.md) | Benchmarks for backends, optimizers, and the Seminario method |
 | [References](references.md) | Literature citations and further reading |
