@@ -1,0 +1,12 @@
+name: q2mm-jax
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - jax
+  - jaxlib
+  - pytest
+  - ruff
+  - pip

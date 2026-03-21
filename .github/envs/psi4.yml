@@ -1,0 +1,11 @@
+name: q2mm-psi4
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - psi4
+  - pytest
+  - ruff
+  - pip

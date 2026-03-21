@@ -20,8 +20,9 @@ slower tiers::
 Backend markers
 ---------------
 Tests can be tagged with ``@pytest.mark.openmm``, ``@pytest.mark.tinker``,
-or ``@pytest.mark.jax`` to indicate which MM backend they require.  Tests
-are **auto-skipped** when the corresponding dependency is not installed.
+``@pytest.mark.jax``, or ``@pytest.mark.psi4`` to indicate which backend they
+require.  Tests are **auto-skipped** when the corresponding dependency is not
+installed.
 
 Use ``-m`` to filter::
 
@@ -57,6 +58,13 @@ try:
 except ImportError:
     _HAS_JAX = False
 
+try:
+    import psi4  # noqa: F401
+
+    _HAS_PSI4 = True
+except ImportError:
+    _HAS_PSI4 = False
+
 
 def pytest_addoption(parser):
     parser.addoption(
@@ -79,6 +87,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "openmm: requires OpenMM backend")
     config.addinivalue_line("markers", "tinker: requires Tinker backend")
     config.addinivalue_line("markers", "jax: requires JAX backend")
+    config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
 
 
 def pytest_collection_modifyitems(config, items):
@@ -102,6 +111,7 @@ def pytest_collection_modifyitems(config, items):
         "openmm": (_HAS_OPENMM, "OpenMM not installed"),
         "tinker": (_HAS_TINKER, "Tinker not installed or not found"),
         "jax": (_HAS_JAX, "JAX not installed"),
+        "psi4": (_HAS_PSI4, "Psi4 not installed"),
     }
     for marker_name, (available, reason) in _backend_checks.items():
         if not available:
