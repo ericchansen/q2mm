@@ -1,5 +1,6 @@
 name: q2mm-full
 channels:
+  - bioconda
   - conda-forge
 dependencies:
   - python=3.12
