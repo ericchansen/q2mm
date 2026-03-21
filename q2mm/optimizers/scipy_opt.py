@@ -243,9 +243,16 @@ class ScipyOptimizer:
             callback=callback,
         )
 
+        # Detect callback-triggered early stop
+        abandoned = getattr(callback, "state", {}).get("abandoned", False)
+        if abandoned:
+            message = "Abandoned: sustained divergence from initial score"
+        else:
+            message = str(scipy_result.message)
+
         return OptimizationResult(
             success=bool(scipy_result.success),
-            message=str(scipy_result.message),
+            message=message,
             initial_score=objective.history[0] if objective.history else 0.0,
             final_score=float(scipy_result.fun),
             n_iterations=int(scipy_result.get("nit", 0)),
@@ -311,6 +318,8 @@ class ScipyOptimizer:
         factor = self.divergence_factor
         patience = self.divergence_patience
         verbose = self.verbose
+        # Mutable flag so _run_minimize can detect callback-triggered stops
+        state = {"abandoned": False}
 
         def callback(xk):
             nonlocal diverge_count
@@ -334,10 +343,12 @@ class ScipyOptimizer:
                             factor,
                             patience,
                         )
+                        state["abandoned"] = True
                         return True
                 else:
                     diverge_count = 0
 
             return False
 
+        callback.state = state
         return callback

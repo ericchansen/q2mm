@@ -86,6 +86,7 @@ def colorize_status(text: str, status: str) -> str:
         "converged": "32",  # green
         "maxiter": "33",  # yellow
         "not converged": "33",  # yellow
+        "abandoned": "31",  # red
         "error": "31",  # red
     }
     code = status_colors.get(status)
@@ -504,7 +505,9 @@ def leaderboard_table(
             status = "converged"
         else:
             msg = (r.get("message") or "").lower()
-            if "iteration" in msg or "maxiter" in msg or "limit" in msg:
+            if "abandoned" in msg:
+                status = "abandoned"
+            elif "iteration" in msg or "maxiter" in msg or "limit" in msg:
                 status = "maxiter"
             else:
                 status = "not converged"
