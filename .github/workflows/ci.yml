@@ -10,6 +10,8 @@ jobs:
   # ---- Fast: lint + core tests (no backends, ~30s) ----
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +23,8 @@ jobs:
 
   test-core:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
@@ -39,50 +43,65 @@ jobs:
 
   test-openmm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
       options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e . --no-deps && pytest -m openmm --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm --run-slow -q
 
   test-tinker:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: ghcr.io/ericchansen/q2mm/ci-tinker:latest
       options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e . --no-deps && pytest -m tinker --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker --run-slow -q
 
   test-jax:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax:latest
       options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e . --no-deps && pytest -m jax --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-slow -q
 
   test-psi4:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: ghcr.io/ericchansen/q2mm/ci-psi4:latest
       options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e . --no-deps && pytest -m psi4 --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 --run-slow -q
 
   test-cross-backend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     container:
       image: ghcr.io/ericchansen/q2mm/ci-full:latest
       options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e . --no-deps && pytest --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest --run-slow -q
