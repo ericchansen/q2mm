@@ -635,6 +635,32 @@ class TestAmberFrcmod:
         content = out.read_text()
         assert content.startswith("Remark line goes here")
 
+    def test_template_preserves_inline_comments(self, tmp_path):
+        """Template mode should preserve trailing inline comments."""
+        frcmod_with_comments = tmp_path / "commented.frcmod"
+        frcmod_with_comments.write_text(
+            "Remark\n"
+            "MASS\n"
+            "\n"
+            "BOND\n"
+            "c -c4    337.5987    1.6002  ATTN, need revision\n"
+            "\n"
+            "ANGLE\n"
+            "c -c4-ca    50.7932   102.6974   # penalty score\n"
+            "\n",
+            encoding="utf-8",
+        )
+        ff = ForceField.from_amber_frcmod(frcmod_with_comments)
+        ff.bonds[0].force_constant = 400.0
+        ff.angles[0].force_constant = 60.0
+        out = tmp_path / "updated.frcmod"
+        ff.to_amber_frcmod(out)
+        content = out.read_text()
+        assert "ATTN, need revision" in content
+        assert "# penalty score" in content
+        assert "400.0000" in content
+        assert "60.0000" in content
+
     def test_upstream_frcmod_irregular_spacing(self):
         """Parser should handle upstream Q2MM frcmod with irregular spacing."""
         ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
