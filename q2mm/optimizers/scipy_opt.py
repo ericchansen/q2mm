@@ -34,7 +34,6 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
-from scipy import optimize
 
 from q2mm.models.forcefield import ForceField
 from q2mm.optimizers.objective import ObjectiveFunction
@@ -203,6 +202,8 @@ class ScipyOptimizer:
         initial_score: float,
     ) -> OptimizationResult:
         """Run scipy.optimize.minimize."""
+        from scipy import optimize
+
         options: dict = {"maxiter": self.maxiter}
 
         # Method-specific convergence tolerance and step size
@@ -270,6 +271,8 @@ class ScipyOptimizer:
         bounds: list[tuple[float, float]] | None,
     ) -> OptimizationResult:
         """Run scipy.optimize.least_squares (Levenberg-Marquardt or trf)."""
+        from scipy import optimize
+
         if bounds:
             lower = np.array([b[0] for b in bounds])
             upper = np.array([b[1] for b in bounds])

@@ -22,6 +22,35 @@ if TYPE_CHECKING:
     from q2mm.diagnostics.benchmark import BenchmarkResult
 
 
+def build_leaderboard_rows(results: list[BenchmarkResult]) -> list[dict]:
+    """Build leaderboard row dicts from benchmark results."""
+    rows = []
+    for r in results:
+        meta = r.metadata
+        opt = r.optimized or {}
+        initial_rmsd = float("nan")
+        if r.seminario and r.seminario.get("rmsd") is not None:
+            initial_rmsd = r.seminario["rmsd"]
+        elif r.default_ff and r.default_ff.get("rmsd") is not None:
+            initial_rmsd = r.default_ff["rmsd"]
+        rows.append(
+            {
+                "backend": meta.get("backend", "?"),
+                "optimizer": meta.get("optimizer", "?"),
+                "rmsd": opt.get("rmsd", float("nan")),
+                "mae": opt.get("mae", float("nan")),
+                "time_s": opt.get("elapsed_s", 0.0) or 0.0,
+                "n_eval": opt.get("n_eval", 0) or 0,
+                "final_score": opt.get("final_score", float("nan")) or float("nan"),
+                "converged": opt.get("converged", False),
+                "message": opt.get("message", ""),
+                "error": meta.get("error", ""),
+                "initial_rmsd": initial_rmsd,
+            }
+        )
+    return rows
+
+
 def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) -> list[TablePrinter]:
     """Generate all SI tables for a single benchmark result.
 
@@ -136,30 +165,7 @@ def full_report(results: list[BenchmarkResult]) -> None:
         One result per (backend, optimizer) combination.
     """
     # --- Leaderboard ---
-    rows = []
-    for r in results:
-        meta = r.metadata
-        opt = r.optimized or {}
-        initial_rmsd = float("nan")
-        if r.seminario and r.seminario.get("rmsd") is not None:
-            initial_rmsd = r.seminario["rmsd"]
-        elif r.default_ff and r.default_ff.get("rmsd") is not None:
-            initial_rmsd = r.default_ff["rmsd"]
-        rows.append(
-            {
-                "backend": meta.get("backend", "?"),
-                "optimizer": meta.get("optimizer", "?"),
-                "rmsd": opt.get("rmsd", float("nan")),
-                "mae": opt.get("mae", float("nan")),
-                "time_s": opt.get("elapsed_s", 0.0) or 0.0,
-                "n_eval": opt.get("n_eval", 0) or 0,
-                "final_score": opt.get("final_score", float("nan")) or float("nan"),
-                "converged": opt.get("converged", False),
-                "message": opt.get("message", ""),
-                "error": meta.get("error", ""),
-                "initial_rmsd": initial_rmsd,
-            }
-        )
+    rows = build_leaderboard_rows(results)
 
     if rows:
         lb = leaderboard_table(rows)

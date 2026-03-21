@@ -58,8 +58,9 @@ class TinkerEngine(MMEngine):
         params_file: Path to MM3 parameter file (auto-detected if None)
     """
 
-    def __init__(self, tinker_dir: str = None, params_file: str = None):
+    def __init__(self, tinker_dir: str = None, params_file: str = None, bond_tolerance: float = 1.3):
         self._tinker_dir = tinker_dir or _find_tinker_dir()
+        self._bond_tolerance = bond_tolerance
         if self._tinker_dir is None:
             raise FileNotFoundError(
                 "Tinker not found. Install from https://dasher.wustl.edu/tinker/ or pass tinker_dir parameter."
@@ -141,7 +142,7 @@ class TinkerEngine(MMEngine):
 
             # Build connectivity (simple distance-based)
             coords_arr = np.array(coords)
-            bonds = self._detect_bonds(atoms, coords_arr)
+            bonds = self._detect_bonds(atoms, coords_arr, self._bond_tolerance)
             atom_type_numbers = [type_map.get(atom, 1) for atom in atoms]
 
         # Write Tinker XYZ
@@ -181,7 +182,7 @@ class TinkerEngine(MMEngine):
         return txyz_path
 
     @staticmethod
-    def _detect_bonds(atoms: list[str], coords: np.ndarray) -> dict:
+    def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = 1.3) -> dict:
         """Simple distance-based bond detection using shared covalent radii."""
         from q2mm.models.molecule import COVALENT_RADII
 
@@ -191,7 +192,7 @@ class TinkerEngine(MMEngine):
                 ri = COVALENT_RADII.get(atoms[i], 0.76)
                 rj = COVALENT_RADII.get(atoms[j], 0.76)
                 dist = np.linalg.norm(coords[i] - coords[j])
-                if dist < 1.3 * (ri + rj):
+                if dist < bond_tolerance * (ri + rj):
                     bonds[i].append(j)
                     bonds[j].append(i)
         return bonds

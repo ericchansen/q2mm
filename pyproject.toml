@@ -66,6 +66,7 @@ dev = [
     "scipy",
     "parmed",
     "qcelemental",
+    "openmm",
     "build",
 ]
 docs = [
@@ -76,6 +77,8 @@ all = [
     "parmed",
     "scipy",
     "qcelemental",
+    "jax",
+    "jaxlib",
 ]
 
 [project.scripts]

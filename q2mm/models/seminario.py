@@ -31,6 +31,10 @@ from q2mm.models.hessian import (
 
 logger = logging.getLogger(__name__)
 
+# Default DFT Hessian scaling factor (B3LYP/6-31G* level).
+# See: Scott & Radom, J. Phys. Chem. 1996, 100, 16502-16513.
+DEFAULT_DFT_SCALING = 0.963
+
 
 def _coerce_molecules(
     molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
@@ -47,50 +51,29 @@ def _coerce_molecules(
     return molecules
 
 
-def _match_mode_for_bonds(param: BondParam, bonds: list[DetectedBond]) -> str:
-    """Choose the most specific available matching strategy for bond parameters."""
-    if param.ff_row is not None and any(bond.ff_row is not None for bond in bonds):
+def _match_mode(param, items: list) -> str:
+    """Choose the most specific available matching strategy for parameters."""
+    if param.ff_row is not None and any(item.ff_row is not None for item in items):
         return "ff_row"
-    if param.env_id and any(bond.env_id for bond in bonds):
+    if param.env_id and any(item.env_id for item in items):
         return "env_id"
     return "elements"
 
 
-def _match_mode_for_angles(param: AngleParam, angles: list[DetectedAngle]) -> str:
-    """Choose the most specific available matching strategy for angle parameters."""
-    if param.ff_row is not None and any(angle.ff_row is not None for angle in angles):
-        return "ff_row"
-    if param.env_id and any(angle.env_id for angle in angles):
-        return "env_id"
-    return "elements"
-
-
-def _collect_matching_bonds(
+def _collect_matching(
     molecules: list[Q2MMMolecule],
-    param: BondParam,
-) -> list[tuple[Q2MMMolecule, DetectedBond]]:
-    """Collect all bonds across molecules that match a bond parameter."""
-    all_bonds = [(molecule, bond) for molecule in molecules for bond in molecule.bonds]
-    match_mode = _match_mode_for_bonds(param, [bond for _, bond in all_bonds])
+    param,
+    items_attr: str,
+    element_key_attr: str,
+) -> list[tuple[Q2MMMolecule, object]]:
+    """Collect all items (bonds or angles) across molecules that match a parameter."""
+    all_items = [(mol, item) for mol in molecules for item in getattr(mol, items_attr)]
+    match_mode = _match_mode(param, [item for _, item in all_items])
     if match_mode == "ff_row":
-        return [(molecule, bond) for molecule, bond in all_bonds if bond.ff_row == param.ff_row]
+        return [(mol, item) for mol, item in all_items if item.ff_row == param.ff_row]
     if match_mode == "env_id":
-        return [(molecule, bond) for molecule, bond in all_bonds if bond.env_id == param.env_id]
-    return [(molecule, bond) for molecule, bond in all_bonds if bond.element_pair == param.key]
-
-
-def _collect_matching_angles(
-    molecules: list[Q2MMMolecule],
-    param: AngleParam,
-) -> list[tuple[Q2MMMolecule, DetectedAngle]]:
-    """Collect all angles across molecules that match an angle parameter."""
-    all_angles = [(molecule, angle) for molecule in molecules for angle in molecule.angles]
-    match_mode = _match_mode_for_angles(param, [angle for _, angle in all_angles])
-    if match_mode == "ff_row":
-        return [(molecule, angle) for molecule, angle in all_angles if angle.ff_row == param.ff_row]
-    if match_mode == "env_id":
-        return [(molecule, angle) for molecule, angle in all_angles if angle.env_id == param.env_id]
-    return [(molecule, angle) for molecule, angle in all_angles if angle.element_triple == param.key]
+        return [(mol, item) for mol, item in all_items if item.env_id == param.env_id]
+    return [(mol, item) for mol, item in all_items if getattr(item, element_key_attr) == param.key]
 
 
 def _should_keep_force_constant(value: float, invalid_policy: Literal["keep", "skip"]) -> bool:
@@ -137,7 +120,12 @@ def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int, coords
 
 
 def seminario_bond_fc(
-    atom_i: int, atom_j: int, coords: np.ndarray, hessian: np.ndarray, au_units: bool = True, dft_scaling: float = 0.963
+    atom_i: int,
+    atom_j: int,
+    coords: np.ndarray,
+    hessian: np.ndarray,
+    au_units: bool = True,
+    dft_scaling: float = DEFAULT_DFT_SCALING,
 ) -> float:
     """Estimate bond stretching force constant via Seminario method.
 
@@ -173,7 +161,7 @@ def seminario_angle_fc(
     coords: np.ndarray,
     hessian: np.ndarray,
     au_units: bool = True,
-    dft_scaling: float = 0.963,
+    dft_scaling: float = DEFAULT_DFT_SCALING,
 ) -> float:
     """Estimate angle bending force constant via modified Seminario method.
 
@@ -328,7 +316,7 @@ def estimate_force_constants(
 
     # Estimate bond force constants
     for bond_param in ff.bonds:
-        matching_bonds = _collect_matching_bonds(molecules, bond_param)
+        matching_bonds = _collect_matching(molecules, bond_param, "bonds", "element_pair")
 
         if not matching_bonds:
             logger.warning(f"No bonds match {bond_param.key} in molecule")
@@ -367,7 +355,7 @@ def estimate_force_constants(
 
     # Estimate angle force constants
     for angle_param in ff.angles:
-        matching_angles = _collect_matching_angles(molecules, angle_param)
+        matching_angles = _collect_matching(molecules, angle_param, "angles", "element_triple")
 
         if not matching_angles:
             logger.warning(f"No angles match {angle_param.key} in molecule")

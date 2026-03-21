@@ -106,33 +106,39 @@ def _clean_atom_type(atom_types: list[str] | tuple[str, ...] | str | None) -> st
     return cleaned[0] if cleaned else ""
 
 
+def _build_param_maps(params, secondary_key: str) -> tuple[dict, dict]:
+    """Build ff_row and secondary-key lookup dicts for a list of parameters."""
+    by_row = {p.ff_row: p for p in params if p.ff_row is not None}
+    by_key = {getattr(p, secondary_key): p for p in params if getattr(p, secondary_key, None)}
+    return by_row, by_key
+
+
 def _build_bond_maps(bonds: list[BondParam]) -> tuple[dict[int, BondParam], dict[str, BondParam]]:
-    by_row = {bond.ff_row: bond for bond in bonds if bond.ff_row is not None}
-    by_env = {bond.env_id: bond for bond in bonds if bond.env_id}
-    return by_row, by_env
+    return _build_param_maps(bonds, "env_id")
 
 
 def _build_angle_maps(angles: list[AngleParam]) -> tuple[dict[int, AngleParam], dict[str, AngleParam]]:
-    by_row = {angle.ff_row: angle for angle in angles if angle.ff_row is not None}
-    by_env = {angle.env_id: angle for angle in angles if angle.env_id}
-    return by_row, by_env
+    return _build_param_maps(angles, "env_id")
 
 
 def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
-    by_row = {vdw.ff_row: vdw for vdw in vdws if vdw.ff_row is not None}
-    by_type = {vdw.atom_type: vdw for vdw in vdws if vdw.atom_type}
-    return by_row, by_type
+    return _build_param_maps(vdws, "atom_type")
+
+
+def _match_for_export(param, by_row: dict, by_env: dict, expected_len: int, canonicalize_fn):
+    """Match a parsed parameter to an internal param by ff_row or env_id."""
+    if param.ff_row is not None and param.ff_row in by_row:
+        return by_row[param.ff_row]
+    atom_types = _clean_atom_types(getattr(param, "atom_types", None), expected_len)
+    if len(atom_types) == expected_len:
+        return by_env.get(canonicalize_fn(atom_types))
+    return None
 
 
 def _match_bond_for_export(
     param, bond_by_row: dict[int, BondParam], bond_by_env: dict[str, BondParam]
 ) -> BondParam | None:
-    if param.ff_row is not None and param.ff_row in bond_by_row:
-        return bond_by_row[param.ff_row]
-    atom_types = _clean_atom_types(getattr(param, "atom_types", None), 2)
-    if len(atom_types) == 2:
-        return bond_by_env.get(canonicalize_bond_env_id(atom_types))
-    return None
+    return _match_for_export(param, bond_by_row, bond_by_env, 2, canonicalize_bond_env_id)
 
 
 def _match_angle_for_export(
@@ -140,12 +146,7 @@ def _match_angle_for_export(
     angle_by_row: dict[int, AngleParam],
     angle_by_env: dict[str, AngleParam],
 ) -> AngleParam | None:
-    if param.ff_row is not None and param.ff_row in angle_by_row:
-        return angle_by_row[param.ff_row]
-    atom_types = _clean_atom_types(getattr(param, "atom_types", None), 3)
-    if len(atom_types) == 3:
-        return angle_by_env.get(canonicalize_angle_env_id(atom_types))
-    return None
+    return _match_for_export(param, angle_by_row, angle_by_env, 3, canonicalize_angle_env_id)
 
 
 @dataclass
@@ -497,8 +498,6 @@ class ForceField:
         Auto-detects unique bond and angle types from the molecule's
         geometry and creates parameters with sensible defaults.
         """
-        from q2mm.models.molecule import Q2MMMolecule
-
         # Unique bond types
         bond_types: dict[tuple[str, str], list[float]] = {}
         for bond in molecule.bonds:

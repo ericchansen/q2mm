@@ -67,16 +67,21 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
     return configs
 
 
-def _find_reference_data() -> tuple[Path, Path, Path, Path | None]:
+def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path, Path | None]:
     """Locate CH3F reference data files.
 
     Returns (xyz, hessian, freqs, normal_modes_or_None).
     """
-    # Try relative to package, then common locations
-    candidates = [
-        Path(__file__).resolve().parent.parent.parent / "examples" / "sn2-test" / "qm-reference",
-        Path.cwd() / "examples" / "sn2-test" / "qm-reference",
-    ]
+    candidates = []
+    if data_dir is not None:
+        candidates.append(data_dir)
+    # Fallback: try relative to repo checkout, then CWD
+    candidates.extend(
+        [
+            Path(__file__).resolve().parent.parent.parent / "examples" / "sn2-test" / "qm-reference",
+            Path.cwd() / "examples" / "sn2-test" / "qm-reference",
+        ]
+    )
 
     for qm_ref in candidates:
         xyz = qm_ref / "ch3f-optimized.xyz"
@@ -88,8 +93,9 @@ def _find_reference_data() -> tuple[Path, Path, Path, Path | None]:
             return xyz, hess, freqs, modes if modes.exists() else None
 
     raise FileNotFoundError(
-        "Cannot find CH3F reference data. Expected in examples/sn2-test/qm-reference/. "
-        "Run from the q2mm repository root."
+        "Cannot find CH3F reference data. Use --data-dir to specify the "
+        "directory containing ch3f-optimized.xyz, ch3f-hessian.npy, etc. "
+        "For a git checkout, run from the repo root."
     )
 
 
@@ -99,6 +105,7 @@ def _run_matrix(
     output_dir: Path | None = None,
     *,
     leaderboard_only: bool = False,
+    data_dir: Path | None = None,
 ) -> list:
     """Run the full backend × optimizer matrix.
 
@@ -109,7 +116,7 @@ def _run_matrix(
     from q2mm.diagnostics.report import detailed_report
     from q2mm.models.molecule import Q2MMMolecule
 
-    xyz, hess_path, freqs_path, modes_path = _find_reference_data()
+    xyz, hess_path, freqs_path, modes_path = _find_reference_data(data_dir)
 
     molecule = Q2MMMolecule.from_xyz(xyz, bond_tolerance=1.5)
     qm_freqs = np.loadtxt(freqs_path)
@@ -254,6 +261,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Print only the summary leaderboard, not detailed SI tables.",
     )
+    parser.add_argument(
+        "--data-dir",
+        type=Path,
+        metavar="DIR",
+        help="Path to QM reference data directory (containing ch3f-*.xyz, etc.). "
+        "Required for pip-installed q2mm; optional for git checkouts.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -312,7 +326,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Optimizers: {', '.join(l for l, _ in optimizers)}")
         print(f"  Combos:     {len(backends) * len(optimizers)}\n")
 
-        results = _run_matrix(backends, optimizers, output_dir=args.output, leaderboard_only=args.leaderboard_only)
+        results = _run_matrix(
+            backends, optimizers, output_dir=args.output, leaderboard_only=args.leaderboard_only, data_dir=args.data_dir
+        )
 
     if not results:
         print("No results to report.", file=sys.stderr)
@@ -320,33 +336,10 @@ def main(argv: list[str] | None = None) -> int:
 
     # Print leaderboard summary at the end
     print()
+    from q2mm.diagnostics.report import build_leaderboard_rows
     from q2mm.diagnostics.tables import leaderboard_table
 
-    rows = []
-    for r in results:
-        meta = r.metadata
-        opt = r.optimized or {}
-        # Starting RMSD: Seminario if available, else default FF
-        initial_rmsd = float("nan")
-        if r.seminario and r.seminario.get("rmsd") is not None:
-            initial_rmsd = r.seminario["rmsd"]
-        elif r.default_ff and r.default_ff.get("rmsd") is not None:
-            initial_rmsd = r.default_ff["rmsd"]
-        rows.append(
-            {
-                "backend": meta.get("backend", "?"),
-                "optimizer": meta.get("optimizer", "?"),
-                "rmsd": opt.get("rmsd", float("nan")),
-                "mae": opt.get("mae", float("nan")),
-                "time_s": opt.get("elapsed_s", 0.0) or 0.0,
-                "n_eval": opt.get("n_eval", 0) or 0,
-                "final_score": opt.get("final_score", float("nan")) or float("nan"),
-                "converged": opt.get("converged", False),
-                "message": opt.get("message", ""),
-                "error": meta.get("error", ""),
-                "initial_rmsd": initial_rmsd,
-            }
-        )
+    rows = build_leaderboard_rows(results)
     if rows:
         leaderboard_table(rows).flush()
 

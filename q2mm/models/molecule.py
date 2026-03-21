@@ -27,42 +27,8 @@ except ImportError:
     _HAS_QCEL = False
 
 
-# Covalent radii for bond detection (Angstrom)
-COVALENT_RADII = {
-    "H": 0.31,
-    "He": 0.28,
-    "Li": 1.28,
-    "Be": 0.96,
-    "B": 0.84,
-    "C": 0.76,
-    "N": 0.71,
-    "O": 0.66,
-    "F": 0.57,
-    "Ne": 0.58,
-    "Na": 1.66,
-    "Mg": 1.41,
-    "Al": 1.21,
-    "Si": 1.11,
-    "P": 1.07,
-    "S": 1.05,
-    "Cl": 1.02,
-    "Ar": 1.06,
-    "K": 2.03,
-    "Ca": 1.76,
-    "Br": 1.20,
-    "I": 1.39,
-    # Transition metals relevant to Q2MM
-    "Rh": 1.42,
-    "Pd": 1.39,
-    "Ru": 1.46,
-    "Ir": 1.41,
-    "Pt": 1.36,
-    "Fe": 1.32,
-    "Co": 1.26,
-    "Ni": 1.24,
-    "Cu": 1.32,
-    "Zn": 1.22,
-}
+# Covalent radii — imported from the single-source-of-truth element table.
+from q2mm.elements import COVALENT_RADII  # noqa: E402
 
 
 @dataclass
