@@ -102,6 +102,8 @@ def _run_matrix(
     backends: list[tuple[str, type, str]],
     optimizers: list[tuple[str, dict]],
     output_dir: Path | None = None,
+    *,
+    leaderboard_only: bool = False,
 ) -> list:
     """Run the full backend × optimizer matrix.
 
@@ -109,6 +111,7 @@ def _run_matrix(
     """
     from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
     from q2mm.diagnostics.pes_distortion import load_normal_modes
+    from q2mm.diagnostics.report import detailed_report
     from q2mm.models.molecule import Q2MMMolecule
 
     xyz, hess_path, freqs_path, modes_path = _find_reference_data()
@@ -155,8 +158,23 @@ def _run_matrix(
                 elapsed = time.perf_counter() - t0
                 results.append(r)
 
-                rmsd = r.optimized["rmsd"] if r.optimized else float("nan")
-                print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)")
+                # Build status tag for progress line
+                opt = r.optimized or {}
+                msg = (opt.get("message") or "").lower()
+                if "abandoned" in msg:
+                    status_tag = "ABANDONED"
+                elif opt.get("converged"):
+                    status_tag = "OK"
+                else:
+                    status_tag = "maxiter" if ("iteration" in msg or "maxiter" in msg) else "no conv"
+
+                rmsd = opt.get("rmsd", float("nan"))
+                print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)  [{status_tag}]")
+
+                # Stream detailed tables immediately
+                if not leaderboard_only:
+                    for table in detailed_report(r, combo_label=combo):
+                        table.flush()
 
             except Exception as e:
                 print(f"FAILED: {e}", file=sys.stderr)
@@ -297,37 +315,41 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Optimizers: {', '.join(l for l, _ in optimizers)}")
         print(f"  Combos:     {len(backends) * len(optimizers)}\n")
 
-        results = _run_matrix(backends, optimizers, output_dir=args.output)
+        results = _run_matrix(backends, optimizers, output_dir=args.output, leaderboard_only=args.leaderboard_only)
 
     if not results:
         print("No results to report.", file=sys.stderr)
         return 1
 
-    # Print report
+    # Print leaderboard summary at the end
     print()
-    from q2mm.diagnostics.report import full_report
     from q2mm.diagnostics.tables import leaderboard_table
 
-    if args.leaderboard_only:
-        rows = []
-        for r in results:
-            meta = r.metadata
-            opt = r.optimized or {}
-            rows.append(
-                {
-                    "backend": meta.get("backend", "?"),
-                    "optimizer": meta.get("optimizer", "?"),
-                    "rmsd": opt.get("rmsd", float("nan")),
-                    "mae": opt.get("mae", float("nan")),
-                    "time_s": opt.get("elapsed_s", 0.0) or 0.0,
-                    "n_eval": opt.get("n_eval", 0) or 0,
-                    "final_score": opt.get("final_score", float("nan")) or float("nan"),
-                    "converged": opt.get("converged", False),
-                }
-            )
-        if rows:
-            leaderboard_table(rows).flush()
-    else:
+    rows = []
+    for r in results:
+        meta = r.metadata
+        opt = r.optimized or {}
+        rows.append(
+            {
+                "backend": meta.get("backend", "?"),
+                "optimizer": meta.get("optimizer", "?"),
+                "rmsd": opt.get("rmsd", float("nan")),
+                "mae": opt.get("mae", float("nan")),
+                "time_s": opt.get("elapsed_s", 0.0) or 0.0,
+                "n_eval": opt.get("n_eval", 0) or 0,
+                "final_score": opt.get("final_score", float("nan")) or float("nan"),
+                "converged": opt.get("converged", False),
+                "message": opt.get("message", ""),
+                "error": meta.get("error", ""),
+            }
+        )
+    if rows:
+        leaderboard_table(rows).flush()
+
+    # For --load, detailed tables weren't streamed, so print them now
+    if args.load and not args.leaderboard_only:
+        from q2mm.diagnostics.report import full_report
+
         full_report(results)
 
     return 0
