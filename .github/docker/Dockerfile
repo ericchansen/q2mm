@@ -32,6 +32,6 @@ ARG MAMBA_DOCKERFILE_ACTIVATE=1
 # GitHub Actions overrides the image entrypoint, so the micromamba activation
 # script never runs. Bake the conda bin directory into PATH so packages are
 # always available regardless of how the container is launched.
-ENV PATH="/opt/conda/bin:${PATH}"
+ENV PATH="${MAMBA_ROOT_PREFIX}/bin:${PATH}"
 
 WORKDIR /workspace

@@ -672,7 +672,24 @@ class TestGoldenFixtureRegression:
         ),
     )
     def test_matches_golden_fixture(self):
-        """Current optimization exactly reproduces the golden fixture."""
+        """Exact match of final_score and final_params against golden fixture."""
+        golden = json.loads(self.GOLDEN_PATH.read_text())
+
+        true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        result = opt.optimize(obj)
+
+        assert result.final_score == pytest.approx(golden["final_score"], rel=1e-4), (
+            f"Final score drift: {result.final_score} vs {golden['final_score']}"
+        )
+        for i, (got, want) in enumerate(zip(result.final_params, golden["final_params"])):
+            assert got == pytest.approx(want, rel=1e-3), f"Param {i} drift: {got} vs {want}"
+
+    def test_optimizer_improves_score(self):
+        """Hard requirement: optimizer must substantially improve the score.
+        Also verifies initial_score stability (single evaluation, should be
+        deterministic across environments)."""
         golden = json.loads(self.GOLDEN_PATH.read_text())
 
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
@@ -683,19 +700,6 @@ class TestGoldenFixtureRegression:
         assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-4), (
             f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"
         )
-        assert result.final_score == pytest.approx(golden["final_score"], rel=1e-4), (
-            f"Final score drift: {result.final_score} vs {golden['final_score']}"
-        )
-        for i, (got, want) in enumerate(zip(result.final_params, golden["final_params"])):
-            assert got == pytest.approx(want, rel=1e-3), f"Param {i} drift: {got} vs {want}"
-
-    def test_optimizer_improves_score(self):
-        """Hard requirement: optimizer must substantially improve the score."""
-        true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
-
         assert result.final_score < result.initial_score * 0.5, (
             f"Optimizer did not improve enough: initial={result.initial_score:.4f}, final={result.final_score:.4f}"
         )
