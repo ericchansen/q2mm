@@ -545,6 +545,7 @@ class TestForceField:
 # ---- AMBER .frcmod I/O ----
 
 SAMPLE_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "sample.frcmod"
+UPSTREAM_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "upstream_q2mm.frcmod"
 
 
 class TestAmberFrcmod:
@@ -633,6 +634,48 @@ class TestAmberFrcmod:
         ff.to_amber_frcmod(out)
         content = out.read_text()
         assert content.startswith("Remark line goes here")
+
+    def test_upstream_frcmod_irregular_spacing(self):
+        """Parser should handle upstream Q2MM frcmod with irregular spacing."""
+        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        assert len(ff.bonds) == 3
+        assert len(ff.angles) == 10
+        proper = [t for t in ff.torsions if "(improper)" not in t.label]
+        improper = [t for t in ff.torsions if "(improper)" in t.label]
+        assert len(proper) == 10
+        assert len(improper) == 10
+        assert len(ff.vdws) == 1
+
+    def test_upstream_idivf_division(self):
+        """IDIVF=4 should divide barrier by 4."""
+        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ca_tor = next(t for t in ff.torsions if t.env_id == "ca-ca-ce-c")
+        assert ca_tor.force_constant == pytest.approx(0.7)
+
+    def test_upstream_comment_lines_skipped(self):
+        """Lines starting with # should be skipped."""
+        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        assert ff.source_format == "amber_frcmod"
+
+    def test_upstream_roundtrip(self, tmp_path):
+        """Upstream frcmod should round-trip through standalone save."""
+        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ff_clean = ForceField(
+            name=ff.name,
+            bonds=ff.bonds,
+            angles=ff.angles,
+            torsions=ff.torsions,
+            vdws=ff.vdws,
+        )
+        out = tmp_path / "upstream_rt.frcmod"
+        ff_clean.to_amber_frcmod(out)
+        rt = ForceField.from_amber_frcmod(out)
+
+        assert len(rt.bonds) == len(ff.bonds)
+        for orig, new in zip(ff.bonds, rt.bonds):
+            assert orig.force_constant == pytest.approx(new.force_constant)
+        for orig, new in zip(ff.torsions, rt.torsions):
+            assert orig.force_constant == pytest.approx(new.force_constant, abs=0.01)
 
 
 # ---- Seminario force constant estimation ----
