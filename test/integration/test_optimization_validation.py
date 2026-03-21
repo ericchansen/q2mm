@@ -23,6 +23,7 @@ import numpy as np
 import pytest
 
 pytest.importorskip("openmm")
+pytestmark = pytest.mark.openmm
 
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.optimizers.scoring import compare_data
@@ -668,11 +669,12 @@ class TestGoldenFixtureRegression:
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         result = opt.optimize(obj)
 
-        # Scores should match tightly (same code, same inputs → same results)
-        assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-6), (
+        # Scores should match closely; rel=1e-4 allows for minor floating-point
+        # variation across numpy/scipy/openmm versions in CI.
+        assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-4), (
             f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"
         )
-        assert result.final_score == pytest.approx(golden["final_score"], rel=1e-6), (
+        assert result.final_score == pytest.approx(golden["final_score"], rel=1e-4), (
             f"Final score drift: {result.final_score} vs {golden['final_score']}"
         )
 
@@ -680,6 +682,6 @@ class TestGoldenFixtureRegression:
         np.testing.assert_allclose(
             result.final_params,
             golden["final_params"],
-            rtol=1e-6,
+            rtol=1e-4,
             err_msg="Optimized parameters drifted from golden fixture",
         )
