@@ -6,7 +6,6 @@ Run a single (backend, optimizer, molecule) combination and produce a
 
 from __future__ import annotations
 
-import copy
 import json
 import time
 from dataclasses import dataclass, field, asdict

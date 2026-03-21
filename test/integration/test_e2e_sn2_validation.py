@@ -248,7 +248,6 @@ class TestCH3FGroundState:
         This validates our QM reference itself. Scaled QM harmonics should
         be within ~50 cm^-1 of experimental fundamentals.
         """
-        nist = np.array(sorted(ext_ref["ch3f_nist_all_cm1"]))
         scale = ext_ref["qm_level_of_theory"]["dft_scaling_factor"]
 
         qm_real = sorted(real_frequencies(qm_freqs))
