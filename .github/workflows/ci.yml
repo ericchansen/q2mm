@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
+      options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ericchansen/q2mm/ci-tinker:latest
+      options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +61,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax:latest
+      options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ericchansen/q2mm/ci-psi4:latest
+      options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -77,6 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/ericchansen/q2mm/ci-full:latest
+      options: --user root
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
