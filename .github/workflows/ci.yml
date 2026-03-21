@@ -32,66 +32,52 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest -m "not (openmm or tinker or jax or psi4)" -q
 
-  # ---- Backend tests (parallel, each ~5 min) ----
-  # These use micromamba to install conda-forge backends.
-  # Once ghcr.io images are built, switch to container: directives for speed.
+  # ---- Backend tests (parallel, using pre-built container images) ----
+  # Images are published by the "Build CI Images" workflow (build-images.yml)
+  # to ghcr.io/ericchansen/q2mm/ci-<backend>:latest.
+  # Rebuild images when backend versions change (a few times per year).
 
   test-openmm:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: .github/envs/openmm.yml
-          cache-environment: true
-      - shell: micromamba-shell {0}
-        run: pip install -e . --no-deps && pytest -m openmm --run-slow -q
+      - run: pip install -e . --no-deps && pytest -m openmm --run-slow -q
 
   test-tinker:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-tinker:latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: .github/envs/tinker.yml
-          cache-environment: true
-      - shell: micromamba-shell {0}
-        run: pip install -e . --no-deps && pytest -m tinker --run-slow -q
+      - run: pip install -e . --no-deps && pytest -m tinker --run-slow -q
 
   test-jax:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-jax:latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: .github/envs/jax.yml
-          cache-environment: true
-      - shell: micromamba-shell {0}
-        run: pip install -e . --no-deps && pytest -m jax --run-slow -q
+      - run: pip install -e . --no-deps && pytest -m jax --run-slow -q
 
   test-psi4:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-psi4:latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: .github/envs/psi4.yml
-          cache-environment: true
-      - shell: micromamba-shell {0}
-        run: pip install -e . --no-deps && pytest -m psi4 --run-slow -q
+      - run: pip install -e . --no-deps && pytest -m psi4 --run-slow -q
 
   test-cross-backend:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-full:latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-file: .github/envs/full.yml
-          cache-environment: true
-      - shell: micromamba-shell {0}
-        run: pip install -e . --no-deps && pytest --run-slow -q
+      - run: pip install -e . --no-deps && pytest --run-slow -q
