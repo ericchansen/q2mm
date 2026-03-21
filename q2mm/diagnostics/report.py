@@ -36,6 +36,31 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
 
     qm_freqs = result.qm_reference.get("frequencies_cm1", [])
 
+    # --- Summary first: Convergence status ---
+    if result.optimized:
+        opt = result.optimized
+        if opt.get("initial_score") is not None and opt.get("final_score") is not None:
+            # Get starting RMSD (Seminario if available, else default)
+            initial_rmsd = None
+            if result.seminario and result.seminario.get("rmsd") is not None:
+                initial_rmsd = result.seminario["rmsd"]
+            elif result.default_ff and result.default_ff.get("rmsd") is not None:
+                initial_rmsd = result.default_ff["rmsd"]
+
+            tables.append(
+                convergence_table(
+                    opt["initial_score"],
+                    opt["final_score"],
+                    opt.get("n_eval", 0),
+                    opt.get("converged", False),
+                    opt.get("message", ""),
+                    title=f"SUMMARY [{combo_label}]",
+                    initial_rmsd=initial_rmsd,
+                    final_rmsd=opt.get("rmsd"),
+                    elapsed_s=opt.get("elapsed_s"),
+                )
+            )
+
     # --- SI Table 1: Frequency progression ---
     stages = []
     if result.default_ff and result.default_ff.get("frequencies_cm1"):
@@ -99,21 +124,6 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
                 )
             )
 
-    # --- SI Table 5: Convergence ---
-    if result.optimized:
-        opt = result.optimized
-        if opt.get("initial_score") is not None and opt.get("final_score") is not None:
-            tables.append(
-                convergence_table(
-                    opt["initial_score"],
-                    opt["final_score"],
-                    opt.get("n_eval", 0),
-                    opt.get("converged", False),
-                    opt.get("message", ""),
-                    title=f"CONVERGENCE [{combo_label}]",
-                )
-            )
-
     return tables
 
 
@@ -130,6 +140,11 @@ def full_report(results: list[BenchmarkResult]) -> None:
     for r in results:
         meta = r.metadata
         opt = r.optimized or {}
+        initial_rmsd = float("nan")
+        if r.seminario and r.seminario.get("rmsd") is not None:
+            initial_rmsd = r.seminario["rmsd"]
+        elif r.default_ff and r.default_ff.get("rmsd") is not None:
+            initial_rmsd = r.default_ff["rmsd"]
         rows.append(
             {
                 "backend": meta.get("backend", "?"),
@@ -142,6 +157,7 @@ def full_report(results: list[BenchmarkResult]) -> None:
                 "converged": opt.get("converged", False),
                 "message": opt.get("message", ""),
                 "error": meta.get("error", ""),
+                "initial_rmsd": initial_rmsd,
             }
         )
 
