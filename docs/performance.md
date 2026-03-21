@@ -156,7 +156,7 @@ Optimization loop        ██████████████████�
 **The energy evaluation is the bottleneck.** Every optimization evaluation
 calls the MM backend once per molecule per geometry. Strategies to speed up:
 
-1. **Use OpenMM over Tinker** — 1.6× faster per evaluation (in-process vs
+1. **Use OpenMM over Tinker** — ~150× higher throughput (in-process vs
    subprocess).
 2. **Reduce evaluations** — Nelder-Mead converges reliably in ~400 evaluations.
    Powell converges too but uses ~1100. L-BFGS-B may not fully converge with

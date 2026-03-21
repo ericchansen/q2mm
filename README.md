@@ -82,5 +82,5 @@ workflow including frequencies, eigenmatrix data, and multi-molecule fits.
 
 ## License
 
-BSD-3-Clause. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 

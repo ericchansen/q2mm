@@ -76,9 +76,8 @@ print(f"Parameters: {len(ff.params)}")
 
 ```
 q2mm/
-├── backends/      # QM/MM engine integrations (Psi4, Tinker, etc.)
-├── forcefields/   # Force field types (MM3, AMBER, Tinker)
-├── io/            # Convenience re-exports from parsers
+├── backends/      # QM/MM engine integrations (OpenMM, Tinker, JAX, Psi4)
+├── diagnostics/   # Benchmarking and convergence analysis
 ├── models/        # Clean molecule/force-field models + Seminario estimation
 ├── optimizers/    # Objective functions, scoring, and scipy-based optimization
 └── parsers/       # File format parsers (Gaussian, Jaguar, MM3, MOL2, etc.)

@@ -13,7 +13,7 @@ Simple example showing Q2MM file parsing with ethane (C₂H₆).
 ## Quick Start
 
 ```python
-from q2mm.io import GaussLog, Mol2
+from q2mm.parsers import GaussLog, Mol2
 
 # Parse QM data
 log = GaussLog("GS.log")

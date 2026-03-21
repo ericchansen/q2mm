@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import numpy as np
 
@@ -19,6 +19,9 @@ from q2mm.models.identifiers import (
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
 )
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 
 def _split_env_id(env_id: str, expected_len: int) -> list[str]:
@@ -317,6 +320,47 @@ class ForceField:
         for vdw in self.vdws:
             values.extend([vdw.radius, vdw.epsilon])
         return np.array(values)
+
+    # --- Parameter matching with ff_row → env_id → element fallback ---
+
+    def match_bond(self, elements: tuple[str, str], env_id: str = "", ff_row: int | None = None) -> BondParam | None:
+        """Match a bond parameter using ff_row, then env_id, then elements."""
+        if ff_row is not None:
+            for bond in self.bonds:
+                if bond.ff_row == ff_row:
+                    return bond
+        if env_id:
+            matched = self.get_bond(elements[0], elements[1], env_id=env_id)
+            if matched is not None:
+                return matched
+        return self.get_bond(elements[0], elements[1])
+
+    def match_angle(
+        self, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
+    ) -> AngleParam | None:
+        """Match an angle parameter using ff_row, then env_id, then elements."""
+        if ff_row is not None:
+            for angle in self.angles:
+                if angle.ff_row == ff_row:
+                    return angle
+        if env_id:
+            matched = self.get_angle(elements[0], elements[1], elements[2], env_id=env_id)
+            if matched is not None:
+                return matched
+        return self.get_angle(elements[0], elements[1], elements[2])
+
+    def match_vdw(self, atom_type: str = "", element: str = "", ff_row: int | None = None) -> VdwParam | None:
+        """Match a vdW parameter using ff_row, then atom_type, then element."""
+        if ff_row is not None:
+            for vdw in self.vdws:
+                if vdw.ff_row == ff_row:
+                    return vdw
+        matched = self.get_vdw(atom_type=atom_type, element=element)
+        if matched is not None:
+            return matched
+        if element:
+            return self.get_vdw(element=element)
+        return None
 
     def set_param_vector(self, vec: np.ndarray):
         """Set parameters from a flat vector (inverse of get_param_vector)."""
