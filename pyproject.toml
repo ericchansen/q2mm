@@ -64,6 +64,7 @@ dev = [
     "pytest",
     "ruff",
     "scipy",
+    "parmed",
     "qcelemental",
     "build",
 ]

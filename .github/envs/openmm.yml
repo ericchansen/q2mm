@@ -1,0 +1,11 @@
+name: q2mm-openmm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - scipy
+  - openmm
+  - pytest
+  - ruff
+  - pip
