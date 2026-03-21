@@ -158,7 +158,7 @@ def run_benchmark(
     *,
     optimizer_method: str = "L-BFGS-B",
     optimizer_kwargs: dict[str, Any] | None = None,
-    maxiter: int = 200,
+    maxiter: int = 10_000,
     backend_name: str = "unknown",
     molecule_name: str = "unknown",
     level_of_theory: str = "unknown",
