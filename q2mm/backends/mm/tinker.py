@@ -56,6 +56,9 @@ class TinkerEngine(MMEngine):
     Args:
         tinker_dir: Path to Tinker bin directory (auto-detected if None)
         params_file: Path to MM3 parameter file (auto-detected if None)
+        bond_tolerance: Distance multiplier for bond detection. Two atoms
+            are bonded when their distance is within
+            ``bond_tolerance * (r_cov_A + r_cov_B)``. Default 1.3.
     """
 
     def __init__(self, tinker_dir: str = None, params_file: str = None, bond_tolerance: float = 1.3):
