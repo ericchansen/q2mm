@@ -226,10 +226,12 @@ def run_benchmark(
     default_ff = ForceField.create_for_molecule(molecule, name=f"{molecule_name} default")
     default_freqs_all = engine.frequencies(molecule, default_ff)
     default_real = real_frequencies(default_freqs_all)
+    default_params = default_ff.get_param_vector().tolist()
     result.default_ff = {
         "frequencies_cm1": default_real.tolist(),
         "rmsd": frequency_rmsd(qm_real, default_real),
         "mae": frequency_mae(qm_real, default_real),
+        "param_values": default_params,
     }
 
     # --- Seminario estimation ---
@@ -247,6 +249,7 @@ def run_benchmark(
             "rmsd": frequency_rmsd(qm_real, sem_real),
             "mae": frequency_mae(qm_real, sem_real),
             "elapsed_s": sem_elapsed,
+            "param_values": seminario_ff.get_param_vector().tolist(),
         }
     else:
         # No Hessian — create a default-based starting point
