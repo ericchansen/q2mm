@@ -41,7 +41,7 @@ def build_leaderboard_rows(results: list[BenchmarkResult]) -> list[dict]:
                 "mae": opt.get("mae", float("nan")),
                 "time_s": opt.get("elapsed_s", 0.0) or 0.0,
                 "n_eval": opt.get("n_eval", 0) or 0,
-                "final_score": opt.get("final_score", float("nan")) or float("nan"),
+                "final_score": float("nan") if opt.get("final_score") is None else opt["final_score"],
                 "converged": opt.get("converged", False),
                 "message": opt.get("message", ""),
                 "error": meta.get("error", ""),

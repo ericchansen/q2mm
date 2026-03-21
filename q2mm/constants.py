@@ -5,8 +5,9 @@ This module contains unit conversions, logging configuration, and other
 physical constants.  Element data (masses, radii, symbols) is centralized
 in :mod:`q2mm.elements`; ``MASSES`` is re-exported here for backward
 compatibility.  Optimization defaults (WEIGHTS, STEPS) live in
-:mod:`q2mm.optimizers.defaults`; regex patterns are defined inline below
-for backward compatibility (``co.RE_*`` usage in parsers).
+:mod:`q2mm.optimizers.defaults`; regex patterns used by the parsers are
+defined inline below, and this module is now their canonical location
+following the removal of :mod:`q2mm.parsers._patterns`.
 """
 
 import logging
