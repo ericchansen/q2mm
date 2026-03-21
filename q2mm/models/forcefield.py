@@ -76,6 +76,11 @@ def _format_mm3_angle_line(atom_types: list[str], equilibrium: float, force_cons
     return f"{prefix}{equilibrium:10.4f} {force_constant:10.4f}\n"
 
 
+def _format_mm3_torsion_line(atom_types: list[str], v1: float, v2: float, v3: float) -> str:
+    prefix = f" 4{atom_types[0]:>4}{atom_types[1]:>4}{atom_types[2]:>4}{atom_types[3]:>4}{'':5}"
+    return f"{prefix}{v1:10.4f} {v2:10.4f} {v3:10.4f}\n"
+
+
 def _format_tinker_bond_line(atom_types: list[str], force_constant: float, equilibrium: float) -> str:
     return f"bond   {atom_types[0]:>4} {atom_types[1]:>4} {force_constant:10.4f} {equilibrium:10.4f}\n"
 
@@ -488,6 +493,25 @@ class ForceField:
         from q2mm.models.ff_io import save_openmm_xml
 
         return save_openmm_xml(self, path, molecule=molecule)
+
+    @classmethod
+    def from_amber_frcmod(cls, path: str | Path) -> ForceField:
+        """Load from an AMBER .frcmod file."""
+        from q2mm.models.ff_io import load_amber_frcmod
+
+        return load_amber_frcmod(path)
+
+    def to_amber_frcmod(
+        self,
+        path: str | Path,
+        template_path: str | Path | None = None,
+        *,
+        remark: str = "Q2MM generated frcmod",
+    ) -> Path:
+        """Export to AMBER .frcmod format."""
+        from q2mm.models.ff_io import save_amber_frcmod
+
+        return save_amber_frcmod(self, path, template_path, remark=remark)
 
     @classmethod
     def create_for_molecule(
