@@ -725,5 +725,5 @@ Feature support across force field formats and compute backends.
 
 ---
 
-*See [Performance](performance.md) for benchmarks across backends and
+*See [Benchmarks](benchmarks/index.md) for benchmarks across backends and
 optimization methods.*

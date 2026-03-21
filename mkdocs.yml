@@ -32,7 +32,11 @@ nav:
   - Tutorial: tutorial.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
-  - Performance: performance.md
+  - Benchmarks:
+    - Overview: benchmarks/index.md
+    - Small Molecules: benchmarks/small-molecules.md
+    - Rh-Enamide (Jaguar): benchmarks/rh-enamide-jaguar.md
+    - Rh-Enamide (Psi4): benchmarks/rh-enamide-psi4.md
   - References: references.md
 
 markdown_extensions:
