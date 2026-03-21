@@ -80,24 +80,53 @@ def colorize_pct(text: str, pct_err: float, *, lo: float = 0.0, hi: float = 50.0
     return _ansi(code, text) if code else text
 
 
-def colorize_status(text: str, status: str) -> str:
-    """Colorize a status label."""
-    status_colors = {
-        "converged": "32",  # green
-        "maxiter": "33",  # yellow
-        "not converged": "33",  # yellow
-        "poor result": "31",  # red
-        "abandoned": "31",  # red
-        "error": "31",  # red
-    }
-    code = status_colors.get(status)
-    return _ansi(code, text) if code else text
-
-
 def colorize_rmsd(text: str, rmsd: float, *, good: float = 50.0, bad: float = 500.0) -> str:
     """Colorize an RMSD value on a green→red spectrum."""
     code = _lerp_color(rmsd, good, bad)
     return _ansi(code, text) if code else text
+
+
+def explain_scipy_message(message: str) -> str:
+    """Translate scipy's raw termination message to plain English.
+
+    Returns a short explanation, or empty string if the message is
+    already self-explanatory.
+    """
+    msg = (message or "").strip()
+    msg_upper = msg.upper().replace(" ", "_")
+
+    translations = {
+        # L-BFGS-B (Fortran-style)
+        "CONVERGENCE:_NORM_OF_PROJECTED_GRADIENT_<=_PGTOL": "Gradient near zero — converged to a minimum.",
+        "CONVERGENCE:_REL_REDUCTION_OF_F_<=_FACTR*EPSMCH": "Score stopped changing — converged.",
+        "STOP:_TOTAL_NO._OF_ITERATIONS_REACHED_LIMIT": "Hit max iterations before convergence tolerance was met.",
+        "STOP:_TOTAL_NO._OF_F_AND_G_EVALUATIONS_EXCEEDS_LIMIT": "Hit max function evaluations.",
+        "ABNORMAL_TERMINATION_IN_LNSRCH": (
+            "Line search failed — often means the finite-difference gradient "
+            "is too noisy near the minimum. Result may still be good."
+        ),
+        "ABNORMAL:": (
+            "Line search failed — often means the finite-difference gradient "
+            "is too noisy near the minimum. Result may still be good."
+        ),
+        # Nelder-Mead / Powell
+        "OPTIMIZATION_TERMINATED_SUCCESSFULLY.": "Optimizer converged normally.",
+        "MAXIMUM_NUMBER_OF_FUNCTION_EVALUATIONS_HAS_BEEN_EXCEEDED.": "Hit max function evaluations before convergence.",
+        "MAXIMUM_NUMBER_OF_ITERATIONS_HAS_BEEN_EXCEEDED.": "Hit max iterations before convergence.",
+    }
+
+    # Try exact match first, then prefix match
+    if msg_upper in translations:
+        return translations[msg_upper]
+    for key, explanation in translations.items():
+        if msg_upper.startswith(key):
+            return explanation
+
+    # Our own messages
+    if "abandoned" in msg.lower():
+        return "Early-stopped: score diverged too far from starting value."
+
+    return ""
 
 
 class TablePrinter:
@@ -451,44 +480,16 @@ def convergence_table(
     final_rmsd: float | None = None,
     elapsed_s: float | None = None,
 ) -> TablePrinter:
-    """Build a convergence summary table."""
+    """Build a convergence summary table showing raw optimizer output."""
     t = TablePrinter()
     t.blank()
     t.bar()
     t.title(title)
     t.bar()
 
-    improvement = (1.0 - final_score / initial_score) * 100 if initial_score > 0 else 0.0
-
-    # Quality-aware status
-    msg_lower = (message or "").lower()
-    if "abandoned" in msg_lower:
-        status = "ABANDONED (diverged)"
-    elif converged:
-        if initial_rmsd is not None and final_rmsd is not None and final_rmsd > initial_rmsd:
-            status = "POOR RESULT (converged to worse fit)"
-        else:
-            status = "CONVERGED"
-    elif "iteration" in msg_lower or "maxiter" in msg_lower or "limit" in msg_lower:
-        status = "HIT ITERATION LIMIT"
-    else:
-        status = "NOT CONVERGED"
-
     use_color = _color_enabled()
 
-    status_display = status
-    if use_color:
-        if status == "CONVERGED":
-            status_display = _ansi("32", status)
-        elif "POOR" in status or "ABANDONED" in status:
-            status_display = _ansi("31", status)
-        elif "LIMIT" in status:
-            status_display = _ansi("33", status)
-        else:
-            status_display = _ansi("33", status)
-
-    t.row(f"Status:            {status_display}")
-
+    # RMSD change
     if initial_rmsd is not None and final_rmsd is not None:
         arrow = "→"
         rmsd_init = f"{initial_rmsd:.1f}"
@@ -498,12 +499,21 @@ def convergence_table(
             rmsd_final = colorize_rmsd(rmsd_final, final_rmsd)
         t.row(f"RMSD (cm⁻¹):       {rmsd_init} {arrow} {rmsd_final}")
 
+    # Score change
+    improvement = (1.0 - final_score / initial_score) * 100 if initial_score > 0 else 0.0
     t.row(f"Score:             {initial_score:.6f} → {final_score:.6f}  ({improvement:+.1f}%)")
+
     t.row(f"Function evals:    {n_eval}")
     if elapsed_s is not None:
         t.row(f"Wall time:         {elapsed_s:.1f}s")
+
+    # Raw scipy output + plain-English explanation
+    t.row(f"Scipy converged:   {converged}")
     if message:
-        t.row(f"Optimizer msg:     {message}")
+        t.row(f"Scipy message:     {message}")
+        explanation = explain_scipy_message(message)
+        if explanation:
+            t.row(f"  → {explanation}")
 
     t.bar()
     t.blank()
@@ -532,45 +542,46 @@ def leaderboard_table(
     W_BE = max((len(r["backend"]) for r in rows), default=8)
     W_OPT = max((len(r["optimizer"]) for r in rows), default=10)
 
-    hdr = f"{'Backend':<{W_BE}}  {'Optimizer':<{W_OPT}}  {'RMSD':>6}  {'MAE':>6}  {'Time':>7}  {'Evals':>5}  {'Score':>8}  {'Status':>12}"
+    hdr = (
+        f"{'Backend':<{W_BE}}  {'Optimizer':<{W_OPT}}  "
+        f"{'RMSD₀':>6}  {'RMSD':>6}  {'MAE':>6}  "
+        f"{'Time':>7}  {'Evals':>5}  {'Score':>8}"
+    )
     t.row(hdr)
     t.sep()
 
     use_color = _color_enabled()
 
     for r in rows:
-        if r.get("error"):
-            status = "error"
-        elif r["converged"]:
-            # Quality check: did RMSD actually improve vs starting point?
-            initial_rmsd = r.get("initial_rmsd", float("nan"))
-            import math
+        import math
 
-            if not math.isnan(initial_rmsd) and not math.isnan(r["rmsd"]) and r["rmsd"] > initial_rmsd:
-                status = "poor result"
-            else:
-                status = "converged"
-        else:
-            msg = (r.get("message") or "").lower()
-            if "abandoned" in msg:
-                status = "abandoned"
-            elif "iteration" in msg or "maxiter" in msg or "limit" in msg:
-                status = "maxiter"
-            else:
-                status = "not converged"
         time_s = f"{r['time_s']:.1f}s"
-        rmsd_s = f"{r['rmsd']:>6.1f}"
-        status_s = f"{status:>12}"
-        if use_color:
-            import math
 
+        initial_rmsd = r.get("initial_rmsd", float("nan"))
+        rmsd0_s = f"{initial_rmsd:>6.1f}" if not math.isnan(initial_rmsd) else f"{'—':>6}"
+
+        if r.get("error"):
+            # Error row — show error tag instead of numbers
+            rmsd_s = f"{'err':>6}"
+            mae_s = f"{'err':>6}"
+            score_s = f"{'err':>8}"
+            evals_s = f"{'—':>5}"
+        else:
+            rmsd_s = f"{r['rmsd']:>6.1f}"
+            mae_s = f"{r['mae']:>6.1f}"
+            score_s = f"{r['final_score']:>8.4f}"
+            evals_s = f"{r['n_eval']:>5d}"
+
+        if use_color and not r.get("error"):
             if not math.isnan(r["rmsd"]):
                 rmsd_s = colorize_rmsd(rmsd_s, r["rmsd"])
-            status_s = colorize_status(status_s, status)
+            if not math.isnan(initial_rmsd):
+                rmsd0_s = colorize_rmsd(rmsd0_s, initial_rmsd)
+
         t.row(
             f"{r['backend']:<{W_BE}}  {r['optimizer']:<{W_OPT}}  "
-            f"{rmsd_s}  {r['mae']:>6.1f}  {time_s:>7}  "
-            f"{r['n_eval']:>5d}  {r['final_score']:>8.4f}  {status_s}"
+            f"{rmsd0_s}  {rmsd_s}  {mae_s}  "
+            f"{time_s:>7}  {evals_s}  {score_s}"
         )
 
     t.bar()

@@ -158,29 +158,20 @@ def _run_matrix(
                 elapsed = time.perf_counter() - t0
                 results.append(r)
 
-                # Build status tag for progress line
                 opt = r.optimized or {}
-                msg = (opt.get("message") or "").lower()
                 rmsd = opt.get("rmsd", float("nan"))
 
-                # Get starting RMSD for quality check
+                # Show starting RMSD → final RMSD on progress line
                 start_rmsd = None
                 if r.seminario and r.seminario.get("rmsd") is not None:
                     start_rmsd = r.seminario["rmsd"]
                 elif r.default_ff and r.default_ff.get("rmsd") is not None:
                     start_rmsd = r.default_ff["rmsd"]
 
-                if "abandoned" in msg:
-                    status_tag = "ABANDONED"
-                elif opt.get("converged"):
-                    if start_rmsd is not None and rmsd > start_rmsd:
-                        status_tag = "POOR RESULT"
-                    else:
-                        status_tag = "OK"
+                if start_rmsd is not None:
+                    print(f"RMSD {start_rmsd:.0f}→{rmsd:.0f}  ({elapsed:.1f}s)")
                 else:
-                    status_tag = "maxiter" if ("iteration" in msg or "maxiter" in msg) else "no conv"
-
-                print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)  [{status_tag}]")
+                    print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)")
 
                 # Stream detailed tables immediately
                 if not leaderboard_only:
