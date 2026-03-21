@@ -178,7 +178,7 @@ class TestCH3FGroundState:
         qm_real = real_frequencies(qm_freqs)
         n = min(len(mm_freqs), len(qm_real))
         rmsd = frequency_rmsd(sorted(mm_freqs)[-n:], sorted(qm_real)[-n:])
-        # Generic FF should be noticeably off -- RMSD > 100 cm^-1
+        # Generic FF should be noticeably off -- RMSD > 50 cm^-1
         assert rmsd > 50.0, f"Default FF unexpectedly good (RMSD={rmsd:.1f} cm^-1)"
 
     # ---- Stage 2: Seminario FF ----

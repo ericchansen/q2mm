@@ -226,8 +226,11 @@ def frequency_progression_table(
     """
     import numpy as np
 
+    # Clamp to the minimum mode count across QM and all stages to avoid IndexError
     n_modes = len(qm_freqs)
-    qm = np.asarray(qm_freqs)
+    for _, freqs in stages:
+        n_modes = min(n_modes, len(freqs))
+    qm = np.asarray(qm_freqs[:n_modes])
 
     # Column widths
     W_NAME = 6 if mode_names is None else max(len(n) for n in mode_names) + 1

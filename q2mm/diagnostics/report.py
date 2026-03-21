@@ -100,7 +100,7 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
             timings["function_evaluations"] = result.optimized["n_eval"]
             if result.optimized.get("elapsed_s") and result.optimized["n_eval"] > 0:
                 per_eval = result.optimized["elapsed_s"] / result.optimized["n_eval"]
-                timings["per_evaluation_ms"] = per_eval
+                timings["per_evaluation_s"] = per_eval
         if result.pes_distortion and result.pes_distortion.get("elapsed_s") is not None:
             timings["pes_distortion_s"] = result.pes_distortion["elapsed_s"]
 
