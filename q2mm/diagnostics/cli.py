@@ -147,7 +147,7 @@ def _run_matrix(
                     normal_modes=normal_modes,
                     optimizer_method=method,
                     optimizer_kwargs=extra_kwargs,
-                    maxiter=200,
+                    maxiter=10_000,
                     backend_name=backend_name,
                     molecule_name="CH3F",
                     level_of_theory="B3LYP/6-31+G(d)",

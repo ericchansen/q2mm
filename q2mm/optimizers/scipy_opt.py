@@ -108,6 +108,15 @@ class ScipyOptimizer:
           energy-only reference data.  Raises if conditions are not met.
           Only applies to ``scipy.optimize.minimize`` paths; not supported
           for ``method='least_squares'`` (raises ``ValueError``).
+    divergence_factor : float or None
+        Early stopping threshold.  If the objective score exceeds
+        ``divergence_factor * initial_score`` for ``divergence_patience``
+        consecutive callback invocations, the optimizer is halted via
+        scipy's callback mechanism.  Set to ``None`` to disable.
+    divergence_patience : int
+        Number of consecutive divergent callbacks required before stopping.
+        Allows transient score spikes (e.g. during simplex exploration)
+        without premature termination.
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
@@ -121,6 +130,8 @@ class ScipyOptimizer:
         use_bounds: bool = True,
         verbose: bool = True,
         jac: str | None = None,
+        divergence_factor: float | None = 3.0,
+        divergence_patience: int = 5,
     ):
         self.method = method
         self.maxiter = maxiter
@@ -129,6 +140,8 @@ class ScipyOptimizer:
         self.use_bounds = use_bounds
         self.verbose = verbose
         self.jac = jac
+        self.divergence_factor = divergence_factor
+        self.divergence_patience = divergence_patience
 
     def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
         """Run the optimization.
@@ -166,7 +179,7 @@ class ScipyOptimizer:
                 )
             result = self._run_least_squares(objective, x0, bounds)
         else:
-            result = self._run_minimize(objective, x0, bounds)
+            result = self._run_minimize(objective, x0, bounds, initial_score)
 
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(result.final_params)
@@ -187,6 +200,7 @@ class ScipyOptimizer:
         objective: ObjectiveFunction,
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
+        initial_score: float,
     ) -> OptimizationResult:
         """Run scipy.optimize.minimize."""
         options: dict = {"maxiter": self.maxiter}
@@ -210,7 +224,7 @@ class ScipyOptimizer:
         # Only pass bounds for methods that support them
         effective_bounds = bounds if (bounds and self.method in self.BOUNDED_METHODS) else None
 
-        callback = self._make_callback(objective) if self.verbose else None
+        callback = self._make_callback(objective, initial_score)
 
         # Analytical Jacobian via JAX
         jac = None
@@ -283,14 +297,47 @@ class ScipyOptimizer:
             method=f"least_squares({ls_method})",
         )
 
-    @staticmethod
-    def _make_callback(objective: ObjectiveFunction):
-        """Create a logging callback for minimize."""
+    def _make_callback(self, objective: ObjectiveFunction, initial_score: float):
+        """Create a callback for minimize with optional early stopping.
+
+        Scipy calls this after each iteration.  If the callback returns
+        ``True``, scipy stops the optimization.  We use this to detect
+        sustained divergence: if the score exceeds ``divergence_factor``
+        times the initial score for ``divergence_patience`` consecutive
+        callbacks, we bail out early rather than grinding for minutes on
+        a lost cause.
+        """
+        diverge_count = 0
+        factor = self.divergence_factor
+        patience = self.divergence_patience
+        verbose = self.verbose
 
         def callback(xk):
-            n = objective.n_eval
+            nonlocal diverge_count
             score = objective.history[-1] if objective.history else float("nan")
-            if n % 10 == 0:
-                logger.info("  eval %4d  score %.6f", n, score)
+
+            if verbose:
+                n = objective.n_eval
+                if n % 10 == 0:
+                    logger.info("  eval %4d  score %.6f", n, score)
+
+            # Early stopping on sustained divergence
+            if factor is not None and initial_score > 0:
+                threshold = initial_score * factor
+                if score > threshold:
+                    diverge_count += 1
+                    if diverge_count >= patience:
+                        logger.warning(
+                            "Early stop: score %.1f > %.1f (%.0f× initial) for %d consecutive iterations",
+                            score,
+                            threshold,
+                            factor,
+                            patience,
+                        )
+                        return True
+                else:
+                    diverge_count = 0
+
+            return False
 
         return callback

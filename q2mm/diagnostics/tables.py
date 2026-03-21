@@ -349,7 +349,7 @@ def leaderboard_table(
     ----------
     rows : list[dict]
         Each dict has keys: backend, optimizer, rmsd, mae, time_s,
-        n_eval, final_score, converged.
+        n_eval, final_score, converged, message, error.
     """
     t = TablePrinter()
     t.blank()
@@ -365,7 +365,16 @@ def leaderboard_table(
     t.sep()
 
     for r in rows:
-        status = "converged" if r["converged"] else "FAILED"
+        if r.get("error"):
+            status = "error"
+        elif r["converged"]:
+            status = "converged"
+        else:
+            msg = (r.get("message") or "").lower()
+            if "iteration" in msg or "maxiter" in msg or "limit" in msg:
+                status = "maxiter"
+            else:
+                status = "not converged"
         time_s = f"{r['time_s']:.1f}s"
         t.row(
             f"{r['backend']:<{W_BE}}  {r['optimizer']:<{W_OPT}}  "

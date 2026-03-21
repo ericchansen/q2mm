@@ -138,6 +138,8 @@ def full_report(results: list[BenchmarkResult]) -> None:
                 "n_eval": opt.get("n_eval", 0) or 0,
                 "final_score": opt.get("final_score", float("nan")) or float("nan"),
                 "converged": opt.get("converged", False),
+                "message": opt.get("message", ""),
+                "error": meta.get("error", ""),
             }
         )
 
