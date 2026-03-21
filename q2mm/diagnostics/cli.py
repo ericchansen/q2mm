@@ -13,7 +13,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import copy
 import sys
 import time
 from pathlib import Path
