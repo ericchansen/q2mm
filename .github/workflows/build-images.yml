@@ -1,12 +1,23 @@
 name: Build CI Images
 
+# Manual-only — run when you bump backend versions (a few times a year).
+# Select a specific backend or rebuild all.
+
 on:
-  push:
-    branches: [master]
-    paths:
-      - ".github/envs/**"
-      - ".github/docker/**"
   workflow_dispatch:
+    inputs:
+      backend:
+        description: "Backend to rebuild (or 'all')"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - openmm
+          - tinker
+          - jax
+          - psi4
+          - full
 
 permissions:
   packages: write
@@ -27,15 +38,25 @@ jobs:
           - { name: psi4,   env: psi4.yml   }
           - { name: full,   env: full.yml   }
     steps:
-      - uses: actions/checkout@v4
+      - name: Check if selected
+        id: check
+        run: |
+          if [[ "${{ inputs.backend }}" != "all" && "${{ inputs.backend }}" != "${{ matrix.backend.name }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - uses: docker/login-action@v3
+      - if: steps.check.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.check.outputs.skip != 'true'
+        uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - if: steps.check.outputs.skip != 'true'
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: .github/docker/Dockerfile
