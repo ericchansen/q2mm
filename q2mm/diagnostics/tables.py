@@ -2,12 +2,100 @@
 
 Provides ``TablePrinter`` for building dynamically-sized ASCII tables,
 plus convenience functions for common benchmark table layouts.
+
+Color support
+-------------
+Tables use ANSI 256-color codes for a green→yellow→red spectrum on
+error percentages, RMSD values, and status labels.  Color is auto-
+detected (TTY check + NO_COLOR env var) and can be forced via
+``TablePrinter(color=True/False)`` or ``Q2MM_COLOR=1/0``.
 """
 
 from __future__ import annotations
 
 import io
+import os
+import re
+import sys
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# ANSI color helpers
+# ---------------------------------------------------------------------------
+
+_ANSI_RE = re.compile(r"\033\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from *text*."""
+    return _ANSI_RE.sub("", text)
+
+
+def _visible_len(text: str) -> int:
+    """Length of *text* excluding ANSI escape sequences."""
+    return len(_strip_ansi(text))
+
+
+def _color_enabled() -> bool:
+    """Check if color output should be used."""
+    env = os.environ.get("Q2MM_COLOR", "").lower()
+    if env in ("0", "false", "no"):
+        return False
+    if env in ("1", "true", "yes"):
+        return True
+    if os.environ.get("NO_COLOR"):
+        return False
+    return hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+
+def _ansi(code: int | str, text: str) -> str:
+    """Wrap *text* in an ANSI escape sequence."""
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _lerp_color(value: float, lo: float, hi: float) -> str | None:
+    """Return an ANSI 256-color code for a green→yellow→red gradient.
+
+    *value* is clamped to [lo, hi].  Returns None if color is not meaningful.
+    """
+    if hi <= lo:
+        return None
+    t = max(0.0, min(1.0, (value - lo) / (hi - lo)))
+    # Green (46) → Yellow (226) → Red (196) in 256-color palette
+    if t < 0.5:
+        # Green → Yellow: 46 → 82 → 118 → 154 → 190 → 226
+        idx = int(t * 2 * 5)
+        colors = [46, 82, 118, 154, 190, 226]
+    else:
+        # Yellow → Red: 226 → 220 → 214 → 208 → 202 → 196
+        idx = int((t - 0.5) * 2 * 5)
+        colors = [226, 220, 214, 208, 202, 196]
+    return f"38;5;{colors[min(idx, len(colors) - 1)]}"
+
+
+def colorize_pct(text: str, pct_err: float, *, lo: float = 0.0, hi: float = 50.0) -> str:
+    """Colorize a percentage error string on a green→red spectrum."""
+    code = _lerp_color(abs(pct_err), lo, hi)
+    return _ansi(code, text) if code else text
+
+
+def colorize_status(text: str, status: str) -> str:
+    """Colorize a status label."""
+    status_colors = {
+        "converged": "32",  # green
+        "maxiter": "33",  # yellow
+        "not converged": "33",  # yellow
+        "error": "31",  # red
+    }
+    code = status_colors.get(status)
+    return _ansi(code, text) if code else text
+
+
+def colorize_rmsd(text: str, rmsd: float, *, good: float = 50.0, bad: float = 500.0) -> str:
+    """Colorize an RMSD value on a green→red spectrum."""
+    code = _lerp_color(rmsd, good, bad)
+    return _ansi(code, text) if code else text
 
 
 class TablePrinter:
@@ -29,8 +117,9 @@ class TablePrinter:
         t.flush()
     """
 
-    def __init__(self):
+    def __init__(self, *, color: bool | None = None):
         self._entries: list[tuple[str, str | None]] = []
+        self.color = _color_enabled() if color is None else color
 
     def title(self, text: str):
         self._entries.append(("text", f"  {text}"))
@@ -58,7 +147,7 @@ class TablePrinter:
             Write to this stream instead of stdout.
         """
         text_lines = [text for _, text in self._entries if text is not None]
-        w = max(len(line) for line in text_lines) if text_lines else 60
+        w = max(_visible_len(line) for line in text_lines) if text_lines else 60
         for kind, text in self._entries:
             if kind == "bar":
                 print("=" * w, file=file)
@@ -137,11 +226,15 @@ def frequency_progression_table(
 
     # Summary row
     t.sep()
+    use_color = _color_enabled()
     summary = f"{'RMSD':>{W_NAME}} {'':>{W_FREQ}}"
     for _, freqs in stages:
         mm = np.asarray(freqs[:n_modes])
         rmsd = float(np.sqrt(np.mean((qm - mm) ** 2)))
-        summary += f" | {rmsd:>{W_STAGE}.1f}"
+        rmsd_s = f"{rmsd:>{W_STAGE}.1f}"
+        if use_color:
+            rmsd_s = colorize_rmsd(rmsd_s, rmsd)
+        summary += f" | {rmsd_s}"
     t.row(summary)
 
     mae_row = f"{'MAE':>{W_NAME}} {'':>{W_FREQ}}"
@@ -213,17 +306,27 @@ def pes_distortion_table(
     t.row(units)
     t.sep()
 
+    use_color = _color_enabled()
+
     all_pct_errors: list[float] = []
     for i, m in enumerate(distortion_results, 1):
         row = f"{i:>6d} {m['freq_cm1']:>8.1f}"
         mode_max_err = 0.0
         for disp in m["displacements"]:
             err_s = f"{disp['pct_err']:+.1f}%"
-            row += f" | {disp['e_qm']:>{W_E}.3f} {disp['e_mm']:>{W_E}.3f} {err_s:>{W_ERR}}"
+            if use_color:
+                err_s = colorize_pct(f"{err_s:>{W_ERR}}", disp["pct_err"])
+            else:
+                err_s = f"{err_s:>{W_ERR}}"
+            row += f" | {disp['e_qm']:>{W_E}.3f} {disp['e_mm']:>{W_E}.3f} {err_s}"
             mode_max_err = max(mode_max_err, abs(disp["pct_err"]))
             all_pct_errors.append(abs(disp["pct_err"]))
         me_s = f"{mode_max_err:.1f}%"
-        row += f" | {me_s:>{W_ME}}"
+        if use_color:
+            me_s = colorize_pct(f"{me_s:>{W_ME}}", mode_max_err)
+        else:
+            me_s = f"{me_s:>{W_ME}}"
+        row += f" | {me_s}"
         t.row(row)
 
     t.sep()
@@ -280,13 +383,13 @@ def timing_table(
 
 def parameter_table(
     param_names: list[str],
-    initial_values: list[float],
+    default_values: list[float] | None,
+    seminario_values: list[float] | None,
     optimized_values: list[float],
     *,
     title: str = "OPTIMIZED PARAMETERS",
-    initial_label: str = "Initial",
 ) -> TablePrinter:
-    """Build a parameter comparison table (initial vs optimized)."""
+    """Build a parameter comparison table showing Default → Seminario → Optimized."""
     t = TablePrinter()
     t.blank()
     t.bar()
@@ -296,14 +399,38 @@ def parameter_table(
     W_NAME = max(len(n) for n in param_names) + 1 if param_names else 12
     W_VAL = 10
 
-    hdr = f"{'Parameter':>{W_NAME}} {initial_label:>{W_VAL}} {'Optimized':>{W_VAL}} {'Change%':>8}"
+    has_default = default_values and len(default_values) == len(param_names)
+    has_seminario = seminario_values and len(seminario_values) == len(param_names)
+
+    hdr = f"{'Parameter':>{W_NAME}}"
+    if has_default:
+        hdr += f" {'Default':>{W_VAL}}"
+    if has_seminario:
+        hdr += f" {'Seminario':>{W_VAL}}"
+    hdr += f" {'Optimized':>{W_VAL}} {'Change%':>8}"
     t.row(hdr)
     t.sep()
 
-    for name, init, opt in zip(param_names, initial_values, optimized_values):
-        pct = ((opt - init) / abs(init) * 100) if abs(init) > 1e-12 else 0.0
+    for i, name in enumerate(param_names):
+        # Change% is relative to the optimizer starting point
+        if has_seminario:
+            base = seminario_values[i]
+        elif has_default:
+            base = default_values[i]
+        else:
+            base = optimized_values[i]
+
+        opt = optimized_values[i]
+        pct = ((opt - base) / abs(base) * 100) if abs(base) > 1e-12 else 0.0
         pct_s = f"{pct:+.1f}%"
-        t.row(f"{name:>{W_NAME}} {init:>{W_VAL}.4f} {opt:>{W_VAL}.4f} {pct_s:>8}")
+
+        row = f"{name:>{W_NAME}}"
+        if has_default:
+            row += f" {default_values[i]:>{W_VAL}.4f}"
+        if has_seminario:
+            row += f" {seminario_values[i]:>{W_VAL}.4f}"
+        row += f" {opt:>{W_VAL}.4f} {pct_s:>8}"
+        t.row(row)
 
     t.bar()
     t.blank()
@@ -368,6 +495,8 @@ def leaderboard_table(
     t.row(hdr)
     t.sep()
 
+    use_color = _color_enabled()
+
     for r in rows:
         if r.get("error"):
             status = "error"
@@ -380,10 +509,18 @@ def leaderboard_table(
             else:
                 status = "not converged"
         time_s = f"{r['time_s']:.1f}s"
+        rmsd_s = f"{r['rmsd']:>6.1f}"
+        status_s = f"{status:>12}"
+        if use_color:
+            import math
+
+            if not math.isnan(r["rmsd"]):
+                rmsd_s = colorize_rmsd(rmsd_s, r["rmsd"])
+            status_s = colorize_status(status_s, status)
         t.row(
             f"{r['backend']:<{W_BE}}  {r['optimizer']:<{W_OPT}}  "
-            f"{r['rmsd']:>6.1f}  {r['mae']:>6.1f}  {time_s:>7}  "
-            f"{r['n_eval']:>5d}  {r['final_score']:>8.4f}  {status:>12}"
+            f"{rmsd_s}  {r['mae']:>6.1f}  {time_s:>7}  "
+            f"{r['n_eval']:>5d}  {r['final_score']:>8.4f}  {status_s}"
         )
 
     t.bar()
