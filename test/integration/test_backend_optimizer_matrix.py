@@ -212,9 +212,29 @@ class TestBenchmarkPipeline:
         assert result.seminario is not None
         assert result.optimized is not None
 
+    @pytest.mark.xfail(
+        strict=False,
+        reason=(
+            "L-BFGS-B frequently fails to converge within 200 iterations on "
+            "frequency-fitting problems. The objective landscape is noisy — "
+            "each evaluation requires a Hessian eigenvalue solve, creating "
+            "discontinuities that frustrate gradient-based convergence criteria "
+            "(gtol). This is a known limitation of applying a single global "
+            "optimizer to the full parameter space. The upstream Q2MM repo "
+            "addressed this by cycling subsets of parameters through a simplex "
+            "optimizer (see #104). Until parameter cycling or sensitivity-based "
+            "selection is implemented, non-convergence on some platforms is "
+            "expected. The separate test_optimization_improved check ensures "
+            "the optimizer still makes meaningful progress."
+        ),
+    )
+    def test_optimization_converged(self, result):
+        """Strict convergence check — optimizer hit its gradient tolerance."""
+        assert result.optimized["converged"]
+
     def test_optimization_improved(self, result):
-        # Don't assert strict convergence — L-BFGS-B may not hit gtol on all
-        # platforms/versions. Instead verify the optimizer meaningfully improved.
+        """Hard requirement: optimizer must improve the score, even if it
+        doesn't formally converge."""
         assert result.optimized["final_score"] < result.optimized["initial_score"]
 
     def test_optimized_rmsd_better_than_default(self, result):
