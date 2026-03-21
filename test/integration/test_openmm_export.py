@@ -11,6 +11,8 @@ from pathlib import Path
 pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm
 
+from test._shared import SN2_XYZ as TS_XYZ, SN2_HESSIAN as TS_HESS, make_diatomic, make_water
+
 from openmm import openmm as mm
 
 from q2mm.backends.mm.openmm import OpenMMEngine
@@ -18,35 +20,18 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionPar
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.ff_io import save_openmm_xml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
-TS_XYZ = QM_REF / "sn2-ts-optimized.xyz"
-TS_HESS = QM_REF / "sn2-ts-hessian.npy"
+
+# ---------------------------------------------------------------------------
+# Molecule factory wrappers (preserve original call signatures)
+# ---------------------------------------------------------------------------
 
 
 def _diatomic(distance: float = 0.74) -> Q2MMMolecule:
-    return Q2MMMolecule(
-        symbols=["H", "H"],
-        geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
-        name="H2",
-        bond_tolerance=2.0,
-    )
+    return make_diatomic(distance=distance)
 
 
 def _water(angle_deg: float = 109.5, bond_length: float = 0.96) -> Q2MMMolecule:
-    theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
-        symbols=["O", "H", "H"],
-        geometry=np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [bond_length, 0.0, 0.0],
-                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-            ]
-        ),
-        name="water-like",
-        bond_tolerance=1.5,
-    )
+    return make_water(angle_deg=angle_deg, bond_length=bond_length, name="water-like")
 
 
 # ---------------------------------------------------------------------------

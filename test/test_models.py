@@ -5,17 +5,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from test._shared import CH3F_HESS, CH3F_XYZ, SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ
+
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam, TorsionParam, VdwParam, _extract_element
 from q2mm.models.seminario import estimate_force_constants
 from q2mm.parsers.tinker_ff import TinkerFF
 
-# Fixture paths
-DATA_DIR = Path(__file__).resolve().parent.parent / "examples" / "sn2-test" / "qm-reference"
-TS_XYZ = DATA_DIR / "sn2-ts-optimized.xyz"
-TS_HESS = DATA_DIR / "sn2-ts-hessian.npy"
-CH3F_XYZ = DATA_DIR / "ch3f-optimized.xyz"
-CH3F_HESS = DATA_DIR / "ch3f-hessian.npy"
+# Fixture paths (test-specific, not shared)
 RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "mm3.fld"
 
 

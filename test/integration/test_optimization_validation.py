@@ -25,6 +25,8 @@ import pytest
 pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm
 
+from test._shared import CH3F_HESS, CH3F_XYZ, make_water
+
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.optimizers.scoring import compare_data
 from q2mm.parsers import Datum
@@ -35,9 +37,6 @@ from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData, Referenc
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
-CH3F_XYZ = QM_REF / "ch3f-optimized.xyz"
-CH3F_HESS = QM_REF / "ch3f-hessian.npy"
 
 # Tinker availability — auto-detect or use env vars
 _TINKER_DIR = Path(os.environ.get("TINKER_DIR", "")) if os.environ.get("TINKER_DIR") else None
@@ -70,19 +69,7 @@ def _tinker_engine():
 
 
 def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
-    theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
-        symbols=["O", "H", "H"],
-        geometry=np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [bond_length, 0.0, 0.0],
-                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-            ]
-        ),
-        name="water",
-        bond_tolerance=1.5,
-    )
+    return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
 def _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5) -> ForceField:

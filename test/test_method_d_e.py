@@ -14,6 +14,8 @@ Covers issue #75.
 import numpy as np
 import pytest
 
+from test._shared import SN2_HESSIAN
+
 from q2mm.models.hessian import (
     decompose,
     detect_problematic_params,
@@ -226,10 +228,6 @@ class TestLockParams:
 # ---------------------------------------------------------------------------
 # Integration: Method D on real SN2 data
 # ---------------------------------------------------------------------------
-SN2_DIR = pytest.importorskip("pathlib").Path(__file__).resolve().parents[1] / "examples" / "sn2-test" / "qm-reference"
-SN2_HESSIAN = SN2_DIR / "sn2-ts-hessian.npy"
-
-
 @pytest.mark.skipif(not SN2_HESSIAN.exists(), reason="SN2 hessian not found")
 class TestMethodDOnSN2:
     """Method D on real SN2 TS Hessian."""

@@ -1,22 +1,17 @@
 """Tests for ReferenceData auto-population (issue #63)."""
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
+from test._shared import (
+    CH3F_XYZ,
+    GS_FCHK,
+    SN2_XYZ as TS_XYZ,
+    TS_FCHK,
+)
+
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData, _parse_fchk
-
-# Fixture paths
-DATA_DIR = Path(__file__).resolve().parent.parent / "examples"
-SN2_DIR = DATA_DIR / "sn2-test" / "qm-reference"
-ETHANE_DIR = DATA_DIR / "ethane"
-TS_XYZ = SN2_DIR / "sn2-ts-optimized.xyz"
-CH3F_XYZ = SN2_DIR / "ch3f-optimized.xyz"
-CH3F_HESS = SN2_DIR / "ch3f-hessian.npy"
-GS_FCHK = ETHANE_DIR / "GS.fchk"
-TS_FCHK = ETHANE_DIR / "TS.fchk"
 
 
 # ---- from_molecule ----

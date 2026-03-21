@@ -8,6 +8,8 @@ import pytest
 pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm
 
+from test._shared import make_diatomic, make_water
+
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import BondParam, AngleParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
@@ -19,28 +21,11 @@ from q2mm.optimizers.scipy_opt import ScipyOptimizer, OptimizationResult
 
 
 def _diatomic(distance: float = 0.74) -> Q2MMMolecule:
-    return Q2MMMolecule(
-        symbols=["H", "H"],
-        geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
-        name="H2",
-        bond_tolerance=2.0,
-    )
+    return make_diatomic(distance=distance)
 
 
 def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
-    theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
-        symbols=["O", "H", "H"],
-        geometry=np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [bond_length, 0.0, 0.0],
-                [bond_length * np.cos(theta), bond_length * np.sin(theta), 0.0],
-            ]
-        ),
-        name="water",
-        bond_tolerance=1.5,
-    )
+    return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
 def _h2_ff(k: float = 5.0, r0: float = 0.74) -> ForceField:
