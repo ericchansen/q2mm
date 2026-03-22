@@ -187,7 +187,7 @@ from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 # Only optimise bond force constants (indices 0 and 2)
 full_vec = ff.get_param_vector()
-sub_obj = SubspaceObjective(objective, indices=[0, 2], base_vector=full_vec)
+sub_obj = SubspaceObjective(objective, [0, 2], full_vec)
 
 # Use any scipy method on the small subspace
 import scipy.optimize
@@ -199,7 +199,8 @@ result = scipy.optimize.minimize(
 )
 
 # Apply optimised subspace back to the full force field
-sub_obj.apply_to_forcefield(result.x)
+best_full = sub_obj.build_full_vector(result.x)
+ff.set_param_vector(best_full)
 ```
 
 ### When to Use

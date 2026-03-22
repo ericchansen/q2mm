@@ -551,7 +551,7 @@ Wraps an `ObjectiveFunction` to expose only a subset of parameters.
 ```python
 from q2mm.optimizers.cycling import SubspaceObjective
 
-sub = SubspaceObjective(objective, indices=[0, 2, 4], base_vector=ff.get_param_vector())
+sub = SubspaceObjective(objective, [0, 2, 4], ff.get_param_vector())
 score = sub(sub_vector)  # len(sub_vector) == 3
 ```
 
