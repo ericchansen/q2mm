@@ -318,7 +318,7 @@ flowchart TD
     OpenMM evaluates energies in-process (~5 ms/eval vs ~160 ms/eval for
     Tinker). For optimization runs that require hundreds or thousands of
     evaluations, this difference is dramatic. Use OpenMM when available.
-    See the [Performance](performance.md) page for detailed benchmarks.
+    See the [Benchmarks](benchmarks/index.md) page for detailed benchmarks.
 
 ---
 
@@ -326,5 +326,5 @@ flowchart TD
 
 - [Tutorial: Step 6 — Optimize](tutorial.md#step-6-optimise-the-force-field) — full walkthrough of a single-shot optimization
 - [API: ScipyOptimizer](api.md#scipyoptimizer) — constructor parameters and method table
-- [Performance](performance.md) — benchmark data for all backends and methods
+- [Benchmarks](benchmarks/index.md) — benchmark data for all backends and methods
 - [References](references.md) — academic papers describing the Q2MM methodology

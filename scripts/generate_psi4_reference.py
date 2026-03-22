@@ -88,8 +88,7 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
 
-    # Configure Psi4 memory (threads set per-engine via n_threads=16)
-    psi4.set_memory("8 GB")
+    # Psi4 memory is configured via Psi4Engine constructor; threads via n_threads=16.
 
     for i, (struct, jag_path) in enumerate(zip(mm.structures, jag_files)):
         label = jag_path.stem
@@ -105,7 +104,7 @@ def main():
         # Compute Psi4 Hessian at B3LYP/def2-SVP (charge=+1 for cationic Rh complex)
         structure = (list(mol.symbols), mol.geometry)
         t0 = time.perf_counter()
-        with Psi4Engine(method="b3lyp", basis="def2-svp", charge=1, n_threads=16) as engine:
+        with Psi4Engine(method="b3lyp", basis="def2-svp", charge=1, n_threads=16, memory="8 GB") as engine:
             psi4_hessian = engine.hessian(structure)
             psi4_energy = engine.energy(structure)
         elapsed = time.perf_counter() - t0
