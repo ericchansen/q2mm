@@ -30,6 +30,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Tutorial: tutorial.md
+  - Optimization Guide: optimization-guide.md
   - API Overview: api.md
   - Performance: performance.md
   - References: references.md

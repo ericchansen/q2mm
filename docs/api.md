@@ -492,6 +492,99 @@ print(result.history)            # score at each evaluation
 
 ---
 
+### `OptimizationLoop`
+
+[source](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py)
+
+GRAD→SIMP cycling loop: alternates full-space gradient optimization with
+sensitivity-based subspace simplex passes. See the
+[Optimization Guide](optimization-guide.md) for detailed usage and examples.
+
+```python
+from q2mm.optimizers.cycling import OptimizationLoop
+
+loop = OptimizationLoop(
+    objective,
+    max_params=3,
+    max_cycles=10,
+    convergence=0.01,
+)
+result = loop.run()
+print(result.summary())
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `max_params` | `int` | `3` | Parameters per simplex pass |
+| `max_cycles` | `int` | `10` | Maximum GRAD→SIMP iterations |
+| `convergence` | `float` | `0.01` | Stop when fractional improvement < this value |
+| `full_method` | `str` | `"L-BFGS-B"` | Scipy method for full-space pass |
+| `simp_method` | `str` | `"Nelder-Mead"` | Scipy method for subspace pass |
+| `full_maxiter` | `int` | `200` | Max iterations for gradient pass |
+| `simp_maxiter` | `int` | `200` | Max iterations for simplex pass |
+| `sensitivity_metric` | `str` | `"simp_var"` | `"simp_var"` or `"abs_d1"` |
+| `eps` | `float` | `1e-3` | Finite-difference step size |
+
+### `LoopResult`
+
+Returned by `OptimizationLoop.run()`.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `success` | `bool` | Whether the loop converged |
+| `initial_score` | `float` | Objective before optimization |
+| `final_score` | `float` | Objective after optimization |
+| `n_cycles` | `int` | Number of GRAD→SIMP cycles completed |
+| `message` | `str` | Convergence status message |
+| `cycle_scores` | `list[float]` | Score after each cycle (length = n_cycles + 1) |
+| `selected_indices` | `list[list[int]]` | Parameter indices selected per cycle |
+| `sensitivity_results` | `list[SensitivityResult]` | Sensitivity data per cycle |
+| `improvement` | `float` | Fractional improvement (property) |
+| `summary()` | `str` | Human-readable summary (method) |
+
+### `SubspaceObjective`
+
+Wraps an `ObjectiveFunction` to expose only a subset of parameters.
+
+```python
+from q2mm.optimizers.cycling import SubspaceObjective
+
+sub = SubspaceObjective(objective, indices=[0, 2, 4], base_vector=ff.get_param_vector())
+score = sub(sub_vector)  # len(sub_vector) == 3
+```
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `__call__(sub_vector)` | `ndarray → float` | Evaluate objective on the subspace |
+| `residuals(sub_vector)` | `ndarray → ndarray` | Residuals on the subspace |
+| `get_initial_vector()` | `→ ndarray` | Initial values for active indices |
+| `get_bounds()` | `→ list[tuple]` | Bounds for active indices |
+
+### `compute_sensitivity()`
+
+Standalone sensitivity analysis via central differentiation.
+
+```python
+from q2mm.optimizers.cycling import compute_sensitivity
+
+sens = compute_sensitivity(objective, metric="simp_var")
+print(sens.ranking)   # param indices sorted by sensitivity
+print(sens.d1)        # first derivatives
+print(sens.simp_var)  # d2/d1² metric
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `objective` | `ObjectiveFunction` | required | The objective to analyse |
+| `metric` | `str` | `"simp_var"` | Ranking metric (`"simp_var"` or `"abs_d1"`) |
+| `step_sizes` | `ndarray`, optional | from `ForceField.get_step_sizes()` | Per-parameter perturbation sizes |
+
+Returns a `SensitivityResult` with fields `d1`, `d2`, `simp_var`, `ranking`, `metric`, `n_evals`.
+
+---
+
 ## Backends (`q2mm.backends`)
 
 Abstract interfaces and concrete implementations for MM and QM engines.
