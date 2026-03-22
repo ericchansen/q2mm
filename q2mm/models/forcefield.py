@@ -245,7 +245,9 @@ class ForceField:
     torsions: list[TorsionParam] = field(default_factory=list)
     vdws: list[VdwParam] = field(default_factory=list)
     source_path: Path | None = field(default=None, repr=False)
-    source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml"] | None = field(default=None, repr=False)
+    source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml", "amber_frcmod"] | None = field(
+        default=None, repr=False
+    )
 
     @property
     def n_params(self) -> int:

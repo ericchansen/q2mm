@@ -659,14 +659,23 @@ def _element_from_mass(mass: float, tolerance: float = 1.5) -> str | None:
     return best_sym
 
 
+# Lowercase GAFF/AMBER two-character type names that genuinely represent
+# two-letter elements.  Everything else follows the GAFF convention of
+# element = first character.  This prevents _extract_element() from
+# misidentifying types like ``ca`` (aromatic C) as Ca (calcium).
+_GAFF_TWO_LETTER_ELEMENTS: frozenset[str] = frozenset(
+    {"cl", "br", "zn", "cu", "fe", "mn", "co", "ni", "pd", "pt", "au", "ag", "ru", "rh", "ir"}
+)
+
+
 def _amber_type_to_element(atom_type: str, mass_map: dict[str, float] | None = None) -> str:
     """Infer element from AMBER/GAFF atom type.
 
     Uses *mass_map* (from the MASS section) when available — this gives
-    definitive results.  Falls back to ``_extract_element()`` which handles
-    two-letter elements (Cl, Br, Zn …) but may mis-infer GAFF types whose
-    first two letters coincidentally form an element symbol (e.g. ``ca``
-    → Ca instead of C).  The MASS section resolves these ambiguities.
+    definitive results.  Falls back to the GAFF convention: if the
+    lowercase type is a known two-letter element (``cl``, ``br``, ``zn``
+    etc.) return that element, otherwise the element is the first
+    character uppercased.
     """
     t = atom_type.strip()
     if not t:
@@ -675,7 +684,11 @@ def _amber_type_to_element(atom_type: str, mass_map: dict[str, float] | None = N
         elem = _element_from_mass(mass_map[t])
         if elem is not None:
             return elem
-    return _extract_element(t)
+    # GAFF fallback: check known two-letter element types, then first-char.
+    lower = t.lower()
+    if lower in _GAFF_TWO_LETTER_ELEMENTS:
+        return lower.title()
+    return t[0].upper()
 
 
 def _parse_amber_types(line: str, n_types: int) -> tuple[list[str], str]:
@@ -913,8 +926,10 @@ def _format_amber_angle_line(types: list[str], k: float, theta0: float, suffix: 
     return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2} {k:12.4f} {theta0:10.4f}{suffix}\n"
 
 
-def _format_amber_dihe_line(types: list[str], k: float, phase: float, periodicity: int, suffix: str = "") -> str:
-    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2}   1 {k:10.4f} {phase:8.3f} {float(periodicity):8.3f}{suffix}\n"
+def _format_amber_dihe_line(
+    types: list[str], k: float, phase: float, periodicity: int, suffix: str = "", *, idivf: int = 1
+) -> str:
+    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2}   {idivf} {k:10.4f} {phase:8.3f} {float(periodicity):8.3f}{suffix}\n"
 
 
 def _format_amber_improper_line(types: list[str], k: float, phase: float, periodicity: int, suffix: str = "") -> str:
@@ -1019,14 +1034,18 @@ def _save_amber_frcmod_template(ff: ForceField, output_path: Path, template: Pat
             updated = True
         elif section in ("DIHE", "IMPROPER") and row in torsion_by_row:
             t = torsion_by_row[row]
-            t = torsion_by_row[row]
-            types, _ = _parse_amber_types(line, 4)
+            types, rest = _parse_amber_types(line, 4)
             n_vals = 3 if section == "IMPROPER" else 4
             suffix = _extract_amber_trailing(line, 4, n_vals)
             if section == "IMPROPER":
                 out_lines.append(_format_amber_improper_line(types, t.force_constant, t.phase, t.periodicity, suffix))
             else:
-                out_lines.append(_format_amber_dihe_line(types, t.force_constant, t.phase, t.periodicity, suffix))
+                # Preserve the template's IDIVF and reconstruct the barrier
+                # so the written line matches the original IDIVF column.
+                orig_vals = _parse_floats(rest)
+                idivf = int(orig_vals[0]) if orig_vals and orig_vals[0] != 0 else 1
+                barrier = t.force_constant * idivf
+                out_lines.append(_format_amber_dihe_line(types, barrier, t.phase, t.periodicity, suffix, idivf=idivf))
             updated = True
         elif section == "NONBON" and row in vdw_by_row:
             v = vdw_by_row[row]
