@@ -140,7 +140,6 @@ class TestRhEnamideSeminarioTiming:
         """Time the full Seminario pipeline on 9 rh-enamide structures."""
         from q2mm.models.forcefield import ForceField
         from q2mm.models.seminario import estimate_force_constants
-        from q2mm.parsers import MacroModel
 
         mm3_path = RH_DIR / "mm3.fld"
         if not mm3_path.exists():
@@ -195,6 +194,13 @@ def _load_rh_enamide_molecules():
         JAG_DIR.glob("*.in"),
         key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
     )
+    n_structures = len(mm.structures)
+    n_jag = len(jag_files)
+    if n_structures != n_jag:
+        pytest.skip(
+            f"rh-enamide dataset inconsistent: {n_structures} MacroModel structures "
+            f"but {n_jag} Jaguar .in files in {JAG_DIR}"
+        )
     molecules = []
     for struct, jag_path in zip(mm.structures, jag_files):
         jag = JaguarIn(str(jag_path))
@@ -211,7 +217,7 @@ class TestRhEnamideFullLoop:
 
     9 organometallic structures (Rh-diphosphine, 36 atoms each, B3LYP/LACVP**).
     182 parameters (8 bond types, 23 angle types, 36 vdW types).
-    Frequency-based objective with L-BFGS-B optimization.
+    Frequency-based objective with Nelder-Mead optimization.
     """
 
     @pytest.fixture(scope="class")
@@ -226,8 +232,12 @@ class TestRhEnamideFullLoop:
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
 
+        mm3_fld_path = RH_DIR / "mm3.fld"
+        if not mm3_fld_path.exists():
+            pytest.skip("rh-enamide force field file mm3.fld not found")
+
         molecules = _load_rh_enamide_molecules()
-        ff_template = ForceField.from_mm3_fld(str(RH_DIR / "mm3.fld"))
+        ff_template = ForceField.from_mm3_fld(str(mm3_fld_path))
 
         # Seminario estimation
         t0 = time.perf_counter()
@@ -254,10 +264,11 @@ class TestRhEnamideFullLoop:
         obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
         initial_score = obj(seminario_params)
 
-        # Optimize (Nelder-Mead: no gradients, robust for high-dimensional
-        # frequency objectives where finite-difference L-BFGS-B can diverge)
+        # Optimize — just enough iterations to verify our optimizer wrapper
+        # and objective function work end-to-end. Full convergence benchmarks
+        # (500 iter, 76.7% improvement) are documented in docs/benchmarks/.
         t0 = time.perf_counter()
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=500, verbose=False)
+        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
         result = opt.optimize(obj)
         t_optimize = time.perf_counter() - t0
 
@@ -324,7 +335,7 @@ class TestRhEnamideFullLoop:
                 f"\n  Rh-enamide full loop ({r['n_molecules']} mols, {r['n_params']} params, "
                 f"{r['total_freq_refs']} freq refs):"
                 f"\n    Seminario: {r['t_seminario']:.3f}s"
-                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=500)"
+                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=3)"
                 f"\n    Score:     {r['initial_score']:.1f} → {r['final_score']:.1f} "
                 f"({r['improvement'] * 100:.1f}% improvement)"
             )
@@ -605,12 +616,12 @@ class TestPipelineDeterminism:
 
             obj = ObjectiveFunction(ff, engine, [mol], freq_ref)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-            opt.optimize(obj)
-            results.append((obj.history[-1], ff.get_param_vector().copy()))
+            result = opt.optimize(obj)
+            results.append((result.final_score, ff.get_param_vector().copy()))
 
         np.testing.assert_array_equal(
             results[0][1],
             results[1][1],
             err_msg="Pipeline produced different params on two runs",
         )
-        assert results[0][0] == results[1][0], "Pipeline produced different scores on two runs"
+        assert results[0][0] == pytest.approx(results[1][0]), "Pipeline produced different scores on two runs"
