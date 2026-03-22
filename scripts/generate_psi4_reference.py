@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Generate Psi4 QM reference data for rh-enamide (issue #74, D2).
 
 Computes Hessians for the 9 rh-enamide training-set structures using Psi4
@@ -19,10 +19,15 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 try:
     import psi4  # noqa: F401
@@ -40,7 +45,6 @@ from q2mm.constants import (
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.parsers import JaguarIn, MacroModel
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
 TRAINING = RH_DIR / "rh_enamide_training_set"
 MMO = TRAINING / "rh_enamide_training_set.mmo"
@@ -68,7 +72,18 @@ def main():
         JAG_DIR.glob("*.in"),
         key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
     )
-    assert len(mm.structures) == len(jag_files) == 9
+    n_mm_structures = len(mm.structures)
+    n_jag_files = len(jag_files)
+    expected_n = 9
+    if not (n_mm_structures == n_jag_files == expected_n):
+        raise SystemExit(
+            "Input mismatch for rh-enamide training set:\n"
+            f"  MacroModel structures: {n_mm_structures}\n"
+            f"  Jaguar input files:     {n_jag_files}\n"
+            f"  Expected count:         {expected_n}\n"
+            f"  MMO file:               {MMO}\n"
+            f"  Jaguar input dir:       {JAG_DIR}"
+        )
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
@@ -150,4 +165,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

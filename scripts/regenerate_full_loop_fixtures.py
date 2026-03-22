@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """Regenerate golden fixtures for full-loop parity tests.
 
 Run this script after any intentional change to the optimization pipeline
@@ -15,10 +15,15 @@ Outputs are saved to ``test/fixtures/full_loop/``.
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.backends.mm import OpenMMEngine
 from q2mm.constants import (
@@ -32,7 +37,6 @@ from q2mm.models.seminario import estimate_force_constants
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop"
 GS_FCHK = REPO_ROOT / "examples" / "ethane" / "GS.fchk"
 
@@ -132,4 +136,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
