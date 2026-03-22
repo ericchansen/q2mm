@@ -165,18 +165,19 @@ class SubspaceObjective:
         if len(self.active_indices) == 0:
             raise ValueError("active_indices must not be empty")
 
-    def _build_full(self, sub_vector: np.ndarray) -> np.ndarray:
+    def build_full_vector(self, sub_vector: np.ndarray) -> np.ndarray:
+        """Map a sub-vector back into the full parameter vector."""
         full = self._base_vector.copy()
         full[self.active_indices] = sub_vector
         return full
 
     def __call__(self, sub_vector: np.ndarray) -> float:
         """Evaluate the objective on *sub_vector*."""
-        return float(self.objective(self._build_full(sub_vector)))
+        return float(self.objective(self.build_full_vector(sub_vector)))
 
     def residuals(self, sub_vector: np.ndarray) -> np.ndarray:
         """Return the residual vector (for ``least_squares``)."""
-        return self.objective.residuals(self._build_full(sub_vector))
+        return self.objective.residuals(self.build_full_vector(sub_vector))
 
     def get_initial_vector(self) -> np.ndarray:
         """The sub-vector corresponding to current active parameters."""
@@ -248,30 +249,38 @@ def compute_sensitivity(
     if len(step_sizes) != n:
         raise ValueError(f"step_sizes length {len(step_sizes)} != param vector length {n}")
 
-    # Baseline evaluation
-    f0 = float(objective(x0))
-    n_evals = 1
-
     d1 = np.zeros(n)
     d2 = np.zeros(n)
+    n_evals = 0
 
-    for i in range(n):
-        h = step_sizes[i]
-        if h == 0:
-            continue
+    try:
+        # Baseline evaluation
+        f0 = float(objective(x0))
+        n_evals = 1
 
-        x_fwd = x0.copy()
-        x_bwd = x0.copy()
-        x_fwd[i] += h
-        x_bwd[i] -= h
+        for i in range(n):
+            h = step_sizes[i]
+            if h == 0:
+                continue
 
-        f_fwd = float(objective(x_fwd))
-        f_bwd = float(objective(x_bwd))
-        n_evals += 2
+            x_fwd = x0.copy()
+            x_bwd = x0.copy()
+            x_fwd[i] += h
+            x_bwd[i] -= h
 
-        # Unnormalised derivatives (upstream convention)
-        d1[i] = (f_fwd - f_bwd) * 0.5
-        d2[i] = f_fwd + f_bwd - 2.0 * f0
+            f_fwd = float(objective(x_fwd))
+            f_bwd = float(objective(x_bwd))
+            n_evals += 2
+
+            # Unnormalised derivatives (upstream convention)
+            d1[i] = (f_fwd - f_bwd) * 0.5
+            d2[i] = f_fwd + f_bwd - 2.0 * f0
+    finally:
+        # Restore the forcefield to x0 so subsequent steps start from the
+        # correct parameters.  ObjectiveFunction.__call__ mutates the FF
+        # via set_param_vector(), leaving it at the last perturbed state.
+        objective(x0)
+        n_evals += 1
 
     # Compute simp_var, guarding against zero d1
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -281,7 +290,10 @@ def compute_sensitivity(
     if metric == "simp_var":
         ranking = np.argsort(simp_var)  # ascending: lowest = most suitable
     elif metric == "abs_d1":
-        ranking = np.argsort(-np.abs(d1))  # descending: largest = most sensitive
+        # Normalise by step size so ranking reflects true gradient magnitude
+        # rather than being biased by per-type step size differences.
+        normalised_d1 = np.where(step_sizes != 0, d1 / step_sizes, 0.0)
+        ranking = np.argsort(-np.abs(normalised_d1))  # descending: largest = most sensitive
     else:
         raise ValueError(f"Unknown metric: {metric!r}")
 
@@ -406,7 +418,6 @@ class OptimizationLoop:
                 eps=self.eps,
                 verbose=False,
             )
-            self.objective.reset()
             full_result = full_opt.optimize(self.objective)
             score_after_grad = full_result.final_score
 
@@ -428,8 +439,13 @@ class OptimizationLoop:
             )
             sensitivity_results.append(sens)
 
-            # Select top max_params
+            # Select top max_params; ensure we have at least one active parameter
             n_active = min(self.max_params, ff.n_params)
+            if n_active < 1:
+                raise ValueError(
+                    f"OptimizationLoop requires at least one active parameter, "
+                    f"but max_params={self.max_params} and ff.n_params={ff.n_params}."
+                )
             active = sens.ranking[:n_active].tolist()
             selected_indices.append(active)
 
@@ -446,15 +462,7 @@ class OptimizationLoop:
             # --- Step 3: Subspace simplex ---
             current_full = ff.get_param_vector().copy()
             sub_obj = SubspaceObjective(self.objective, active, current_full)
-            simp_opt = ScipyOptimizer(
-                method=self.simp_method,
-                maxiter=self.simp_maxiter,
-                verbose=False,
-            )
 
-            # Build sub-objective compatible with ScipyOptimizer.optimize()
-            # We run scipy directly since ScipyOptimizer.optimize() expects
-            # an ObjectiveFunction, not a SubspaceObjective.
             from scipy import optimize as sp_opt
 
             sub_x0 = sub_obj.get_initial_vector()
@@ -465,18 +473,37 @@ class OptimizationLoop:
                 scipy_options["xatol"] = 1e-6
                 scipy_options["fatol"] = 1e-8
 
+            # Pass bounds when the method supports them
+            bounded_methods = {"L-BFGS-B", "trust-constr", "SLSQP"}
+            use_bounds = self.simp_method in bounded_methods
+
             scipy_result = sp_opt.minimize(
                 sub_obj,
                 sub_x0,
                 method=self.simp_method,
+                bounds=sub_bounds if use_bounds else None,
                 options=scipy_options,
             )
 
-            # Apply the optimised subspace params to the full FF
+            # Only accept the simplex result if it actually improved the score
             best_sub = scipy_result.x
-            best_full = sub_obj._build_full(best_sub)
-            ff.set_param_vector(best_full)
+            best_full = sub_obj.build_full_vector(best_sub)
             score_after_simp = float(self.objective(best_full))
+
+            if score_after_simp < score_after_grad:
+                ff.set_param_vector(best_full)
+            else:
+                # Revert to post-gradient parameters
+                score_after_simp = score_after_grad
+                ff.set_param_vector(current_full)
+                self.objective(current_full)  # restore objective state
+                if self.verbose:
+                    logger.info(
+                        "  Cycle %d SIMP: no improvement (%.6f ≥ %.6f), keeping GRAD result",
+                        cycle,
+                        score_after_simp,
+                        score_after_grad,
+                    )
 
             if self.verbose:
                 logger.info(
