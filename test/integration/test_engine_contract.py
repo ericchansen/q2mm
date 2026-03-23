@@ -28,6 +28,9 @@ from test._shared import (
 
 _AVAILABLE = available_mm_engines()
 
+if not _AVAILABLE:
+    pytest.skip("no MM engines available", allow_module_level=True)
+
 _SN2_DATA_AVAILABLE = SN2_XYZ.exists() and SN2_HESSIAN.exists()
 
 
@@ -76,15 +79,15 @@ def _vdw_ff(engine: MMEngine) -> ForceField:
     )
 
 
-@pytest.fixture(params=_AVAILABLE, ids=_AVAILABLE)
+@pytest.fixture(scope="module", params=_AVAILABLE, ids=_AVAILABLE)
 def engine_name(request: pytest.FixtureRequest) -> str:
     """Yield each available MM engine name in turn."""
     return request.param
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def engine(engine_name: str) -> MMEngine:
-    """Instantiate the engine from the registry."""
+    """Instantiate the engine from the registry (reused across the module)."""
     return get_mm_engine(engine_name)
 
 
