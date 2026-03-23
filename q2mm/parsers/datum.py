@@ -1,7 +1,5 @@
 """Data point container for reference and calculated values."""
 
-from __future__ import annotations
-
 import re
 
 
@@ -126,16 +124,3 @@ def remove_none(*args):
         (list): A list containing only non-None, non-empty-string values.
     """
     return [x for x in args if x is not None and x != ""]
-
-
-def datum_sort_key(datum: Datum) -> tuple:
-    """Sort key ensuring calculated and reference data points align properly.
-
-    Args:
-        datum (Datum): The data point to generate a sort key for.
-
-    Returns:
-        (tuple): A tuple of ``(typ, src_1, src_2, idx_1, idx_2)`` used for
-            stable ordering.
-    """
-    return (datum.typ, datum.src_1, datum.src_2, datum.idx_1, datum.idx_2)

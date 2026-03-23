@@ -5,7 +5,6 @@ torsions) from ``.mmo`` files and ``MacroModelLog`` for reading
 mass-weighted Hessian matrices from MacroModel log files.
 """
 
-from __future__ import annotations
 import logging
 import numpy as np
 import os
@@ -15,15 +14,6 @@ from q2mm.parsers.base import File
 from q2mm.parsers.structures import Atom, Bond, Angle, Torsion, Structure
 
 logger = logging.getLogger(__name__)
-
-# MacroModel configuration constants (moved from constants.py)
-COM_FORM = " {0:4}{1:>8}{2:>7}{3:>7}{4:>7}{5:>11.4f}{6:>11.4f}{7:>11.4f}{8:>11.4f}\n"
-LABEL_SUITE = r"SUITE_\w+"
-LABEL_MACRO = "MMOD_MACROMODEL"
-LIC_SUITE = re.compile(rf"(?<!_){LABEL_SUITE}\s+(\d+)\sof\s\d+\s" r"tokens\savailable")
-LIC_MACRO = re.compile(rf"{LABEL_MACRO}\s+(\d+)\sof\s\d+\stokens\s" "available")
-MIN_SUITE_TOKENS = 2
-MIN_MACRO_TOKENS = 2
 
 
 class MacroModel(File):
@@ -226,57 +216,6 @@ class MacroModel(File):
             return Torsion(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
         else:
             return None
-
-
-def geo_from_points(*args):
-    """Compute a geometric measurement from 2, 3, or 4 Cartesian points.
-
-    With 2 points the bond length is returned, with 3 the angle in
-    degrees, and with 4 the dihedral (torsion) angle in degrees.
-
-    Args:
-        *args (tuple[float, float, float]): Two to four ``(x, y, z)``
-            coordinate tuples.
-
-    Returns:
-        (float): Bond length (Å), angle (degrees), or dihedral angle
-            (degrees) depending on the number of points provided.
-    """
-    x1 = args[0][0]
-    y1 = args[0][1]
-    z1 = args[0][2]
-    x2 = args[1][0]
-    y2 = args[1][1]
-    z2 = args[1][2]
-    if len(args) == 2:
-        bond = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2)
-        return float(bond)
-    x3 = args[2][0]
-    y3 = args[2][1]
-    z3 = args[2][2]
-    if len(args) == 3:
-        dist_21 = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2 + (z2 - z1) ** 2)
-        dist_23 = np.sqrt((x2 - x3) ** 2 + (y2 - y3) ** 2 + (z2 - z3) ** 2)
-        dist_13 = np.sqrt((x1 - x3) ** 2 + (y1 - y3) ** 2 + (z1 - z3) ** 2)
-        angle = np.acos((dist_21**2 + dist_23**2 - dist_13**2) / (2 * dist_21 * dist_23))
-        angle = np.degrees(angle)
-        return float(angle)
-    x4 = args[3][0]
-    y4 = args[3][1]
-    z4 = args[3][2]
-    if len(args) == 4:
-        vect_21 = [x2 - x1, y2 - y1, z2 - z1]
-        vect_32 = [x3 - x2, y3 - y2, z3 - z2]
-        vect_43 = [x4 - x3, y4 - y3, z4 - z3]
-        x_ab = np.cross(vect_21, vect_32)
-        x_bc = np.cross(vect_32, vect_43)
-        norm_ab = x_ab / (np.sqrt(x_ab[0] ** 2 + x_ab[1] ** 2 + x_ab[2] ** 2))
-        norm_bc = x_bc / (np.sqrt(x_bc[0] ** 2 + x_bc[1] ** 2 + x_bc[2] ** 2))
-        mag_ab = np.sqrt(norm_ab[0] ** 2 + norm_ab[1] ** 2 + norm_ab[2] ** 2)
-        mag_bc = np.sqrt(norm_bc[0] ** 2 + norm_bc[1] ** 2 + norm_bc[2] ** 2)
-        angle = np.acos(np.dot(norm_ab, norm_bc) / (mag_ab * mag_bc))
-        torsion = angle * (180 / np.pi)
-        return torsion
 
 
 class MacroModelLog(File):

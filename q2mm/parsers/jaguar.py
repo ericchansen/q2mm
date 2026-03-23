@@ -5,7 +5,6 @@ Hessian data) and ``JaguarOut`` for reading Jaguar ``.out`` files
 (structures, eigenvalues, eigenvectors, and frequencies).
 """
 
-from __future__ import annotations
 import logging
 import numpy as np
 import os

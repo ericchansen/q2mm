@@ -5,8 +5,6 @@ Hessian, and frequency calculations.  Supports both harmonic and MM3
 functional forms with runtime parameter updates via :class:`OpenMMHandle`.
 """
 
-from __future__ import annotations
-
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,7 +26,6 @@ from q2mm.constants import (
     RAD_TO_DEG,
     KCAL_TO_KJ,
     KJMOLNM2_TO_HESSIAN_AU,
-    AVO,
     MASSES,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam

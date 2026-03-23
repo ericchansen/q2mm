@@ -21,8 +21,6 @@ from q2mm.parsers.structures import (  # noqa: F401
     DOF,
     Structure,
     Torsion,
-    check_mm_dummy,
-    get_dummy_hessian_indices,
 )
 from q2mm.parsers.base import File, FF  # noqa: F401
 from q2mm.parsers.gaussian import GaussLog  # noqa: F401
@@ -44,7 +42,7 @@ from q2mm.parsers.mm3 import (  # noqa: F401
 from q2mm.parsers.amber_ff import AmberFF  # noqa: F401
 from q2mm.parsers.tinker_ff import TinkerFF, TinkerMM3A  # noqa: F401
 
-from q2mm.parsers.datum import Datum, remove_none, datum_sort_key  # noqa: F401
+from q2mm.parsers.datum import Datum, remove_none  # noqa: F401
 from q2mm.parsers.param import Param, ParamError  # noqa: F401
 from q2mm.models.hessian import (  # noqa: F401
     mass_weight_hessian,

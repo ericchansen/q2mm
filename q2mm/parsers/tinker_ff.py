@@ -4,7 +4,6 @@ Provides ``TinkerFF`` and ``TinkerMM3A`` for reading and writing Tinker
 ``.prm`` / ``.fld`` parameter files used with the MM3 force field.
 """
 
-from __future__ import annotations
 import logging
 from q2mm.parsers.base import FF
 from q2mm.parsers.param import Param
@@ -34,17 +33,6 @@ class TinkerFF(FF):
         self.sub_names = []
         self._atom_types = None
         self._lines = None
-
-    def copy_attributes(self, ff):
-        """Copy general attributes from this instance to another force field.
-
-        Args:
-            ff (FF): Target force field instance to copy attributes into.
-        """
-        ff.path = self.path
-        ff.sub_names = self.sub_names
-        ff._atom_types = self._atom_types
-        ff._lines = self._lines
 
     @property
     def lines(self):
@@ -97,8 +85,8 @@ class TinkerFF(FF):
                     if split[0] == "atom":
                         at = split[1]
                         el = split[2]
-                        des = split[3][1:-1]
-                        atnum = split[4]
+                        _des = split[3][1:-1]
+                        _atnum = split[4]
                         mass = split[5]
                         # still don't know what this colum does. I don't even
                         # know if its valence
@@ -259,17 +247,6 @@ class TinkerMM3A(FF):
         self._atom_types = None
         self._lines = None
 
-    def copy_attributes(self, ff):
-        """Copy general attributes from this instance to another force field.
-
-        Args:
-            ff (FF): Target force field instance to copy attributes into.
-        """
-        ff.path = self.path
-        ff.sub_names = self.sub_names
-        ff._atom_types = self._atom_types
-        ff._lines = self._lines
-
     @property
     def lines(self):
         """list[str]: Lines of the parameter file, read lazily from disk."""
@@ -321,8 +298,8 @@ class TinkerMM3A(FF):
                     if split[0] == "atom":
                         at = split[1]
                         el = split[2]
-                        des = split[3][1:-1]
-                        atnum = split[4]
+                        _des = split[3][1:-1]
+                        _atnum = split[4]
                         mass = split[5]
                         # still don't know what this colum does. I don't even
                         # know if its valence

@@ -6,7 +6,6 @@ It also provides utilities for manipulating Hessian matrices with respect
 to dummy atoms.
 """
 
-from __future__ import annotations
 import logging
 from string import digits
 import numpy as np
@@ -190,7 +189,7 @@ class DOF:
 
     def __init__(
         self,
-        atom_nums: List[int] = None,
+        atom_nums: list[int] = None,
         comment: str = None,
         value: float = None,
         ff_row: int = None,
@@ -208,7 +207,7 @@ class DOF:
             ff_row (int, optional): Row of the FF which models the DOF.
                 Defaults to None.
         """
-        self.atom_nums: List[int] = atom_nums
+        self.atom_nums: list[int] = atom_nums
         """ TODO atom_indices is a more intuitive name,
         but use of this property is too widespread (with poor referencing) to change atm,
         refactor this name when there is time."""
@@ -248,22 +247,6 @@ class DOF:
             setattr(datum, k, v)
         return datum
 
-    def is_same_DOF(self, other) -> bool:
-        """Comparison operator for DOFs. Returns true if the DOFs are identical
-        based on the indices of the atoms involved. Relies on the assumption that
-        atom indices are not different from structure to structure, TODO this is a
-        fallacy which should be addressed at some point or at least emphasized to
-        the user in documentation.
-
-        Args:
-            other (DOF): The DOF to which to compare self.
-
-        Returns:
-            (bool): True if DOF is identical to self, else False.
-        """
-        assert isinstance(other, DOF)
-        return self.atom_nums == other.atom_nums or list(reversed(self.atom_nums)) == other.atom_nums
-
 
 class Bond(DOF):
     """Data class for a single bond."""
@@ -272,7 +255,7 @@ class Bond(DOF):
 
     def __init__(
         self,
-        atom_nums: List[int] = None,
+        atom_nums: list[int] = None,
         comment: str = None,
         value: float = None,
         ff_row: int = None,
@@ -353,10 +336,10 @@ class Structure:
             origin_name (str): Name or path of the file from which this
                 structure originates.
         """
-        self._atoms: List[Atom] = None
-        self._bonds: List[Bond] = None
-        self._angles: List[Angle] = None
-        self._torsions: List[Torsion] = None
+        self._atoms: list[Atom] = None
+        self._bonds: list[Bond] = None
+        self._angles: list[Angle] = None
+        self._torsions: list[Torsion] = None
         self.hess = None
         self.props = {}
         self.origin_name: str = origin_name
@@ -391,7 +374,7 @@ class Structure:
             (list[Atom]): Atoms belonging to this structure.
         """
         if self._atoms is None:
-            self._atoms: List[Atom] = []
+            self._atoms: list[Atom] = []
         return self._atoms
 
     @property
@@ -402,7 +385,7 @@ class Structure:
             (list[Bond]): Bonds belonging to this structure.
         """
         if self._bonds is None:
-            self._bonds: List[Bond] = []
+            self._bonds: list[Bond] = []
         return self._bonds
 
     @property
@@ -413,7 +396,7 @@ class Structure:
             (list[Angle]): Angles belonging to this structure.
         """
         if self._angles is None:
-            self._angles: List[Angle] = []
+            self._angles: list[Angle] = []
         return self._angles
 
     @property
@@ -424,25 +407,8 @@ class Structure:
             (list[Torsion]): Torsions belonging to this structure.
         """
         if self._torsions is None:
-            self._torsions: List[Torsion] = []
+            self._torsions: list[Torsion] = []
         return self._torsions
-
-    def generalize_to_ff_atom_types(self, equivalency_dict: dict, substr_atom_types: list):
-        """Replace specific atom type names with generalised FF equivalents.
-
-        Atoms whose type name is not in *substr_atom_types* but is found in
-        *equivalency_dict* will have their ``atom_type_name`` updated to the
-        corresponding general name.
-
-        Args:
-            equivalency_dict (dict): Mapping from specific atom type names
-                to their generalised equivalents.
-            substr_atom_types (list): Atom type names that should be kept
-                as-is (not generalised).
-        """
-        for atom in self.atoms:
-            if atom.atom_type_name not in substr_atom_types and atom.atom_type_name in equivalency_dict:
-                atom.atom_type_name = equivalency_dict[atom.atom_type_name]
 
     def guess_atoms(self) -> int:
         """Estimate the number of atoms from bond indices.
@@ -456,8 +422,6 @@ class Structure:
             if max_in_bond > max_atom_index:
                 max_atom_index = max_in_bond
         return max_atom_index
-
-    # region Methods which ought to be refactored or might be unused but I'm too busy/scared to mess with yet
 
     def format_coords(self, format="latex", indices_use_charge=None):
         """Format atomic coordinates for output in various file formats.
@@ -518,169 +482,7 @@ class Structure:
                 output.append(f" {label:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}")
             return output
 
-    def select_stuff(self, typ, com_match=None):
-        """Select structural elements (bonds, angles, or torsions).
-
-        A simpler version of :meth:`select_data` that returns the raw DOF
-        objects instead of Datum instances.
-
-        Args:
-            typ (str): Attribute name to select from — ``'bonds'``,
-                ``'angles'``, or ``'torsions'``.
-            com_match (list[str] | None, optional): If provided, only
-                elements whose comment contains one of these strings are
-                returned. Defaults to None (return all).
-
-        Returns:
-            (list[DOF]): Matching structural elements.
-        """
-        stuff = []
-        for thing in getattr(self, typ):
-            if (com_match and any(x in thing.comment for x in com_match)) or com_match is None:
-                stuff.append(thing)
-        return stuff
-
-    def select_data(self, typ, com_match=None, **kwargs):
-        """Select structural elements and return them as Datum objects.
-
-        Selects bonds, angles, or torsions from the structure and converts
-        them into the Datum format used for data collection.
-
-        Args:
-            typ (str): Attribute name to select — ``'bonds'``, ``'angles'``,
-                or ``'torsions'``.
-            com_match (list[str] | None, optional): If provided, only
-                elements whose comment contains one of these strings are
-                selected. In ``.mmo`` files the comment corresponds to the
-                substructure name, restricting fitting to directly dependent
-                parameters. Defaults to None (select all).
-            **kwargs: Additional attributes forwarded to
-                :meth:`DOF.as_data`.
-
-        Returns:
-            (list[Datum]): Selected structural data as Datum objects.
-
-        Raises:
-            AssertionError: If no data is retrieved.
-        """
-        data = []
-        logger.log(1, f">>> typ: {typ}")
-        for thing in getattr(self, typ):
-            if (com_match and any(x in thing.comment for x in com_match)) or com_match is None:
-                datum = thing.as_data(**kwargs)
-                # If it's a torsion we have problems.
-                # Have to check whether an angle inside the torsion is near 0 or 180.
-                if typ == "torsions":
-                    atom_nums = [datum.atm_1, datum.atm_2, datum.atm_3, datum.atm_4]
-                    angle_atoms_1 = [atom_nums[0], atom_nums[1], atom_nums[2]]
-                    angle_atoms_2 = [atom_nums[1], atom_nums[2], atom_nums[3]]
-                    for angle in self._angles:
-                        if set(angle.atom_nums) == set(angle_atoms_1):
-                            angle_1 = angle.value
-                            break
-                    for angle in self._angles:
-                        if set(angle.atom_nums) == set(angle_atoms_2):
-                            angle_2 = angle.value
-                            break
-                    try:
-                        logger.log(1, f">>> atom_nums: {atom_nums}")
-                        logger.log(1, f">>> angle_1: {angle_1} / angle_2: {angle_2}")
-                    except UnboundLocalError:
-                        logger.error(f">>> atom_nums: {atom_nums}")
-                        logger.error(f">>> angle_atoms_1: {angle_atoms_1}")
-                        logger.error(f">>> angle_atoms_2: {angle_atoms_2}")
-                        if "angle_1" not in locals():
-                            logger.error("Can't identify angle_1!")
-                        else:
-                            logger.error(f">>> angle_1: {angle_1}")
-                        if "angle_2" not in locals():
-                            logger.error("Can't identify angle_2!")
-                        else:
-                            logger.error(f">>> angle_2: {angle_2}")
-                        logger.warning("WARNING: Using torsion anyway!")
-                        data.append(datum)
-                    if (
-                        -20.0 < angle_1 < 20.0
-                        or 160.0 < angle_1 < 200.0
-                        or -20.0 < angle_2 < 20.0
-                        or 160.0 < angle_2 < 200.0
-                    ):
-                        logger.log(1, ">>> angle_1 or angle_2 is too close to 0 or 180!")
-                        pass
-                    else:
-                        data.append(datum)
-                    # atom_coords = [x.coords for x in atoms]
-                    # tor_1 = geo_from_points(
-                    #     atom_coords[0], atom_coords[1], atom_coords[2])
-                    # tor_2 = geo_from_points(
-                    #     atom_coords[1], atom_coords[2], atom_coords[3])
-                    # logger.log(1, '>>> tor_1: {} / tor_2: {}'.format(
-                    #     tor_1, tor_2))
-                    # if -5. < tor_1 < 5. or 175. < tor_1 < 185. or \
-                    #         -5. < tor_2 < 5. or 175. < tor_2 < 185.:
-                    #     logger.log(
-                    #         1,
-                    #         '>>> tor_1 or tor_2 is too close to 0 or 180!')
-                    #     pass
-                    # else:
-                    #     data.append(datum)
-                else:
-                    data.append(datum)
-        assert data, "No data actually retrieved!"
-        return data
-
-    def get_aliph_hyds(self):
-        """Return aliphatic hydrogen atoms.
-
-        These hydrogens are always assigned a partial charge of zero in
-        MacroModel calculations. This should be subclassed into something
-        MM3*-specific.
-
-        Returns:
-            (list[Atom]): Aliphatic hydrogen Atom objects.
-        """
-        aliph_hyds = []
-        for atom in self._atoms:
-            if 40 < atom.atom_type < 49:
-                for bonded_atom_index in atom.bonded_atom_indices:
-                    bonded_atom = self._atoms[bonded_atom_index - 1]
-                    if bonded_atom.atom_type == 3:
-                        aliph_hyds.append(atom)
-        logger.log(5, f"  -- {len(aliph_hyds)} aliphatic hydrogen(s).")
-        return aliph_hyds
-
-    def get_hyds(self):
-        """Return default MacroModel-type hydrogen atoms.
-
-        This should be subclassed into something MM3*-specific.
-
-        Returns:
-            (list[Atom]): Hydrogen Atom objects.
-        """
-        hyds = []
-        for atom in self._atoms:
-            if 40 < atom.atom_type < 49:
-                for bonded_atom_index in atom.bonded_atom_indices:
-                    hyds.append(atom)
-        logger.log(5, f"  -- {len(hyds)} hydrogen(s).")
-        return hyds
-
-    def get_dummy_atom_indices(self):
-        """Return indices of dummy atoms in this structure.
-
-        Returns:
-            (list[int]): Indices of atoms identified as dummy atoms.
-        """
-        dummies = []
-        for atom in self._atoms:
-            if atom.is_dummy:
-                logger.log(10, f"  -- Identified {atom} as a dummy atom.")
-                dummies.append(atom.index)
-        return dummies
-
-    # endregion
-
-    def identify_angles(self) -> List[Angle]:
+    def identify_angles(self) -> list[Angle]:
         """Identify and measure angles within this structure.
 
         Pairs of bonds sharing an atom are used to construct angle objects
@@ -692,7 +494,7 @@ class Structure:
         Returns:
             (list[Angle]): Angles found in this structure.
         """
-        angles: List[Angle] = []
+        angles: list[Angle] = []
         i = 0
         for a in self.bonds:
             i += 1
@@ -733,15 +535,7 @@ class Structure:
                         angles.append(Angle(atom_nums=[a1_index, a2_index, b2_index], value=angle))
         return angles
 
-    def identify_torsions(self):
-        """Identify torsions within this structure.
-
-        Raises:
-            NotImplementedError: Not yet implemented.
-        """
-        raise NotImplementedError
-
-    def get_atoms_in_DOF(self, dof: DOF) -> List[Atom]:
+    def get_atoms_in_DOF(self, dof: DOF) -> list[Atom]:
         """Return atoms involved in the given degree of freedom.
 
         Args:
@@ -751,90 +545,3 @@ class Structure:
             (list[Atom]): Atom objects involved in the DOF.
         """
         return [self.atoms[idx - 1] for idx in dof.atom_nums]
-
-    def get_DOF_atom_types_dict(self) -> dict:
-        """Returns a dictionary of the atom types which correspond to each DOF in self.
-
-        Returns:
-            (dict): dictionary of the form {DOF: [atom_type_name1, atom_type_name2, ...]}
-        """
-        dof_atom_type_dict = dict()
-        for bond in self.bonds:
-            dof_atom_type_dict[bond] = [atom.atom_type_name for atom in self.get_atoms_in_DOF(bond)]
-        for angle in self.angles:
-            dof_atom_type_dict[angle] = [atom.atom_type_name for atom in self.get_atoms_in_DOF(angle)]
-        return dof_atom_type_dict
-
-    def get_eqbm_geom_values(self):
-        """Gather equilibrium geometry values grouped by FF row.
-
-        Adapted from parameters.py code.
-
-        Example::
-
-            bond_dic = {1857: [2.2233, 2.2156, 2.5123],
-                        1858: [1.3601, 1.3535, 1.3532]}
-
-        Returns:
-            (tuple[dict, dict, dict]): Dictionaries mapping FF row numbers to
-                lists of measured values for bonds, angles, and torsions
-                respectively.
-        """
-
-        bond_dic = {}
-        angle_dic = {}
-        torsion_dic = {}
-        for bond in self.bonds:
-            if bond.ff_row in bond_dic:
-                bond_dic[bond.ff_row].append(bond.value)
-            else:
-                bond_dic[bond.ff_row] = [bond.value]
-        for angle in self.angles:
-            if angle.ff_row in angle_dic:
-                angle_dic[angle.ff_row].append(angle.value)
-            else:
-                angle_dic[angle.ff_row] = [angle.value]
-        for torsion in self.torsions:
-            if torsion.ff_row in torsion_dic:
-                torsion_dic[torsion.ff_row].append(torsion.value)
-            else:
-                torsion_dic[torsion.ff_row] = [torsion.value]
-        return bond_dic, angle_dic, torsion_dic
-
-
-def check_mm_dummy(hess, dummy_indices):
-    """Remove dummy-atom rows and columns from a Hessian matrix.
-
-    Args:
-        hess (np.matrix): The Hessian matrix to modify.
-        dummy_indices (list[int]): Indices of the rows/columns to remove,
-            corresponding to dummy atoms.
-
-    Returns:
-        (np.matrix): The Hessian with dummy-atom rows and columns removed.
-    """
-    hess = np.delete(hess, dummy_indices, 0)
-    hess = np.delete(hess, dummy_indices, 1)
-    logger.log(15, f"Created {hess.shape} Hessian w/o dummy atoms.")
-    return hess
-
-
-def get_dummy_hessian_indices(dummy_indices):
-    """Convert atom indices to Hessian row/column indices.
-
-    Each atom contributes three rows (x, y, z) to the Hessian, so this
-    expands each atom index into the corresponding trio of Hessian indices.
-
-    Args:
-        dummy_indices (list[int]): 1-based atom indices for the dummy atoms.
-
-    Returns:
-        (list[int]): 0-based Hessian row/column indices to remove.
-    """
-    hess_dummy_indices = []
-    for index in dummy_indices:
-        hess_index = (index - 1) * 3
-        hess_dummy_indices.append(hess_index)
-        hess_dummy_indices.append(hess_index + 1)
-        hess_dummy_indices.append(hess_index + 2)
-    return hess_dummy_indices

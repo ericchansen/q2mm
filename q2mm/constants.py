@@ -9,16 +9,13 @@ defined inline below, and this module is now their canonical location
 following the removal of ``q2mm.parsers._patterns``.
 
 Module-level Constants:
-    GAUSSIAN_ENERGIES: List of Gaussian energy method labels.
     LOG_SETTINGS: Logging configuration dict (kept for backward compat).
     HARTREE_TO_KJMOL: Hartree to kJ/mol conversion factor.
     HARTREE_TO_J: Hartree to Joule conversion factor.
     HARTREE_TO_KCALMOL: Hartree to kcal/mol conversion factor.
     KCAL_TO_KJ: kcal to kJ conversion factor.
     BOHR_TO_ANG: Bohr radius to Angstrom conversion factor.
-    CM_TO_ANG: Centimeter to Angstrom conversion factor.
     FORCE_CONVERSION: Force constant conversion factor (au to mdyn/Å).
-    EIGENVALUE_CONVERSION: Hessian eigenvalue conversion factor.
     AU_TO_MDYNA: Atomic units to mdyn/Å conversion factor.
     AU_TO_MDYN_ANGLE: Atomic units to mdyn·Å/rad² conversion factor.
     AVO: Avogadro's number.
@@ -32,10 +29,6 @@ Module-level Constants:
 
 import logging
 import math
-from collections import OrderedDict
-
-# GAUSSIAN ENERGIES
-GAUSSIAN_ENERGIES = ["HF"]
 
 # LOGGING SETTINGS
 # Kept for backwards compatibility. Do not call logging.config.dictConfig()
@@ -84,23 +77,17 @@ KCAL_TO_KJ = 4.184
 # --- Length conversions ---
 # CODATA 2018: https://physics.nist.gov/cgi-bin/cuu/Value?bohrrada0
 BOHR_TO_ANG = 0.529177210903
-CM_TO_ANG = 10**8
 
 # --- Force constant conversions ---
 FORCE_CONVERSION = 15.569141
-EIGENVALUE_CONVERSION = 53.0883777868
 AU_TO_MDYNA = 15.569141
 AU_TO_MDYN_ANGLE = 4.3598
-KJ_TO_DYNCM = 10**10
-KJMOLA2_TO_MDYNA = 1.0 / (6.022140857e3)
 MDYNA_TO_KJMOLA2 = 6.022140857e2
-KJMOLA_TO_MDYN = 1.0 / (6.022140857e2)
 MM3_STR = 601.99392
 
 # --- Derived Hessian unit conversions ---
 # All derived from base CODATA constants above to avoid inconsistency.
 # Canonical internal Hessian unit: Hartree/Bohr² (atomic units).
-ANG_TO_BOHR = 1.0 / BOHR_TO_ANG
 
 # Hartree/Bohr² ↔ kJ/(mol·Å²)
 HESSIAN_AU_TO_KJMOLA2 = HARTREE_TO_KJMOL / (BOHR_TO_ANG**2)
@@ -136,25 +123,6 @@ KJMOLA = "KJMOLA"
 
 # MASSES — re-exported from q2mm.elements (single source of truth).
 from q2mm.elements import MASSES  # noqa: E402
-
-# ELECTRONIC STRUCTURE METHODS
-gaussian_methods = ["b3lyp", "m06", "m062x", "m06L"]
-
-# CHELPG RADII
-CHELPG_RADII = OrderedDict(
-    [
-        ("H", 1.45),
-        ("C", 1.50),
-        ("N", 1.70),
-        ("O", 1.70),
-        ("F", 1.70),
-        ("Pd", 2.40),
-        ("Ir", 2.40),
-        ("Ru", 2.40),
-        ("Rh", 2.40),
-        ("S", 2.00),
-    ]
-)
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports

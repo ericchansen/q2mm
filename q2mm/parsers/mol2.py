@@ -4,7 +4,6 @@ Provides the ``Mol2`` class for reading atom coordinates, bond
 connectivity, and other structural data from ``.mol2`` files.
 """
 
-from __future__ import annotations
 import logging
 import numpy as np
 import os
@@ -220,17 +219,3 @@ class Mol2(File):
         )
 
         return struct
-
-    def value_bonds(self):
-        """Compute bond lengths from atom coordinates for all bonds.
-
-        .. deprecated::
-            Not currently in use; scheduled for removal in a future release.
-        """
-        atom_list = self._structures.atoms
-        for bond in self._structures.bonds:
-            # Indexing atom_list is possible only because this is within the Mol2 class so
-            # we can assume that the atoms were added in order of their atom index.
-            atom1 = atom_list[bond.atom_nums[0] - 1]
-            atom2 = atom_list[bond.atom_nums[1] - 1]
-            bond.value = utilities.measure_bond(np.array(atom1.coords), np.array(atom2.coords))

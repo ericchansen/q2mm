@@ -27,8 +27,6 @@ equivalent or superior implementations with better numerical stability,
 convergence diagnostics, and bounds support.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from typing import Literal
@@ -376,7 +374,7 @@ class ScipyOptimizer:
         # Mutable flag so _run_minimize can detect callback-triggered stops
         state = {"abandoned": False}
 
-        def callback(xk, *args, **kwargs):
+        def callback(_xk, *args, **kwargs):
             nonlocal diverge_count
             score = objective.history[-1] if objective.history else float("nan")
 
