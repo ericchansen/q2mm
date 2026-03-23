@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Clean, format-agnostic force field representation for Q2MM.
 
 Decouples Q2MM's optimization from specific file formats (MM3 .fld,
 Tinker .prm, AMBER .frcmod). Parameters are identified by element
 pairs/triples, not format-specific atom type strings or line numbers.
 """
+
+from __future__ import annotations
 
 
 import copy
