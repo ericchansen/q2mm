@@ -15,8 +15,6 @@ needed at the engine boundary.
 For MM3-specific JAX forms, see issue #91.
 """
 
-from __future__ import annotations
-
 import copy
 import math
 from collections.abc import Callable
@@ -107,19 +105,6 @@ def _safe_arccos(x):
     return jnp.arccos(jnp.clip(x, -1.0 + 1e-7, 1.0 - 1e-7))
 
 
-def _normalize(x, axis=-1):
-    """Unit-normalize vectors along *axis*.
-
-    Args:
-        x: Input array of vectors.
-        axis: Axis along which to normalize.
-
-    Returns:
-        jnp.ndarray: Unit-normalized vectors.
-    """
-    return x / _safe_norm_keepdims(x, axis=axis) if x.ndim > 1 else x / _safe_norm(x)
-
-
 def _safe_norm_keepdims(x, axis=-1):
     """Norm with keepdims for broadcasting.
 
@@ -182,43 +167,6 @@ def _harmonic_angle_energy(k, theta0, coords, angle_indices):
     cos_theta = jnp.sum(rij_norm * rkj_norm, axis=-1)
     theta = _safe_arccos(cos_theta)
     return jnp.sum(k * (theta - theta0) ** 2)
-
-
-def _fourier_torsion_energy(k, n, gamma, coords, torsion_indices):
-    """Fourier torsion: ``E = Σ k_i · (1 + cos(n_i · φ_i − γ_i))``.
-
-    Args:
-        k (jnp.ndarray): Barrier heights, shape ``(n_torsions,)``, in
-            kcal/mol.
-        n (jnp.ndarray): Periodicities, shape ``(n_torsions,)``.
-        gamma (jnp.ndarray): Phase angles, shape ``(n_torsions,)``, in
-            radians.
-        coords (jnp.ndarray): Cartesian coordinates, shape
-            ``(n_atoms, 3)``, in Å.
-        torsion_indices (jnp.ndarray): Atom index quadruples, shape
-            ``(n_torsions, 4)``.
-
-    Returns:
-        jnp.ndarray: Scalar total torsion energy in kcal/mol.
-    """
-    p0 = coords[torsion_indices[:, 0]]
-    p1 = coords[torsion_indices[:, 1]]
-    p2 = coords[torsion_indices[:, 2]]
-    p3 = coords[torsion_indices[:, 3]]
-
-    b0 = p1 - p0
-    b1 = p2 - p1
-    b2 = p3 - p2
-
-    n1 = jnp.cross(b0, b1)
-    n2 = jnp.cross(b1, b2)
-    n1 = n1 / _safe_norm_keepdims(n1, axis=-1)
-    n2 = n2 / _safe_norm_keepdims(n2, axis=-1)
-
-    cos_phi = jnp.sum(n1 * n2, axis=-1)
-    phi = _safe_arccos(cos_phi)
-
-    return jnp.sum(k * (1.0 + jnp.cos(n * phi - gamma)))
 
 
 def _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, pair_indices):
@@ -521,7 +469,7 @@ class JaxEngine(MMEngine):
         # so this loop will be empty until torsion matching is added.)
         torsion_atom_indices = []
         torsion_param_map = []
-        for i_tor, torsion in enumerate(molecule.torsions if hasattr(molecule, "torsions") else []):
+        for _i_tor, torsion in enumerate(molecule.torsions if hasattr(molecule, "torsions") else []):
             for j_ff, ff_tor in enumerate(forcefield.torsions):
                 if ff_tor.ff_row is not None and hasattr(torsion, "ff_row") and torsion.ff_row == ff_tor.ff_row:
                     torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))

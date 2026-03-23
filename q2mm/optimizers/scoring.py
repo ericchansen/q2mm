@@ -9,80 +9,15 @@ where :math:`w` is a weight, :math:`x_r` is the reference data point's
 value, and :math:`x_c` is the calculated (force field) value.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterator
 import logging
 
 import numpy as np
 
-from q2mm import constants as co
 from q2mm.optimizers.defaults import WEIGHTS
 
 logger = logging.getLogger(__name__)
-
-
-def data_by_type(data_iterable) -> dict:
-    """Group an iterable of Datum objects into a dict keyed by data type.
-
-    Args:
-        data_iterable (Iterable[Datum]): Datum objects to group.
-
-    Returns:
-        dict[str, list[Datum]]: Data points grouped by their ``typ`` attribute.
-    """
-    data_by_typ = {}
-    for datum in data_iterable:
-        if datum.typ not in data_by_typ:
-            data_by_typ[datum.typ] = []
-        data_by_typ[datum.typ].append(datum)
-    return data_by_typ
-
-
-def trim_data(dict1, dict2) -> tuple:
-    """Remove data points not present in both datasets (within each type).
-
-    For torsion data (``'t'``), matching uses filename + atom indices rather
-    than exact labels, since pre/opt structures may have different indices.
-
-    Args:
-        dict1 (dict[str, list[Datum]]): First dataset grouped by type.
-        dict2 (dict[str, list[Datum]]): Second dataset grouped by type.
-
-    Returns:
-        tuple[dict[str, np.ndarray], dict[str, np.ndarray]]: Both datasets
-            with unmatched points removed and lists converted to arrays.
-    """
-    for typ in dict1:
-        if typ == "t":
-            to_remove = []
-            for d1 in dict1[typ]:
-                if not any(
-                    co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d1.lbl)[1]
-                    and co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d1.lbl)[2]
-                    for x in dict2[typ]
-                ):
-                    to_remove.append(d1)
-            for d2 in dict2[typ]:
-                if not any(
-                    co.RE_T_LBL.split(x.lbl)[1] == co.RE_T_LBL.split(d2.lbl)[1]
-                    and co.RE_T_LBL.split(x.lbl)[2] == co.RE_T_LBL.split(d2.lbl)[2]
-                    for x in dict1[typ]
-                ):
-                    to_remove.append(d2)
-            for datum in to_remove:
-                if datum in dict1[typ] and datum in dict2[typ]:
-                    raise AssertionError("The data point that is flagged to be removed is present in both data sets.")
-                if datum in dict1[typ]:
-                    dict1[typ].remove(datum)
-                if datum in dict2[typ]:
-                    dict2[typ].remove(datum)
-            if to_remove:
-                logger.log(20, f">>> Removed Data: {len(to_remove)}")
-        dict1[typ] = np.array(dict1[typ])
-        dict2[typ] = np.array(dict2[typ])
-    return dict1, dict2
 
 
 def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
@@ -94,8 +29,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
       - Other types: score = w² × diff² / N_type
 
     Args:
-        r_dict (dict[str, np.ndarray]): Reference data grouped by type
-            (from :func:`data_by_type`).
+        r_dict (dict[str, np.ndarray]): Reference data grouped by type.
         c_dict (dict[str, np.ndarray]): Calculated data grouped by type.
         output (str | None): Optional file path to write formatted output.
         doprint (bool): If ``True``, print formatted output to stdout.

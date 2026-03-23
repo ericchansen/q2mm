@@ -4,7 +4,6 @@ Reads and writes AMBER-format force field files, extracting bond, angle,
 dihedral, improper, and van der Waals parameters for Q2MM optimization.
 """
 
-from __future__ import annotations
 import logging
 from q2mm import constants as co
 from q2mm.parsers.base import FF
@@ -52,17 +51,6 @@ class AmberFF(FF):
 
     # AMBER-specific step sizes that differ from the global defaults.
     AMBER_STEPS = {"bf": 10.0, "af": 10.0, "df": 10.0}
-
-    def copy_attributes(self, ff):
-        """Copies general attributes to another force field instance.
-
-        Args:
-            ff (AmberFF): Target force field to receive copied attributes.
-        """
-        ff.path = self.path
-        ff.sub_names = self.sub_names
-        ff._atom_types = self._atom_types
-        ff._lines = self._lines
 
     @property
     def lines(self):
@@ -129,8 +117,6 @@ class AmberFF(FF):
                         at = split[0]  # need number if it matters
                         el = split[0]
                         mass = split[1]
-                        if len(split) > 2:
-                            pol = split[2]
                         # no need for atom label
                         # at = ["Z0", "P1", "CX"]
                     # BOND

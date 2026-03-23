@@ -4,9 +4,6 @@ Provides the ``File`` base class for reading and writing text files, and the
 ``FF`` base class for force field containers used in Q2MM optimization.
 """
 
-from __future__ import annotations
-
-from abc import abstractmethod
 import logging
 import os
 
@@ -96,26 +93,5 @@ class FF:
         self.params = params
         self.score = score
 
-    def copy_attributes(self, ff):
-        """Copy shared attributes from this FF instance to another.
-
-        Args:
-            ff (FF): Target force field instance to copy attributes into.
-        """
-        ff.path = self.path
-
     def __repr__(self):
         return f"{self.__class__.__name__}[{self.method}]({self.score})"
-
-    @abstractmethod
-    def get_DOFs_by_param(self, structs: list) -> dict:
-        """Return degrees of freedom grouped by parameter.
-
-        Args:
-            structs (list): List of structure objects to extract DOFs from.
-
-        Returns:
-            (dict): Mapping of Param objects to their associated degrees of
-                freedom.
-        """
-        raise NotImplementedError

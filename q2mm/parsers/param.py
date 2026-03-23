@@ -1,7 +1,5 @@
 """Force field parameter container for Q2MM optimization."""
 
-from __future__ import annotations
-
 import logging
 
 from q2mm import constants as co
@@ -207,31 +205,6 @@ class Param:
             return 360.0 - v if v > 180.0 else v
         return value
 
-    def convert_and_set(self, value: float, units: str) -> None:
-        """Convert a force constant from kJ/(mol·Å²) and set as the parameter value.
-
-        Only applicable to force constants (bf, af), not equilibrium geometry
-        parameters, charges, or torsions.
-
-        Args:
-            value: Force constant in kJ/(mol·Å²).
-            units: Target unit system (constants.MM3FF, constants.AMBERFF, etc.).
-        """
-        if value is None:
-            return
-        if units == co.MM3FF:
-            self.value = value / co.MM3_STR
-        elif units == co.AMBERFF:
-            self.value = (
-                value * co.HARTREE_TO_KCALMOL / (co.BOHR_TO_ANG**2)
-                if self.ptype == "bf"
-                else value * co.HARTREE_TO_KCALMOL
-            )
-        elif units == co.TINKERFF:
-            raise NotImplementedError("Tinker unit conversion not yet implemented.")
-        else:
-            raise ValueError(f"Unknown FF unit type: {units!r}. Supported: MM3 (MDYNA), AMBER (KCALMOLA).")
-
     def value_in_range(self, value: float) -> bool:
         """Check whether a value falls within the allowed range for this parameter type.
 
@@ -248,20 +221,3 @@ class Param:
         if lo <= value <= hi:
             return True
         raise ParamError(f"{self} value {value} outside allowed range [{lo}, {hi}]")
-
-    def value_at_limits(self) -> None:
-        """Log a warning if the parameter sits at the boundary of its allowed range.
-
-        Should be called at the end of an optimization to flag parameters that
-        may need wider bounds or different initial values.
-        """
-        if self._value is not None and self._value == self.allowed_range[0]:
-            logger.warning(
-                f"{self} is at its lower limit ({self._value}). "
-                "Consider adjusting limits, initial values, or reference data."
-            )
-        if self._value is not None and self._value == self.allowed_range[1]:
-            logger.warning(
-                f"{self} is at its upper limit ({self._value}). "
-                "Consider adjusting limits, initial values, or reference data."
-            )

@@ -3,13 +3,7 @@
 Contains basic utility methods for use in Q2MM.
 """
 
-import copy
 import numpy as np
-
-try:
-    import parmed
-except ImportError:
-    parmed = None
 
 
 # region Atom Type Handling
@@ -47,19 +41,6 @@ def convert_atom_type_pair(atom_type_pair: list[str]) -> list[str]:
     return q2mm_atom_type_pair
 
 
-def convert_atom_types(atom_type_pairs: list[list[str]]) -> list[list[str]]:
-    """Convert multiple atom type pairs to normalized Q2MM atom types.
-
-    Args:
-        atom_type_pairs (list[list[str]]): A list of atom type pairs to convert.
-
-    Returns:
-        list[list[str]]: A list of normalized atom type pairs.
-    """
-    q2mm_atom_type_pairs = [convert_atom_type_pair(atom_type_pair) for atom_type_pair in atom_type_pairs]
-    return q2mm_atom_type_pairs
-
-
 def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
     """Returns bond length between 2 sets of coordinates.
 
@@ -90,23 +71,6 @@ def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray)
     cos_angle = np.dot(vector21, vector23) / (np.sqrt(vector21.dot(vector21)) * np.sqrt(vector23.dot(vector23)))
     angle = np.arccos(cos_angle)
     return np.degrees(angle)
-
-
-def is_same_type_DOF(atom_types1: list[str], atom_types2: list[str]) -> bool:
-    """Check whether two atom type sequences represent the same degree of freedom.
-
-    Two sequences match if they are equal in forward or reverse order.
-
-    Args:
-        atom_types1 (list[str]): First atom type sequence.
-        atom_types2 (list[str]): Second atom type sequence.
-
-    Returns:
-        (bool): True if the sequences match in either direction, False otherwise.
-    """
-    reverse_1 = copy.deepcopy(atom_types1)
-    reverse_1.reverse()
-    return atom_types1 == atom_types2 or reverse_1 == atom_types2
 
 
 # endregion Atom Type Handling
