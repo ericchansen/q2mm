@@ -440,12 +440,12 @@ class TestEthaneFullLoop:
         # 8 params: [CH_k, CH_r0, CC_k, CC_r0, HCH_k, HCH_eq, CCH_k, CCH_eq]
         assert len(params) == 8
 
-        # C-H bond: k ~ 4-6 mdyn/Å, r0 ~ 1.09 Å
-        assert 3.0 < params[0] < 7.0, f"C-H force constant out of range: {params[0]}"
+        # C-H bond: k ~ 200-500 kcal/mol/Å², r0 ~ 1.09 Å
+        assert 200.0 < params[0] < 500.0, f"C-H force constant out of range: {params[0]}"
         assert 1.0 < params[1] < 1.2, f"C-H equilibrium out of range: {params[1]}"
 
-        # C-C bond: k ~ 2-5 mdyn/Å, r0 ~ 1.53 Å
-        assert 1.5 < params[2] < 5.0, f"C-C force constant out of range: {params[2]}"
+        # C-C bond: k ~ 100-400 kcal/mol/Å², r0 ~ 1.53 Å
+        assert 100.0 < params[2] < 400.0, f"C-C force constant out of range: {params[2]}"
         assert 1.4 < params[3] < 1.7, f"C-C equilibrium out of range: {params[3]}"
 
     # ---- Optimization stage ----
@@ -555,10 +555,10 @@ class TestEthaneTSSeminario:
         """TS Seminario bond/angle params should be close to GS values."""
         ff = ts_result["ff"]
         for b in ff.bonds:
-            assert 1.0 < b.force_constant < 10.0, f"Bond FC out of range: {b}"
+            assert 70.0 < b.force_constant < 720.0, f"Bond FC out of range: {b}"
             assert 0.8 < b.equilibrium < 2.0, f"Bond eq out of range: {b}"
         for a in ff.angles:
-            assert 0.05 < a.force_constant < 5.0, f"Angle FC out of range: {a}"
+            assert 3.5 < a.force_constant < 360.0, f"Angle FC out of range: {a}"
             assert 80.0 < a.equilibrium < 130.0, f"Angle eq out of range: {a}"
 
     def test_ts_seminario_matches_gs_approximately(self, ts_result):

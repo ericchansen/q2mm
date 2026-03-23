@@ -287,7 +287,9 @@ class TinkerEngine(MMEngine):
             for bond in ff.bonds:
                 t1 = elem_to_type[bond.elements[0]]
                 t2 = elem_to_type[bond.elements[1]]
-                f.write(f"bond   {t1:5d} {t2:5d}         {canonical_to_mm3_bond_k(bond.force_constant):8.4f}   {bond.equilibrium:8.4f}\n")
+                f.write(
+                    f"bond   {t1:5d} {t2:5d}         {canonical_to_mm3_bond_k(bond.force_constant):8.4f}   {bond.equilibrium:8.4f}\n"
+                )
 
             # Angle parameters
             for angle in ff.angles:
