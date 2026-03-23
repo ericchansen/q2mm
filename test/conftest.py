@@ -63,40 +63,19 @@ from test._shared import (  # noqa: F401
 # Backend availability detection (runs once at collection time)
 # ---------------------------------------------------------------------------
 
-try:
-    import openmm  # noqa: F401
+from q2mm.backends.registry import available_engines as _available_engines
 
-    _HAS_OPENMM = True
-except ImportError:
-    _HAS_OPENMM = False
+_AVAILABLE_BACKENDS = set(_available_engines())
 
-try:
-    from q2mm.backends.mm.tinker import TinkerEngine
-
-    _HAS_TINKER = TinkerEngine().is_available()
-except (ImportError, FileNotFoundError, OSError):
-    _HAS_TINKER = False
-
-try:
-    import jax  # noqa: F401
-
-    _HAS_JAX = True
-except ImportError:
-    _HAS_JAX = False
-
-try:
-    import jax_md  # noqa: F401
-
-    _HAS_JAX_MD = True
-except ImportError:
-    _HAS_JAX_MD = False
-
-try:
-    import psi4  # noqa: F401
-
-    _HAS_PSI4 = True
-except ImportError:
-    _HAS_PSI4 = False
+# Mapping from pytest marker names to registry keys.
+# Marker names use underscores (Python identifiers); registry keys use hyphens.
+_MARKER_TO_REGISTRY = {
+    "openmm": "openmm",
+    "tinker": "tinker",
+    "jax": "jax",
+    "jax_md": "jax-md",
+    "psi4": "psi4",
+}
 
 
 def pytest_addoption(parser):
@@ -141,16 +120,9 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip_medium)
 
     # Auto-skip tests that require a missing backend
-    _backend_checks = {
-        "openmm": (_HAS_OPENMM, "OpenMM not installed"),
-        "tinker": (_HAS_TINKER, "Tinker not installed or not found"),
-        "jax": (_HAS_JAX, "JAX not installed"),
-        "jax_md": (_HAS_JAX_MD, "jax-md not installed"),
-        "psi4": (_HAS_PSI4, "Psi4 not installed"),
-    }
-    for marker_name, (available, reason) in _backend_checks.items():
-        if not available:
-            skip_marker = pytest.mark.skip(reason=reason)
+    for marker_name, registry_key in _MARKER_TO_REGISTRY.items():
+        if registry_key not in _AVAILABLE_BACKENDS:
+            skip_marker = pytest.mark.skip(reason=f"{registry_key} not available")
             for item in items:
                 if marker_name in item.keywords:
                     item.add_marker(skip_marker)

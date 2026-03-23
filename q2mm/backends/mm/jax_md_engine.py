@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.backends.registry import register_mm
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
@@ -531,6 +532,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
 # ---------------------------------------------------------------------------
 
 
+@register_mm("jax-md")
 class JaxMDEngine(MMEngine):
     """Differentiable MM backend using jax-md for periodic systems.
 
