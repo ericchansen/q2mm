@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -70,6 +70,14 @@ class _VdwTerm:
 
 
 @dataclass
+class _Exception14:
+    """A 1-4 nonbonded exception whose parameters must track particle updates."""
+    exception_index: int
+    particle_i: int
+    particle_j: int
+
+
+@dataclass
 class OpenMMHandle:
     """Reusable OpenMM system/context pair for fast parameter updates."""
 
@@ -83,6 +91,7 @@ class OpenMMHandle:
     bond_terms: list[_BondTerm]
     angle_terms: list[_AngleTerm]
     vdw_terms: list[_VdwTerm]
+    exceptions_14: list[_Exception14] = field(default_factory=list)
     functional_form: FunctionalForm = FunctionalForm.MM3
 
 
@@ -377,12 +386,14 @@ class OpenMMEngine(MMEngine):
 
                 # Scale 1-4 pairs (AMBER: scnb=2.0 → epsilon/2, scee=1.2 → no charges here)
                 SCNB = 2.0
+                exceptions_14: list[_Exception14] = []
                 for p1, p2 in sorted(pairs_14):
                     sig1, eps1 = vdw_force.getParticleParameters(p1)[1:]
                     sig2, eps2 = vdw_force.getParticleParameters(p2)[1:]
                     sig_14 = 0.5 * (sig1 + sig2)
                     eps_14 = (eps1 * eps2) ** 0.5 / SCNB
-                    vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+                    exc_idx = vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+                    exceptions_14.append(_Exception14(exception_index=exc_idx, particle_i=p1, particle_j=p2))
             else:
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
@@ -420,6 +431,7 @@ class OpenMMEngine(MMEngine):
             bond_terms=bond_terms,
             angle_terms=angle_terms,
             vdw_terms=vdw_terms,
+            exceptions_14=exceptions_14 if use_harmonic and vdw_terms else [],
             functional_form=ff_form,
         )
 
@@ -499,6 +511,17 @@ class OpenMMEngine(MMEngine):
                         term.particle_index,
                         [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)],
                     )
+
+            # Recompute 1-4 exception params from updated particle params
+            if use_harmonic and handle.exceptions_14:
+                SCNB = 2.0
+                for exc in handle.exceptions_14:
+                    _, sig1, eps1 = handle.vdw_force.getParticleParameters(exc.particle_i)
+                    _, sig2, eps2 = handle.vdw_force.getParticleParameters(exc.particle_j)
+                    sig_14 = 0.5 * (sig1 + sig2)
+                    eps_14 = (eps1 * eps2) ** 0.5 / SCNB
+                    handle.vdw_force.setExceptionParameters(exc.exception_index, exc.particle_i, exc.particle_j, 0.0, sig_14, eps_14)
+
             handle.vdw_force.updateParametersInContext(handle.context)
 
     def export_system_xml(

@@ -52,7 +52,7 @@ from q2mm.models.units import (
 _FORMAT_COMPATIBLE_FORMS: dict[str, set[str]] = {
     "mm3_fld": {"mm3"},
     "tinker_prm": {"mm3"},
-    "openmm_xml": {"mm3", "harmonic"},
+    "openmm_xml": {"mm3"},
     "amber_frcmod": {"harmonic"},
 }
 
