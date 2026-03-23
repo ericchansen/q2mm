@@ -34,9 +34,14 @@ _SN2_DATA_AVAILABLE = SN2_XYZ.exists() and SN2_HESSIAN.exists()
 def _functional_form(engine: MMEngine) -> FunctionalForm:
     """Pick a FunctionalForm supported by *engine*."""
     supported = engine.supported_functional_forms()
-    if "mm3" in supported and "harmonic" not in supported:
+    if "harmonic" in supported:
+        return FunctionalForm.HARMONIC
+    if "mm3" in supported:
         return FunctionalForm.MM3
-    return FunctionalForm.HARMONIC
+    for name in sorted(supported):
+        if hasattr(FunctionalForm, name.upper()):
+            return getattr(FunctionalForm, name.upper())
+    raise RuntimeError(f"Engine {engine.name} reports no mappable functional forms: {supported!r}")
 
 
 def _is_harmonic(engine: MMEngine) -> bool:
