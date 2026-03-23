@@ -23,7 +23,16 @@ if TYPE_CHECKING:
 
 
 def build_leaderboard_rows(results: list[BenchmarkResult]) -> list[dict]:
-    """Build leaderboard row dicts from benchmark results."""
+    """Build leaderboard row dicts from benchmark results.
+
+    Args:
+        results (list[BenchmarkResult]): Completed benchmark results.
+
+    Returns:
+        list[dict]: Row dicts with keys ``backend``, ``optimizer``,
+            ``rmsd``, ``mae``, ``time_s``, ``n_eval``, ``final_score``,
+            ``converged``, ``message``, ``error``, and ``initial_rmsd``.
+    """
     rows = []
     for r in results:
         meta = r.metadata
@@ -54,8 +63,15 @@ def build_leaderboard_rows(results: list[BenchmarkResult]) -> list[dict]:
 def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) -> list[TablePrinter]:
     """Generate all SI tables for a single benchmark result.
 
-    Returns a list of ``TablePrinter`` objects (one per table).
-    Call ``.flush()`` on each to print, or ``.to_string()`` to capture.
+    Args:
+        result (BenchmarkResult): A single completed benchmark result.
+        combo_label (str | None): Display label for the backend+optimizer
+            combination (e.g., ``'OpenMM + L-BFGS-B'``). Derived from
+            metadata if ``None``.
+
+    Returns:
+        list[TablePrinter]: One ``TablePrinter`` per table. Call
+            ``.flush()`` on each to print, or ``.to_string()`` to capture.
     """
     meta = result.metadata
     if combo_label is None:
@@ -159,10 +175,9 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
 def full_report(results: list[BenchmarkResult]) -> None:
     """Print the complete report: leaderboard + all SI tables.
 
-    Parameters
-    ----------
-    results : list[BenchmarkResult]
-        One result per (backend, optimizer) combination.
+    Args:
+        results (list[BenchmarkResult]): One result per (backend, optimizer)
+            combination.
     """
     # --- Leaderboard ---
     rows = build_leaderboard_rows(results)

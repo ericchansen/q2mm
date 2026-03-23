@@ -27,10 +27,12 @@ def load_normal_modes(path: Path) -> dict:
     The file must contain arrays ``eigenvalues``, ``eigenvectors``, and
     ``masses_amu`` (from a mass-weighted Hessian eigendecomposition).
 
-    Returns
-    -------
-    dict
-        Keys: eigenvalues, eigenvectors, masses_amu.
+    Args:
+        path (Path): Path to the ``.npz`` file.
+
+    Returns:
+        dict: Dictionary with keys ``'eigenvalues'``, ``'eigenvectors'``,
+            and ``'masses_amu'``, each mapping to a ``numpy.ndarray``.
     """
     data = np.load(path, allow_pickle=False)
     return {
@@ -49,27 +51,21 @@ def compute_distortions(
 ) -> tuple[list[dict], float, float]:
     """Displace molecule along QM normal modes and compare energies.
 
-    Parameters
-    ----------
-    mol : Q2MMMolecule
-        Equilibrium geometry molecule.
-    ff : ForceField
-        Force field to evaluate MM energies with.
-    engine : MMEngine
-        Any backend engine with an ``energy()`` method.
-    modes : dict
-        Output from ``load_normal_modes()``.
-    target_norms_ang : list[float], optional
-        Cartesian displacement magnitudes in Angstrom (default [0.05, 0.10, 0.15]).
+    Args:
+        mol (Q2MMMolecule): Equilibrium geometry molecule.
+        ff (ForceField): Force field to evaluate MM energies with.
+        engine (MMEngine): Any backend engine with an ``energy()`` method.
+        modes (dict): Output from ``load_normal_modes()``.
+        target_norms_ang (list[float] | None): Cartesian displacement
+            magnitudes in Angstrom. Defaults to ``[0.05, 0.10, 0.15]``.
 
-    Returns
-    -------
-    results : list[dict]
-        Per-mode results with keys: mode_idx, freq_cm1, displacements.
-    e_eq : float
-        Equilibrium MM energy (kcal/mol).
-    elapsed : float
-        Wall clock time in seconds for all energy evaluations.
+    Returns:
+        tuple[list[dict], float, float]: A 3-tuple of:
+
+            - **results** (*list[dict]*) — Per-mode results with keys
+              ``mode_idx``, ``freq_cm1``, and ``displacements``.
+            - **e_eq** (*float*) — Equilibrium MM energy in kcal/mol.
+            - **elapsed** (*float*) — Wall-clock time in seconds.
     """
     from q2mm.models.molecule import Q2MMMolecule as _Mol
 

@@ -58,6 +58,27 @@ class Datum:
         atm_4: int | None = None,
         ff_row: int | None = None,
     ):
+        """Initialize a Datum instance.
+
+        Args:
+            lbl (str | None): Explicit label; auto-generated from other fields
+                if not provided.
+            val (float | None): Numerical value of the data point.
+            wht (float | None): Weight for this data point in the objective
+                function.
+            typ (str | None): Data type identifier (e.g., ``'b'``, ``'a'``,
+                ``'t'``).
+            com (str | None): Comment or description.
+            src_1 (str | None): Primary source file name.
+            src_2 (str | None): Secondary source file name.
+            idx_1 (int | None): Primary structure index.
+            idx_2 (int | None): Secondary structure index.
+            atm_1 (int | None): First atom number.
+            atm_2 (int | None): Second atom number.
+            atm_3 (int | None): Third atom number.
+            atm_4 (int | None): Fourth atom number.
+            ff_row (int | None): Force field file row number.
+        """
         self._lbl = lbl
         self.val = val
         self.wht = wht
@@ -79,7 +100,12 @@ class Datum:
 
     @property
     def lbl(self) -> str:
-        """Auto-generated label from type, source, index, and atom fields."""
+        """Auto-generated label from type, source, index, and atom fields.
+
+        Returns:
+            (str): A label string composed of type, source, index, and atom
+                fields joined by underscores.
+        """
         if self._lbl is None:
             a = self.typ
             b = re.split(r"[.]+", self.src_1)[0] if self.src_1 else None
@@ -91,10 +117,25 @@ class Datum:
 
 
 def remove_none(*args):
-    """Filter out None and empty-string values."""
+    """Filter out None and empty-string values.
+
+    Args:
+        *args: Arbitrary values to filter.
+
+    Returns:
+        (list): A list containing only non-None, non-empty-string values.
+    """
     return [x for x in args if x is not None and x != ""]
 
 
 def datum_sort_key(datum: Datum) -> tuple:
-    """Sort key ensuring calculated and reference data points align properly."""
+    """Sort key ensuring calculated and reference data points align properly.
+
+    Args:
+        datum (Datum): The data point to generate a sort key for.
+
+    Returns:
+        (tuple): A tuple of ``(typ, src_1, src_2, idx_1, idx_2)`` used for
+            stable ordering.
+    """
     return (datum.typ, datum.src_1, datum.src_2, datum.idx_1, datum.idx_2)

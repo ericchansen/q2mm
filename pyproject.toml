@@ -71,6 +71,7 @@ dev = [
 ]
 docs = [
     "mkdocs-material",
+    "mkdocstrings[python]",
 ]
 all = [
     "openmm",

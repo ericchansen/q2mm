@@ -1,13 +1,33 @@
-"""
-Constants and variables used throughout Q2MM.
+"""Constants and variables used throughout Q2MM.
 
 This module contains unit conversions, logging configuration, and other
 physical constants.  Element data (masses, radii, symbols) is centralized
-in :mod:`q2mm.elements`; ``MASSES`` is re-exported here for backward
-compatibility.  Optimization defaults (WEIGHTS, STEPS) live in
-:mod:`q2mm.optimizers.defaults`; regex patterns used by the parsers are
+in ``q2mm.elements``; ``MASSES`` is re-exported here for backward
+compatibility.  Optimization defaults (``WEIGHTS``, ``STEPS``) live in
+``q2mm.optimizers.defaults``; regex patterns used by the parsers are
 defined inline below, and this module is now their canonical location
-following the removal of :mod:`q2mm.parsers._patterns`.
+following the removal of ``q2mm.parsers._patterns``.
+
+Module-level Constants:
+    GAUSSIAN_ENERGIES: List of Gaussian energy method labels.
+    LOG_SETTINGS: Logging configuration dict (kept for backward compat).
+    HARTREE_TO_KJMOL: Hartree to kJ/mol conversion factor.
+    HARTREE_TO_J: Hartree to Joule conversion factor.
+    HARTREE_TO_KCALMOL: Hartree to kcal/mol conversion factor.
+    KCAL_TO_KJ: kcal to kJ conversion factor.
+    BOHR_TO_ANG: Bohr radius to Angstrom conversion factor.
+    CM_TO_ANG: Centimeter to Angstrom conversion factor.
+    FORCE_CONVERSION: Force constant conversion factor (au to mdyn/Å).
+    EIGENVALUE_CONVERSION: Hessian eigenvalue conversion factor.
+    AU_TO_MDYNA: Atomic units to mdyn/Å conversion factor.
+    AU_TO_MDYN_ANGLE: Atomic units to mdyn·Å/rad² conversion factor.
+    AVO: Avogadro's number.
+    AMU_TO_KG: Atomic mass unit to kilogram conversion factor.
+    SPEED_OF_LIGHT_MS: Speed of light in m/s.
+    RAD_TO_DEG: Radians to degrees conversion factor.
+    MASSES: Element symbol to monoisotopic mass mapping (re-exported).
+    STEPS: Optimization step sizes (re-exported from optimizers.defaults).
+    WEIGHTS: Optimization weights (re-exported from optimizers.defaults).
 """
 
 import logging

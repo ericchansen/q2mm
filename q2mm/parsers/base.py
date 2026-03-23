@@ -1,3 +1,9 @@
+"""Base classes for force field file parsing and representation.
+
+Provides the ``File`` base class for reading and writing text files, and the
+``FF`` base class for force field containers used in Q2MM optimization.
+"""
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -8,15 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 class File:
-    """
-    Base for every other filetype class. Identical to filetypes.py version,
-    ported over for schrodinger independence in seminario.py
+    """Base for every other filetype class.
+
+    Identical to the ``filetypes.py`` version, ported over for Schrödinger
+    independence in ``seminario.py``.
+
+    Attributes:
+        path: Absolute path to the file.
+        directory: Directory containing the file.
+        filename: Base name of the file.
     """
 
     __slots__ = ["_lines", "path", "directory", "filename"]
 
     def __init__(self, path: str):
-        """Instantiates a file object fro the file at the location path passed.
+        """Instantiates a file object for the file at the location path passed.
 
         Populates the directory and filename properties as well.
 
@@ -34,7 +46,7 @@ class File:
         """Returns the lines of the file.
 
         Returns:
-            List[str]: lines of the file
+            (List[str]): lines of the file
         """
         if self._lines is None:
             with open(self.path) as f:
@@ -69,6 +81,15 @@ class FF:
     __slots__ = ["path", "data", "method", "params", "score"]
 
     def __init__(self, path=None, data=None, method=None, params=None, score=None):
+        """Initialize a force field instance.
+
+        Args:
+            path (str | None): Path to the force field file.
+            data (list[Datum] | None): List of Datum objects.
+            method (str | None): Method used to generate this FF.
+            params (list[Param] | None): List of Param objects.
+            score (float | None): Objective function score.
+        """
         self.path = path
         self.data = data
         self.method = method
@@ -76,6 +97,11 @@ class FF:
         self.score = score
 
     def copy_attributes(self, ff):
+        """Copy shared attributes from this FF instance to another.
+
+        Args:
+            ff (FF): Target force field instance to copy attributes into.
+        """
         ff.path = self.path
 
     def __repr__(self):
@@ -83,4 +109,13 @@ class FF:
 
     @abstractmethod
     def get_DOFs_by_param(self, structs: list) -> dict:
+        """Return degrees of freedom grouped by parameter.
+
+        Args:
+            structs (list): List of structure objects to extract DOFs from.
+
+        Returns:
+            (dict): Mapping of Param objects to their associated degrees of
+                freedom.
+        """
         raise NotImplementedError

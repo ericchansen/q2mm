@@ -12,6 +12,7 @@ value, and :math:`x_c` is the calculated (force field) value.
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterator
 import logging
 
 import numpy as np
@@ -22,8 +23,15 @@ from q2mm.optimizers.defaults import WEIGHTS
 logger = logging.getLogger(__name__)
 
 
-def data_by_type(data_iterable):
-    """Group an iterable of Datum objects into a dict keyed by data type."""
+def data_by_type(data_iterable) -> dict:
+    """Group an iterable of Datum objects into a dict keyed by data type.
+
+    Args:
+        data_iterable (Iterable[Datum]): Datum objects to group.
+
+    Returns:
+        dict[str, list[Datum]]: Data points grouped by their ``typ`` attribute.
+    """
     data_by_typ = {}
     for datum in data_iterable:
         if datum.typ not in data_by_typ:
@@ -32,11 +40,19 @@ def data_by_type(data_iterable):
     return data_by_typ
 
 
-def trim_data(dict1, dict2):
+def trim_data(dict1, dict2) -> tuple:
     """Remove data points not present in both datasets (within each type).
 
-    For torsion data ('t'), matching uses filename + atom indices rather
+    For torsion data (``'t'``), matching uses filename + atom indices rather
     than exact labels, since pre/opt structures may have different indices.
+
+    Args:
+        dict1 (dict[str, list[Datum]]): First dataset grouped by type.
+        dict2 (dict[str, list[Datum]]): Second dataset grouped by type.
+
+    Returns:
+        tuple[dict[str, np.ndarray], dict[str, np.ndarray]]: Both datasets
+            with unmatched points removed and lists converted to arrays.
     """
     for typ in dict1:
         if typ == "t":
@@ -69,7 +85,7 @@ def trim_data(dict1, dict2):
     return dict1, dict2
 
 
-def compare_data(r_dict, c_dict, output=None, doprint=False):
+def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
     """Compute the legacy chi-squared objective function score.
 
     Scoring formula per data point:
@@ -78,13 +94,14 @@ def compare_data(r_dict, c_dict, output=None, doprint=False):
       - Other types: score = w² × diff² / N_type
 
     Args:
-        r_dict: Reference data grouped by type (from data_by_type).
-        c_dict: Calculated data grouped by type.
-        output: Optional file path to write formatted output.
-        doprint: If True, print formatted output to stdout.
+        r_dict (dict[str, np.ndarray]): Reference data grouped by type
+            (from :func:`data_by_type`).
+        c_dict (dict[str, np.ndarray]): Calculated data grouped by type.
+        output (str | None): Optional file path to write formatted output.
+        doprint (bool): If ``True``, print formatted output to stdout.
 
     Returns:
-        Total objective function score (float).
+        float: Total objective function score.
     """
     strings = []
     strings.append(
@@ -174,6 +191,10 @@ def correlate_energies(r_data, c_data):
     energies so the corresponding calculated value is zero.
 
     Both datasets must be aligned (same ordering).
+
+    Args:
+        r_data (np.ndarray): Reference energy data points.
+        c_data (np.ndarray): Calculated energy data points (modified in place).
     """
     for indices in select_group_of_energies(c_data):
         zero, zero_ind = min((x.val, i) for i, x in enumerate(r_data[indices]))
@@ -183,13 +204,19 @@ def correlate_energies(r_data, c_data):
             c_data[ind].val -= zero
 
 
-def select_group_of_energies(data):
+def select_group_of_energies(data) -> Iterator[np.ndarray]:
     """Yield index arrays for each group of energies in the dataset.
 
     Handles all energy types: relative (``e``, ``eo``) and absolute
     (``ea``, ``eao``).  Previously only ``e``/``eo`` were iterated,
     so ``ea``/``eao`` silently passed through ``correlate_energies``
     uncorrelated — a bug inherited from upstream.
+
+    Args:
+        data (np.ndarray): Array of Datum objects with energy types.
+
+    Yields:
+        np.ndarray: Index array for each energy group within the dataset.
     """
     for energy_type in ["e", "eo", "ea", "eao"]:
         indices = np.where([x.typ == energy_type for x in data])[0]
@@ -205,6 +232,10 @@ def import_weights(data):
     Only sets weights on data points where ``datum.wht is None``.
     Eigenvalue data gets special handling based on diagonal/off-diagonal
     and frequency value.
+
+    Args:
+        data (np.ndarray): Array of Datum objects whose weights may be updated
+            in place.
     """
     for datum in data:
         if datum.wht is None:

@@ -1,3 +1,9 @@
+"""Parsers for Tinker-format force field parameter files.
+
+Provides ``TinkerFF`` and ``TinkerMM3A`` for reading and writing Tinker
+``.prm`` / ``.fld`` parameter files used with the MM3 force field.
+"""
+
 from __future__ import annotations
 import logging
 from q2mm.parsers.base import FF
@@ -7,25 +13,33 @@ logger = logging.getLogger(__name__)
 
 
 class TinkerFF(FF):
-    """
-    STUFF TO FILL IN LATER
-    THE PROBLEM: Depending on the forcefield used, the parameter structures are different.
-    mm3.prm (exists)
-    amoeba09.prm (development)
+    """Tinker force field parameter file reader/writer.
+
+    Handles Tinker ``.prm`` parameter files (e.g. ``mm3.prm``). The
+    parameter structure varies by force field; currently ``mm3.prm`` is
+    supported with ``amoeba09.prm`` under development.
     """
 
     def __init__(self, path=None, data=None, method=None, params=None, score=None):
+        """Initialize a TinkerFF instance.
+
+        Args:
+            path (str | None): Path to the Tinker parameter file.
+            data (list[Datum] | None): List of Datum objects.
+            method (str | None): Method used to generate this FF.
+            params (list[Param] | None): List of Param objects.
+            score (float | None): Objective function score.
+        """
         super().__init__(path, data, method, params, score)
         self.sub_names = []
         self._atom_types = None
         self._lines = None
 
     def copy_attributes(self, ff):
-        """
-        Copies some general attributes to another force field.
+        """Copy general attributes from this instance to another force field.
 
-        Parameters
-        ----------
+        Args:
+            ff (FF): Target force field instance to copy attributes into.
         """
         ff.path = self.path
         ff.sub_names = self.sub_names
@@ -34,6 +48,7 @@ class TinkerFF(FF):
 
     @property
     def lines(self):
+        """list[str]: Lines of the parameter file, read lazily from disk."""
         if self._lines is None:
             with open(self.path) as f:
                 self._lines = f.readlines()
@@ -44,6 +59,17 @@ class TinkerFF(FF):
         self._lines = x
 
     def import_ff(self, path=None, sub_search="OPT"):
+        """Import force field parameters from a Tinker parameter file.
+
+        Reads bonds, angles, torsions, dipoles, pi-bonds, out-of-plane
+        bends, and van der Waals parameters marked for optimization in
+        the Q2MM section of the file.
+
+        Args:
+            path (str | None): Path to read from. Defaults to ``self.path``.
+            sub_search (str): Subsection keyword to match for gathering
+                parameters. Defaults to ``"OPT"``.
+        """
         if path is None:
             path = self.path
         bonds = ["bond", "bond3", "bond4", "bond5"]
@@ -158,8 +184,14 @@ class TinkerFF(FF):
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def export_ff(self, path=None, params=None, lines=None):
-        """
-        Exports the force field to a file, typically mm3.fld.
+        """Export the force field to a file, typically ``mm3.fld``.
+
+        Args:
+            path (str | None): Output file path. Defaults to ``self.path``.
+            params (list[Param] | None): Parameters to write. Defaults to
+                ``self.params``.
+            lines (list[str] | None): Base file lines to modify. Defaults
+                to ``self.lines``.
         """
         if path is None:
             path = self.path
@@ -206,22 +238,32 @@ class TinkerFF(FF):
 
 
 class TinkerMM3A(FF):
-    """
-    STUFF TO FILL IN LATER
+    """Tinker MM3A force field parameter file reader/writer.
+
+    Handles Tinker MM3A-format ``.prm`` parameter files with
+    fixed-width column layout for export.
     """
 
     def __init__(self, path=None, data=None, method=None, params=None, score=None):
+        """Initialize a TinkerMM3A instance.
+
+        Args:
+            path (str | None): Path to the Tinker parameter file.
+            data (list[Datum] | None): List of Datum objects.
+            method (str | None): Method used to generate this FF.
+            params (list[Param] | None): List of Param objects.
+            score (float | None): Objective function score.
+        """
         super().__init__(path, data, method, params, score)
         self.sub_names = []
         self._atom_types = None
         self._lines = None
 
     def copy_attributes(self, ff):
-        """
-        Copies some general attributes to another force field.
+        """Copy general attributes from this instance to another force field.
 
-        Parameters
-        ----------
+        Args:
+            ff (FF): Target force field instance to copy attributes into.
         """
         ff.path = self.path
         ff.sub_names = self.sub_names
@@ -230,6 +272,7 @@ class TinkerMM3A(FF):
 
     @property
     def lines(self):
+        """list[str]: Lines of the parameter file, read lazily from disk."""
         if self._lines is None:
             with open(self.path) as f:
                 self._lines = f.readlines()
@@ -240,6 +283,17 @@ class TinkerMM3A(FF):
         self._lines = x
 
     def import_ff(self, path=None, sub_search="OPT"):
+        """Import force field parameters from a Tinker MM3A parameter file.
+
+        Reads bonds, angles, torsions, dipoles, pi-bonds, out-of-plane
+        bends, and van der Waals parameters marked for optimization in
+        the Q2MM section of the file.
+
+        Args:
+            path (str | None): Path to read from. Defaults to ``self.path``.
+            sub_search (str): Subsection keyword to match for gathering
+                parameters. Defaults to ``"OPT"``.
+        """
         if path is None:
             path = self.path
         bonds = ["bond", "bond3", "bond4", "bond5"]
@@ -353,8 +407,16 @@ class TinkerMM3A(FF):
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def export_ff(self, path=None, params=None, lines=None):
-        """
-        Exports the force field to a file, typically mm3.fld.
+        """Export the force field to a file, typically ``mm3.fld``.
+
+        Uses a fixed-width column layout for the MM3A parameter format.
+
+        Args:
+            path (str | None): Output file path. Defaults to ``self.path``.
+            params (list[Param] | None): Parameters to write. Defaults to
+                ``self.params``.
+            lines (list[str] | None): Base file lines to modify. Defaults
+                to ``self.lines``.
         """
         if path is None:
             path = self.path

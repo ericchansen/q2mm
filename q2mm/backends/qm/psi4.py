@@ -1,9 +1,9 @@
 """Psi4 quantum mechanics engine backend.
 
-Wraps the Psi4 Python API for QM calculations:
-energy, hessian, geometry optimization, and vibrational frequencies.
+Wraps the Psi4 Python API for QM calculations: energy, Hessian, geometry
+optimization, and vibrational frequencies.
 
-Requires: conda install psi4 -c conda-forge
+Requires: ``conda install psi4 -c conda-forge``
 """
 
 from __future__ import annotations
@@ -25,7 +25,15 @@ except ImportError:
 
 
 def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
-    """Read an XYZ file, return (atom_labels, coordinates_angstrom)."""
+    """Read an XYZ file.
+
+    Args:
+        path: Path to the XYZ file.
+
+    Returns:
+        tuple[list[str], np.ndarray]: ``(atom_labels, coordinates)`` where
+            coordinates are in Å with shape ``(N, 3)``.
+    """
     with open(path) as f:
         lines = f.readlines()
     n_atoms = int(lines[0].strip())
@@ -39,7 +47,17 @@ def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
 
 
 def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1):
-    """Create a Psi4 molecule object from atoms and coordinates."""
+    """Create a Psi4 molecule object from atoms and coordinates.
+
+    Args:
+        atoms: Element symbols.
+        coords: Cartesian coordinates, shape ``(N, 3)``, in Å.
+        charge: Molecular charge.
+        multiplicity: Spin multiplicity.
+
+    Returns:
+        A Psi4 ``Molecule`` object.
+    """
     geom_str = f"    {charge} {multiplicity}\n"
     for atom, (x, y, z) in zip(atoms, coords):
         geom_str += f"    {atom} {x:.10f} {y:.10f} {z:.10f}\n"
@@ -67,6 +85,19 @@ class Psi4Engine(QMEngine):
         charge: int = 0,
         multiplicity: int = 1,
     ):
+        """Initialize the Psi4 engine.
+
+        Args:
+            method: DFT functional or method (e.g. ``"b3lyp"``, ``"mp2"``).
+            basis: Basis set (e.g. ``"6-31+G(d)"``).
+            memory: Memory allocation string (e.g. ``"2 GB"``).
+            n_threads: Number of threads for parallel computation.
+            charge: Molecular charge.
+            multiplicity: Spin multiplicity.
+
+        Raises:
+            ImportError: If Psi4 is not installed.
+        """
         if not _HAS_PSI4:
             raise ImportError("Psi4 is not installed. Install via: conda install psi4 -c conda-forge")
         self._method = method
@@ -81,13 +112,31 @@ class Psi4Engine(QMEngine):
 
     @property
     def name(self) -> str:
+        """Human-readable engine name.
+
+        Returns:
+            str: Engine name including method and basis set.
+        """
         return f"Psi4 ({self._method}/{self._basis})"
 
     def is_available(self) -> bool:
+        """Check if Psi4 is installed.
+
+        Returns:
+            bool: ``True`` if the ``psi4`` package is importable.
+        """
         return _HAS_PSI4
 
     def _load_molecule(self, structure):
-        """Load a molecule from an XYZ file path or (atoms, coords) tuple."""
+        """Load a molecule from an XYZ file path or ``(atoms, coords)`` tuple.
+
+        Args:
+            structure (str | tuple): Path to an XYZ file (``str``) or a tuple of
+                ``(atoms, coords)``.
+
+        Returns:
+            object: A Psi4 ``Molecule`` object with basis and reference set.
+        """
         if isinstance(structure, str):
             atoms, coords = _read_xyz(structure)
         else:
@@ -98,7 +147,16 @@ class Psi4Engine(QMEngine):
         return mol
 
     def energy(self, structure, method: str = None, basis: str = None) -> float:
-        """Calculate single-point energy in Hartrees."""
+        """Calculate single-point energy in Hartrees.
+
+        Args:
+            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
+            method: Override the default QM method.
+            basis: Override the default basis set.
+
+        Returns:
+            float: Electronic energy in Hartrees.
+        """
         mol = self._load_molecule(structure)
         m = method or self._method
         if basis:
@@ -108,8 +166,13 @@ class Psi4Engine(QMEngine):
     def hessian(self, structure, method: str = None, basis: str = None) -> np.ndarray:
         """Calculate Hessian matrix (second derivatives of energy).
 
+        Args:
+            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
+            method: Override the default QM method.
+            basis: Override the default basis set.
+
         Returns:
-            np.ndarray of shape (3*N, 3*N) in Hartree/Bohr^2
+            np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -118,11 +181,18 @@ class Psi4Engine(QMEngine):
         _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
         return np.array(wfn.hessian())
 
-    def optimize(self, structure, method: str = None, basis: str = None, opt_type: str = "min"):
-        """Optimize geometry. Returns (energy, atoms, coords_angstrom).
+    def optimize(self, structure, method: str = None, basis: str = None, opt_type: str = "min") -> tuple:
+        """Optimize geometry.
 
         Args:
-            opt_type: "min" for minimization, "ts" for transition state
+            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
+            method: Override the default QM method.
+            basis: Override the default basis set.
+            opt_type: ``"min"`` for minimization, ``"ts"`` for transition
+                state search.
+
+        Returns:
+            tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords_angstrom)`` with energy in Hartrees.
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -136,7 +206,16 @@ class Psi4Engine(QMEngine):
         return energy, atoms, coords_ang
 
     def frequencies(self, structure, method: str = None, basis: str = None) -> list[float]:
-        """Calculate vibrational frequencies in cm^-1."""
+        """Calculate vibrational frequencies in cm⁻¹.
+
+        Args:
+            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
+            method: Override the default QM method.
+            basis: Override the default basis set.
+
+        Returns:
+            list[float]: Vibrational frequencies in cm⁻¹.
+        """
         mol = self._load_molecule(structure)
         m = method or self._method
         if basis:
@@ -145,15 +224,22 @@ class Psi4Engine(QMEngine):
         return list(np.array(wfn.frequencies()))
 
     def close(self):
-        """Clean up temporary files."""
+        """Clean up temporary files created by Psi4."""
         if hasattr(self, "_tmpdir") and os.path.exists(self._tmpdir):
             shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def __enter__(self):
+    def __enter__(self) -> Psi4Engine:
+        """Enter context manager.
+
+        Returns:
+            Psi4Engine: This engine instance.
+        """
         return self
 
     def __exit__(self, *args):
+        """Exit context manager and clean up temporary files."""
         self.close()
 
     def __del__(self):
+        """Destructor — clean up temporary files."""
         self.close()

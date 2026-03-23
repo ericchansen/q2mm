@@ -21,7 +21,12 @@ import numpy as np
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
-    """Discover available MM backends at runtime."""
+    """Discover available MM backends at runtime.
+
+    Returns:
+        list[tuple[str, type, str]]: List of ``(display_name, engine_class,
+            marker)`` tuples for each importable backend.
+    """
     backends: list[tuple[str, type, str]] = []
 
     try:
@@ -54,7 +59,12 @@ def _discover_backends() -> list[tuple[str, type, str]]:
 
 
 def _optimizer_configs() -> list[tuple[str, dict]]:
-    """Build the optimizer configuration list."""
+    """Build the optimizer configuration list.
+
+    Returns:
+        list[tuple[str, dict]]: List of ``(label, config_dict)`` tuples.
+            Each ``config_dict`` contains at minimum a ``'method'`` key.
+    """
     configs: list[tuple[str, dict]] = [
         ("L-BFGS-B", {"method": "L-BFGS-B"}),
         ("Nelder-Mead", {"method": "Nelder-Mead"}),
@@ -70,7 +80,18 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
 def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path, Path | None]:
     """Locate CH3F reference data files.
 
-    Returns (xyz, hessian, freqs, normal_modes_or_None).
+    Args:
+        data_dir (Path | None): Explicit directory to search. Falls back
+            to the repo ``examples/`` directory and CWD if ``None``.
+
+    Returns:
+        tuple[Path, Path, Path, Path | None]: A 4-tuple of
+            ``(xyz_path, hessian_path, frequencies_path, normal_modes_path)``.
+            The normal-modes path is ``None`` if the ``.npz`` file is absent.
+
+    Raises:
+        FileNotFoundError: If the required reference files cannot be found
+            in any candidate directory.
     """
     candidates = []
     if data_dir is not None:
@@ -109,7 +130,19 @@ def _run_matrix(
 ) -> list:
     """Run the full backend × optimizer matrix.
 
-    Returns list of BenchmarkResult.
+    Args:
+        backends (list[tuple[str, type, str]]): Backend entries from
+            ``_discover_backends()``.
+        optimizers (list[tuple[str, dict]]): Optimizer entries from
+            ``_optimizer_configs()``.
+        output_dir (Path | None): Directory to save JSON result files.
+            Created if it does not exist.
+        leaderboard_only (bool): If ``True``, skip streaming detailed
+            SI tables during the run.
+        data_dir (Path | None): Override for QM reference data directory.
+
+    Returns:
+        list[BenchmarkResult]: One result per (backend, optimizer) combination.
     """
     from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
     from q2mm.diagnostics.pes_distortion import load_normal_modes
@@ -208,7 +241,15 @@ def _run_matrix(
 
 
 def _load_results(directory: Path) -> list:
-    """Load all BenchmarkResult JSON files from a directory."""
+    """Load all BenchmarkResult JSON files from a directory.
+
+    Args:
+        directory (Path): Directory containing ``*.json`` result files.
+
+    Returns:
+        list[BenchmarkResult]: Successfully loaded results (files that
+            fail to parse are skipped with a warning).
+    """
     from q2mm.diagnostics.benchmark import BenchmarkResult
 
     results = []
@@ -221,7 +262,15 @@ def _load_results(directory: Path) -> list:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for ``q2mm-benchmark`` CLI."""
+    """Entry point for the ``q2mm-benchmark`` CLI.
+
+    Args:
+        argv (list[str] | None): Command-line arguments. If ``None``,
+            ``sys.argv[1:]`` is used (via ``argparse``).
+
+    Returns:
+        int: Exit code — ``0`` on success, ``1`` on error.
+    """
     parser = argparse.ArgumentParser(
         prog="q2mm-benchmark",
         description="Run Q2MM benchmark matrix across backends and optimizers.",

@@ -1,3 +1,9 @@
+"""Parser for Tripos Mol2 structure files.
+
+Provides the ``Mol2`` class for reading atom coordinates, bond
+connectivity, and other structural data from ``.mol2`` files.
+"""
+
 from __future__ import annotations
 import logging
 import numpy as np
@@ -12,14 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class Mol2(File):
-    """
-    Used to retrieve structural data from mol2 files.
+    """Retrieve structural data from Tripos Mol2 files.
 
-    Please ensure that mol2 atom types match the atom types specified in the force field.
+    Please ensure that mol2 atom types match the atom types specified
+    in the force field.
 
     Note:
-            Format for the data in the file can be found by searching
-            Tripos Mol2 File Format SYBYL.
+        Format for the data in the file can be found by searching
+        Tripos Mol2 File Format SYBYL.
     """
 
     TRIPOS_FLAG = "@<TRIPOS>"
@@ -30,36 +36,37 @@ class Mol2(File):
     __slots__ = ["_lines", "path", "directory", "filename", "_structures"]
 
     def __init__(self, path: str):
-        """Creates a Mol2 object based on the path given, data is only structural.
+        """Initialize a Mol2 instance.
 
         Args:
-            path (str): Absolute path of mol2 file.
+            path (str): Absolute path of the mol2 file.
         """
         super().__init__(path)
-        self._structures: List[Structure] = None
+        self._structures: list[Structure] = None
 
     @property
-    def structures(self) -> List[Structure]:
-        """Returns the Structure objects extracted from the mol2 file at self.path.
-        If None, indicating no extraction yet, parses the lines from the file to populate
-        the structures list with Structures.
+    def structures(self) -> list[Structure]:
+        """list[Structure]: Structure objects extracted from the mol2 file.
+
+        Lazily parses the file on first access.
 
         Returns:
-            List[Structure]: Structure objects extracted from parsing the mol2 file.
+            (list[Structure]): Structure objects extracted from parsing the
+                mol2 file.
         """
         if self._structures is None:
             self.parse_lines()
         return self._structures
 
     def parse_lines(self):
-        """Parses self.lines() as set by super to extract Structure objects to self.structures.
+        """Parse file lines to extract Structure objects into ``self.structures``.
 
-        It is safe to parse this with split because the mol2 format from SYBYL
-         requires consistent data ordering matching the standard, otherwise the
-         file is not in valid mol2 format.
+        It is safe to parse this with ``split`` because the mol2 format
+        from SYBYL requires consistent data ordering matching the
+        standard; otherwise the file is not in valid mol2 format.
         """
         # TODO this could be amended to use regular expression matching (regex) if slow
-        self._structures: List[Structure] = []
+        self._structures: list[Structure] = []
         joined_lines = "".join(self.lines)
         structure_chunks = joined_lines.split(self.TRIPOS_FLAG + self.MOLECULE_FLAG)
         entry_num = 0 if len(structure_chunks) > 2 else None
@@ -77,14 +84,15 @@ class Mol2(File):
                 + " MOLECULE entries in the .mol2 file",
             )
 
-    def parse_atoms(self, atom_lines: List[str]) -> List[Atom]:
-        """Returns the Atom objects parsed from the atom_lines given.
+    def parse_atoms(self, atom_lines: list[str]) -> list[Atom]:
+        """Parse atom entries from mol2 atom-section lines.
 
         Args:
-            atom_lines (List[str]): lines from the mol2 file pertaining to the atoms in the structure.
+            atom_lines (list[str]): Lines from the mol2 file pertaining
+                to the atoms in the structure.
 
         Returns:
-            List[Atom]: Atom objects parsed from atom_lines
+            (list[Atom]): Atom objects parsed from *atom_lines*.
         """
         atoms = []
         for atom_entry in atom_lines:
@@ -112,15 +120,17 @@ class Mol2(File):
             )
         return atoms
 
-    def parse_bonds(self, bond_lines: List[str], structure: Structure) -> List[Bond]:
-        """Returns the Bond objects parsed from the bond_lines given.
+    def parse_bonds(self, bond_lines: list[str], structure: Structure) -> list[Bond]:
+        """Parse bond entries from mol2 bond-section lines.
 
         Args:
-            bond_lines (List[str]): lines from the mol2 file pertaining to the bond connectivity in the structure.
-            structure (Structure): structure which the bonds pertain to, used for bond measurement.
+            bond_lines (list[str]): Lines from the mol2 file pertaining
+                to the bond connectivity in the structure.
+            structure (Structure): Structure to which the bonds pertain,
+                used for bond-length measurement.
 
         Returns:
-            List[Bond]: Bond objects parsed from bond_lines
+            (list[Bond]): Bond objects parsed from *bond_lines*.
         """
         bonds = []
         for bond_entry in bond_lines:
@@ -146,13 +156,19 @@ class Mol2(File):
         return bonds
 
     def parse_structure(self, structure_chunk: str, chunk_index: int = None) -> Structure:
-        """Returns the Structure objects parsed from the structure_chunk given.
+        """Parse a single structure from a mol2 molecule chunk.
 
         Args:
-            structure_chunk (str): string containing the lines which pertain to a single structure.
+            structure_chunk (str): String containing the lines which
+                pertain to a single structure.
+            chunk_index (int | None): Zero-based index of this chunk
+                within the file. Appended to the filename to form a
+                unique identifier when the file contains multiple
+                structures. ``None`` for single-structure files.
 
         Returns:
-            Structure: the Structure object parsed from structure_chunk data.
+            (Structure): The Structure object parsed from
+                *structure_chunk* data.
         """
         tripos_chunks = structure_chunk.split(self.TRIPOS_FLAG)
         molecule_lines = tripos_chunks[0].split("\n")
@@ -205,9 +221,13 @@ class Mol2(File):
 
         return struct
 
-    def value_bonds(
-        self,
-    ):  # TODO Not currently in use, remove if not needed by March 1, 2024.
+    def value_bonds(self):
+        """Compute bond lengths from atom coordinates for all bonds.
+
+        .. deprecated::
+            Not currently in use; remove if not needed.
+        """
+        # TODO Not currently in use, remove if not needed by March 1, 2024.
         atom_list = self._structures.atoms
         for bond in self._structures.bonds:
             # Indexing atom_list is possible only because this is within the Mol2 class so

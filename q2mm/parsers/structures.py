@@ -1,3 +1,11 @@
+"""Data classes for molecular structures, atoms, and degrees of freedom.
+
+This module defines the core data structures used to represent molecular
+geometry: atoms, bonds, angles, torsions, and full molecular structures.
+It also provides utilities for manipulating Hessian matrices with respect
+to dummy atoms.
+"""
+
 from __future__ import annotations
 import logging
 from string import digits
@@ -12,9 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class Atom:
-    """
-    Data class for a single atom.
-    """
+    """Data class for a single atom."""
 
     __slots__ = [
         "atom_type",
@@ -55,22 +61,35 @@ class Atom:
         Units: Angstrom
 
         Note:
-            TODO Values are all optional because of the currently established q2mm code, however this
-            is bad practice, any strictly necessary properties should be required arguments, such as atom type, index, and
-            coordinates.
+            Values are all optional because of the currently established q2mm
+            code, however this is bad practice; any strictly necessary
+            properties should be required arguments, such as atom type, index,
+            and coordinates.
 
         Args:
-            atom_type (str, optional): The integer atom type according to atom.typ file. Defaults to None.
-            atom_type_name (str, optional): The name of the atom type corresponding to the integer atom type in the atom.typ file. Defaults to None.
-            atomic_num (int, optional): Atomic number (element number) of the atom. Defaults to None.
-            atomic_mass (float, optional): TODO. Defaults to None.
-            bonded_atom_indices (TODO, optional): TODO. Defaults to None.
-            coords (TODO maybe np.ndarray, optional): Atom coordinates. Defaults to None.
-            coords_type (TODO, optional): TODO Is this even ever used?. Defaults to None.
-            element (str, optional): The atom element (e.g. C, N, O, H). Defaults to None.
-            exact_mass (_type_, optional): TODO. Defaults to None.
-            index (int, optional): The index number of the atom in its original structural file. Defaults to None.
-            partial_charge (float, optional): TODO is this even really used?. Defaults to None.
+            atom_type (str, optional): The integer atom type according to
+                atom.typ file. Defaults to None.
+            atom_type_name (str, optional): The name of the atom type
+                corresponding to the integer atom type in the atom.typ file.
+                Defaults to None.
+            atomic_num (int, optional): Atomic number (element number) of
+                the atom. Defaults to None.
+            atomic_mass (float | None, optional): Atomic mass of the atom
+                in atomic mass units. Defaults to None.
+            bonded_atom_indices (list[int] | None, optional): Indices of
+                atoms bonded to this atom. Defaults to None.
+            coords (list[float] | None, optional): Atom coordinates as
+                ``[x, y, z]``. Defaults to None.
+            coords_type (str | None, optional): Coordinate type label.
+                Defaults to None.
+            element (str, optional): The atom element (e.g. C, N, O, H).
+                Defaults to None.
+            exact_mass (float | None, optional): Exact isotopic mass of the
+                atom. Defaults to None.
+            index (int, optional): The index number of the atom in its
+                original structural file. Defaults to None.
+            partial_charge (float, optional): Partial charge of the atom.
+                Defaults to None.
             x (float, optional): X coordinate of the atom. Defaults to None.
             y (float, optional): Y coordinate of the atom. Defaults to None.
             z (float, optional): Z coordinate of the atom. Defaults to None.
@@ -102,7 +121,7 @@ class Atom:
         """Getter method for coords property.
 
         Returns:
-            np.ndarray: Array of Cartesian coordinates of atom of form [x, y, z].
+            (np.ndarray): Array of Cartesian coordinates of atom of form [x, y, z].
         """
         return np.array([self.x, self.y, self.z])
 
@@ -111,7 +130,8 @@ class Atom:
         """Setter method for coords property.
 
         Args:
-            value (TODO): Cartesian coordinates of atom of form [x, y, z]
+            value (list[float] | np.ndarray): Cartesian coordinates of atom
+                of form ``[x, y, z]``.
         """
         try:
             self.x = value[0]
@@ -122,6 +142,11 @@ class Atom:
 
     @property
     def element(self):
+        """Element symbol for this atom.
+
+        Returns:
+            (str): Element symbol (e.g. ``'C'``, ``'N'``, ``'O'``).
+        """
         if self._element is None:
             self._element = list(co.MASSES.keys())[self.atomic_num - 1]
         return self._element
@@ -132,6 +157,11 @@ class Atom:
 
     @property
     def exact_mass(self):
+        """Exact isotopic mass of this atom.
+
+        Returns:
+            (float): Exact mass in atomic mass units.
+        """
         if self._exact_mass is None:
             self._exact_mass = co.MASSES[self.element]
         return self._exact_mass
@@ -142,19 +172,11 @@ class Atom:
 
     @property
     def is_dummy(self):
-        """
-        Return True if self is a dummy atom, else return False.
+        """Return whether this atom is a dummy atom.
 
-        Returns
-        -------
-        bool
+        Returns:
+            (bool): ``True`` if the atom is a dummy atom, ``False`` otherwise.
         """
-        # I think 61 is the default dummy atom type in a Schrodinger atom.typ
-        # file.
-        # Okay, so maybe it's not. Anyway, Tony added an atom type 205 for
-        # dummies. It'd be really great if we all used the same atom.typ file
-        # someday.
-        # Could add in a check for the atom_type number. I removed it.
         if self.atom_type_name == "Du" or self.element == "X" or self.atomic_num == -2:
             return True
         else:
@@ -162,9 +184,7 @@ class Atom:
 
 
 class DOF:
-    """
-    Abstract data class for a single degree of freedom.
-    """
+    """Abstract data class for a single degree of freedom."""
 
     __slots__ = ["atom_nums", "comment", "value", "ff_row"]
 
@@ -175,13 +195,18 @@ class DOF:
         value: float = None,
         ff_row: int = None,
     ):
-        """Abstract Class for a Degree Of Freedom (DOF) containing the bare bones properties necessary.
+        """Abstract class for a degree of freedom (DOF).
+
+        Contains the bare-bones properties necessary for any DOF.
 
         Args:
-            atom_nums (List[int], optional): Indices of the atoms involved in the DOF. Defaults to None.
-            comment (str, optional): Any comment associated with the DOF TODO Is this used?. Defaults to None.
+            atom_nums (list[int], optional): Indices of the atoms involved
+                in the DOF. Defaults to None.
+            comment (str, optional): Any comment associated with the DOF.
+                Defaults to None.
             value (float, optional): Value of the DOF. Defaults to None.
-            ff_row (int, optional): Row of the FF which models the DOF. Defaults to None.
+            ff_row (int, optional): Row of the FF which models the DOF.
+                Defaults to None.
         """
         self.atom_nums: List[int] = atom_nums
         """ TODO atom_indices is a more intuitive name,
@@ -195,6 +220,15 @@ class DOF:
         return "{}[{}]({})".format(self.__class__.__name__, "-".join(map(str, self.atom_nums)), self.value)
 
     def as_data(self, **kwargs):
+        """Convert this DOF into a Datum object for data collection.
+
+        Args:
+            **kwargs: Additional attributes to set on the returned
+                :class:`~q2mm.parsers.datum.Datum` object.
+
+        Returns:
+            (Datum): A Datum representation of this DOF.
+        """
         # Sort of silly to have all this stuff about angles and
         # torsions in here, but they both inherit from this class.
         # I suppose it'd make more sense to create a structural
@@ -225,16 +259,14 @@ class DOF:
             other (DOF): The DOF to which to compare self.
 
         Returns:
-            bool: True if DOF is identical to self, else False.
+            (bool): True if DOF is identical to self, else False.
         """
         assert isinstance(other, DOF)
         return self.atom_nums == other.atom_nums or list(reversed(self.atom_nums)) == other.atom_nums
 
 
 class Bond(DOF):
-    """
-    Data class for a single bond.
-    """
+    """Data class for a single bond."""
 
     __slots__ = ["atom_nums", "comment", "value", "ff_row", "order"]
 
@@ -246,71 +278,81 @@ class Bond(DOF):
         ff_row: int = None,
         order: str = None,
     ):
-        """Bond object containing the bare bones properties necessary.
+        """Bond object containing the bare-bones properties necessary.
 
         Note:
-            As of yet, there is no need for this class to also track a force constant as it
-            is used exclusively in the newer, schrodinger-independent code like seminario.py,
-            but this could be a good place to store that data within a FF object if Param were
+            As of yet, there is no need for this class to also track a force
+            constant as it is used exclusively in the newer,
+            Schrödinger-independent code like seminario.py, but this could be
+            a good place to store that data within a FF object if Param were
             to be replaced/condensed.
 
         Args:
-            atom_nums (List[int], optional): Indices of the atoms involved in the bond of the form [index1, index2]. Defaults to None.
-            comment (str, optional): Any comment associated with the Bond TODO Is this used?. Defaults to None.
-            value (float, optional): Bond length in Angstrom. Defaults to None.
-            ff_row (int, optional): Row of the FF which models the bond. Defaults to None.
-            order (int, optional): Bond order (e.g. single bond - 1, double bond - 2...)
+            atom_nums (list[int], optional): Indices of the atoms involved in
+                the bond of the form ``[index1, index2]``. Defaults to None.
+            comment (str, optional): Any comment associated with the Bond.
+                Defaults to None.
+            value (float, optional): Bond length in Angstrom. Defaults to
+                None.
+            ff_row (int, optional): Row of the FF which models the bond.
+                Defaults to None.
+            order (str, optional): Bond order (e.g. single bond ``'1'``,
+                double bond ``'2'``). Defaults to None.
         """
         super().__init__(atom_nums, comment, value, ff_row)
         self.order = order
 
 
 class Angle(DOF):
-    """
-    Data class for a single angle.
-    """
+    """Data class for a single angle."""
 
     def __init__(self, atom_nums=None, comment=None, value=None, ff_row=None):
-        """Angle object containing the bare bones properties necessary.
+        """Angle object containing the bare-bones properties necessary.
 
         Args:
-            atom_nums (List[int], optional): Indices of the atoms involved in the Angle. Defaults to None.
-            comment (str, optional): Any comment associated with the Angle TODO Is this used?. Defaults to None.
-            value (float, optional): Value of the Angle in degrees. Defaults to None.
-            ff_row (int, optional): Row of the FF which models the Angle. Defaults to None.
+            atom_nums (list[int], optional): Indices of the atoms involved in
+                the angle. Defaults to None.
+            comment (str, optional): Any comment associated with the angle.
+                Defaults to None.
+            value (float, optional): Value of the angle in degrees. Defaults
+                to None.
+            ff_row (int, optional): Row of the FF which models the angle.
+                Defaults to None.
         """
         super().__init__(atom_nums, comment, value, ff_row)
 
 
 class Torsion(DOF):
-    """
-    Data class for a single torsion.
-    """
+    """Data class for a single torsion."""
 
     def __init__(self, atom_nums=None, comment=None, value=None, ff_row=None):
-        """Torsion/Dihedral object containing the bare bones properties necessary.
+        """Torsion/dihedral object containing the bare-bones properties necessary.
 
         Args:
-            atom_nums (List[int], optional): Indices of the atoms involved in the torsion. Defaults to None.
-            comment (str, optional): Any comment associated with the torsion TODO Is this used?. Defaults to None.
-            value (float, optional): Value of the torsion angle in degrees. Defaults to None.
-            ff_row (int, optional): Row of the FF which models the Torsion. Defaults to None.
+            atom_nums (list[int], optional): Indices of the atoms involved in
+                the torsion. Defaults to None.
+            comment (str, optional): Any comment associated with the torsion.
+                Defaults to None.
+            value (float, optional): Value of the torsion angle in degrees.
+                Defaults to None.
+            ff_row (int, optional): Row of the FF which models the torsion.
+                Defaults to None.
         """
         super().__init__(atom_nums, comment, value, ff_row)
 
 
 class Structure:
-    """
-    Data for a single structure/conformer/snapshot.
-    """
+    """Data class for a single structure, conformer, or snapshot."""
 
     __slots__ = ["_atoms", "_bonds", "_angles", "_torsions", "hess", "props", "origin_name"]
 
     def __init__(self, origin_name: str):
-        # TODO: This should really be a constructor which accepts a bare minimum of
-        # these fields and the rest are optional defaulted to None, good for error-protection
-        # and just generally cleaner, more intuitive. An empty structure is never itself used,
-        # so why have it as an option which simply complicates error-checking and tracking.
+        """Initialise a Structure.
+
+        Args:
+            origin_name (str): Name or path of the file from which this
+                structure originates.
+        """
         self._atoms: List[Atom] = None
         self._bonds: List[Bond] = None
         self._angles: List[Angle] = None
@@ -321,13 +363,21 @@ class Structure:
 
     @property
     def coords(self):
-        """
-        Returns atomic coordinates as a list of lists.
+        """Atomic coordinates for every atom in the structure.
+
+        Returns:
+            (list[np.ndarray]): List of coordinate arrays, one per atom.
         """
         return [atom.coords for atom in self._atoms]
 
     @property
     def num_atoms(self):
+        """Number of atoms in the structure.
+
+        Returns:
+            (int): Atom count, or a guess based on bond indices when atoms
+                are not yet populated.
+        """
         if self._atoms is None or self._atoms == []:
             return self.guess_atoms()
         else:
@@ -335,46 +385,71 @@ class Structure:
 
     @property
     def atoms(self):
-        # if self._atoms == []:
-        #     raise Exception(
-        #         "structure._atoms is not defined, this must be done on creation."
-        #     )
+        """List of atoms in the structure.
+
+        Returns:
+            (list[Atom]): Atoms belonging to this structure.
+        """
         if self._atoms is None:
             self._atoms: List[Atom] = []
         return self._atoms
 
     @property
     def bonds(self):
-        # if self._bonds == []:
-        #     raise Exception(
-        #         "structure._bonds is not defined, this must be done on creation."
-        #     )
+        """List of bonds in the structure.
+
+        Returns:
+            (list[Bond]): Bonds belonging to this structure.
+        """
         if self._bonds is None:
             self._bonds: List[Bond] = []
         return self._bonds
 
     @property
     def angles(self):
-        # if self._angles == []:
-        #     self._angles = self.identify_angles() TODO move this to Mol2.structures None property if
+        """List of angles in the structure.
+
+        Returns:
+            (list[Angle]): Angles belonging to this structure.
+        """
         if self._angles is None:
             self._angles: List[Angle] = []
         return self._angles
 
     @property
     def torsions(self):
-        # if self._torsions == []:
-        #     self._torsions = self.identify_torsions()
+        """List of torsions in the structure.
+
+        Returns:
+            (list[Torsion]): Torsions belonging to this structure.
+        """
         if self._torsions is None:
             self._torsions: List[Torsion] = []
         return self._torsions
 
     def generalize_to_ff_atom_types(self, equivalency_dict: dict, substr_atom_types: list):
+        """Replace specific atom type names with generalised FF equivalents.
+
+        Atoms whose type name is not in *substr_atom_types* but is found in
+        *equivalency_dict* will have their ``atom_type_name`` updated to the
+        corresponding general name.
+
+        Args:
+            equivalency_dict (dict): Mapping from specific atom type names
+                to their generalised equivalents.
+            substr_atom_types (list): Atom type names that should be kept
+                as-is (not generalised).
+        """
         for atom in self.atoms:
             if atom.atom_type_name not in substr_atom_types and atom.atom_type_name in equivalency_dict:
                 atom.atom_type_name = equivalency_dict[atom.atom_type_name]
 
     def guess_atoms(self) -> int:
+        """Estimate the number of atoms from bond indices.
+
+        Returns:
+            (int): The highest atom index found across all bonds.
+        """
         max_atom_index = 0
         for bond in self.bonds:
             max_in_bond = np.max(bond.atom_nums)
@@ -385,14 +460,20 @@ class Structure:
     # region Methods which ought to be refactored or might be unused but I'm too busy/scared to mess with yet
 
     def format_coords(self, format="latex", indices_use_charge=None):
-        """
-        Returns a list of strings/lines to easily generate coordinates
-        in various formats.
+        """Format atomic coordinates for output in various file formats.
 
-        latex  - Makes a LaTeX table.
-        gauss  - Makes output that matches Gaussian's .com filse.
-        jaguar - Just like Gaussian, but include the atom number after the
-                 element name in the left column.
+        Args:
+            format (str, optional): Output format. Supported values are
+                ``'latex'`` (LaTeX table), ``'gauss'`` (Gaussian ``.com``
+                format), and ``'jaguar'`` (Jaguar input format).
+                Defaults to ``'latex'``.
+            indices_use_charge (list[int] | None, optional): Atom indices
+                for which partial charges should be embedded in the
+                Gaussian-style output. Only used when *format* is
+                ``'gauss'``. Defaults to None.
+
+        Returns:
+            (list[str]): Formatted coordinate lines.
         """
         # Formatted for LaTeX.
         if format == "latex":
@@ -438,9 +519,20 @@ class Structure:
             return output
 
     def select_stuff(self, typ, com_match=None):
-        """
-        A much simpler version of select_data. It would be nice if select_data
-        was a wrapper around this function.
+        """Select structural elements (bonds, angles, or torsions).
+
+        A simpler version of :meth:`select_data` that returns the raw DOF
+        objects instead of Datum instances.
+
+        Args:
+            typ (str): Attribute name to select from — ``'bonds'``,
+                ``'angles'``, or ``'torsions'``.
+            com_match (list[str] | None, optional): If provided, only
+                elements whose comment contains one of these strings are
+                returned. Defaults to None (return all).
+
+        Returns:
+            (list[DOF]): Matching structural elements.
         """
         stuff = []
         for thing in getattr(self, typ):
@@ -449,18 +541,27 @@ class Structure:
         return stuff
 
     def select_data(self, typ, com_match=None, **kwargs):
-        """
-        Selects bonds, angles, or torsions from the structure and returns them
-        in the format used as data.
+        """Select structural elements and return them as Datum objects.
 
-        typ       - 'bonds', 'angles', or 'torsions'.
-        com_match - String or None. If None, just returns all of the selected
-                    stuff (bonds, angles, or torsions). If a string, selects
-                    only those that have this string in their comment.
+        Selects bonds, angles, or torsions from the structure and converts
+        them into the Datum format used for data collection.
 
-                    In .mmo files, the comment corresponds to the substructures
-                    name. This way, we only fit bonds, angles, and torsions that
-                    directly depend on our parameters.
+        Args:
+            typ (str): Attribute name to select — ``'bonds'``, ``'angles'``,
+                or ``'torsions'``.
+            com_match (list[str] | None, optional): If provided, only
+                elements whose comment contains one of these strings are
+                selected. In ``.mmo`` files the comment corresponds to the
+                substructure name, restricting fitting to directly dependent
+                parameters. Defaults to None (select all).
+            **kwargs: Additional attributes forwarded to
+                :meth:`DOF.as_data`.
+
+        Returns:
+            (list[Datum]): Selected structural data as Datum objects.
+
+        Raises:
+            AssertionError: If no data is retrieved.
         """
         data = []
         logger.log(1, f">>> typ: {typ}")
@@ -529,12 +630,14 @@ class Structure:
         return data
 
     def get_aliph_hyds(self):
-        """
-        Returns the atom numbers of aliphatic hydrogens. These hydrogens
-        are always assigned a partial charge of zero in MacroModel
-        calculations.
+        """Return aliphatic hydrogen atoms.
 
-        This should be subclassed into something is MM3* specific.
+        These hydrogens are always assigned a partial charge of zero in
+        MacroModel calculations. This should be subclassed into something
+        MM3*-specific.
+
+        Returns:
+            (list[Atom]): Aliphatic hydrogen Atom objects.
         """
         aliph_hyds = []
         for atom in self._atoms:
@@ -547,10 +650,12 @@ class Structure:
         return aliph_hyds
 
     def get_hyds(self):
-        """
-        Returns the atom numbers of any default MacroModel type hydrogens.
+        """Return default MacroModel-type hydrogen atoms.
 
-        This should be subclassed into something is MM3* specific.
+        This should be subclassed into something MM3*-specific.
+
+        Returns:
+            (list[Atom]): Hydrogen Atom objects.
         """
         hyds = []
         for atom in self._atoms:
@@ -561,13 +666,10 @@ class Structure:
         return hyds
 
     def get_dummy_atom_indices(self):
-        """
-        Returns a list of integers where each integer corresponds to an atom
-        that is a dummy atom.
+        """Return indices of dummy atoms in this structure.
 
-        Returns
-        -------
-        list of integers
+        Returns:
+            (list[int]): Indices of atoms identified as dummy atoms.
         """
         dummies = []
         for atom in self._atoms:
@@ -579,13 +681,16 @@ class Structure:
     # endregion
 
     def identify_angles(self) -> List[Angle]:
-        """Returns angles identified and measured within self Structure.
+        """Identify and measure angles within this structure.
+
+        Pairs of bonds sharing an atom are used to construct angle objects
+        with measured values.
 
         Note:
-            TODO May need to add same logic of 0 vs 180 as in filetypes.py
+            May need to add same logic of 0 vs 180 as in filetypes.py.
 
         Returns:
-            List[Angle]: angles in self Structure
+            (list[Angle]): Angles found in this structure.
         """
         angles: List[Angle] = []
         i = 0
@@ -628,17 +733,22 @@ class Structure:
                         angles.append(Angle(atom_nums=[a1_index, a2_index, b2_index], value=angle))
         return angles
 
-    def identify_torsions(self):  # TODO
+    def identify_torsions(self):
+        """Identify torsions within this structure.
+
+        Raises:
+            NotImplementedError: Not yet implemented.
+        """
         raise NotImplementedError
 
     def get_atoms_in_DOF(self, dof: DOF) -> List[Atom]:
-        """Returns a list of Atom objects which are involved in the DOF as implied by atom indices.
+        """Return atoms involved in the given degree of freedom.
 
         Args:
-            dof (DOF): Degree of Freedom (Bond, Angle, etc.) to query
+            dof (DOF): Degree of freedom (Bond, Angle, etc.) to query.
 
         Returns:
-            List[Atom]: Atom objects involved in the DOF.
+            (list[Atom]): Atom objects involved in the DOF.
         """
         return [self.atoms[idx - 1] for idx in dof.atom_nums]
 
@@ -646,7 +756,7 @@ class Structure:
         """Returns a dictionary of the atom types which correspond to each DOF in self.
 
         Returns:
-            dict: dictionary of the form {DOF: [atom_type_name1, atom_type_name2, ...]}
+            (dict): dictionary of the form {DOF: [atom_type_name1, atom_type_name2, ...]}
         """
         dof_atom_type_dict = dict()
         for bond in self.bonds:
@@ -656,13 +766,19 @@ class Structure:
         return dof_atom_type_dict
 
     def get_eqbm_geom_values(self):
-        """
-        Gather bonds and angles from structures. Adapted from parameters.py code.
+        """Gather equilibrium geometry values grouped by FF row.
 
-        Ex.:
-          bond_dic = {1857: [2.2233, 2.2156, 2.5123],
-                      1858: [1.3601, 1.3535, 1.3532]
-                     }
+        Adapted from parameters.py code.
+
+        Example::
+
+            bond_dic = {1857: [2.2233, 2.2156, 2.5123],
+                        1858: [1.3601, 1.3535, 1.3532]}
+
+        Returns:
+            (tuple[dict, dict, dict]): Dictionaries mapping FF row numbers to
+                lists of measured values for bonds, angles, and torsions
+                respectively.
         """
 
         bond_dic = {}
@@ -687,20 +803,15 @@ class Structure:
 
 
 def check_mm_dummy(hess, dummy_indices):
-    """
-    Removes dummy atom rows and columns from the Hessian based upon
-    dummy_indices.
+    """Remove dummy-atom rows and columns from a Hessian matrix.
 
-    Arguments
-    ---------
-    hess : np.matrix
-    dummy_indices : list of integers
-                    Integers correspond to the indices to be removed from the
-                    np.matrix of the Hessian.
+    Args:
+        hess (np.matrix): The Hessian matrix to modify.
+        dummy_indices (list[int]): Indices of the rows/columns to remove,
+            corresponding to dummy atoms.
 
-    Returns
-    -------
-    np.matrix
+    Returns:
+        (np.matrix): The Hessian with dummy-atom rows and columns removed.
     """
     hess = np.delete(hess, dummy_indices, 0)
     hess = np.delete(hess, dummy_indices, 1)
@@ -709,19 +820,16 @@ def check_mm_dummy(hess, dummy_indices):
 
 
 def get_dummy_hessian_indices(dummy_indices):
-    """
-    Takes a list of indices for the dummy atoms and returns another list of
-    integers corresponding to the rows of the eigenvectors to remove
-    for those those dummy atoms.
+    """Convert atom indices to Hessian row/column indices.
 
-    Arguments
-    ---------
-    dummy_indices : list of integers
-                    Indices for the dummy atoms.
+    Each atom contributes three rows (x, y, z) to the Hessian, so this
+    expands each atom index into the corresponding trio of Hessian indices.
 
-    Returns
-    -------
-    list of integers
+    Args:
+        dummy_indices (list[int]): 1-based atom indices for the dummy atoms.
+
+    Returns:
+        (list[int]): 0-based Hessian row/column indices to remove.
     """
     hess_dummy_indices = []
     for index in dummy_indices:

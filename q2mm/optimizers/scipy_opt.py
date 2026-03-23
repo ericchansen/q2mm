@@ -43,7 +43,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OptimizationResult:
-    """Result of a force field optimization."""
+    """Result of a force field optimization.
+
+    Attributes:
+        success (bool): Whether the optimizer converged.
+        message (str): Human-readable convergence message.
+        initial_score (float): Objective value before optimization.
+        final_score (float): Objective value after optimization.
+        n_iterations (int): Number of optimizer iterations.
+        n_evaluations (int): Number of objective function evaluations.
+        initial_params (np.ndarray): Parameter vector before optimization.
+        final_params (np.ndarray): Parameter vector after optimization.
+        history (list[float]): Objective value at each evaluation.
+        method (str): Scipy method used for optimization.
+    """
 
     success: bool
     message: str
@@ -58,13 +71,22 @@ class OptimizationResult:
 
     @property
     def improvement(self) -> float:
-        """Fractional improvement (0 = no change, 1 = perfect)."""
+        """Fractional improvement (0 = no change, 1 = perfect).
+
+        Returns:
+            float: ``(initial_score - final_score) / initial_score``,
+                or 0.0 if ``initial_score`` is zero.
+        """
         if self.initial_score == 0.0:
             return 0.0
         return (self.initial_score - self.final_score) / self.initial_score
 
     def summary(self) -> str:
-        """Human-readable summary."""
+        """Human-readable summary.
+
+        Returns:
+            str: Multi-line summary of the optimization result.
+        """
         return (
             f"Method: {self.method}\n"
             f"Success: {self.success} — {self.message}\n"
@@ -77,45 +99,36 @@ class OptimizationResult:
 class ScipyOptimizer:
     """Force field optimizer using scipy.optimize.
 
-    Parameters
-    ----------
-    method : str
-        Scipy minimization method. Supported:
-        - ``'L-BFGS-B'``: Bounded quasi-Newton (default, good for smooth problems)
-        - ``'Nelder-Mead'``: Simplex (derivative-free, robust)
-        - ``'trust-constr'``: Trust-region constrained
-        - ``'Powell'``: Direction-set (derivative-free)
-        - ``'least_squares'``: Levenberg-Marquardt (uses residual vector)
-    maxiter : int
-        Maximum number of iterations.
-    ftol : float
-        Function tolerance for convergence.
-    eps : float
-        Finite-difference step size for gradient-based methods.
-        Force field parameters have magnitudes ~0.5–10, so the default
-        scipy step (~1e-8) is too small; 1e-3 works well.
-    use_bounds : bool
-        Whether to use parameter bounds from ForceField.get_bounds().
-    verbose : bool
-        Log progress during optimization.
-    jac : str or None
-        Jacobian computation strategy:
-        - ``None`` (default): Use scipy's built-in finite differences.
-        - ``'analytical'``: Use ``ObjectiveFunction.gradient()`` for exact
-          analytical gradients via JAX autodiff. Requires an engine that
-          ``supports_analytical_gradients()`` (e.g. ``JaxEngine``) and
-          energy-only reference data.  Raises if conditions are not met.
-          Only applies to ``scipy.optimize.minimize`` paths; not supported
-          for ``method='least_squares'`` (raises ``ValueError``).
-    divergence_factor : float or None
-        Early stopping threshold.  If the objective score exceeds
-        ``divergence_factor * initial_score`` for ``divergence_patience``
-        consecutive callback invocations, the optimizer is halted via
-        scipy's callback mechanism.  Set to ``None`` to disable.
-    divergence_patience : int
-        Number of consecutive divergent callbacks required before stopping.
-        Allows transient score spikes (e.g. during simplex exploration)
-        without premature termination.
+    Args:
+        method (str): Scipy minimization method. Supported:
+            ``'L-BFGS-B'`` (bounded quasi-Newton, default),
+            ``'Nelder-Mead'`` (simplex, derivative-free),
+            ``'trust-constr'`` (trust-region constrained),
+            ``'Powell'`` (direction-set, derivative-free),
+            ``'least_squares'`` (Levenberg-Marquardt, uses residual
+            vector).
+        maxiter (int): Maximum number of iterations.
+        ftol (float): Function tolerance for convergence.
+        eps (float): Finite-difference step size for gradient-based
+            methods. Force field parameters have magnitudes ~0.5–10,
+            so the default scipy step (~1e-8) is too small; 1e-3 works
+            well.
+        use_bounds (bool): Whether to use parameter bounds from
+            :meth:`ForceField.get_bounds`.
+        verbose (bool): Log progress during optimization.
+        jac (str | None): Jacobian computation strategy.
+            ``None`` (default) uses scipy's built-in finite differences.
+            ``'analytical'`` uses :meth:`ObjectiveFunction.gradient` for
+            exact analytical gradients via JAX autodiff. Only applies to
+            ``scipy.optimize.minimize`` paths; not supported for
+            ``method='least_squares'``.
+        divergence_factor (float | None): Early stopping threshold. If
+            the objective score exceeds ``divergence_factor *
+            initial_score`` for ``divergence_patience`` consecutive
+            callbacks, the optimizer is halted. Set to ``None`` to
+            disable.
+        divergence_patience (int): Number of consecutive divergent
+            callbacks required before stopping.
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
@@ -132,6 +145,20 @@ class ScipyOptimizer:
         divergence_factor: float | None = 3.0,
         divergence_patience: int = 5,
     ):
+        """Initialize the optimizer.
+
+        Args:
+            method (str): Scipy minimization method.
+            maxiter (int): Maximum number of iterations.
+            ftol (float): Function tolerance for convergence.
+            eps (float): Finite-difference step size.
+            use_bounds (bool): Whether to use parameter bounds.
+            verbose (bool): Log progress during optimization.
+            jac (str | None): Jacobian computation strategy.
+            divergence_factor (float | None): Early stopping threshold.
+            divergence_patience (int): Consecutive divergent callbacks
+                before stopping.
+        """
         self.method = method
         self.maxiter = maxiter
         self.ftol = ftol
@@ -145,15 +172,13 @@ class ScipyOptimizer:
     def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
         """Run the optimization.
 
-        Parameters
-        ----------
-        objective : ObjectiveFunction
-            Configured objective with forcefield, engine, molecules, and reference data.
+        Args:
+            objective (ObjectiveFunction): Configured objective with
+                forcefield, engine, molecules, and reference data.
 
-        Returns
-        -------
-        OptimizationResult
-            Optimization outcome with final parameters and convergence history.
+        Returns:
+            OptimizationResult: Optimization outcome with final parameters
+                and convergence history.
         """
         objective.reset()
         x0 = objective.forcefield.get_param_vector().copy()
@@ -201,7 +226,17 @@ class ScipyOptimizer:
         bounds: list[tuple[float, float]] | None,
         initial_score: float,
     ) -> OptimizationResult:
-        """Run scipy.optimize.minimize."""
+        """Run scipy.optimize.minimize.
+
+        Args:
+            objective (ObjectiveFunction): The objective function.
+            x0 (np.ndarray): Initial parameter vector.
+            bounds (list[tuple[float, float]] | None): Parameter bounds.
+            initial_score (float): Objective value at ``x0``.
+
+        Returns:
+            OptimizationResult: Result of the minimization.
+        """
         from scipy import optimize
 
         options: dict = {"maxiter": self.maxiter}
@@ -270,7 +305,16 @@ class ScipyOptimizer:
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
     ) -> OptimizationResult:
-        """Run scipy.optimize.least_squares (Levenberg-Marquardt or trf)."""
+        """Run scipy.optimize.least_squares (Levenberg-Marquardt or trf).
+
+        Args:
+            objective (ObjectiveFunction): The objective function.
+            x0 (np.ndarray): Initial parameter vector.
+            bounds (list[tuple[float, float]] | None): Parameter bounds.
+
+        Returns:
+            OptimizationResult: Result of the least-squares optimization.
+        """
         from scipy import optimize
 
         if bounds:
@@ -316,6 +360,14 @@ class ScipyOptimizer:
         times the initial score for ``divergence_patience`` consecutive
         callbacks, we bail out early rather than grinding for minutes on
         a lost cause.
+
+        Args:
+            objective (ObjectiveFunction): The objective function (used
+                to read evaluation history).
+            initial_score (float): Objective value before optimization.
+
+        Returns:
+            Callable: Callback function for :func:`scipy.optimize.minimize`.
         """
         diverge_count = 0
         factor = self.divergence_factor
