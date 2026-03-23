@@ -31,6 +31,7 @@ nav:
   - Getting Started: getting-started.md
   - Architecture: architecture.md
   - Tutorial: tutorial.md
+  - Data Types: data-types.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
   - API Reference:

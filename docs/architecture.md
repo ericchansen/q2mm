@@ -5,15 +5,14 @@ recent design decisions, and how the pieces fit together.
 
 ---
 
-## Background: The Upstream Q2MM
+## Background
 
 Q2MM originated in the Norrby and Wiest research groups as a tool for
 deriving transition-state force fields using quantum mechanical reference data.
-The original codebase ([nsf-c-cas/q2mm-2](https://github.com/nsf-c-cas/q2mm-2))
-was tightly integrated with the **MM3 force field** and Schrödinger's
-MacroModel as its primary MM engine. This coupling was a natural fit for the
-research context — MM3 was the target force field and MacroModel was the
-available computational engine.
+Early versions of the code were tightly integrated with the **MM3 force field**
+and Schrödinger's MacroModel as the primary MM engine. This coupling was a
+natural fit for the research context — MM3 was the target force field and
+MacroModel was the available computational engine.
 
 However, it introduced architectural limitations:
 
@@ -32,7 +31,7 @@ However, it introduced architectural limitations:
 
 ## Design Goals of the Refactor
 
-This fork addresses those limitations with three principles:
+The current architecture addresses those limitations with three principles:
 
 ### 1. Format-Agnostic Data Models
 
@@ -144,11 +143,11 @@ q2mm/
 ├── optimizers/           # Parameter fitting machinery
 │   ├── objective.py      # ObjectiveFunction, ReferenceData
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
-│   ├── cycling.py        # GRAD→SIMP parameter cycling (upstream strategy)
+│   ├── cycling.py        # GRAD→SIMP parameter cycling
 │   ├── scoring.py        # Legacy scoring functions
 │   └── defaults.py       # Default step sizes and bounds
 │
-├── parsers/              # File format I/O (legacy + modern)
+├── parsers/              # File format I/O
 │   ├── gaussian.py       # Gaussian log/fchk parsing
 │   ├── jaguar.py         # Jaguar input/output parsing
 │   ├── macromodel.py     # MacroModel log parsing
