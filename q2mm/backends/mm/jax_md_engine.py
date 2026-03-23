@@ -346,7 +346,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
 
     # Build jax-md energy function
     # This returns (energy_fn, neighbor_fn, displacement_fn)
-    jaxmd_energy_fn, neighbor_fn, displacement_fn = oplsaa_energy(
+    _unused_energy_fn, neighbor_fn, displacement_fn = oplsaa_energy(
         topology,
         create_parameters(
             bond_k=jnp.ones(max(bond_arr.shape[0], 1)),

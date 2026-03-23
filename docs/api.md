@@ -755,7 +755,7 @@ Feature support across force field formats and compute backends.
 | Per-term energy breakdown | — | — | — | ✅ `energy_breakdown()` |
 | System XML export | ✅ `export_system_xml()` | — | — | — |
 | Torsions | ✅ | ✅ | ❌ (#91) | ⚠️ engine ready, awaiting #127 |
-| Electrostatics | ✅ | ✅ | — | ✅ (Cutoff/Ewald/PME) |
+| Electrostatics | ❌ (charges zeroed) | ✅ | — | ⚠️ infra only; charges zeroed |
 | Periodic boundary conditions | ✅ | ✅ | — | ✅ |
 | Functional forms | MM3 (cubic/sextic/14-7) | MM3 | OPLSAA (harmonic/LJ) | OPLSAA (harmonic/LJ) |
 | Install | `pip install openmm` | System binary | `pip install "q2mm[jax]"` | `pip install "q2mm[jax-md]"` |
