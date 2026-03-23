@@ -39,7 +39,7 @@ from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
 if TYPE_CHECKING:
-    from q2mm.parsers.gaussian import GaussLog
+    pass
 
 
 # ---- Reference data containers ----

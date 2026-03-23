@@ -17,7 +17,6 @@ import numpy as np
 import pytest
 
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import (
     estimate_force_constants,
     seminario_angle_fc,

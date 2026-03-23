@@ -4,7 +4,6 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 pytest.importorskip("openmm")
 pytestmark = pytest.mark.openmm

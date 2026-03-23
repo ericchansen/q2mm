@@ -85,6 +85,13 @@ except ImportError:
     _HAS_JAX = False
 
 try:
+    import jax_md  # noqa: F401
+
+    _HAS_JAX_MD = True
+except ImportError:
+    _HAS_JAX_MD = False
+
+try:
     import psi4  # noqa: F401
 
     _HAS_PSI4 = True
@@ -113,6 +120,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "openmm: requires OpenMM backend")
     config.addinivalue_line("markers", "tinker: requires Tinker backend")
     config.addinivalue_line("markers", "jax: requires JAX backend")
+    config.addinivalue_line("markers", "jax_md: requires JAX-MD backend")
     config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
 
 
@@ -137,6 +145,7 @@ def pytest_collection_modifyitems(config, items):
         "openmm": (_HAS_OPENMM, "OpenMM not installed"),
         "tinker": (_HAS_TINKER, "Tinker not installed or not found"),
         "jax": (_HAS_JAX, "JAX not installed"),
+        "jax_md": (_HAS_JAX_MD, "jax-md not installed"),
         "psi4": (_HAS_PSI4, "Psi4 not installed"),
     }
     for marker_name, (available, reason) in _backend_checks.items():

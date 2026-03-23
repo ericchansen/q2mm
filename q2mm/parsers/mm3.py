@@ -5,17 +5,13 @@ MacroModel, extracting bond, angle, torsion, improper, stretch-bend,
 and van der Waals parameters for Q2MM optimization.
 """
 
-import copy
+import contextlib
 import logging
-import numpy as np
-import os
 import re
-import sys
 from q2mm import constants as co
 from q2mm.parsers.base import FF
 from q2mm.parsers.structures import Structure, DOF
 from q2mm.parsers.param import Param
-from q2mm.parsers.datum import Datum
 
 # MM3 fixed-format column positions
 COM_POS_START = 96
@@ -284,7 +280,8 @@ class MM3(FF):
                                 ),
                             )
                         )
-                        try:
+                        # Some bonds parameters don't use bond dipoles.
+                        with contextlib.suppress(IndexError):
                             self.params.append(
                                 Param(
                                     atom_labels=atm_lbls,
@@ -296,9 +293,6 @@ class MM3(FF):
                                     value=parm_cols[2],
                                 )
                             )
-                        # Some bonds parameters don't use bond dipoles.
-                        except IndexError:
-                            pass
                         continue
                     # Angles.
                     elif match_mm3_angle(line):

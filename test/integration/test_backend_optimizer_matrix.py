@@ -9,7 +9,6 @@ synthetic data.
 Requires ``--run-medium`` and OpenMM.
 """
 
-import json
 import tempfile
 from pathlib import Path
 

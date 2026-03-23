@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 import importlib
 import importlib.util
 import json
-import logging.config
 from pathlib import Path
 import subprocess
 import sys

@@ -1,6 +1,4 @@
-import os
 import unittest
-import sys
 from pathlib import Path
 
 from q2mm.parsers import _utils as utilities

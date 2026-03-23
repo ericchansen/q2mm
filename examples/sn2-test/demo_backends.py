@@ -1,7 +1,5 @@
 """Quick test of both backends."""
 
-import sys
-
 if __name__ == "__main__":
     # Test TinkerEngine (doesn't need conda)
     from q2mm.backends.mm.tinker import TinkerEngine

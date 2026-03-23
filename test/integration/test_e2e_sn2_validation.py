@@ -32,7 +32,6 @@ from test._shared import (
     CH3F_HESS,
     CH3F_MODES,
     CH3F_XYZ,
-    COMPLEX_XYZ,
     REPO_ROOT,
     SN2_ENERGY,
     SN2_FREQS,

@@ -34,7 +34,6 @@ from typing import Literal
 
 import numpy as np
 
-from q2mm.models.forcefield import ForceField
 from q2mm.optimizers.objective import ObjectiveFunction
 
 logger = logging.getLogger(__name__)

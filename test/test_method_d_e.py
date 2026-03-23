@@ -22,7 +22,6 @@ from q2mm.models.hessian import (
     invert_ts_curvature,
     keep_natural_eigenvalue,
     lock_params,
-    replace_neg_eigenvalue,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 

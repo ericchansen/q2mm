@@ -57,6 +57,12 @@ jax = [
     "jaxlib",
     "scipy",
 ]
+jax-md = [
+    "jax-md; sys_platform != 'win32'",
+    "jax; sys_platform != 'win32'",
+    "jaxlib; sys_platform != 'win32'",
+    "scipy",
+]
 qcel = [
     "qcelemental",
 ]
@@ -80,6 +86,7 @@ all = [
     "qcelemental",
     "jax",
     "jaxlib",
+    "jax-md; sys_platform != 'win32'",
 ]
 
 [project.scripts]
@@ -116,20 +123,9 @@ ignore = [
     "E501",   # line too long (let formatter handle)
     "E701",   # multiple statements on one line
     "E741",   # ambiguous variable name (common in scientific code)
-    "F401",   # unused imports (many are re-exports or conditional)
-    "F402",   # import shadowed by loop variable (accepted in existing code)
-    "F403",   # import star
-    "F405",   # undefined from import star
-    "F811",   # redefined while unused
-    "F841",   # unused variable (common in scientific iteration)
-    "UP028",  # yield-in-for-loop
+    "F841",   # unused variable (common in scientific iteration / tuple unpacking)
     "SIM102", # collapsible-if (readability preference)
-    "SIM103", # needless-bool
-    "SIM105", # suppressible-exception
-    "SIM108", # ternary (readability preference)
-    "SIM113", # enumerate-for-loop
-    "SIM115", # open-file-with-context-handler
-    "SIM201", # negate-equal-op
+    "SIM108", # ternary (readability preference in scientific code)
 ]
 
 [tool.ruff.lint.per-file-ignores]

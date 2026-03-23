@@ -250,6 +250,68 @@ result = optimizer.optimize(objective)
 
 ---
 
+### `JaxMDEngine` — Full-featured Differentiable MM
+
+[source](https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_md_engine.py)
+
+Wraps [jax-md](https://github.com/jax-md/jax-md)'s OPLSAA module for
+production-quality molecular mechanics with analytical gradients. Supports
+periodic boundary conditions, electrostatics (Cutoff/Ewald/PME), and
+neighbor lists. Proper torsion math is implemented but currently inactive
+until molecule-level torsion detection lands ([#127](https://github.com/ericchansen/q2mm/issues/127)).
+
+```python
+from q2mm.backends.mm.jax_md_engine import JaxMDEngine
+
+engine = JaxMDEngine(box=(50.0, 50.0, 50.0))
+
+# Standard MMEngine methods
+energy = engine.energy(molecule, forcefield)
+energy, grad = engine.energy_and_param_grad(molecule, forcefield)
+
+# Per-term energy breakdown
+breakdown = engine.energy_breakdown(molecule, forcefield)
+# → {'bond': 1.2, 'angle': 0.5, 'torsion': 0.0, 'lj': -0.3, 'coulomb': 0.1, 'total': 1.5}
+```
+
+**Electrostatics options:**
+
+```python
+from jax_md.mm_forcefields.nonbonded.electrostatics import (
+    CutoffCoulomb, EwaldCoulomb, PMECoulomb,
+)
+
+# Simple cutoff (default)
+engine = JaxMDEngine(coulomb=CutoffCoulomb(r_cut=12.0))
+
+# Ewald summation
+engine = JaxMDEngine(coulomb=EwaldCoulomb(alpha=0.23, kmax=5))
+
+# Particle Mesh Ewald
+engine = JaxMDEngine(coulomb=PMECoulomb(grid_size=32, alpha=0.3))
+```
+
+!!! note "Electrostatic charges"
+    Partial charges are not yet optimizable through Q2MM's parameter vector.
+    Coulomb energy is computed with zero charges by default. The Coulomb
+    handler is still invoked so the API is forward-compatible when charge
+    support is added.
+
+!!! note "Improper torsions"
+    Improper torsions are not yet supported. The topology arrays are allocated
+    empty. Support will be added when the Q2MM data model includes improper
+    parameters.
+
+!!! tip "When to use JaxMDEngine vs JaxEngine"
+    **JaxEngine** is a lightweight gas-phase backend with hand-rolled energy
+    functions — ideal for simple small-molecule TS force field work.
+
+    **JaxMDEngine** wraps jax-md's full OPLSAA implementation including
+    torsions, electrostatics, and PBC. Use it when you need these features
+    or want to leverage jax-md's ecosystem.
+
+---
+
 ## Optimizers (`q2mm.optimizers`)
 
 Classes for defining objectives and running parameter optimization.
@@ -603,7 +665,7 @@ class MMEngine(ABC):
     def hessian(self, structure, forcefield) -> ndarray: ...
 ```
 
-**Implementations:** `OpenMMEngine`, `TinkerEngine`, `JaxEngine`
+**Implementations:** `OpenMMEngine`, `TinkerEngine`, `JaxEngine`, `JaxMDEngine`
 
 ---
 
@@ -681,18 +743,22 @@ Feature support across force field formats and compute backends.
 
 ### MM Backends
 
-| Capability | OpenMM | Tinker | JAX |
-|------------|:------:|:------:|:---:|
-| Single-point energy | ✅ | ✅ | ✅ |
-| Energy minimisation | ✅ | ✅ | ✅ |
-| Numerical Hessian | ✅ | ✅ | — |
-| Analytical Hessian | — | — | ✅ `jax.hessian` |
-| Vibrational frequencies | ✅ | ✅ | ✅ |
-| Runtime parameter update | ✅ `update_forcefield()` | ❌ (re-writes files) | ✅ (all JIT-compiled) |
-| Analytical param gradients | — | — | ✅ `energy_and_param_grad()` |
-| System XML export | ✅ `export_system_xml()` | — | — |
-| Functional forms | MM3 (cubic/sextic/14-7) | MM3 | OPLSAA (harmonic/LJ) |
-| Install | `pip install openmm` | System binary | `pip install "q2mm[jax]"` |
+| Capability | OpenMM | Tinker | JAX | JAX-MD |
+|------------|:------:|:------:|:---:|:------:|
+| Single-point energy | ✅ | ✅ | ✅ | ✅ |
+| Energy minimisation | ✅ | ✅ | ✅ | ✅ |
+| Numerical Hessian | ✅ | ✅ | — | — |
+| Analytical Hessian | — | — | ✅ `jax.hessian` | ✅ `jax.hessian` |
+| Vibrational frequencies | ✅ | ✅ | ✅ | ✅ |
+| Runtime parameter update | ✅ `update_forcefield()` | ❌ (re-writes files) | ✅ (all JIT-compiled) | ✅ (all JIT-compiled) |
+| Analytical param gradients | — | — | ✅ `energy_and_param_grad()` | ✅ `energy_and_param_grad()` |
+| Per-term energy breakdown | — | — | — | ✅ `energy_breakdown()` |
+| System XML export | ✅ `export_system_xml()` | — | — | — |
+| Torsions | ✅ | ✅ | ❌ (#91) | ⚠️ engine ready, awaiting #127 |
+| Electrostatics | ✅ | ✅ | — | ✅ (Cutoff/Ewald/PME) |
+| Periodic boundary conditions | ✅ | ✅ | — | ✅ |
+| Functional forms | MM3 (cubic/sextic/14-7) | MM3 | OPLSAA (harmonic/LJ) | OPLSAA (harmonic/LJ) |
+| Install | `pip install openmm` | System binary | `pip install "q2mm[jax]"` | `pip install "q2mm[jax-md]"` |
 
 ### QM Backends
 

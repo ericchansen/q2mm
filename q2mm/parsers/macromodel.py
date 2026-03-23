@@ -7,7 +7,6 @@ mass-weighted Hessian matrices from MacroModel log files.
 
 import logging
 import numpy as np
-import os
 import re
 from q2mm import constants as co
 from q2mm.parsers.base import File

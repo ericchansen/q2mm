@@ -28,12 +28,10 @@ convergence diagnostics, and bounds support.
 """
 
 import logging
-from dataclasses import dataclass, field
-from typing import Literal
+from dataclasses import dataclass
 
 import numpy as np
 
-from q2mm.models.forcefield import ForceField
 from q2mm.optimizers.objective import ObjectiveFunction
 
 logger = logging.getLogger(__name__)

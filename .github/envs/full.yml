@@ -8,6 +8,10 @@ dependencies:
   - scipy
   - openmm
   - tinker
+  - jax
+  - jaxlib
   - pytest
   - ruff
   - pip
+  - pip:
+    - jax-md
