@@ -1,4 +1,3 @@
-import copy
 import unittest
 
 import numpy as np
@@ -111,18 +110,7 @@ class TestLinearAlgebra(unittest.TestCase):
         zero_out: bool,
         hessian_units=constants.GAUSSIAN,
     ):
-        # TODO this might need to be refactored for python 3.8 at some point if it will be run with Schrodinger...
-        # Last Gaussian Eigenvalue Analysis Check TODO finish refactoring this after moving from seminario.py
-
-        estimated_ff = copy.deepcopy(force_field)
-        structs = structures
-
-        last_evec_ch = log.evecs[-1]
-        normed = last_evec_ch / np.linalg.norm(last_evec_ch)
-        print("normed final eigenvector ch: " + str(normed))
-        last_evec_hess = np.dot(normed, min_hessian)
-        print("last evec dot hess: " + str(last_evec_hess))
-        dotted_again = last_evec_hess.dot(np.transpose(normed))
-        print("last evec dot dot: " + str(dotted_again))
-        print("all close hessian dotted: " + str(np.allclose(log.evals[-1], dotted_again)))
-        print("last eigenvalue/force constant: " + str(log.evals[-1]))
+        # TODO: This test is incomplete. `log` (a JaguarOut-like object with .evecs/.evals)
+        # and `min_hessian` need to be derived from the test parameters before this test
+        # can run. See issue #128.
+        pass

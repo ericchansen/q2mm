@@ -179,6 +179,8 @@ class JaguarOut(File):
             section_geometry = False
             section_eigenvalues = False
             section_eigenvectors = False
+            current_structure = None
+            temp_eigenvectors = []
             for i, line in enumerate(f):
                 if section_geometry:
                     cols = line.split()

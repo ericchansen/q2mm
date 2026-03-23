@@ -128,12 +128,3 @@ ignore = [
     "SIM108", # ternary (readability preference in scientific code)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-# Legacy parsers use unimported List type hints and have scoping quirks
-"q2mm/parsers/gaussian.py" = ["F821"]
-"q2mm/parsers/jaguar.py" = ["F821"]
-"q2mm/parsers/macromodel.py" = ["F821"]
-"q2mm/parsers/mol2.py" = ["F821"]
-"q2mm/parsers/structures.py" = ["F821"]
-# Legacy test with undefined references in incomplete refactoring
-"test/test_linear_algebra.py" = ["F821"]
