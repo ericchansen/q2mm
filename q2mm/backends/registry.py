@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 
 
 class EngineNotAvailable(RuntimeError):
-    """Raised when a requested engine is not registered or not available."""
+    """Raised when a requested engine name is not found in the registry."""
 
     def __init__(self, name: str, *, available: list[str] | None = None):
         self.name = name
         self.available = available or []
-        msg = f"Engine {name!r} is not available."
+        msg = f"Engine {name!r} is not registered."
         if self.available:
             msg += f" Registered engines: {', '.join(sorted(self.available))}"
         super().__init__(msg)
