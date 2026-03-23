@@ -1,3 +1,10 @@
+"""Parsers for Schrödinger Jaguar input and output files.
+
+Provides ``JaguarIn`` for reading Jaguar ``.in`` files (including
+Hessian data) and ``JaguarOut`` for reading Jaguar ``.out`` files
+(structures, eigenvalues, eigenvectors, and frequencies).
+"""
+
 from __future__ import annotations
 import logging
 import numpy as np
@@ -12,11 +19,18 @@ logger = logging.getLogger(__name__)
 
 
 class JaguarIn(File):
-    """
-    Used to retrieve data from Jaguar .in files. Hessian is not mass-weighted. Hessian units assumed to be kJ/(mol*Angstrom^2)
+    """Retrieve data from Jaguar ``.in`` files.
+
+    The Hessian is not mass-weighted. Hessian units are assumed to be
+    kJ/(mol·Å²).
     """
 
     def __init__(self, path):
+        """Initialize a JaguarIn instance.
+
+        Args:
+            path (str): Path to the Jaguar ``.in`` file.
+        """
         super().__init__(path)
         self._structures = None
         self._hessian = None
@@ -24,13 +38,19 @@ class JaguarIn(File):
         self._lines = None
 
     def get_hessian(self, num_atoms: int):
-        """
-        Reads the Hessian from a Jaguar .in.
+        """Read the Hessian matrix from a Jaguar ``.in`` file.
 
-        Automatically removes Hessian elements corresponding to dummy atoms.
-        ^ That is removed for now to minimize schrodinger dependence bc current
-        use cases don't have dummy atoms or empty atoms, but this should be handled
-        at some point in case dummy atoms used in a case.
+        Automatically removes Hessian elements corresponding to dummy
+        atoms.  That removal is currently disabled to minimize Schrödinger
+        dependence because current use cases have no dummy or empty atoms,
+        but it should be restored if dummy atoms are used in the future.
+
+        Args:
+            num_atoms (int): Number of atoms in the system.
+
+        Returns:
+            (numpy.ndarray): 2-D Hessian matrix of shape
+                ``(num_atoms * 3, num_atoms * 3)`` after unit conversion.
         """
         if self._hessian is None:
             num = num_atoms
@@ -64,15 +84,17 @@ class JaguarIn(File):
         return self._hessian
 
     def gen_lines(self):
-        """
-        Attempts to figure out the lines of itself.
+        """Generate output lines for the Jaguar ``.in`` file.
 
-        Since it'd be difficult, the written version will be missing much
-        of the data in the original. Maybe there's something in the
-        Schrodinger API for that.
+        Since it would be difficult to reproduce all original data, the
+        written version will be missing much of the data in the original.
+        The Schrödinger API may provide a better mechanism for that.
 
-        However, I do want this to include the ability to write out an
-        atomic section with the ESP data that we'd want.
+        The intent is to include the ability to write out an atomic
+        section with the ESP data that we would want.
+
+        Returns:
+            (list[str]): Generated lines for the ``.in`` file.
         """
         lines = []
         mae_name = None
@@ -89,11 +111,17 @@ class JaguarIn(File):
 
 
 class JaguarOut(File):
-    """
-    Used to retrieve data from Schrodinger Jaguar .out files. Eigenvalues and Eigenvectors are NOT mass-weighted.
+    """Retrieve data from Schrödinger Jaguar ``.out`` files.
+
+    Eigenvalues and eigenvectors are **not** mass-weighted.
     """
 
     def __init__(self, path):
+        """Initialize a JaguarOut instance.
+
+        Args:
+            path (str): Path to the Jaguar ``.out`` file.
+        """
         super().__init__(path)
         self._structures = None
         self._eigenvalues = None
@@ -104,35 +132,46 @@ class JaguarOut(File):
 
     @property
     def structures(self):
+        """list[Structure]: Parsed molecular structures from the output file."""
         if self._structures is None:
             self.import_file()
         return self._structures
 
     @property
     def eigenvalues(self):
+        """numpy.ndarray: Eigenvalues derived from force constants and frequencies."""
         if self._eigenvalues is None:
             self.import_file()
         return self._eigenvalues
 
     @property
     def eigenvectors(self):
+        """numpy.ndarray: Cartesian eigenvectors with dummy-atom rows removed."""
         if self._eigenvectors is None:
             self.import_file()
         return self._eigenvectors
 
     @property
     def frequencies(self):
+        """numpy.ndarray: Vibrational frequencies in cm⁻¹."""
         if self._frequencies is None:
             self.import_file()
         return self._frequencies
 
     @property
     def dummy_atom_eigenvector_indices(self):
+        """list[int]: Row indices in the eigenvector matrix that correspond to dummy atoms."""
         if self._dummy_atom_eigenvector_indices is None:
             self.import_file()
         return self._dummy_atom_eigenvector_indices
 
     def import_file(self):
+        """Parse the Jaguar ``.out`` file and populate all cached properties.
+
+        Reads structures, frequencies, force constants, and eigenvectors
+        from the file. Dummy-atom contributions are removed from the
+        eigenvectors.
+        """
         logger.log(10, f"READING: {self.filename}")
         frequencies = []
         force_constants = []

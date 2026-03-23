@@ -139,11 +139,12 @@ def seminario_bond_fc(
     the original Seminario method and upstream Q2MM implementation.
 
     Args:
-        atom_i, atom_j: 0-based atom indices
-        coords: Atomic coordinates, shape (N, 3) in Angstrom
-        hessian: Full Cartesian Hessian, shape (3N, 3N)
-        au_units: If True, Hessian is in Hartree/Bohr^2 (Gaussian/Psi4 default)
-        dft_scaling: Scaling factor for DFT Hessians (default 0.963)
+        atom_i (int): 0-based index of the first atom.
+        atom_j (int): 0-based index of the second atom.
+        coords (np.ndarray): Atomic coordinates, shape (N, 3) in Angstrom.
+        hessian (np.ndarray): Full Cartesian Hessian, shape (3N, 3N).
+        au_units (bool): If True, Hessian is in Hartree/Bohr^2 (Gaussian/Psi4 default).
+        dft_scaling (float): Scaling factor for DFT Hessians (default 0.963).
 
     Returns:
         Force constant in kcal/(mol·Å²) (scaled)
@@ -445,11 +446,11 @@ def estimate_force_constants_method_e(
 
     Returns:
         Tuple of:
-          - ForceField with Method E hybrid parameters.
-          - Diagnostics dict with keys:
-            ``"method_d"`` — ForceField from Method D,
-            ``"method_c"`` — ForceField from Method C,
-            ``"problematic"`` — dict from ``detect_problematic_params``.
+            - ForceField with Method E hybrid parameters.
+            - Diagnostics dict with keys:
+                ``"method_d"`` — ForceField from Method D,
+                ``"method_c"`` — ForceField from Method C,
+                ``"problematic"`` — dict from ``detect_problematic_params``.
     """
     common_kwargs = dict(
         forcefield=forcefield,

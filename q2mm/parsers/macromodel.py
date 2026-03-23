@@ -1,3 +1,10 @@
+"""Parsers for MacroModel ``.mmo`` and log files.
+
+Provides ``MacroModel`` for extracting structural data (bonds, angles,
+torsions) from ``.mmo`` files and ``MacroModelLog`` for reading
+mass-weighted Hessian matrices from MacroModel log files.
+"""
+
 from __future__ import annotations
 import logging
 import numpy as np
@@ -20,16 +27,31 @@ MIN_MACRO_TOKENS = 2
 
 
 class MacroModel(File):
-    """
-    Extracts data from MacroModel .mmo files.
+    """Extract structural data from MacroModel ``.mmo`` files.
+
+    Reads bond lengths, angles, and torsions for each structure entry
+    in the ``.mmo`` file.
     """
 
     def __init__(self, path):
+        """Initialize a MacroModel instance.
+
+        Args:
+            path (str): Path to the MacroModel ``.mmo`` file.
+        """
         super().__init__(path)
         self._structures = None
 
     @property
-    def structures(self):  # TODO make this read atoms for consistency and bc need num atoms for hessian read
+    def structures(self):
+        """list[Structure]: Parsed structures with bonds, angles, and torsions.
+
+        Returns:
+            (list[Structure]): Structure objects extracted from the ``.mmo``
+                file, each populated with sorted bonds, angles, and
+                torsions.
+        """
+        # TODO: make this read atoms for consistency and bc need num atoms for hessian read
         if self._structures is None or self._structures == []:
             logger.log(10, f"READING: {self.filename}")
             self._structures = []
@@ -134,6 +156,15 @@ class MacroModel(File):
         return self._structures
 
     def read_line_for_bond(self, line):
+        """Parse a single line for bond data.
+
+        Args:
+            line (str): A line from the bond section of the ``.mmo`` file.
+
+        Returns:
+            (Bond | None): A Bond object if the line matches the bond
+                pattern, otherwise ``None``.
+        """
         match = co.RE_BOND.match(line)
         # TODO: MF find if atom_nums are atomic or index, where index bc need for sub_hessian seminario
         if match:
@@ -146,6 +177,17 @@ class MacroModel(File):
             return None
 
     def read_line_for_angle(self, line):
+        """Parse a single line for angle data.
+
+        Terminal atoms are reordered so that the lower index comes first.
+
+        Args:
+            line (str): A line from the angle section of the ``.mmo`` file.
+
+        Returns:
+            (Angle | None): An Angle object if the line matches the angle
+                pattern, otherwise ``None``.
+        """
         match = co.RE_ANGLE.match(line)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3)]]
@@ -160,6 +202,19 @@ class MacroModel(File):
             return None
 
     def read_line_for_torsion(self, line):
+        """Parse a single line for torsion data.
+
+        Atom indices are reordered so that the lower central-atom index
+        comes first.
+
+        Args:
+            line (str): A line from the torsion section of the ``.mmo``
+                file.
+
+        Returns:
+            (Torsion | None): A Torsion object if the line matches the
+                torsion pattern, otherwise ``None``.
+        """
         match = co.RE_TORSION.match(line)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3), match.group(4)]]
@@ -173,8 +228,20 @@ class MacroModel(File):
             return None
 
 
-# This could use some documentation. Looks pretty though.
 def geo_from_points(*args):
+    """Compute a geometric measurement from 2, 3, or 4 Cartesian points.
+
+    With 2 points the bond length is returned, with 3 the angle in
+    degrees, and with 4 the dihedral (torsion) angle in degrees.
+
+    Args:
+        *args (tuple[float, float, float]): Two to four ``(x, y, z)``
+            coordinate tuples.
+
+    Returns:
+        (float): Bond length (Å), angle (degrees), or dihedral angle
+            (degrees) depending on the number of points provided.
+    """
     x1 = args[0][0]
     y1 = args[0][1]
     z1 = args[0][2]
@@ -213,17 +280,29 @@ def geo_from_points(*args):
 
 
 class MacroModelLog(File):
-    """
-    Used to retrieve data from MacroModel log files. Hessian is Mass weighted.
+    """Retrieve data from MacroModel log files.
+
+    The Hessian matrix read from these files is mass-weighted.
     """
 
     def __init__(self, path):
+        """Initialize a MacroModelLog instance.
+
+        Args:
+            path (str): Path to the MacroModel log file.
+        """
         super().__init__(path)
         self._hessian = None
         self._structures = None
 
     @property
     def hessian(self):
+        """numpy.ndarray: Mass-weighted Hessian matrix read from the log file.
+
+        Returns:
+            (numpy.ndarray): 2-D Hessian of shape ``(N*3, N*3)`` where
+                *N* is the number of atoms.
+        """
         if self._hessian is None:
             logger.log(10, f"READING: {self.filename}")
             with open(self.path) as f:
@@ -283,6 +362,12 @@ class MacroModelLog(File):
 
     @property
     def structures(self):
+        """list[Structure]: Parsed structures from the log file.
+
+        Returns:
+            (list[Structure]): Structure objects extracted from the
+                MacroModel log file.
+        """
         if self._structures is None:
             logger.log(10, f"READING: {self.filename}")
             self._structures = []

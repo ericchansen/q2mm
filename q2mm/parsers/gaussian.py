@@ -1,3 +1,9 @@
+"""Parser for Gaussian log files.
+
+Extracts structures, Hessians, eigenvectors, eigenvalues, frequencies,
+and ESP data from Gaussian output files.
+"""
+
 from __future__ import annotations
 import logging
 import numpy as np
@@ -37,10 +43,10 @@ class GaussLog(File):
         Populates the directory and filename properties as well.
 
         Args:
-            path (str): location of the Gaussian log file
-            au_hessian (bool, optional): If true, Hessian will not be converted to
-            kJ/(mol*Angstrom^2) but rather left in Atomic Units (AU) (Hartree/Bohr^2).
-            Defaults to False.
+            path (str): Location of the Gaussian log file.
+            au_hessian (bool, optional): If True, the Hessian will not be
+                converted to kJ/(mol·Å²) but rather left in atomic units
+                (Hartree/Bohr²). Defaults to False.
         """
         super().__init__(path)
         self._evals = None
@@ -52,11 +58,13 @@ class GaussLog(File):
 
     @property
     def evecs(self):
-        """Returns eigenvectors of frequency analysis if applicable.  If not yet parsed,
-        parses them from the log body, not the archive.
+        """Returns eigenvectors of frequency analysis if applicable.
+
+        If not yet parsed, parses them from the log body, not the archive.
 
         Returns:
-            TODO : eigenvectors of Gaussian frequency analysis
+            (np.ndarray | None): Mass-weighted, normalized eigenvectors of the
+                Gaussian frequency analysis, or None if not a frequency job.
         """
         if self._evecs is None:
             self.read_out()
@@ -64,15 +72,17 @@ class GaussLog(File):
 
     @property
     def evals(self):
-        """Returns eigenvalues of frequency analysis if applicable.  If not yet parsed,
-        parses them from the log body, not the archive.
+        """Returns eigenvalues of frequency analysis if applicable.
+
+        If not yet parsed, parses them from the log body, not the archive.
 
         These are mass-weighted force constants in atomic units
         (sign × force_constant / (reduced_mass × AU_TO_MDYNA)), NOT vibrational
         frequencies in cm⁻¹.  Use :attr:`frequencies` for cm⁻¹ values.
 
         Returns:
-            TODO : eigenvalues of Gaussian frequency analysis
+            (np.ndarray | None): Mass-weighted force constants in atomic units,
+                or None if not a frequency job.
         """
         if self._evals is None:
             self.read_out()
@@ -85,19 +95,20 @@ class GaussLog(File):
         Negative values indicate imaginary modes (transition states).
 
         Returns:
-            np.ndarray | None: Frequencies in cm⁻¹, or None if not a frequency job.
+            (np.ndarray | None): Frequencies in cm⁻¹, or None if not a frequency job.
         """
         if self._frequencies_cm is None:
             self.read_out()
         return self._frequencies_cm
 
     @property
-    def structures(self) -> List[Structure]:
-        """Returns Structure objects parsed from the Gaussian log file. If None,
-        parses the archive of the log file for structures.
+    def structures(self) -> list[Structure]:
+        """Returns Structure objects parsed from the Gaussian log file.
+
+        If None, parses the archive of the log file for structures.
 
         Returns:
-            List[Structure]: Structures parsed from log file archive.
+            (list[Structure]): Structures parsed from log file archive.
         """
         if self._structures is None:
             # self.read_out()
@@ -106,10 +117,11 @@ class GaussLog(File):
 
     @property
     def esp_rms(self):
-        """Returns the esp_rms (Electrostatic potential ?? TODO)
+        """Returns the RMS of the electrostatic potential fit.
 
         Returns:
-            int | float: TODO
+            (int | float): RMS value from the ESP charge fitting, or -1 if
+                not found in the log file.
         """
         if self._esp_rms is None:
             self._esp_rms = -1
@@ -117,9 +129,10 @@ class GaussLog(File):
         return self._esp_rms
 
     def read_out(self):
-        """
-        Read force constant and eigenvector data from a frequency
-        calculation.
+        """Reads force constant and eigenvector data from a frequency calculation.
+
+        Populates ``_evals``, ``_evecs``, ``_frequencies_cm``, ``_structures``,
+        and ``_esp_rms`` from the Gaussian log file body.
         """
         logger.log(5, f"READING: {self.filename}")
         self._evals = []
@@ -345,9 +358,13 @@ class GaussLog(File):
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
     def read_archive(self):
-        """
-        Only reads last archive found in the Gaussian .log file. Hessian converted
-        to kJ/molA^2
+        """Reads the last archive section from the Gaussian log file.
+
+        Extracts atoms, coordinates, properties, and the Hessian (converted
+        to kJ/(mol·Å²) unless ``au_hessian`` is True) from the archive block.
+
+        Raises:
+            IndexError: If no archive section is found in the log file.
         """
         logger.log(5, f"READING: {self.filename}")
         struct = Structure(self.filename)
@@ -523,12 +540,21 @@ class GaussLog(File):
         # struct.props['thermal'] = float(stuff.group('thermal'))
 
     def get_most_converged(self, structures=None):
-        """
+        """Returns the most converged structure from an optimization.
+
         Used with geometry optimizations that don't succeed. Sometimes
         intermediate geometries obtain better convergence than the
-        final geometry. This function returns the class Structure for
+        final geometry. This function returns the Structure for
         the most converged geometry, which can then be used to output
         the coordinates for the next optimization.
+
+        Args:
+            structures (list[Structure] | None, optional): Structures to
+                compare. Defaults to ``self.structures``.
+
+        Returns:
+            (Structure | None): The most converged structure, or None if no
+                structures with convergence data are found.
         """
         if structures is None:
             structures = self.structures
@@ -572,15 +598,21 @@ class GaussLog(File):
         return best_structure
 
     def read_optimization(self, coords_type="both"):
-        """
-        Finds structures from a Gaussian geometry optimization that
-        are listed throughout the log file. Also finds data about
-        their convergence.
+        """Finds structures from a Gaussian geometry optimization.
 
-        coords_type = "input" or "standard" or "both"
-                      Using both may cause coordinates in one format
-                      to be overwritten by whatever comes later in the
-                      log file.
+        Parses structures listed throughout the log file and their
+        convergence data.
+
+        Args:
+            coords_type (str, optional): Which coordinate orientation to
+                extract. One of ``"input"``, ``"standard"``, or ``"both"``.
+                Using ``"both"`` may cause coordinates in one format to be
+                overwritten by whatever comes later in the log file.
+                Defaults to ``"both"``.
+
+        Returns:
+            (list[Structure]): Structures with convergence properties extracted
+                from the optimization log.
         """
         logger.log(10, f"READING: {self.filename}")
         structures = []

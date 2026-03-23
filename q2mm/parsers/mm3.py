@@ -1,3 +1,10 @@
+"""Parser for Schrödinger MM3* force field files (mm3.fld).
+
+Reads and writes MM3*-format force field files used by Schrödinger's
+MacroModel, extracting bond, angle, torsion, improper, stretch-bend,
+and van der Waals parameters for Q2MM optimization.
+"""
+
 from __future__ import annotations
 import copy
 import logging
@@ -24,22 +31,17 @@ logger = logging.getLogger(__name__)
 
 
 class MM3(FF):
-    """
-    Class for Schrodinger MM3* force fields (mm3.fld). TODO
+    """Schrödinger MM3* force field reader and writer (mm3.fld).
 
-    Attributes
-    ----------
-    smiles : list of strings
-             MM3* SMILES syntax used in a custom parameter section of a
-             Schrodinger MM3* force field file.
-    sub_names : list of strings
-                Strings used to describe each custom parameter section read.
-    atom_types : list of strings
-                 Atom types derived from the SMILES formula. The smiles
-                 formula may have some integers, but this is strictly atom
-                 types.
-    lines : list of strings
-            Every line from the MM3* force field file.
+    Attributes:
+        smiles (list[str]): MM3* SMILES syntax used in custom parameter
+            sections of the force field file.
+        sub_names (list[str]): Strings used to describe each custom
+            parameter section read.
+        atom_types (list[list[str]]): Atom types derived from each SMILES
+            formula. The SMILES may contain integers referencing earlier
+            atoms, but this list holds only resolved atom type strings.
+        lines (list[str]): Every line from the MM3* force field file.
     """
 
     units = co.MM3FF
@@ -47,6 +49,19 @@ class MM3(FF):
     __slots__ = ["smiles", "sub_names", "_atom_types", "_lines", "atom_type_equivalencies"]
 
     def __init__(self, path=None, data=None, method=None, params: list[Param] | None = None, score=None):
+        """Initializes an MM3 force field instance.
+
+        Args:
+            path (str | None, optional): Path to the mm3.fld file.
+                Defaults to None.
+            data (object | None, optional): Pre-loaded data. Defaults to None.
+            method (str | None, optional): Calculation method label.
+                Defaults to None.
+            params (list[Param] | None, optional): Pre-loaded parameters.
+                Defaults to None.
+            score (float | None, optional): Objective function score.
+                Defaults to None.
+        """
         super().__init__(path, data, method, params, score)
         self.smiles = []
         self.sub_names = []
@@ -55,12 +70,10 @@ class MM3(FF):
         self.atom_type_equivalencies = dict()
 
     def copy_attributes(self, ff):
-        """
-        Copies some general attributes to another force field.
+        """Copies general attributes to another force field instance.
 
-        Parameters
-        ----------
-        ff : `datatypes.MM3`
+        Args:
+            ff (MM3): Target force field to receive copied attributes.
         """
         ff.path = self.path
         ff.smiles = self.smiles
@@ -70,10 +83,14 @@ class MM3(FF):
 
     @property
     def atom_types(self):
-        """
+        """Derives atom types from SMILES substructure definitions.
+
         Uses the SMILES-esque substructure definition (located
-        directly below the substructre's name) to determine
+        directly below the substructure's name) to determine
         the atom types.
+
+        Returns:
+            (list[list[str]]): Atom types for each SMILES substructure.
         """
         self._atom_types = []
         for smiles in self.smiles:
@@ -82,6 +99,12 @@ class MM3(FF):
 
     @property
     def lines(self):
+        """Lines of the force field file.
+
+        Returns:
+            (list[str]): All lines from the mm3.fld file, lazily loaded
+                from disk on first access.
+        """
         if self._lines is None:
             with open(self.path) as f:
                 self._lines = f.readlines()
@@ -92,9 +115,16 @@ class MM3(FF):
         self._lines = x
 
     def split_smiles(self, smiles):
-        """
+        """Splits an MM3* SMILES string into individual atom tokens.
+
         Uses the MM3* SMILES substructure definition (located directly below the
         substructure's name) to determine the atom types.
+
+        Args:
+            smiles (str): MM3* SMILES substructure string.
+
+        Returns:
+            (list[str]): Individual atom labels extracted from the SMILES string.
         """
         split_smiles = re.split(co.RE_SPLIT_ATOMS, smiles)
         # I guess this could be an if instead of while since .remove gets rid of
@@ -104,30 +134,51 @@ class MM3(FF):
         return split_smiles
 
     def convert_smiles_to_types(self, smiles):
+        """Converts an MM3* SMILES string to a list of atom types.
+
+        Args:
+            smiles (str): MM3* SMILES substructure string.
+
+        Returns:
+            (list[str]): Resolved atom types derived from the SMILES string.
+        """
         atom_types = self.split_smiles(smiles)
         atom_types = self.convert_to_types(atom_types, atom_types)
         return atom_types
 
     def convert_to_types(self, atom_labels, atom_types):
-        """
-        Takes a list of atom_labels, which may have digits instead of atom
-        types, and converts it into a list of solely atom types.
+        """Converts atom labels (which may be digit references) to atom types.
 
-        For example,
-          atom_labels = [1, 2]
-          atom_types  = ["Z0", "P1", "P2"]
-        would return ["Z0", "P1"].
+        For example::
 
-        atom_labels - List of atom labels, which can be strings like C3, H1,
-                      etc. or digits like "1" or 1.
-        atom_types  - List of atom types, which are only strings like C3, H1,
-                      etc.
+            atom_labels = [1, 2]
+            atom_types  = ["Z0", "P1", "P2"]
+
+        would return ``["Z0", "P1"]``.
+
+        Args:
+            atom_labels (list[str]): Atom labels that can be strings like
+                ``"C3"``, ``"H1"``, etc. or digit references like ``"1"``.
+            atom_types (list[str]): Full list of atom type strings to
+                resolve digit references against.
+
+        Returns:
+            (list[str]): Resolved atom types with all digit references
+                replaced by the corresponding atom type string.
         """
         return [atom_types[int(x) - 1] if x.strip().isdigit() and x != "00" else x for x in atom_labels]
 
     def import_ff(self, path=None, sub_search="OPT"):
-        """
-        Reads parameters from mm3.fld.
+        """Reads parameters from an mm3.fld file.
+
+        Parses bond, angle, stretch-bend, torsion, improper, and van der
+        Waals parameters from the MM3* force field file.
+
+        Args:
+            path (str | None, optional): Path to the force field file.
+                Defaults to ``self.path``.
+            sub_search (str, optional): Marker string used to identify
+                optimizable substructure sections. Defaults to ``"OPT"``.
         """
         if path is None:
             path = self.path
@@ -505,9 +556,16 @@ class MM3(FF):
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def alternate_import_ff(self, path=None, sub_search="OPT"):
-        """
-        Reads parameters, but doesn't need as particular of formatting.
-        TODO Clean up!!!
+        """Reads parameters with relaxed formatting requirements.
+
+        Similar to :meth:`import_ff` but uses whitespace-split parsing
+        instead of fixed-width column positions.
+
+        Args:
+            path (str | None, optional): Path to the force field file.
+                Defaults to ``self.path``.
+            sub_search (str, optional): Marker string used to identify
+                optimizable substructure sections. Defaults to ``"OPT"``.
         """
         if path is None:
             path = self.path
@@ -827,17 +885,16 @@ class MM3(FF):
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
     def export_ff(self, path=None, params=None, lines=None):
-        """
-        Exports the force field to a file, typically mm3.fld.
+        """Exports the force field to a file, typically mm3.fld.
 
-        Parameters
-        ----------
-        path : string
-               File to be written or overwritten.
-        params : list of `datatypes.Param` (or subclass)
-        lines : list of strings
-                This is what is generated when you read mm3.fld using
-                readlines().
+        Args:
+            path (str | None, optional): Output file path. Defaults to
+                ``self.path``.
+            params (list[Param] | None, optional): Parameters to write.
+                Defaults to ``self.params``.
+            lines (list[str] | None, optional): Base file lines to modify.
+                Generated via ``readlines()`` on the mm3.fld file.
+                Defaults to ``self.lines``.
         """
         if path is None:
             path = self.path
@@ -867,6 +924,15 @@ class MM3(FF):
         logger.log(10, f"WROTE: {path}")
 
     def get_DOFs_by_ff_row(self, structs: list[Structure]) -> dict:
+        """Groups degrees of freedom by force field row number.
+
+        Args:
+            structs (list[Structure]): Structures whose DOFs are collected.
+
+        Returns:
+            (dict): Mapping of ``ff_row`` to a list of :class:`DOF` instances
+                (bonds, angles, and torsions).
+        """
         dof_by_param = dict()
         for param in self.params:
             dof_by_param[param.ff_row]: list[DOF] = []
@@ -880,11 +946,25 @@ class MM3(FF):
         return dof_by_param
 
     def get_DOFs_by_param(self, structs: list[Structure]) -> dict:
+        """Groups degrees of freedom by parameter.
+
+        Delegates to :meth:`get_DOFs_by_ff_row`.
+
+        Args:
+            structs (list[Structure]): Structures whose DOFs are collected.
+
+        Returns:
+            (dict): Mapping of ``ff_row`` to a list of :class:`DOF` instances.
+        """
         return self.get_DOFs_by_ff_row(structs)
 
     def alternate_export_ff(self, path=None, params=None):
-        """
-        Doesn't rely upon needing to read an mm3.fld.
+        """Exports the force field without reading an existing mm3.fld.
+
+        Args:
+            path (str | None, optional): Output file path. Defaults to None.
+            params (list[Param] | None, optional): Parameters to write.
+                Defaults to None.
         """
         lines = []
         for param in params:
@@ -892,50 +972,111 @@ class MM3(FF):
 
 
 def match_mm3_label(mm3_label):
-    """
-    Makes sure the MM3* label is recognized.
+    """Checks whether a line has a recognized MM3* parameter label.
 
-    The label is the 1st 2 characters in the line containing the parameter
-    in a Schrodinger mm3.fld file.
+    The label is the first 2 characters in the line containing the parameter
+    in a Schrödinger mm3.fld file.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label is recognized, else None.
     """
     return re.match(r"[\s5a-z][1-5]", mm3_label)
 
 
 def match_mm3_vdw(mm3_label):
-    """Matches MM3* label for bonds."""
+    """Matches MM3* label for van der Waals parameters.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]6", mm3_label)
 
 
 def match_mm3_bond(mm3_label):
-    """Matches MM3* label for bonds."""
+    """Matches MM3* label for bonds.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]1", mm3_label)
 
 
 def match_mm3_angle(mm3_label):
-    """Matches MM3* label for angles."""
+    """Matches MM3* label for angles.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]2", mm3_label)
 
 
 def match_mm3_stretch_bend(mm3_label):
-    """Matches MM3* label for stretch-bends."""
+    """Matches MM3* label for stretch-bends.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]3", mm3_label)
 
 
 def match_mm3_torsion(mm3_label):
-    """Matches MM3* label for all orders of torsional parameters."""
+    """Matches MM3* label for all orders of torsional parameters.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]4|54", mm3_label)
 
 
 def match_mm3_lower_torsion(mm3_label):
-    """Matches MM3* label for torsions (1st through 3rd order)."""
+    """Matches MM3* label for torsions (1st through 3rd order).
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]4", mm3_label)
 
 
 def match_mm3_higher_torsion(mm3_label):
-    """Matches MM3* label for torsions (4th through 6th order)."""
+    """Matches MM3* label for torsions (4th through 6th order).
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match("54", mm3_label)
 
 
 def match_mm3_improper(mm3_label):
-    """Matches MM3* label for improper torsions."""
+    """Matches MM3* label for improper torsions.
+
+    Args:
+        mm3_label (str): Line or string whose first 2 characters are checked.
+
+    Returns:
+        (re.Match | None): Match object if the label matches, else None.
+    """
     return re.match(r"[\sa-z]5", mm3_label)

@@ -54,6 +54,11 @@ except ImportError:  # pragma: no cover
 
 
 def _ensure_jax():
+    """Raise ``ImportError`` if JAX is not installed.
+
+    Raises:
+        ImportError: If the ``jax`` package cannot be imported.
+    """
     if not _HAS_JAX:
         raise ImportError("JAX is required for JaxEngine. Install with: pip install jax jaxlib")
 
@@ -78,22 +83,53 @@ _ANGLE_K_CONV = 1.0
 
 
 def _safe_norm(x, axis=-1):
-    """Euclidean norm with gradient-safe floor to avoid NaN at zero."""
+    """Euclidean norm with gradient-safe floor to avoid NaN at zero.
+
+    Args:
+        x: Input array.
+        axis: Axis along which to compute the norm.
+
+    Returns:
+        jnp.ndarray: Element-wise norm, floored at ``1e-30`` before sqrt.
+    """
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2, axis=axis), 1e-30))
 
 
 def _safe_arccos(x):
-    """arccos clipped to (-1, 1) to avoid NaN gradients at boundaries."""
+    """arccos clipped to (-1, 1) to avoid NaN gradients at boundaries.
+
+    Args:
+        x: Input array of cosine values.
+
+    Returns:
+        jnp.ndarray: Angle values in radians.
+    """
     return jnp.arccos(jnp.clip(x, -1.0 + 1e-7, 1.0 - 1e-7))
 
 
 def _normalize(x, axis=-1):
-    """Unit-normalize vectors along axis."""
+    """Unit-normalize vectors along *axis*.
+
+    Args:
+        x: Input array of vectors.
+        axis: Axis along which to normalize.
+
+    Returns:
+        jnp.ndarray: Unit-normalized vectors.
+    """
     return x / _safe_norm_keepdims(x, axis=axis) if x.ndim > 1 else x / _safe_norm(x)
 
 
 def _safe_norm_keepdims(x, axis=-1):
-    """Norm with keepdims for broadcasting."""
+    """Norm with keepdims for broadcasting.
+
+    Args:
+        x: Input array.
+        axis: Axis along which to compute the norm.
+
+    Returns:
+        jnp.ndarray: Norm with the reduced axis kept as size-1 dimension.
+    """
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2, axis=axis, keepdims=True), 1e-30))
 
 
@@ -103,18 +139,20 @@ def _safe_norm_keepdims(x, axis=-1):
 
 
 def _harmonic_bond_energy(k, r0, coords, bond_indices):
-    """Harmonic bond stretch: E = sum_i k_i * (r_i - r0_i)^2.
+    """Harmonic bond stretch: ``E = Σ k_i · (r_i − r0_i)²``.
 
-    Parameters
-    ----------
-    k : jnp.ndarray, shape (n_bonds,)
-        Force constants in kcal/mol/Å².
-    r0 : jnp.ndarray, shape (n_bonds,)
-        Equilibrium distances in Å.
-    coords : jnp.ndarray, shape (n_atoms, 3)
-        Cartesian coordinates in Å.
-    bond_indices : jnp.ndarray, shape (n_bonds, 2)
-        Atom index pairs for each bond.
+    Args:
+        k (jnp.ndarray): Force constants, shape ``(n_bonds,)``, in
+            kcal/mol/Å².
+        r0 (jnp.ndarray): Equilibrium distances, shape ``(n_bonds,)``,
+            in Å.
+        coords (jnp.ndarray): Cartesian coordinates, shape
+            ``(n_atoms, 3)``, in Å.
+        bond_indices (jnp.ndarray): Atom index pairs, shape
+            ``(n_bonds, 2)``.
+
+    Returns:
+        jnp.ndarray: Scalar total bond energy in kcal/mol.
     """
     dr = coords[bond_indices[:, 0]] - coords[bond_indices[:, 1]]
     r = _safe_norm(dr, axis=-1)
@@ -122,18 +160,20 @@ def _harmonic_bond_energy(k, r0, coords, bond_indices):
 
 
 def _harmonic_angle_energy(k, theta0, coords, angle_indices):
-    """Harmonic angle bend: E = sum_i k_i * (theta_i - theta0_i)^2.
+    """Harmonic angle bend: ``E = Σ k_i · (θ_i − θ0_i)²``.
 
-    Parameters
-    ----------
-    k : jnp.ndarray, shape (n_angles,)
-        Force constants in kcal/mol/rad².
-    theta0 : jnp.ndarray, shape (n_angles,)
-        Equilibrium angles in radians.
-    coords : jnp.ndarray, shape (n_atoms, 3)
-        Cartesian coordinates in Å.
-    angle_indices : jnp.ndarray, shape (n_angles, 3)
-        Atom index triples (i, j, k) where j is the central atom.
+    Args:
+        k (jnp.ndarray): Force constants, shape ``(n_angles,)``, in
+            kcal/mol/rad².
+        theta0 (jnp.ndarray): Equilibrium angles, shape ``(n_angles,)``,
+            in radians.
+        coords (jnp.ndarray): Cartesian coordinates, shape
+            ``(n_atoms, 3)``, in Å.
+        angle_indices (jnp.ndarray): Atom index triples ``(i, j, k)``,
+            shape ``(n_angles, 3)``, where ``j`` is the central atom.
+
+    Returns:
+        jnp.ndarray: Scalar total angle energy in kcal/mol.
     """
     rij = coords[angle_indices[:, 0]] - coords[angle_indices[:, 1]]
     rkj = coords[angle_indices[:, 2]] - coords[angle_indices[:, 1]]
@@ -145,20 +185,21 @@ def _harmonic_angle_energy(k, theta0, coords, angle_indices):
 
 
 def _fourier_torsion_energy(k, n, gamma, coords, torsion_indices):
-    """Fourier torsion: E = sum_i k_i * (1 + cos(n_i * phi_i - gamma_i)).
+    """Fourier torsion: ``E = Σ k_i · (1 + cos(n_i · φ_i − γ_i))``.
 
-    Parameters
-    ----------
-    k : jnp.ndarray, shape (n_torsions,)
-        Barrier heights in kcal/mol.
-    n : jnp.ndarray, shape (n_torsions,)
-        Periodicities.
-    gamma : jnp.ndarray, shape (n_torsions,)
-        Phase angles in radians.
-    coords : jnp.ndarray, shape (n_atoms, 3)
-        Cartesian coordinates in Å.
-    torsion_indices : jnp.ndarray, shape (n_torsions, 4)
-        Atom index quadruples.
+    Args:
+        k (jnp.ndarray): Barrier heights, shape ``(n_torsions,)``, in
+            kcal/mol.
+        n (jnp.ndarray): Periodicities, shape ``(n_torsions,)``.
+        gamma (jnp.ndarray): Phase angles, shape ``(n_torsions,)``, in
+            radians.
+        coords (jnp.ndarray): Cartesian coordinates, shape
+            ``(n_atoms, 3)``, in Å.
+        torsion_indices (jnp.ndarray): Atom index quadruples, shape
+            ``(n_torsions, 4)``.
+
+    Returns:
+        jnp.ndarray: Scalar total torsion energy in kcal/mol.
     """
     p0 = coords[torsion_indices[:, 0]]
     p1 = coords[torsion_indices[:, 1]]
@@ -181,21 +222,23 @@ def _fourier_torsion_energy(k, n, gamma, coords, torsion_indices):
 
 
 def _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, pair_indices):
-    """Lennard-Jones 12-6: E = sum_{i<j} 4*eps_ij * [(sig_ij/r)^12 - (sig_ij/r)^6].
+    """Lennard-Jones 12-6 energy with geometric combining rules.
 
-    Uses geometric combining rules: sig_ij = sqrt(sig_i * sig_j),
-    eps_ij = sqrt(eps_i * eps_j).
+    ``E = Σ_{i<j} 4·ε_ij · [(σ_ij/r)¹² − (σ_ij/r)⁶]`` where
+    ``σ_ij = √(σ_i·σ_j)`` and ``ε_ij = √(ε_i·ε_j)``.
 
-    Parameters
-    ----------
-    per_atom_sigma : jnp.ndarray, shape (n_atoms,)
-        Per-atom sigma in Å.
-    per_atom_epsilon : jnp.ndarray, shape (n_atoms,)
-        Per-atom epsilon in kcal/mol.
-    coords : jnp.ndarray, shape (n_atoms, 3)
-        Cartesian coordinates in Å.
-    pair_indices : jnp.ndarray, shape (n_pairs, 2)
-        Non-excluded atom pairs (i < j).
+    Args:
+        per_atom_sigma (jnp.ndarray): Per-atom sigma, shape
+            ``(n_atoms,)``, in Å.
+        per_atom_epsilon (jnp.ndarray): Per-atom epsilon, shape
+            ``(n_atoms,)``, in kcal/mol.
+        coords (jnp.ndarray): Cartesian coordinates, shape
+            ``(n_atoms, 3)``, in Å.
+        pair_indices (jnp.ndarray): Non-excluded atom pairs ``(i, j)``
+            with ``i < j``, shape ``(n_pairs, 2)``.
+
+    Returns:
+        jnp.ndarray: Scalar total LJ energy in kcal/mol.
     """
     if pair_indices.shape[0] == 0:
         return jnp.float64(0.0)
@@ -221,7 +264,16 @@ def _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, pair_indices):
 
 
 def _build_vdw_pairs(n_atoms: int, bond_pairs: list[tuple[int, int]]) -> np.ndarray:
-    """Build non-excluded vdW pair list (1-2 and 1-3 exclusions)."""
+    """Build non-excluded vdW pair list (1-2 and 1-3 exclusions).
+
+    Args:
+        n_atoms: Total number of atoms.
+        bond_pairs: List of ``(i, j)`` bonded atom index pairs.
+
+    Returns:
+        np.ndarray: Shape ``(n_pairs, 2)`` array of non-excluded pairs
+            with ``i < j``, dtype ``int32``.
+    """
     excluded: set[tuple[int, int]] = set()
 
     # 1-2 exclusions
@@ -249,6 +301,25 @@ class JaxHandle:
     """Cached topology and parameter mapping for a molecule.
 
     Created once per molecule, reused across parameter updates.
+
+    Attributes:
+        molecule: Deep copy of the input molecule.
+        bond_indices: Atom index pairs, shape ``(n_matched_bonds, 2)``.
+        angle_indices: Atom index triples, shape ``(n_matched_angles, 3)``.
+        torsion_indices: Atom index quadruples, shape
+            ``(n_matched_torsions, 4)``.
+        vdw_pair_indices: Non-excluded pairs, shape ``(n_vdw_pairs, 2)``.
+        bond_param_map: Maps each matched bond → index into
+            ``ForceField.bonds``.
+        angle_param_map: Maps each matched angle → index into
+            ``ForceField.angles``.
+        torsion_param_map: Maps each matched torsion → index into
+            ``ForceField.torsions``.
+        atom_vdw_map: Maps each atom → index into ``ForceField.vdws``.
+        n_bond_types: Number of unique bond parameter types.
+        n_angle_types: Number of unique angle parameter types.
+        n_torsion_types: Number of unique torsion parameter types.
+        n_vdw_types: Number of unique vdW parameter types.
     """
 
     molecule: Q2MMMolecule
@@ -279,6 +350,18 @@ class JaxHandle:
 
 
 def _match_bond(forcefield, elements, env_id="", ff_row=None):
+    """Match a bond to its ForceField index.
+
+    Args:
+        forcefield: Force field to search.
+        elements: Element symbols of the two bonded atoms.
+        env_id: Chemical environment identifier.
+        ff_row: Optional row index hint for matching.
+
+    Returns:
+        tuple[int | None, BondParam | None]: ``(index, param)`` or
+            ``(None, None)`` if unmatched.
+    """
     matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
         return forcefield.bonds.index(matched), matched
@@ -286,6 +369,18 @@ def _match_bond(forcefield, elements, env_id="", ff_row=None):
 
 
 def _match_angle(forcefield, elements, env_id="", ff_row=None):
+    """Match an angle to its ForceField index.
+
+    Args:
+        forcefield: Force field to search.
+        elements: Element symbols of the three atoms.
+        env_id: Chemical environment identifier.
+        ff_row: Optional row index hint for matching.
+
+    Returns:
+        tuple[int | None, AngleParam | None]: ``(index, param)`` or
+            ``(None, None)`` if unmatched.
+    """
     matched = forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
         return forcefield.angles.index(matched), matched
@@ -293,6 +388,18 @@ def _match_angle(forcefield, elements, env_id="", ff_row=None):
 
 
 def _match_vdw(forcefield, atom_type="", element="", ff_row=None):
+    """Match a vdW parameter to its ForceField index.
+
+    Args:
+        forcefield: Force field to search.
+        atom_type: Atom type label for matching.
+        element: Element symbol for fallback matching.
+        ff_row: Optional row index hint for matching.
+
+    Returns:
+        tuple[int | None, VdwParam | None]: ``(index, param)`` or
+            ``(None, None)`` if unmatched.
+    """
     matched = forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
     if matched is not None:
         return forcefield.vdws.index(matched), matched
@@ -313,37 +420,79 @@ class JaxEngine(MMEngine):
 
     The energy functions use standard harmonic/LJ forms (not MM3). Near
     equilibrium, results are similar to MM3 but not identical. For exact
-    MM3 parity, use ``OpenMMEngine``.
+    MM3 parity, use :class:`~q2mm.backends.mm.openmm.OpenMMEngine`.
 
-    Examples
-    --------
-    >>> engine = JaxEngine()
-    >>> energy = engine.energy(molecule, forcefield)
-    >>> energy, grad = engine.energy_and_param_grad(molecule, forcefield)
+    Example:
+        >>> engine = JaxEngine()
+        >>> energy = engine.energy(molecule, forcefield)
+        >>> energy, grad = engine.energy_and_param_grad(molecule, forcefield)
     """
 
     def __init__(self):
+        """Initialize the JAX engine.
+
+        Raises:
+            ImportError: If JAX is not installed.
+        """
         _ensure_jax()
 
     @property
     def name(self) -> str:
+        """Human-readable engine name.
+
+        Returns:
+            str: ``"JAX (harmonic)"``.
+        """
         return "JAX (harmonic)"
 
     def supported_functional_forms(self) -> frozenset[str]:
-        """JAX currently supports harmonic forms only (see issue #91 for MM3)."""
+        """JAX currently supports harmonic forms only (see issue #91 for MM3).
+
+        Returns:
+            frozenset[str]: ``{"harmonic"}``.
+        """
         return frozenset({"harmonic"})
 
     def is_available(self) -> bool:
+        """Check if JAX is installed.
+
+        Returns:
+            bool: ``True`` if the ``jax`` package is importable.
+        """
         return _HAS_JAX
 
     def supports_runtime_params(self) -> bool:
+        """Whether parameters can be updated without rebuilding the system.
+
+        Returns:
+            bool: Always ``True`` for JAX.
+        """
         return True
 
     def supports_analytical_gradients(self) -> bool:
+        """Whether this engine provides analytical parameter gradients.
+
+        Returns:
+            bool: Always ``True`` for JAX.
+        """
         return True
 
     def create_context(self, structure, forcefield: ForceField | None = None) -> JaxHandle:
-        """Build topology and compile energy function for a molecule."""
+        """Build topology and compile energy function for a molecule.
+
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield: Force field to apply. Auto-generated from the
+                molecule if ``None``.
+
+        Returns:
+            JaxHandle: Compiled handle for energy evaluation and gradient
+                computation.
+
+        Raises:
+            ValueError: If vdW parameters are defined but not all atoms
+                have matching entries.
+        """
         if forcefield is not None:
             self._validate_forcefield(forcefield)
         molecule = _as_molecule(structure)
@@ -440,20 +589,45 @@ class JaxEngine(MMEngine):
         return handle
 
     def _get_handle(self, structure, forcefield):
-        """Get or create a JaxHandle."""
+        """Get or create a :class:`JaxHandle`.
+
+        Args:
+            structure: A :class:`Q2MMMolecule` or existing :class:`JaxHandle`.
+            forcefield: Force field for creating a new handle.
+
+        Returns:
+            JaxHandle: Ready-to-use handle.
+        """
         if isinstance(structure, JaxHandle):
             return structure
         molecule = _as_molecule(structure)
         return self.create_context(molecule, forcefield)
 
     def _params_and_coords(self, handle, forcefield):
-        """Extract JAX arrays from forcefield and molecule."""
+        """Extract JAX arrays from force field and molecule.
+
+        Args:
+            handle: A :class:`JaxHandle` containing the molecule.
+            forcefield: Force field whose parameter vector to extract.
+
+        Returns:
+            tuple[jnp.ndarray, jnp.ndarray]: ``(params, coords)`` as JAX
+                float64 arrays.
+        """
         params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
         coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
         return params, coords
 
     def energy(self, structure, forcefield) -> float:
-        """Calculate energy in kcal/mol."""
+        """Calculate energy in kcal/mol.
+
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield (ForceField): Force field parameters.
+
+        Returns:
+            float: Potential energy in kcal/mol.
+        """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
         return float(handle._energy_fn(params, coords))
@@ -461,12 +635,14 @@ class JaxEngine(MMEngine):
     def energy_and_param_grad(self, structure, forcefield) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
-        Returns
-        -------
-        energy : float
-            Energy in kcal/mol.
-        grad : np.ndarray
-            Gradient dE/d(param_vector), same shape as ``forcefield.get_param_vector()``.
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield (ForceField): Force field parameters.
+
+        Returns:
+            tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy``
+                is in kcal/mol and ``grad`` has the same shape as
+                ``forcefield.get_param_vector()``.
         """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
@@ -478,7 +654,15 @@ class JaxEngine(MMEngine):
         return float(val), np.asarray(grad)
 
     def hessian(self, structure, forcefield) -> np.ndarray:
-        """Compute Hessian via jax.hessian (d²E/d_coords²) in Hartree/Bohr²."""
+        """Compute Hessian via ``jax.hessian`` (d²E/dcoords²) in Hartree/Bohr².
+
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield (ForceField): Force field parameters.
+
+        Returns:
+            np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
+        """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
 
@@ -494,7 +678,15 @@ class JaxEngine(MMEngine):
         return np.asarray(hess_kcal_a2) * _KCALMOLA2_TO_HESSIAN_AU
 
     def frequencies(self, structure, forcefield) -> list[float]:
-        """Compute vibrational frequencies in cm⁻¹ from the Hessian."""
+        """Compute vibrational frequencies in cm⁻¹ from the Hessian.
+
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield (ForceField): Force field parameters.
+
+        Returns:
+            list[float]: Vibrational frequencies in cm⁻¹, sorted ascending.
+        """
         handle = self._get_handle(structure, forcefield)
         hess_au = self.hessian(handle, forcefield)
         n_atoms = len(handle.molecule.symbols)
@@ -523,8 +715,20 @@ class JaxEngine(MMEngine):
 
         return sorted(freqs)
 
-    def minimize(self, structure, forcefield, max_iterations=200):
-        """Minimize energy w.r.t. coordinates using analytical JAX gradients."""
+    def minimize(self, structure, forcefield, max_iterations=200) -> tuple:
+        """Minimize energy w.r.t. coordinates using analytical JAX gradients.
+
+        Uses ``scipy.optimize.minimize`` with the L-BFGS-B method.
+
+        Args:
+            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield (ForceField): Force field parameters.
+            max_iterations (int): Maximum number of L-BFGS-B iterations.
+
+        Returns:
+            tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
+                where energy is in kcal/mol and coords are in Å.
+        """
         from scipy.optimize import minimize as scipy_minimize
 
         handle = self._get_handle(structure, forcefield)
@@ -562,9 +766,16 @@ class JaxEngine(MMEngine):
 def _compile_energy_fn(handle: JaxHandle) -> Callable:
     """Create a JIT-compiled energy function for a specific topology.
 
-    The returned function has signature: ``(params, coords) -> energy``
-    where ``params`` is the flat parameter vector from ``ForceField.get_param_vector()``
-    and ``coords`` is shape ``(n_atoms, 3)`` in Å. Energy returned in kcal/mol.
+    The returned function has signature ``(params, coords) -> energy``
+    where ``params`` is the flat parameter vector from
+    ``ForceField.get_param_vector()`` and ``coords`` is shape
+    ``(n_atoms, 3)`` in Å. Energy is returned in kcal/mol.
+
+    Args:
+        handle: A :class:`JaxHandle` with topology arrays populated.
+
+    Returns:
+        Callable: JIT-compiled ``energy_fn(params, coords)`` closure.
     """
     # Capture topology as JAX arrays in the closure
     has_bonds = handle.n_bond_types > 0 and len(handle.bond_indices) > 0
@@ -644,7 +855,17 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
 
 
 def _as_molecule(structure) -> Q2MMMolecule:
-    """Coerce input to a Q2MMMolecule."""
+    """Coerce input to a :class:`Q2MMMolecule`.
+
+    Args:
+        structure: A :class:`JaxHandle`, :class:`Q2MMMolecule`, or other.
+
+    Returns:
+        Q2MMMolecule: The coerced molecule.
+
+    Raises:
+        TypeError: If *structure* is not a recognised type.
+    """
     if isinstance(structure, JaxHandle):
         return structure.molecule
     if isinstance(structure, Q2MMMolecule):

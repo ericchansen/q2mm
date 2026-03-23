@@ -89,6 +89,7 @@ class Q2MMMolecule:
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
 
     def __post_init__(self):
+        """Validate atom_types length and normalize geometry to float."""
         self.symbols = [str(symbol) for symbol in self.symbols]
         if self.atom_types is None:
             self.atom_types = list(self.symbols)
@@ -100,6 +101,7 @@ class Q2MMMolecule:
 
     @property
     def n_atoms(self) -> int:
+        """Number of atoms in the molecule."""
         return len(self.symbols)
 
     @property

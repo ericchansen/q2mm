@@ -60,6 +60,21 @@ class Param:
         ff_row: int | None = None,
         label: str | None = None,
     ):
+        """Initialize a Param instance.
+
+        Args:
+            ptype (str | None): Parameter type identifier (e.g., ``'ae'``,
+                ``'bf'``, ``'q'``).
+            value (float | None): Initial parameter value.
+            d1 (float | None): First derivative w.r.t. the penalty function.
+            d2 (float | None): Second derivative w.r.t. the penalty function.
+            ff_type (str | None): Force field unit system identifier.
+            atom_labels (list | None): Atom label strings from the FF file.
+            atom_types (list | None): Atom type identifiers.
+            ff_col (int | None): Column index in the FF file.
+            ff_row (int | None): Row number in the FF file.
+            label (str | None): FF-specific label string.
+        """
         self._allowed_range = None
         self._step = None
         self._value = None
@@ -120,6 +135,9 @@ class Param:
         Force constants and charges (bf, af, df, q) allow negative values
         for transition-state force fields (TSFF). Equilibrium geometry
         parameters (be, ae) and others are non-negative.
+
+        Returns:
+            (tuple[float, float]): A ``(lower, upper)`` bound pair.
         """
         if self._allowed_range is None:
             if self.ptype in ("q", "df", "bf", "af"):
@@ -133,7 +151,10 @@ class Param:
         """Step size for numerical differentiation.
 
         If the stored step is a string, it is treated as a fraction of the
-        current value (e.g., "0.01" means 1% of value).
+        current value (e.g., ``"0.01"`` means 1% of value).
+
+        Returns:
+            (float): The absolute step size.
         """
         if self._step is None:
             try:
@@ -153,6 +174,11 @@ class Param:
 
     @property
     def value(self) -> float | None:
+        """Current parameter value.
+
+        Returns:
+            (float | None): The parameter value, or None if unset.
+        """
         return self._value
 
     @value.setter
@@ -168,7 +194,14 @@ class Param:
 
     @staticmethod
     def _normalize_angle(value: float) -> float:
-        """For equilibrium angles, fold values back into [0, 180]."""
+        """For equilibrium angles, fold values back into [0, 180].
+
+        Args:
+            value (float): The raw angle value in degrees.
+
+        Returns:
+            (float): The angle normalized to the range [0, 180].
+        """
         if value > 180.0:
             v = value % 360.0
             return 360.0 - v if v > 180.0 else v
@@ -201,6 +234,12 @@ class Param:
 
     def value_in_range(self, value: float) -> bool:
         """Check whether a value falls within the allowed range for this parameter type.
+
+        Args:
+            value (float): The value to validate.
+
+        Returns:
+            (bool): True if the value is within the allowed range.
 
         Raises:
             ParamError: If value is outside the allowed range.

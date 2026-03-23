@@ -1,4 +1,9 @@
-"""Molecular mechanics engine backends."""
+"""Molecular mechanics engine backends.
+
+Provides :class:`~q2mm.backends.mm.openmm.OpenMMEngine`,
+:class:`~q2mm.backends.mm.tinker.TinkerEngine`, and (optionally)
+:class:`~q2mm.backends.mm.jax_engine.JaxEngine` for MM energy evaluations.
+"""
 
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.backends.mm.tinker import TinkerEngine

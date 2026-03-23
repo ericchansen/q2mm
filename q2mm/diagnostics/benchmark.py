@@ -20,22 +20,21 @@ import numpy as np
 class BenchmarkResult:
     """Serializable result from a single benchmark run.
 
-    Attributes
-    ----------
-    metadata : dict
-        backend, optimizer, molecule, timestamp, source, level_of_theory.
-    qm_reference : dict
-        frequencies_cm1, level_of_theory.
-    default_ff : dict or None
-        frequencies_cm1, rmsd, mae (if evaluated).
-    seminario : dict or None
-        frequencies_cm1, rmsd, mae, elapsed_s.
-    optimized : dict or None
-        frequencies_cm1, rmsd, mae, elapsed_s, n_eval, converged,
-        initial_score, final_score, message, param_names, param_initial,
-        param_final.
-    pes_distortion : dict or None
-        modes (list), median_error_pct, max_error_pct, elapsed_s.
+    Attributes:
+        metadata (dict): Backend, optimizer, molecule, timestamp, source,
+            and level_of_theory metadata.
+        qm_reference (dict): QM reference data including frequencies_cm1
+            and level_of_theory.
+        default_ff (dict | None): Default force field results including
+            frequencies_cm1, rmsd, and mae (if evaluated).
+        seminario (dict | None): Seminario estimation results including
+            frequencies_cm1, rmsd, mae, and elapsed_s.
+        optimized (dict | None): Optimization results including
+            frequencies_cm1, rmsd, mae, elapsed_s, n_eval, converged,
+            initial_score, final_score, message, param_names, param_initial,
+            and param_final.
+        pes_distortion (dict | None): PES distortion results including
+            modes (list), median_error_pct, max_error_pct, and elapsed_s.
     """
 
     metadata: dict = field(default_factory=dict)
@@ -46,7 +45,12 @@ class BenchmarkResult:
     pes_distortion: dict | None = None
 
     def to_json(self, path: str | Path) -> None:
-        """Save result to a JSON file."""
+        """Save result to a JSON file.
+
+        Args:
+            path (str | Path): Destination file path. Parent directories
+                are created if they do not exist.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -62,7 +66,14 @@ class BenchmarkResult:
 
     @classmethod
     def from_json(cls, path: str | Path) -> BenchmarkResult:
-        """Load a result from a JSON file."""
+        """Load a result from a JSON file.
+
+        Args:
+            path (str | Path): Path to the JSON file.
+
+        Returns:
+            BenchmarkResult: Deserialized benchmark result.
+        """
         with open(path) as f:
             data = json.load(f)
         return cls(**data)
@@ -80,6 +91,16 @@ class BenchmarkResult:
 
         Use this to import results from the upstream/legacy q2mm code
         or any other source for comparison.
+
+        Args:
+            frequencies_cm1 (list[float]): Vibrational frequencies in cm⁻¹.
+            molecule (str): Human-readable molecule name.
+            label (str): Source label (e.g., ``'upstream'``).
+            level_of_theory (str): QM level of theory string.
+
+        Returns:
+            BenchmarkResult: Result populated with the given frequencies and
+                metadata suitable for leaderboard comparison.
         """
         return cls(
             metadata={
@@ -108,27 +129,60 @@ class BenchmarkResult:
 
 
 def frequency_rmsd(a, b) -> float:
-    """RMSD between two frequency arrays (truncates to shorter)."""
+    """Compute RMSD between two frequency arrays (truncates to shorter).
+
+    Args:
+        a (array-like): First array of frequencies.
+        b (array-like): Second array of frequencies.
+
+    Returns:
+        float: Root-mean-square deviation between the two arrays.
+    """
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.sqrt(np.mean((arr_a[:n] - arr_b[:n]) ** 2)))
 
 
 def frequency_mae(a, b) -> float:
-    """Mean absolute error between two frequency arrays."""
+    """Compute mean absolute error between two frequency arrays.
+
+    Args:
+        a (array-like): First array of frequencies.
+        b (array-like): Second array of frequencies.
+
+    Returns:
+        float: Mean absolute error between the two arrays.
+    """
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.mean(np.abs(arr_a[:n] - arr_b[:n])))
 
 
 def real_frequencies(freqs, threshold: float = 50.0) -> np.ndarray:
-    """Extract and sort real (non-imaginary, non-translational) frequencies."""
+    """Extract and sort real (non-imaginary, non-translational) frequencies.
+
+    Args:
+        freqs (array-like): Input frequencies.
+        threshold (float): Minimum frequency in cm⁻¹ to include. Modes
+            below this are treated as translational/rotational.
+
+    Returns:
+        np.ndarray: Sorted array of frequencies above the threshold.
+    """
     arr = np.asarray(freqs)
     return np.sort(arr[arr > threshold])
 
 
 def _param_names(ff) -> list[str]:
-    """Build human-readable names for each parameter in get_param_vector() order."""
+    """Build human-readable names for each parameter in get_param_vector() order.
+
+    Args:
+        ff (ForceField): Force field object with ``bonds``, ``angles``,
+            ``torsions``, and ``vdws`` attributes.
+
+    Returns:
+        list[str]: Parameter name strings (e.g., ``'kb_C-H'``, ``'ka_H-C-H'``).
+    """
     names = []
     for b in ff.bonds:
         label = "-".join(b.key) + (f"[{b.env_id}]" if b.env_id else "")
@@ -164,37 +218,25 @@ def run_benchmark(
 ) -> BenchmarkResult:
     """Run a complete benchmark for one (backend, optimizer) combination.
 
-    Parameters
-    ----------
-    engine : MMEngine
-        The MM backend engine to use.
-    molecule : Q2MMMolecule
-        The molecule (at QM equilibrium geometry).
-    qm_freqs : ndarray
-        QM reference frequencies (all real modes, cm-1).
-    qm_hessian : ndarray, optional
-        QM Hessian matrix for Seminario estimation. If None, Seminario
-        step is skipped.
-    normal_modes : dict, optional
-        Pre-computed normal modes from ``load_normal_modes()``. If None,
-        PES distortion is skipped.
-    optimizer_method : str
-        Scipy optimizer method (e.g. "L-BFGS-B", "Nelder-Mead").
-    optimizer_kwargs : dict, optional
-        Extra kwargs for ScipyOptimizer (e.g. {"jac": "analytical"}).
-    maxiter : int
-        Maximum optimizer iterations.
-    backend_name : str
-        Human-readable backend name for the result metadata.
-    molecule_name : str
-        Human-readable molecule name.
-    level_of_theory : str
-        QM level of theory string.
+    Args:
+        engine (MMEngine): The MM backend engine to use.
+        molecule (Q2MMMolecule): The molecule (at QM equilibrium geometry).
+        qm_freqs (np.ndarray): QM reference frequencies (all real modes, cm⁻¹).
+        qm_hessian (np.ndarray | None): QM Hessian matrix for Seminario
+            estimation. If ``None``, Seminario step is skipped.
+        normal_modes (dict | None): Pre-computed normal modes from
+            ``load_normal_modes()``. If ``None``, PES distortion is skipped.
+        optimizer_method (str): Scipy optimizer method (e.g.,
+            ``'L-BFGS-B'``, ``'Nelder-Mead'``).
+        optimizer_kwargs (dict[str, Any] | None): Extra keyword arguments
+            for ``ScipyOptimizer`` (e.g., ``{'jac': 'analytical'}``).
+        maxiter (int): Maximum optimizer iterations.
+        backend_name (str): Human-readable backend name for result metadata.
+        molecule_name (str): Human-readable molecule name.
+        level_of_theory (str): QM level of theory string.
 
-    Returns
-    -------
-    BenchmarkResult
-        Complete result with all metrics.
+    Returns:
+        BenchmarkResult: Complete result with all metrics.
     """
     from q2mm.models.forcefield import ForceField
     from q2mm.models.seminario import estimate_force_constants

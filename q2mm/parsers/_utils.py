@@ -16,13 +16,15 @@ except ImportError:
 
 
 def convert_atom_type(atom_type: str) -> str:
-    """_summary_
+    """Convert a raw atom type string to a normalized Q2MM atom type.
+
+    Strips non-alphanumeric characters and converts to uppercase.
 
     Args:
-        atom_type (str): _description_
+        atom_type (str): Raw atom type string from a force field file.
 
     Returns:
-        str: _description_
+        (str): Normalized uppercase alphanumeric atom type.
     """
     q2mm_atom_type = "".join(filter(str.isalnum, atom_type))
     q2mm_atom_type = q2mm_atom_type.upper()
@@ -32,12 +34,28 @@ def convert_atom_type(atom_type: str) -> str:
     return q2mm_atom_type
 
 
-def convert_atom_type_pair(atom_type_pair):
+def convert_atom_type_pair(atom_type_pair: list[str]) -> list[str]:
+    """Convert a pair of raw atom type strings to normalized Q2MM atom types.
+
+    Args:
+        atom_type_pair (list[str]): A pair of raw atom type strings.
+
+    Returns:
+        (list[str]): A list of normalized uppercase alphanumeric atom types.
+    """
     q2mm_atom_type_pair = [convert_atom_type(atom_type) for atom_type in atom_type_pair]
     return q2mm_atom_type_pair
 
 
-def convert_atom_types(atom_type_pairs: list) -> list:
+def convert_atom_types(atom_type_pairs: list[list[str]]) -> list[list[str]]:
+    """Convert multiple atom type pairs to normalized Q2MM atom types.
+
+    Args:
+        atom_type_pairs (list[list[str]]): A list of atom type pairs to convert.
+
+    Returns:
+        list[list[str]]: A list of normalized atom type pairs.
+    """
     q2mm_atom_type_pairs = [convert_atom_type_pair(atom_type_pair) for atom_type_pair in atom_type_pairs]
     return q2mm_atom_type_pairs
 
@@ -50,7 +68,7 @@ def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
         coords2 (np.ndarray): atom2 coordinates [x, y, z]
 
     Returns:
-        float: measured bond length
+        (float): measured bond length
     """
     vector = coords2 - coords1
     return np.sqrt(vector.dot(vector))  # Used over np.linalg.norm due to speed advantage
@@ -65,7 +83,7 @@ def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray)
         coords3 (np.ndarray): atom3 coordinates [x, y, z]
 
     Returns:
-        float: Angle between coords1, coords2, coords3 in degrees
+        (float): Angle between coords1, coords2, coords3 in degrees
     """
     vector21 = coords1 - coords2
     vector23 = coords3 - coords2
@@ -74,7 +92,18 @@ def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray)
     return np.degrees(angle)
 
 
-def is_same_type_DOF(atom_types1: list, atom_types2: list) -> bool:
+def is_same_type_DOF(atom_types1: list[str], atom_types2: list[str]) -> bool:
+    """Check whether two atom type sequences represent the same degree of freedom.
+
+    Two sequences match if they are equal in forward or reverse order.
+
+    Args:
+        atom_types1 (list[str]): First atom type sequence.
+        atom_types2 (list[str]): Second atom type sequence.
+
+    Returns:
+        (bool): True if the sequences match in either direction, False otherwise.
+    """
     reverse_1 = copy.deepcopy(atom_types1)
     reverse_1.reverse()
     return atom_types1 == atom_types2 or reverse_1 == atom_types2

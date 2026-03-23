@@ -118,9 +118,9 @@ def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     Returns:
         (np.ndarray, np.ndarray): (eigenvalues, eigenvectors) where eigenvalues
-         is of shape ``(n,)`` and eigenvectors is of shape ``(n, n)`` with
-         eigenvectors stored as **columns** (the ``np.linalg.eigh`` convention).
-         That is, ``eigenvectors[:, i]`` is the eigenvector for ``eigenvalues[i]``.
+                is of shape ``(n,)`` and eigenvectors is of shape ``(n, n)`` with
+                eigenvectors stored as **columns** (the ``np.linalg.eigh`` convention).
+                That is, ``eigenvectors[:, i]`` is the eigenvector for ``eigenvalues[i]``.
     """
     eigenvalues, eigenvectors = np.linalg.eigh(matrix)
     return eigenvalues, eigenvectors
@@ -151,13 +151,13 @@ def replace_neg_eigenvalue(
     for details and issue #75 for implementation status.
 
     Args:
-        eigenvalues: Eigenvalues from Cartesian Hessian decomposition.
-        replace_with: Replacement value in Hartree/Bohr². Defaults to 1.0.
-        zer_out_neg: If True, zero out remaining negative eigenvalues after
+        eigenvalues (np.ndarray): Eigenvalues from Cartesian Hessian decomposition.
+        replace_with (float): Replacement value in Hartree/Bohr². Defaults to 1.0.
+        zer_out_neg (bool): If True, zero out remaining negative eigenvalues after
             replacing the most negative. Defaults to False.
-        units: Target units for the replacement. If ``co.KJMOLA`` (default),
+        units (int): Target units for the replacement. If ``co.KJMOLA`` (default),
             *replace_with* is converted via ``constants.HESSIAN_CONVERSION``.
-        strict: If True, raise ValueError when more than one negative
+        strict (bool): If True, raise ValueError when more than one negative
             eigenvalue is found (indicates a higher-order saddle point or
             corrupted Hessian).  If False, proceed with a warning. Defaults
             to True.
@@ -352,8 +352,8 @@ def detect_problematic_params(
     so they can be re-set for Method E re-optimization.
 
     Args:
-        forcefield: ForceField with estimated parameters.
-        fc_threshold: Force constants at or below this value are flagged.
+        forcefield (ForceField): ForceField with estimated parameters.
+        fc_threshold (float): Force constants at or below this value are flagged.
 
     Returns:
         Dict with ``"bonds"`` and ``"angles"`` keys, each containing a set
@@ -390,10 +390,10 @@ def lock_params(
     ``ForceField.get_param_vector`` / ``set_param_vector``).
 
     Args:
-        forcefield: ForceField to modify in-place.
-        lock_keys: Dict from ``detect_problematic_params()``, keyed by
+        forcefield (ForceField): ForceField to modify in-place.
+        lock_keys (dict[str, set[tuple]]): Dict from ``detect_problematic_params()``, keyed by
             ``"bonds"`` and ``"angles"`` with sets of canonical keys.
-        source_ff: Reference ForceField to copy values from (typically
+        source_ff (ForceField): Reference ForceField to copy values from (typically
             the Method D result or a standard force field).
     """
     bond_keys = lock_keys.get("bonds", set())

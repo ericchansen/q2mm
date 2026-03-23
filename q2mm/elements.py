@@ -3,16 +3,12 @@
 This module has **no q2mm imports**, so any module can import from it
 without risking circular dependencies.
 
-Data sources
-------------
-Monoisotopic masses : NUBASE2020 / AME2020
-    Wang et al., Chinese Phys. C 45, 030003 (2021).
-    DOI: 10.1088/1674-1137/abddaf
-
-Covalent radii : Cordero et al., Dalton Trans. 2008, 2832-2838
-    DOI: 10.1039/b801115j
-    Values for noble gases and elements without covalent bonds are
-    van der Waals or estimated values.
+Data Sources:
+    Monoisotopic masses: NUBASE2020 / AME2020 — Wang et al., Chinese
+        Phys. C 45, 030003 (2021). DOI: 10.1088/1674-1137/abddaf.
+    Covalent radii: Cordero et al., Dalton Trans. 2008, 2832-2838.
+        DOI: 10.1039/b801115j. Values for noble gases and elements
+        without covalent bonds are van der Waals or estimated values.
 """
 
 from __future__ import annotations
@@ -22,7 +18,17 @@ from typing import NamedTuple
 
 
 class Element(NamedTuple):
-    """Annotated element record."""
+    """Annotated element record from the periodic table.
+
+    Attributes:
+        z (int): Atomic number.
+        symbol (str): Element symbol (e.g., ``'H'``, ``'He'``).
+        mass (float): Monoisotopic mass in unified atomic mass units (u),
+            from NUBASE2020.
+        covalent_radius (float | None): Single-bond covalent radius in
+            Angstroms from Cordero 2008, or ``None`` for elements without
+            commonly observed covalent bonding.
+    """
 
     z: int
     symbol: str

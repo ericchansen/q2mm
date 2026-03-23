@@ -3,12 +3,11 @@
 Provides ``TablePrinter`` for building dynamically-sized ASCII tables,
 plus convenience functions for common benchmark table layouts.
 
-Color support
--------------
-Tables use ANSI 256-color codes for a green→yellow→red spectrum on
-error percentages, RMSD values, and status labels.  Color is auto-
-detected (TTY check + NO_COLOR env var) and can be forced via
-``TablePrinter(color=True/False)`` or ``Q2MM_COLOR=1/0``.
+Color Support:
+    Tables use ANSI 256-color codes for a green→yellow→red spectrum on
+    error percentages, RMSD values, and status labels.  Color is auto-
+    detected (TTY check + ``NO_COLOR`` env var) and can be forced via
+    ``TablePrinter(color=True/False)`` or ``Q2MM_COLOR=1/0``.
 """
 
 from __future__ import annotations
@@ -28,17 +27,38 @@ _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
 
 
 def _strip_ansi(text: str) -> str:
-    """Remove ANSI escape sequences from *text*."""
+    """Remove ANSI escape sequences from *text*.
+
+    Args:
+        text (str): Input string potentially containing ANSI codes.
+
+    Returns:
+        str: String with all ANSI escape sequences removed.
+    """
     return _ANSI_RE.sub("", text)
 
 
 def _visible_len(text: str) -> int:
-    """Length of *text* excluding ANSI escape sequences."""
+    """Compute the visible length of *text* excluding ANSI escape sequences.
+
+    Args:
+        text (str): Input string potentially containing ANSI codes.
+
+    Returns:
+        int: Number of visible characters.
+    """
     return len(_strip_ansi(text))
 
 
 def _color_enabled() -> bool:
-    """Check if color output should be used."""
+    """Check if color output should be used.
+
+    Respects the ``Q2MM_COLOR`` and ``NO_COLOR`` environment variables,
+    falling back to a TTY check on ``sys.stdout``.
+
+    Returns:
+        bool: ``True`` if ANSI color output is enabled.
+    """
     env = os.environ.get("Q2MM_COLOR", "").lower()
     if env in ("0", "false", "no"):
         return False
@@ -50,14 +70,32 @@ def _color_enabled() -> bool:
 
 
 def _ansi(code: int | str, text: str) -> str:
-    """Wrap *text* in an ANSI escape sequence."""
+    """Wrap *text* in an ANSI escape sequence.
+
+    Args:
+        code (int | str): ANSI SGR code (e.g., ``1`` for bold,
+            ``'38;5;196'`` for 256-color red).
+        text (str): Text to colorize.
+
+    Returns:
+        str: *text* wrapped with the ANSI escape and a reset suffix.
+    """
     return f"\033[{code}m{text}\033[0m"
 
 
 def _lerp_color(value: float, lo: float, hi: float) -> str | None:
     """Return an ANSI 256-color code for a green→yellow→red gradient.
 
-    *value* is clamped to [lo, hi].  Returns None if color is not meaningful.
+    *value* is clamped to [*lo*, *hi*].
+
+    Args:
+        value (float): The metric value to map onto the gradient.
+        lo (float): Value corresponding to pure green.
+        hi (float): Value corresponding to pure red.
+
+    Returns:
+        str | None: An ANSI 256-color SGR parameter string (e.g.,
+            ``'38;5;46'``), or ``None`` if the range is degenerate.
     """
     if hi <= lo:
         return None
@@ -75,13 +113,35 @@ def _lerp_color(value: float, lo: float, hi: float) -> str | None:
 
 
 def colorize_pct(text: str, pct_err: float, *, lo: float = 0.0, hi: float = 50.0) -> str:
-    """Colorize a percentage error string on a green→red spectrum."""
+    """Colorize a percentage error string on a green→red spectrum.
+
+    Args:
+        text (str): Pre-formatted text to wrap with color codes.
+        pct_err (float): Percentage error value (absolute value is used).
+        lo (float): Error value mapped to green.
+        hi (float): Error value mapped to red.
+
+    Returns:
+        str: *text* with ANSI color codes, or unchanged if color is
+            not applicable.
+    """
     code = _lerp_color(abs(pct_err), lo, hi)
     return _ansi(code, text) if code else text
 
 
 def colorize_rmsd(text: str, rmsd: float, *, good: float = 50.0, bad: float = 500.0) -> str:
-    """Colorize an RMSD value on a green→red spectrum."""
+    """Colorize an RMSD value on a green→red spectrum.
+
+    Args:
+        text (str): Pre-formatted text to wrap with color codes.
+        rmsd (float): RMSD value in cm⁻¹.
+        good (float): RMSD value mapped to green.
+        bad (float): RMSD value mapped to red.
+
+    Returns:
+        str: *text* with ANSI color codes, or unchanged if color is
+            not applicable.
+    """
     code = _lerp_color(rmsd, good, bad)
     return _ansi(code, text) if code else text
 
@@ -89,8 +149,13 @@ def colorize_rmsd(text: str, rmsd: float, *, good: float = 50.0, bad: float = 50
 def explain_scipy_message(message: str) -> str:
     """Translate scipy's raw termination message to plain English.
 
-    Returns a short explanation, or empty string if the message is
-    already self-explanatory.
+    Args:
+        message (str): The ``message`` field from a scipy
+            ``OptimizeResult``.
+
+    Returns:
+        str: A short human-readable explanation, or an empty string
+            if the message is already self-explanatory.
     """
     msg = (message or "").strip()
     msg_upper = msg.upper().replace(" ", "_")
@@ -149,13 +214,29 @@ class TablePrinter:
     """
 
     def __init__(self, *, color: bool | None = None):
+        """Initialize the table printer.
+
+        Args:
+            color (bool | None): Force color on (``True``) or off
+                (``False``). If ``None``, auto-detect from the terminal.
+        """
         self._entries: list[tuple[str, str | None]] = []
         self.color = _color_enabled() if color is None else color
 
     def title(self, text: str):
+        """Append a title line (indented two spaces).
+
+        Args:
+            text (str): Title text.
+        """
         self._entries.append(("text", f"  {text}"))
 
     def row(self, text: str):
+        """Append a content row (indented two spaces).
+
+        Args:
+            text (str): Row text.
+        """
         self._entries.append(("text", f"  {text}"))
 
     def bar(self):
@@ -167,15 +248,14 @@ class TablePrinter:
         self._entries.append(("sep", None))
 
     def blank(self):
+        """Append an empty line."""
         self._entries.append(("blank", None))
 
     def flush(self, file=None):
         """Print everything with bars dynamically sized to content.
 
-        Parameters
-        ----------
-        file : file-like, optional
-            Write to this stream instead of stdout.
+        Args:
+            file: Writable file-like object. Defaults to ``sys.stdout``.
         """
         text_lines = [text for _, text in self._entries if text is not None]
         w = max(_visible_len(line) for line in text_lines) if text_lines else 60
@@ -191,7 +271,11 @@ class TablePrinter:
         self._entries.clear()
 
     def to_string(self) -> str:
-        """Render to a string instead of printing."""
+        """Render to a string instead of printing.
+
+        Returns:
+            str: The complete table as a string (with trailing newline).
+        """
         buf = io.StringIO()
         self.flush(file=buf)
         return buf.getvalue()
@@ -211,18 +295,18 @@ def frequency_progression_table(
 ) -> TablePrinter:
     """Build a mode-by-mode frequency comparison table.
 
-    Parameters
-    ----------
-    qm_freqs : list[float]
-        QM reference frequencies (cm-1).
-    stages : list of (label, freqs) tuples
-        Each entry is (stage_label, mm_frequencies). E.g.
-        [("Default FF", [...]), ("Seminario", [...]), ("Optimized", [...])].
-    title : str
-        Table title.
-    mode_names : list[str], optional
-        Names for each mode (e.g. "CF str", "CH3 def"). If None, uses
-        integer indices.
+    Args:
+        qm_freqs (list[float]): QM reference frequencies (cm⁻¹).
+        stages (list[tuple[str, list[float]]]): Each entry is
+            ``(stage_label, mm_frequencies)``. E.g.,
+            ``[("Default FF", [...]), ("Seminario", [...]), ("Optimized", [...])]``.
+        title (str): Table title.
+        mode_names (list[str] | None): Names for each mode (e.g.,
+            ``'CF str'``, ``'CH3 def'``). If ``None``, uses integer indices.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
     """
     import numpy as np
 
@@ -291,15 +375,18 @@ def pes_distortion_table(
 ) -> TablePrinter:
     """Build a PES distortion comparison table.
 
-    Parameters
-    ----------
-    distortion_results : list[dict]
-        Output from ``compute_distortions()``. Each entry has keys:
-        mode_idx, freq_cm1, displacements (list of {d_ang, e_qm, e_mm, pct_err}).
-    title : str
-        Table title.
-    elapsed_s : float, optional
-        Wall clock time for the distortion evaluation.
+    Args:
+        distortion_results (list[dict]): Output from
+            ``compute_distortions()``. Each entry has keys ``mode_idx``,
+            ``freq_cm1``, and ``displacements`` (a list of dicts with
+            ``d_ang``, ``e_qm``, ``e_mm``, ``pct_err``).
+        title (str): Table title.
+        elapsed_s (float | None): Wall-clock time for the distortion
+            evaluation.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
     """
     import numpy as np
 
@@ -384,11 +471,14 @@ def timing_table(
 ) -> TablePrinter:
     """Build a timing breakdown table.
 
-    Parameters
-    ----------
-    timings : dict
-        Keys like "seminario_s", "optimization_s", "n_eval",
-        "per_eval_ms", etc.
+    Args:
+        timings (dict[str, Any]): Keys like ``'seminario_s'``,
+            ``'optimization_s'``, ``'n_eval'``, ``'per_eval_ms'``, etc.
+        title (str): Table title.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
     """
     t = TablePrinter()
     t.blank()
@@ -423,7 +513,21 @@ def parameter_table(
     *,
     title: str = "OPTIMIZED PARAMETERS",
 ) -> TablePrinter:
-    """Build a parameter comparison table showing Default → Seminario → Optimized."""
+    """Build a parameter comparison table showing Default → Seminario → Optimized.
+
+    Args:
+        param_names (list[str]): Human-readable parameter names.
+        default_values (list[float] | None): Default FF parameter values,
+            or ``None`` to omit the column.
+        seminario_values (list[float] | None): Seminario-estimated parameter
+            values, or ``None`` to omit the column.
+        optimized_values (list[float]): Final optimized parameter values.
+        title (str): Table title.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
+    """
     t = TablePrinter()
     t.blank()
     t.bar()
@@ -483,7 +587,23 @@ def convergence_table(
     final_rmsd: float | None = None,
     elapsed_s: float | None = None,
 ) -> TablePrinter:
-    """Build a convergence summary table showing raw optimizer output."""
+    """Build a convergence summary table showing raw optimizer output.
+
+    Args:
+        initial_score (float): Objective function score before optimization.
+        final_score (float): Objective function score after optimization.
+        n_eval (int): Number of function evaluations.
+        converged (bool): Whether scipy reported convergence.
+        message (str): Raw scipy termination message.
+        title (str): Table title.
+        initial_rmsd (float | None): Starting RMSD in cm⁻¹.
+        final_rmsd (float | None): Final RMSD in cm⁻¹.
+        elapsed_s (float | None): Wall-clock time in seconds.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
+    """
     t = TablePrinter()
     t.blank()
     t.bar()
@@ -530,11 +650,15 @@ def leaderboard_table(
 ) -> TablePrinter:
     """Build a summary leaderboard from multiple benchmark results.
 
-    Parameters
-    ----------
-    rows : list[dict]
-        Each dict has keys: backend, optimizer, rmsd, mae, time_s,
-        n_eval, final_score, converged, message, error, initial_rmsd.
+    Args:
+        rows (list[dict]): Each dict has keys ``backend``, ``optimizer``,
+            ``rmsd``, ``mae``, ``time_s``, ``n_eval``, ``final_score``,
+            ``converged``, ``message``, ``error``, and ``initial_rmsd``.
+        title (str): Table title.
+
+    Returns:
+        TablePrinter: Populated table ready for ``flush()`` or
+            ``to_string()``.
     """
     t = TablePrinter()
     t.blank()

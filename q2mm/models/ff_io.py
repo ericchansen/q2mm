@@ -438,9 +438,9 @@ def save_openmm_xml(
     supply their own topology when loading.
 
     Args:
-        ff: Force field to export.
-        path: Output file path.
-        molecule: Optional :class:`~q2mm.models.molecule.Q2MMMolecule`
+        ff (ForceField): Force field to export.
+        path (str | Path): Output file path.
+        molecule (Q2MMMolecule | list[Q2MMMolecule] | None): Optional molecule
             or list thereof.  Used to generate ``<AtomTypes>`` and
             ``<Residues>`` sections.
 

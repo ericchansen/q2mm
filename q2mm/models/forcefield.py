@@ -193,6 +193,7 @@ class BondParam:
 
     @property
     def key(self) -> tuple[str, str]:
+        """Sorted element pair for canonical matching (e.g., ``('C', 'F')``)."""
         return tuple(sorted(self.elements))
 
 
@@ -249,6 +250,7 @@ class VdwParam:
     ff_row: int | None = None
 
     def __post_init__(self):
+        """Normalize atom_type and auto-extract element if not provided."""
         self.atom_type = str(self.atom_type).strip()
         if not self.element:
             self.element = _extract_element(self.atom_type)
@@ -315,6 +317,15 @@ class ForceField:
         return None
 
     def get_vdw(self, atom_type: str = "", element: str = "") -> VdwParam | None:
+        """Find vdW parameter by atom type or element.
+
+        Args:
+            atom_type (str): Exact atom type string to match.
+            element (str): Element symbol to match (returns only if unique).
+
+        Returns:
+            VdwParam | None: Matching parameter, or None if not found.
+        """
         if atom_type:
             normalized = atom_type.strip()
             for vdw in self.vdws:
@@ -597,8 +608,8 @@ class ForceField:
         14-7 vdW).
 
         Args:
-            path: Output file path.
-            molecule: Optional molecule(s) for generating
+            path (str | Path): Output file path.
+            molecule (Q2MMMolecule | list[Q2MMMolecule] | None): Optional molecule(s) for generating
                 ``<AtomTypes>`` and ``<Residues>`` sections.
 
         Returns:

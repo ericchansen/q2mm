@@ -85,6 +85,14 @@ class ReferenceData:
         molecule_idx: int = 0,
         label: str = "",
     ):
+        """Add a single energy reference value.
+
+        Args:
+            value (float): Reference energy value.
+            weight (float): Weight for this entry.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
+        """
         self.values.append(
             ReferenceValue(
                 kind="energy",
@@ -104,6 +112,15 @@ class ReferenceData:
         molecule_idx: int = 0,
         label: str = "",
     ):
+        """Add a single vibrational frequency reference value.
+
+        Args:
+            value (float): Reference frequency in cm⁻¹.
+            data_idx (int): 0-based index of this frequency mode.
+            weight (float): Weight for this entry.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
+        """
         self.values.append(
             ReferenceValue(
                 kind="frequency",
@@ -125,6 +142,22 @@ class ReferenceData:
         molecule_idx: int = 0,
         label: str = "",
     ):
+        """Add a single bond length reference value.
+
+        Args:
+            value (float): Reference bond length in Ångströms.
+            data_idx (int): 0-based positional index (fallback if
+                ``atom_indices`` is not provided).
+            atom_indices (tuple[int, int] | None): Atom pair for
+                identity-based matching.
+            weight (float): Weight for this entry.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
+
+        Raises:
+            ValueError: If neither ``atom_indices`` nor a non-negative
+                ``data_idx`` is provided.
+        """
         if atom_indices is None and data_idx < 0:
             raise ValueError("Either atom_indices or data_idx must be provided for bond_length.")
         self.values.append(
@@ -149,6 +182,22 @@ class ReferenceData:
         molecule_idx: int = 0,
         label: str = "",
     ):
+        """Add a single bond angle reference value.
+
+        Args:
+            value (float): Reference bond angle in degrees.
+            data_idx (int): 0-based positional index (fallback if
+                ``atom_indices`` is not provided).
+            atom_indices (tuple[int, int, int] | None): Atom triple
+                (i, j, k) for identity-based matching.
+            weight (float): Weight for this entry.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
+
+        Raises:
+            ValueError: If neither ``atom_indices`` nor a non-negative
+                ``data_idx`` is provided.
+        """
         if atom_indices is None and data_idx < 0:
             raise ValueError("Either atom_indices or data_idx must be provided for bond_angle.")
         self.values.append(
@@ -172,6 +221,16 @@ class ReferenceData:
         molecule_idx: int = 0,
         label: str = "",
     ):
+        """Add a single torsion (dihedral) angle reference value.
+
+        Args:
+            value (float): Reference torsion angle in degrees.
+            atom_indices (tuple[int, int, int, int]): Four atom indices
+                defining the dihedral.
+            weight (float): Weight for this entry.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
+        """
         self.values.append(
             ReferenceValue(
                 kind="torsion_angle",
@@ -194,19 +253,14 @@ class ReferenceData:
     ):
         """Add a diagonal element (eigenvalue) of the eigenmatrix.
 
-        Parameters
-        ----------
-        value : float
-            QM eigenvalue for this mode.
-        mode_idx : int
-            0-based index of the vibrational mode.
-        weight : float
-            Weight for this entry. Legacy defaults: 0.10 for both low-
-            and high-frequency modes, 0.00 for the first (imaginary) mode.
-        molecule_idx : int
-            Index into the molecules list.
-        label : str
-            Human-readable label.
+        Args:
+            value (float): QM eigenvalue for this mode.
+            mode_idx (int): 0-based index of the vibrational mode.
+            weight (float): Weight for this entry. Legacy defaults: 0.10
+                for both low- and high-frequency modes, 0.00 for the
+                first (imaginary) mode.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
         """
         self.values.append(
             ReferenceValue(
@@ -235,18 +289,14 @@ class ReferenceData:
         They should be close to zero when the MM Hessian closely
         reproduces the QM eigenvector structure.
 
-        Parameters
-        ----------
-        value : float
-            QM eigenmatrix element (typically 0.0 for the QM self-projection).
-        row, col : int
-            0-based row and column indices into the eigenmatrix.
-        weight : float
-            Weight for this entry. Legacy default: 0.05.
-        molecule_idx : int
-            Index into the molecules list.
-        label : str
-            Human-readable label.
+        Args:
+            value (float): QM eigenmatrix element (typically 0.0 for
+                the QM self-projection).
+            row (int): 0-based row index into the eigenmatrix.
+            col (int): 0-based column index into the eigenmatrix.
+            weight (float): Weight for this entry. Legacy default: 0.05.
+            molecule_idx (int): Index into the molecules list.
+            label (str): Human-readable label.
         """
         self.values.append(
             ReferenceValue(
@@ -276,37 +326,30 @@ class ReferenceData:
 
         The Hessian should be in canonical units (Hartree/Bohr²).
 
-        Parameters
-        ----------
-        hessian : np.ndarray
-            QM Hessian matrix ``(3N, 3N)`` in Hartree/Bohr².
-        diagonal_only : bool
-            If True, add only diagonal elements (eigenvalues).
-            If False, add all lower-triangular elements.
-        molecule_idx : int
-            Index into the molecules list.
-        weights : dict, optional
-            Weight overrides. Keys: ``"eig_i"`` (1st eigenvalue),
-            ``"eig_d_low"`` (diagonal, value < threshold),
-            ``"eig_d_high"`` (diagonal, value ≥ threshold),
-            ``"eig_o"`` (off-diagonal).
-            Defaults match legacy: ``{eig_i: 0.0, eig_d_low: 0.1,
-            eig_d_high: 0.1, eig_o: 0.05}``.
-        skip_first : bool
-            If True, the first eigenvalue gets weight ``eig_i``
-            (default 0.0, effectively skipping it). This is standard
-            for TS fitting where the first mode is imaginary.
-        eigenvalue_threshold : float
-            Eigenvalue threshold (Hartree/Bohr²) separating low/high
-            frequency modes for weight assignment.  The default 0.1173
-            corresponds to the legacy threshold of 1100 kJ/(mol·Å²),
-            which roughly separates modes below/above ~1100 cm⁻¹ when
-            mass-weighted.
+        Args:
+            hessian (np.ndarray): QM Hessian matrix ``(3N, 3N)`` in
+                Hartree/Bohr².
+            diagonal_only (bool): If ``True``, add only diagonal elements
+                (eigenvalues). If ``False``, add all lower-triangular
+                elements.
+            molecule_idx (int): Index into the molecules list.
+            weights (dict[str, float] | None): Weight overrides. Keys:
+                ``"eig_i"`` (1st eigenvalue), ``"eig_d_low"`` (diagonal,
+                value < threshold), ``"eig_d_high"`` (diagonal, value ≥
+                threshold), ``"eig_o"`` (off-diagonal). Defaults match
+                legacy: ``{eig_i: 0.0, eig_d_low: 0.1, eig_d_high: 0.1,
+                eig_o: 0.05}``.
+            skip_first (bool): If ``True``, the first eigenvalue gets
+                weight ``eig_i`` (default 0.0, effectively skipping it).
+                This is standard for TS fitting where the first mode is
+                imaginary.
+            eigenvalue_threshold (float): Eigenvalue threshold
+                (Hartree/Bohr²) separating low/high frequency modes for
+                weight assignment. The default 0.1173 corresponds to the
+                legacy threshold of 1100 kJ/(mol·Å²).
 
-        Returns
-        -------
-        int
-            Number of entries added.
+        Returns:
+            int: Number of entries added.
         """
         from q2mm.models.hessian import decompose, transform_to_eigenmatrix, extract_eigenmatrix_data
 
@@ -350,6 +393,11 @@ class ReferenceData:
 
     @property
     def n_observations(self) -> int:
+        """Total number of reference observations.
+
+        Returns:
+            int: Length of the ``values`` list.
+        """
         return len(self.values)
 
     # ---- Bulk loaders ----
@@ -364,22 +412,17 @@ class ReferenceData:
     ) -> int:
         """Add all frequencies from a 1-D array.
 
-        Parameters
-        ----------
-        frequencies : array-like
-            Vibrational frequencies (cm⁻¹). Imaginary modes should be
-            negative values.
-        weight : float
-            Weight applied to every frequency entry.
-        molecule_idx : int
-            Index into the molecules list for multi-structure fits.
-        skip_imaginary : bool
-            If True, negative frequencies (imaginary modes) are skipped.
+        Args:
+            frequencies (np.ndarray | list[float]): Vibrational frequencies
+                (cm⁻¹). Imaginary modes should be negative values.
+            weight (float): Weight applied to every frequency entry.
+            molecule_idx (int): Index into the molecules list for
+                multi-structure fits.
+            skip_imaginary (bool): If ``True``, negative frequencies
+                (imaginary modes) are skipped.
 
-        Returns
-        -------
-        int
-            Number of frequency entries added.
+        Returns:
+            int: Number of frequency entries added.
         """
         freqs = np.asarray(frequencies, dtype=float).ravel()
         added = 0
@@ -416,34 +459,29 @@ class ReferenceData:
         molecule. Optionally adds vibrational frequencies and/or Hessian
         eigenmatrix training data.
 
-        Parameters
-        ----------
-        mol : Q2MMMolecule
-            Molecule with geometry (bonds/angles auto-detected).
-        weights : dict, optional
-            Weight overrides keyed by data type. Supported keys:
-            ``"bond_length"``, ``"bond_angle"``, ``"frequency"``,
-            and the eigenmatrix keys ``"eig_i"``, ``"eig_d_low"``,
-            ``"eig_d_high"``, ``"eig_o"``.
-            Defaults: ``{"bond_length": 10.0, "bond_angle": 5.0,
-            "frequency": 1.0}``.
-        molecule_idx : int
-            Index for multi-molecule fits.
-        frequencies : array-like, optional
-            Vibrational frequencies (cm⁻¹) to include.
-        skip_imaginary : bool
-            If True, negative frequencies are skipped.
-        include_eigenmatrix : bool
-            If True and the molecule has a Hessian, add eigenmatrix
-            training data (diagonal and optionally off-diagonal elements).
-        eigenmatrix_diagonal_only : bool
-            If True, only diagonal eigenmatrix elements are added.
+        Args:
+            mol (Q2MMMolecule): Molecule with geometry (bonds/angles
+                auto-detected).
+            weights (dict[str, float] | None): Weight overrides keyed by
+                data type. Supported keys: ``"bond_length"``,
+                ``"bond_angle"``, ``"frequency"``, and the eigenmatrix
+                keys ``"eig_i"``, ``"eig_d_low"``, ``"eig_d_high"``,
+                ``"eig_o"``. Defaults: ``{"bond_length": 10.0,
+                "bond_angle": 5.0, "frequency": 1.0}``.
+            molecule_idx (int): Index for multi-molecule fits.
+            frequencies (np.ndarray | list[float] | None): Vibrational
+                frequencies (cm⁻¹) to include.
+            skip_imaginary (bool): If ``True``, negative frequencies are
+                skipped.
+            include_eigenmatrix (bool): If ``True`` and the molecule has
+                a Hessian, add eigenmatrix training data (diagonal and
+                optionally off-diagonal elements).
+            eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
+                eigenmatrix elements are added.
 
-        Returns
-        -------
-        ReferenceData
-            Populated with bond lengths, angles, and (optionally)
-            frequencies and eigenmatrix data.
+        Returns:
+            ReferenceData: Populated with bond lengths, angles, and
+                (optionally) frequencies and eigenmatrix data.
         """
         w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
         if weights:
@@ -504,26 +542,26 @@ class ReferenceData:
         Each molecule is assigned a sequential ``molecule_idx`` starting
         from 0.  Delegates to :meth:`from_molecule` per molecule.
 
-        Parameters
-        ----------
-        molecules : list[Q2MMMolecule]
-            Training set molecules.
-        weights : dict, optional
-            Weight overrides (same keys as :meth:`from_molecule`).
-        frequencies_list : list of array-like, optional
-            Per-molecule frequencies. Must have the same length as
-            *molecules* if provided.
-        skip_imaginary : bool
-            If True, negative frequencies are skipped.
-        include_eigenmatrix : bool
-            If True and a molecule has a Hessian, add eigenmatrix data.
-        eigenmatrix_diagonal_only : bool
-            If True, only diagonal eigenmatrix elements are added.
+        Args:
+            molecules (list[Q2MMMolecule]): Training set molecules.
+            weights (dict[str, float] | None): Weight overrides (same
+                keys as :meth:`from_molecule`).
+            frequencies_list (list[np.ndarray | list[float]] | None):
+                Per-molecule frequencies. Must have the same length as
+                *molecules* if provided.
+            skip_imaginary (bool): If ``True``, negative frequencies are
+                skipped.
+            include_eigenmatrix (bool): If ``True`` and a molecule has a
+                Hessian, add eigenmatrix data.
+            eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
+                eigenmatrix elements are added.
 
-        Returns
-        -------
-        ReferenceData
-            Combined reference data for all molecules.
+        Returns:
+            ReferenceData: Combined reference data for all molecules.
+
+        Raises:
+            ValueError: If ``frequencies_list`` length does not match
+                ``molecules`` length.
         """
         if frequencies_list is not None and len(frequencies_list) != len(molecules):
             raise ValueError(
@@ -564,28 +602,26 @@ class ReferenceData:
         frequencies, then auto-populates bond lengths, angles, and
         (optionally) frequencies.
 
-        Parameters
-        ----------
-        path : str or Path
-            Path to the Gaussian ``.log`` file (from an ``opt freq`` job).
-        weights : dict, optional
-            Weight overrides (same keys as :meth:`from_molecule`).
-        bond_tolerance : float
-            Multiplier for covalent-radii bond detection. Use 1.4+ for TS.
-        charge, multiplicity : int
-            Molecular charge and spin multiplicity.
-        include_frequencies : bool
-            Whether to add frequency data from the log file.
-        skip_imaginary : bool
-            If True, negative frequencies are skipped.
-        au_hessian : bool
-            Keep Hessian in atomic units (Hartree/Bohr²).
+        Args:
+            path (str | Path): Path to the Gaussian ``.log`` file
+                (from an ``opt freq`` job).
+            weights (dict[str, float] | None): Weight overrides (same
+                keys as :meth:`from_molecule`).
+            bond_tolerance (float): Multiplier for covalent-radii bond
+                detection. Use 1.4+ for TS.
+            charge (int): Molecular charge.
+            multiplicity (int): Spin multiplicity.
+            include_frequencies (bool): Whether to add frequency data
+                from the log file.
+            skip_imaginary (bool): If ``True``, negative frequencies are
+                skipped.
+            au_hessian (bool): Keep Hessian in atomic units
+                (Hartree/Bohr²).
 
-        Returns
-        -------
-        (ReferenceData, Q2MMMolecule)
-            Populated reference data and the parsed molecule (with Hessian
-            attached if available).
+        Returns:
+            tuple[ReferenceData, Q2MMMolecule]: Populated reference data
+                and the parsed molecule (with Hessian attached if
+                available).
         """
         from q2mm.parsers.gaussian import GaussLog
         from q2mm.models.hessian import reform_hessian
@@ -637,22 +673,20 @@ class ReferenceData:
         Parses the ``.fchk`` file for geometry, Cartesian Force Constants
         (Hessian), and atom data. Auto-populates bond lengths and angles.
 
-        Parameters
-        ----------
-        path : str or Path
-            Path to the Gaussian ``.fchk`` file.
-        weights : dict, optional
-            Weight overrides (same keys as :meth:`from_molecule`).
-        bond_tolerance : float
-            Multiplier for covalent-radii bond detection.
-        charge, multiplicity : int
-            Molecular charge and spin multiplicity (overridden by file
-            values if present).
+        Args:
+            path (str | Path): Path to the Gaussian ``.fchk`` file.
+            weights (dict[str, float] | None): Weight overrides (same
+                keys as :meth:`from_molecule`).
+            bond_tolerance (float): Multiplier for covalent-radii bond
+                detection.
+            charge (int): Molecular charge (overridden by file values
+                if present).
+            multiplicity (int): Spin multiplicity (overridden by file
+                values if present).
 
-        Returns
-        -------
-        (ReferenceData, Q2MMMolecule)
-            Populated reference data and the parsed molecule with Hessian.
+        Returns:
+            tuple[ReferenceData, Q2MMMolecule]: Populated reference data
+                and the parsed molecule with Hessian.
         """
         path = Path(path)
         symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
@@ -683,8 +717,17 @@ _BOHR_TO_ANG = constants.BOHR_TO_ANG
 def _parse_fchk(path: Path) -> tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
     """Parse a Gaussian .fchk file for geometry and Hessian.
 
-    Returns (symbols, coords_angstrom, hessian_au_or_None, charge, multiplicity).
-    The Hessian is in Hartree/Bohr² (atomic units) — the native .fchk format.
+    Args:
+        path (Path): Path to the ``.fchk`` file.
+
+    Returns:
+        tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
+            ``(symbols, coords_angstrom, hessian_au_or_None, charge,
+            multiplicity)``. The Hessian is in Hartree/Bohr² (atomic
+            units) — the native .fchk format.
+
+    Raises:
+        ValueError: If atomic numbers or coordinates cannot be parsed.
     """
     with open(path) as f:
         lines = f.readlines()
@@ -775,6 +818,15 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
     """Compute dihedral angle (degrees) for four points.
 
     Uses the atan2 formulation that returns values in [-180, 180].
+
+    Args:
+        p0 (np.ndarray): Coordinates of the first atom.
+        p1 (np.ndarray): Coordinates of the second atom.
+        p2 (np.ndarray): Coordinates of the third atom.
+        p3 (np.ndarray): Coordinates of the fourth atom.
+
+    Returns:
+        float: Dihedral angle in degrees, in the range [-180, 180].
     """
     b1 = np.asarray(p1) - np.asarray(p0)
     b2 = np.asarray(p2) - np.asarray(p1)
@@ -802,16 +854,12 @@ class ObjectiveFunction:
     Evaluates the weighted sum-of-squares between MM-calculated and
     reference data for one or more molecules.
 
-    Parameters
-    ----------
-    forcefield : ForceField
-        The force field whose parameters are being optimized.
-    engine : MMEngine
-        The MM backend (OpenMM, Tinker, etc.).
-    molecules : list[Q2MMMolecule]
-        Training set molecules.
-    reference : ReferenceData
-        QM/experimental reference observations.
+    Args:
+        forcefield (ForceField): The force field whose parameters are
+            being optimized.
+        engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
+        molecules (list[Q2MMMolecule]): Training set molecules.
+        reference (ReferenceData): QM/experimental reference observations.
     """
 
     def __init__(
@@ -821,6 +869,16 @@ class ObjectiveFunction:
         molecules: list[Q2MMMolecule],
         reference: ReferenceData,
     ):
+        """Initialize the objective function.
+
+        Args:
+            forcefield (ForceField): The force field whose parameters
+                are being optimized.
+            engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
+            molecules (list[Q2MMMolecule]): Training set molecules.
+            reference (ReferenceData): QM/experimental reference
+                observations.
+        """
         self.forcefield = forcefield
         self.engine = engine
         self.molecules = molecules
@@ -840,6 +898,12 @@ class ObjectiveFunction:
 
         This is the function signature that :func:`scipy.optimize.minimize`
         expects: ``f(x) -> float``.
+
+        Args:
+            param_vector (np.ndarray): Flat parameter vector.
+
+        Returns:
+            float: Sum-of-squared weighted residuals.
         """
         self.forcefield.set_param_vector(param_vector)
 
@@ -851,7 +915,14 @@ class ObjectiveFunction:
         return score
 
     def residuals(self, param_vector: np.ndarray) -> np.ndarray:
-        """Compute weighted residual vector (for least-squares methods)."""
+        """Compute weighted residual vector (for least-squares methods).
+
+        Args:
+            param_vector (np.ndarray): Flat parameter vector.
+
+        Returns:
+            np.ndarray: Weighted residuals for each reference observation.
+        """
         self.forcefield.set_param_vector(param_vector)
         r = self._compute_residuals()
         self.n_eval += 1
@@ -859,7 +930,11 @@ class ObjectiveFunction:
         return r
 
     def _compute_residuals(self) -> np.ndarray:
-        """Compute weighted residuals for all reference observations."""
+        """Compute weighted residuals for all reference observations.
+
+        Returns:
+            np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
+        """
         calc_cache: dict[int, dict] = {}
 
         residuals = []
@@ -892,29 +967,25 @@ class ObjectiveFunction:
 
         ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
 
-        .. note::
-           This method does **not** increment ``n_eval`` or append to
-           ``history``.  SciPy's ``minimize`` calls ``fun(x)`` and ``jac(x)``
-           separately, so tracking state here would double-count evaluations.
-           Evaluation counting is handled exclusively in ``__call__``.
+        Note:
+            This method does **not** increment ``n_eval`` or append to
+            ``history``.  SciPy's ``minimize`` calls ``fun(x)`` and ``jac(x)``
+            separately, so tracking state here would double-count evaluations.
+            Evaluation counting is handled exclusively in ``__call__``.
 
-        Parameters
-        ----------
-        param_vector : np.ndarray
-            Flat parameter vector (same as :meth:`__call__`).
+        Args:
+            param_vector (np.ndarray): Flat parameter vector (same as
+                :meth:`__call__`).
 
-        Returns
-        -------
-        np.ndarray
-            Gradient of the score with respect to each parameter.
+        Returns:
+            np.ndarray: Gradient of the score with respect to each parameter.
 
-        Raises
-        ------
-        TypeError
-            If the engine does not support ``energy_and_param_grad()``.
-        NotImplementedError
-            If the reference data contains types other than ``energy``
-            (Hessian/frequency/geometry gradient support is planned).
+        Raises:
+            TypeError: If the engine does not support
+                ``energy_and_param_grad()``.
+            NotImplementedError: If the reference data contains types
+                other than ``energy`` (Hessian/frequency/geometry gradient
+                support is planned).
         """
         if not self.engine.supports_analytical_gradients():
             raise TypeError(
@@ -958,6 +1029,12 @@ class ObjectiveFunction:
         For backends that support runtime parameter updates (OpenMM), this
         creates the simulation context once and reuses it across evaluations.
         For stateless backends (Tinker), this returns the raw molecule.
+
+        Args:
+            mol_idx (int): Index into the molecules list.
+
+        Returns:
+            object: Engine-specific structure handle or raw molecule.
         """
         mol = self.molecules[mol_idx]
         if not self.engine.supports_runtime_params():
@@ -968,7 +1045,15 @@ class ObjectiveFunction:
         return self._handles[mol_idx]
 
     def _evaluate_molecule(self, mol_idx: int) -> dict:
-        """Run MM calculations for a single molecule."""
+        """Run MM calculations for a single molecule.
+
+        Args:
+            mol_idx (int): Index into the molecules list.
+
+        Returns:
+            dict: Calculated results keyed by data type (e.g.
+                ``"energy"``, ``"frequencies"``, ``"bond_lengths"``).
+        """
         mol = self.molecules[mol_idx]
         structure = self._get_structure(mol_idx)
         result: dict = {}
@@ -1036,6 +1121,19 @@ class ObjectiveFunction:
         For bond_length and bond_angle, prefers atom-identity matching via
         ``ref.atom_indices`` when available, falling back to positional
         ``ref.data_idx`` for backwards compatibility.
+
+        Args:
+            calc (dict): Calculated results from :meth:`_evaluate_molecule`.
+            ref (ReferenceValue): Reference observation to match.
+
+        Returns:
+            float: The calculated value corresponding to the reference.
+
+        Raises:
+            IndexError: If ``data_idx`` is out of range.
+            KeyError: If atom-identity match fails.
+            ValueError: If ``ref.kind`` is unknown or torsion is missing
+                atom indices.
         """
         if ref.kind == "energy":
             return calc["energy"]

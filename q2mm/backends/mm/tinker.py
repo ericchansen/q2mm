@@ -1,10 +1,10 @@
 """Tinker molecular mechanics engine backend.
 
-Wraps Tinker executables (analyze, minimize, vibrate) for MM calculations
-with MM3 and other force fields.
+Wraps Tinker executables (``analyze``, ``minimize``, ``vibrate``) for MM
+calculations with MM3 and other force fields.
 
-Requires: Tinker binaries on PATH or configured via tinker_dir parameter.
-Download from: https://dasher.wustl.edu/tinker/
+Requires: Tinker binaries on ``PATH`` or configured via *tinker_dir*
+parameter.  Download from: https://dasher.wustl.edu/tinker/
 """
 
 from __future__ import annotations
@@ -22,7 +22,15 @@ from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
 
 def _find_tinker_dir() -> str | None:
-    """Auto-detect Tinker installation directory."""
+    """Auto-detect Tinker installation directory.
+
+    Searches common installation paths and the system ``PATH`` for
+    the ``analyze`` executable.
+
+    Returns:
+        str | None: Path to the Tinker bin directory, or ``None`` if not
+            found.
+    """
     # Check common locations
     candidates = [
         os.path.join(os.path.expanduser("~"), "tinker", "bin-windows"),
@@ -43,7 +51,18 @@ def _find_tinker_dir() -> str | None:
 
 
 def _exe(tinker_dir: str, name: str) -> str:
-    """Get full path to a Tinker executable."""
+    """Get full path to a Tinker executable.
+
+    Args:
+        tinker_dir: Directory containing Tinker binaries.
+        name: Base name of the executable (without extension).
+
+    Returns:
+        str: Full path to the executable.
+
+    Raises:
+        FileNotFoundError: If the executable is not found in *tinker_dir*.
+    """
     for ext in [".exe", ""]:
         path = os.path.join(tinker_dir, name + ext)
         if os.path.isfile(path):
@@ -63,6 +82,21 @@ class TinkerEngine(MMEngine):
     """
 
     def __init__(self, tinker_dir: str = None, params_file: str = None, bond_tolerance: float = 1.3):
+        """Initialize the Tinker engine.
+
+        Args:
+            tinker_dir: Path to Tinker bin directory. Auto-detected if
+                ``None``.
+            params_file: Path to MM3 parameter file. Auto-detected if
+                ``None``.
+            bond_tolerance: Distance multiplier for bond detection. Two
+                atoms are bonded when their distance is within
+                ``bond_tolerance * (r_cov_A + r_cov_B)``.
+
+        Raises:
+            FileNotFoundError: If Tinker binaries or the MM3 parameter file
+                cannot be found.
+        """
         self._tinker_dir = tinker_dir or _find_tinker_dir()
         self._bond_tolerance = bond_tolerance
         if self._tinker_dir is None:
@@ -89,13 +123,27 @@ class TinkerEngine(MMEngine):
 
     @property
     def name(self) -> str:
+        """Human-readable engine name.
+
+        Returns:
+            str: ``"Tinker"``.
+        """
         return "Tinker"
 
     def supported_functional_forms(self) -> frozenset[str]:
-        """Tinker with MM3 params supports MM3 functional forms only."""
+        """Tinker with MM3 params supports MM3 functional forms only.
+
+        Returns:
+            frozenset[str]: ``{"mm3"}``.
+        """
         return frozenset({"mm3"})
 
     def is_available(self) -> bool:
+        """Check if Tinker ``analyze`` executable is accessible.
+
+        Returns:
+            bool: ``True`` if the executable can be located.
+        """
         try:
             _exe(self._tinker_dir, "analyze")
             return True
@@ -192,7 +240,16 @@ class TinkerEngine(MMEngine):
 
     @staticmethod
     def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = 1.3) -> dict:
-        """Simple distance-based bond detection using shared covalent radii."""
+        """Simple distance-based bond detection using shared covalent radii.
+
+        Args:
+            atoms: Element symbols for each atom.
+            coords: Cartesian coordinates, shape ``(N, 3)``, in Å.
+            bond_tolerance: Multiplier applied to the sum of covalent radii.
+
+        Returns:
+            dict: Mapping of atom index to list of bonded atom indices.
+        """
         from q2mm.models.molecule import COVALENT_RADII
 
         bonds = {i: [] for i in range(len(atoms))}
@@ -313,7 +370,21 @@ class TinkerEngine(MMEngine):
     def _run_tinker(
         self, exe_name: str, xyz_path: str, args: list = None, stdin: str = None
     ) -> subprocess.CompletedProcess:
-        """Run a Tinker executable."""
+        """Run a Tinker executable.
+
+        Args:
+            exe_name: Base name of the Tinker executable (e.g. ``"analyze"``).
+            xyz_path: Path to the Tinker XYZ input file.
+            args: Additional command-line arguments.
+            stdin: Text to pipe to the process's standard input.
+
+        Returns:
+            subprocess.CompletedProcess: Completed process result.
+
+        Raises:
+            RuntimeError: If the Tinker executable exits with a non-zero
+                return code.
+        """
         exe = _exe(self._tinker_dir, exe_name)
         key_path = xyz_path.replace(".xyz", ".key")
         cmd = [exe, xyz_path, "-k", key_path] + (args or [])
@@ -325,7 +396,19 @@ class TinkerEngine(MMEngine):
         return result
 
     def energy(self, structure, forcefield=None) -> float:
-        """Calculate MM energy in kcal/mol."""
+        """Calculate MM energy in kcal/mol.
+
+        Args:
+            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
+                types if ``None``.
+
+        Returns:
+            float: Total potential energy in kcal/mol.
+
+        Raises:
+            RuntimeError: If the energy cannot be parsed from Tinker output.
+        """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
             result = self._run_tinker("analyze", txyz, ["E"])
@@ -334,8 +417,23 @@ class TinkerEngine(MMEngine):
                     return float(line.split(":")[1].split()[0])
         raise RuntimeError(f"Could not parse energy from Tinker output:\n{result.stdout}")
 
-    def minimize(self, structure, forcefield=None, rms_grad: float = 0.01):
-        """Energy-minimize structure. Returns (energy, atoms, coords)."""
+    def minimize(self, structure, forcefield=None, rms_grad: float = 0.01) -> tuple:
+        """Energy-minimize structure.
+
+        Args:
+            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
+                types if ``None``.
+            rms_grad: RMS gradient convergence criterion in kcal/mol/Å.
+
+        Returns:
+            tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
+                where energy is in kcal/mol and coords are in Å.
+
+        Raises:
+            RuntimeError: If the energy cannot be parsed from output or the
+                minimized coordinate file is not found.
+        """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
             result = self._run_tinker("minimize", txyz, [str(rms_grad)])
@@ -369,13 +467,34 @@ class TinkerEngine(MMEngine):
     def hessian(self, structure, forcefield=None) -> np.ndarray:
         """Calculate MM Hessian matrix.
 
-        Note: Full Hessian extraction from Tinker requires the testhess program.
-        Use frequencies() for vibrational analysis instead.
+        Note:
+            Full Hessian extraction from Tinker requires the ``testhess``
+            program. Use :meth:`frequencies` for vibrational analysis instead.
+
+        Args:
+            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            forcefield (ForceField | dict | None): Force field or atom-type mapping.
+
+        Returns:
+            np.ndarray: Not implemented — always raises.
+
+        Raises:
+            NotImplementedError: Always raised; use :meth:`frequencies`
+                instead.
         """
         raise NotImplementedError("Full Hessian extraction not yet implemented. Use frequencies() instead.")
 
     def frequencies(self, structure, forcefield=None) -> list[float]:
-        """Calculate vibrational frequencies in cm^-1."""
+        """Calculate vibrational frequencies in cm⁻¹.
+
+        Args:
+            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
+                types if ``None``.
+
+        Returns:
+            list[float]: Vibrational frequencies in cm⁻¹.
+        """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
             result = self._run_tinker("vibrate", txyz, stdin="A\n")

@@ -51,20 +51,15 @@ logger = logging.getLogger(__name__)
 class SensitivityResult:
     """Result of parameter sensitivity analysis via central differentiation.
 
-    Attributes
-    ----------
-    d1 : np.ndarray
-        First derivative (unnormalised) for each parameter.
-    d2 : np.ndarray
-        Second derivative (unnormalised) for each parameter.
-    simp_var : np.ndarray
-        Upstream "simplex variable": ``d2 / d1**2`` for each parameter.
-    ranking : np.ndarray
-        Parameter indices sorted by sensitivity (most sensitive first).
-    metric : str
-        Which metric was used for ranking.
-    n_evals : int
-        Number of objective function evaluations performed.
+    Attributes:
+        d1 (np.ndarray): First derivative (unnormalised) for each parameter.
+        d2 (np.ndarray): Second derivative (unnormalised) for each parameter.
+        simp_var (np.ndarray): Upstream "simplex variable":
+            ``d2 / d1**2`` for each parameter.
+        ranking (np.ndarray): Parameter indices sorted by sensitivity
+            (most sensitive first).
+        metric (str): Which metric was used for ranking.
+        n_evals (int): Number of objective function evaluations performed.
     """
 
     d1: np.ndarray
@@ -79,24 +74,18 @@ class SensitivityResult:
 class LoopResult:
     """Result of an :class:`OptimizationLoop` run.
 
-    Attributes
-    ----------
-    success : bool
-        ``True`` if converged before hitting *max_cycles*.
-    initial_score : float
-        Objective value before any optimisation.
-    final_score : float
-        Objective value after the last cycle.
-    n_cycles : int
-        Number of GRAD→SIMP cycles completed.
-    cycle_scores : list[float]
-        Objective value at the end of each cycle.
-    selected_indices : list[list[int]]
-        Parameter indices selected for each simplex pass.
-    sensitivity_results : list[SensitivityResult]
-        Full sensitivity analysis for each cycle.
-    message : str
-        Human-readable summary.
+    Attributes:
+        success (bool): ``True`` if converged before hitting *max_cycles*.
+        initial_score (float): Objective value before any optimisation.
+        final_score (float): Objective value after the last cycle.
+        n_cycles (int): Number of GRAD→SIMP cycles completed.
+        cycle_scores (list[float]): Objective value at the end of each
+            cycle.
+        selected_indices (list[list[int]]): Parameter indices selected
+            for each simplex pass.
+        sensitivity_results (list[SensitivityResult]): Full sensitivity
+            analysis for each cycle.
+        message (str): Human-readable summary.
     """
 
     success: bool
@@ -110,13 +99,22 @@ class LoopResult:
 
     @property
     def improvement(self) -> float:
-        """Fractional improvement: ``(initial - final) / initial``."""
+        """Fractional improvement: ``(initial - final) / initial``.
+
+        Returns:
+            float: Fractional improvement, or 0.0 if ``initial_score``
+                is zero.
+        """
         if self.initial_score == 0:
             return 0.0
         return (self.initial_score - self.final_score) / self.initial_score
 
     def summary(self) -> str:
-        """Human-readable summary string."""
+        """Human-readable summary string.
+
+        Returns:
+            str: Multi-line summary of the loop result.
+        """
         lines = [
             f"OptimizationLoop: {'converged' if self.success else 'max cycles reached'}",
             f"  Cycles:      {self.n_cycles}",
@@ -142,15 +140,12 @@ class SubspaceObjective:
     Nelder-Mead (or any other method) on just the selected parameters
     while the rest stay fixed.
 
-    Parameters
-    ----------
-    objective : ObjectiveFunction
-        The full objective function.
-    active_indices : sequence of int
-        Indices into the full parameter vector that are active.
-    full_vector : np.ndarray
-        The current full parameter vector (inactive params are taken from
-        this snapshot).
+    Args:
+        objective (ObjectiveFunction): The full objective function.
+        active_indices (list[int] | np.ndarray): Indices into the full
+            parameter vector that are active.
+        full_vector (np.ndarray): The current full parameter vector
+            (inactive params are taken from this snapshot).
     """
 
     def __init__(
@@ -159,6 +154,17 @@ class SubspaceObjective:
         active_indices: list[int] | np.ndarray,
         full_vector: np.ndarray,
     ):
+        """Initialize the subspace objective wrapper.
+
+        Args:
+            objective (ObjectiveFunction): The full objective function.
+            active_indices (list[int] | np.ndarray): Indices into the
+                full parameter vector that are active.
+            full_vector (np.ndarray): The current full parameter vector.
+
+        Raises:
+            ValueError: If ``active_indices`` is empty.
+        """
         self.objective = objective
         self.active_indices = np.asarray(active_indices, dtype=int)
         self._base_vector = full_vector.copy()
@@ -166,25 +172,56 @@ class SubspaceObjective:
             raise ValueError("active_indices must not be empty")
 
     def build_full_vector(self, sub_vector: np.ndarray) -> np.ndarray:
-        """Map a sub-vector back into the full parameter vector."""
+        """Map a sub-vector back into the full parameter vector.
+
+        Args:
+            sub_vector (np.ndarray): Values for the active parameters.
+
+        Returns:
+            np.ndarray: Full parameter vector with active slots replaced.
+        """
         full = self._base_vector.copy()
         full[self.active_indices] = sub_vector
         return full
 
     def __call__(self, sub_vector: np.ndarray) -> float:
-        """Evaluate the objective on *sub_vector*."""
+        """Evaluate the objective on *sub_vector*.
+
+        Args:
+            sub_vector (np.ndarray): Values for the active parameters.
+
+        Returns:
+            float: Objective function score.
+        """
         return float(self.objective(self.build_full_vector(sub_vector)))
 
     def residuals(self, sub_vector: np.ndarray) -> np.ndarray:
-        """Return the residual vector (for ``least_squares``)."""
+        """Return the residual vector (for ``least_squares``).
+
+        Args:
+            sub_vector (np.ndarray): Values for the active parameters.
+
+        Returns:
+            np.ndarray: Weighted residual vector.
+        """
         return self.objective.residuals(self.build_full_vector(sub_vector))
 
     def get_initial_vector(self) -> np.ndarray:
-        """The sub-vector corresponding to current active parameters."""
+        """The sub-vector corresponding to current active parameters.
+
+        Returns:
+            np.ndarray: Copy of active parameter values from the base
+                vector.
+        """
         return self._base_vector[self.active_indices].copy()
 
     def get_bounds(self) -> list[tuple[float, float]]:
-        """Bounds for the active parameters only."""
+        """Bounds for the active parameters only.
+
+        Returns:
+            list[tuple[float, float]]: Lower/upper bound pairs for each
+                active parameter.
+        """
         all_bounds = self.objective.forcefield.get_bounds()
         return [all_bounds[i] for i in self.active_indices]
 
@@ -212,32 +249,24 @@ def compute_sensitivity(
     for simplex) or *descending* ``|d1|`` (largest gradient = most
     sensitive), depending on *metric*.
 
-    Parameters
-    ----------
-    objective : ObjectiveFunction
-        Must already be evaluable (engine and molecules configured).
-    step_sizes : np.ndarray, optional
-        Per-parameter step sizes.  Defaults to
-        :meth:`ForceField.get_step_sizes` if not provided.
-    metric : {"simp_var", "abs_d1"}
-        Ranking criterion.
-
-    Returns
-    -------
-    SensitivityResult
-
-    Notes
-    -----
     Cost: ``2N + 1`` objective evaluations (1 baseline + 2 per parameter
-    for central differentiation).  The upstream code
-    (``opt.py:param_derivs``) stored d1 and d2 as unnormalised quantities
-    (not divided by step size); we follow the same convention for
-    compatibility with the ``simp_var = d2 / d1²`` formula.
+    for central differentiation).
 
-    References
-    ----------
-    Upstream ``opt.py:param_derivs()`` and
-    ``simplex.py:select_simp_params_on_derivs()``.
+    Args:
+        objective (ObjectiveFunction): Must already be evaluable (engine
+            and molecules configured).
+        step_sizes (np.ndarray | None): Per-parameter step sizes.
+            Defaults to :meth:`ForceField.get_step_sizes` if not
+            provided.
+        metric (str): Ranking criterion — ``"simp_var"`` or
+            ``"abs_d1"``.
+
+    Returns:
+        SensitivityResult: Derivatives, rankings, and evaluation count.
+
+    Raises:
+        ValueError: If ``step_sizes`` length does not match the parameter
+            vector, or if *metric* is unknown.
     """
     ff = objective.forcefield
     x0 = ff.get_param_vector().copy()
@@ -324,34 +353,26 @@ class OptimizationLoop:
       4. **Convergence check** — stop if the fractional improvement in the
          objective falls below ``convergence``.
 
-    Parameters
-    ----------
-    objective : ObjectiveFunction
-        The objective function to minimise.
-    max_params : int
-        Number of parameters per simplex pass (upstream default: 3).
-    convergence : float
-        Stop when ``(score_before - score_after) / score_before < convergence``.
-    max_cycles : int
-        Maximum number of GRAD→SIMP cycles.
-    full_method : str
-        Scipy method for the full-space pass.
-    simp_method : str
-        Scipy method for the subspace pass.
-    full_maxiter : int
-        Max iterations for the full-space pass.
-    simp_maxiter : int
-        Max iterations for the subspace pass.
-    sensitivity_metric : {"simp_var", "abs_d1"}
-        How to rank parameters for selection.
-    eps : float
-        Finite-difference step size for the full-space optimizer.
-    verbose : bool
-        Whether to log progress.
+    Args:
+        objective (ObjectiveFunction): The objective function to minimise.
+        max_params (int): Number of parameters per simplex pass (upstream
+            default: 3).
+        convergence (float): Stop when ``(score_before - score_after) /
+            score_before < convergence``.
+        max_cycles (int): Maximum number of GRAD→SIMP cycles.
+        full_method (str): Scipy method for the full-space pass.
+        simp_method (str): Scipy method for the subspace pass.
+        full_maxiter (int): Max iterations for the full-space pass.
+        simp_maxiter (int): Max iterations for the subspace pass.
+        sensitivity_metric (str): How to rank parameters for selection
+            — ``"simp_var"`` or ``"abs_d1"``.
+        eps (float): Finite-difference step size for the full-space
+            optimizer.
+        verbose (bool): Whether to log progress.
 
-    References
-    ----------
-    Upstream ``loop.py:Loop.opt_loop()`` and ``simplex.py:Simplex.run()``.
+    References:
+        Upstream ``loop.py:Loop.opt_loop()`` and
+        ``simplex.py:Simplex.run()``.
     """
 
     def __init__(
@@ -369,6 +390,22 @@ class OptimizationLoop:
         eps: float = 1e-3,
         verbose: bool = True,
     ):
+        """Initialize the optimization loop.
+
+        Args:
+            objective (ObjectiveFunction): The objective function to
+                minimise.
+            max_params (int): Number of parameters per simplex pass.
+            convergence (float): Fractional improvement threshold.
+            max_cycles (int): Maximum number of GRAD→SIMP cycles.
+            full_method (str): Scipy method for the full-space pass.
+            simp_method (str): Scipy method for the subspace pass.
+            full_maxiter (int): Max iterations for the full-space pass.
+            simp_maxiter (int): Max iterations for the subspace pass.
+            sensitivity_metric (str): Parameter ranking criterion.
+            eps (float): Finite-difference step size.
+            verbose (bool): Whether to log progress.
+        """
         self.objective = objective
         self.max_params = max_params
         self.convergence = convergence
@@ -384,11 +421,9 @@ class OptimizationLoop:
     def run(self) -> LoopResult:
         """Execute the GRAD→SIMP cycling loop.
 
-        Returns
-        -------
-        LoopResult
-            Contains convergence status, per-cycle scores, and selected
-            parameter indices.
+        Returns:
+            LoopResult: Contains convergence status, per-cycle scores,
+                and selected parameter indices.
         """
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
