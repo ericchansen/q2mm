@@ -128,7 +128,8 @@ from q2mm.elements import MASSES  # noqa: E402
 # Backward-compatible re-exports
 # ---------------------------------------------------------------------------
 # STEPS and WEIGHTS are now in q2mm.optimizers.defaults.
-# Regex patterns are now in q2mm.parsers._patterns.
+# Regex patterns are defined inline below (the standalone _patterns
+# module was removed).
 # MacroModel constants are now in q2mm.parsers.macromodel.
 #
 # These cannot be re-exported here because the parsers package imports
@@ -142,8 +143,8 @@ from q2mm.elements import MASSES  # noqa: E402
 from q2mm.optimizers.defaults import STEPS, WEIGHTS  # noqa: E402, F401
 
 # ---------------------------------------------------------------------------
-# Regex patterns — canonical location is q2mm.parsers._patterns,
-# but defined here too for backward compatibility with old code using co.RE_*
+# Regex patterns — defined here as the canonical location.
+# Accessible via co.RE_* for backward compatibility.
 # ---------------------------------------------------------------------------
 import re  # noqa: E402
 

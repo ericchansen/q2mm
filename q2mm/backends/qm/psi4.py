@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Psi4 quantum mechanics engine backend.
 
 Wraps the Psi4 Python API for QM calculations: energy, Hessian, geometry
@@ -7,6 +5,8 @@ optimization, and vibrational frequencies.
 
 Requires: ``conda install psi4 -c conda-forge``
 """
+
+from __future__ import annotations
 
 
 import os
