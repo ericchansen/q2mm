@@ -1,4 +1,4 @@
-name: q2mm-jax
+name: q2mm-jax-md
 channels:
   - conda-forge
 dependencies:
@@ -10,3 +10,5 @@ dependencies:
   - pytest
   - ruff
   - pip
+  - pip:
+    - jax-md
