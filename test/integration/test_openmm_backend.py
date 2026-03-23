@@ -12,7 +12,6 @@ pytestmark = pytest.mark.openmm
 from test._shared import SN2_XYZ as TS_XYZ, SN2_HESSIAN as TS_HESS, make_diatomic, make_water, make_noble_gas_pair
 
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.constants import KCAL_TO_KJ
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
