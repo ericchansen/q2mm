@@ -130,8 +130,10 @@ accuracy is discussed in [Halgren, *J. Comput. Chem.* **1996**, 17, 490](https:/
 **Definition:** Electronic energy from a QM calculation. Typically used as
 **relative** energies between conformers or along a reaction path.
 
-**Units:** Hartree or kJ/mol (the objective function compares QM and MM
-values directly, so both must use consistent units).
+**Units:** kcal/mol. `MMEngine.energy()` returns energies in kcal/mol and
+`ObjectiveFunction` compares QM and MM values directly with no unit conversion,
+so you must convert QM energies (often reported in Hartree or kJ/mol) to
+kcal/mol before adding them as reference data.
 
 **When to use:** Include when you have multiple conformers or structures
 and want the force field to reproduce their relative energetics. Energy
@@ -182,7 +184,7 @@ poorly described by harmonic force fields and may warrant lower weights.
 ```python
 # Bulk-add from an array (most common)
 ts_freqs = np.loadtxt("qm-frequencies.txt")
-n = ref.add_frequencies_from_array(freqs=ts_freqs, weight=1.0, skip_imaginary=True)
+n = ref.add_frequencies_from_array(ts_freqs, weight=1.0, skip_imaginary=True)
 
 # Or add individually
 ref.add_frequency(value=1648.5, data_idx=0, weight=1.0)
@@ -238,8 +240,8 @@ high-frequency modes:
 
 ```python
 ref.add_hessian_eigenvalue(
-    eigenvalue=0.0543,       # in Hartree/Bohr²
-    eig_idx=1,               # which eigenvalue (0 = most negative)
+    value=0.0543,            # in Hartree/Bohr²
+    mode_idx=1,              # which eigenvalue (0 = most negative)
     weight=0.1,
 )
 ```
@@ -283,7 +285,7 @@ n = ref.add_eigenmatrix_from_hessian(
 # Or add individual off-diagonal elements
 ref.add_hessian_offdiagonal(
     value=0.00234,
-    eig_i=1, eig_j=3,             # mode indices
+    row=1, col=3,                     # mode indices
     weight=0.05,
 )
 ```
@@ -356,7 +358,7 @@ ref, mol = ReferenceData.from_gaussian("calculation.log")
 # From multiple molecules
 ref = ReferenceData.from_molecules(
     [mol1, mol2, mol3],
-    frequencies=[freqs1, freqs2, freqs3],
+    frequencies_list=[freqs1, freqs2, freqs3],
 )
 ```
 
