@@ -25,6 +25,7 @@ from test._shared import REPO_ROOT, SN2_QM_REF, SN2_XYZ, SN2_HESSIAN
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
+from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
 from q2mm.parsers import JaguarIn, MacroModel
 
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
@@ -136,8 +137,9 @@ def test_bond_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture)
                 rel=1e-6,
             )
         else:
+            # Fixture stores mdyn/Å; ForceField stores canonical kcal/(mol·Å²)
             assert bond_param.force_constant == pytest.approx(
-                fixture_force_constant,
+                fixture_force_constant * MDYNA_TO_KCALMOLA2,
                 rel=1e-6,
             )
 
@@ -171,8 +173,9 @@ def test_angle_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture
                 rel=1e-6,
             )
         else:
+            # Fixture stores mdyn·Å/rad²; ForceField stores canonical kcal/(mol·rad²)
             assert angle_param.force_constant == pytest.approx(
-                fixture_force_constant,
+                fixture_force_constant * MDYNA_RAD2_TO_KCALMOLRAD2,
                 rel=1e-6,
             )
 
@@ -200,9 +203,11 @@ def test_sn2_bond_projections_match_fixture(sn2_fixture):
             au_units=True,
             dft_scaling=scaling,
         )
+        # seminario_bond_fc returns canonical kcal/(mol·Å²);
+        # fixture stores legacy mdyn/Å values
         assert actual == pytest.approx(
-            bond["legacy_force_constant_mdyn_a"],
-            abs=1e-8,
+            bond["legacy_force_constant_mdyn_a"] * MDYNA_TO_KCALMOLA2,
+            rel=1e-6,
         )
 
 
@@ -264,6 +269,8 @@ def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fix
         expected_k = fixture_bf.get(b.ff_row)
         if expected_k is None:
             expected_k = starting_bonds[b.ff_row].force_constant
+        else:
+            expected_k *= MDYNA_TO_KCALMOLA2  # fixture mdyn/Å → canonical
         max_bond_k_diff = max(max_bond_k_diff, abs(b.force_constant - expected_k))
         max_bond_eq_diff = max(max_bond_eq_diff, abs(b.equilibrium - fixture_be[b.ff_row]))
 
@@ -271,6 +278,8 @@ def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fix
         expected_k = fixture_af.get(a.ff_row)
         if expected_k is None:
             expected_k = starting_angles[a.ff_row].force_constant
+        else:
+            expected_k *= MDYNA_RAD2_TO_KCALMOLRAD2  # fixture mdyn·Å/rad² → canonical
         max_angle_k_diff = max(max_angle_k_diff, abs(a.force_constant - expected_k))
         max_angle_eq_diff = max(max_angle_eq_diff, abs(a.equilibrium - fixture_ae[a.ff_row]))
 

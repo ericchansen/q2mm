@@ -43,7 +43,7 @@ def _noble_gas_pair(distance: float = 3.0) -> Q2MMMolecule:
     return make_noble_gas_pair(distance=distance)
 
 
-def _h2_ff(bond_k: float = 5.0, bond_r0: float = 0.74) -> ForceField:
+def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     """H2 force field with one bond parameter."""
     return ForceField(
         name="H2-test",
@@ -52,9 +52,9 @@ def _h2_ff(bond_k: float = 5.0, bond_r0: float = 0.74) -> ForceField:
 
 
 def _water_ff(
-    bond_k: float = 7.0,
+    bond_k: float = 503.6,
     bond_r0: float = 0.96,
-    angle_k: float = 0.8,
+    angle_k: float = 57.6,
     angle_eq: float = 104.5,
 ) -> ForceField:
     """Water force field with bond and angle parameters."""
@@ -102,12 +102,12 @@ class TestJaxEngineBondEnergy:
 
     def test_energy_at_equilibrium_is_zero(self):
         mol = _diatomic(distance=0.74)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         energy = self.engine.energy(mol, ff)
         assert abs(energy) < 1e-10, f"Energy at equilibrium should be ~0, got {energy}"
 
     def test_energy_increases_with_stretch(self):
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         mol_eq = _diatomic(distance=0.74)
         mol_stretch = _diatomic(distance=0.84)
         e_eq = self.engine.energy(mol_eq, ff)
@@ -115,7 +115,7 @@ class TestJaxEngineBondEnergy:
         assert e_stretch > e_eq + 1e-6, "Stretched bond should have higher energy"
 
     def test_energy_increases_with_compression(self):
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         mol_eq = _diatomic(distance=0.74)
         mol_compress = _diatomic(distance=0.64)
         e_eq = self.engine.energy(mol_eq, ff)
@@ -124,7 +124,7 @@ class TestJaxEngineBondEnergy:
 
     def test_energy_symmetric_stretch_compress(self):
         """Harmonic potential is symmetric about equilibrium."""
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         mol_stretch = _diatomic(distance=0.80)
         mol_compress = _diatomic(distance=0.68)
         e_stretch = self.engine.energy(mol_stretch, ff)
@@ -134,8 +134,8 @@ class TestJaxEngineBondEnergy:
     def test_energy_scales_with_force_constant(self):
         """Doubling k should double the energy."""
         mol = _diatomic(distance=0.84)
-        e1 = self.engine.energy(mol, _h2_ff(bond_k=5.0, bond_r0=0.74))
-        e2 = self.engine.energy(mol, _h2_ff(bond_k=10.0, bond_r0=0.74))
+        e1 = self.engine.energy(mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+        e2 = self.engine.energy(mol, _h2_ff(bond_k=719.4, bond_r0=0.74))
         assert abs(e2 / e1 - 2.0) < 1e-10, f"Energy ratio should be 2.0, got {e2 / e1}"
 
     def test_energy_known_value(self):
@@ -143,15 +143,15 @@ class TestJaxEngineBondEnergy:
 
         E = k_conv * k_mdyna * (r - r0)^2
         k_conv ≈ 71.94 kcal/mol/Å² per mdyn/Å
-        k = 5.0 mdyn/Å, dr = 0.1 Å
-        E = 71.94 * 5.0 * 0.01 = 3.597 kcal/mol
+        k = 359.7 kcal/(mol·Å²), dr = 0.1 Å
+        E = _BOND_K_CONV * 359.7 * 0.01 kcal/mol
         """
         from q2mm.backends.mm.jax_engine import _BOND_K_CONV
 
         mol = _diatomic(distance=0.84)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         energy = self.engine.energy(mol, ff)
-        expected = _BOND_K_CONV * 5.0 * 0.1**2
+        expected = _BOND_K_CONV * 359.7 * 0.1**2
         assert abs(energy - expected) < 1e-8, f"Expected {expected:.6f}, got {energy:.6f}"
 
 
@@ -169,7 +169,7 @@ class TestJaxEngineAngleEnergy:
         assert abs(energy) < 1e-6, f"Energy at equilibrium should be ~0, got {energy}"
 
     def test_energy_increases_away_from_angle_eq(self):
-        ff = _water_ff(angle_k=0.8, angle_eq=104.5)
+        ff = _water_ff(angle_k=57.6, angle_eq=104.5)
         mol_eq = _water(angle_deg=104.5)
         mol_bent = _water(angle_deg=120.0)
         e_eq = self.engine.energy(mol_eq, ff)
@@ -208,7 +208,7 @@ class TestJaxEngineGradients:
 
     def test_param_gradient_exists(self):
         mol = _diatomic(distance=0.84)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         energy, grad = self.engine.energy_and_param_grad(mol, ff)
         assert isinstance(grad, np.ndarray)
         assert len(grad) == ff.n_params
@@ -217,7 +217,7 @@ class TestJaxEngineGradients:
     def test_gradient_zero_at_equilibrium(self):
         """At equilibrium geometry, dE/dk = 0 (energy minimum w.r.t. geometry)."""
         mol = _diatomic(distance=0.74)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         _, grad = self.engine.energy_and_param_grad(mol, ff)
         # dE/dk = k_conv * (r-r0)^2 = 0 at r=r0
         assert abs(grad[0]) < 1e-10, f"dE/dk should be 0 at equilibrium, got {grad[0]}"
@@ -225,7 +225,7 @@ class TestJaxEngineGradients:
     def test_gradient_vs_finite_difference(self):
         """Analytical gradient should match finite differences."""
         mol = _diatomic(distance=0.84)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         _, grad_analytical = self.engine.energy_and_param_grad(mol, ff)
 
         eps = 1e-5
@@ -259,7 +259,7 @@ class TestJaxEngineGradients:
     def test_water_gradient_vs_finite_difference(self):
         """Multi-parameter gradient test with bonds + angles."""
         mol = _water(angle_deg=110.0, bond_length=1.0)
-        ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+        ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         _, grad_analytical = self.engine.energy_and_param_grad(mol, ff)
 
         eps = 1e-5
@@ -339,7 +339,7 @@ class TestJaxEngineMinimize:
 
     def test_minimize_relaxes_stretched_bond(self):
         mol = _diatomic(distance=0.84)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         e_before = self.engine.energy(mol, ff)
         opt_energy, symbols, opt_coords = self.engine.minimize(mol, ff)
         assert opt_energy < e_before - 1e-6, "Minimization should lower energy"
@@ -349,7 +349,7 @@ class TestJaxEngineMinimize:
 
     def test_minimize_water(self):
         mol = _water(angle_deg=120.0, bond_length=1.05)
-        ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+        ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         e_before = self.engine.energy(mol, ff)
         opt_energy, symbols, opt_coords = self.engine.minimize(mol, ff)
         assert opt_energy < e_before - 1e-6, "Minimization should lower energy"
@@ -371,8 +371,8 @@ class TestJaxEngineHandle:
 
     def test_handle_with_different_params(self):
         mol = _diatomic(distance=0.84)
-        ff1 = _h2_ff(bond_k=5.0, bond_r0=0.74)
-        ff2 = _h2_ff(bond_k=10.0, bond_r0=0.74)
+        ff1 = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        ff2 = _h2_ff(bond_k=719.4, bond_r0=0.74)
         handle = self.engine.create_context(mol, ff1)
         e1 = self.engine.energy(handle, ff1)
         e2 = self.engine.energy(handle, ff2)
@@ -449,7 +449,7 @@ class TestJaxOptimizerIntegration:
 
         mol = _diatomic(distance=0.74)
         # Start with wrong k; target energy at eq is 0, so aim for that
-        ff = _h2_ff(bond_k=3.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
 
         ref = ReferenceData()
         ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
@@ -468,8 +468,8 @@ class TestJaxOptimizerIntegration:
 
         mol = _diatomic(distance=0.80)
         target_energy = 10.0  # arbitrary target
-        ff_analytical = _h2_ff(bond_k=3.0, bond_r0=0.74)
-        ff_fd = _h2_ff(bond_k=3.0, bond_r0=0.74)
+        ff_analytical = _h2_ff(bond_k=215.8, bond_r0=0.74)
+        ff_fd = _h2_ff(bond_k=215.8, bond_r0=0.74)
 
         ref = ReferenceData()
         ref.add_energy(value=target_energy, molecule_idx=0, weight=1.0)
@@ -493,7 +493,7 @@ class TestJaxOptimizerIntegration:
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
         mol = _diatomic(distance=0.80)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         ref = ReferenceData()
         ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
 
@@ -507,7 +507,7 @@ class TestJaxOptimizerIntegration:
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
         mol = _diatomic(distance=0.80)
-        ff = _h2_ff(bond_k=5.0, bond_r0=0.74)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         ref = ReferenceData()
         ref.add_energy(value=2.0, molecule_idx=0, weight=1.0)
 

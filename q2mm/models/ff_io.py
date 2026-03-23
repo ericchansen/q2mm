@@ -13,6 +13,7 @@ from q2mm.models.forcefield import (
     AngleParam,
     BondParam,
     ForceField,
+    FunctionalForm,
     TorsionParam,
     VdwParam,
     _build_angle_maps,
@@ -40,6 +41,34 @@ from q2mm.models.identifiers import (
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
 )
+from q2mm.models.units import (
+    canonical_to_mm3_angle_k,
+    canonical_to_mm3_bond_k,
+    mm3_angle_k_to_canonical,
+    mm3_bond_k_to_canonical,
+)
+
+
+_FORMAT_COMPATIBLE_FORMS: dict[str, set[str]] = {
+    "mm3_fld": {"mm3"},
+    "tinker_prm": {"mm3"},
+    "openmm_xml": {"mm3", "harmonic"},
+    "amber_frcmod": {"harmonic"},
+}
+
+
+def _validate_form_for_format(ff: ForceField, target_format: str) -> None:
+    """Raise ``ValueError`` if the force field's functional form is incompatible with *target_format*."""
+    form = getattr(ff, "functional_form", None)
+    if form is None:
+        return
+    form_value = form.value if hasattr(form, "value") else str(form)
+    allowed = _FORMAT_COMPATIBLE_FORMS.get(target_format)
+    if allowed is not None and form_value not in allowed:
+        raise ValueError(
+            f"Cannot save a {form!r} force field to {target_format!r} format. "
+            f"Compatible forms: {sorted(allowed)}"
+        )
 
 
 def load_mm3_fld(path: str | Path) -> ForceField:
@@ -76,7 +105,7 @@ def load_mm3_fld(path: str | Path) -> ForceField:
                 BondParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=param.value,
+                    force_constant=mm3_bond_k_to_canonical(param.value),
                     label=f"MM3 row {param.ff_row}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -96,7 +125,7 @@ def load_mm3_fld(path: str | Path) -> ForceField:
                 AngleParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=param.value,
+                    force_constant=mm3_angle_k_to_canonical(param.value),
                     label=f"MM3 row {param.ff_row}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -126,6 +155,7 @@ def load_mm3_fld(path: str | Path) -> ForceField:
         vdws=vdws,
         source_path=Path(path),
         source_format="mm3_fld",
+        functional_form=FunctionalForm.MM3,
     )
 
 
@@ -145,6 +175,7 @@ def save_mm3_fld(
 
     Otherwise, a minimal bond/angle-only MM3 substructure is generated.
     """
+    _validate_form_for_format(ff, "mm3_fld")
     output_path = Path(path)
     template = Path(template_path) if template_path is not None else None
     if template is None and ff.source_format == "mm3_fld" and ff.source_path is not None:
@@ -163,11 +194,11 @@ def save_mm3_fld(
             if param.ptype in ("bf", "be"):
                 bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = bond.force_constant if param.ptype == "bf" else bond.equilibrium
+                    param.value = canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
             elif param.ptype in ("af", "ae"):
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = angle.force_constant if param.ptype == "af" else angle.equilibrium
+                    param.value = canonical_to_mm3_angle_k(angle.force_constant) if param.ptype == "af" else angle.equilibrium
             elif param.ptype == "df":
                 _update_torsion_param(param, ff.torsions)
 
@@ -180,12 +211,18 @@ def save_mm3_fld(
     lines = [f" C  {substructure_name}\n", f" 9  {smiles}\n"]
     for bond in ff.bonds:
         lines.append(
-            _format_mm3_bond_line(_mm3_atom_types(bond.env_id, bond.elements), bond.equilibrium, bond.force_constant)
+            _format_mm3_bond_line(
+                _mm3_atom_types(bond.env_id, bond.elements),
+                bond.equilibrium,
+                canonical_to_mm3_bond_k(bond.force_constant),
+            )
         )
     for angle in ff.angles:
         lines.append(
             _format_mm3_angle_line(
-                _mm3_atom_types(angle.env_id, angle.elements), angle.equilibrium, angle.force_constant
+                _mm3_atom_types(angle.env_id, angle.elements),
+                angle.equilibrium,
+                canonical_to_mm3_angle_k(angle.force_constant),
             )
         )
     if ff.torsions:
@@ -220,6 +257,10 @@ def load_tinker_prm(path: str | Path) -> ForceField:
 
     if not parser.params:
         bonds, angles, vdws = _parse_generic_tinker_prm(Path(path))
+        for b in bonds:
+            b.force_constant = mm3_bond_k_to_canonical(b.force_constant)
+        for a in angles:
+            a.force_constant = mm3_angle_k_to_canonical(a.force_constant)
         return ForceField(
             name=f"Tinker from {Path(path).name}",
             bonds=bonds,
@@ -227,6 +268,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
             vdws=vdws,
             source_path=Path(path),
             source_format="tinker_prm",
+            functional_form=FunctionalForm.MM3,
         )
 
     bonds = []
@@ -250,7 +292,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 BondParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=param.value,
+                    force_constant=mm3_bond_k_to_canonical(param.value),
                     label=f"Tinker row {param.ff_row}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -264,7 +306,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 AngleParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=param.value,
+                    force_constant=mm3_angle_k_to_canonical(param.value),
                     label=f"Tinker row {param.ff_row}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -293,6 +335,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
         vdws=vdws,
         source_path=Path(path),
         source_format="tinker_prm",
+        functional_form=FunctionalForm.MM3,
     )
 
 
@@ -309,6 +352,7 @@ def save_tinker_prm(
     :func:`load_tinker_prm`, the existing file is updated via the legacy
     exporter. Otherwise, a minimal Q2MM bond/angle section is written.
     """
+    _validate_form_for_format(ff, "tinker_prm")
     output_path = Path(path)
     template = Path(template_path) if template_path is not None else None
     if template is None and ff.source_format == "tinker_prm" and ff.source_path is not None:
@@ -327,11 +371,11 @@ def save_tinker_prm(
             if param.ptype in ("bf", "be"):
                 bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = bond.force_constant if param.ptype == "bf" else bond.equilibrium
+                    param.value = canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
             elif param.ptype == "af":
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = angle.force_constant
+                    param.value = canonical_to_mm3_angle_k(angle.force_constant)
             elif param.ptype == "ae" and getattr(param, "ff_col", None) == 2:
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
@@ -349,13 +393,17 @@ def save_tinker_prm(
     for bond in ff.bonds:
         lines.append(
             _format_tinker_bond_line(
-                _tinker_atom_types(bond.env_id, bond.elements), bond.force_constant, bond.equilibrium
+                _tinker_atom_types(bond.env_id, bond.elements),
+                canonical_to_mm3_bond_k(bond.force_constant),
+                bond.equilibrium,
             )
         )
     for angle in ff.angles:
         lines.append(
             _format_tinker_angle_line(
-                _tinker_atom_types(angle.env_id, angle.elements), angle.force_constant, angle.equilibrium
+                _tinker_atom_types(angle.env_id, angle.elements),
+                canonical_to_mm3_angle_k(angle.force_constant),
+                angle.equilibrium,
             )
         )
     for vdw in ff.vdws:
@@ -394,18 +442,17 @@ def save_openmm_xml(
     Returns:
         The resolved output path.
     """
+    _validate_form_for_format(ff, "openmm_xml")
     import xml.etree.ElementTree as ET
 
     from q2mm.constants import (
         KCAL_TO_KJ,
-        MDYNA_TO_KJMOLA2,
         MM3_ANGLE_C3,
         MM3_ANGLE_C4,
         MM3_ANGLE_C5,
         MM3_ANGLE_C6,
         MM3_BOND_C3,
         MM3_BOND_C4,
-        MM3_STR,
         MASSES,
         RAD_TO_DEG,
     )
@@ -482,7 +529,7 @@ def save_openmm_xml(
         ET.SubElement(bond_force_el, "PerBondParameter", name="r0")
 
         for bond in ff.bonds:
-            k_openmm = 0.5 * float(bond.force_constant) * MDYNA_TO_KJMOLA2
+            k_openmm = float(bond.force_constant) * KCAL_TO_KJ
             r0_nm = float(bond.equilibrium) * 0.1
 
             env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
@@ -515,7 +562,7 @@ def save_openmm_xml(
         for angle in ff.angles:
             import math
 
-            k_openmm = 0.5 * float(angle.force_constant) * MM3_STR
+            k_openmm = float(angle.force_constant) * KCAL_TO_KJ
             theta0_rad = math.radians(float(angle.equilibrium))
 
             env_parts = angle.env_id.split("-") if angle.env_id else list(angle.elements)
@@ -861,6 +908,7 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
         vdws=vdws,
         source_path=path,
         source_format="amber_frcmod",
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -877,6 +925,7 @@ def save_amber_frcmod(
     .frcmod file), the template is updated in-place, preserving comments
     and unrelated sections.  Otherwise a standalone file is generated.
     """
+    _validate_form_for_format(ff, "amber_frcmod")
     output_path = Path(path)
     template = Path(template_path) if template_path is not None else None
     if template is None and ff.source_format == "amber_frcmod" and ff.source_path is not None:

@@ -137,38 +137,38 @@ class TestDetectProblematicParams:
         return ForceField(name="test", bonds=bonds, angles=angles)
 
     def test_no_problems(self):
-        ff = self._make_ff([5.0, 3.0], [0.6, 0.8])
+        ff = self._make_ff([359.7, 215.8], [43.2, 57.6])
         result = detect_problematic_params(ff)
         assert result["bonds"] == set()
         assert result["angles"] == set()
 
     def test_negative_bond_fc(self):
-        ff = self._make_ff([5.0, -0.1], [0.6, 0.8])
+        ff = self._make_ff([359.7, -7.2], [43.2, 57.6])
         result = detect_problematic_params(ff)
         assert ("C", "H") in result["bonds"]
         assert result["angles"] == set()
 
     def test_zero_angle_fc(self):
-        ff = self._make_ff([5.0, 3.0], [0.6, 0.0])
+        ff = self._make_ff([359.7, 215.8], [43.2, 0.0])
         result = detect_problematic_params(ff)
         assert result["bonds"] == set()
         assert ("H", "C", "H") in result["angles"]
 
     def test_custom_threshold(self):
-        ff = self._make_ff([5.0, 0.05], [0.6, 0.01])
-        result = detect_problematic_params(ff, fc_threshold=0.1)
+        ff = self._make_ff([359.7, 3.6], [43.2, 0.7])
+        result = detect_problematic_params(ff, fc_threshold=7.2)
         assert ("C", "H") in result["bonds"]
         assert ("H", "C", "H") in result["angles"]
 
     def test_all_problematic(self):
         """Multiple distinct problematic param types are all reported."""
         bonds = [
-            BondParam(elements=("C", "H"), force_constant=-1.0, equilibrium=1.09),
-            BondParam(elements=("C", "C"), force_constant=-2.0, equilibrium=1.53),
+            BondParam(elements=("C", "H"), force_constant=-71.9, equilibrium=1.09),
+            BondParam(elements=("C", "C"), force_constant=-143.9, equilibrium=1.53),
         ]
         angles = [
             AngleParam(elements=("H", "C", "H"), force_constant=0.0, equilibrium=109.5),
-            AngleParam(elements=("C", "C", "H"), force_constant=-0.5, equilibrium=111.0),
+            AngleParam(elements=("C", "C", "H"), force_constant=-36.0, equilibrium=111.0),
         ]
         ff = ForceField(name="test", bonds=bonds, angles=angles)
         result = detect_problematic_params(ff)
@@ -198,29 +198,29 @@ class TestLockParams:
         )
 
     def test_lock_bond(self):
-        target = self._make_ff(-0.5, 1.09, 0.6, 109.5)
-        source = self._make_ff(5.0, 1.10, 0.7, 108.0)
+        target = self._make_ff(-36.0, 1.09, 43.2, 109.5)
+        source = self._make_ff(359.7, 1.10, 50.4, 108.0)
         lock_params(target, {"bonds": {("C", "H")}, "angles": set()}, source)
-        assert target.bonds[0].force_constant == 5.0
+        assert target.bonds[0].force_constant == 359.7
         assert target.bonds[0].equilibrium == 1.10
 
     def test_lock_angle(self):
-        target = self._make_ff(5.0, 1.09, -0.1, 109.5)
-        source = self._make_ff(3.0, 1.10, 0.7, 108.0)
+        target = self._make_ff(359.7, 1.09, -7.2, 109.5)
+        source = self._make_ff(215.8, 1.10, 50.4, 108.0)
         lock_params(target, {"bonds": set(), "angles": {("H", "C", "H")}}, source)
-        assert target.angles[0].force_constant == 0.7
+        assert target.angles[0].force_constant == 50.4
         assert target.angles[0].equilibrium == 108.0
 
     def test_lock_preserves_unlocked(self):
         target = self._make_ff(5.0, 1.09, 0.6, 109.5)
-        source = self._make_ff(3.0, 1.10, 0.7, 108.0)
+        source = self._make_ff(215.8, 1.10, 50.4, 108.0)
         lock_params(target, {"bonds": set(), "angles": set()}, source)
         assert target.bonds[0].force_constant == 5.0
         assert target.angles[0].force_constant == 0.6
 
     def test_lock_empty_keys(self):
         target = self._make_ff(5.0, 1.09, 0.6, 109.5)
-        source = self._make_ff(3.0, 1.10, 0.7, 108.0)
+        source = self._make_ff(215.8, 1.10, 50.4, 108.0)
         lock_params(target, {}, source)
         assert target.bonds[0].force_constant == 5.0
 

@@ -56,7 +56,7 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5) -> ForceField:
+def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -66,7 +66,7 @@ def _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5) -> ForceFie
 
 def build_problem(engine):
     """Build reference data from true parameters, return (guess_ff, mols, ref)."""
-    true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+    true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     mol_eq = _water(104.5, 0.96)
     mol_wide = _water(115.0, 0.96)
@@ -83,7 +83,7 @@ def build_problem(engine):
             ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
 
     # Perturbed starting point — same for all methods
-    guess_ff = _water_ff(bond_k=8.5, bond_r0=1.01, angle_k=1.1, angle_eq=109.5)
+    guess_ff = _water_ff(bond_k=611.5, bond_r0=1.01, angle_k=79.1, angle_eq=109.5)
 
     return guess_ff, mols, ref
 

@@ -7,13 +7,15 @@ optimizer loop for numerical differentiation and scoring.
 from __future__ import annotations
 
 # Step sizes for numerical differentiation by parameter type.
+# Bond/angle force constant steps are in canonical units:
+# kcal/(mol·Å²) for bonds, kcal/(mol·rad²) for angles.
 # Float values: x_new = x +/- step
 # String values: x_new = x +/- (x * step)  (percentage)
 STEPS = {
     "ae": 1.0,
-    "af": 0.1,
+    "af": 7.2,
     "be": 0.02,
-    "bf": 0.1,
+    "bf": 7.2,
     "df": 0.1,
     "imp1": 0.2,
     "imp2": 0.2,

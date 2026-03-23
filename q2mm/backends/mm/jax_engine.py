@@ -1,18 +1,17 @@
 """JAX-based differentiable MM backend for analytical gradients.
 
-Provides a pure-JAX molecular mechanics engine using standard OPLSAA-style
-functional forms (harmonic bond/angle, 12-6 Lennard-Jones).  Torsion energy
-functions are implemented but not yet wired for ``Q2MMMolecule`` (which lacks
-torsion detection); they will activate once torsion matching is added.
+Provides a pure-JAX molecular mechanics engine using harmonic bond/angle
+and 12-6 Lennard-Jones energy functions.  Torsion energy functions are
+implemented but not yet wired for ``Q2MMMolecule`` (which lacks torsion
+detection); they will activate once torsion matching is added.
 All energy functions are differentiable via ``jax.grad``, enabling analytical
 gradient computation for force field parameter optimization.
 
-The functional forms differ from MM3 (used by the OpenMM backend):
-- Bonds: harmonic ``k*(r - r0)^2`` vs MM3 cubic stretch
-- Angles: harmonic ``k*(theta - theta0)^2`` vs MM3 sextic bend
-- vdW: 12-6 LJ vs MM3 buffered 14-7
+ForceField stores parameters in canonical units (kcal/mol/Å² for bond_k,
+kcal/mol/rad² for angle_k) with energy convention ``E = k·(x − x₀)²``.
+The JAX energy functions use the same convention, so no unit conversion is
+needed at the engine boundary.
 
-Near equilibrium geometries, the two forms give very similar results.
 For MM3-specific JAX forms, see issue #91.
 """
 
@@ -32,8 +31,6 @@ from q2mm.constants import (
     KCAL_TO_KJ,
     KJMOLA2_TO_HESSIAN_AU,
     MASSES,
-    MDYNA_TO_KJMOLA2,
-    MM3_STR,
     SPEED_OF_LIGHT_MS,
 )
 from q2mm.models.forcefield import ForceField
@@ -69,10 +66,10 @@ _KCALMOLA2_TO_HESSIAN_AU = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
 # ---------------------------------------------------------------------------
 # Force field param vector unit conversions
 # ---------------------------------------------------------------------------
-# ForceField stores bond_k in mdyn/Å and angle_k in mdyn·Å/rad² (MM3 convention).
-# The JAX energy functions use kcal/mol/Å² and kcal/mol/rad² respectively.
-_BOND_K_CONV = 0.5 * MDYNA_TO_KJMOLA2 / KCAL_TO_KJ  # mdyn/Å → kcal/mol/Å² ≈ 71.94
-_ANGLE_K_CONV = 0.5 * MM3_STR / KCAL_TO_KJ  # mdyn·Å/rad² → kcal/mol/rad² ≈ 71.94
+# ForceField stores bond_k in kcal/(mol·Å²) and angle_k in kcal/(mol·rad²)
+# (canonical units).  The JAX energy functions use the same units.
+_BOND_K_CONV = 1.0
+_ANGLE_K_CONV = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +327,11 @@ class JaxEngine(MMEngine):
 
     @property
     def name(self) -> str:
-        return "JAX (OPLSAA harmonic + LJ)"
+        return "JAX (harmonic)"
+
+    def supported_functional_forms(self) -> frozenset[str]:
+        """JAX currently supports harmonic forms only (see issue #91 for MM3)."""
+        return frozenset({"harmonic"})
 
     def is_available(self) -> bool:
         return _HAS_JAX
@@ -343,6 +344,8 @@ class JaxEngine(MMEngine):
 
     def create_context(self, structure, forcefield: ForceField | None = None) -> JaxHandle:
         """Build topology and compile energy function for a molecule."""
+        if forcefield is not None:
+            self._validate_forcefield(forcefield)
         molecule = _as_molecule(structure)
         if forcefield is None:
             forcefield = ForceField.create_for_molecule(molecule)
@@ -595,14 +598,14 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
 
         if has_bonds:
             bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
-            # Convert force constants from mdyn/Å → kcal/mol/Å²
+            # bond_k already in kcal/mol/Å² (canonical units)
             k = bond_params[_bond_map, 0] * _BOND_K_CONV
             r0 = bond_params[_bond_map, 1]
             E = E + _harmonic_bond_energy(k, r0, coords, _bond_indices)
 
         if has_angles:
             angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
-            # Convert force constants from mdyn·Å/rad² → kcal/mol/rad²
+            # angle_k already in kcal/mol/rad² (canonical units)
             k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
             theta0_deg = angle_params[_angle_map, 1]
             theta0 = theta0_deg * (jnp.pi / 180.0)

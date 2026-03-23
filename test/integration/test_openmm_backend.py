@@ -12,7 +12,7 @@ pytestmark = pytest.mark.openmm
 from test._shared import SN2_XYZ as TS_XYZ, SN2_HESSIAN as TS_HESS, make_diatomic, make_water, make_noble_gas_pair
 
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.constants import MDYNA_TO_KJMOLA2, MM3_STR
+from q2mm.constants import KCAL_TO_KJ
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
@@ -51,34 +51,32 @@ class TestOpenMMEngine:
 
     def test_mm3_bond_energy_matches_reference_formula(self):
         molecule = _diatomic(0.84)
-        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         energy = self.engine.energy(molecule, forcefield)
 
         delta = 0.84 - 0.74
-        expected_kj = 0.5 * 1.0 * MDYNA_TO_KJMOLA2 * delta**2 * (1.0 - 2.55 * delta + (7.0 / 12.0) * 2.55**2 * delta**2)
-        expected_kcal = expected_kj / 4.184
+        # Canonical: E = k·Δr²·(1 − c3·Δr + c4·Δr²), k in kcal/mol/Å²
+        expected_kcal = 71.9 * delta**2 * (1.0 - 2.55 * delta + (7.0 / 12.0) * 2.55**2 * delta**2)
         assert energy == pytest.approx(expected_kcal)
 
     def test_mm3_angle_energy_matches_reference_formula(self):
         molecule = _water(angle_deg=120.0)
         forcefield = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
         )
 
         energy = self.engine.energy(molecule, forcefield)
 
         delta_deg = 120.0 - 104.5
         delta_rad = np.deg2rad(delta_deg)
-        expected_kj = (
-            0.5
-            * 0.5
-            * MM3_STR
+        # Canonical: E = k·Δθ²·(1 + higher-order), k in kcal/mol/rad²
+        expected_kcal = (
+            36.0
             * delta_rad**2
             * (1.0 - 0.014 * delta_deg + 5.6e-5 * delta_deg**2 - 7.0e-7 * delta_deg**3 + 9.0e-10 * delta_deg**4)
         )
-        expected_kcal = expected_kj / 4.184
         assert energy == pytest.approx(expected_kcal)
 
     def test_mm3_vdw_energy_matches_reference_formula(self):
@@ -93,7 +91,7 @@ class TestOpenMMEngine:
 
     def test_energy_is_near_zero_at_equilibrium(self):
         molecule = _diatomic(0.74)
-        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         energy = self.engine.energy(molecule, forcefield)
 
@@ -101,11 +99,11 @@ class TestOpenMMEngine:
 
     def test_update_forcefield_reuses_context(self):
         molecule = _diatomic(1.00)
-        initial_forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        initial_forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
         handle = self.engine.create_context(molecule, initial_forcefield)
         initial_energy = self.engine.energy(handle)
 
-        updated_forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=1.00, force_constant=1.0)])
+        updated_forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=1.00, force_constant=71.9)])
         self.engine.update_forcefield(handle, updated_forcefield)
         updated_energy = self.engine.energy(handle)
 
@@ -159,7 +157,7 @@ class TestOpenMMEngine:
 
     def test_minimize_lowers_energy(self):
         molecule = _diatomic(1.20)
-        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.5)])
+        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=107.9)])
         initial_energy = self.engine.energy(molecule, forcefield)
         initial_distance = np.linalg.norm(molecule.geometry[0] - molecule.geometry[1])
 
@@ -172,7 +170,7 @@ class TestOpenMMEngine:
 
     def test_hessian_is_symmetric(self):
         molecule = _diatomic(0.80)
-        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        forcefield = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         hessian = self.engine.hessian(molecule, forcefield)
 
@@ -182,8 +180,8 @@ class TestOpenMMEngine:
     def test_frequencies_return_three_n_modes(self):
         molecule = _water(angle_deg=120.0)
         forcefield = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
         )
 
         frequencies = self.engine.frequencies(molecule, forcefield)
