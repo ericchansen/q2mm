@@ -19,7 +19,7 @@ nearest minimum). No single optimizer excels at both:
 | Scaling | ✅ Cost per step scales as O(N) | ❌ Cost per step scales as O(N²) |
 | Derivative-free | ❌ Requires finite-difference gradients | ✅ No gradients needed |
 
-The upstream Q2MM code solved this by combining both in a **GRAD→SIMP cycling
+Q2MM solves this by combining both in a **GRAD→SIMP cycling
 loop**: gradient methods handle the bulk of convergence, then simplex polishes
 the parameters that gradients struggle with.
 
@@ -64,8 +64,7 @@ print(result.summary())
 ## Strategy 2: GRAD→SIMP Cycling (Recommended for Large Systems)
 
 The flagship optimization strategy, based on the approach described in
-Norrby & Liljefors (1998) and implemented in the upstream Q2MM code
-(nsf-c-cas/q2mm-2). Each cycle:
+Norrby & Liljefors ([*J. Comput. Chem.* **1998**, 19, 1146](https://doi.org/10.1002/(SICI)1096-987X(19980730)19:10%3C1146::AID-JCC4%3E3.0.CO;2-M)). Each cycle:
 
 1. **Full-space gradient pass** — L-BFGS-B on all N parameters
 2. **Sensitivity analysis** — rank every parameter by how much the objective
@@ -134,7 +133,7 @@ flowchart LR
     parameters, you'd need 21 vertices and convergence slows dramatically.
     Quinn et al. (2022) confirmed that "the modified simplex method has
     shown to have faster convergence than Raphson-type methods up to ca.
-    40 parameters," but the original upstream code used just 3 per cycle.
+    40 parameters," but the default is just 3 per cycle.
 
 ### Understanding the Output
 
@@ -163,14 +162,14 @@ for sens in result.sensitivity_results:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `max_params` | `3` | Parameters per simplex pass. Upstream default was 3. Increase to 4–5 for larger systems. |
+| `max_params` | `3` | Parameters per simplex pass. Increase to 4–5 for larger systems. |
 | `max_cycles` | `10` | Maximum GRAD→SIMP iterations. Most problems converge in 3–5 cycles. |
 | `convergence` | `0.01` | Stop when fractional improvement < this value (1% default). |
 | `full_method` | `"L-BFGS-B"` | Scipy method for the full-space pass. |
 | `simp_method` | `"Nelder-Mead"` | Scipy method for the subspace pass. |
 | `full_maxiter` | `200` | Iteration budget for the gradient pass. |
 | `simp_maxiter` | `200` | Iteration budget for the simplex pass. |
-| `sensitivity_metric` | `"simp_var"` | `"simp_var"` (d2/d1², upstream default) or `"abs_d1"` (rank by absolute gradient). |
+| `sensitivity_metric` | `"simp_var"` | `"simp_var"` (d2/d1², default) or `"abs_d1"` (rank by absolute gradient). |
 | `eps` | `1e-3` | Finite-difference step for the full-space optimizer. |
 
 ---

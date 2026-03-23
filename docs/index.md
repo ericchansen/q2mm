@@ -61,6 +61,7 @@ flowchart LR
         direction TB
         OMM[OpenMM]
         TK[Tinker]
+        JX[JAX]
     end
 
     Parsers --> Models
@@ -83,7 +84,7 @@ flowchart LR
    MM-calculated properties for the current parameter set.
 4. **Optimizer** drives `scipy.optimize` to minimize the objective, iterating over
    parameter updates.
-5. **MM backends** (OpenMM or Tinker) evaluate energies and gradients at each
+5. **MM backends** (OpenMM, Tinker, or JAX) evaluate energies and gradients at each
    optimization step.
 
 ---
@@ -114,6 +115,8 @@ The recent refactoring modernized Q2MM around three goals:
 |------|-------------|
 | [Getting Started](getting-started.md) | Installation, prerequisites, and first run |
 | [Tutorial](tutorial.md) | End-to-end walkthrough: QM data → optimized force field |
+| [Data Types](data-types.md) | Reference data types: what to train on and when |
+| [Optimization Guide](optimization-guide.md) | Single-shot, GRAD→SIMP cycling, and manual strategies |
 | [API Overview](api.md) | Module reference for parsers, models, optimizers, and backends |
 | [Benchmarks](benchmarks/index.md) | Benchmarks for backends, optimizers, and the Seminario method |
 | [References](references.md) | Literature citations and further reading |

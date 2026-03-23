@@ -40,7 +40,7 @@ engines. Install the ones your workflow requires:
 | **Psi4**         | QM    | BSD-3 (open source)  | `conda install psi4 -c conda-forge`              |
 | **Tinker**       | MM    | Free (academic)      | [download](https://dasher.wustl.edu/tinker/)     |
 | **Gaussian**     | QM    | Commercial           | Site license                                     |
-| **Schrödinger**  | QM/MM | Commercial           | Site license                                     |
+| **Jaguar** (Schrödinger)  | QM | Commercial      | Site license (Schrödinger Suite)                 |
 
 !!! tip
     You only need the backends relevant to your project — Q2MM will skip

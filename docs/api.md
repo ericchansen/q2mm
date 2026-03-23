@@ -336,7 +336,7 @@ n = ref.add_eigenmatrix_from_hessian(mol.hessian, diagonal_only=False)
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `add_frequencies_from_array(freqs)` | `int` (count added) | Bulk-add all vibrational frequencies from a 1-D array |
-| `add_eigenmatrix_from_hessian(hessian)` | `int` (count added) | Decompose Hessian, extract eigenmatrix, add diagonal + off-diagonal elements with legacy weight scheme |
+| `add_eigenmatrix_from_hessian(hessian)` | `int` (count added) | Decompose Hessian, extract eigenmatrix, add diagonal + off-diagonal elements with default weight scheme |
 
 **Manual entry** — add individual observations:
 
@@ -696,12 +696,13 @@ Feature support across force field formats and compute backends.
 
 ### QM Backends
 
-| Capability | Gaussian | Psi4 |
-|------------|:--------:|:----:|
-| Parse optimised geometry | ✅ `.log` / `.fchk` | ✅ via QCElemental |
-| Parse Hessian | ✅ | ✅ |
-| Parse frequencies | ✅ | ✅ |
-| Live QM engine | ❌ (file-based) | ✅ `Psi4Engine` |
+| Capability | Gaussian | Jaguar | Psi4 |
+|------------|:--------:|:------:|:----:|
+| Parse optimised geometry | ✅ `.log` / `.fchk` | ✅ `.out` | ✅ via QCElemental |
+| Parse Hessian | ✅ | ✅ `.in` | ✅ |
+| Parse frequencies | ✅ | ✅ `.out` | ✅ |
+| Parse eigenvalues / eigenvectors | ✅ | ✅ `.out` | ✅ |
+| Live QM engine | ❌ (file-based) | ❌ (file-based) | ✅ `Psi4Engine` |
 
 ### Seminario Method
 
@@ -709,9 +710,25 @@ Feature support across force field formats and compute backends.
 |---------|:---------:|
 | Bond force constants | ✅ |
 | Angle force constants | ✅ |
-| Transition states (imaginary mode handling) | ✅ Methods C, D, E |
+| Transition states (imaginary mode handling) | ✅ Methods C, D, E ([Limé & Norrby, *J. Comput. Chem.* **2015**](https://doi.org/10.1002/jcc.23797)) |
 | Multiple molecules (ensemble averaging) | ✅ |
 | Eigenmatrix training data | ✅ |
+
+!!! info "Transition State Methods C, D, E"
+    At a transition state, one Hessian eigenvalue is negative (the reaction
+    coordinate). Methods C, D, and E are different strategies for handling
+    this during Seminario estimation:
+
+    - **Method C** (`replace_neg_eigenvalue`): Replace the negative eigenvalue
+      with a large positive value. Simple but distorts the eigenspectrum.
+    - **Method D** (`keep_natural_eigenvalue`): Keep the natural (negative)
+      eigenvalue unchanged — gives lower RMS error but may produce
+      force fields with negative force constants.
+    - **Method E** (`hybrid_eigenvalue_pipeline`): Run Method D first,
+      detect problematic parameters (zero or negative force constants),
+      lock those parameters, and re-optimise with Method C.
+
+    See `q2mm.models.hessian` for the implementation.
 
 !!! tip "Quick reference"
     For the best out-of-the-box experience, use **OpenMM** as your MM backend

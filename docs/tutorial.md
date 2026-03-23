@@ -151,6 +151,32 @@ hessian = linear_algebra.reform_hessian(eigenvalues, eigenvectors)
     (Hartree/Bohr²) — the Seminario method expects this. If you omit the
     flag, GaussLog converts to kJ/(mol·Å²).
 
+### Option C — Jaguar (Schrödinger)
+
+If you use Schrödinger's Jaguar, parse the `.in` file (which contains the
+Hessian) and the `.out` file (which contains frequencies and eigenvectors):
+
+```python
+from q2mm.parsers.jaguar import JaguarIn, JaguarOut
+
+# Hessian from the .in file
+jag_in = JaguarIn("sn2-ts.in")
+hessian = jag_in.hessian()                # (3N, 3N), Hartree/Bohr²
+
+# Frequencies and eigenvectors from the .out file
+jag_out = JaguarOut("sn2-ts.out")
+eigenvalues = jag_out.eigenvalues
+eigenvectors = jag_out.eigenvectors
+structures = jag_out.structures
+frequencies = jag_out.frequencies
+```
+
+!!! tip "Jaguar in production workflows"
+    Jaguar is commonly used for organometallic transition states where
+    pseudopotentials like LACVP** are needed.  See the
+    [Rh-enamide benchmark](benchmarks/rh-enamide-jaguar.md) for a full
+    example with 9 transition-state structures.
+
 ---
 
 ## Step 2: Build a Q2MMMolecule
@@ -297,7 +323,7 @@ geometry.
 
 ## Step 3: Initialise the Force Field with the Seminario Method
 
-The **Seminario method** (J. Phys. Chem. A, 1996, 100, 16871) extracts
+The **Seminario method** ([Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271](https://doi.org/10.1002/(SICI)1096-987X(199604)17:5/6%3C616::AID-JCC5%3E3.0.CO;2-X)) extracts
 harmonic force constants directly from the QM Hessian matrix. For each bond
 or angle, it projects the Hessian onto the internal coordinate's subspace and
 takes the eigenvalue along that direction. This produces excellent initial
@@ -374,11 +400,10 @@ function will try to reproduce. Each entry has a **kind** (energy, frequency,
 bond length, bond angle, torsion angle), a **value**, and a **weight** that
 controls its importance in the fit.
 
-!!! success "Hessian eigenmatrix as training data"
-    The full Hessian eigenmatrix is now supported as training data, matching
-    the legacy Q2MM approach. The QM Hessian is projected into eigenvector
-    space via `transform_to_eigenmatrix()`, and the diagonal (eigenvalues)
-    and off-diagonal elements can be added as reference data.  During
+!!! info "Hessian eigenmatrix as training data"
+    The QM Hessian can be projected into eigenvector space via
+    `transform_to_eigenmatrix()`, and the diagonal (eigenvalues) and
+    off-diagonal elements can be added as reference data.  During
     optimisation the MM Hessian is projected onto the **QM eigenvectors**
     so that element-by-element comparison measures how well the MM force
     field reproduces each QM mode.
@@ -420,12 +445,12 @@ ref = ReferenceData.from_molecule(
     include_eigenmatrix=True,           # add eigenvalue data
     eigenmatrix_diagonal_only=False,    # include off-diagonal elements
 )
-# Eigenvalue weights follow the legacy scheme:
+# Eigenvalue weights follow the standard scheme:
 #   eig_i=0.0 (first/imaginary mode),
 #   eig_d_low=0.1 (eigenvalue < 0.1173 Hartree/Bohr²),
 #   eig_d_high=0.1 (eigenvalue ≥ 0.1173 Hartree/Bohr²),
 #   eig_o=0.05 (off-diagonal)
-# The 0.1173 threshold corresponds to the legacy 1100 kJ/(mol·Å²)
+# The 0.1173 threshold corresponds to a 1100 kJ/(mol·Å²)
 # cutoff, roughly separating modes below/above ~1100 cm⁻¹.
 ```
 
@@ -665,10 +690,55 @@ plt.savefig("convergence.png")
 
 ---
 
+## Step 6b: GRAD→SIMP Cycling (Recommended for Large Systems)
+
+For systems with more than ~10 parameters, a single optimizer often leaves
+residual error.  The `OptimizationLoop` alternates between a gradient-based
+pass on all parameters and a simplex pass on the most sensitive parameters,
+combining the strengths of both approaches.
+
+```python
+from q2mm.optimizers.cycling import OptimizationLoop
+
+loop = OptimizationLoop(
+    objective,
+    max_params=3,         # simplex on top 3 most sensitive params per cycle
+    max_cycles=10,        # up to 10 GRAD→SIMP cycles
+    convergence=0.01,     # stop when <1% improvement per cycle
+    full_method="L-BFGS-B",
+    simp_method="Nelder-Mead",
+    full_maxiter=200,
+    simp_maxiter=200,
+    verbose=True,
+)
+
+result = loop.run()
+print(result.summary())
+```
+
+Each cycle:
+
+1. **Full-space gradient pass** — L-BFGS-B on all N parameters
+2. **Sensitivity analysis** — rank every parameter by how much the objective
+   responds to perturbation
+3. **Subspace simplex** — Nelder-Mead on only the top 3 most sensitive
+   parameters
+4. **Convergence check** — stop when improvement drops below threshold
+
+!!! tip "When to use cycling vs single-shot"
+    For ≤ 10 parameters, a single `ScipyOptimizer` call (Step 6) is usually
+    sufficient. For larger systems — especially transition-state force fields
+    with coupled parameters — the cycling loop typically produces better
+    results. See the [Optimization Guide](optimization-guide.md) for a
+    detailed comparison.
+
+---
+
 ## Step 7: Export the Optimised Force Field
 
 Q2MM can write the optimised parameters to **MM3 `.fld`** format (Schrödinger
-MacroModel), **Tinker `.prm`** format, or **OpenMM ForceField XML** format.
+MacroModel), **Tinker `.prm`** format, **AMBER `.frcmod`** format, or
+**OpenMM ForceField XML** format.
 
 ### MM3 format
 
@@ -704,17 +774,34 @@ save_tinker_prm(
 
 ### Using the ForceField methods directly
 
-The `ForceField` object also has built-in I/O methods:
+The `ForceField` object has built-in I/O methods for all supported formats:
 
 ```python
 # Save
 optimised_ff.to_mm3_fld("optimized_mm3.fld")
 optimised_ff.to_tinker_prm("optimized.prm")
+optimised_ff.to_amber_frcmod("optimized.frcmod")
 optimised_ff.to_openmm_xml("forcefield.xml")
 
 # Load
 ff = ForceField.from_mm3_fld("optimized_mm3.fld")
 ff = ForceField.from_tinker_prm("optimized.prm")
+ff = ForceField.from_amber_frcmod("optimized.frcmod")
+```
+
+### AMBER format
+
+```python
+from q2mm.models.ff_io import save_amber_frcmod
+
+save_amber_frcmod(
+    optimised_ff,
+    "optimized.frcmod",
+    template_path="template.frcmod",   # preserves headers and unmodified sections
+)
+
+# Or use the convenience method
+optimised_ff.to_amber_frcmod("optimized.frcmod", template_path="template.frcmod")
 ```
 
 ### OpenMM XML format
@@ -803,21 +890,20 @@ for a in ff.angles:
           f"θ₀={a.equilibrium:.1f}°  {a.label}")
 
 # ── Step 3: Reference data ────────────────────────────────────────
-ref = ReferenceData()
-for bond in mol.bonds:
-    ref.add_bond_length(
-        bond.length,
-        atom_indices=(bond.atom_i, bond.atom_j),
-        weight=10.0,
-        label=f"{bond.element_pair} bond",
-    )
-for angle in mol.angles:
-    ref.add_bond_angle(
-        angle.value,
-        atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
-        weight=5.0,
-        label=f"{angle.element_triple} angle",
-    )
+# Load QM frequencies
+ts_freqs = np.loadtxt(str(QM_REF / "sn2-ts-frequencies.txt"))
+
+# Build reference data from the molecule — bond lengths, angles,
+# frequencies, and (optionally) eigenmatrix data are extracted
+# automatically.  Toggle include_eigenmatrix, skip_imaginary, etc.
+# to control which data types are used.
+ref = ReferenceData.from_molecule(
+    mol,
+    frequencies=ts_freqs,
+    skip_imaginary=True,
+    include_eigenmatrix=True,
+    eigenmatrix_diagonal_only=False,
+)
 print(f"\nReference observations: {ref.n_observations}")
 
 # ── Step 4: Hessian analysis ──────────────────────────────────────
