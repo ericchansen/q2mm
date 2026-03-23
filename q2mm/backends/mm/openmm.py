@@ -72,6 +72,7 @@ class _VdwTerm:
 @dataclass
 class _Exception14:
     """A 1-4 nonbonded exception whose parameters must track particle updates."""
+
     exception_index: int
     particle_i: int
     particle_j: int
@@ -520,7 +521,9 @@ class OpenMMEngine(MMEngine):
                     _, sig2, eps2 = handle.vdw_force.getParticleParameters(exc.particle_j)
                     sig_14 = 0.5 * (sig1 + sig2)
                     eps_14 = (eps1 * eps2) ** 0.5 / SCNB
-                    handle.vdw_force.setExceptionParameters(exc.exception_index, exc.particle_i, exc.particle_j, 0.0, sig_14, eps_14)
+                    handle.vdw_force.setExceptionParameters(
+                        exc.exception_index, exc.particle_i, exc.particle_j, 0.0, sig_14, eps_14
+                    )
 
             handle.vdw_force.updateParametersInContext(handle.context)
 

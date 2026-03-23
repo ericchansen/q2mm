@@ -194,6 +194,5 @@ class MMEngine(ABC):
         supported = self.supported_functional_forms()
         if form_value not in supported:
             raise ValueError(
-                f"{self.name} does not support functional form {ff_form!r}. "
-                f"Supported: {sorted(supported)}"
+                f"{self.name} does not support functional form {ff_form!r}. Supported: {sorted(supported)}"
             )

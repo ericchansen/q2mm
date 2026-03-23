@@ -190,10 +190,10 @@ class TestCH3FGroundState:
     def test_seminario_ff_has_reasonable_params(self, seminario_ff):
         """Seminario FF should have physically reasonable force constants."""
         for b in seminario_ff.bonds:
-            assert 0.5 < b.force_constant < 20.0, f"Bond FC out of range: {b}"
+            assert 35.0 < b.force_constant < 1440.0, f"Bond FC out of range: {b}"
             assert 0.5 < b.equilibrium < 2.5, f"Bond eq out of range: {b}"
         for a in seminario_ff.angles:
-            assert 0.05 < a.force_constant < 5.0, f"Angle FC out of range: {a}"
+            assert 3.5 < a.force_constant < 360.0, f"Angle FC out of range: {a}"
             assert 50.0 < a.equilibrium < 180.0, f"Angle eq out of range: {a}"
 
     def test_seminario_better_than_default(self, engine, ch3f_mol, default_ff, seminario_ff, qm_freqs):

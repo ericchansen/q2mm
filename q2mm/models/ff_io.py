@@ -66,8 +66,7 @@ def _validate_form_for_format(ff: ForceField, target_format: str) -> None:
     allowed = _FORMAT_COMPATIBLE_FORMS.get(target_format)
     if allowed is not None and form_value not in allowed:
         raise ValueError(
-            f"Cannot save a {form!r} force field to {target_format!r} format. "
-            f"Compatible forms: {sorted(allowed)}"
+            f"Cannot save a {form!r} force field to {target_format!r} format. Compatible forms: {sorted(allowed)}"
         )
 
 
@@ -194,11 +193,15 @@ def save_mm3_fld(
             if param.ptype in ("bf", "be"):
                 bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
+                    param.value = (
+                        canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
+                    )
             elif param.ptype in ("af", "ae"):
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = canonical_to_mm3_angle_k(angle.force_constant) if param.ptype == "af" else angle.equilibrium
+                    param.value = (
+                        canonical_to_mm3_angle_k(angle.force_constant) if param.ptype == "af" else angle.equilibrium
+                    )
             elif param.ptype == "df":
                 _update_torsion_param(param, ff.torsions)
 
@@ -371,7 +374,9 @@ def save_tinker_prm(
             if param.ptype in ("bf", "be"):
                 bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
+                    param.value = (
+                        canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
+                    )
             elif param.ptype == "af":
                 angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
                 if angle is not None:
