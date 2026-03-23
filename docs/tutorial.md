@@ -159,16 +159,17 @@ Hessian) and the `.out` file (which contains frequencies and eigenvectors):
 ```python
 from q2mm.parsers.jaguar import JaguarIn, JaguarOut
 
-# Hessian from the .in file
-jag_in = JaguarIn("sn2-ts.in")
-hessian = jag_in.hessian()                # (3N, 3N), Hartree/Bohr²
-
-# Frequencies and eigenvectors from the .out file
+# Frequencies, eigenvectors, and structures from the .out file
 jag_out = JaguarOut("sn2-ts.out")
 eigenvalues = jag_out.eigenvalues
 eigenvectors = jag_out.eigenvectors
 structures = jag_out.structures
 frequencies = jag_out.frequencies
+
+# Hessian from the .in file (requires the number of atoms)
+num_atoms = structures[0].coords.shape[0]
+jag_in = JaguarIn("sn2-ts.in")
+hessian = jag_in.get_hessian(num_atoms)   # (3N, 3N), Hartree/Bohr²
 ```
 
 !!! tip "Jaguar in production workflows"
@@ -442,7 +443,7 @@ between modes that frequencies alone miss:
 ref = ReferenceData.from_molecule(
     mol,
     frequencies=ts_freqs,
-    include_eigenmatrix=True,           # add eigenvalue data
+    include_eigenmatrix=True,           # add eigenmatrix data (diagonal eigenvalues plus coupling terms)
     eigenmatrix_diagonal_only=False,    # include off-diagonal elements
 )
 # Eigenvalue weights follow the standard scheme:

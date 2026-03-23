@@ -724,11 +724,11 @@ Feature support across force field formats and compute backends.
     - **Method D** (`keep_natural_eigenvalue`): Keep the natural (negative)
       eigenvalue unchanged — gives lower RMS error but may produce
       force fields with negative force constants.
-    - **Method E** (`hybrid_eigenvalue_pipeline`): Run Method D first,
+    - **Method E** (`estimate_force_constants_method_e`): Run Method D first,
       detect problematic parameters (zero or negative force constants),
-      lock those parameters, and re-optimise with Method C.
+      and replace only those parameters with the corresponding Method C values.
 
-    See `q2mm.models.hessian` for the implementation.
+    See `q2mm.models.seminario` for the implementation.
 
 !!! tip "Quick reference"
     For the best out-of-the-box experience, use **OpenMM** as your MM backend
