@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Objective function for force field optimization.
 
 Wraps the ForceField ↔ MM-engine ↔ reference-data loop into a single
@@ -24,7 +26,6 @@ directly — it is importable and usable standalone to cross-check scores
 against the upstream code path.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path

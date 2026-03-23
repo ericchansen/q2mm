@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Clean molecular structure representation for Q2MM.
 
 Built on QCElemental for validated molecular data (symbols, geometry,
@@ -5,7 +7,6 @@ charge, multiplicity, connectivity) with Q2MM-specific extensions
 (Hessian, detected bonds/angles, element-based matching).
 """
 
-from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field

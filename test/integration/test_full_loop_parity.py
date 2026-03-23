@@ -16,8 +16,6 @@ References
 - Issue: https://github.com/ericchansen/q2mm/issues/74
 """
 
-from __future__ import annotations
-
 import json
 import time
 from pathlib import Path

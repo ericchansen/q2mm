@@ -21,8 +21,6 @@ Savers convert from canonical back to format-native on save.
 Engines convert from canonical to engine-native at the boundary.
 """
 
-from __future__ import annotations
-
 from q2mm.constants import KCAL_TO_KJ, MDYNA_TO_KJMOLA2, MM3_STR
 
 # --- MM3 bond: mdyn/Å  ↔  kcal/(mol·Å²) ---

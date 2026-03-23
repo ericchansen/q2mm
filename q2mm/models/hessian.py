@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Canonical location for Hessian and eigenvalue operations.
 
 Consolidated from the former ``q2mm.linear_algebra`` module.
@@ -18,8 +20,6 @@ Also provides the **eigenmatrix training data** pipeline:
 - ``transform_to_eigenmatrix``: project a Hessian into an eigenvector basis
 - ``extract_eigenmatrix_data``: extract diagonal/off-diagonal training data
 """
-
-from __future__ import annotations
 
 import copy
 import logging

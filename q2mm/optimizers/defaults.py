@@ -4,8 +4,6 @@ These were originally in q2mm.constants and are used by the legacy
 optimizer loop for numerical differentiation and scoring.
 """
 
-from __future__ import annotations
-
 # Step sizes for numerical differentiation by parameter type.
 # Bond/angle force constant steps are in canonical units:
 # kcal/(mol·Å²) for bonds, kcal/(mol·rad²) for angles.

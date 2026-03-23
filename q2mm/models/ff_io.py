@@ -4,8 +4,6 @@ Standalone functions that handle format-specific conversion, keeping
 the ForceField dataclass itself format-agnostic.
 """
 
-from __future__ import annotations
-
 import copy
 from pathlib import Path
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate legacy Seminario parity fixtures from an upstream worktree."""
 
-from __future__ import annotations
-
 import argparse
 from datetime import datetime, timezone
 import importlib

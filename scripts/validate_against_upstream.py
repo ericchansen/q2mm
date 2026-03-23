@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Validate current Q2MM behavior against pinned fixtures or live upstream code."""
 
-from __future__ import annotations
-
 import argparse
 from dataclasses import asdict, dataclass, field
 import json

@@ -1,7 +1,5 @@
 """Tests for q2mm.parsers.param.Param."""
 
-from __future__ import annotations
-
 import pytest
 
 from q2mm.parsers.param import Param, ParamError

@@ -11,8 +11,6 @@ Data Sources:
         without covalent bonds are van der Waals or estimated values.
 """
 
-from __future__ import annotations
-
 from collections import OrderedDict
 from typing import NamedTuple
 

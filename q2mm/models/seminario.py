@@ -10,8 +10,6 @@ Reference:
     Seminario, Int. J. Quantum Chem. 1996, 60, 1271-1277.
 """
 
-from __future__ import annotations
-
 import copy
 from collections.abc import Iterable
 import logging

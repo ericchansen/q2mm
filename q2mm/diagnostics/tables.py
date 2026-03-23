@@ -10,8 +10,6 @@ Color Support:
     ``TablePrinter(color=True/False)`` or ``Q2MM_COLOR=1/0``.
 """
 
-from __future__ import annotations
-
 import io
 import os
 import re

@@ -15,8 +15,6 @@ Usage (inside Psi4 Docker container)::
 Outputs saved to ``examples/rh-enamide/psi4_reference/``.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import sys

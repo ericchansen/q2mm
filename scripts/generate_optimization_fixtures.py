@@ -8,8 +8,6 @@ Usage:
     python scripts/generate_optimization_fixtures.py
 """
 
-from __future__ import annotations
-
 import json
 import sys
 from datetime import datetime, timezone

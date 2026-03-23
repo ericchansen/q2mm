@@ -1,7 +1,5 @@
 """Integration tests for the OpenMM MM backend."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from pathlib import Path
