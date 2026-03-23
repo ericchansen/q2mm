@@ -16,6 +16,7 @@ on:
           - openmm
           - tinker
           - jax
+          - jax-md
           - psi4
           - full
 
@@ -35,6 +36,7 @@ jobs:
           - { name: openmm, env: openmm.yml }
           - { name: tinker, env: tinker.yml }
           - { name: jax,    env: jax.yml    }
+          - { name: jax-md, env: jax-md.yml }
           - { name: psi4,   env: psi4.yml   }
           - { name: full,   env: full.yml   }
     steps:

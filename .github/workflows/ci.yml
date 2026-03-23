@@ -86,7 +86,7 @@ jobs:
       contents: read
       packages: read
     container:
-      image: ghcr.io/ericchansen/q2mm/ci-jax:latest
+      image: ghcr.io/ericchansen/q2mm/ci-jax-md:latest
       options: --user root
     timeout-minutes: 10
     steps:
