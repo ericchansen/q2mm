@@ -15,6 +15,7 @@ import shutil
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.backends.registry import register_mm
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
@@ -68,6 +69,7 @@ def _exe(tinker_dir: str, name: str) -> str:
     raise FileNotFoundError(f"Tinker executable '{name}' not found in {tinker_dir}")
 
 
+@register_mm("tinker")
 class TinkerEngine(MMEngine):
     """Molecular mechanics engine using Tinker.
 

@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.backends.registry import register_mm
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
@@ -338,6 +339,7 @@ def _match_vdw(
     return forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
 
 
+@register_mm("openmm")
 class OpenMMEngine(MMEngine):
     """Molecular mechanics backend powered by OpenMM.
 

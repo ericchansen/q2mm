@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.backends.registry import register_mm
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
@@ -359,6 +360,7 @@ def _match_vdw(forcefield, atom_type="", element="", ff_row=None):
 # ---------------------------------------------------------------------------
 
 
+@register_mm("jax")
 class JaxEngine(MMEngine):
     """Differentiable MM backend using JAX with OPLSAA-style energy functions.
 

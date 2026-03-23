@@ -19,49 +19,25 @@ import numpy as np
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
-    """Discover available MM backends at runtime.
+    """Discover available MM backends at runtime via the engine registry.
 
     Returns:
         list[tuple[str, type, str]]: List of ``(display_name, engine_class,
-            marker)`` tuples for each importable backend.
+            registry_key)`` tuples for each available backend.
     """
-    backends: list[tuple[str, type, str]] = []
+    from q2mm.backends.registry import available_mm_engines, registered_mm_engines
 
-    try:
-        import openmm  # noqa: F401
-
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
-        backends.append(("OpenMM", OpenMMEngine, "openmm"))
-    except ImportError:
-        pass
-
-    try:
-        from q2mm.backends.mm.tinker import TinkerEngine
-
-        if TinkerEngine().is_available():
-            backends.append(("Tinker", TinkerEngine, "tinker"))
-    except (ImportError, FileNotFoundError, OSError):
-        pass
-
-    try:
-        import jax  # noqa: F401
-
-        from q2mm.backends.mm.jax_engine import JaxEngine
-
-        backends.append(("JAX", JaxEngine, "jax"))
-    except ImportError:
-        pass
-
-    try:
-        import jax_md  # noqa: F401
-
-        from q2mm.backends.mm.jax_md_engine import JaxMDEngine
-
-        backends.append(("JAX-MD", JaxMDEngine, "jax-md"))
-    except ImportError:
-        pass
-
+    engines = registered_mm_engines()
+    backends = []
+    for key in available_mm_engines():
+        cls = engines[key]
+        # Use the engine's display name (from the ``name`` property).
+        # Fall back to the registry key if instantiation fails.
+        try:
+            display_name = cls().name
+        except Exception:
+            display_name = key
+        backends.append((display_name, cls, key))
     return backends
 
 

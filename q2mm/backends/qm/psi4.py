@@ -15,6 +15,7 @@ import tempfile
 import numpy as np
 
 from q2mm.backends.base import QMEngine
+from q2mm.backends.registry import register_qm
 
 try:
     import psi4 as _psi4
@@ -65,6 +66,7 @@ def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, m
     return _psi4.geometry(geom_str)
 
 
+@register_qm("psi4")
 class Psi4Engine(QMEngine):
     """Quantum mechanics engine using Psi4.
 
