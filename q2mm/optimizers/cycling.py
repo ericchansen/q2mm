@@ -28,8 +28,6 @@ References
 - Upstream code: github.com/nsf-c-cas/q2mm-2 (``simplex.py``, ``opt.py``).
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from typing import Literal

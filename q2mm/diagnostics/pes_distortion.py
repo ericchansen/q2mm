@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 """PES distortion analysis along QM normal modes.
 
 Displaces a molecule along its QM-derived normal mode eigenvectors
 and compares the MM energy change to the QM harmonic prediction.
 """
-
-from __future__ import annotations
 
 import time
 from pathlib import Path

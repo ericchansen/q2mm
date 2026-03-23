@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 """Benchmark runner and result serialization for Q2MM.
 
 Run a single (backend, optimizer, molecule) combination and produce a
 :class:`BenchmarkResult` that can be saved to / loaded from JSON.
 """
 
-from __future__ import annotations
 
 import json
 import time

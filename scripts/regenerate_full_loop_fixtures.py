@@ -12,8 +12,6 @@ Usage::
 Outputs are saved to ``test/fixtures/full_loop/``.
 """
 
-from __future__ import annotations
-
 import json
 import sys
 import time

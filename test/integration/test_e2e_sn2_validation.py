@@ -16,8 +16,6 @@ References
 - Shaik & Pross, J. Chem. Soc. Perkin Trans. 2, 1019 (1992)
 """
 
-from __future__ import annotations
-
 import json
 import time
 from pathlib import Path

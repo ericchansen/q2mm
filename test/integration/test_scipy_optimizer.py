@@ -1,7 +1,5 @@
 """Tests for q2mm.optimizers (objective, scipy_opt)."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 

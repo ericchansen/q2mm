@@ -1,10 +1,10 @@
+from __future__ import annotations
+
 """Report generation from benchmark results.
 
 Combines one or more :class:`~q2mm.diagnostics.benchmark.BenchmarkResult`
 objects into detailed per-result SI tables and a summary leaderboard.
 """
-
-from __future__ import annotations
 
 from typing import TYPE_CHECKING
 

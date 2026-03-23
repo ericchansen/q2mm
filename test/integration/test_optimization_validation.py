@@ -13,8 +13,6 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
   9. Parameter vector length validation
 """
 
-from __future__ import annotations
-
 import json
 import os
 from pathlib import Path

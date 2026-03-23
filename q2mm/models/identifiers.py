@@ -1,7 +1,5 @@
 """Helpers for extracting and matching clean-model identifiers."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 from q2mm.elements import TWO_LETTER_ELEMENTS

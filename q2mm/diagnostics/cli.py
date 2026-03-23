@@ -10,8 +10,6 @@ Usage::
     q2mm-benchmark --list               # Show available backends and optimizers
 """
 
-from __future__ import annotations
-
 import argparse
 import sys
 import time

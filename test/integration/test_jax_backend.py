@@ -1,7 +1,5 @@
 """Integration tests for the JAX differentiable MM backend."""
 
-from __future__ import annotations
-
 import math
 import numpy as np
 import pytest
