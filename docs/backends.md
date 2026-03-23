@@ -23,7 +23,7 @@ and documents when optimized parameters can be transferred between engines.
 | **Runtime param updates** | ✅ | ❌ (subprocess per call) | ✅ | ✅ |
 | **Analytical gradients** | ❌ | ❌ | ✅ via `jax.grad` | ✅ via `jax.grad` |
 | **JIT compilation** | N/A | N/A | ✅ | ✅ |
-| **Platform** | Linux, macOS, Windows | Linux, macOS | Linux, macOS | Linux, macOS |
+| **Platform** | Linux, macOS, Windows | Linux, macOS | Linux, macOS, WSL2 | Linux, macOS, WSL2 |
 
 ---
 

@@ -175,6 +175,19 @@ class TestJaxMDEngineVdW:
         e = self.engine.energy(mol, ff)
         assert e > 0.0, "Expected repulsive energy at close range"
 
+    def test_vdw_lj_numeric(self):
+        """Deterministic LJ check: two He atoms at known distance."""
+        distance = 4.0
+        mol = _noble_gas_pair(distance=distance)
+        ff = _vdw_ff()  # radius=1.40 (Rmin/2), epsilon=0.02
+
+        sigma = 1.40 * 2.0 / 2 ** (1.0 / 6.0)
+        sr6 = (sigma / distance) ** 6
+        expected = 4.0 * 0.02 * (sr6**2 - sr6)
+
+        e = self.engine.energy(mol, ff)
+        assert e == pytest.approx(expected, abs=1e-10)
+
 
 # ---------------------------------------------------------------------------
 # Gradient tests
