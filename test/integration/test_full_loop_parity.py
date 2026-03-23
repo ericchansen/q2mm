@@ -450,16 +450,13 @@ class TestEthaneFullLoop:
 
     # ---- Optimization stage ----
 
-    def test_optimization_converges(self, pipeline_result):
-        """Optimizer improves the score (may not reach strict convergence in 200 iters)."""
-        assert pipeline_result["optimized_score"] <= pipeline_result["seminario_score"], (
-            f"Optimizer worsened score: {pipeline_result['optimized_score']:.6f} > "
+    def test_optimized_score_improves(self, pipeline_result):
+        """Optimizer strictly improves the score over Seminario initial guess."""
+        assert pipeline_result["optimized_score"] < pipeline_result["seminario_score"], (
+            f"Optimizer failed to improve score: "
+            f"{pipeline_result['optimized_score']:.6f} >= "
             f"{pipeline_result['seminario_score']:.6f}"
         )
-
-    def test_optimized_score_improves(self, pipeline_result):
-        """Optimized score ≤ Seminario score (optimizer must not worsen)."""
-        assert pipeline_result["optimized_score"] <= pipeline_result["seminario_score"] + 1e-12
 
     def test_optimized_score_matches_golden(self, pipeline_result, golden):
         """Optimized penalty score matches golden fixture."""
