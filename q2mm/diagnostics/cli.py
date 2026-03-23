@@ -53,6 +53,15 @@ def _discover_backends() -> list[tuple[str, type, str]]:
     except ImportError:
         pass
 
+    try:
+        import jax_md  # noqa: F401
+
+        from q2mm.backends.mm.jax_md_engine import JaxMDEngine
+
+        backends.append(("JAX-MD", JaxMDEngine, "jax-md"))
+    except ImportError:
+        pass
+
     return backends
 
 

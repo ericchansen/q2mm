@@ -1,12 +1,11 @@
 """Integration tests for the JAX differentiable MM backend."""
 
-import math
 import numpy as np
 import pytest
 
 try:
-    import jax
-    import jax.numpy as jnp
+    import jax  # noqa: F401
+    import jax.numpy as jnp  # noqa: F401
 
     _HAS_JAX = True
 except ImportError:

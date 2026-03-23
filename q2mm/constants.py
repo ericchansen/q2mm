@@ -122,7 +122,7 @@ GAUSSIAN = "AU"
 KJMOLA = "KJMOLA"
 
 # MASSES — re-exported from q2mm.elements (single source of truth).
-from q2mm.elements import MASSES  # noqa: E402
+from q2mm.elements import MASSES  # noqa: E402, F401
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports

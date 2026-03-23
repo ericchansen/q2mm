@@ -7,7 +7,6 @@ Hessian data) and ``JaguarOut`` for reading Jaguar ``.out`` files
 
 import logging
 import numpy as np
-import os
 import re
 from string import digits
 from q2mm import constants as co

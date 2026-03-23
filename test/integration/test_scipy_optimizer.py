@@ -1,6 +1,5 @@
 """Tests for q2mm.optimizers (objective, scipy_opt)."""
 
-import numpy as np
 import pytest
 
 pytest.importorskip("openmm")
@@ -11,8 +10,8 @@ from test._shared import make_diatomic, make_water
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import BondParam, AngleParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData, ReferenceValue
-from q2mm.optimizers.scipy_opt import ScipyOptimizer, OptimizationResult
+from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
 # ---- Helpers ----

@@ -53,7 +53,7 @@ class TestParamEquality:
         a = Param(ptype="ae")
         b = Param(ptype="ae")
         # NotImplemented from __eq__ causes Python to fall back to `is`
-        assert not (a == b)
+        assert not (a == b)  # noqa: SIM201 — intentionally testing __eq__ fallback
         assert a == a  # noqa: PLR0124
 
     def test_incomplete_identity_not_hashable(self):

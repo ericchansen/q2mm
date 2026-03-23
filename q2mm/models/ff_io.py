@@ -4,6 +4,7 @@ Standalone functions that handle format-specific conversion, keeping
 the ForceField dataclass itself format-agnostic.
 """
 
+import contextlib
 import copy
 from pathlib import Path
 
@@ -804,10 +805,8 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
         if section == "MASS":
             parts = stripped.split()
             if len(parts) >= 2:
-                try:
+                with contextlib.suppress(ValueError):
                     mass_map[parts[0]] = float(parts[1])
-                except ValueError:
-                    pass
 
         elif section == "BOND":
             types, rest = _parse_amber_types(line, 2)

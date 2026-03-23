@@ -10,6 +10,8 @@
 ```bash
 pip install q2mm                   # core package
 pip install "q2mm[openmm]"         # with OpenMM backend
+pip install "q2mm[jax]"            # with JAX backend (gas-phase)
+pip install "q2mm[jax-md]"         # with JAX-MD backend (periodic, PBC)
 pip install "q2mm[amber]"          # with parmed (AMBER support)
 pip install "q2mm[all]"            # all optional dependencies
 ```
@@ -37,6 +39,7 @@ engines. Install the ones your workflow requires:
 | Backend          | Type  | License              | Install                                          |
 | ---------------- | ----- | -------------------- | ------------------------------------------------ |
 | **OpenMM**       | MM    | MIT                  | `pip install openmm`                             |
+| **JAX-MD**       | MM    | Apache-2.0           | `pip install "q2mm[jax-md]"` (Linux/macOS/WSL2)  |
 | **Psi4**         | QM    | BSD-3 (open source)  | `conda install psi4 -c conda-forge`              |
 | **Tinker**       | MM    | Free (academic)      | [download](https://dasher.wustl.edu/tinker/)     |
 | **Gaussian**     | QM    | Commercial           | Site license                                     |

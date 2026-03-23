@@ -7,10 +7,7 @@ to dummy atoms.
 """
 
 import logging
-from string import digits
 import numpy as np
-import os
-import re
 from q2mm import constants as co
 from q2mm.parsers import _utils as utilities
 from q2mm.parsers.datum import Datum
@@ -176,10 +173,7 @@ class Atom:
         Returns:
             (bool): ``True`` if the atom is a dummy atom, ``False`` otherwise.
         """
-        if self.atom_type_name == "Du" or self.element == "X" or self.atomic_num == -2:
-            return True
-        else:
-            return False
+        return self.atom_type_name == "Du" or self.element == "X" or self.atomic_num == -2
 
 
 class DOF:
@@ -495,10 +489,8 @@ class Structure:
             (list[Angle]): Angles found in this structure.
         """
         angles: list[Angle] = []
-        i = 0
-        for a in self.bonds:
-            i += 1
-            for b in self.bonds[i:]:
+        for i, a in enumerate(self.bonds):
+            for b in self.bonds[i + 1 :]:
                 a1_index, a2_index = a.atom_nums
                 b1_index, b2_index = b.atom_nums
                 if a1_index == b1_index:

@@ -10,7 +10,6 @@ Reference:
     Seminario, Int. J. Quantum Chem. 1996, 60, 1271-1277.
 """
 
-import copy
 from collections.abc import Iterable
 import logging
 import numpy as np
@@ -20,8 +19,8 @@ from q2mm.constants import AU_TO_MDYNA as _AU_TO_MDYNA
 from q2mm.constants import AU_TO_MDYN_ANGLE as _AU_TO_MDYN_ANGLE
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
-from q2mm.models.molecule import Q2MMMolecule, DetectedBond, DetectedAngle
-from q2mm.models.forcefield import ForceField, BondParam, AngleParam
+from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.forcefield import ForceField
 
 # AU → canonical: Hartree/Bohr² → kcal/(mol·Å²) for bonds,
 #                  Hartree/rad² → kcal/(mol·rad²) for angles.

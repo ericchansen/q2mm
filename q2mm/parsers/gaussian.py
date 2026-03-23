@@ -6,7 +6,6 @@ and ESP data from Gaussian output files.
 
 import logging
 import numpy as np
-import os
 import re
 from q2mm import constants as co
 from q2mm.parsers.base import File
@@ -370,7 +369,8 @@ class GaussLog(File):
         #        print(open(self.path,'r').read())
         #        print(re.findall('(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',open(self.path,'r').read()))
         try:
-            arch = re.findall("(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", open(self.path).read())[-1]
+            with open(self.path) as fh:
+                arch = re.findall("(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", fh.read())[-1]
             logger.log(5, "  -- Located last archive.")
         except IndexError:
             logger.warning("  -- Couldn't locate archive.")
@@ -451,7 +451,7 @@ class GaussLog(File):
         # SECTION 5
         # The Hessian. Only exists if you did a frequency calculation.
         # Appears in lower triangular form, not mass-weighted.
-        if not arch[section_counter] == "@":
+        if arch[section_counter] != "@":
             hess_tri = arch[section_counter]
             hess_tri = hess_tri.split(",")
             logger.log(

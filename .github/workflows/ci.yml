@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -m "not (openmm or tinker or jax or psi4)" -q
+      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
 
   # ---- Backend tests (parallel, using pre-built container images) ----
   # Images are published by the "Build CI Images" workflow (build-images.yml)
@@ -79,6 +79,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-slow -q
+
+  test-jax-md:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-jax:latest
+      options: --user root
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install -e . --no-deps && python -m pytest -m jax_md --run-slow -q
 
   test-psi4:
     runs-on: ubuntu-latest

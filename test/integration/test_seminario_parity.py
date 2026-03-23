@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from test._shared import REPO_ROOT, SN2_QM_REF, SN2_XYZ, SN2_HESSIAN
+from test._shared import REPO_ROOT, SN2_XYZ, SN2_HESSIAN
 
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
