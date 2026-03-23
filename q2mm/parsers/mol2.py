@@ -225,9 +225,8 @@ class Mol2(File):
         """Compute bond lengths from atom coordinates for all bonds.
 
         .. deprecated::
-            Not currently in use; remove if not needed.
+            Not currently in use; scheduled for removal in a future release.
         """
-        # TODO Not currently in use, remove if not needed by March 1, 2024.
         atom_list = self._structures.atoms
         for bond in self._structures.bonds:
             # Indexing atom_list is possible only because this is within the Mol2 class so
