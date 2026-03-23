@@ -49,6 +49,11 @@ class MacroModel(File):
                 count_input = 0
                 count_structure = 0
                 count_previous = 0
+                bonds = []
+                angles = []
+                torsions = []
+                atoms = []
+                current_structure = None
                 section = None
                 for line in f:
                     # This would probably be better as a function in the structure
@@ -254,6 +259,9 @@ class MacroModelLog(File):
             section_hessian = False
             start_row = False
             start_col = False
+            row_num = 0
+            col_nums = []
+            elements = []
             for i, word in enumerate(words):
                 # 1. Start of Hessian section.
                 if word == "Mass-weighted":
