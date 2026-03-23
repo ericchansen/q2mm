@@ -18,6 +18,7 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
 
 def _find_tinker_dir() -> str | None:
@@ -88,7 +89,11 @@ class TinkerEngine(MMEngine):
 
     @property
     def name(self) -> str:
-        return "Tinker (MM3)"
+        return "Tinker"
+
+    def supported_functional_forms(self) -> frozenset[str]:
+        """Tinker with MM3 params supports MM3 functional forms only."""
+        return frozenset({"mm3"})
 
     def is_available(self) -> bool:
         try:
@@ -165,6 +170,7 @@ class TinkerEngine(MMEngine):
         from q2mm.models.forcefield import ForceField
 
         if isinstance(forcefield, ForceField):
+            self._validate_forcefield(forcefield)
             exported_prm = os.path.join(workdir, "molecule.prm")
             if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
                 # FF came from a .prm file — use template-based export
@@ -281,7 +287,7 @@ class TinkerEngine(MMEngine):
             for bond in ff.bonds:
                 t1 = elem_to_type[bond.elements[0]]
                 t2 = elem_to_type[bond.elements[1]]
-                f.write(f"bond   {t1:5d} {t2:5d}         {bond.force_constant:8.4f}   {bond.equilibrium:8.4f}\n")
+                f.write(f"bond   {t1:5d} {t2:5d}         {canonical_to_mm3_bond_k(bond.force_constant):8.4f}   {bond.equilibrium:8.4f}\n")
 
             # Angle parameters
             for angle in ff.angles:
@@ -289,7 +295,7 @@ class TinkerEngine(MMEngine):
                 t2 = elem_to_type[angle.elements[1]]
                 t3 = elem_to_type[angle.elements[2]]
                 f.write(
-                    f"angle  {t1:5d} {t2:5d} {t3:5d}         {angle.force_constant:8.4f}   {angle.equilibrium:8.4f}\n"
+                    f"angle  {t1:5d} {t2:5d} {t3:5d}         {canonical_to_mm3_angle_k(angle.force_constant):8.4f}   {angle.equilibrium:8.4f}\n"
                 )
 
             # vdW parameters

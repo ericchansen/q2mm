@@ -151,8 +151,8 @@ class TestIndividualBonds:
                 k = seminario_bond_fc(b.atom_i, b.atom_j, mol.geometry, mol.hessian)
                 ch_fcs.append(k)
         assert len(ch_fcs) == 6
-        # All C-H bonds should be within 0.1 mdyn/A of each other
-        assert max(ch_fcs) - min(ch_fcs) < 0.1
+        # All C-H bonds should be within ~7.2 kcal/(mol·Å²) of each other
+        assert max(ch_fcs) - min(ch_fcs) < 7.2
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ class TestGSvsTSComparison:
         """C-H bonds should be similar between GS and TS (rotation doesn't affect them much)."""
         gs_ch = next(b for b in gs_ff.bonds if set(b.elements) == {"C", "H"})
         ts_ch = next(b for b in ts_ff.bonds if set(b.elements) == {"C", "H"})
-        assert abs(gs_ch.force_constant - ts_ch.force_constant) < 0.2
+        assert abs(gs_ch.force_constant - ts_ch.force_constant) < 14.4
 
     def test_bond_fc_positive(self, gs_ff, ts_ff):
         """All bond force constants should be positive for ethane."""
@@ -385,11 +385,11 @@ class TestLiteratureValidation:
     Reference ranges come from experimental/high-level QM sources,
     NOT from the Seminario pipeline itself.
 
-    Sources:
-    - C-C bond: ~4.3-5.0 mdyn/Å (MM3 force field, Allinger et al.)
-    - C-H bond: ~4.7-5.0 mdyn/Å (IR spectroscopy / MM3)
-    - H-C-H angle: ~0.3-0.6 mdyn·Å/rad² (MM3)
-    - C-C-H angle: ~0.4-0.7 mdyn·Å/rad² (MM3)
+    Sources (converted to canonical units):
+    - C-C bond: ~310-360 kcal/(mol·Å²) (MM3 force field, Allinger et al.)
+    - C-H bond: ~338-360 kcal/(mol·Å²) (IR spectroscopy / MM3)
+    - H-C-H angle: ~21.6-43.2 kcal/(mol·rad²) (MM3)
+    - C-C-H angle: ~28.8-50.4 kcal/(mol·rad²) (MM3)
     """
 
     @pytest.fixture(scope="class")
@@ -398,25 +398,25 @@ class TestLiteratureValidation:
         return estimate_force_constants(mol)
 
     def test_cc_fc_in_literature_range(self, gs_ff):
-        """C-C stretch FC should be ~3-6 mdyn/Å (Seminario from DFT can be softer than MM3)."""
+        """C-C stretch FC should be ~180-468 kcal/(mol·Å²) (Seminario from DFT can be softer than MM3)."""
         cc = next((b for b in gs_ff.bonds if b.elements == ("C", "C")), None)
         assert cc is not None, "No C-C bond found in force field"
-        assert 2.5 < cc.force_constant < 6.5, f"C-C FC {cc.force_constant:.2f} outside lit range"
+        assert 180 < cc.force_constant < 468, f"C-C FC {cc.force_constant:.2f} outside lit range"
 
     def test_ch_fc_in_literature_range(self, gs_ff):
-        """C-H stretch FC should be ~4.5-5.5 mdyn/Å."""
+        """C-H stretch FC should be ~288-432 kcal/(mol·Å²)."""
         ch = next((b for b in gs_ff.bonds if set(b.elements) == {"C", "H"}), None)
         assert ch is not None, "No C-H bond found in force field"
-        assert 4.0 < ch.force_constant < 6.0, f"C-H FC {ch.force_constant:.2f} outside lit range"
+        assert 288 < ch.force_constant < 432, f"C-H FC {ch.force_constant:.2f} outside lit range"
 
     def test_hch_angle_fc_in_literature_range(self, gs_ff):
-        """H-C-H bend FC should be ~0.3-0.7 mdyn·Å/rad²."""
+        """H-C-H bend FC should be ~14.4-57.6 kcal/(mol·rad²)."""
         hch = next((a for a in gs_ff.angles if a.elements == ("H", "C", "H")), None)
         assert hch is not None, "No H-C-H angle found in force field"
-        assert 0.2 < hch.force_constant < 0.8, f"H-C-H FC {hch.force_constant:.2f} outside lit range"
+        assert 14.4 < hch.force_constant < 57.6, f"H-C-H FC {hch.force_constant:.2f} outside lit range"
 
     def test_cch_angle_fc_in_literature_range(self, gs_ff):
-        """C-C-H bend FC should be ~0.4-0.8 mdyn·Å/rad²."""
+        """C-C-H bend FC should be ~21.6-64.8 kcal/(mol·rad²)."""
         cch = next((a for a in gs_ff.angles if a.elements == ("C", "C", "H")), None)
         assert cch is not None, "No C-C-H angle found in force field"
-        assert 0.3 < cch.force_constant < 0.9, f"C-C-H FC {cch.force_constant:.2f} outside lit range"
+        assert 21.6 < cch.force_constant < 64.8, f"C-C-H FC {cch.force_constant:.2f} outside lit range"

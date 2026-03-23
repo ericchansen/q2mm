@@ -16,11 +16,11 @@ def _full_ff() -> ForceField:
     return ForceField(
         name="test-full",
         bonds=[
-            BondParam(elements=("C", "F"), force_constant=5.0, equilibrium=1.38),
-            BondParam(elements=("C", "H"), force_constant=4.7, equilibrium=1.11),
+            BondParam(elements=("C", "F"), force_constant=359.7, equilibrium=1.38),
+            BondParam(elements=("C", "H"), force_constant=338.1, equilibrium=1.11),
         ],
         angles=[
-            AngleParam(elements=("F", "C", "F"), force_constant=1.0, equilibrium=109.5),
+            AngleParam(elements=("F", "C", "F"), force_constant=71.9, equilibrium=109.5),
         ],
         torsions=[
             TorsionParam(elements=("F", "C", "C", "F"), force_constant=0.5),
@@ -91,11 +91,11 @@ class TestParamIndicesByType:
         indices = ff.get_param_indices_by_type()
 
         # bond_k[0] should be the first bond's force constant
-        assert vec[indices["bond_k"][0]] == 5.0
+        assert vec[indices["bond_k"][0]] == 359.7
         # bond_eq[0] should be the first bond's equilibrium
         assert vec[indices["bond_eq"][0]] == 1.38
         # angle_k[0] should be the angle force constant
-        assert vec[indices["angle_k"][0]] == 1.0
+        assert vec[indices["angle_k"][0]] == 71.9
         # torsion_k[0] should be the first torsion
         assert vec[indices["torsion_k"][0]] == 0.5
         # vdw_radius[0]

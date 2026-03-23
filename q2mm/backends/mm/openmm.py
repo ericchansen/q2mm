@@ -23,12 +23,10 @@ from q2mm.constants import (
     RAD_TO_DEG,
     KCAL_TO_KJ,
     KJMOLNM2_TO_HESSIAN_AU,
-    MDYNA_TO_KJMOLA2,
-    MM3_STR,
     AVO,
     MASSES,
 )
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
 try:
@@ -85,6 +83,7 @@ class OpenMMHandle:
     bond_terms: list[_BondTerm]
     angle_terms: list[_AngleTerm]
     vdw_terms: list[_VdwTerm]
+    functional_form: FunctionalForm = FunctionalForm.MM3
 
 
 def _ensure_openmm():
@@ -107,13 +106,37 @@ def _coerce_forcefield(forcefield: ForceField | None, molecule: Q2MMMolecule) ->
 
 
 def _bond_k_to_openmm(force_constant: float) -> float:
-    """Convert MM3 bond constants to Tinker-scaled kJ/mol/A^2."""
-    return 0.5 * float(force_constant) * MDYNA_TO_KJMOLA2
+    """Convert canonical bond force constant (kcal/mol/Å²) to kJ/mol/Å²."""
+    return float(force_constant) * KCAL_TO_KJ
 
 
 def _angle_k_to_openmm(force_constant: float) -> float:
-    """Convert MM3 angle constants to Tinker-scaled kJ/mol/rad^2."""
-    return 0.5 * float(force_constant) * MM3_STR
+    """Convert canonical angle force constant (kcal/mol/rad²) to kJ/mol/rad²."""
+    return float(force_constant) * KCAL_TO_KJ
+
+
+def _bond_k_to_harmonic(force_constant: float) -> float:
+    """Canonical bond k (kcal/mol/Å²) → HarmonicBondForce k (kJ/mol/nm²).
+
+    OpenMM's HarmonicBondForce uses E = ½·k·(r−r₀)² while the canonical
+    convention is E = k·(r−r₀)², so k_openmm = 2·k.  Additionally convert
+    kcal→kJ (×4.184) and Å⁻²→nm⁻² (×100).
+    """
+    return 2.0 * float(force_constant) * KCAL_TO_KJ * 100.0
+
+
+def _angle_k_to_harmonic(force_constant: float) -> float:
+    """Canonical angle k (kcal/mol/rad²) → HarmonicAngleForce k (kJ/mol/rad²).
+
+    OpenMM's HarmonicAngleForce uses E = ½·k·(θ−θ₀)² while the canonical
+    convention is E = k·(θ−θ₀)², so k_openmm = 2·k.  Convert kcal→kJ.
+    """
+    return 2.0 * float(force_constant) * KCAL_TO_KJ
+
+
+def _vdw_sigma_nm(radius: float) -> float:
+    """Convert Rmin/2 (Å) to LJ sigma (nm) for standard 12-6 NonbondedForce."""
+    return float(radius) * 2.0 / (2.0 ** (1.0 / 6.0)) * 0.1
 
 
 def _vdw_radius_to_openmm(radius: float) -> float:
@@ -151,7 +174,10 @@ class OpenMMEngine(MMEngine):
 
     @property
     def name(self) -> str:
-        return "OpenMM (MM3 bonded + vdW terms)"
+        return "OpenMM"
+
+    def supported_functional_forms(self) -> frozenset[str]:
+        return frozenset({"harmonic", "mm3"})
 
     def is_available(self) -> bool:
         return _HAS_OPENMM
@@ -174,6 +200,11 @@ class OpenMMEngine(MMEngine):
     def create_context(self, structure, forcefield: ForceField | None = None) -> OpenMMHandle:
         molecule = _as_molecule(structure)
         forcefield = _coerce_forcefield(forcefield, molecule)
+        self._validate_forcefield(forcefield)
+
+        # Default to MM3 for backward compatibility when functional_form is None
+        ff_form = forcefield.functional_form or FunctionalForm.MM3
+        use_harmonic = ff_form == FunctionalForm.HARMONIC
 
         system = mm.System()
         for symbol in molecule.symbols:
@@ -181,44 +212,73 @@ class OpenMMEngine(MMEngine):
                 raise KeyError(f"No atomic mass is defined for element '{symbol}'.")
             system.addParticle(MASSES[symbol] * unit.dalton)
 
-        bond_force = mm.CustomBondForce(
-            f"k*(10*(r-r0))^2*(1-c3*(10*(r-r0))+c4*(10*(r-r0))^2);c3={MM3_BOND_C3};c4={MM3_BOND_C4}"
-        )
-        bond_force.addPerBondParameter("k")
-        bond_force.addPerBondParameter("r0")
+        # --- Create force objects based on functional form ---
+        if use_harmonic:
+            bond_force = mm.HarmonicBondForce()
+        else:
+            bond_force = mm.CustomBondForce(
+                f"k*(10*(r-r0))^2*(1-c3*(10*(r-r0))+c4*(10*(r-r0))^2);c3={MM3_BOND_C3};c4={MM3_BOND_C4}"
+            )
+            bond_force.addPerBondParameter("k")
+            bond_force.addPerBondParameter("r0")
 
-        angle_force = mm.CustomAngleForce(
-            "k*(theta-theta0)^2*("
-            "1+a3*((theta-theta0)*deg)"
-            "+a4*((theta-theta0)*deg)^2"
-            "+a5*((theta-theta0)*deg)^3"
-            "+a6*((theta-theta0)*deg)^4"
-            ");"
-            f"a3={MM3_ANGLE_C3};"
-            f"a4={MM3_ANGLE_C4};"
-            f"a5={MM3_ANGLE_C5};"
-            f"a6={MM3_ANGLE_C6};"
-            f"deg={RAD_TO_DEG}"
-        )
-        angle_force.addPerAngleParameter("k")
-        angle_force.addPerAngleParameter("theta0")
-        vdw_force = mm.CustomNonbondedForce(
-            "epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv));rv=radius1+radius2;epsilon=sqrt(epsilon1*epsilon2)"
-        )
-        vdw_force.addPerParticleParameter("radius")
-        vdw_force.addPerParticleParameter("epsilon")
-        vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
+        if use_harmonic:
+            angle_force = mm.HarmonicAngleForce()
+        else:
+            angle_force = mm.CustomAngleForce(
+                "k*(theta-theta0)^2*("
+                "1+a3*((theta-theta0)*deg)"
+                "+a4*((theta-theta0)*deg)^2"
+                "+a5*((theta-theta0)*deg)^3"
+                "+a6*((theta-theta0)*deg)^4"
+                ");"
+                f"a3={MM3_ANGLE_C3};"
+                f"a4={MM3_ANGLE_C4};"
+                f"a5={MM3_ANGLE_C5};"
+                f"a6={MM3_ANGLE_C6};"
+                f"deg={RAD_TO_DEG}"
+            )
+            angle_force.addPerAngleParameter("k")
+            angle_force.addPerAngleParameter("theta0")
 
+        if use_harmonic:
+            vdw_force = mm.NonbondedForce()
+            vdw_force.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
+        else:
+            # MM3 Buckingham exp-6 with short-range repulsive wall.
+            # Below r < 0.34·rv the attractive r^-6 dominates the exponential,
+            # causing divergence to -∞.  Switch to a hard repulsive form
+            # at that boundary using step() to prevent collapse.
+            vdw_force = mm.CustomNonbondedForce(
+                "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
+                " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
+                "rc=0.34*rv;"
+                "rv=radius1+radius2;"
+                "epsilon=sqrt(epsilon1*epsilon2)"
+            )
+            vdw_force.addPerParticleParameter("radius")
+            vdw_force.addPerParticleParameter("epsilon")
+            vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
+
+        # --- Assign bond parameters ---
         bond_terms: list[_BondTerm] = []
         for bond in molecule.bonds:
             param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
             if param is None:
                 continue
-            force_index = bond_force.addBond(
-                bond.atom_i,
-                bond.atom_j,
-                [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
-            )
+            if use_harmonic:
+                force_index = bond_force.addBond(
+                    bond.atom_i,
+                    bond.atom_j,
+                    float(param.equilibrium) * 0.1,
+                    _bond_k_to_harmonic(param.force_constant),
+                )
+            else:
+                force_index = bond_force.addBond(
+                    bond.atom_i,
+                    bond.atom_j,
+                    [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
+                )
             bond_terms.append(
                 _BondTerm(
                     force_index=force_index,
@@ -230,17 +290,27 @@ class OpenMMEngine(MMEngine):
                 )
             )
 
+        # --- Assign angle parameters ---
         angle_terms: list[_AngleTerm] = []
         for angle in molecule.angles:
             param = _match_angle(forcefield, angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
             if param is None:
                 continue
-            force_index = angle_force.addAngle(
-                angle.atom_i,
-                angle.atom_j,
-                angle.atom_k,
-                [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
-            )
+            if use_harmonic:
+                force_index = angle_force.addAngle(
+                    angle.atom_i,
+                    angle.atom_j,
+                    angle.atom_k,
+                    np.deg2rad(float(param.equilibrium)),
+                    _angle_k_to_harmonic(param.force_constant),
+                )
+            else:
+                force_index = angle_force.addAngle(
+                    angle.atom_i,
+                    angle.atom_j,
+                    angle.atom_k,
+                    [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
+                )
             angle_terms.append(
                 _AngleTerm(
                     force_index=force_index,
@@ -253,13 +323,17 @@ class OpenMMEngine(MMEngine):
                 )
             )
 
+        # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []
         if forcefield.vdws:
             for atom_index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=False)):
                 param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
                 if param is None:
                     raise ValueError(f"Missing vdW parameter for atom {atom_index + 1} ({atom_type or symbol}).")
-                vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
+                if use_harmonic:
+                    vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
+                else:
+                    vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
                 vdw_terms.append(
                     _VdwTerm(
                         particle_index=atom_index,
@@ -268,7 +342,49 @@ class OpenMMEngine(MMEngine):
                         ff_row=param.ff_row,
                     )
                 )
-            vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
+            if use_harmonic:
+                # Exclude 1-2 and 1-3 pairs; scale 1-4 pairs by 1/2 (AMBER scnb=2.0)
+                excluded_12: set[tuple[int, int]] = set()
+                for bond in molecule.bonds:
+                    excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
+
+                excluded_13: set[tuple[int, int]] = set()
+                for angle in molecule.angles:
+                    excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
+                excluded_13 -= excluded_12  # pure 1-3 only
+
+                # Build adjacency for 1-4 detection
+                neighbors: dict[int, set[int]] = {}
+                for bond in molecule.bonds:
+                    neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
+                    neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
+
+                pairs_14: set[tuple[int, int]] = set()
+                for angle in molecule.angles:
+                    # 1-4 pairs: atoms bonded to angle endpoints but not in the angle
+                    for nb in neighbors.get(angle.atom_i, ()):
+                        if nb != angle.atom_j and nb != angle.atom_k:
+                            pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
+                    for nb in neighbors.get(angle.atom_k, ()):
+                        if nb != angle.atom_j and nb != angle.atom_i:
+                            pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
+                pairs_14 -= excluded_12
+                pairs_14 -= excluded_13
+
+                # Fully exclude 1-2 and 1-3
+                for p1, p2 in sorted(excluded_12 | excluded_13):
+                    vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
+
+                # Scale 1-4 pairs (AMBER: scnb=2.0 → epsilon/2, scee=1.2 → no charges here)
+                SCNB = 2.0
+                for p1, p2 in sorted(pairs_14):
+                    sig1, eps1 = vdw_force.getParticleParameters(p1)[1:]
+                    sig2, eps2 = vdw_force.getParticleParameters(p2)[1:]
+                    sig_14 = 0.5 * (sig1 + sig2)
+                    eps_14 = (eps1 * eps2) ** 0.5 / SCNB
+                    vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+            else:
+                vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
         if not bond_terms and not angle_terms and not vdw_terms:
             raise ValueError(
@@ -304,21 +420,40 @@ class OpenMMEngine(MMEngine):
             bond_terms=bond_terms,
             angle_terms=angle_terms,
             vdw_terms=vdw_terms,
+            functional_form=ff_form,
         )
 
     def update_forcefield(self, handle: OpenMMHandle, forcefield: ForceField):
         """Update per-term parameters in an existing OpenMM Context."""
+        incoming_form = forcefield.functional_form
+        if incoming_form is not None and incoming_form != handle.functional_form:
+            raise ValueError(
+                f"Force field functional form {incoming_form!r} does not match "
+                f"the handle's form {handle.functional_form!r}. "
+                f"Create a new context instead of reusing this handle."
+            )
+        use_harmonic = handle.functional_form == FunctionalForm.HARMONIC
+
         if handle.bond_force is not None:
             for term in handle.bond_terms:
                 param = _match_bond(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
-                handle.bond_force.setBondParameters(
-                    term.force_index,
-                    term.atom_i,
-                    term.atom_j,
-                    [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
-                )
+                if use_harmonic:
+                    handle.bond_force.setBondParameters(
+                        term.force_index,
+                        term.atom_i,
+                        term.atom_j,
+                        float(param.equilibrium) * 0.1,
+                        _bond_k_to_harmonic(param.force_constant),
+                    )
+                else:
+                    handle.bond_force.setBondParameters(
+                        term.force_index,
+                        term.atom_i,
+                        term.atom_j,
+                        [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
+                    )
             handle.bond_force.updateParametersInContext(handle.context)
 
         if handle.angle_force is not None:
@@ -326,13 +461,23 @@ class OpenMMEngine(MMEngine):
                 param = _match_angle(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing angle parameter for {term.elements}.")
-                handle.angle_force.setAngleParameters(
-                    term.force_index,
-                    term.atom_i,
-                    term.atom_j,
-                    term.atom_k,
-                    [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
-                )
+                if use_harmonic:
+                    handle.angle_force.setAngleParameters(
+                        term.force_index,
+                        term.atom_i,
+                        term.atom_j,
+                        term.atom_k,
+                        np.deg2rad(float(param.equilibrium)),
+                        _angle_k_to_harmonic(param.force_constant),
+                    )
+                else:
+                    handle.angle_force.setAngleParameters(
+                        term.force_index,
+                        term.atom_i,
+                        term.atom_j,
+                        term.atom_k,
+                        [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
+                    )
             handle.angle_force.updateParametersInContext(handle.context)
 
         if handle.vdw_force is not None:
@@ -342,10 +487,18 @@ class OpenMMEngine(MMEngine):
                     raise ValueError(
                         f"Updated force field is missing vdW parameter for {term.atom_type or term.element}."
                     )
-                handle.vdw_force.setParticleParameters(
-                    term.particle_index,
-                    [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)],
-                )
+                if use_harmonic:
+                    handle.vdw_force.setParticleParameters(
+                        term.particle_index,
+                        0.0,
+                        _vdw_sigma_nm(param.radius),
+                        _vdw_epsilon_to_openmm(param.epsilon),
+                    )
+                else:
+                    handle.vdw_force.setParticleParameters(
+                        term.particle_index,
+                        [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)],
+                    )
             handle.vdw_force.updateParametersInContext(handle.context)
 
     def export_system_xml(
@@ -356,11 +509,10 @@ class OpenMMEngine(MMEngine):
     ) -> Path:
         """Serialize the OpenMM System to XML.
 
-        Produces a topology-specific XML file containing the exact
-        ``CustomBondForce``, ``CustomAngleForce``, and
-        ``CustomNonbondedForce`` objects with all per-term parameters.
-        The file can be loaded back with
-        ``openmm.XmlSerializer.deserialize()``.
+        Produces a topology-specific XML file containing the force objects
+        (``HarmonicBondForce``/``CustomBondForce``, etc. depending on the
+        functional form) with all per-term parameters.  The file can be
+        loaded back with ``openmm.XmlSerializer.deserialize()``.
 
         Args:
             path: Output file path.

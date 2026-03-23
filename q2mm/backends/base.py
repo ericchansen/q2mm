@@ -56,7 +56,23 @@ class QMEngine(ABC):
 class MMEngine(ABC):
     """Abstract base class for molecular mechanics engines.
 
-    All MM backends (Tinker, OpenMM, MacroModel, etc.) must implement this interface.
+    All MM backends (Tinker, OpenMM, MacroModel, etc.) must implement
+    this interface.
+
+    **Unit contracts** (canonical units for ForceField parameters):
+
+    - ``bond_k``: kcal/(mol·Å²) — energy convention ``E = k·(r − r₀)²``
+    - ``angle_k``: kcal/(mol·rad²)
+    - ``torsion_k``, ``vdw_epsilon``: kcal/mol
+    - ``bond_eq``, ``vdw_radius``: Å
+    - ``angle_eq``: degrees
+
+    Engines convert from canonical units to engine-native at the boundary
+    (e.g. kcal → kJ for OpenMM, Å → nm).  Output contracts:
+
+    - ``energy()`` returns kcal/mol
+    - ``hessian()`` returns Hartree/Bohr² (atomic units)
+    - ``frequencies()`` returns cm⁻¹
     """
 
     @abstractmethod
@@ -144,3 +160,40 @@ class MMEngine(ABC):
     def name(self) -> str:
         """Human-readable engine name."""
         ...
+
+    def supported_functional_forms(self) -> frozenset[str]:
+        """Functional forms this engine can evaluate.
+
+        Returns a frozenset of :class:`~q2mm.models.forcefield.FunctionalForm`
+        values (as strings).  Override in subclasses; the default is all
+        forms (no restriction).
+
+        Examples::
+
+            # OpenMM supports both harmonic and MM3:
+            return frozenset({"harmonic", "mm3"})
+
+            # A future AMOEBA-only engine:
+            return frozenset({"amoeba"})
+        """
+        from q2mm.models.forcefield import FunctionalForm
+
+        return frozenset(f.value for f in FunctionalForm)
+
+    def _validate_forcefield(self, forcefield) -> None:
+        """Raise ``ValueError`` if the force field's functional form is unsupported.
+
+        Called by engines at the start of ``create_context`` / ``energy`` /
+        etc.  Does nothing when ``forcefield.functional_form`` is ``None``
+        (legacy / unset).
+        """
+        ff_form = getattr(forcefield, "functional_form", None)
+        if ff_form is None:
+            return
+        form_value = ff_form.value if hasattr(ff_form, "value") else str(ff_form)
+        supported = self.supported_functional_forms()
+        if form_value not in supported:
+            raise ValueError(
+                f"{self.name} does not support functional form {ff_form!r}. "
+                f"Supported: {sorted(supported)}"
+            )

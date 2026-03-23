@@ -46,7 +46,7 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5) -> ForceField:
+def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -58,7 +58,7 @@ def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
     """Create a water optimization problem with known true parameters."""
     if engine is None:
         engine = OpenMMEngine()
-    true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+    true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     mol_eq = _water(104.5, 0.96)
     mol_wide = _water(115.0, 0.96)

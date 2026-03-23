@@ -28,9 +28,9 @@ from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
 
 def _water_ff(
-    bond_k: float = 7.0,
+    bond_k: float = 503.6,
     bond_r0: float = 0.96,
-    angle_k: float = 0.8,
+    angle_k: float = 57.6,
     angle_eq: float = 104.5,
 ) -> ForceField:
     return ForceField(
@@ -40,7 +40,7 @@ def _water_ff(
     )
 
 
-def _h2_ff(k: float = 5.0, r0: float = 0.74) -> ForceField:
+def _h2_ff(k: float = 359.7, r0: float = 0.74) -> ForceField:
     return ForceField(
         name="H2-test",
         bonds=[BondParam(elements=("H", "H"), force_constant=k, equilibrium=r0)],
@@ -72,11 +72,11 @@ class TestSubspaceObjective:
     def test_full_subspace_matches_full_objective(self):
         """When all indices are active, SubspaceObjective == ObjectiveFunction."""
         mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
-        guess_ff = _h2_ff(k=7.0, r0=0.78)
+        guess_ff = _h2_ff(k=503.6, r0=0.78)
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
@@ -89,11 +89,11 @@ class TestSubspaceObjective:
     def test_single_param_subspace(self):
         """Optimising one param while holding the other fixed."""
         mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
-        guess_ff = _h2_ff(k=7.0, r0=0.74)  # r0 is correct, k is wrong
+        guess_ff = _h2_ff(k=503.6, r0=0.74)  # r0 is correct, k is wrong
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
@@ -102,19 +102,19 @@ class TestSubspaceObjective:
 
         # Only optimise k (index 0), hold r0 fixed
         sub_obj = SubspaceObjective(obj, [0], full_vec)
-        score_at_7 = sub_obj(np.array([7.0]))
-        score_at_5 = sub_obj(np.array([5.0]))
+        score_at_7 = sub_obj(np.array([503.6]))
+        score_at_5 = sub_obj(np.array([359.7]))
         # Score at true k should be lower
         assert score_at_5 < score_at_7
 
     def test_residuals(self):
         """residuals() returns array of correct length."""
         mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
-        guess_ff = _h2_ff(k=7.0, r0=0.74)
+        guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
@@ -122,13 +122,13 @@ class TestSubspaceObjective:
         full_vec = guess_ff.get_param_vector()
         sub_obj = SubspaceObjective(obj, [0], full_vec)
 
-        residuals = sub_obj.residuals(np.array([7.0]))
+        residuals = sub_obj.residuals(np.array([503.6]))
         assert isinstance(residuals, np.ndarray)
         assert len(residuals) == 1  # one reference data point
 
     def test_get_bounds(self):
         """Bounds are correctly subset."""
-        guess_ff = _h2_ff(k=7.0, r0=0.74)
+        guess_ff = _h2_ff(k=503.6, r0=0.74)
         mol = make_diatomic(0.74)
         engine = OpenMMEngine()
         ref = ReferenceData()
@@ -160,11 +160,11 @@ class TestSensitivity:
     def test_basic_ranking(self):
         """Sensitivity analysis returns valid ranking."""
         mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
-        guess_ff = _h2_ff(k=7.0, r0=0.74)
+        guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
@@ -178,31 +178,33 @@ class TestSensitivity:
         assert sens.n_evals == 6  # 1 baseline + 2*2 params + 1 restore
 
     def test_abs_d1_metric(self):
-        """abs_d1 metric ranks by largest |d1| descending."""
+        """abs_d1 metric ranks by largest normalised |d1/step| descending."""
         mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
-        guess_ff = _h2_ff(k=7.0, r0=0.74)
+        guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
         obj = ObjectiveFunction(guess_ff, engine, [mol], ref)
         sens = compute_sensitivity(obj, metric="abs_d1")
 
-        # Ranking should be sorted by |d1| descending — first ranked param has largest |d1|
-        assert np.abs(sens.d1[sens.ranking[0]]) >= np.abs(sens.d1[sens.ranking[1]])
+        # Ranking is sorted by |d1 / step_size| descending
+        step_sizes = guess_ff.get_step_sizes()
+        normalised = np.where(step_sizes != 0, sens.d1 / step_sizes, 0.0)
+        assert np.abs(normalised[sens.ranking[0]]) >= np.abs(normalised[sens.ranking[1]])
 
     def test_known_insensitive_param(self):
         """A parameter at its optimal value should have near-zero d1."""
         mol = make_diatomic(0.74)  # at equilibrium for r0=0.74
-        true_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
         target_energy = engine.energy(mol, true_ff)
 
         # Start AT the true parameters — both should have ~0 sensitivity
-        guess_ff = _h2_ff(k=5.0, r0=0.74)
+        guess_ff = _h2_ff(k=359.7, r0=0.74)
         ref = ReferenceData()
         ref.add_energy(target_energy, weight=1.0)
 
@@ -231,8 +233,8 @@ class TestOptimizationLoop:
     @pytest.mark.medium
     def test_loop_improves_score(self):
         """OptimizationLoop should improve over a single-shot Nelder-Mead."""
-        true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
-        guess_ff = _water_ff(bond_k=5.0, bond_r0=1.05, angle_k=0.5, angle_eq=110.0)
+        true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
+        guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         obj = _make_water_objective(true_ff, guess_ff)
 
         loop = OptimizationLoop(
@@ -258,8 +260,8 @@ class TestOptimizationLoop:
     @pytest.mark.medium
     def test_loop_tracks_sensitivity(self):
         """Each cycle should produce a sensitivity result."""
-        true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
-        guess_ff = _water_ff(bond_k=5.0, bond_r0=1.05, angle_k=0.5, angle_eq=110.0)
+        true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
+        guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         obj = _make_water_objective(true_ff, guess_ff)
 
         loop = OptimizationLoop(
@@ -283,8 +285,8 @@ class TestConvergence:
     def test_stops_at_convergence(self):
         """Loop should stop early if already converged."""
         # Use true params as guess — already optimal, should converge immediately
-        true_ff = _h2_ff(k=5.0, r0=0.74)
-        guess_ff = _h2_ff(k=5.0, r0=0.74)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
+        guess_ff = _h2_ff(k=359.7, r0=0.74)
         mol = make_diatomic(0.80)
         engine = OpenMMEngine()
         ref = ReferenceData()
@@ -307,8 +309,8 @@ class TestConvergence:
 
     def test_max_cycles_limit(self):
         """Loop should respect max_cycles."""
-        true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
-        guess_ff = _water_ff(bond_k=3.0, bond_r0=1.2, angle_k=0.3, angle_eq=120.0)
+        true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
+        guess_ff = _water_ff(bond_k=215.8, bond_r0=1.2, angle_k=21.6, angle_eq=120.0)
         obj = _make_water_objective(true_ff, guess_ff)
 
         loop = OptimizationLoop(
@@ -329,8 +331,8 @@ class TestConvergence:
     @pytest.mark.medium
     def test_summary_output(self):
         """LoopResult.summary() produces readable output."""
-        true_ff = _h2_ff(k=5.0, r0=0.74)
-        guess_ff = _h2_ff(k=7.0, r0=0.78)
+        true_ff = _h2_ff(k=359.7, r0=0.74)
+        guess_ff = _h2_ff(k=503.6, r0=0.78)
         mol = make_diatomic(0.80)
         engine = OpenMMEngine()
         ref = ReferenceData()

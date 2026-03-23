@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
 
@@ -22,6 +23,26 @@ from q2mm.models.identifiers import (
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
+
+
+class FunctionalForm(str, Enum):
+    """Physical functional form used by a force field.
+
+    Determines which energy expressions an engine should build:
+
+    - ``HARMONIC``: Standard harmonic bonds/angles, periodic torsions,
+      Lennard-Jones 12-6 vdW.  Used by AMBER, OPLS, GAFF, etc.
+    - ``MM3``: Allinger's MM3 cubic bond stretch, sextic angle bend,
+      buffered 14-7 vdW.
+
+    The enum is orthogonal to ``source_format`` (file format) — an MM3
+    force field can be loaded from ``.fld`` or ``.prm`` files, while a
+    HARMONIC force field comes from ``.frcmod`` or programmatic
+    construction.
+    """
+
+    HARMONIC = "harmonic"
+    MM3 = "mm3"
 
 
 def _split_env_id(env_id: str, expected_len: int) -> list[str]:
@@ -156,11 +177,15 @@ def _match_angle_for_export(
 
 @dataclass
 class BondParam:
-    """A bond force field parameter."""
+    """A bond force field parameter.
+
+    Units (canonical): ``force_constant`` in kcal/(mol·Å²),
+    ``equilibrium`` in Å.  Energy convention: ``E = k·(r − r₀)²``.
+    """
 
     elements: tuple[str, str]  # Sorted element pair, e.g., ('C', 'F')
-    equilibrium: float  # Angstrom
-    force_constant: float  # mdyn/A (MM3 units)
+    equilibrium: float  # Å
+    force_constant: float  # kcal/(mol·Å²)
     label: str = ""  # Human-readable label
     env_id: str = ""  # Environment ID for disambiguating same-element params
     # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
@@ -173,11 +198,15 @@ class BondParam:
 
 @dataclass
 class AngleParam:
-    """An angle force field parameter."""
+    """An angle force field parameter.
+
+    Units (canonical): ``force_constant`` in kcal/(mol·rad²),
+    ``equilibrium`` in degrees.  Energy convention: ``E = k·(θ − θ₀)²``.
+    """
 
     elements: tuple[str, str, str]  # (outer, center, outer)
     equilibrium: float  # degrees
-    force_constant: float  # mdyn*A/rad^2
+    force_constant: float  # kcal/(mol·rad²)
     label: str = ""
     env_id: str = ""  # Environment ID for disambiguating same-element params
     ff_row: int | None = None  # Source force-field row for exact legacy parity
@@ -248,6 +277,7 @@ class ForceField:
     source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml", "amber_frcmod"] | None = field(
         default=None, repr=False
     )
+    functional_form: FunctionalForm | None = field(default=None, repr=True)
 
     @property
     def n_params(self) -> int:
@@ -386,13 +416,14 @@ class ForceField:
             vdw.epsilon = vec[idx + 1]
             idx += 2
 
-    # Default bounds per parameter type (min, max).
+    # Default bounds per parameter type (min, max) in canonical units.
     # bond_k allows negative values for transition-state force fields (TSFF),
     # where reaction-coordinate bonds have negative force constants.
+    # Bond/angle k in kcal/(mol·Å²) and kcal/(mol·rad²) respectively.
     DEFAULT_BOUNDS: ClassVar[dict[str, tuple[float, float]]] = {
-        "bond_k": (-50.0, 50.0),
+        "bond_k": (-3600.0, 3600.0),
         "bond_eq": (0.5, 3.0),
-        "angle_k": (-10.0, 10.0),
+        "angle_k": (-720.0, 720.0),
         "angle_eq": (30.0, 180.0),
         "torsion_k": (-20.0, 20.0),
         "vdw_radius": (0.5, 5.0),

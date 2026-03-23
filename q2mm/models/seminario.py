@@ -18,11 +18,17 @@ import logging
 import numpy as np
 from typing import Literal
 
-from q2mm.constants import AU_TO_MDYNA as HARTREE_BOHR2_TO_MDYNE_A
-from q2mm.constants import AU_TO_MDYN_ANGLE
+from q2mm.constants import AU_TO_MDYNA as _AU_TO_MDYNA
+from q2mm.constants import AU_TO_MDYN_ANGLE as _AU_TO_MDYN_ANGLE
 from q2mm.constants import BOHR_TO_ANG
+from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
 from q2mm.models.molecule import Q2MMMolecule, DetectedBond, DetectedAngle
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam
+
+# AU → canonical: Hartree/Bohr² → kcal/(mol·Å²) for bonds,
+#                  Hartree/rad² → kcal/(mol·rad²) for angles.
+HARTREE_BOHR2_TO_KCALMOLA2 = _AU_TO_MDYNA * MDYNA_TO_KCALMOLA2
+HARTREE_RAD2_TO_KCALMOLRAD2 = _AU_TO_MDYN_ANGLE * MDYNA_RAD2_TO_KCALMOLRAD2
 from q2mm.models.hessian import (
     detect_problematic_params,
     invert_ts_curvature,
@@ -140,16 +146,16 @@ def seminario_bond_fc(
         dft_scaling: Scaling factor for DFT Hessians (default 0.963)
 
     Returns:
-        Force constant in mdyn/A (scaled)
+        Force constant in kcal/(mol·Å²) (scaled)
     """
     # Bidirectional: compute i->j and j->i, then average
     f_ij = _project_hessian_block(hessian, atom_i, atom_j, coords, au_units)
     f_ji = _project_hessian_block(hessian, atom_j, atom_i, coords, au_units)
     k_bond = 0.5 * (f_ij + f_ji) * dft_scaling
 
-    # Convert to mdyn/A
+    # Convert to canonical kcal/(mol·Å²)
     if au_units:
-        k_bond *= HARTREE_BOHR2_TO_MDYNE_A
+        k_bond *= HARTREE_BOHR2_TO_KCALMOLA2
 
     return k_bond
 
@@ -178,7 +184,7 @@ def seminario_angle_fc(
         dft_scaling: Scaling factor for DFT Hessians (default 0.963)
 
     Returns:
-        Force constant in mdyn*A/rad^2 (scaled)
+        Force constant in kcal/(mol·rad²) (scaled)
     """
     if au_units:
         coords_work = coords / BOHR_TO_ANG
@@ -248,9 +254,9 @@ def seminario_angle_fc(
     # Apply DFT scaling
     k_angle *= dft_scaling
 
-    # Convert: Hartree/rad^2 -> mdyn*A/rad^2
+    # Convert: Hartree/rad^2 -> canonical kcal/(mol·rad²)
     if au_units:
-        k_angle *= AU_TO_MDYN_ANGLE
+        k_angle *= HARTREE_RAD2_TO_KCALMOLRAD2
 
     return k_angle
 
@@ -348,7 +354,7 @@ def estimate_force_constants(
         if force_constants:
             bond_param.force_constant = float(np.mean(force_constants))
             logger.info(
-                f"  Bond {bond_param.key}: k={bond_param.force_constant:.4f} mdyn/A, r0={bond_param.equilibrium:.4f} A"
+                f"  Bond {bond_param.key}: k={bond_param.force_constant:.4f} kcal/(mol·Å²), r0={bond_param.equilibrium:.4f} Å"
             )
         else:
             logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")

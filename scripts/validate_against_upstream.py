@@ -409,8 +409,8 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
     engine = OpenMMEngine()
     true_ff = ForceField(
         name="water-test",
-        bonds=[BondParam(elements=("H", "O"), force_constant=7.0, equilibrium=0.96)],
-        angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.8, equilibrium=104.5)],
+        bonds=[BondParam(elements=("H", "O"), force_constant=503.6, equilibrium=0.96)],
+        angles=[AngleParam(elements=("H", "O", "H"), force_constant=57.6, equilibrium=104.5)],
     )
 
     def _water(angle_deg=104.5, bond_length=0.96):
@@ -439,8 +439,8 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
 
     guess_ff = ForceField(
         name="water-test",
-        bonds=[BondParam(elements=("H", "O"), force_constant=8.5, equilibrium=1.01)],
-        angles=[AngleParam(elements=("H", "O", "H"), force_constant=1.1, equilibrium=109.5)],
+        bonds=[BondParam(elements=("H", "O"), force_constant=611.5, equilibrium=1.01)],
+        angles=[AngleParam(elements=("H", "O", "H"), force_constant=79.1, equilibrium=109.5)],
     )
 
     obj = ObjectiveFunction(guess_ff, engine, mols, ref)

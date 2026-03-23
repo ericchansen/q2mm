@@ -103,8 +103,8 @@ class TestForceField:
 
     def test_n_params_matches_vector(self):
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, 5.0)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
         )
         vec = ff.get_param_vector()
@@ -112,8 +112,8 @@ class TestForceField:
 
     def test_param_vector_roundtrip(self):
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, 5.0)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
         )
         vec = ff.get_param_vector()
@@ -125,8 +125,8 @@ class TestForceField:
     def test_default_bounds_allow_negative_bond_k(self):
         """TSFF requires negative bond force constants for reaction coordinates."""
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, -0.69)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, 0.5)],
+            bonds=[BondParam(("C", "F"), 1.38, -49.6)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
         )
         bounds = ff.get_bounds()
         bond_k_lower, bond_k_upper = bounds[0]
@@ -136,8 +136,8 @@ class TestForceField:
     def test_default_bounds_allow_negative_angle_k(self):
         """Angle force constants may also be negative in TSFF."""
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, 5.0)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, -0.3)],
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, -21.6)],
         )
         bounds = ff.get_bounds()
         angle_k_lower, angle_k_upper = bounds[2]
@@ -146,22 +146,22 @@ class TestForceField:
     def test_negative_fc_in_param_vector_roundtrip(self):
         """Negative force constants must survive get/set param vector roundtrip."""
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, -0.69)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, -0.15)],
+            bonds=[BondParam(("C", "F"), 1.38, -49.6)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, -10.8)],
         )
         vec = ff.get_param_vector()
-        assert vec[0] == pytest.approx(-0.69)
-        assert vec[2] == pytest.approx(-0.15)
+        assert vec[0] == pytest.approx(-49.6)
+        assert vec[2] == pytest.approx(-10.8)
         ff2 = ff.copy()
         ff2.set_param_vector(vec)
-        assert ff2.bonds[0].force_constant == pytest.approx(-0.69)
-        assert ff2.angles[0].force_constant == pytest.approx(-0.15)
+        assert ff2.bonds[0].force_constant == pytest.approx(-49.6)
+        assert ff2.angles[0].force_constant == pytest.approx(-10.8)
 
     def test_torsion_in_param_vector(self):
         """Torsion force constants appear in param vector after bonds/angles."""
         ff = ForceField(
-            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
-            angles=[AngleParam(("H", "C", "H"), 109.5, 0.5)],
+            bonds=[BondParam(("C", "C"), 1.54, 323.7)],
+            angles=[AngleParam(("H", "C", "H"), 109.5, 36.0)],
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
@@ -180,7 +180,7 @@ class TestForceField:
     def test_torsion_param_vector_roundtrip(self):
         """Torsion params survive get/set roundtrip."""
         ff = ForceField(
-            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
+            bonds=[BondParam(("C", "C"), 1.54, 323.7)],
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
@@ -197,7 +197,7 @@ class TestForceField:
     def test_torsion_bounds(self):
         """Torsion bounds included in get_bounds()."""
         ff = ForceField(
-            bonds=[BondParam(("C", "C"), 1.54, 4.5)],
+            bonds=[BondParam(("C", "C"), 1.54, 323.7)],
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
         )
         bounds = ff.get_bounds()
@@ -238,8 +238,8 @@ class TestForceField:
     def test_mm3_export_roundtrip_generic(self, tmp_path):
         ff = ForceField(
             name="Generic MM3",
-            bonds=[BondParam(("C", "F"), 1.381, 5.25, env_id="C1-F1")],
-            angles=[AngleParam(("H", "C", "F"), 109.7, 0.55, env_id="H1-C1-F1")],
+            bonds=[BondParam(("C", "F"), 1.381, 377.7, env_id="C1-F1")],
+            angles=[AngleParam(("H", "C", "F"), 109.7, 39.6, env_id="H1-C1-F1")],
         )
         out_path = tmp_path / "generated.fld"
         ff.to_mm3_fld(out_path)
@@ -252,9 +252,9 @@ class TestForceField:
         angle = roundtrip.get_angle("H", "C", "F", env_id="F1-C1-H1")
         assert bond is not None
         assert angle is not None
-        assert bond.force_constant == pytest.approx(5.25)
+        assert bond.force_constant == pytest.approx(377.7, rel=1e-3)
         assert bond.equilibrium == pytest.approx(1.381)
-        assert angle.force_constant == pytest.approx(0.55)
+        assert angle.force_constant == pytest.approx(39.6, rel=1e-3)
         assert angle.equilibrium == pytest.approx(109.7)
 
     def test_mm3_vdw_roundtrip_generic(self, tmp_path):
@@ -277,8 +277,8 @@ class TestForceField:
         """Standalone MM3 export should include torsion parameters."""
         ff = ForceField(
             name="Torsion Test",
-            bonds=[BondParam(("C", "C"), 1.525, 4.49, env_id="C3-C3")],
-            angles=[AngleParam(("H", "C", "C"), 111.0, 0.636, env_id="H1-C3-C3")],
+            bonds=[BondParam(("C", "C"), 1.525, 323.0, env_id="C3-C3")],
+            angles=[AngleParam(("H", "C", "C"), 111.0, 45.8, env_id="H1-C3-C3")],
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.0, env_id="H1-C3-C3-H1"),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.0, env_id="H1-C3-C3-H1"),
@@ -311,8 +311,8 @@ class TestForceField:
         """Standalone MM3 export with bonds, angles, torsions, and vdW."""
         ff = ForceField(
             name="Full Test",
-            bonds=[BondParam(("C", "F"), 1.381, 5.25, env_id="C1-F1")],
-            angles=[AngleParam(("H", "C", "F"), 109.7, 0.55, env_id="H1-C1-F1")],
+            bonds=[BondParam(("C", "F"), 1.381, 377.7, env_id="C1-F1")],
+            angles=[AngleParam(("H", "C", "F"), 109.7, 39.6, env_id="H1-C1-F1")],
             torsions=[
                 TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=-0.5, env_id="H1-C1-C1-F1"),
                 TorsionParam(("H", "C", "C", "F"), periodicity=2, force_constant=1.2, env_id="H1-C1-C1-F1"),
@@ -344,7 +344,7 @@ class TestForceField:
 
         roundtrip = ForceField.from_mm3_fld(out_path)
         updated = next(bond for bond in roundtrip.bonds if bond.ff_row == first_bond.ff_row)
-        assert updated.force_constant == pytest.approx(first_bond.force_constant)
+        assert updated.force_constant == pytest.approx(first_bond.force_constant, rel=1e-3)
         assert updated.equilibrium == pytest.approx(first_bond.equilibrium)
 
     def test_mm3_imports_vdw_table(self):
@@ -384,9 +384,9 @@ class TestForceField:
         angle = ff.get_angle("H", "C", "F", env_id="F1-C1-H1")
         assert bond is not None
         assert angle is not None
-        assert bond.force_constant == pytest.approx(5.0)
+        assert bond.force_constant == pytest.approx(359.7, rel=1e-3)
         assert bond.equilibrium == pytest.approx(1.38)
-        assert angle.force_constant == pytest.approx(0.5)
+        assert angle.force_constant == pytest.approx(36.0, rel=1e-3)
         assert angle.equilibrium == pytest.approx(109.5)
         vdw = ff.get_vdw(atom_type="F1")
         assert vdw is not None
@@ -400,7 +400,7 @@ class TestForceField:
         generic_angle = generic_roundtrip.get_angle("H", "C", "F", env_id="F1-C1-H1")
         assert generic_bond is not None
         assert generic_angle is not None
-        assert generic_bond.force_constant == pytest.approx(5.0)
+        assert generic_bond.force_constant == pytest.approx(359.7, rel=1e-3)
         assert generic_angle.equilibrium == pytest.approx(109.5)
         generic_vdw = generic_roundtrip.get_vdw(atom_type="F1")
         assert generic_vdw is not None
@@ -431,9 +431,9 @@ class TestForceField:
         assert bond is not None
         assert angle is not None
         assert vdw is not None
-        assert bond.force_constant == pytest.approx(4.74)
+        assert bond.force_constant == pytest.approx(341.0, rel=1e-3)
         assert bond.equilibrium == pytest.approx(1.1120)
-        assert angle.force_constant == pytest.approx(0.55)
+        assert angle.force_constant == pytest.approx(39.6, rel=1e-3)
         assert angle.equilibrium == pytest.approx(107.60)
         assert vdw.radius == pytest.approx(2.0400)
         assert vdw.epsilon == pytest.approx(0.0270)
@@ -456,7 +456,7 @@ class TestForceField:
         )
         ff = ForceField.from_tinker_prm(prm_path)
         ff.angles[0].equilibrium = 108.25
-        ff.angles[0].force_constant = 0.75
+        ff.angles[0].force_constant = 54.0
 
         out_path = tmp_path / "updated.prm"
         ff.to_tinker_prm(out_path)
@@ -466,7 +466,7 @@ class TestForceField:
         angle_row = ff.angles[0].ff_row
         angle_fcs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "af"]
         angle_eqs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "ae"]
-        assert angle_fcs == [pytest.approx(0.75)]
+        assert angle_fcs == [pytest.approx(54.0 / 71.94, abs=1e-3)]
         assert angle_eqs[0] == pytest.approx(108.25)
         assert angle_eqs[1:] == [pytest.approx(111.0), pytest.approx(112.0)]
 
@@ -742,3 +742,65 @@ class TestSeminario:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="Hessian"):
             estimate_force_constants(mol)
+
+
+# ---- Saver functional form validation ----
+
+
+class TestSaverFormValidation:
+    """Verify that savers reject incompatible functional forms."""
+
+    @pytest.fixture()
+    def harmonic_ff(self):
+        from q2mm.models.forcefield import FunctionalForm
+
+        return ForceField(
+            bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],
+            angles=[AngleParam(elements=("C", "C", "C"), force_constant=50.0, equilibrium=109.5)],
+            functional_form=FunctionalForm.HARMONIC,
+        )
+
+    @pytest.fixture()
+    def mm3_ff(self):
+        from q2mm.models.forcefield import FunctionalForm
+
+        return ForceField(
+            bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],
+            angles=[AngleParam(elements=("C", "C", "C"), force_constant=50.0, equilibrium=109.5)],
+            functional_form=FunctionalForm.MM3,
+        )
+
+    def test_save_mm3_rejects_harmonic(self, tmp_path, harmonic_ff):
+        from q2mm.models.ff_io import save_mm3_fld
+
+        with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*mm3_fld"):
+            save_mm3_fld(harmonic_ff, tmp_path / "out.fld")
+
+    def test_save_tinker_rejects_harmonic(self, tmp_path, harmonic_ff):
+        from q2mm.models.ff_io import save_tinker_prm
+
+        with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*tinker_prm"):
+            save_tinker_prm(harmonic_ff, tmp_path / "out.prm")
+
+    def test_save_amber_rejects_mm3(self, tmp_path, mm3_ff):
+        from q2mm.models.ff_io import save_amber_frcmod
+
+        with pytest.raises(ValueError, match="Cannot save.*MM3.*amber_frcmod"):
+            save_amber_frcmod(mm3_ff, tmp_path / "out.frcmod")
+
+    def test_save_amber_accepts_harmonic(self, tmp_path, harmonic_ff):
+        from q2mm.models.ff_io import save_amber_frcmod
+
+        result = save_amber_frcmod(harmonic_ff, tmp_path / "out.frcmod")
+        assert result.exists()
+
+    def test_save_with_none_form_always_allowed(self, tmp_path):
+        """ForceField with functional_form=None is allowed everywhere (backward compat)."""
+        from q2mm.models.ff_io import save_amber_frcmod
+
+        ff = ForceField(
+            bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],
+        )
+        assert ff.functional_form is None
+        result = save_amber_frcmod(ff, tmp_path / "out.frcmod")
+        assert result.exists()

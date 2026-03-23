@@ -47,7 +47,7 @@ class TestSystemXMLExport:
 
     def test_export_creates_valid_xml_file(self, tmp_path):
         molecule = _diatomic()
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         out = self.engine.export_system_xml(tmp_path / "system.xml", molecule, ff)
 
@@ -57,7 +57,7 @@ class TestSystemXMLExport:
 
     def test_system_xml_round_trip_preserves_energy(self, tmp_path):
         molecule = _diatomic(0.84)
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         original_energy = self.engine.energy(molecule, ff)
 
@@ -82,8 +82,8 @@ class TestSystemXMLExport:
     def test_system_xml_round_trip_water_with_angles(self, tmp_path):
         molecule = _water(angle_deg=120.0)
         ff = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
         )
 
         original_energy = self.engine.energy(molecule, ff)
@@ -164,7 +164,7 @@ class TestForceFieldXMLExport:
     """Test ForceField.to_openmm_xml() standalone XML generation."""
 
     def test_produces_valid_xml_with_bonds(self, tmp_path):
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         out = ff.to_openmm_xml(tmp_path / "ff.xml")
 
@@ -181,8 +181,8 @@ class TestForceFieldXMLExport:
 
     def test_produces_valid_xml_with_angles(self, tmp_path):
         ff = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
         )
 
         out = ff.to_openmm_xml(tmp_path / "ff.xml")
@@ -228,8 +228,8 @@ class TestForceFieldXMLExport:
     def test_with_molecule_generates_atom_types_and_residues(self, tmp_path):
         molecule = _water()
         ff = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
         )
 
         out = ff.to_openmm_xml(tmp_path / "ff.xml", molecule=molecule)
@@ -253,8 +253,8 @@ class TestForceFieldXMLExport:
     def test_unit_conversions_are_correct(self, tmp_path):
         """Verify that exported parameters use correct OpenMM units."""
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), equilibrium=1.38, force_constant=5.0)],
-            angles=[AngleParam(("F", "C", "F"), equilibrium=108.0, force_constant=1.2)],
+            bonds=[BondParam(("C", "F"), equilibrium=1.38, force_constant=359.7)],
+            angles=[AngleParam(("F", "C", "F"), equilibrium=108.0, force_constant=86.3)],
             vdws=[VdwParam("C", radius=1.94, epsilon=0.027), VdwParam("F", radius=1.47, epsilon=0.075)],
         )
 
@@ -280,7 +280,7 @@ class TestForceFieldXMLExport:
 
     def test_save_openmm_xml_function_directly(self, tmp_path):
         """Test the standalone save_openmm_xml function."""
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=1.0)])
+        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         out = save_openmm_xml(ff, tmp_path / "direct.xml")
 
@@ -299,8 +299,8 @@ class TestForceFieldXMLExport:
 
         molecule = _water()
         ff = ForceField(
-            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=1.0)],
-            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
+            bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
+            angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
             vdws=[VdwParam("O", radius=1.52, epsilon=0.21), VdwParam("H", radius=1.20, epsilon=0.02)],
         )
 

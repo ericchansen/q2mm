@@ -72,7 +72,7 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
-def _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5) -> ForceField:
+def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -88,7 +88,7 @@ def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
     """
     if engine is None:
         engine = OpenMMEngine()
-    true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+    true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     # Multiple geometries for identifiability
     mol_eq = _water(104.5, 0.96)
@@ -125,7 +125,7 @@ def _make_energy_only_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
     """
     if engine is None:
         engine = OpenMMEngine()
-    true_ff = _water_ff(bond_k=7.0, bond_r0=0.96, angle_k=0.8, angle_eq=104.5)
+    true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     mols = [_water(104.5, 0.96), _water(115.0, 0.96), _water(104.5, 1.05), _water(95.0, 1.02)]
 
@@ -472,7 +472,7 @@ class TestForceFieldExportRoundtrip:
 
     def test_copy_preserves_params(self):
         """ForceField.copy() preserves the parameter vector exactly."""
-        ff = _water_ff(bond_k=3.14, bond_r0=1.23, angle_k=0.42, angle_eq=109.5)
+        ff = _water_ff(bond_k=225.9, bond_r0=1.23, angle_k=30.2, angle_eq=109.5)
         ff_copy = ff.copy()
         np.testing.assert_array_equal(ff.get_param_vector(), ff_copy.get_param_vector())
         # Mutating the copy should not affect the original
