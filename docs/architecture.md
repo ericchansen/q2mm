@@ -123,8 +123,8 @@ uses kcal/mol).
 ```
 q2mm/
 ├── models/               # Format-neutral data structures
-│   ├── forcefield.py     # ForceField, BondParam, AngleParam, FunctionalForm
-│   ├── molecule.py       # Q2MMMolecule, DetectedBond
+│   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
+│   ├── molecule.py       # Q2MMMolecule, DetectedBond, DetectedTorsion
 │   ├── ff_io.py          # Loaders/savers (MM3, AMBER, Tinker, OpenMM XML)
 │   ├── seminario.py      # Hessian → initial force constants
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
@@ -135,8 +135,9 @@ q2mm/
 │   ├── base.py           # MMEngine and QMEngine ABCs
 │   ├── mm/
 │   │   ├── openmm.py     # OpenMM engine (harmonic + MM3 dual-mode)
-│   │   ├── tinker.py     # Tinker engine (subprocess-based)
-│   │   └── jax_engine.py # JAX engine (differentiable, analytical gradients)
+│   │   ├── tinker.py        # Tinker engine (subprocess-based)
+│   │   ├── jax_engine.py   # JAX engine (differentiable, analytical gradients)
+│   │   └── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
 │   └── qm/
 │       └── psi4.py       # Psi4 engine (QM single-points, Hessians)
 │

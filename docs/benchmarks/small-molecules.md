@@ -6,30 +6,43 @@ parameters.  Results cover speed, accuracy, and cross-engine agreement.
 
 ---
 
-## Combined Leaderboard
+## Backend Leaderboard by Optimizer
 
-Every backend × optimizer combination, ranked by final accuracy.
+All runs start from RMSD = 156.9 cm⁻¹ (score = 0.221).  Tables sorted by
+wall-clock time (fastest first).
 
-| Backend | Optimizer | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
-|---------|-----------|-------------------:|----------:|------:|------:|-----:|--------:|
-| **JAX** | Powell | **0.0** | **0.0** | 0.000 | 2565 | 1.3 s | 1973 |
-| **JAX-MD** | Powell | **0.0** | **0.0** | 0.000 | 2612 | 1.8 s | 1451 |
-| **JAX** | Nelder-Mead | 1037.9 | 888.8 | 0.000 | 1193 | 0.8 s | 1491 |
-| **JAX-MD** | Nelder-Mead | 1037.9 | 888.8 | 0.000 | 1205 | 1.2 s | 1004 |
-| **OpenMM** | Nelder-Mead | — | — | 0.001 | 378 | 2.0 s | 190 |
-| **OpenMM** | Powell | — | — | 0.001 | 722 | 3.8 s | 190 |
-| **Tinker** | Nelder-Mead | — | — | 0.001 | 376 | 286.9 s | 1.3 |
-| **OpenMM** | L-BFGS-B | 114.1 | 93.6 | 0.117 | 424 | 11.7 s | 36 |
-| **JAX** | L-BFGS-B | 813.4 | 610.1 | 0.077 | 406 | 0.6 s | 677 |
-| **JAX-MD** | L-BFGS-B | 813.4 | 610.1 | 0.077 | 370 | 1.0 s | 370 |
-
-All runs start from RMSD = 156.9 cm⁻¹ (score = 0.221).
-
-!!! tip "Reading the table"
+!!! tip "Reading the tables"
     **RMSD** = root-mean-square deviation of optimized MM frequencies from QM
     reference (lower is better).  **Score** = normalized objective function
     (lower is better; 0.000 = perfect match).  **Evals/s** = energy
     evaluations per second (higher is better).
+
+### Nelder-Mead
+
+| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | 1037.9 | 888.8 | 0.000 | 1193 | 0.8 s | 1491 |
+| **JAX-MD** | 1037.9 | 888.8 | 0.000 | 1205 | 1.2 s | 1004 |
+| **OpenMM** | — | — | 0.001 | 378 | 2.0 s | 190 |
+| **Tinker** | — | — | 0.001 | 376 | 286.9 s | 1.3 |
+
+### Powell
+
+| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | **0.0** | **0.0** | 0.000 | 2565 | 1.3 s | 1973 |
+| **JAX-MD** | **0.0** | **0.0** | 0.000 | 2612 | 1.8 s | 1451 |
+| **OpenMM** | — | — | 0.001 | 722 | 3.8 s | 190 |
+| **Tinker** | 553.8 | 289.4 | 0.000 | 11314 | 2972.7 s | 3.8 |
+
+### L-BFGS-B
+
+| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | 813.4 | 610.1 | 0.077 | 406 | 0.6 s | 677 |
+| **JAX-MD** | 813.4 | 610.1 | 0.077 | 370 | 1.0 s | 370 |
+| **OpenMM** | 114.1 | 93.6 | 0.117 | 424 | 11.7 s | 36 |
+| **Tinker** | 114.0 | 93.4 | 0.117 | 478 | 122.7 s | 3.9 |
 
 ### Key Observations
 
@@ -43,6 +56,8 @@ All runs start from RMSD = 156.9 cm⁻¹ (score = 0.221).
   pure JAX eliminates Python ↔ C++ marshalling overhead.
 - **JAX-MD is ~30% slower than JAX** due to neighbor list management and
   periodic boundary bookkeeping, but both are far faster than OpenMM/Tinker.
+- **Tinker is 100–500× slower** than JAX per evaluation.  Powell on Tinker
+  takes ~50 min (11k evals) vs 1.3 s on JAX for the same molecule.
 
 ---
 
