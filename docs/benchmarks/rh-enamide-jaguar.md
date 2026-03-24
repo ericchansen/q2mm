@@ -3,6 +3,11 @@
 Full-loop validation on a real organometallic system using Jaguar
 B3LYP/LACVP** QM reference data.
 
+!!! info "Data"
+    **Inputs:**
+    [Rh-enamide training set](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide)
+    (structures, Jaguar QM data, MM3 FF template)
+
 ---
 
 ## System Description
