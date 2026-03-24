@@ -1,0 +1,33 @@
+# Minimal reference YAML fixture for testing.
+# Defines a water molecule using inline geometry data.
+
+molecules:
+  - name: water
+    geometry:
+      symbols: [O, H, H]
+      coordinates:
+        - [0.0, 0.0, 0.0]
+        - [0.96, 0.0, 0.0]
+        - [-0.24, 0.93, 0.0]
+    charge: 0
+    multiplicity: 1
+    data:
+      - kind: energy
+        value: -76.0267
+        weight: 1.0
+        label: water energy
+      - kind: bond_length
+        atoms: [0, 1]
+        value: 0.96
+        weight: 10.0
+      - kind: bond_length
+        atoms: [0, 2]
+        value: 0.96
+        weight: 10.0
+      - kind: bond_angle
+        atoms: [1, 0, 2]
+        value: 104.5
+        weight: 5.0
+      - kind: frequency
+        values: [1648.0, 3832.0, 3943.0]
+        weight: 1.0

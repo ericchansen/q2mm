@@ -35,6 +35,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
+    "pyyaml",
 ]
 
 [tool.setuptools_scm]
