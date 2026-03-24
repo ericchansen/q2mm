@@ -467,7 +467,7 @@ class TestEvaluatorObjectiveParity:
         ref.add_energy(40.0, weight=2.0)
 
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0)
+        result = obj._evaluate_molecule(0, obj.forcefield)
 
         assert result["energy"] == 42.0
         calc_value = obj._extract_value(result, ref.values[0])
@@ -484,7 +484,7 @@ class TestEvaluatorObjectiveParity:
         ref.add_frequency(195.0, data_idx=1, weight=1.0)
 
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0)
+        result = obj._evaluate_molecule(0, obj.forcefield)
 
         assert result["frequencies"] == [100.0, 200.0, 300.0]
         assert obj._extract_value(result, ref.values[0]) == 100.0
@@ -504,7 +504,7 @@ class TestEvaluatorObjectiveParity:
 
         engine = StubEngine(hessian=qm_hessian)
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0)
+        result = obj._evaluate_molecule(0, obj.forcefield)
 
         assert "eigenmatrix" in result
         eigmat = np.array(result["eigenmatrix"], dtype=float)
