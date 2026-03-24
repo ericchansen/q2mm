@@ -23,7 +23,6 @@ from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
     HARTREE_TO_J,
-    KCAL_TO_KJ,
     SPEED_OF_LIGHT_MS,
     MM3_BOND_C3,
     MM3_BOND_C4,
@@ -38,11 +37,13 @@ from q2mm.models.units import (
     ang_to_nm,
     canonical_to_openmm_angle_k,
     canonical_to_openmm_bond_k,
+    canonical_to_openmm_bond_k_nm,
     canonical_to_openmm_epsilon,
     canonical_to_openmm_harmonic_angle_k,
     canonical_to_openmm_harmonic_bond_k,
     canonical_to_openmm_torsion_k,
     hessian_kjmolnm2_to_au,
+    kj_to_kcal,
     rmin_half_to_sigma_nm,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
@@ -732,14 +733,14 @@ class OpenMMEngine(MMEngine):
                 force_index = bond_force.addBond(
                     bond.atom_i,
                     bond.atom_j,
-                    float(param.equilibrium) * 0.1,
+                    ang_to_nm(param.equilibrium),
                     _bond_k_to_harmonic(param.force_constant),
                 )
             else:
                 force_index = bond_force.addBond(
                     bond.atom_i,
                     bond.atom_j,
-                    [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
+                    [_bond_k_to_openmm(param.force_constant), ang_to_nm(param.equilibrium)],
                 )
             bond_terms.append(
                 _BondTerm(
@@ -969,7 +970,7 @@ class OpenMMEngine(MMEngine):
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
-                        float(param.equilibrium) * 0.1,
+                        ang_to_nm(param.equilibrium),
                         _bond_k_to_harmonic(param.force_constant),
                     )
                 else:
@@ -977,7 +978,7 @@ class OpenMMEngine(MMEngine):
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
-                        [_bond_k_to_openmm(param.force_constant), float(param.equilibrium) * 0.1],
+                        [_bond_k_to_openmm(param.force_constant), ang_to_nm(param.equilibrium)],
                     )
             handle.bond_force.updateParametersInContext(handle.context)
 
@@ -1182,7 +1183,7 @@ class OpenMMEngine(MMEngine):
         bond_global_map: dict[int, tuple[str, str]] = {}
         # Conversion factors differ: HARMONIC CustomBondForce uses
         # kJ/mol/nm² directly; MM3 uses kJ/mol/Å² (expression handles nm→Å).
-        bond_k_factor = KCAL_TO_KJ * 100.0 if use_harmonic else _bond_k_to_openmm(1.0)
+        bond_k_factor = canonical_to_openmm_bond_k_nm(1.0) if use_harmonic else _bond_k_to_openmm(1.0)
         for bp_idx, bp in enumerate(forcefield.bonds):
             k_name = f"bond_k_{bp_idx}"
             r0_name = f"bond_r0_{bp_idx}"
@@ -1202,7 +1203,9 @@ class OpenMMEngine(MMEngine):
         for bp_idx, bp in enumerate(forcefield.bonds):
             k_name, r0_name = bond_global_map[bp_idx]
             k_val = (
-                float(bp.force_constant) * KCAL_TO_KJ * 100.0 if use_harmonic else _bond_k_to_openmm(bp.force_constant)
+                canonical_to_openmm_bond_k_nm(bp.force_constant)
+                if use_harmonic
+                else _bond_k_to_openmm(bp.force_constant)
             )
             if use_harmonic:
                 expr = f"{k_name}*(r-{r0_name})^2"
@@ -1211,7 +1214,7 @@ class OpenMMEngine(MMEngine):
             bf = mm.CustomBondForce(expr)
             bf.setForceGroup(0)
             bf.addGlobalParameter(k_name, k_val)
-            bf.addGlobalParameter(r0_name, float(bp.equilibrium) * 0.1)
+            bf.addGlobalParameter(r0_name, ang_to_nm(bp.equilibrium))
             bf.addEnergyParameterDerivative(k_name)
             bf.addEnergyParameterDerivative(r0_name)
 
@@ -1228,9 +1231,8 @@ class OpenMMEngine(MMEngine):
 
         # --- Angles: each angle param contributes (k, theta0) ---
         angle_global_map: dict[int, tuple[str, str]] = {}
-        # HARMONIC uses simple kJ/mol/rad² (2x for half-convention absorbed);
-        # MM3 uses kJ/mol/rad² with anharmonic corrections.
-        angle_k_factor = _angle_k_to_harmonic(1.0) / 2.0 if use_harmonic else _angle_k_to_openmm(1.0)
+        # CustomAngleForce uses E=k·(θ−θ₀)² (no ½), same conversion for both forms.
+        angle_k_factor = _angle_k_to_openmm(1.0)
         for ap_idx, ap in enumerate(forcefield.angles):
             k_name = f"angle_k_{ap_idx}"
             t0_name = f"angle_t0_{ap_idx}"
@@ -1248,7 +1250,7 @@ class OpenMMEngine(MMEngine):
         # Build one CustomAngleForce per angle-param type.
         for ap_idx, ap in enumerate(forcefield.angles):
             k_name, t0_name = angle_global_map[ap_idx]
-            k_val = float(ap.force_constant) * KCAL_TO_KJ if use_harmonic else _angle_k_to_openmm(ap.force_constant)
+            k_val = _angle_k_to_openmm(ap.force_constant)
             if use_harmonic:
                 expr = f"{k_name}*(theta-{t0_name})^2"
             else:
@@ -1444,7 +1446,7 @@ class OpenMMEngine(MMEngine):
             # dE/dp_canonical = dE/dp_openmm * dp_openmm/dp_canonical
             # But OpenMM returns dE in kJ/mol, we want kcal/mol
             deriv_openmm = derivs[name]  # dE_kJ/dp_openmm
-            grad[pv_idx] = deriv_openmm * unit_factor / KCAL_TO_KJ
+            grad[pv_idx] = kj_to_kcal(deriv_openmm * unit_factor)
 
         return energy, grad
 
