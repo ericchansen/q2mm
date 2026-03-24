@@ -448,7 +448,7 @@ class TestTorsionEnergy:
     @staticmethod
     def _skip_if_no_torsion_support(engine: MMEngine) -> None:
         """Skip engines that don't yet support torsion energy."""
-        unsupported = {"Tinker", "JAX (harmonic)", "JAX-MD (OPLSAA)"}
+        unsupported = {"Tinker"}
         if engine.name in unsupported:
             pytest.skip(f"{engine.name} does not yet support torsion energy evaluation")
 
@@ -484,3 +484,17 @@ class TestTorsionEnergy:
         e_with = engine.energy(mol, ff_with)
         e_without = engine.energy(mol, ff_without)
         assert abs(e_with - e_without) > 1e-6
+
+    def test_torsion_energy_matches_openmm(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
+        """Cross-engine parity: torsion energy must agree with OpenMM reference."""
+        self._skip_if_no_torsion_support(engine)
+        if engine.name == "OpenMM":
+            pytest.skip("Reference engine")
+        openmm = get_mm_engine("openmm")
+        mol, ff = ethane
+        e_engine = engine.energy(mol, ff)
+        e_openmm = openmm.energy(mol, ff)
+        assert abs(e_engine - e_openmm) < 1e-4, (
+            f"{engine.name} torsion energy {e_engine:.6f} != OpenMM {e_openmm:.6f} "
+            f"(diff={abs(e_engine - e_openmm):.2e})"
+        )
