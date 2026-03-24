@@ -272,11 +272,11 @@ sequenceDiagram
     User->>Seminario: estimate_force_constants()
     Seminario-->>User: ForceField
 
-    User->>Objective: build(ff, engine, mols, ref)
+    User->>Objective: ObjectiveFunction(ff, engine, molecules, reference)
 
     User->>Optimizer: optimize(objective)
     loop Until converged
-        Optimizer->>Objective: evaluate(params)
+        Optimizer->>Objective: __call__(param_vector)
         Objective->>Engine: energy / frequencies
         Engine-->>Objective: MM values
         Objective-->>Optimizer: penalty score
