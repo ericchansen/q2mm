@@ -45,11 +45,14 @@ full feature set of jax-md.
 from __future__ import annotations
 
 import copy
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
@@ -598,11 +601,14 @@ class JaxMDEngine(MMEngine):
         self._box = np.array(box, dtype=np.float64)
         self._coulomb = coulomb if coulomb is not None else CutoffCoulomb(r_cut=12.0)
         self._nb_options = nb_options if nb_options is not None else NonbondedOptions(r_cut=12.0)
+        devices = jax.devices()
+        logger.info("JAX-MD devices: %s", [str(d) for d in devices])
 
     @property
     def name(self) -> str:
-        """Return the engine display name."""
-        return "JAX-MD (OPLSAA)"
+        """Return the engine display name including device type."""
+        backend = jax.default_backend()
+        return f"JAX-MD (OPLSAA, {backend})"
 
     def supported_functional_forms(self) -> frozenset[str]:
         """OPLSAA uses harmonic bonds/angles + proper torsions + LJ 12-6."""

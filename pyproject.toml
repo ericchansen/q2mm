@@ -63,6 +63,10 @@ jax-md = [
     "jaxlib; sys_platform != 'win32'",
     "scipy",
 ]
+gpu = [
+    "jax[cuda12]",
+    "scipy",
+]
 qcel = [
     "qcelemental",
 ]

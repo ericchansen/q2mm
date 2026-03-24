@@ -8,11 +8,14 @@ functional forms with runtime parameter updates via :class:`OpenMMHandle`.
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
@@ -239,6 +242,30 @@ def _ensure_openmm() -> None:
     """
     if not _HAS_OPENMM:
         raise ImportError('OpenMM is not installed. Install with `pip install openmm` or `pip install -e ".[openmm]"`.')
+
+
+_PLATFORM_PRIORITY = ("CUDA", "OpenCL", "CPU", "Reference")
+
+
+def detect_best_platform() -> str:
+    """Return the name of the fastest available OpenMM platform.
+
+    Platform preference order: CUDA > OpenCL > CPU > Reference.
+
+    Returns:
+        str: Name of the best available platform.
+
+    Raises:
+        ImportError: If OpenMM is not installed.
+
+    """
+    _ensure_openmm()
+    available = {mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())}
+    for name in _PLATFORM_PRIORITY:
+        if name in available:
+            return name
+    # Fallback — shouldn't happen since OpenMM always has Reference
+    return mm.Platform.getPlatform(0).getName()  # pragma: no cover
 
 
 def _as_molecule(structure: Q2MMMolecule | str | Path) -> Q2MMMolecule:
@@ -477,29 +504,43 @@ class OpenMMEngine(MMEngine):
     updates during optimization loops.
     """
 
-    def __init__(self, platform_name: str | None = None) -> None:
+    def __init__(
+        self,
+        platform_name: str | None = None,
+        precision: str | None = None,
+    ) -> None:
         """Initialize the OpenMM engine.
 
         Args:
             platform_name: OpenMM platform to use (e.g. ``"CPU"``,
-                ``"CUDA"``). Auto-selected if ``None``.
+                ``"CUDA"``, ``"OpenCL"``).  When ``None``, the fastest
+                available platform is auto-detected
+                (CUDA > OpenCL > CPU > Reference).
+            precision: Floating-point precision for GPU platforms
+                (``"single"``, ``"mixed"``, or ``"double"``).  Ignored
+                for CPU/Reference platforms.  Defaults to ``"mixed"``
+                when a GPU platform is selected.
 
         Raises:
             ImportError: If OpenMM is not installed.
 
         """
         _ensure_openmm()
+        if platform_name is None:
+            platform_name = detect_best_platform()
         self._platform_name = platform_name
+        self._precision = precision
+        logger.info("OpenMM platform: %s", self._platform_name)
 
     @property
     def name(self) -> str:
-        """Human-readable engine name.
+        """Human-readable engine name including the active platform.
 
         Returns:
-            str: ``"OpenMM"``.
+            str: e.g. ``"OpenMM (CUDA)"``.
 
         """
-        return "OpenMM"
+        return f"OpenMM ({self._platform_name})"
 
     def supported_functional_forms(self) -> frozenset[str]:
         """Functional forms this engine can evaluate.
@@ -570,11 +611,15 @@ class OpenMMEngine(MMEngine):
 
         """
         integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
-        if self._platform_name:
-            platform = mm.Platform.getPlatformByName(self._platform_name)
-            context = mm.Context(system, integrator, platform)
+        platform = mm.Platform.getPlatformByName(self._platform_name)
+        # Set precision for GPU platforms (CUDA/OpenCL).
+        gpu_platforms = {"CUDA", "OpenCL"}
+        if self._platform_name in gpu_platforms:
+            precision = self._precision or "mixed"
+            prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
+            context = mm.Context(system, integrator, platform, {prop_key: precision})
         else:
-            context = mm.Context(system, integrator)
+            context = mm.Context(system, integrator, platform)
         return integrator, context
 
     def create_context(
