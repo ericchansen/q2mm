@@ -130,11 +130,30 @@ class GaussLog(File):
 
         Each structure is converted via
         :meth:`Q2MMMolecule.from_structure`, preserving any Hessian data
-        attached to the underlying ``Structure``.
+        attached to the underlying ``Structure`` when it is stored in
+        atomic units (Hartree/Bohr²).
+
+        Note:
+            ``Q2MMMolecule.hessian`` is documented in Hartree/Bohr².  When
+            this parser was constructed with ``au_hessian=False`` (the
+            default), any attached Hessian has already been converted to
+            kJ/(mol·Å²) and will **not** be forwarded to avoid silently
+            mixing unit systems.
         """
         from q2mm.models.molecule import Q2MMMolecule
 
-        return [Q2MMMolecule.from_structure(s, hessian=getattr(s, "hess", None)) for s in self.structures]
+        molecules: list[Q2MMMolecule] = []
+        for s in self.structures:
+            hess = getattr(s, "hess", None)
+            if hess is not None and not self._au_hessian:
+                logger.warning(
+                    "Non-atomic-unit Hessian detected (au_hessian=False); "
+                    "not attaching Hessian to Q2MMMolecule, which expects "
+                    "Hartree/Bohr²."
+                )
+                hess = None
+            molecules.append(Q2MMMolecule.from_structure(s, hessian=hess))
+        return molecules
 
     def read_out(self):
         """Reads force constant and eigenvector data from a frequency calculation.
