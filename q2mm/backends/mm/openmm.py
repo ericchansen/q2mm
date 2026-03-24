@@ -201,8 +201,19 @@ class _DiffHandle:
     Unlike :class:`OpenMMHandle`, this uses global parameters so that
     ``addEnergyParameterDerivative()`` can compute exact dE/d(param).
 
+    Attributes:
+        integrator: The ``openmm.Integrator`` used by the context.  Must
+            remain alive for the lifetime of the context to prevent
+            use-after-free.
+        context: The ``openmm.Context`` for energy evaluation.
+        param_names: Global parameter names registered for derivatives.
+        param_vector_indices: Indices into the flat param vector.
+        grad_unit_factors: Chain-rule conversion factors (dp_openmm/dp_canonical).
+        functional_form: The functional form used when the handle was created.
+
     """
 
+    integrator: object
     context: object
     param_names: list[str]
     param_vector_indices: list[int]
@@ -511,15 +522,18 @@ class OpenMMEngine(MMEngine):
     def supports_analytical_gradients(self) -> bool:
         """Whether this engine provides analytical parameter gradients.
 
-        OpenMM provides exact dE/d(param) via ``addEnergyParameterDerivative``
-        on ``CustomForce`` objects. Only supported for MM3 functional form
-        (which uses CustomForce); harmonic form uses built-in Force classes
-        that don't expose parameter derivatives.
+        Both HARMONIC and MM3 functional forms use ``CustomBondForce``
+        and ``CustomAngleForce`` with global parameters, so
+        ``addEnergyParameterDerivative()`` provides exact dE/d(param)
+        for bond and angle parameters.
+
+        Torsion parameters use ``PeriodicTorsionForce`` (no global-param
+        derivatives) and vdW parameters are per-particle, so their
+        gradient entries are returned as zero.  Use finite differences
+        or the JAX backend for those.
 
         Returns:
-            bool: Always ``True`` — MM3 path uses global-parameter
-                derivatives; harmonic path falls back to finite differences
-                inside :meth:`energy_and_param_grad`.
+            bool: Always ``True``.
 
         """
         return True
@@ -1247,56 +1261,85 @@ class OpenMMEngine(MMEngine):
                     )
             system.addForce(torsion_force)
 
-        # --- vdW: each vdw param contributes (radius, epsilon) ---
-        vdw_global_map: dict[int, tuple[str, str]] = {}
-        for vp_idx, vp in enumerate(forcefield.vdws):
-            r_name = f"vdw_r_{vp_idx}"
-            e_name = f"vdw_e_{vp_idx}"
-            vdw_global_map[vp_idx] = (r_name, e_name)
-            param_names.extend([r_name, e_name])
-            param_vector_indices.extend([pv_idx, pv_idx + 1])
-            # radius: canonical Å Rmin/2 → OpenMM nm (divide by 10)
-            # epsilon: canonical kcal/mol → OpenMM kJ/mol (* 4.184)
-            grad_unit_factors.extend(
-                [
-                    0.1,  # dradius_openmm/dradius_canonical
-                    KCAL_TO_KJ,  # deps_openmm/deps_canonical
-                ]
-            )
-            pv_idx += 2
+        # --- vdW: advance pv_idx past vdW params (no derivatives available) ---
+        # vdW uses per-particle parameters, not global parameters, so
+        # CustomNonbondedForce cannot compute dE/d(param).  We still need
+        # to advance the param-vector index to keep alignment correct.
+        pv_idx += 2 * len(forcefield.vdws)
 
         if forcefield.vdws:
-            vdw_force = mm.CustomNonbondedForce(
-                "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
-                " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
-                "rc=0.34*rv;"
-                "rv=radius1+radius2;"
-                "epsilon=sqrt(epsilon1*epsilon2)"
-            )
-            vdw_force.addPerParticleParameter("radius")
-            vdw_force.addPerParticleParameter("epsilon")
-            vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
-            # Note: CustomNonbondedForce derivatives are w.r.t. global params only,
-            # not per-particle params. vdW gradients require a different approach
-            # (one global param per atom type). For now, skip vdW derivatives.
-            for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
-                param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-                if param is None:
-                    raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
-                vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
-            vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
-            system.addForce(vdw_force)
+            if use_harmonic:
+                # HARMONIC: standard NonbondedForce with LJ 12-6, no charges
+                vdw_force = mm.NonbondedForce()
+                vdw_force.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
+                for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
+                    param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
+                    if param is None:
+                        raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
+                    vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
 
-            # Remove vdW entries from derivative lists (per-particle, not global)
-            n_vdw_params = 2 * len(forcefield.vdws)
-            param_names = param_names[:-n_vdw_params]
-            param_vector_indices = param_vector_indices[:-n_vdw_params]
-            grad_unit_factors = grad_unit_factors[:-n_vdw_params]
+                # Exclude 1-2 and 1-3; scale 1-4 (AMBER scnb=2.0)
+                excluded_12: set[tuple[int, int]] = set()
+                for bond in molecule.bonds:
+                    excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
+
+                excluded_13: set[tuple[int, int]] = set()
+                for angle in molecule.angles:
+                    excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
+                excluded_13 -= excluded_12
+
+                neighbors: dict[int, set[int]] = {}
+                for bond in molecule.bonds:
+                    neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
+                    neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
+
+                pairs_14: set[tuple[int, int]] = set()
+                for angle in molecule.angles:
+                    for nb in neighbors.get(angle.atom_i, ()):
+                        if nb != angle.atom_j and nb != angle.atom_k:
+                            pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
+                    for nb in neighbors.get(angle.atom_k, ()):
+                        if nb != angle.atom_j and nb != angle.atom_i:
+                            pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
+                pairs_14 -= excluded_12
+                pairs_14 -= excluded_13
+
+                for p1, p2 in sorted(excluded_12 | excluded_13):
+                    vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
+
+                SCNB = 2.0
+                for p1, p2 in sorted(pairs_14):
+                    _, sig1, eps1 = vdw_force.getParticleParameters(p1)
+                    _, sig2, eps2 = vdw_force.getParticleParameters(p2)
+                    sig_14 = 0.5 * (sig1 + sig2)
+                    eps_14 = (eps1 * eps2) ** 0.5 / SCNB
+                    vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+            else:
+                # MM3: Buckingham exp-6 with per-particle params
+                vdw_force = mm.CustomNonbondedForce(
+                    "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
+                    " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
+                    "rc=0.34*rv;"
+                    "rv=radius1+radius2;"
+                    "epsilon=sqrt(epsilon1*epsilon2)"
+                )
+                vdw_force.addPerParticleParameter("radius")
+                vdw_force.addPerParticleParameter("epsilon")
+                vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
+                for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
+                    param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
+                    if param is None:
+                        raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
+                    vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
+                vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
+
+            system.addForce(vdw_force)
 
         integrator, context = self._create_context(system)
         context.setPositions(self._positions(molecule))
 
         return _DiffHandle(
+            integrator=integrator,
             context=context,
             param_names=param_names,
             param_vector_indices=param_vector_indices,
