@@ -292,34 +292,27 @@ def compute_sensitivity(
     d2 = np.zeros(n)
     n_evals = 0
 
-    try:
-        # Baseline evaluation
-        f0 = float(objective(x0))
-        n_evals = 1
+    # Baseline evaluation
+    f0 = float(objective(x0))
+    n_evals = 1
 
-        for i in range(n):
-            h = step_sizes[i]
-            if h == 0:
-                continue
+    for i in range(n):
+        h = step_sizes[i]
+        if h == 0:
+            continue
 
-            x_fwd = x0.copy()
-            x_bwd = x0.copy()
-            x_fwd[i] += h
-            x_bwd[i] -= h
+        x_fwd = x0.copy()
+        x_bwd = x0.copy()
+        x_fwd[i] += h
+        x_bwd[i] -= h
 
-            f_fwd = float(objective(x_fwd))
-            f_bwd = float(objective(x_bwd))
-            n_evals += 2
+        f_fwd = float(objective(x_fwd))
+        f_bwd = float(objective(x_bwd))
+        n_evals += 2
 
-            # Unnormalised derivatives (upstream convention)
-            d1[i] = (f_fwd - f_bwd) * 0.5
-            d2[i] = f_fwd + f_bwd - 2.0 * f0
-    finally:
-        # Restore the forcefield to x0 so subsequent steps start from the
-        # correct parameters.  ObjectiveFunction.__call__ mutates the FF
-        # via set_param_vector(), leaving it at the last perturbed state.
-        objective(x0)
-        n_evals += 1
+        # Unnormalised derivatives (upstream convention)
+        d1[i] = (f_fwd - f_bwd) * 0.5
+        d2[i] = f_fwd + f_bwd - 2.0 * f0
 
     # Compute simp_var, guarding against zero d1
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -541,10 +534,10 @@ class OptimizationLoop:
             if score_after_simp < score_after_grad:
                 ff.set_param_vector(best_full)
             else:
-                # Revert to post-gradient parameters
+                # Simplex didn't improve — FF already has post-gradient
+                # parameters (set by ScipyOptimizer.optimize), no restore
+                # needed since objective evaluations are non-mutating.
                 score_after_simp = score_after_grad
-                ff.set_param_vector(current_full)
-                self.objective(current_full)  # restore objective state
                 if self.verbose:
                     logger.info(
                         "  Cycle %d SIMP: no improvement (%.6f ≥ %.6f), keeping GRAD result",

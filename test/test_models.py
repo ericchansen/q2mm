@@ -10,7 +10,15 @@ import pytest
 from test._shared import CH3F_HESS, CH3F_XYZ, SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_ethane
 
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField, BondParam, AngleParam, TorsionParam, VdwParam, _extract_element
+from q2mm.models.forcefield import (
+    ForceField,
+    FunctionalForm,
+    BondParam,
+    AngleParam,
+    TorsionParam,
+    VdwParam,
+    _extract_element,
+)
 from q2mm.models.seminario import estimate_force_constants
 from q2mm.parsers.tinker_ff import TinkerFF
 
@@ -351,6 +359,94 @@ class TestForceField:
         ff2.set_param_vector(vec)
         assert ff2.torsions[0].force_constant == pytest.approx(0.30)
         assert ff2.torsions[1].force_constant == pytest.approx(0.20)
+
+    # --- with_params() tests ---
+
+    def test_with_params_roundtrip(self) -> None:
+        """with_params(get_param_vector()) reproduces the same values."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
+        )
+        vec = ff.get_param_vector()
+        ff2 = ff.with_params(vec)
+        np.testing.assert_allclose(ff2.get_param_vector(), vec)
+
+    def test_with_params_applies_new_values(self) -> None:
+        """with_params applies the given vector to the new ForceField."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
+        )
+        vec = ff.get_param_vector()
+        new_vec = vec * 2.0
+        ff2 = ff.with_params(new_vec)
+        np.testing.assert_allclose(ff2.get_param_vector(), new_vec)
+
+    def test_with_params_does_not_mutate_original(self) -> None:
+        """with_params returns a new FF; the original is unchanged."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
+        )
+        original_vec = ff.get_param_vector().copy()
+        new_vec = original_vec * 3.0
+        ff2 = ff.with_params(new_vec)
+
+        # Original unchanged
+        np.testing.assert_allclose(ff.get_param_vector(), original_vec)
+        # New FF has new values
+        np.testing.assert_allclose(ff2.get_param_vector(), new_vec)
+
+    def test_with_params_no_aliasing(self) -> None:
+        """Mutating returned FF params does not affect the original."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+        )
+        original_k = ff.bonds[0].force_constant
+        ff2 = ff.with_params(ff.get_param_vector())
+        ff2.bonds[0].force_constant = 999.0
+        assert ff.bonds[0].force_constant == pytest.approx(original_k)
+
+    def test_with_params_preserves_metadata(self) -> None:
+        """with_params preserves non-value fields (label, env_id, etc.)."""
+        ff = ForceField(
+            name="test_ff",
+            bonds=[BondParam(("C", "F"), 1.38, 359.7, label="C-F bond", env_id="C1-F1", ff_row=5)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0, label="HCF", env_id="H1-C1-F1")],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.15, phase=180.0, env_id="t1")],
+            vdws=[VdwParam("F1", 1.47, 0.061, reduction=0.92)],
+            functional_form=FunctionalForm.MM3,
+        )
+        ff2 = ff.with_params(ff.get_param_vector() * 1.5)
+
+        assert ff2.name == "test_ff"
+        assert ff2.functional_form == FunctionalForm.MM3
+        assert ff2.bonds[0].label == "C-F bond"
+        assert ff2.bonds[0].env_id == "C1-F1"
+        assert ff2.bonds[0].ff_row == 5
+        assert ff2.angles[0].label == "HCF"
+        assert ff2.angles[0].env_id == "H1-C1-F1"
+        assert ff2.torsions[0].periodicity == 2
+        assert ff2.torsions[0].phase == pytest.approx(180.0)
+        assert ff2.torsions[0].env_id == "t1"
+        assert ff2.vdws[0].reduction == pytest.approx(0.92)
+
+    def test_with_params_wrong_length_raises(self) -> None:
+        """with_params raises ValueError for wrong-length vector."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+        )
+        with pytest.raises(ValueError, match="does not match"):
+            ff.with_params(np.array([1.0, 2.0]))  # too short
+        with pytest.raises(ValueError, match="does not match"):
+            ff.with_params(np.zeros(100))  # too long
 
     def test_torsion_bounds(self) -> None:
         """Torsion bounds included in get_bounds()."""

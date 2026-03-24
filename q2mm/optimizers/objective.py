@@ -921,9 +921,9 @@ class ObjectiveFunction:
             float: Sum-of-squared weighted residuals.
 
         """
-        self.forcefield.set_param_vector(param_vector)
+        ff = self.forcefield.with_params(param_vector)
 
-        residuals = self._compute_residuals()
+        residuals = self._compute_residuals(ff)
         score = float(np.sum(residuals**2))
 
         self.n_eval += 1
@@ -940,14 +940,18 @@ class ObjectiveFunction:
             np.ndarray: Weighted residuals for each reference observation.
 
         """
-        self.forcefield.set_param_vector(param_vector)
-        r = self._compute_residuals()
+        ff = self.forcefield.with_params(param_vector)
+        r = self._compute_residuals(ff)
         self.n_eval += 1
         self.history.append(float(np.sum(r**2)))
         return r
 
-    def _compute_residuals(self) -> np.ndarray:
+    def _compute_residuals(self, forcefield: ForceField) -> np.ndarray:
         """Compute weighted residuals for all reference observations.
+
+        Args:
+            forcefield: The force field to evaluate (typically a temporary
+                instance from :meth:`~ForceField.with_params`).
 
         Returns:
             np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
@@ -959,7 +963,7 @@ class ObjectiveFunction:
         for ref in self.reference.values:
             mol_idx = ref.molecule_idx
             if mol_idx not in calc_cache:
-                calc_cache[mol_idx] = self._evaluate_molecule(mol_idx)
+                calc_cache[mol_idx] = self._evaluate_molecule(mol_idx, forcefield)
 
             calc = calc_cache[mol_idx]
             calc_value = self._extract_value(calc, ref)
@@ -1012,7 +1016,7 @@ class ObjectiveFunction:
                 "Use a JaxEngine or another differentiable engine."
             )
 
-        self.forcefield.set_param_vector(param_vector)
+        ff = self.forcefield.with_params(param_vector)
 
         # Check which data types are needed
         all_kinds = {ref.kind for ref in self.reference.values}
@@ -1033,7 +1037,7 @@ class ObjectiveFunction:
             mol_idx = ref.molecule_idx
             if mol_idx not in energy_cache:
                 structure = self._get_structure(mol_idx)
-                energy_cache[mol_idx] = self.engine.energy_and_param_grad(structure, self.forcefield)
+                energy_cache[mol_idx] = self.engine.energy_and_param_grad(structure, ff)
 
             calc_value, calc_grad = energy_cache[mol_idx]
             diff = ref.value - calc_value
@@ -1064,11 +1068,13 @@ class ObjectiveFunction:
             self._handles[mol_idx] = self.engine.create_context(mol, self.forcefield)
         return self._handles[mol_idx]
 
-    def _evaluate_molecule(self, mol_idx: int) -> dict:
+    def _evaluate_molecule(self, mol_idx: int, forcefield: ForceField) -> dict:
         """Run MM calculations for a single molecule.
 
         Args:
             mol_idx (int): Index into the molecules list.
+            forcefield: The force field to evaluate (typically a temporary
+                instance from :meth:`~ForceField.with_params`).
 
         Returns:
             dict: Calculated results keyed by data type (e.g.
@@ -1083,10 +1089,10 @@ class ObjectiveFunction:
         needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
 
         if "energy" in needed:
-            result["energy"] = self.engine.energy(structure, self.forcefield)
+            result["energy"] = self.engine.energy(structure, forcefield)
 
         if "frequency" in needed:
-            result["frequencies"] = self.engine.frequencies(structure, self.forcefield)
+            result["frequencies"] = self.engine.frequencies(structure, forcefield)
 
         if "bond_length" in needed or "bond_angle" in needed or "torsion_angle" in needed:
             # Geometry observables require MM-minimized structures to be
@@ -1094,7 +1100,7 @@ class ObjectiveFunction:
             # Pass the raw molecule (not cached handle) because minimize()
             # mutates context positions — reusing the cached handle would
             # corrupt subsequent energy/frequency evaluations.
-            _energy, _atoms, opt_coords = self.engine.minimize(mol, self.forcefield)
+            _energy, _atoms, opt_coords = self.engine.minimize(mol, forcefield)
             opt_mol = Q2MMMolecule(
                 symbols=mol.symbols,
                 geometry=opt_coords,
@@ -1117,7 +1123,7 @@ class ObjectiveFunction:
 
             # Compute MM Hessian (engine returns canonical Hartree/Bohr²)
             # and project onto QM eigenvectors for eigenmatrix comparison.
-            mm_hess = self.engine.hessian(structure, self.forcefield)
+            mm_hess = self.engine.hessian(structure, forcefield)
 
             # Cache QM eigenvectors (fixed across evaluations)
             if mol_idx not in self._qm_eigenvectors:
