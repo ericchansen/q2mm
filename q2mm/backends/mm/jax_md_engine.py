@@ -659,16 +659,18 @@ class JaxMDEngine(MMEngine):
                 angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
                 angle_param_map.append(idx)
 
-        # Match torsions
-        torsion_atom_indices = []
-        torsion_param_map = []
-        torsion_list = list(molecule.torsions) if hasattr(molecule, "torsions") else []
-        for torsion in torsion_list:
-            for j_ff, ff_tor in enumerate(forcefield.torsions):
-                if ff_tor.ff_row is not None and hasattr(torsion, "ff_row") and torsion.ff_row == ff_tor.ff_row:
-                    torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
-                    torsion_param_map.append(j_ff)
-                    break
+        # Match torsions — each detected torsion may match multiple FF
+        # entries (one per periodicity component)
+        torsion_atom_indices: list[tuple[int, int, int, int]] = []
+        torsion_param_map: list[int] = []
+        for torsion in molecule.torsions:
+            matches = forcefield.match_torsion(
+                torsion.element_quad, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
+            )
+            for param in matches:
+                j_ff = forcefield.torsions.index(param)
+                torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
+                torsion_param_map.append(j_ff)
 
         # Match vdW
         atom_vdw_map = []

@@ -1,11 +1,10 @@
 """JAX-based differentiable MM backend for analytical gradients.
 
-Provides a pure-JAX molecular mechanics engine using harmonic bond/angle
-and 12-6 Lennard-Jones energy functions.  Torsion energy functions are
-implemented but not yet wired for ``Q2MMMolecule`` (which lacks torsion
-detection); they will activate once torsion matching is added.
-All energy functions are differentiable via ``jax.grad``, enabling analytical
-gradient computation for force field parameter optimization.
+Provides a pure-JAX molecular mechanics engine using harmonic bond/angle,
+cosine torsion (atan2-based signed dihedral), and 12-6 Lennard-Jones energy
+functions.  All energy functions are differentiable via ``jax.grad``,
+enabling analytical gradient computation for force field parameter
+optimization.
 
 ForceField stores parameters in canonical units (kcal/mol/Å² for bond_k,
 kcal/mol/rad² for angle_k) with energy convention ``E = k·(x − x₀)²``.
@@ -220,6 +219,53 @@ def _lj_12_6_energy(
 
     sr6 = (sig_ij / r) ** 6
     return jnp.sum(4.0 * eps_ij * (sr6**2 - sr6))
+
+
+def _torsion_energy(
+    k: jnp.ndarray,
+    periodicity: jnp.ndarray,
+    phase: jnp.ndarray,
+    coords: jnp.ndarray,
+    torsion_indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """Cosine torsion energy: ``E = Σ k_i · (1 + cos(n_i·φ_i − γ_i))``.
+
+    Uses an atan2-based signed dihedral angle computation.
+
+    Args:
+        k (jnp.ndarray): Force constants, shape ``(n_torsions,)``, kcal/mol.
+        periodicity (jnp.ndarray): Periodicity per torsion, shape
+            ``(n_torsions,)``.
+        phase (jnp.ndarray): Phase angles per torsion, shape
+            ``(n_torsions,)``, in radians.
+        coords (jnp.ndarray): Cartesian coordinates, shape
+            ``(n_atoms, 3)``, in Å.
+        torsion_indices (jnp.ndarray): Atom index quadruples
+            ``(i, j, k, l)``, shape ``(n_torsions, 4)``.
+
+    Returns:
+        jnp.ndarray: Scalar total torsion energy in kcal/mol.
+
+    """
+    # Vectors along the torsion chain (IUPAC convention):
+    # b0 = i→j, b1 = j→k, b2 = k→l
+    p0 = coords[torsion_indices[:, 0]]
+    p1 = coords[torsion_indices[:, 1]]
+    p2 = coords[torsion_indices[:, 2]]
+    p3 = coords[torsion_indices[:, 3]]
+    b0 = p1 - p0
+    b1 = p2 - p1
+    b2 = p3 - p2
+    # Normal vectors to the two planes
+    n1 = jnp.cross(b0, b1)
+    n2 = jnp.cross(b1, b2)
+    # atan2-based signed dihedral
+    b1_len = _safe_norm(b1, axis=-1)
+    m1 = jnp.cross(n1, b1 / jnp.maximum(b1_len, 1e-10)[:, None])
+    x = jnp.sum(n1 * n2, axis=-1)
+    y = jnp.sum(m1 * n2, axis=-1)
+    phi = jnp.arctan2(y, x)
+    return jnp.sum(k * (1.0 + jnp.cos(periodicity * phi - phase)))
 
 
 # ---------------------------------------------------------------------------
@@ -501,16 +547,19 @@ class JaxEngine(MMEngine):
                 angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
                 angle_param_map.append(idx)
 
-        # Match torsions (NOTE: Q2MMMolecule does not yet detect torsions,
-        # so this loop will be empty until torsion matching is added.)
-        torsion_atom_indices = []
-        torsion_param_map = []
-        for _i_tor, torsion in enumerate(molecule.torsions if hasattr(molecule, "torsions") else []):
-            for j_ff, ff_tor in enumerate(forcefield.torsions):
-                if ff_tor.ff_row is not None and hasattr(torsion, "ff_row") and torsion.ff_row == ff_tor.ff_row:
-                    torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
-                    torsion_param_map.append(j_ff)
-                    break
+        # Match torsions — each detected torsion may match multiple FF
+        # entries (one per periodicity component), each becoming a separate
+        # term.  Only proper torsions from molecule geometry are matched.
+        torsion_atom_indices: list[tuple[int, int, int, int]] = []
+        torsion_param_map: list[int] = []
+        for torsion in molecule.torsions:
+            matches = forcefield.match_torsion(
+                torsion.element_quad, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
+            )
+            for param in matches:
+                j_ff = forcefield.torsions.index(param)
+                torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
+                torsion_param_map.append(j_ff)
 
         # Match vdW
         atom_vdw_map = []
@@ -569,7 +618,7 @@ class JaxEngine(MMEngine):
         )
 
         # Compile energy function
-        handle._energy_fn = _compile_energy_fn(handle)
+        handle._energy_fn = _compile_energy_fn(handle, forcefield)
         return handle
 
     def _get_handle(self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField) -> JaxHandle:
@@ -758,7 +807,7 @@ class JaxEngine(MMEngine):
 # ---------------------------------------------------------------------------
 
 
-def _compile_energy_fn(handle: JaxHandle) -> Callable:
+def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     """Create a JIT-compiled energy function for a specific topology.
 
     The returned function has signature ``(params, coords) -> energy``
@@ -768,6 +817,8 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
 
     Args:
         handle: A :class:`JaxHandle` with topology arrays populated.
+        forcefield: Force field used to extract static torsion
+            periodicity and phase values.
 
     Returns:
         Callable: JIT-compiled ``energy_fn(params, coords)`` closure.
@@ -787,6 +838,20 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
     _torsion_map = jnp.array(handle.torsion_param_map) if has_torsions else None
     _vdw_pairs = jnp.array(handle.vdw_pair_indices) if has_vdw else None
     _atom_vdw_map = jnp.array(handle.atom_vdw_map) if has_vdw else None
+
+    # Capture torsion periodicity/phase as static arrays (not optimized)
+    if has_torsions:
+        per_term_n = []
+        per_term_gamma = []
+        for ff_idx in handle.torsion_param_map:
+            tp = forcefield.torsions[ff_idx]
+            per_term_n.append(float(tp.periodicity))
+            per_term_gamma.append(math.radians(tp.phase))
+        _torsion_n = jnp.array(per_term_n)
+        _torsion_gamma = jnp.array(per_term_gamma)
+    else:
+        _torsion_n = None
+        _torsion_gamma = None
 
     n_bt = handle.n_bond_types
     n_at = handle.n_angle_types
@@ -819,16 +884,9 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
             E = E + _harmonic_angle_energy(k, theta0, coords, _angle_indices)
 
         if has_torsions:
-            # Torsion terms are not yet correctly supported in the JAX backend:
-            # - Periodicity and phase from the ForceField are not plumbed through.
-            # - The dihedral computation uses arccos which loses the sign of phi.
-            # Disable explicitly until a full atan2-based implementation is added.
-            raise NotImplementedError(
-                "Torsion energies are not yet supported in the JAX backend. "
-                "Q2MMMolecule does not detect torsions, so this block is normally "
-                "unreachable. If you reach this, implement proper periodicity/phase "
-                "handling and a signed dihedral (atan2) formulation first."
-            )
+            torsion_k = params[torsion_offset : torsion_offset + n_tt]
+            k = torsion_k[_torsion_map]
+            E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
 
         if has_vdw:
             vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
@@ -836,7 +894,7 @@ def _compile_energy_fn(handle: JaxHandle) -> Callable:
             per_atom_radius = vdw_params[_atom_vdw_map, 0]
             per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
             # Convert radius to sigma for 12-6 LJ: sigma = 2*radius / 2^(1/6)
-            # (MM3/OPLS use radius as Rmin/2, sigma = Rmin / 2^(1/6))
+            # (MM3/OPLS use radius as Rmin / 2^(1/6))
             per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
             E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
 

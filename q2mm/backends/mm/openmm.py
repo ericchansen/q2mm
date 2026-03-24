@@ -140,6 +140,7 @@ class _TorsionTerm:
         periodicity: Fourier component periodicity (1, 2, or 3).
         env_id: Chemical environment identifier for parameter matching.
         ff_row: Row index in the source force field file, if applicable.
+        is_improper: Whether this term is an improper torsion.
 
     """
 
@@ -152,6 +153,7 @@ class _TorsionTerm:
     periodicity: int = 1
     env_id: str = ""
     ff_row: int | None = None
+    is_improper: bool = False
 
 
 @dataclass
@@ -708,36 +710,10 @@ class OpenMMEngine(MMEngine):
                     )
                 )
 
-        # --- Assign improper torsion parameters ---
-        # Improper torsions come from the force field, not geometry detection.
-        # Match improper TorsionParams to detected torsions by element quad.
-        for imp in forcefield.improper_torsions:
-            imp_elems = imp.elements
-            for torsion in molecule.torsions:
-                quad = torsion.element_quad
-                if quad == imp_elems or quad == tuple(reversed(imp_elems)):
-                    force_index = torsion_force.addTorsion(
-                        torsion.atom_i,
-                        torsion.atom_j,
-                        torsion.atom_k,
-                        torsion.atom_l,
-                        imp.periodicity,
-                        np.deg2rad(float(imp.phase)),
-                        _torsion_k_to_openmm(imp.force_constant),
-                    )
-                    torsion_terms.append(
-                        _TorsionTerm(
-                            force_index=force_index,
-                            atom_i=torsion.atom_i,
-                            atom_j=torsion.atom_j,
-                            atom_k=torsion.atom_k,
-                            atom_l=torsion.atom_l,
-                            elements=quad,
-                            periodicity=imp.periodicity,
-                            env_id=imp.env_id,
-                            ff_row=imp.ff_row,
-                        )
-                    )
+        # NOTE: Improper torsions are not yet supported.  Proper improper
+        # detection requires identifying trigonal centres (not bond-graph
+        # walks), which is tracked as future work.  The improper params in
+        # the ForceField are preserved but not assigned to OpenMM forces.
 
         # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []
@@ -922,7 +898,9 @@ class OpenMMEngine(MMEngine):
 
         if handle.torsion_force is not None:
             for term in handle.torsion_terms:
-                params = _match_torsions(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                params = _match_torsions(
+                    forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row, is_improper=term.is_improper
+                )
                 matched = [p for p in params if p.periodicity == term.periodicity]
                 if not matched:
                     raise ValueError(
