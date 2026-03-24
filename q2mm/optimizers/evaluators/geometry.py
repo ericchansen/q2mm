@@ -195,7 +195,7 @@ class GeometryEvaluator:
                         f"Label: {ref.label!r}"
                     )
                 return computed.bond_lengths_by_atoms[key]
-            if ref.data_idx >= len(computed.bond_lengths):
+            if ref.data_idx < 0 or ref.data_idx >= len(computed.bond_lengths):
                 raise IndexError(
                     f"Bond data_idx={ref.data_idx} out of range "
                     f"(molecule has {len(computed.bond_lengths)} bonds). "
@@ -216,7 +216,7 @@ class GeometryEvaluator:
                         f"Label: {ref.label!r}"
                     )
                 return by_atoms[key]
-            if ref.data_idx >= len(computed.bond_angles):
+            if ref.data_idx < 0 or ref.data_idx >= len(computed.bond_angles):
                 raise IndexError(
                     f"Angle data_idx={ref.data_idx} out of range "
                     f"(molecule has {len(computed.bond_angles)} angles). "
@@ -238,6 +238,39 @@ class GeometryEvaluator:
             )
 
         raise ValueError(f"GeometryEvaluator cannot handle kind: {ref.kind}")
+
+    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
+        """Geometry gradients require differentiating through the minimizer.
+
+        Args:
+            engine: The MM backend to check.
+
+        Returns:
+            Always ``False`` — not yet implemented.
+
+        """
+        return False
+
+    def gradient(
+        self,
+        engine: MMEngine,
+        mol: Q2MMMolecule,
+        ff: ForceField,
+        references: list[ReferenceValue],
+        n_params: int,
+        *,
+        structure: Any | None = None,
+    ) -> np.ndarray | None:
+        """Not yet implemented — geometry analytical gradients.
+
+        Differentiating through the MM geometry optimizer is planned
+        for a future release.
+
+        Returns:
+            ``None`` — analytical gradients are not yet supported.
+
+        """
+        return None
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
@@ -263,7 +296,7 @@ class GeometryEvaluator:
                     )
                 return by_atoms[key]
             lengths = calc["bond_lengths"]
-            if ref.data_idx >= len(lengths):
+            if ref.data_idx < 0 or ref.data_idx >= len(lengths):
                 raise IndexError(
                     f"Bond data_idx={ref.data_idx} out of range "
                     f"(molecule has {len(lengths)} bonds). "
@@ -284,7 +317,7 @@ class GeometryEvaluator:
                     )
                 return by_atoms[key]
             angles = calc["bond_angles"]
-            if ref.data_idx >= len(angles):
+            if ref.data_idx < 0 or ref.data_idx >= len(angles):
                 raise IndexError(
                     f"Angle data_idx={ref.data_idx} out of range "
                     f"(molecule has {len(angles)} angles). "

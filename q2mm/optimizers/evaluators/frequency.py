@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
+
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
@@ -74,7 +76,7 @@ class FrequencyEvaluator:
         """
         result: list[float] = []
         for ref in references:
-            if ref.data_idx >= len(computed.frequencies):
+            if ref.data_idx < 0 or ref.data_idx >= len(computed.frequencies):
                 raise IndexError(
                     f"Frequency data_idx={ref.data_idx} out of range "
                     f"(molecule has {len(computed.frequencies)} modes). "
@@ -84,6 +86,39 @@ class FrequencyEvaluator:
             diff = ref.value - calc_value
             result.append(ref.weight * diff)
         return result
+
+    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
+        """Frequency gradients require differentiating through the Hessian eigendecomposition.
+
+        Args:
+            engine: The MM backend to check.
+
+        Returns:
+            Always ``False`` — not yet implemented.
+
+        """
+        return False
+
+    def gradient(
+        self,
+        engine: MMEngine,
+        mol: Q2MMMolecule,
+        ff: ForceField,
+        references: list[ReferenceValue],
+        n_params: int,
+        *,
+        structure: Any | None = None,
+    ) -> np.ndarray | None:
+        """Not yet implemented — frequency analytical gradients.
+
+        Differentiating through Hessian → eigendecomposition → frequencies
+        is planned for a future release.
+
+        Returns:
+            ``None`` — analytical gradients are not yet supported.
+
+        """
+        return None
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
@@ -101,7 +136,7 @@ class FrequencyEvaluator:
 
         """
         freqs = calc["frequencies"]
-        if ref.data_idx >= len(freqs):
+        if ref.data_idx < 0 or ref.data_idx >= len(freqs):
             raise IndexError(
                 f"Frequency data_idx={ref.data_idx} out of range "
                 f"(molecule has {len(freqs)} modes). Label: {ref.label!r}"
