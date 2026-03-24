@@ -1,0 +1,16 @@
+{
+  "backend": "JAX-MD (OPLSAA)",
+  "optimizer": "L-BFGS-B",
+  "functional_form": "harmonic",
+  "initial_score": 663711,
+  "final_score": 5234397,
+  "improvement_pct": -688.7,
+  "n_eval": 1099,
+  "elapsed_s": 248.0,
+  "converged": false,
+  "maxiter": 2,
+  "n_params": 182,
+  "n_molecules": 9,
+  "status": "ok",
+  "notes": "L-BFGS-B diverges even more severely than JAX engine"
+}

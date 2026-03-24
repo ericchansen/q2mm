@@ -1,0 +1,16 @@
+{
+  "backend": "JAX (harmonic)",
+  "optimizer": "Powell",
+  "functional_form": "harmonic",
+  "initial_score": 385737,
+  "final_score": null,
+  "improvement_pct": null,
+  "n_eval": null,
+  "elapsed_s": 78.5,
+  "converged": false,
+  "maxiter": 2,
+  "n_params": 182,
+  "n_molecules": 9,
+  "status": "error: LinAlgError",
+  "notes": "Powell drives params to values causing non-convergent eigenvalue decomposition"
+}
