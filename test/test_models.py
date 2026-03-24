@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from test._shared import CH3F_HESS, CH3F_XYZ, SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ
+from test._shared import CH3F_HESS, CH3F_XYZ, SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_ethane
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam, TorsionParam, VdwParam, _extract_element
@@ -96,46 +96,21 @@ class TestMoleculeFromXYZ:
 # ---- Torsion detection ----
 
 
-def _ethane() -> Q2MMMolecule:
-    """Build a staggered ethane molecule for torsion tests."""
-    # C-C along x-axis, tetrahedral H arrangement, staggered by 60°
-    r_cc = 1.54
-    r_ch = 1.09
-    theta = np.radians(109.5)  # H-C-C angle
-    cos_t = np.cos(theta)  # ≈ -0.334
-    sin_t = np.sin(theta)  # ≈ 0.943
-    c1 = np.array([0.0, 0.0, 0.0])
-    c2 = np.array([r_cc, 0.0, 0.0])
-    # H on C1: 109.5° from +x axis, azimuthal 0°/120°/240°
-    h1 = c1 + r_ch * np.array([cos_t, sin_t, 0.0])
-    h2 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(2 * np.pi / 3), sin_t * np.sin(2 * np.pi / 3)])
-    h3 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(4 * np.pi / 3), sin_t * np.sin(4 * np.pi / 3)])
-    # H on C2: 109.5° from -x axis, staggered azimuthal 60°/180°/300°
-    h4 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi / 3), sin_t * np.sin(np.pi / 3)])
-    h5 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi), sin_t * np.sin(np.pi)])
-    h6 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(5 * np.pi / 3), sin_t * np.sin(5 * np.pi / 3)])
-    return Q2MMMolecule(
-        symbols=["C", "C", "H", "H", "H", "H", "H", "H"],
-        geometry=np.array([c1, c2, h1, h2, h3, h4, h5, h6]),
-        name="ethane",
-    )
-
-
 class TestTorsionDetection:
     def test_ethane_torsion_count(self) -> None:
         """Ethane has 9 unique H-C-C-H torsions."""
-        mol = _ethane()
+        mol = make_ethane()
         assert len(mol.torsions) == 9
 
     def test_ethane_torsion_elements(self) -> None:
         """All ethane torsions are H-C-C-H."""
-        mol = _ethane()
+        mol = make_ethane()
         for t in mol.torsions:
             assert t.element_quad == ("H", "C", "C", "H")
 
     def test_ethane_torsion_angles_finite(self) -> None:
         """All dihedral angles are finite and in [-180, 180]."""
-        mol = _ethane()
+        mol = make_ethane()
         for t in mol.torsions:
             assert -180.0 <= t.value <= 180.0
             assert np.isfinite(t.value)
@@ -155,7 +130,7 @@ class TestTorsionDetection:
 
     def test_no_duplicate_torsions(self) -> None:
         """A-B-C-D and D-C-B-A should not both appear."""
-        mol = _ethane()
+        mol = make_ethane()
         seen = set()
         for t in mol.torsions:
             key = (t.atom_i, t.atom_j, t.atom_k, t.atom_l)
@@ -175,7 +150,7 @@ class TestTorsionDetection:
 
     def test_torsion_env_ids(self) -> None:
         """Torsion env_ids use canonical (directional) atom-type labels."""
-        mol = _ethane()
+        mol = make_ethane()
         env_ids = {t.env_id for t in mol.torsions}
         # All H-C-C-H with default atom_types = symbols → "C-C-H-H" or "H-C-C-H"
         assert len(env_ids) == 1
@@ -198,9 +173,9 @@ class TestMatchTorsion:
     def test_match_reversed(self) -> None:
         """match_torsion matches reversed element order."""
         ff = ForceField(
-            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5)],
+            torsions=[TorsionParam(("H", "C", "N", "O"), periodicity=1, force_constant=0.5)],
         )
-        matches = ff.match_torsion(("H", "C", "C", "H"))
+        matches = ff.match_torsion(("O", "N", "C", "H"))
         assert len(matches) == 1
 
     def test_match_by_periodicity(self) -> None:
