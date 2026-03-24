@@ -717,6 +717,46 @@ class ReferenceData:
 
         return ref, mol
 
+    @classmethod
+    def from_yaml(
+        cls,
+        path: str | Path,
+    ) -> tuple[ReferenceData, list[Q2MMMolecule]]:
+        """Load reference data and molecules from a YAML file.
+
+        Delegates to :func:`q2mm.parsers.reference_yaml.load_reference_yaml`.
+
+        Args:
+            path (str | Path): Path to the YAML reference file.
+
+        Returns:
+            tuple[ReferenceData, list[Q2MMMolecule]]: Loaded reference
+                data and parsed molecules.
+
+        """
+        from q2mm.parsers.reference_yaml import load_reference_yaml
+
+        return load_reference_yaml(path)
+
+    def to_yaml(
+        self,
+        path: str | Path,
+        molecules: list[Q2MMMolecule],
+    ) -> None:
+        """Save this reference data and molecules to a YAML file.
+
+        Delegates to :func:`q2mm.parsers.reference_yaml.save_reference_yaml`.
+
+        Args:
+            path (str | Path): Output file path.
+            molecules (list[Q2MMMolecule]): Molecules corresponding to
+                the reference values.
+
+        """
+        from q2mm.parsers.reference_yaml import save_reference_yaml
+
+        save_reference_yaml(path, self, molecules)
+
 
 # ---- Lazy re-exports (avoid circular imports at module load) ----
 

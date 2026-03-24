@@ -1,0 +1,16 @@
+# Reference YAML fixture using external XYZ file path.
+# Resolved relative to this file's directory.
+
+molecules:
+  - name: ch3f
+    xyz: ../../examples/sn2-test/qm-reference/ch3f-optimized.xyz
+    charge: 0
+    multiplicity: 1
+    data:
+      - kind: energy
+        value: -139.7621
+        weight: 1.0
+      - kind: bond_length
+        atoms: [0, 1]
+        value: 1.383
+        weight: 10.0
