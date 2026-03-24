@@ -18,7 +18,7 @@ For detailed information on each backend, see the individual pages:
 |---------|--------|--------|-----|--------|
 | **Functional forms** | Harmonic, MM3 | MM3 | Harmonic | Harmonic |
 | **Bond/angle terms** | ✅ | ✅ | ✅ | ✅ |
-| **Torsions** | ⚠️ awaiting [#127](https://github.com/ericchansen/q2mm/issues/127) | ⚠️ awaiting [#127](https://github.com/ericchansen/q2mm/issues/127) | ⚠️ awaiting [#127](https://github.com/ericchansen/q2mm/issues/127) | ⚠️ engine ready, awaiting [#127](https://github.com/ericchansen/q2mm/issues/127) |
+| **Torsions** | ✅ | ❌ | ✅ | ✅ |
 | **Improper torsions** | ❌ | ❌ | ❌ | ❌ |
 | **vdW (LJ 12-6)** | ✅ Harmonic mode | ✅ via MM3 | ✅ | ✅ |
 | **vdW (Buckingham exp-6)** | ✅ MM3 mode | ✅ | ❌ | ❌ |
@@ -27,7 +27,7 @@ For detailed information on each backend, see the individual pages:
 | **Periodic boundaries** | ❌ | ❌ | ❌ | ✅ |
 | **Neighbor lists** | ❌ | ❌ | ❌ | ✅ (jax-md native) |
 | **Runtime param updates** | ✅ | ❌ (subprocess per call) | ✅ | ✅ |
-| **Analytical gradients** | ❌ | ❌ | ✅ via `jax.grad` | ✅ via `jax.grad` |
+| **Analytical gradients** | ⚠️ bond/angle only | ❌ | ✅ via `jax.grad` | ✅ via `jax.grad` |
 | **JIT compilation** | N/A | N/A | ✅ | ✅ |
 | **Platform** | Linux, macOS, Windows | Linux, macOS | Linux, macOS, WSL2 | Linux, macOS, WSL2 |
 
@@ -171,7 +171,7 @@ CH₃F has no 1-4 pairs, so all three harmonic engines agree exactly.
 | **Fast optimization** | JAX or JAX-MD | 5–10× faster than OpenMM, analytical gradients |
 | **MM3 force fields** | OpenMM or Tinker | Only engines supporting MM3 |
 | **Periodic systems** | JAX-MD | Only engine with periodic boundary support |
-| **Torsion optimization** | JAX-MD (once [#127](https://github.com/ericchansen/q2mm/issues/127) lands) | Only engine with full torsion support |
+| **Torsion optimization** | OpenMM, JAX, or JAX-MD | Tinker lacks torsion support |
 | **Widest compatibility** | OpenMM | Supports both Harmonic and MM3, mature ecosystem |
 | **Gradient-based optimizers** | JAX or JAX-MD | Analytical `jax.grad` eliminates finite-difference overhead |
 
