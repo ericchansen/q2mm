@@ -91,9 +91,14 @@ class BenchmarkResult:
         Returns:
             BenchmarkResult: Deserialized benchmark result.
 
+        Raises:
+            ValueError: If the JSON is missing required fields (``metadata``).
+
         """
         with open(path) as f:
             data = json.load(f)
+        if "metadata" not in data or not isinstance(data.get("metadata"), dict):
+            raise ValueError(f"Invalid BenchmarkResult JSON: 'metadata' key missing or not a dict in {path}")
         # Drop keys not in the dataclass (e.g. optimized_ff is never serialized)
         valid_fields = {f.name for f in field_list(cls)}
         data = {k: v for k, v in data.items() if k in valid_fields}
@@ -142,7 +147,15 @@ class BenchmarkResult:
 
         ff = self.optimized_ff
         form = getattr(ff, "functional_form", None)
-        form_value = form.value if hasattr(form, "value") else str(form) if form else "mm3"
+        if form is None:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Cannot save force field: functional_form is not set. "
+                "Set it explicitly on the ForceField before running the benchmark."
+            )
+            return []
+        form_value = form.value if hasattr(form, "value") else str(form)
 
         # Map format name → (saver function, extension, extra kwargs)
         savers: list[tuple[Any, str, dict[str, Any]]] = []
@@ -159,8 +172,10 @@ class BenchmarkResult:
             try:
                 save_fn(ff, out_path, **kwargs)
                 saved.append(out_path)
-            except Exception:
-                pass  # skip formats that fail (e.g. missing atom types)
+            except Exception as exc:
+                import logging
+
+                logging.getLogger(__name__).warning("Failed to save %s format for %s: %s", ext, stem, exc)
 
         return saved
 

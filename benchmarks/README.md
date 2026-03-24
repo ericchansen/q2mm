@@ -36,8 +36,11 @@ functional form:
 | MM3             | `.fld` (Schrödinger MM3), `.prm` (Tinker), `.xml` (OpenMM) |
 | Harmonic        | `.frcmod` (AMBER) |
 
-CH₃F uses the MM3 functional form, so all FF files are in `.fld`,
-`.prm`, and `.xml` formats.
+In this archive, CH₃F force fields (including harmonic-engine variants
+like JAX and JAX-MD) are stored in `.fld`, `.prm`, and `.xml` formats
+because the underlying force field template uses MM3 functional form.
+The engine's functional form determines the energy expression, but the
+serialized parameters are the same.
 
 ## Reproducing
 
