@@ -34,12 +34,12 @@ nav:
   - Backend Engines: backends.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
-  - API Reference: reference/
   - Benchmarks:
     - Overview: benchmarks/index.md
     - Small Molecules: benchmarks/small-molecules.md
     - Rh-Enamide (Jaguar): benchmarks/rh-enamide-jaguar.md
     - Rh-Enamide (Psi4): benchmarks/rh-enamide-psi4.md
+  - API Reference: reference/
   - References: references.md
 
 markdown_extensions:
