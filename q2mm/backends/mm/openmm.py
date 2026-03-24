@@ -27,10 +27,19 @@ from q2mm.constants import (
     MM3_ANGLE_C4,
     MM3_ANGLE_C5,
     MM3_ANGLE_C6,
-    RAD_TO_DEG,
-    KCAL_TO_KJ,
-    KJMOLNM2_TO_HESSIAN_AU,
     MASSES,
+)
+from q2mm.models.units import (
+    RAD_TO_DEG,
+    ang_to_nm,
+    canonical_to_openmm_angle_k,
+    canonical_to_openmm_bond_k,
+    canonical_to_openmm_epsilon,
+    canonical_to_openmm_harmonic_angle_k,
+    canonical_to_openmm_harmonic_bond_k,
+    canonical_to_openmm_torsion_k,
+    hessian_kjmolnm2_to_au,
+    rmin_half_to_sigma_nm,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
@@ -252,7 +261,7 @@ def _bond_k_to_openmm(force_constant: float) -> float:
         float: Bond force constant in kJ/mol/Å².
 
     """
-    return float(force_constant) * KCAL_TO_KJ
+    return canonical_to_openmm_bond_k(force_constant)
 
 
 def _angle_k_to_openmm(force_constant: float) -> float:
@@ -265,7 +274,7 @@ def _angle_k_to_openmm(force_constant: float) -> float:
         float: Angle force constant in kJ/mol/rad².
 
     """
-    return float(force_constant) * KCAL_TO_KJ
+    return canonical_to_openmm_angle_k(force_constant)
 
 
 def _bond_k_to_harmonic(force_constant: float) -> float:
@@ -282,7 +291,7 @@ def _bond_k_to_harmonic(force_constant: float) -> float:
         float: Bond force constant in kJ/mol/nm² with the ½ convention.
 
     """
-    return 2.0 * float(force_constant) * KCAL_TO_KJ * 100.0
+    return canonical_to_openmm_harmonic_bond_k(force_constant)
 
 
 def _angle_k_to_harmonic(force_constant: float) -> float:
@@ -298,7 +307,7 @@ def _angle_k_to_harmonic(force_constant: float) -> float:
         float: Angle force constant in kJ/mol/rad² with the ½ convention.
 
     """
-    return 2.0 * float(force_constant) * KCAL_TO_KJ
+    return canonical_to_openmm_harmonic_angle_k(force_constant)
 
 
 def _vdw_sigma_nm(radius: float) -> float:
@@ -311,7 +320,7 @@ def _vdw_sigma_nm(radius: float) -> float:
         float: LJ sigma in nm.
 
     """
-    return float(radius) * 2.0 / (2.0 ** (1.0 / 6.0)) * 0.1
+    return rmin_half_to_sigma_nm(radius)
 
 
 def _vdw_radius_to_openmm(radius: float) -> float:
@@ -324,7 +333,7 @@ def _vdw_radius_to_openmm(radius: float) -> float:
         float: Van der Waals radius in nm.
 
     """
-    return float(radius) * 0.1
+    return ang_to_nm(radius)
 
 
 def _vdw_epsilon_to_openmm(epsilon: float) -> float:
@@ -337,7 +346,7 @@ def _vdw_epsilon_to_openmm(epsilon: float) -> float:
         float: Well depth in kJ/mol.
 
     """
-    return float(epsilon) * KCAL_TO_KJ
+    return canonical_to_openmm_epsilon(epsilon)
 
 
 def _match_bond(
@@ -404,7 +413,7 @@ def _torsion_k_to_openmm(force_constant: float) -> float:
         float: Torsion force constant in kJ/mol.
 
     """
-    return float(force_constant) * KCAL_TO_KJ
+    return canonical_to_openmm_torsion_k(force_constant)
 
 
 def _match_torsions(
@@ -1135,7 +1144,7 @@ class OpenMMEngine(MMEngine):
         hessian_symmetric = 0.5 * (hessian + hessian.T)
 
         # Convert from OpenMM native kJ/mol/nm² to canonical Hartree/Bohr²
-        return hessian_symmetric * KJMOLNM2_TO_HESSIAN_AU
+        return hessian_symmetric * hessian_kjmolnm2_to_au(1.0)
 
     def frequencies(
         self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None

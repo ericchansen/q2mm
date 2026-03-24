@@ -17,17 +17,18 @@ import logging
 import numpy as np
 from typing import Literal
 
-from q2mm.constants import AU_TO_MDYNA as _AU_TO_MDYNA
-from q2mm.constants import AU_TO_MDYN_ANGLE as _AU_TO_MDYN_ANGLE
 from q2mm.constants import BOHR_TO_ANG
-from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
+from q2mm.models.units import (
+    _AU_BOND_K_TO_CANONICAL,
+    _AU_ANGLE_K_TO_CANONICAL,
+)
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 
 # AU → canonical: Hartree/Bohr² → kcal/(mol·Å²) for bonds,
 #                  Hartree/rad² → kcal/(mol·rad²) for angles.
-HARTREE_BOHR2_TO_KCALMOLA2 = _AU_TO_MDYNA * MDYNA_TO_KCALMOLA2
-HARTREE_RAD2_TO_KCALMOLRAD2 = _AU_TO_MDYN_ANGLE * MDYNA_RAD2_TO_KCALMOLRAD2
+HARTREE_BOHR2_TO_KCALMOLA2 = _AU_BOND_K_TO_CANONICAL
+HARTREE_RAD2_TO_KCALMOLRAD2 = _AU_ANGLE_K_TO_CANONICAL
 from q2mm.models.hessian import (
     detect_problematic_params,
     invert_ts_curvature,

@@ -457,7 +457,6 @@ def save_openmm_xml(
     import xml.etree.ElementTree as ET
 
     from q2mm.constants import (
-        KCAL_TO_KJ,
         MM3_ANGLE_C3,
         MM3_ANGLE_C4,
         MM3_ANGLE_C5,
@@ -465,7 +464,15 @@ def save_openmm_xml(
         MM3_BOND_C3,
         MM3_BOND_C4,
         MASSES,
+    )
+    from q2mm.models.units import (
         RAD_TO_DEG,
+        ang_to_nm,
+        canonical_to_openmm_bond_k,
+        canonical_to_openmm_angle_k,
+        canonical_to_openmm_torsion_k,
+        canonical_to_openmm_epsilon,
+        deg_to_rad,
     )
 
     root = ET.Element("ForceField")
@@ -540,8 +547,8 @@ def save_openmm_xml(
         ET.SubElement(bond_force_el, "PerBondParameter", name="r0")
 
         for bond in ff.bonds:
-            k_openmm = float(bond.force_constant) * KCAL_TO_KJ
-            r0_nm = float(bond.equilibrium) * 0.1
+            k_openmm = canonical_to_openmm_bond_k(bond.force_constant)
+            r0_nm = ang_to_nm(bond.equilibrium)
 
             env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
             class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
@@ -571,10 +578,8 @@ def save_openmm_xml(
         ET.SubElement(angle_force_el, "PerAngleParameter", name="theta0")
 
         for angle in ff.angles:
-            import math
-
-            k_openmm = float(angle.force_constant) * KCAL_TO_KJ
-            theta0_rad = math.radians(float(angle.equilibrium))
+            k_openmm = canonical_to_openmm_angle_k(angle.force_constant)
+            theta0_rad = deg_to_rad(angle.equilibrium)
 
             env_parts = angle.env_id.split("-") if angle.env_id else list(angle.elements)
             class1 = env_parts[0] if len(env_parts) >= 3 else angle.elements[0]
@@ -589,8 +594,6 @@ def save_openmm_xml(
 
     # ---- Custom torsion force ----
     if ff.torsions:
-        import math
-
         torsion_expr = "k*(1+cos(n*theta-phase))"
         torsion_force_el = ET.SubElement(
             root,
@@ -602,7 +605,7 @@ def save_openmm_xml(
         ET.SubElement(torsion_force_el, "PerTorsionParameter", name="phase")
 
         for torsion in ff.torsions:
-            k_kj = float(torsion.force_constant) * KCAL_TO_KJ
+            k_kj = canonical_to_openmm_torsion_k(torsion.force_constant)
             env_parts = torsion.env_id.split("-") if torsion.env_id else list(torsion.elements)
             class1 = env_parts[0] if len(env_parts) >= 4 else torsion.elements[0]
             class2 = env_parts[1] if len(env_parts) >= 4 else torsion.elements[1]
@@ -615,7 +618,7 @@ def save_openmm_xml(
             tor_el.set("class4", class4)
             tor_el.set("k", f"{k_kj:.6f}")
             tor_el.set("n", str(torsion.periodicity))
-            tor_el.set("phase", f"{math.radians(float(torsion.phase)):.6f}")
+            tor_el.set("phase", f"{deg_to_rad(torsion.phase):.6f}")
 
     # ---- Custom nonbonded vdW force (MM3 buffered 14-7) ----
     if ff.vdws:
@@ -630,8 +633,8 @@ def save_openmm_xml(
         ET.SubElement(vdw_force_el, "PerParticleParameter", name="epsilon")
 
         for vdw in ff.vdws:
-            r_nm = float(vdw.radius) * 0.1
-            eps_kj = float(vdw.epsilon) * KCAL_TO_KJ
+            r_nm = ang_to_nm(vdw.radius)
+            eps_kj = canonical_to_openmm_epsilon(vdw.epsilon)
             type_name = vdw.atom_type if vdw.atom_type else vdw.element
             atom_el = ET.SubElement(vdw_force_el, "Atom")
             atom_el.set("class", type_name)

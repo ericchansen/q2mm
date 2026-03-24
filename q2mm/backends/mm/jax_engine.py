@@ -28,11 +28,10 @@ from q2mm.backends.registry import register_mm
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
-    KCAL_TO_KJ,
-    KJMOLA2_TO_HESSIAN_AU,
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
+from q2mm.models.units import _KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
@@ -66,8 +65,8 @@ def _ensure_jax() -> None:
 
 # ---------------------------------------------------------------------------
 # Hessian unit conversion: kcal/mol/Å² → Hartree/Bohr²
+# Imported from q2mm.models.units as _KCALMOLA2_TO_HESSIAN_AU
 # ---------------------------------------------------------------------------
-_KCALMOLA2_TO_HESSIAN_AU = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
 
 # ---------------------------------------------------------------------------
 # Force field param vector unit conversions
