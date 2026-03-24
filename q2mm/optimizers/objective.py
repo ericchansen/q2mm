@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from q2mm import constants
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
@@ -717,145 +716,20 @@ class ReferenceData:
         return ref, mol
 
 
-# ---- .fchk parser (minimal, self-contained) ----
+# ---- .fchk parser — delegated to q2mm.parsers.fchk ----
 
-# Atomic numbers → element symbols, from centralized element data.
-from q2mm.elements import ATOMIC_SYMBOLS as _ATOMIC_SYMBOLS
+from q2mm.parsers.fchk import parse_fchk as _parse_fchk  # noqa: E402
 
-_BOHR_TO_ANG = constants.BOHR_TO_ANG
+# ---- Dihedral angle — delegated to geometry evaluator ----
 
+from q2mm.optimizers.evaluators.geometry import dihedral_angle as _dihedral_angle  # noqa: E402, F401
 
-def _parse_fchk(path: Path) -> tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
-    """Parse a Gaussian .fchk file for geometry and Hessian.
+# ---- Per-data-type evaluators ----
 
-    Args:
-        path (Path): Path to the ``.fchk`` file.
-
-    Returns:
-        tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
-            ``(symbols, coords_angstrom, hessian_au_or_None, charge,
-            multiplicity)``. The Hessian is in Hartree/Bohr² (atomic
-            units) — the native .fchk format.
-
-    Raises:
-        ValueError: If atomic numbers or coordinates cannot be parsed.
-
-    """
-    with open(path) as f:
-        lines = f.readlines()
-
-    n_atoms = None
-    charge = None
-    multiplicity = None
-    atomic_numbers: list[int] = []
-    coords_bohr: list[float] = []
-    hessian_flat: list[float] = []
-    reading = None  # tracks which array section we're in
-    expected = 0
-
-    for line in lines:
-        # Scalar integer fields
-        if line.startswith("Number of atoms"):
-            n_atoms = int(line.split()[-1])
-            continue
-        if line.startswith("Charge "):
-            charge = int(line.split()[-1])
-            continue
-        if line.startswith("Multiplicity"):
-            multiplicity = int(line.split()[-1])
-            continue
-
-        # Array section headers
-        if line.startswith("Atomic numbers") and "N=" in line:
-            reading = "atomic_numbers"
-            expected = int(line.split("N=")[1].strip())
-            continue
-        if line.startswith("Current cartesian coordinates") and "N=" in line:
-            reading = "coords"
-            expected = int(line.split("N=")[1].strip())
-            continue
-        if line.startswith("Cartesian Force Constants") and "N=" in line:
-            reading = "hessian"
-            expected = int(line.split("N=")[1].strip())
-            continue
-
-        # Other array headers end the current section
-        if len(line) > 40 and ("N=" in line[40:] or ("I" in line[40:50] and line[40:50].strip() in ("I", "R"))):
-            if reading:
-                reading = None
-            continue
-
-        # Read array data
-        if reading == "atomic_numbers" and len(atomic_numbers) < expected:
-            atomic_numbers.extend(int(x) for x in line.split())
-            if len(atomic_numbers) >= expected:
-                reading = None
-        elif reading == "coords" and len(coords_bohr) < expected:
-            coords_bohr.extend(float(x) for x in line.split())
-            if len(coords_bohr) >= expected:
-                reading = None
-        elif reading == "hessian" and len(hessian_flat) < expected:
-            hessian_flat.extend(float(x) for x in line.split())
-            if len(hessian_flat) >= expected:
-                reading = None
-
-    if not atomic_numbers or not coords_bohr:
-        raise ValueError(f"Could not parse atomic numbers or coordinates from {path}")
-
-    symbols = []
-    for z in atomic_numbers:
-        sym = _ATOMIC_SYMBOLS.get(z)
-        if sym is None:
-            raise ValueError(f"Unsupported atomic number {z} in {path}")
-        symbols.append(sym)
-    coords_ang = np.array(coords_bohr).reshape(-1, 3) * _BOHR_TO_ANG
-
-    hessian = None
-    if hessian_flat:
-        n = len(symbols)
-        dim = 3 * n
-        # .fchk stores lower triangle in row-major order
-        hessian = np.zeros((dim, dim))
-        idx = 0
-        for i in range(dim):
-            for j in range(i + 1):
-                hessian[i, j] = hessian_flat[idx]
-                hessian[j, i] = hessian_flat[idx]
-                idx += 1
-
-    return symbols, coords_ang, hessian, charge, multiplicity
-
-
-def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
-    """Compute dihedral angle (degrees) for four points.
-
-    Uses the atan2 formulation that returns values in [-180, 180].
-
-    Args:
-        p0 (np.ndarray): Coordinates of the first atom.
-        p1 (np.ndarray): Coordinates of the second atom.
-        p2 (np.ndarray): Coordinates of the third atom.
-        p3 (np.ndarray): Coordinates of the fourth atom.
-
-    Returns:
-        float: Dihedral angle in degrees, in the range [-180, 180].
-
-    """
-    b1 = np.asarray(p1) - np.asarray(p0)
-    b2 = np.asarray(p2) - np.asarray(p1)
-    b3 = np.asarray(p3) - np.asarray(p2)
-    n1 = np.cross(b1, b2)
-    n2 = np.cross(b2, b3)
-    n1_norm = np.linalg.norm(n1)
-    n2_norm = np.linalg.norm(n2)
-    if n1_norm < 1e-10 or n2_norm < 1e-10:
-        return 0.0
-    n1 = n1 / n1_norm
-    n2 = n2 / n2_norm
-    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
-    x = float(np.dot(n1, n2))
-    y = float(np.dot(m1, n2))
-    return float(np.degrees(np.arctan2(y, x)))
+from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator as _EigenmatrixEvaluator  # noqa: E402
+from q2mm.optimizers.evaluators.energy import EnergyEvaluator as _EnergyEvaluator  # noqa: E402
+from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator as _FrequencyEvaluator  # noqa: E402
+from q2mm.optimizers.evaluators.geometry import GeometryEvaluator as _GeometryEvaluator  # noqa: E402
 
 
 # ---- Objective function ----
@@ -904,9 +778,11 @@ class ObjectiveFunction:
         # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
         # evaluation — critical for optimization performance.
         self._handles: dict[int, object] = {}
-        # Cached QM eigenvectors per molecule (precomputed once for
-        # eigenmatrix comparisons — the QM basis is fixed).
-        self._qm_eigenvectors: dict[int, np.ndarray] = {}
+        # Per-data-type evaluator instances (created once, reused).
+        self._energy_evaluator = _EnergyEvaluator()
+        self._frequency_evaluator = _FrequencyEvaluator()
+        self._geometry_evaluator = _GeometryEvaluator()
+        self._eigenmatrix_evaluator = _EigenmatrixEvaluator()
 
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
@@ -1071,6 +947,9 @@ class ObjectiveFunction:
     def _evaluate_molecule(self, mol_idx: int, forcefield: ForceField) -> dict:
         """Run MM calculations for a single molecule.
 
+        Delegates to per-data-type evaluators where available, populating
+        the results dict with the same keys for backward compatibility.
+
         Args:
             mol_idx (int): Index into the molecules list.
             forcefield: The force field to evaluate (typically a temporary
@@ -1089,55 +968,40 @@ class ObjectiveFunction:
         needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
 
         if "energy" in needed:
-            result["energy"] = self.engine.energy(structure, forcefield)
+            er = self._energy_evaluator.compute(self.engine, mol, self.forcefield, structure=structure)
+            result["energy"] = er.energy
 
         if "frequency" in needed:
-            result["frequencies"] = self.engine.frequencies(structure, forcefield)
+            fr = self._frequency_evaluator.compute(self.engine, mol, self.forcefield, structure=structure)
+            result["frequencies"] = fr.frequencies
 
-        if "bond_length" in needed or "bond_angle" in needed or "torsion_angle" in needed:
-            # Geometry observables require MM-minimized structures to be
-            # meaningful (the input geometry is fixed). Minimize first.
-            # Pass the raw molecule (not cached handle) because minimize()
-            # mutates context positions — reusing the cached handle would
-            # corrupt subsequent energy/frequency evaluations.
-            _energy, _atoms, opt_coords = self.engine.minimize(mol, forcefield)
-            opt_mol = Q2MMMolecule(
-                symbols=mol.symbols,
-                geometry=opt_coords,
-                name=mol.name,
-                atom_types=list(mol.atom_types),
-                bond_tolerance=mol.bond_tolerance,
+        if needed & self._geometry_evaluator.GEOMETRY_KINDS:
+            geo_needed = frozenset(needed & self._geometry_evaluator.GEOMETRY_KINDS)
+            # Geometry evaluator runs minimize internally on the raw molecule.
+            gr = self._geometry_evaluator.compute(
+                self.engine,
+                mol,
+                self.forcefield,
+                needed_kinds=geo_needed,
             )
-            if "bond_length" in needed:
-                # Store both positional list and atom-keyed dict for matching
-                result["bond_lengths"] = [b.length for b in opt_mol.bonds]
-                result["bond_lengths_by_atoms"] = {tuple(sorted((b.atom_i, b.atom_j))): b.length for b in opt_mol.bonds}
-            if "bond_angle" in needed:
-                result["bond_angles"] = [a.value for a in opt_mol.angles]
-                result["bond_angles_by_atoms"] = {(a.atom_i, a.atom_j, a.atom_k): a.value for a in opt_mol.angles}
-            if "torsion_angle" in needed:
-                result["torsion_coords"] = opt_coords
+            if "bond_length" in geo_needed:
+                result["bond_lengths"] = gr.bond_lengths
+                result["bond_lengths_by_atoms"] = gr.bond_lengths_by_atoms
+            if "bond_angle" in geo_needed:
+                result["bond_angles"] = gr.bond_angles
+                result["bond_angles_by_atoms"] = gr.bond_angles_by_atoms
+            if "torsion_angle" in geo_needed:
+                result["torsion_coords"] = gr.torsion_coords
 
-        if "eig_diagonal" in needed or "eig_offdiagonal" in needed:
-            from q2mm.models.hessian import decompose, transform_to_eigenmatrix
-
-            # Compute MM Hessian (engine returns canonical Hartree/Bohr²)
-            # and project onto QM eigenvectors for eigenmatrix comparison.
-            mm_hess = self.engine.hessian(structure, forcefield)
-
-            # Cache QM eigenvectors (fixed across evaluations)
-            if mol_idx not in self._qm_eigenvectors:
-                if mol.hessian is None:
-                    raise ValueError(
-                        f"Molecule {mol_idx} ({mol.name}) has no QM Hessian. "
-                        "Eigenmatrix training requires a QM Hessian for the eigenvector basis."
-                    )
-                _, qm_evecs = decompose(mol.hessian)
-                self._qm_eigenvectors[mol_idx] = qm_evecs
-
-            qm_evecs = self._qm_eigenvectors[mol_idx]
-            eigenmatrix = transform_to_eigenmatrix(mm_hess, qm_evecs)
-            result["eigenmatrix"] = eigenmatrix
+        if needed & self._eigenmatrix_evaluator.EIGENMATRIX_KINDS:
+            emr = self._eigenmatrix_evaluator.compute(
+                self.engine,
+                mol,
+                self.forcefield,
+                structure=structure,
+                mol_idx=mol_idx,
+            )
+            result["eigenmatrix"] = emr.eigenmatrix
 
         return result
 
@@ -1145,9 +1009,7 @@ class ObjectiveFunction:
     def _extract_value(calc: dict, ref: ReferenceValue) -> float:
         """Extract a calculated value matching a reference observation.
 
-        For bond_length and bond_angle, prefers atom-identity matching via
-        ``ref.atom_indices`` when available, falling back to positional
-        ``ref.data_idx`` for backwards compatibility.
+        Delegates to per-data-type evaluators for extraction logic.
 
         Args:
             calc (dict): Calculated results from :meth:`_evaluate_molecule`.
@@ -1164,68 +1026,13 @@ class ObjectiveFunction:
 
         """
         if ref.kind == "energy":
-            return calc["energy"]
+            return _EnergyEvaluator.extract_value(calc, ref)
         elif ref.kind == "frequency":
-            freqs = calc["frequencies"]
-            if ref.data_idx >= len(freqs):
-                raise IndexError(
-                    f"Frequency data_idx={ref.data_idx} out of range "
-                    f"(molecule has {len(freqs)} modes). Label: {ref.label!r}"
-                )
-            return freqs[ref.data_idx]
-        elif ref.kind == "bond_length":
-            if ref.atom_indices is not None:
-                key = tuple(sorted(ref.atom_indices[:2]))
-                by_atoms = calc.get("bond_lengths_by_atoms", {})
-                if key not in by_atoms:
-                    raise KeyError(
-                        f"No bond found for atoms {key}. Available bonds: {list(by_atoms.keys())}. Label: {ref.label!r}"
-                    )
-                return by_atoms[key]
-            lengths = calc["bond_lengths"]
-            if ref.data_idx >= len(lengths):
-                raise IndexError(
-                    f"Bond data_idx={ref.data_idx} out of range "
-                    f"(molecule has {len(lengths)} bonds). Label: {ref.label!r}"
-                )
-            return lengths[ref.data_idx]
-        elif ref.kind == "bond_angle":
-            if ref.atom_indices is not None:
-                by_atoms = calc.get("bond_angles_by_atoms", {})
-                key = tuple(ref.atom_indices[:3])
-                # Try both orderings: (i, j, k) and (k, j, i)
-                if key not in by_atoms:
-                    key = (key[2], key[1], key[0])
-                if key not in by_atoms:
-                    raise KeyError(
-                        f"No angle found for atoms {ref.atom_indices[:3]}. "
-                        f"Available angles: {list(by_atoms.keys())}. Label: {ref.label!r}"
-                    )
-                return by_atoms[key]
-            angles = calc["bond_angles"]
-            if ref.data_idx >= len(angles):
-                raise IndexError(
-                    f"Angle data_idx={ref.data_idx} out of range "
-                    f"(molecule has {len(angles)} angles). Label: {ref.label!r}"
-                )
-            return angles[ref.data_idx]
-        elif ref.kind == "torsion_angle":
-            if ref.atom_indices is None or len(ref.atom_indices) < 4:
-                raise ValueError(f"torsion_angle requires atom_indices with 4 atoms. Label: {ref.label!r}")
-            coords = calc["torsion_coords"]
-            return _dihedral_angle(
-                coords[ref.atom_indices[0]],
-                coords[ref.atom_indices[1]],
-                coords[ref.atom_indices[2]],
-                coords[ref.atom_indices[3]],
-            )
-        elif ref.kind == "eig_diagonal":
-            eigenmatrix = calc["eigenmatrix"]
-            return float(eigenmatrix[ref.data_idx, ref.data_idx])
-        elif ref.kind == "eig_offdiagonal":
-            eigenmatrix = calc["eigenmatrix"]
-            row, col = ref.atom_indices[:2]
-            return float(eigenmatrix[row, col])
+            return _FrequencyEvaluator.extract_value(calc, ref)
+        elif ref.kind in _GeometryEvaluator.GEOMETRY_KINDS:
+            return _GeometryEvaluator.extract_value(calc, ref)
+        elif ref.kind in _EigenmatrixEvaluator.EIGENMATRIX_KINDS:
+            return _EigenmatrixEvaluator.extract_value(calc, ref)
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 
@@ -1234,4 +1041,4 @@ class ObjectiveFunction:
         self.n_eval = 0
         self.history.clear()
         self._handles.clear()
-        self._qm_eigenvectors.clear()
+        self._eigenmatrix_evaluator.reset()
