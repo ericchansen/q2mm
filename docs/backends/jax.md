@@ -48,7 +48,7 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 |------|:---------:|
 | Bonds (harmonic) | ✅ |
 | Angles (harmonic) | ✅ |
-| Torsions (cosine) | ⚠️ [#127](https://github.com/ericchansen/q2mm/issues/127) |
+| Torsions (cosine) | ✅ |
 | Improper torsions | ❌ |
 | vdW (LJ 12-6) | ✅ |
 | Electrostatics | ❌ |
@@ -122,7 +122,7 @@ engine = JaxMDEngine(
 |------|:---------:|
 | Bonds (harmonic) | ✅ |
 | Angles (harmonic) | ✅ |
-| Torsions (cosine) | ⚠️ [#127](https://github.com/ericchansen/q2mm/issues/127) |
+| Torsions (cosine) | ✅ |
 | Improper torsions | ❌ |
 | vdW (LJ 12-6) | ✅ |
 | Electrostatics | Infrastructure only (charges zeroed) |
@@ -207,5 +207,5 @@ print(f"Energy: {e:.4f}, grad shape: {grad.shape}")
 - [Engine comparison table](index.md#engine-overview)
 - [Parameter transferability](index.md#parameter-transferability)
 - [Benchmarks](../benchmarks/index.md)
-- [API Reference: JaxEngine](../reference/q2mm/backends/mm/jax_engine/)
-- [API Reference: JaxMDEngine](../reference/q2mm/backends/mm/jax_md_engine/)
+- [API Reference: JaxEngine](../reference/q2mm/backends/mm/jax_engine.md)
+- [API Reference: JaxMDEngine](../reference/q2mm/backends/mm/jax_md_engine.md)

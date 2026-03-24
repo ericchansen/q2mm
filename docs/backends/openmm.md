@@ -48,7 +48,7 @@ Override with the `platform_name` constructor parameter if needed.
 |------|:---:|:---:|
 | Bonds | ✅ Harmonic | ✅ Cubic/quartic |
 | Angles | ✅ Harmonic | ✅ Sextic |
-| Torsions | ⚠️ [#127](https://github.com/ericchansen/q2mm/issues/127) | ⚠️ [#127](https://github.com/ericchansen/q2mm/issues/127) |
+| Torsions | ✅ | ✅ |
 | Improper torsions | ❌ | ❌ |
 | vdW (LJ 12-6) | ✅ | — |
 | vdW (Buckingham exp-6) | — | ✅ |
@@ -145,4 +145,4 @@ print(f"Frequencies: {freqs}")
 - [Engine comparison table](index.md#engine-overview)
 - [Parameter transferability](index.md#parameter-transferability)
 - [Benchmarks](../benchmarks/index.md)
-- [API Reference: OpenMMEngine](../reference/q2mm/backends/mm/openmm/)
+- [API Reference: OpenMMEngine](../reference/q2mm/backends/mm/openmm.md)

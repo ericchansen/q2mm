@@ -39,7 +39,7 @@ The engine searches for Tinker executables in this order:
 |------|:---------:|
 | Bonds (MM3 cubic/quartic) | ✅ |
 | Angles (MM3 sextic) | ✅ |
-| Torsions | ⚠️ [#127](https://github.com/ericchansen/q2mm/issues/127) |
+| Torsions | ❌ |
 | Improper torsions | ❌ |
 | vdW (Buckingham exp-6) | ✅ |
 | Electrostatics | ✅ (Tinker default) |
@@ -131,4 +131,4 @@ print(f"Frequencies: {freqs}")
 - [Engine comparison table](index.md#engine-overview)
 - [Parameter transferability](index.md#parameter-transferability)
 - [Benchmarks](../benchmarks/index.md)
-- [API Reference: TinkerEngine](../reference/q2mm/backends/mm/tinker/)
+- [API Reference: TinkerEngine](../reference/q2mm/backends/mm/tinker.md)
