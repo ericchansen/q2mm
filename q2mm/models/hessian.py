@@ -53,8 +53,15 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
     if not items:
         return []
 
-    # Plain strings
+    # Plain strings — validate they are known elements
     if isinstance(items[0], str):
+        unknown = [s for s in items if s not in co.MASSES]
+        if unknown:
+            raise ValueError(
+                f"Unknown element symbol(s): {unknown}. "
+                "Dummy atoms ('X', 'Du') should be excluded before "
+                "calling mass-weighting functions."
+            )
         return items
 
     # Legacy Atom objects (duck-typed: .element, .is_dummy)
@@ -88,17 +95,12 @@ def mass_weight_hessian(
         reverse: If ``True``, un-mass-weight instead.
     """
     symbols = _resolve_symbols(atoms)
-    masses = [co.MASSES[s] for s in symbols]
-    inv_sqrt = []
-    for m in masses:
-        inv_sqrt.extend([1.0 / np.sqrt(m)] * 3)
-    rows, cols = hess.shape
-    for i in range(rows):
-        for j in range(cols):
-            if reverse:
-                hess[i, j] /= inv_sqrt[i] * inv_sqrt[j]
-            else:
-                hess[i, j] *= inv_sqrt[i] * inv_sqrt[j]
+    inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols for _ in range(3)])
+    scale = np.outer(inv_sqrt, inv_sqrt)
+    if reverse:
+        hess /= scale
+    else:
+        hess *= scale
 
 
 def mass_weight_force_constant(

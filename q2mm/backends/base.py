@@ -23,8 +23,7 @@ class QMEngine(ABC):
         """Calculate single-point energy in Hartrees.
 
         Args:
-            structure: Molecular structure (``Q2MMMolecule``, path to XYZ
-                file, or engine-specific molecule object).
+            structure: Molecular structure.
             method: QM method or functional (e.g. ``"b3lyp"``, ``"mp2"``).
             basis: Basis set name (e.g. ``"def2-svp"``, ``"6-31+G(d)"``).
 
@@ -129,8 +128,9 @@ class MMEngine(ABC):
         """Calculate MM energy in kcal/mol.
 
         Args:
-            structure: Molecular structure or engine-specific context
-                (e.g. ``OpenMMHandle``, ``JaxHandle``).
+            structure: Molecular structure.  Concrete engines may widen
+                this to accept engine-specific handles (e.g.
+                ``OpenMMHandle``) per the Liskov Substitution Principle.
             forcefield: Force field parameters.
 
         Returns:
@@ -143,7 +143,7 @@ class MMEngine(ABC):
         """Energy-minimize structure.
 
         Args:
-            structure: Molecular structure or engine-specific context.
+            structure: Molecular structure.
             forcefield: Force field parameters.
 
         Returns:
@@ -156,7 +156,7 @@ class MMEngine(ABC):
         """Calculate MM Hessian matrix.
 
         Args:
-            structure: Molecular structure or engine-specific context.
+            structure: Molecular structure.
             forcefield: Force field parameters.
 
         Returns:
@@ -169,7 +169,7 @@ class MMEngine(ABC):
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
-            structure: Molecular structure or engine-specific context.
+            structure: Molecular structure.
             forcefield: Force field parameters.
 
         Returns:
