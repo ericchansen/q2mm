@@ -8,6 +8,8 @@ Usage:
     python scripts/generate_optimization_fixtures.py
 """
 
+from __future__ import annotations
+
 import json
 import sys
 from datetime import datetime, timezone
@@ -44,7 +46,7 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
+def _water_ff(bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -52,7 +54,7 @@ def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> Force
     )
 
 
-def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
+def _make_water_problem(engine: OpenMMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, OpenMMEngine]:
     """Create a water optimization problem with known true parameters."""
     if engine is None:
         engine = OpenMMEngine()
@@ -83,6 +85,7 @@ def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
 
 
 def main() -> int:
+    """Generate and save optimization golden fixture data."""
     print("Generating optimization golden fixture ...")
 
     true_ff, guess_ff, mols, ref, engine = _make_water_problem()

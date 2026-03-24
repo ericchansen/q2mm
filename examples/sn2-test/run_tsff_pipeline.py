@@ -1,5 +1,7 @@
 """Full TSFF pipeline using the clean Q2MM models API."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 import sys
@@ -17,7 +19,7 @@ from q2mm.models.seminario import estimate_force_constants, estimate_force_const
 QM_REF = Path(__file__).parent / "qm-reference"
 
 
-def create_sn2_ff(path):
+def create_sn2_ff(path: str | Path) -> str | Path:
     """Create a minimal MM3 force field for the SN2 F-CH3-F system.
 
     Parameters are rough initial guesses that Seminario will improve.
@@ -53,7 +55,8 @@ def create_sn2_ff(path):
     return path
 
 
-def main():
+def main() -> None:
+    """Run the full TSFF pipeline for the SN2 system."""
     print("=" * 70)
     print("Q2MM TSFF Pipeline: SN2 F- + CH3F Transition State")
     print("=" * 70)

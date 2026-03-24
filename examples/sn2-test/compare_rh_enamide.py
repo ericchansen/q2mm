@@ -19,6 +19,7 @@ FIXTURE_PATH = REPO_ROOT / "test" / "fixtures" / "seminario_parity" / "rh_enamid
 
 
 def main() -> int:
+    """Compare Rh-enamide bond projections against the pinned fixture."""
     fixture = json.loads(FIXTURE_PATH.read_text())
     training_dir = REPO_ROOT / "examples" / "rh-enamide" / "rh_enamide_training_set"
     mol2_path = REPO_ROOT / fixture["metadata"]["mol2_path"]

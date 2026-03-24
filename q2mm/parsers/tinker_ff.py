@@ -183,7 +183,7 @@ class TinkerFF(FF):
     def export_ff(
         self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
     ) -> None:
-        """Export the force field to a file, typically ``mm3.fld``.
+        """Export the force field to a Tinker parameter file (``.prm``).
 
         Args:
             path (str | None): Output file path. Defaults to ``self.path``.
@@ -407,7 +407,7 @@ class TinkerMM3A(FF):
     def export_ff(
         self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
     ) -> None:
-        """Export the force field to a file, typically ``mm3.fld``.
+        """Export the force field to a Tinker MM3A parameter file (``.prm``).
 
         Uses a fixed-width column layout for the MM3A parameter format.
 

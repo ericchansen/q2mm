@@ -8,6 +8,8 @@ Usage:
     python scripts/generate_benchmarks.py
 """
 
+from __future__ import annotations
+
 import sys
 import time
 from pathlib import Path
@@ -32,6 +34,7 @@ try:
 except Exception:
     HAS_TINKER = False
 
+from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
@@ -54,7 +57,7 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
+def _water_ff(bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -62,7 +65,7 @@ def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> Force
     )
 
 
-def build_problem(engine):
+def build_problem(engine: MMEngine) -> tuple[ForceField, list[Q2MMMolecule], ReferenceData]:
     """Build reference data from true parameters, return (guess_ff, mols, ref)."""
     true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
@@ -86,7 +89,7 @@ def build_problem(engine):
     return guess_ff, mols, ref
 
 
-def run_benchmark(engine, method: str, guess_ff: ForceField, mols, ref, use_bounds=True):
+def run_benchmark(engine: MMEngine, method: str, guess_ff: ForceField, mols: list[Q2MMMolecule], ref: ReferenceData, use_bounds: bool = True) -> dict[str, object]:
     """Run a single optimizer benchmark from a FRESH copy of guess_ff."""
     # Deep copy the guess FF so each method starts from identical params
     fresh_ff = _water_ff(
@@ -116,6 +119,7 @@ def run_benchmark(engine, method: str, guess_ff: ForceField, mols, ref, use_boun
 
 
 def format_score(score: float) -> str:
+    """Format a score value with appropriate decimal precision."""
     if score < 0.01:
         return f"{score:.3f}"
     elif score < 10:
@@ -124,7 +128,8 @@ def format_score(score: float) -> str:
         return f"{score:.1f}"
 
 
-def print_table(backend_name: str, results: list[dict]):
+def print_table(backend_name: str, results: list[dict]) -> None:
+    """Print a Markdown benchmark results table for one backend."""
     print(f"\n### {backend_name} Backend\n")
     print("| Method | Time | Evaluations | Evals/s | Initial → Final Score |")
     print("|--------|------|-------------|---------|----------------------|")
@@ -137,6 +142,7 @@ def print_table(backend_name: str, results: list[dict]):
 
 
 def main() -> int:
+    """Run optimizer benchmarks and print results as Markdown tables."""
     methods_bounded = ["L-BFGS-B", "Powell"]
     methods_unbounded = ["Nelder-Mead"]
 

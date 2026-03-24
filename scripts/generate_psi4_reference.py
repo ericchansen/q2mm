@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Psi4 QM reference data for rh-enamide (issue #74, D2).
+r"""Generate Psi4 QM reference data for rh-enamide (issue #74, D2).
 
 Computes Hessians for the 9 rh-enamide training-set structures using Psi4
 at B3LYP/def2-SVP (comparable to Jaguar's B3LYP/LACVP**). def2-SVP includes
@@ -63,7 +63,8 @@ def qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> n
     return freqs
 
 
-def main():
+def main() -> None:
+    """Compute and save Psi4 Hessians for the rh-enamide training set."""
     print("Loading rh-enamide structures...")
     mm = MacroModel(str(MMO))
     jag_files = sorted(
