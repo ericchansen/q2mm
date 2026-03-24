@@ -93,6 +93,179 @@ class TestMoleculeFromXYZ:
         assert any(angle.env_id == "5-1-5" for angle in mol.angles)
 
 
+# ---- Torsion detection ----
+
+
+def _ethane() -> Q2MMMolecule:
+    """Build a staggered ethane molecule for torsion tests."""
+    # C-C along x-axis, tetrahedral H arrangement, staggered by 60°
+    r_cc = 1.54
+    r_ch = 1.09
+    theta = np.radians(109.5)  # H-C-C angle
+    cos_t = np.cos(theta)  # ≈ -0.334
+    sin_t = np.sin(theta)  # ≈ 0.943
+    c1 = np.array([0.0, 0.0, 0.0])
+    c2 = np.array([r_cc, 0.0, 0.0])
+    # H on C1: 109.5° from +x axis, azimuthal 0°/120°/240°
+    h1 = c1 + r_ch * np.array([cos_t, sin_t, 0.0])
+    h2 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(2 * np.pi / 3), sin_t * np.sin(2 * np.pi / 3)])
+    h3 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(4 * np.pi / 3), sin_t * np.sin(4 * np.pi / 3)])
+    # H on C2: 109.5° from -x axis, staggered azimuthal 60°/180°/300°
+    h4 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi / 3), sin_t * np.sin(np.pi / 3)])
+    h5 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi), sin_t * np.sin(np.pi)])
+    h6 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(5 * np.pi / 3), sin_t * np.sin(5 * np.pi / 3)])
+    return Q2MMMolecule(
+        symbols=["C", "C", "H", "H", "H", "H", "H", "H"],
+        geometry=np.array([c1, c2, h1, h2, h3, h4, h5, h6]),
+        name="ethane",
+    )
+
+
+class TestTorsionDetection:
+    def test_ethane_torsion_count(self) -> None:
+        """Ethane has 9 unique H-C-C-H torsions."""
+        mol = _ethane()
+        assert len(mol.torsions) == 9
+
+    def test_ethane_torsion_elements(self) -> None:
+        """All ethane torsions are H-C-C-H."""
+        mol = _ethane()
+        for t in mol.torsions:
+            assert t.element_quad == ("H", "C", "C", "H")
+
+    def test_ethane_torsion_angles_finite(self) -> None:
+        """All dihedral angles are finite and in [-180, 180]."""
+        mol = _ethane()
+        for t in mol.torsions:
+            assert -180.0 <= t.value <= 180.0
+            assert np.isfinite(t.value)
+
+    def test_water_no_torsions(self) -> None:
+        """Water (H-O-H) has no torsions — not enough connectivity depth."""
+        water = Q2MMMolecule(
+            symbols=["O", "H", "H"],
+            geometry=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
+        )
+        assert len(water.torsions) == 0
+
+    def test_ch3f_no_torsions(self) -> None:
+        """CH3F has no torsions — F is terminal with no further neighbors."""
+        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        assert len(mol.torsions) == 0
+
+    def test_no_duplicate_torsions(self) -> None:
+        """A-B-C-D and D-C-B-A should not both appear."""
+        mol = _ethane()
+        seen = set()
+        for t in mol.torsions:
+            key = (t.atom_i, t.atom_j, t.atom_k, t.atom_l)
+            key_rev = (t.atom_l, t.atom_k, t.atom_j, t.atom_i)
+            assert key not in seen and key_rev not in seen
+            seen.add(key)
+
+    def test_element_quad_canonical(self) -> None:
+        """element_quad returns the lexically smaller direction."""
+        from q2mm.models.molecule import DetectedTorsion
+
+        t = DetectedTorsion(0, 1, 2, 3, ("H", "C", "N", "O"), 60.0)
+        # forward: (H,C,N,O), reverse: (O,N,C,H) — forward is smaller
+        assert t.element_quad == ("H", "C", "N", "O")
+        t2 = DetectedTorsion(0, 1, 2, 3, ("O", "N", "C", "H"), 60.0)
+        assert t2.element_quad == ("H", "C", "N", "O")
+
+    def test_torsion_env_ids(self) -> None:
+        """Torsion env_ids use canonical (directional) atom-type labels."""
+        mol = _ethane()
+        env_ids = {t.env_id for t in mol.torsions}
+        # All H-C-C-H with default atom_types = symbols → "C-C-H-H" or "H-C-C-H"
+        assert len(env_ids) == 1
+        assert env_ids.pop() == "H-C-C-H"  # palindrome, same in both directions
+
+
+class TestMatchTorsion:
+    def test_match_by_elements(self) -> None:
+        """match_torsion finds all periodicity components by element quad."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+                TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.25),
+            ],
+        )
+        matches = ff.match_torsion(("H", "C", "C", "H"))
+        assert len(matches) == 3
+
+    def test_match_reversed(self) -> None:
+        """match_torsion matches reversed element order."""
+        ff = ForceField(
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5)],
+        )
+        matches = ff.match_torsion(("H", "C", "C", "H"))
+        assert len(matches) == 1
+
+    def test_match_by_periodicity(self) -> None:
+        """match_torsion filters by periodicity when specified."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
+            ],
+        )
+        matches = ff.match_torsion(("H", "C", "C", "H"), periodicity=2)
+        assert len(matches) == 1
+        assert matches[0].force_constant == -0.10
+
+    def test_match_by_ff_row(self) -> None:
+        """match_torsion prioritizes ff_row over element matching."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15, ff_row=10),
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.99, ff_row=20),
+            ],
+        )
+        matches = ff.match_torsion(("H", "C", "C", "H"), ff_row=20)
+        assert len(matches) == 1
+        assert matches[0].force_constant == 0.99
+
+    def test_no_match_returns_empty(self) -> None:
+        """match_torsion returns empty list when nothing matches."""
+        ff = ForceField(
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5)],
+        )
+        matches = ff.match_torsion(("C", "N", "C", "O"))
+        assert matches == []
+
+    def test_match_proper_vs_improper_filter(self) -> None:
+        """match_torsion can filter by is_improper flag."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.30, is_improper=True),
+            ],
+        )
+        proper = ff.match_torsion(("H", "C", "C", "H"), is_improper=False)
+        assert len(proper) == 1
+        assert proper[0].force_constant == 0.15
+        improper = ff.match_torsion(("H", "C", "C", "H"), is_improper=True)
+        assert len(improper) == 1
+        assert improper[0].force_constant == 0.30
+        both = ff.match_torsion(("H", "C", "C", "H"))
+        assert len(both) == 2
+
+    def test_proper_and_improper_properties(self) -> None:
+        """ForceField.proper_torsions and .improper_torsions filter correctly."""
+        ff = ForceField(
+            torsions=[
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
+                TorsionParam(("C", "N", "C", "O"), periodicity=2, force_constant=1.0, is_improper=True),
+            ],
+        )
+        assert len(ff.proper_torsions) == 1
+        assert len(ff.improper_torsions) == 1
+        assert ff.proper_torsions[0].force_constant == 0.15
+        assert ff.improper_torsions[0].is_improper is True
+
+
 # ---- ForceField ----
 
 
@@ -569,14 +742,14 @@ class TestAmberFrcmod:
 
     def test_load_dihedrals(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
-        proper = [t for t in ff.torsions if "(improper)" not in t.label]
-        assert len(proper) == 8
+        assert len(ff.proper_torsions) == 8
 
     def test_load_impropers(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
-        improper = [t for t in ff.torsions if "(improper)" in t.label]
-        assert len(improper) == 3
-        assert improper[0].force_constant == pytest.approx(10.5)
+        assert len(ff.improper_torsions) == 3
+        assert ff.improper_torsions[0].force_constant == pytest.approx(10.5)
+        assert all(t.is_improper for t in ff.improper_torsions)
+        assert all(not t.is_improper for t in ff.proper_torsions)
 
     def test_load_vdw(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
