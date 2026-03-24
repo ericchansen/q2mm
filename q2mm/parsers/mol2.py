@@ -172,7 +172,7 @@ class Mol2(File):
 
         return bonds
 
-    def parse_structure(self, structure_chunk: str, chunk_index: int = None) -> Structure:
+    def parse_structure(self, structure_chunk: str, chunk_index: int | None = None) -> Structure:
         """Parse a single structure from a mol2 molecule chunk.
 
         Args:
