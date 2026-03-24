@@ -907,13 +907,13 @@ class ObjectiveFunction:
     def gradient(self, param_vector: np.ndarray) -> np.ndarray:
         """Compute analytical gradient of the score w.r.t. parameters.
 
-        Uses the engine's ``energy_and_param_grad()`` method (available on
-        :class:`~q2mm.backends.mm.jax_engine.JaxEngine`) to compute exact
-        derivatives for energy reference data.  Raises ``NotImplementedError``
-        for reference data types that require Hessians or minimized geometries;
-        use ``jac=None`` (finite differences) for mixed reference data.
+        Delegates to each evaluator's ``gradient()`` method where
+        analytical gradients are available.  For evaluators that do not
+        yet support analytical gradients, falls back to finite-difference
+        approximation of that evaluator's score contribution.
 
-        The score is ``sum_i (w_i * (ref_i - calc_i))**2``, so:
+        The score is ``sum_i (w_i * (ref_i - calc_i))**2``, so each
+        evaluator computes:
 
         ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
 
@@ -930,49 +930,224 @@ class ObjectiveFunction:
         Returns:
             np.ndarray: Gradient of the score with respect to each parameter.
 
-        Raises:
-            TypeError: If the engine does not support
-                ``energy_and_param_grad()``.
-            NotImplementedError: If the reference data contains types
-                other than ``energy`` (Hessian/frequency/geometry gradient
-                support is planned).
+        Note:
+            Evaluators that support analytical gradients (e.g. energy via
+            ``energy_and_param_grad``) are used directly.  Evaluators that
+            do not support them are handled transparently via central
+            finite-difference fallback — no error is raised.
+
+        Note:
+            ``n_eval`` and ``history`` track only objective-function
+            evaluations made through ``__call__``.  The finite-difference
+            gradient evaluations performed here are internal to the
+            gradient computation and are intentionally excluded from
+            those counters.
 
         """
-        if not self.engine.supports_analytical_gradients():
-            raise TypeError(
-                f"{self.engine.name} does not support analytical gradients. "
-                "Use a JaxEngine or another differentiable engine."
-            )
-
         ff = self.forcefield.with_params(param_vector)
-
-        # Check which data types are needed
-        all_kinds = {ref.kind for ref in self.reference.values}
-        unsupported = all_kinds - {"energy"}
-        if unsupported:
-            raise NotImplementedError(
-                f"Analytical gradients not yet supported for data types: {unsupported}. "
-                "Only 'energy' references are supported. Use finite differences (jac=None) "
-                "for mixed reference data, or contribute Hessian/geometry gradient support."
-            )
-
-        # Compute energy + gradient for each molecule
         n_params = len(param_vector)
         total_grad = np.zeros(n_params)
-        energy_cache: dict[int, tuple[float, np.ndarray]] = {}
 
+        # Group references by molecule and evaluator kind
+        refs_by_mol: dict[int, dict[str, list[ReferenceValue]]] = {}
         for ref in self.reference.values:
-            mol_idx = ref.molecule_idx
-            if mol_idx not in energy_cache:
-                structure = self._get_structure(mol_idx)
-                energy_cache[mol_idx] = self.engine.energy_and_param_grad(structure, ff)
+            mol_refs = refs_by_mol.setdefault(ref.molecule_idx, {})
+            # Map kinds to evaluator categories
+            category = self._kind_to_category(ref.kind)
+            mol_refs.setdefault(category, []).append(ref)
 
-            calc_value, calc_grad = energy_cache[mol_idx]
-            diff = ref.value - calc_value
-            # d(score)/d(p) = -2 * w^2 * (ref - calc) * d(calc)/d(p)
-            total_grad += -2.0 * ref.weight**2 * diff * calc_grad
+        # Process each molecule's evaluator contributions
+        for mol_idx, category_refs in refs_by_mol.items():
+            mol = self.molecules[mol_idx]
+
+            for category, refs in category_refs.items():
+                evaluator = self._get_evaluator(category)
+                if evaluator.supports_analytical_gradient(self.engine):
+                    # _get_structure returns a cached handle for engines
+                    # that support runtime params, or the raw molecule
+                    # for stateless backends — no exception-based dispatch.
+                    structure = self._get_structure(mol_idx)
+                    grad = evaluator.gradient(
+                        self.engine,
+                        mol,
+                        ff,
+                        refs,
+                        n_params,
+                        structure=structure,
+                    )
+                    total_grad += grad
+                else:
+                    # Finite-difference fallback for this evaluator's contribution
+                    grad = self._finite_difference_gradient(
+                        param_vector,
+                        mol_idx,
+                        category,
+                        refs,
+                    )
+                    total_grad += grad
 
         return total_grad
+
+    def _finite_difference_gradient(
+        self,
+        param_vector: np.ndarray,
+        mol_idx: int,
+        category: str,
+        refs: list[ReferenceValue],
+        step: float = 1e-4,  # TODO: make configurable via OptConfig (#166)
+    ) -> np.ndarray:
+        """Compute finite-difference gradient for one evaluator's contribution.
+
+        Uses central differences: ``(f(x+h) - f(x-h)) / (2h)`` for each
+        parameter, where ``f`` is the sum-of-squared weighted residuals
+        from *refs* only.
+
+        .. warning::
+
+            For ``frequency`` and ``eigenmatrix`` categories, the FD
+            perturbation evaluates at the *original* (unperturbed)
+            geometry rather than re-optimizing at each perturbed
+            parameter set.  This is an approximation — the true
+            derivative includes an implicit geometry-relaxation term.
+            For small parameter perturbations this is usually
+            acceptable, but the resulting gradient may be inaccurate
+            when the potential energy surface is highly anharmonic.
+
+        Args:
+            param_vector: Current parameter vector.
+            mol_idx: Molecule index.
+            category: Evaluator category (``"energy"``, ``"frequency"``,
+                ``"geometry"``, or ``"eigenmatrix"``).
+            refs: Reference values for this evaluator and molecule.
+            step: Finite-difference step size.
+
+        Returns:
+            Gradient vector of shape ``(n_params,)``.
+
+        """
+        n_params = len(param_vector)
+        grad = np.zeros(n_params)
+
+        for j in range(n_params):
+            params_plus = param_vector.copy()
+            params_plus[j] += step
+            score_plus = self._partial_score(params_plus, mol_idx, category, refs)
+
+            params_minus = param_vector.copy()
+            params_minus[j] -= step
+            score_minus = self._partial_score(params_minus, mol_idx, category, refs)
+
+            grad[j] = (score_plus - score_minus) / (2.0 * step)
+
+        return grad
+
+    def _partial_score(
+        self,
+        param_vector: np.ndarray,
+        mol_idx: int,
+        category: str,
+        refs: list[ReferenceValue],
+    ) -> float:
+        """Evaluate score contribution from a subset of references.
+
+        .. warning::
+
+            For ``frequency`` and ``eigenmatrix`` categories this
+            evaluates at the *unperturbed* geometry.  Strictly, the
+            Hessian (and therefore frequencies / eigenmatrix) should
+            be computed at the minimum-energy geometry for the
+            perturbed parameters.  See the note on
+            :meth:`_finite_difference_gradient`.
+
+        Args:
+            param_vector: Parameter vector to evaluate.
+            mol_idx: Molecule index.
+            category: Evaluator category.
+            refs: Reference values to score.
+
+        Returns:
+            Sum-of-squared weighted residuals for the given references.
+
+        """
+        ff = self.forcefield.with_params(param_vector)
+        mol = self.molecules[mol_idx]
+        evaluator = self._get_evaluator(category)
+
+        if category == "geometry":
+            needed_kinds = frozenset(r.kind for r in refs)
+            computed = evaluator.compute(self.engine, mol, ff, needed_kinds=needed_kinds)
+        elif category == "eigenmatrix":
+            # TODO(#149): Re-optimize geometry at perturbed parameters before
+            # computing the eigenmatrix.  Currently evaluates the Hessian at the
+            # original geometry, which is an approximation.
+            structure = self._get_structure(mol_idx)
+            computed = evaluator.compute(
+                self.engine,
+                mol,
+                ff,
+                structure=structure,
+                mol_idx=mol_idx,
+            )
+        elif category == "frequency":
+            # TODO(#149): Re-optimize geometry at perturbed parameters before
+            # computing frequencies.  Currently evaluates the Hessian at the
+            # original geometry, which is an approximation.
+            structure = self._get_structure(mol_idx)
+            computed = evaluator.compute(self.engine, mol, ff, structure=structure)
+        else:
+            structure = self._get_structure(mol_idx)
+            computed = evaluator.compute(self.engine, mol, ff, structure=structure)
+
+        residuals = evaluator.residuals(computed, refs)
+        return float(np.sum(np.array(residuals) ** 2))
+
+    @staticmethod
+    def _kind_to_category(kind: str) -> str:
+        """Map a reference value kind to its evaluator category.
+
+        Args:
+            kind: Reference value kind string.
+
+        Returns:
+            Evaluator category: ``"energy"``, ``"frequency"``,
+            ``"geometry"``, or ``"eigenmatrix"``.
+
+        Raises:
+            ValueError: If the kind is unknown.
+
+        """
+        if kind == "energy":
+            return "energy"
+        elif kind == "frequency":
+            return "frequency"
+        elif kind in ("bond_length", "bond_angle", "torsion_angle"):
+            return "geometry"
+        elif kind in ("eig_diagonal", "eig_offdiagonal"):
+            return "eigenmatrix"
+        raise ValueError(f"Unknown reference kind: {kind}")
+
+    def _get_evaluator(self, category: str) -> Any:
+        """Get the evaluator instance for a category.
+
+        Args:
+            category: Evaluator category string.
+
+        Returns:
+            The evaluator instance.
+
+        Raises:
+            ValueError: If the category is unknown.
+
+        """
+        evaluators: dict[str, Any] = {
+            "energy": self._energy_evaluator,
+            "frequency": self._frequency_evaluator,
+            "geometry": self._geometry_evaluator,
+            "eigenmatrix": self._eigenmatrix_evaluator,
+        }
+        if category not in evaluators:
+            raise ValueError(f"Unknown evaluator category: {category}")
+        return evaluators[category]
 
     def _get_structure(self, mol_idx: int) -> Any:
         """Get the structure handle for a molecule, reusing if possible.

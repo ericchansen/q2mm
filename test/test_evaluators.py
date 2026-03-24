@@ -55,6 +55,66 @@ class StubEngine:
     def supports_runtime_params(self) -> bool:
         return False
 
+    def supports_analytical_gradients(self) -> bool:
+        return False
+
+
+class GradStubEngine(StubEngine):
+    """Stub engine that supports analytical parameter gradients."""
+
+    name = "grad_stub"
+
+    def __init__(
+        self,
+        *,
+        energy: float = 0.0,
+        param_grad: np.ndarray | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(energy=energy, **kwargs)
+        self._param_grad = param_grad if param_grad is not None else np.zeros(0)
+
+    def supports_analytical_gradients(self) -> bool:
+        return True
+
+    def energy_and_param_grad(
+        self,
+        structure: object,
+        forcefield: object = None,
+    ) -> tuple[float, np.ndarray]:
+        return self._energy, np.array(self._param_grad)
+
+
+class RuntimeHandleStubEngine(GradStubEngine):
+    """Stub engine with ``supports_runtime_params() = True``.
+
+    When the objective function dispatches through ``_get_structure``,
+    the engine receives a handle from ``create_context`` instead of
+    the raw molecule.  The ``energy_and_param_grad`` method verifies
+    it receives the handle, not a ``Q2MMMolecule``.
+    """
+
+    name = "runtime_handle_stub"
+
+    _HANDLE_SENTINEL = "runtime_handle"
+
+    def supports_runtime_params(self) -> bool:
+        return True
+
+    def create_context(self, mol: object, forcefield: object = None) -> str:
+        return self._HANDLE_SENTINEL
+
+    def energy_and_param_grad(
+        self,
+        structure: object,
+        forcefield: object = None,
+    ) -> tuple[float, np.ndarray]:
+        from q2mm.models.molecule import Q2MMMolecule
+
+        if isinstance(structure, Q2MMMolecule):
+            raise TypeError("RuntimeHandleStubEngine received a raw Q2MMMolecule instead of a runtime handle")
+        return self._energy, np.array(self._param_grad)
+
 
 # ---- EnergyEvaluator tests ----
 
@@ -419,6 +479,261 @@ class TestProtocolCompliance:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 
         assert isinstance(EigenmatrixEvaluator(), Evaluator)
+
+
+# ---- Evaluator gradient tests ----
+
+
+class TestEnergyEvaluatorGradient:
+    def test_supports_analytical_gradient_true(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        engine = GradStubEngine(energy=1.0, param_grad=np.array([1.0, 2.0]))
+        assert evaluator.supports_analytical_gradient(engine) is True
+
+    def test_supports_analytical_gradient_false(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        engine = StubEngine(energy=1.0)
+        assert evaluator.supports_analytical_gradient(engine) is False
+
+    def test_gradient_single_ref(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        de_dp = np.array([3.0, -1.0])
+        engine = GradStubEngine(energy=10.0, param_grad=de_dp)
+        mol = make_water()
+        refs = [ReferenceValue(kind="energy", value=12.0, weight=2.0)]
+
+        grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
+        # d(score)/d(p) = -2 * w^2 * (ref - calc) * dE/dp
+        # = -2 * 4.0 * 2.0 * [3.0, -1.0] = [-48.0, 16.0]
+        expected = -2.0 * 2.0**2 * (12.0 - 10.0) * de_dp
+        np.testing.assert_allclose(grad, expected)
+
+    def test_gradient_multiple_refs(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        de_dp = np.array([1.0, 0.5])
+        engine = GradStubEngine(energy=5.0, param_grad=de_dp)
+        mol = make_water()
+        refs = [
+            ReferenceValue(kind="energy", value=5.0, weight=1.0),
+            ReferenceValue(kind="energy", value=7.0, weight=0.5),
+        ]
+
+        grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
+        expected = -2.0 * 0.5**2 * (7.0 - 5.0) * de_dp
+        np.testing.assert_allclose(grad, expected)
+
+    def test_gradient_raises_on_unsupported_engine(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        engine = StubEngine(energy=1.0)
+        mol = make_water()
+        refs = [ReferenceValue(kind="energy", value=2.0, weight=1.0)]
+
+        with pytest.raises(TypeError, match="does not support"):
+            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+
+    def test_gradient_validates_de_dp_shape(self) -> None:
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+
+        evaluator = EnergyEvaluator()
+        # Engine returns 2 derivatives but caller expects 3
+        de_dp = np.array([1.0, 2.0])
+        engine = GradStubEngine(energy=5.0, param_grad=de_dp)
+        mol = make_water()
+        refs = [ReferenceValue(kind="energy", value=6.0, weight=1.0)]
+
+        with pytest.raises(ValueError, match="returned 2 derivatives but expected 3"):
+            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=3)
+
+
+class TestFrequencyEvaluatorGradient:
+    def test_supports_analytical_gradient_false(self) -> None:
+        from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
+
+        evaluator = FrequencyEvaluator()
+        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(engine) is False
+
+    def test_gradient_returns_none(self) -> None:
+        from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
+
+        evaluator = FrequencyEvaluator()
+        engine = StubEngine(frequencies=[100.0])
+        mol = make_water()
+        refs = [ReferenceValue(kind="frequency", value=105.0, data_idx=0)]
+
+        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        assert result is None
+
+
+class TestGeometryEvaluatorGradient:
+    def test_supports_analytical_gradient_false(self) -> None:
+        from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+
+        evaluator = GeometryEvaluator()
+        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(engine) is False
+
+    def test_gradient_returns_none(self) -> None:
+        from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+
+        evaluator = GeometryEvaluator()
+        engine = StubEngine()
+        mol = make_water()
+        refs = [ReferenceValue(kind="bond_length", value=1.0, atom_indices=(0, 1))]
+
+        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        assert result is None
+
+
+class TestEigenmatrixEvaluatorGradient:
+    def test_supports_analytical_gradient_false(self) -> None:
+        from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
+
+        evaluator = EigenmatrixEvaluator()
+        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(engine) is False
+
+    def test_gradient_returns_none(self) -> None:
+        from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
+
+        evaluator = EigenmatrixEvaluator()
+        engine = StubEngine()
+        mol = make_water()
+        refs = [ReferenceValue(kind="eig_diagonal", value=1.0, data_idx=0)]
+
+        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        assert result is None
+
+
+# ---- ObjectiveFunction.gradient() delegation tests ----
+
+
+class TestObjectiveFunctionGradient:
+    def test_energy_only_gradient_delegates_to_evaluator(self) -> None:
+        """Energy-only gradient should use analytical evaluator gradient."""
+        from q2mm.optimizers.objective import ObjectiveFunction
+
+        de_dp = np.array([3.0, -1.0])
+        engine = GradStubEngine(energy=10.0, param_grad=de_dp)
+        mol = make_water()
+        ref = ReferenceData()
+        ref.add_energy(12.0, weight=2.0)
+
+        # Need a mock forcefield with with_params
+        ff = _StubForceField(n_params=2)
+        obj = ObjectiveFunction(
+            forcefield=ff,
+            engine=engine,
+            molecules=[mol],
+            reference=ref,
+        )
+
+        grad = obj.gradient(np.array([0.0, 0.0]))
+        expected = -2.0 * 2.0**2 * (12.0 - 10.0) * de_dp
+        np.testing.assert_allclose(grad, expected)
+
+    def test_mixed_refs_uses_fd_fallback_for_frequency(self) -> None:
+        """Mixed energy+frequency refs should use FD for frequency part."""
+        from q2mm.optimizers.objective import ObjectiveFunction
+
+        # Engine supports analytical gradients (for energy)
+        # but frequency evaluator always falls back to FD
+        de_dp = np.array([1.0])
+        engine = GradStubEngine(
+            energy=10.0,
+            param_grad=de_dp,
+            frequencies=[100.0],
+        )
+        mol = make_water()
+        ref = ReferenceData()
+        ref.add_energy(10.0, weight=1.0)  # zero diff → zero energy grad
+        ref.add_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero freq grad
+
+        ff = _StubForceField(n_params=1)
+        obj = ObjectiveFunction(
+            forcefield=ff,
+            engine=engine,
+            molecules=[mol],
+            reference=ref,
+        )
+
+        # Should NOT raise — it should fall back to FD for frequency
+        grad = obj.gradient(np.array([0.0]))
+        # Both diffs are zero, so gradient should be ~zero
+        np.testing.assert_allclose(grad, [0.0], atol=1e-6)
+
+    def test_mixed_refs_nonzero_gradient(self) -> None:
+        """Mixed energy+frequency with non-zero residuals produces correct gradient."""
+        from q2mm.optimizers.objective import ObjectiveFunction
+
+        de_dp = np.array([2.0])
+        engine = GradStubEngine(
+            energy=10.0,
+            param_grad=de_dp,
+            frequencies=[100.0],
+        )
+        mol = make_water()
+        ref = ReferenceData()
+        ref.add_energy(15.0, weight=1.0)
+        ref.add_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero FD contribution
+
+        ff = _StubForceField(n_params=1)
+        obj = ObjectiveFunction(
+            forcefield=ff,
+            engine=engine,
+            molecules=[mol],
+            reference=ref,
+        )
+
+        grad = obj.gradient(np.array([0.0]))
+        # Energy part (analytical): -2 * 1^2 * (15 - 10) * 2.0 = -20.0
+        # Frequency part (FD): stub returns constant → FD ≈ 0
+        expected_energy_grad = -2.0 * 1.0**2 * (15.0 - 10.0) * de_dp
+        np.testing.assert_allclose(grad, expected_energy_grad, atol=1e-6)
+        assert grad[0] != 0.0
+
+    def test_runtime_handle_engine_receives_handle_not_molecule(self) -> None:
+        """Engine with supports_runtime_params=True gets a handle via _get_structure."""
+        from q2mm.optimizers.objective import ObjectiveFunction
+
+        de_dp = np.array([1.0])
+        engine = RuntimeHandleStubEngine(energy=10.0, param_grad=de_dp)
+        mol = make_water()
+        ref = ReferenceData()
+        ref.add_energy(12.0, weight=1.0)
+
+        ff = _StubForceField(n_params=1)
+        obj = ObjectiveFunction(
+            forcefield=ff,
+            engine=engine,
+            molecules=[mol],
+            reference=ref,
+        )
+
+        # Should NOT raise — the engine receives a handle, not a raw molecule
+        grad = obj.gradient(np.array([0.0]))
+        expected = -2.0 * 1.0**2 * (12.0 - 10.0) * de_dp
+        np.testing.assert_allclose(grad, expected)
+
+
+class _StubForceField:
+    """Minimal stub for ForceField used in gradient tests."""
+
+    def __init__(self, n_params: int = 1) -> None:
+        self.n_params = n_params
+
+    def with_params(self, param_vector: np.ndarray) -> _StubForceField:
+        return self
 
 
 # ---- Parsers ----

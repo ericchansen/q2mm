@@ -128,11 +128,49 @@ class EigenmatrixEvaluator:
 
         """
         if ref.kind == "eig_diagonal":
+            n = computed.eigenmatrix.shape[0]
+            if ref.data_idx < 0 or ref.data_idx >= n:
+                raise IndexError(
+                    f"Eigenmatrix data_idx={ref.data_idx} out of range (matrix has {n} modes). Label: {ref.label!r}"
+                )
             return float(computed.eigenmatrix[ref.data_idx, ref.data_idx])
         elif ref.kind == "eig_offdiagonal":
             row, col = ref.atom_indices[:2]
             return float(computed.eigenmatrix[row, col])
         raise ValueError(f"EigenmatrixEvaluator cannot handle kind: {ref.kind}")
+
+    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
+        """Eigenmatrix gradients require eigenvector derivatives.
+
+        Args:
+            engine: The MM backend to check.
+
+        Returns:
+            Always ``False`` — not yet implemented.
+
+        """
+        return False
+
+    def gradient(
+        self,
+        engine: MMEngine,
+        mol: Q2MMMolecule,
+        ff: ForceField,
+        references: list[ReferenceValue],
+        n_params: int,
+        *,
+        structure: Any | None = None,
+    ) -> np.ndarray | None:
+        """Not yet implemented — eigenmatrix analytical gradients.
+
+        Differentiating through eigendecomposition (eigenvector
+        derivatives) is planned for a future release.
+
+        Returns:
+            ``None`` — analytical gradients are not yet supported.
+
+        """
+        return None
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
@@ -150,6 +188,11 @@ class EigenmatrixEvaluator:
         """
         eigenmatrix = calc["eigenmatrix"]
         if ref.kind == "eig_diagonal":
+            n = eigenmatrix.shape[0]
+            if ref.data_idx < 0 or ref.data_idx >= n:
+                raise IndexError(
+                    f"Eigenmatrix data_idx={ref.data_idx} out of range (matrix has {n} modes). Label: {ref.label!r}"
+                )
             return float(eigenmatrix[ref.data_idx, ref.data_idx])
         elif ref.kind == "eig_offdiagonal":
             row, col = ref.atom_indices[:2]

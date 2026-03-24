@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+import numpy as np
+
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
@@ -25,6 +27,8 @@ class Evaluator(Protocol):
        its data type (energy, frequencies, geometry, eigenmatrix).
     2. **residuals** — compare computed values against reference data and
        return weighted residuals.
+    3. **gradient** *(optional)* — compute analytical gradient of this
+       evaluator's score contribution w.r.t. force field parameters.
     """
 
     def compute(
@@ -59,6 +63,51 @@ class Evaluator(Protocol):
 
         Returns:
             List of ``w_i * (ref_i - calc_i)`` residuals.
+
+        """
+        ...
+
+    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
+        """Whether this evaluator can compute analytical gradients on *engine*.
+
+        Args:
+            engine: The MM backend to check.
+
+        Returns:
+            ``True`` if :meth:`gradient` is implemented for this engine.
+
+        """
+        ...
+
+    def gradient(
+        self,
+        engine: MMEngine,
+        mol: Q2MMMolecule,
+        ff: ForceField,
+        references: Any,
+        n_params: int,
+        *,
+        structure: Any | None = None,
+    ) -> np.ndarray | None:
+        """Compute analytical gradient of this evaluator's score contribution.
+
+        The score contribution is ``sum_i (w_i * (ref_i - calc_i))^2``,
+        so the gradient is:
+
+        ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - calc_i) * d(calc_i)/d(p)]``
+
+        Args:
+            engine: The MM backend.
+            mol: The molecule being evaluated.
+            ff: The current force field.
+            references: Reference data entries for this evaluator's kind.
+            n_params: Number of force field parameters (length of
+                the gradient vector).
+            structure: Optional pre-built engine context/handle.
+
+        Returns:
+            Gradient vector of shape ``(n_params,)``, or ``None`` if
+            analytical gradients are not yet supported for this evaluator.
 
         """
         ...
