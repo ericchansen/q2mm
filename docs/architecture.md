@@ -172,13 +172,13 @@ q2mm/
 
 ```mermaid
 flowchart TD
-    subgraph Core["Core (no external deps)"]
-        constants[constants.py]
-        elements[elements.py]
-        units[models/units.py]
+    subgraph Core["Core"]
+        constants[constants]
+        elements[elements]
+        units[units]
     end
 
-    subgraph Models["Model Layer"]
+    subgraph Models["Models"]
         ff[ForceField]
         mol[Q2MMMolecule]
         hess[Hessian]
@@ -186,21 +186,21 @@ flowchart TD
         sem[Seminario]
     end
 
-    subgraph Opt["Optimizer Layer"]
-        obj[ObjectiveFunction]
+    subgraph Opt["Optimizers"]
+        obj[Objective]
         ref[ReferenceData]
         scipy[ScipyOptimizer]
         cycling[OptimizationLoop]
     end
 
-    subgraph Engines["Backend Layer"]
-        omm[OpenMMEngine]
-        tk[TinkerEngine]
-        jax[JaxEngine]
-        psi4[Psi4Engine]
+    subgraph Engines["Backends"]
+        omm[OpenMM]
+        tk[Tinker]
+        jax[JAX]
+        psi4[Psi4]
     end
 
-    subgraph IO["I/O Layer"]
+    subgraph IO["I/O"]
         parsers[Parsers]
         savers[Savers]
     end
@@ -266,29 +266,24 @@ sequenceDiagram
     participant Optimizer
     participant Engine
 
-    User->>Parser: Load QM data (.fchk, .log)
-    Parser->>Parser: Extract geometry, Hessian, energies
-    Parser-->>User: Q2MMMolecule + ReferenceData
+    User->>Parser: Load QM data
+    Parser-->>User: Molecule + ReferenceData
 
-    User->>Seminario: estimate_force_constants(molecule)
-    Seminario->>Seminario: Project Hessian → internal coords
-    Seminario-->>User: ForceField (canonical units)
+    User->>Seminario: estimate_force_constants()
+    Seminario-->>User: ForceField
 
-    User->>Objective: ObjectiveFunction(ff, engine, mols, ref)
+    User->>Objective: build(ff, engine, mols, ref)
 
-    User->>Optimizer: optimizer.optimize(objective)
+    User->>Optimizer: optimize(objective)
     loop Until converged
-        Optimizer->>Objective: evaluate(param_vector)
-        Objective->>Engine: energy(mol, ff) / frequencies(mol, ff)
-        Engine->>Engine: Convert canonical → engine units
-        Engine->>Engine: Run MM calculation
+        Optimizer->>Objective: evaluate(params)
+        Objective->>Engine: energy / frequencies
         Engine-->>Objective: MM values
-        Objective->>Objective: Compute weighted residuals
         Objective-->>Optimizer: penalty score
     end
     Optimizer-->>User: OptimizationResult
 
-    User->>User: ff.to_amber_frcmod() / ff.to_mm3_fld()
+    User->>User: export (frcmod / fld)
 ```
 
 ### Key Design Invariants

@@ -118,9 +118,9 @@ making gradient methods inefficient.
 
 ```mermaid
 flowchart LR
-    A[Full-space<br/>L-BFGS-B] --> B[Sensitivity<br/>Analysis]
-    B --> C[Select Top N<br/>Parameters]
-    C --> D[Subspace<br/>Nelder-Mead]
+    A[L-BFGS-B] --> B[Sensitivity]
+    B --> C[Select Top N]
+    C --> D[Nelder-Mead]
     D --> E{Converged?}
     E -->|No| A
     E -->|Yes| F[Done]
@@ -265,13 +265,13 @@ Expected output:
 ```mermaid
 flowchart TD
     A[How many parameters?] --> B{≤ 10?}
-    B -->|Yes| C[Single-shot<br/>ScipyOptimizer]
-    B -->|No| D{Need best<br/>possible result?}
-    D -->|Yes| E[GRAD→SIMP Cycling<br/>OptimizationLoop]
-    D -->|No| F[Single-shot L-BFGS-B<br/>for quick estimate]
-    C --> G{Converged well?}
+    B -->|Yes| C[Single-shot]
+    B -->|No| D{Best result needed?}
+    D -->|Yes| E[GRAD→SIMP Cycling]
+    D -->|No| F[L-BFGS-B estimate]
+    C --> G{Converged?}
     G -->|Yes| H[Done ✅]
-    G -->|No| I[Try OptimizationLoop]
+    G -->|No| I[Try Cycling]
     E --> H
     F --> J{Good enough?}
     J -->|Yes| H

@@ -36,10 +36,10 @@ the Seminario method and MM force field optimization.
 ## Pipeline
 
 ```mermaid
-graph LR
-    A[9 Jaguar .in files] --> B[Seminario Estimation]
-    B --> C[Initial Force Field<br/>182 parameters]
-    C --> D[MM Engine Frequencies]
+flowchart LR
+    A[Jaguar QM data] --> B[Seminario]
+    B --> C[Initial FF]
+    C --> D[MM Frequencies]
     D --> E[Optimizer]
     E --> F[Optimized FF]
 ```

@@ -4,6 +4,12 @@ Q2MM supports multiple MM backend engines for energy evaluation, frequency
 calculation, and geometry optimization.  This page compares their capabilities
 and documents when optimized parameters can be transferred between engines.
 
+For detailed information on each backend, see the individual pages:
+
+- [OpenMM](openmm.md) — mature, dual functional-form support (Harmonic + MM3)
+- [Tinker](tinker.md) — subprocess-based MM3 engine
+- [JAX](jax.md) — differentiable engines with analytical gradients (JaxEngine + JaxMDEngine)
+
 ---
 
 ## Engine Overview
@@ -148,7 +154,7 @@ JAX-MD.
 ### Verified Parity
 
 Cross-engine energy and frequency agreement has been measured on CH₃F
-(see [benchmarks](benchmarks/small-molecules.md#cross-engine-parity)):
+(see [benchmarks](../benchmarks/small-molecules.md#cross-engine-parity)):
 
 - **JAX ↔ JAX-MD:** < 10⁻²⁰ kcal/mol energy difference (machine precision)
 - **JAX ↔ OpenMM:** < 10⁻¹⁸ kcal/mol energy difference
