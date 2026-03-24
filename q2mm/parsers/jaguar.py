@@ -5,13 +5,21 @@ Hessian data) and ``JaguarOut`` for reading Jaguar ``.out`` files
 (structures, eigenvalues, eigenvectors, and frequencies).
 """
 
+from __future__ import annotations
+
 import logging
-import numpy as np
 import re
 from string import digits
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from q2mm import constants as co
 from q2mm.parsers.base import File
 from q2mm.parsers.structures import Atom, Structure
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +142,13 @@ class JaguarOut(File):
         if self._structures is None:
             self.import_file()
         return self._structures
+
+    @property
+    def molecules(self) -> list[Q2MMMolecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
+        from q2mm.models.molecule import Q2MMMolecule
+
+        return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
     @property
     def eigenvalues(self):

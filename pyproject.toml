@@ -128,3 +128,11 @@ ignore = [
     "SIM108", # ternary (readability preference in scientific code)
 ]
 
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # too strict for existing codebase
+check_untyped_defs = true
+ignore_missing_imports = true
+

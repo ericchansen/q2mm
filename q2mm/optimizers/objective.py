@@ -630,18 +630,14 @@ class ReferenceData:
         log = GaussLog(str(path), au_hessian=au_hessian)
 
         # Build molecule from the last (optimised) structure
-        structure = log.structures[-1]
-        hessian = None
-        if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
-            hessian = reform_hessian(log.evals, log.evecs)
+        mol = log.molecules[-1]
+        mol.charge = charge
+        mol.multiplicity = multiplicity
+        mol.bond_tolerance = bond_tolerance
 
-        mol = Q2MMMolecule.from_structure(
-            structure,
-            charge=charge,
-            multiplicity=multiplicity,
-            bond_tolerance=bond_tolerance,
-            hessian=hessian,
-        )
+        # Override hessian with eigenvalue-reconstructed version if available
+        if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
+            mol.hessian = reform_hessian(log.evals, log.evecs)
 
         # Frequencies in cm⁻¹ from the Gaussian log
         # Note: log.evals are eigenvalues (mass-weighted force constants in

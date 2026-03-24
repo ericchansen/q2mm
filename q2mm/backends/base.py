@@ -1,7 +1,15 @@
 """Abstract base classes for QM and MM engine backends."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from q2mm.models.forcefield import ForceField
+    from q2mm.models.molecule import Q2MMMolecule
 
 
 class QMEngine(ABC):
@@ -11,64 +19,59 @@ class QMEngine(ABC):
     """
 
     @abstractmethod
-    def energy(self, structure, method: str = "b3lyp", basis: str = "def2-svp") -> float:
+    def energy(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> float:
         """Calculate single-point energy in Hartrees.
 
         Args:
-            structure (object): Molecular structure (path to XYZ file or engine-specific
-                molecule object).
+            structure: Molecular structure (``Q2MMMolecule``, path to XYZ
+                file, or engine-specific molecule object).
             method: QM method or functional (e.g. ``"b3lyp"``, ``"mp2"``).
             basis: Basis set name (e.g. ``"def2-svp"``, ``"6-31+G(d)"``).
 
         Returns:
-            float: Electronic energy in Hartrees.
+            Electronic energy in Hartrees.
         """
         ...
 
     @abstractmethod
-    def hessian(self, structure, method: str = "b3lyp", basis: str = "def2-svp") -> np.ndarray:
+    def hessian(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> np.ndarray:
         """Calculate Hessian matrix (second derivatives of energy).
 
         Args:
-            structure (object): Molecular structure (path to XYZ file or engine-specific
-                molecule object).
+            structure: Molecular structure.
             method: QM method or functional.
             basis: Basis set name.
 
         Returns:
-            np.ndarray: Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²**
-                (atomic units).
+            Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
         """
         ...
 
     @abstractmethod
-    def optimize(self, structure, method: str = "b3lyp", basis: str = "def2-svp") -> tuple:
+    def optimize(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> tuple:
         """Optimize geometry.
 
         Args:
-            structure (object): Molecular structure (path to XYZ file or engine-specific
-                molecule object).
+            structure: Molecular structure.
             method: QM method or functional.
             basis: Basis set name.
 
         Returns:
-            Optimized structure in an engine-specific format (typically a
-            tuple of ``(energy, atoms, coordinates)``).
+            Optimized structure as ``(energy, atoms, coordinates)``.
         """
         ...
 
     @abstractmethod
-    def frequencies(self, structure, method: str = "b3lyp", basis: str = "def2-svp") -> list[float]:
+    def frequencies(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
-            structure (object): Molecular structure (path to XYZ file or engine-specific
-                molecule object).
+            structure: Molecular structure.
             method: QM method or functional.
             basis: Basis set name.
 
         Returns:
-            list[float]: Vibrational frequencies in cm⁻¹.
+            Vibrational frequencies in cm⁻¹.
         """
         ...
 
@@ -122,58 +125,55 @@ class MMEngine(ABC):
     """
 
     @abstractmethod
-    def energy(self, structure, forcefield) -> float:
+    def energy(self, structure: Q2MMMolecule, forcefield: ForceField) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure or engine-specific context
+                (e.g. ``OpenMMHandle``, ``JaxHandle``).
+            forcefield: Force field parameters.
 
         Returns:
-            float: Potential energy in kcal/mol.
+            Potential energy in kcal/mol.
         """
         ...
 
     @abstractmethod
-    def minimize(self, structure, forcefield) -> tuple:
+    def minimize(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple:
         """Energy-minimize structure.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure or engine-specific context.
+            forcefield: Force field parameters.
 
         Returns:
-            Minimized structure in an engine-specific format (typically a
-            tuple of ``(energy, atoms, coordinates)``).
+            ``(energy, atoms, coordinates)`` tuple.
         """
         ...
 
     @abstractmethod
-    def hessian(self, structure, forcefield) -> np.ndarray:
+    def hessian(self, structure: Q2MMMolecule, forcefield: ForceField) -> np.ndarray:
         """Calculate MM Hessian matrix.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure or engine-specific context.
+            forcefield: Force field parameters.
 
         Returns:
-            np.ndarray: Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²**
-                (atomic units). Implementors must convert from engine-native
-                units before returning (e.g. OpenMM kJ/mol/nm² →
-                Hartree/Bohr²).
+            Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
         """
         ...
 
     @abstractmethod
-    def frequencies(self, structure, forcefield) -> list[float]:
+    def frequencies(self, structure: Q2MMMolecule, forcefield: ForceField) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure or engine-specific context.
+            forcefield: Force field parameters.
 
         Returns:
-            list[float]: Vibrational frequencies in cm⁻¹.
+            Vibrational frequencies in cm⁻¹.
         """
         ...
 
@@ -203,20 +203,19 @@ class MMEngine(ABC):
         """
         return False
 
-    def energy_and_param_grad(self, structure, forcefield) -> tuple[float, np.ndarray]:
+    def energy_and_param_grad(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. MM parameters.
 
         Must be implemented by engines for which
         :meth:`supports_analytical_gradients` returns ``True``.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure or engine-specific context.
+            forcefield: Force field parameters.
 
         Returns:
-            tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy`` is
-                the MM energy in kcal/mol and ``grad`` is a 1-D array of
-                ``dE/dp`` derivatives.
+            ``(energy, grad)`` where ``energy`` is the MM energy in
+            kcal/mol and ``grad`` is a 1-D array of ``dE/dp`` derivatives.
 
         Raises:
             NotImplementedError: If the engine does not support analytical
@@ -227,7 +226,7 @@ class MMEngine(ABC):
             "Override this method when supports_analytical_gradients() returns True."
         )
 
-    def create_context(self, structure, forcefield) -> object:
+    def create_context(self, structure: Q2MMMolecule, forcefield: ForceField) -> object:
         """Create a reusable engine context/handle for a molecule.
 
         Only needed when :meth:`supports_runtime_params` returns ``True``.
@@ -236,8 +235,8 @@ class MMEngine(ABC):
         rebuilding the simulation state each evaluation.
 
         Args:
-            structure (object): Molecular structure or engine-specific context.
-            forcefield (object): Force field or parameter set used for the calculation.
+            structure: Molecular structure.
+            forcefield: Force field parameters.
 
         Returns:
             An engine-specific handle object for reuse across evaluations.
@@ -284,7 +283,7 @@ class MMEngine(ABC):
 
         return frozenset(f.value for f in FunctionalForm)
 
-    def _validate_forcefield(self, forcefield) -> None:
+    def _validate_forcefield(self, forcefield: ForceField) -> None:
         """Raise ``ValueError`` if the force field's functional form is unsupported.
 
         Called by engines at the start of ``create_context`` / ``energy`` /
@@ -292,7 +291,7 @@ class MMEngine(ABC):
         (legacy / unset).
 
         Args:
-            forcefield (object): Force field whose ``functional_form`` attribute is
+            forcefield: Force field whose ``functional_form`` attribute is
                 checked against :meth:`supported_functional_forms`.
 
         Raises:

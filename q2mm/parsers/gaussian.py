@@ -4,12 +4,20 @@ Extracts structures, Hessians, eigenvectors, eigenvalues, frequencies,
 and ESP data from Gaussian output files.
 """
 
+from __future__ import annotations
+
 import logging
-import numpy as np
 import re
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from q2mm import constants as co
 from q2mm.parsers.base import File
 from q2mm.parsers.structures import Atom, Structure
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 logger = logging.getLogger(__name__)
 
@@ -107,11 +115,26 @@ class GaussLog(File):
 
         Returns:
             (list[Structure]): Structures parsed from log file archive.
+
+        .. deprecated::
+            Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
         """
         if self._structures is None:
             # self.read_out()
             self.read_archive()
         return self._structures
+
+    @property
+    def molecules(self) -> list[Q2MMMolecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects.
+
+        Each structure is converted via
+        :meth:`Q2MMMolecule.from_structure`, preserving any Hessian data
+        attached to the underlying ``Structure``.
+        """
+        from q2mm.models.molecule import Q2MMMolecule
+
+        return [Q2MMMolecule.from_structure(s, hessian=getattr(s, "hess", None)) for s in self.structures]
 
     def read_out(self):
         """Reads force constant and eigenvector data from a frequency calculation.

@@ -86,11 +86,12 @@ class TestHessianMassWeighting(unittest.TestCase):
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
         struct = mol2.structures[0]
+        symbols = [a.element for a in struct.atoms]
         hess = log.structures[0].hess.copy()
         original = hess.copy()
         # Mass-weight then un-weight should give back original
-        mass_weight_hessian(hess, struct.atoms)
-        mass_weight_hessian(hess, struct.atoms, reverse=True)
+        mass_weight_hessian(hess, symbols)
+        mass_weight_hessian(hess, symbols, reverse=True)
         np.testing.assert_allclose(original, hess, rtol=1e-10, err_msg="Mass-weight roundtrip did not preserve Hessian")
 
 
