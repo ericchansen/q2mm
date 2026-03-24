@@ -117,6 +117,7 @@ def _run_matrix(
     *,
     leaderboard_only: bool = False,
     data_dir: Path | None = None,
+    platform: str | None = None,
 ) -> list:
     """Run the full backend × optimizer matrix.
 
@@ -130,6 +131,9 @@ def _run_matrix(
         leaderboard_only (bool): If ``True``, skip streaming detailed
             SI tables during the run.
         data_dir (Path | None): Override for QM reference data directory.
+        platform (str | None): OpenMM platform override (e.g. ``"CUDA"``).
+            Passed to :class:`OpenMMEngine` when instantiating OpenMM
+            backends.  ``None`` triggers auto-detection.
 
     Returns:
         list[BenchmarkResult]: One result per (backend, optimizer) combination.
@@ -151,9 +155,15 @@ def _run_matrix(
     total = len(backends) * len(optimizers)
     idx = 0
 
-    for backend_name, engine_cls, _ in backends:
+    for backend_name, engine_cls, registry_key in backends:
         try:
-            engine = engine_cls()
+            # Pass platform to OpenMM when specified
+            if registry_key == "openmm" and platform is not None:
+                engine = engine_cls(platform_name=platform)
+            else:
+                engine = engine_cls()
+            # Update display name to reflect actual engine config
+            backend_name = engine.name
         except Exception as e:
             print(f"  Skipping {backend_name}: {e}", file=sys.stderr)
             continue
@@ -325,6 +335,12 @@ def main(argv: list[str] | None = None) -> int:
         help="Path to QM reference data directory (containing ch3f-*.xyz, etc.). "
         "Required for pip-installed q2mm; optional for git checkouts.",
     )
+    parser.add_argument(
+        "--platform",
+        metavar="NAME",
+        default=None,
+        help="OpenMM platform to use (e.g. CPU, CUDA, OpenCL). Default: auto-detect fastest available.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -389,7 +405,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Combos:     {len(backends) * len(optimizers)}\n")
 
         results = _run_matrix(
-            backends, optimizers, output_dir=output_dir, leaderboard_only=args.leaderboard_only, data_dir=args.data_dir
+            backends,
+            optimizers,
+            output_dir=output_dir,
+            leaderboard_only=args.leaderboard_only,
+            data_dir=args.data_dir,
+            platform=args.platform,
         )
 
     if not results:

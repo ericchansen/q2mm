@@ -488,7 +488,7 @@ class TestTorsionEnergy:
     def test_torsion_energy_matches_openmm(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
         """Cross-engine parity: torsion energy must agree with OpenMM reference."""
         self._skip_if_no_torsion_support(engine)
-        if engine.name == "OpenMM":
+        if engine.name.startswith("OpenMM"):
             pytest.skip("Reference engine")
         if "openmm" not in available_mm_engines():
             pytest.skip("OpenMM not available for reference comparison")

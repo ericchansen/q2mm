@@ -17,11 +17,14 @@ For MM3-specific JAX forms, see issue #91.
 from __future__ import annotations
 
 import copy
+import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
@@ -460,16 +463,19 @@ class JaxEngine(MMEngine):
 
         """
         _ensure_jax()
+        devices = jax.devices()
+        logger.info("JAX devices: %s", [str(d) for d in devices])
 
     @property
     def name(self) -> str:
-        """Human-readable engine name.
+        """Human-readable engine name including device type.
 
         Returns:
-            str: ``"JAX (harmonic)"``.
+            str: e.g. ``"JAX (harmonic, gpu)"`` or ``"JAX (harmonic, cpu)"``.
 
         """
-        return "JAX (harmonic)"
+        backend = jax.default_backend()
+        return f"JAX (harmonic, {backend})"
 
     def supported_functional_forms(self) -> frozenset[str]:
         """JAX currently supports harmonic forms only (see issue #91 for MM3).
