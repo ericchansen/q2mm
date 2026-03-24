@@ -29,14 +29,25 @@ backend × optimizer matrix.
 
 ## Rh-Enamide (9 molecules, 182 parameters)
 
-Best result per QM source, sorted by wall-clock time.
+Best result per MM backend (Nelder-Mead, 2 iterations, preliminary).
+QM reference: Jaguar B3LYP/LACVP**.
+See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 
-| Backend | QM Source | Optimizer | Score Δ | Time |
-|---------|-----------|-----------|---------|-----:|
-| **OpenMM** | Jaguar B3LYP/LACVP** | Nelder-Mead | 434,172 → 101,077 (76.7%) | 369 s |
-| **OpenMM** | Psi4 B3LYP/def2-SVP | Nelder-Mead | — | — |
+**Data:**
+[QM inputs](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide) ·
+[Results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/results)
 
-*Psi4 row will be populated after Psi4 generation completes.*
+| Backend | FF Form | Optimizer | Score Δ | Time |
+|---------|---------|-----------|---------|-----:|
+| **JAX-MD** | harmonic | Nelder-Mead | 663,711 → 316,575 (↓52.3%) | 56 s |
+| **JAX** | harmonic | Nelder-Mead | 385,737 → 341,407 (↓11.5%) | 17 s |
+| **OpenMM** | MM3 | Nelder-Mead | 422,326 → ⏱ timeout | >300 s |
+| **Tinker** | MM3 | all | — → 🐛 bug | — |
+
+!!! note "Preliminary results"
+    These are 2-iteration runs to assess convergence direction.  OpenMM and
+    Tinker are too slow per evaluation for 182-parameter optimization — see
+    [issue #147](https://github.com/ericchansen/q2mm/issues/147).
 
 ---
 
@@ -54,27 +65,26 @@ Best result per QM source, sorted by wall-clock time.
    only holds when engines share the same functional form and non-bonded
    treatment (combining rules, 1-4 scaling, cutoffs).
 
-3. **Nelder-Mead and Powell** converge to perfect scores (0.000) on
-   small molecules.  **L-BFGS-B** with finite-difference gradients gets
-   stuck at suboptimal points — analytical gradients via ``jax.grad``
-   would fix this.
+3. **Nelder-Mead is the most robust optimizer** — converges on both small
+   (8-param) and large (182-param) systems.  Powell works well on small
+   molecules but crashes on larger systems.  L-BFGS-B with finite-difference
+   gradients diverges on high-dimensional problems.
 
 4. **JAX and JAX-MD support analytical parameter gradients** via ``jax.grad``,
    which will eliminate the 2N+1 finite-difference overhead once the optimizer
    is wired to use ``energy_and_param_grad()``.
 
-5. **L-BFGS-B diverges on high-dimensional frequency objectives.**  With
-   182 parameters and 9 molecules, finite-difference gradients are unstable
-   — the optimizer *worsened* the score.  Nelder-Mead is the reliable choice
-   for derivative-free frequency optimization on complex systems.
+5. **Speed matters for scaling** — with 182 parameters and 9 molecules,
+   OpenMM and Tinker are too slow per function evaluation for practical
+   optimization (even 2 Nelder-Mead iterations exceed 5 min).  JAX backends
+   complete the same work in under a minute.
 
 6. **The Seminario method is effectively free** — even 182-parameter
    organometallic systems complete in < 50 ms.
 
-7. **Scaling**: With Nelder-Mead and 9 molecules (1,030 frequency
-   references), the full optimization converges in ~370 s (~6 min), achieving
-   76.7% score improvement.  Each evaluation computes frequencies for all
-   training molecules.
+7. **Functional form flexibility** — the same Seminario parameters work
+   with both MM3 (OpenMM/Tinker) and harmonic (JAX/JAX-MD) functional
+   forms, enabling cross-engine comparison on any training set.
 
 ---
 

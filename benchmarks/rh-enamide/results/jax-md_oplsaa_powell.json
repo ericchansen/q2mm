@@ -1,0 +1,16 @@
+{
+  "backend": "JAX-MD (OPLSAA)",
+  "optimizer": "Powell",
+  "functional_form": "harmonic",
+  "initial_score": 663711,
+  "final_score": null,
+  "improvement_pct": null,
+  "n_eval": null,
+  "elapsed_s": 300.0,
+  "converged": false,
+  "maxiter": 2,
+  "n_params": 182,
+  "n_molecules": 9,
+  "status": "timeout",
+  "notes": "Powell line search too expensive at 182 params \u2014 exceeded 5 min timeout"
+}

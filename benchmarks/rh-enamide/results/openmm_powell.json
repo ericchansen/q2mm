@@ -1,0 +1,16 @@
+{
+  "backend": "OpenMM",
+  "optimizer": "Powell",
+  "functional_form": "MM3",
+  "initial_score": 422326,
+  "final_score": null,
+  "improvement_pct": null,
+  "n_eval": null,
+  "elapsed_s": 300.0,
+  "converged": false,
+  "maxiter": 2,
+  "n_params": 182,
+  "n_molecules": 9,
+  "status": "timeout",
+  "notes": "Powell line search too expensive with OpenMM per-eval cost"
+}

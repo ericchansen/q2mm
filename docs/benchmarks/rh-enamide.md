@@ -8,6 +8,10 @@ B3LYP/LACVP** QM reference data.
     [Rh-enamide training set](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide)
     (structures, Jaguar QM data, MM3 FF template)
 
+    **Outputs:**
+    [Benchmark results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide)
+    (JSON results for all backend × optimizer combinations)
+
 ---
 
 ## System Description
@@ -35,8 +39,8 @@ the Seminario method and MM force field optimization.
 graph LR
     A[9 Jaguar .in files] --> B[Seminario Estimation]
     B --> C[Initial Force Field<br/>182 parameters]
-    C --> D[OpenMM Frequency<br/>Objective Function]
-    D --> E[Nelder-Mead Optimizer]
+    C --> D[MM Engine Frequencies]
+    D --> E[Optimizer]
     E --> F[Optimized FF]
 ```
 
@@ -45,39 +49,67 @@ graph LR
    the MM3 template (preserves vdW parameters for all atom types including Rh)
 3. **Reference**: Build multi-molecule frequency reference data — each
    molecule contributes its real vibrational frequencies (>50 cm⁻¹)
-4. **Optimize**: Nelder-Mead minimizes the weighted sum-of-squares between
-   QM and MM frequencies across all 9 molecules simultaneously
+4. **Optimize**: Minimize weighted sum-of-squares between QM and MM
+   frequencies across all 9 molecules simultaneously
+
+!!! note "Functional forms"
+    The MM3 force field template uses **MM3 functional forms** (cubic/quartic
+    stretch, sextic bend), supported by OpenMM and Tinker.  For JAX and
+    JAX-MD engines, which only support harmonic potentials, we use a
+    **harmonic copy** of the same Seminario-estimated parameters.  Initial
+    scores differ between functional forms because the energy expressions
+    differ, but convergence behavior is comparable.
 
 ---
 
-## Results
+## Results (2 iterations, preliminary)
 
-### Seminario Estimation
+These are preliminary results with only 2 optimizer iterations — enough to
+reveal convergence direction and identify scaling problems.  Full
+convergence runs are tracked in
+[issue #147](https://github.com/ericchansen/q2mm/issues/147).
 
-| Metric | Value |
-|--------|-------|
-| **Parameters** | 182 (8 bond, 23 angle, 36 vdW) |
-| **Time** | 0.033 s |
-| **Negative FCs** | C-H bond (5-17) in all 9 structures (TS reaction coordinate) |
+### JAX Engines (harmonic FF)
 
-### Optimization
+| Backend | Optimizer | Score₀ | Score | Δ% | Evals | Time |
+|---------|-----------|-------:|------:|---:|------:|-----:|
+| JAX (harmonic) | **Nelder-Mead** | 385,737 | 341,407 | **↓ 11.5%** | 185 | 17 s |
+| JAX (harmonic) | L-BFGS-B | 385,737 | 2,024,868 | ↑ 425% | 1,648 | 91 s |
+| JAX (harmonic) | Powell | 385,737 | — | crash | — | 79 s |
+| JAX-MD (OPLSAA) | **Nelder-Mead** | 663,711 | 316,575 | **↓ 52.3%** | 186 | 56 s |
+| JAX-MD (OPLSAA) | L-BFGS-B | 663,711 | 5,234,397 | ↑ 689% | 1,099 | 248 s |
+| JAX-MD (OPLSAA) | Powell | 663,711 | — | timeout | — | 300 s |
 
-| Metric | Value |
-|--------|-------|
-| **Method** | Nelder-Mead (500 max iterations) |
-| **Frequency references** | 1,030 across 9 molecules |
-| **Initial score** | 434,172 |
-| **Final score** | 101,077 |
-| **Improvement** | **76.7%** |
-| **Wall time** | 369 s (~6 min) |
+### MM3 Engines (MM3 FF)
 
-!!! warning "L-BFGS-B diverges on this problem"
-    L-BFGS-B with finite-difference gradients (2×182+1 = 365 evaluations
-    per gradient step) actually *worsened* the score from 434k to 1.5M in
-    3 iterations.  The objective landscape for 182 parameters with 1,030
-    frequency references is too rough for finite-difference gradients.
-    Nelder-Mead converges reliably without gradients.
+| Backend | Optimizer | Score₀ | Status | Notes |
+|---------|-----------|-------:|--------|-------|
+| OpenMM | L-BFGS-B | 422,326 | ⏱ timeout | >5 min for 2 iterations |
+| OpenMM | Nelder-Mead | 422,326 | ⏱ timeout | >5 min for 2 iterations |
+| OpenMM | Powell | 422,326 | ⏱ timeout | >5 min for 2 iterations |
+| Tinker | all | — | 🐛 bug | `_write_standalone_prm` element '00' error |
+
+!!! success "Key findings"
+    - **Nelder-Mead is the only viable optimizer** for 182-parameter systems
+      with finite-difference gradients
+    - **JAX-MD + Nelder-Mead** achieved **52.3% improvement in just 2
+      iterations** (56 s) — the strongest early convergence of any combination
+    - **L-BFGS-B diverges** on all backends — finite-difference gradients are
+      unreliable at 182 parameters (each gradient step requires 365 function
+      evaluations)
+    - **Powell crashes** with `LinAlgError` — line-search drives parameters
+      to physically unreasonable values
+
+!!! warning "Scaling bottleneck"
+    OpenMM and Tinker are too slow per function evaluation for 182-parameter
+    optimization with 9 molecules.  Each Nelder-Mead iteration requires ~185
+    evaluations, and each evaluation computes frequencies for all 9 molecules.
+    At ~2.5 s/eval for OpenMM (vs ~0.1 s/eval for JAX), even 2 iterations
+    exceed the 5-minute timeout.  See
+    [issue #147](https://github.com/ericchansen/q2mm/issues/147) for planned
+    improvements.
 
 ---
 
-*Data generated by `test/integration/test_full_loop_parity.py`.*
+*Data generated from Jaguar B3LYP/LACVP** reference data in
+`examples/rh-enamide/`.  Full results archived in `benchmarks/rh-enamide/`.*

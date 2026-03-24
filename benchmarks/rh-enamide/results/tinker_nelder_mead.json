@@ -1,0 +1,16 @@
+{
+  "backend": "Tinker",
+  "optimizer": "Nelder-Mead",
+  "functional_form": "MM3",
+  "initial_score": null,
+  "final_score": null,
+  "improvement_pct": null,
+  "n_eval": null,
+  "elapsed_s": 0,
+  "converged": false,
+  "maxiter": 2,
+  "n_params": 182,
+  "n_molecules": 9,
+  "status": "error: _write_standalone_prm bug (element '00')",
+  "notes": "Same Tinker bug \u2014 blocks all Tinker runs for Rh-enamide"
+}
