@@ -327,19 +327,14 @@ class TinkerEngine(MMEngine):
                 )
             elem_to_type[elem] = tnum
 
-        # Ensure all FF elements are covered (bonds/angles/vdws may reference
-        # elements not in the molecule — raise rather than silently default)
-        for b in ff.bonds:
-            for el in b.elements:
-                if el not in elem_to_type:
-                    raise ValueError(f"FF bond references element '{el}' not present in molecule atoms")
-        for a in ff.angles:
-            for el in a.elements:
-                if el not in elem_to_type:
-                    raise ValueError(f"FF angle references element '{el}' not present in molecule atoms")
-        for vdw in ff.vdws:
-            if vdw.element and vdw.element not in elem_to_type:
-                raise ValueError(f"FF vdW references element '{vdw.element}' not present in molecule atoms")
+        # Filter out FF parameters referencing placeholder/wildcard elements
+        # (e.g., "00" from MM3 atom-type encodings) that aren't real atoms.
+        def _has_real_elements(elements: tuple[str, ...]) -> bool:
+            return all(el in elem_to_type for el in elements)
+
+        bonds = [b for b in ff.bonds if _has_real_elements(b.elements)]
+        angles = [a for a in ff.angles if _has_real_elements(a.elements)]
+        vdws = [v for v in ff.vdws if not v.element or v.element in elem_to_type]
 
         with open(prm_path, "w") as f:
             # MM3 functional form header (matches mm3.prm conventions)
@@ -360,7 +355,7 @@ class TinkerEngine(MMEngine):
             f.write("\n")
 
             # Bond parameters
-            for bond in ff.bonds:
+            for bond in bonds:
                 t1 = elem_to_type[bond.elements[0]]
                 t2 = elem_to_type[bond.elements[1]]
                 f.write(
@@ -368,7 +363,7 @@ class TinkerEngine(MMEngine):
                 )
 
             # Angle parameters
-            for angle in ff.angles:
+            for angle in angles:
                 t1 = elem_to_type[angle.elements[0]]
                 t2 = elem_to_type[angle.elements[1]]
                 t3 = elem_to_type[angle.elements[2]]
@@ -377,7 +372,7 @@ class TinkerEngine(MMEngine):
                 )
 
             # vdW parameters
-            for vdw in ff.vdws:
+            for vdw in vdws:
                 # atom_type is a string (element or Tinker type label);
                 # convert to numeric Tinker type via elem_to_type
                 try:
@@ -494,25 +489,72 @@ class TinkerEngine(MMEngine):
     def hessian(
         self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
     ) -> np.ndarray:
-        """Calculate MM Hessian matrix.
+        """Calculate MM Hessian matrix via Tinker ``testhess``.
 
-        Note:
-            Full Hessian extraction from Tinker requires the ``testhess``
-            program. Use :meth:`frequencies` for vibrational analysis instead.
+        Calls ``testhess`` to compute the analytical Cartesian Hessian,
+        parses the ``.hes`` output file (diagonal + upper-triangle
+        off-diagonal blocks), symmetrizes, and converts to the canonical
+        unit contract (Hartree/Bohr²).
 
         Args:
             structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping.
 
         Returns:
-            np.ndarray: Not implemented — always raises.
+            np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
 
         Raises:
-            NotImplementedError: Always raised; use :meth:`frequencies`
-                instead.
+            RuntimeError: If ``testhess`` fails or the ``.hes`` file cannot
+                be parsed.
 
         """
-        raise NotImplementedError("Full Hessian extraction not yet implemented. Use frequencies() instead.")
+        from q2mm.constants import KCALMOLA2_TO_HESSIAN_AU
+
+        with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
+            txyz = self._write_tinker_xyz(structure, forcefield, workdir)
+            # Y = compute analytical Hessian, N = skip numerical comparison
+            self._run_tinker("testhess", txyz, stdin="Y\nN\n")
+
+            # Parse the .hes file written by testhess
+            hes_path = txyz.replace(".xyz", ".hes")
+            if not os.path.exists(hes_path):
+                raise RuntimeError(f"testhess did not produce {hes_path}")
+
+            with open(hes_path) as f:
+                content = f.read()
+
+            # Split into sections by "Diagonal" and "Off-diagonal" headers
+            sections = re.split(r"\n\s*(?:Diagonal|Off-diagonal)\s+Hessian\s+Elements.*\n", content)
+            # sections[0] is empty/header, sections[1] is diagonal data,
+            # sections[2..] are off-diagonal blocks for each (atom, coord)
+
+            if len(sections) < 2:
+                raise RuntimeError("Could not parse .hes file: no diagonal section found")
+
+            # Parse diagonal elements
+            diag_vals = [float(v) for v in sections[1].split()]
+            n3 = len(diag_vals)
+            hessian = np.zeros((n3, n3))
+            for i, val in enumerate(diag_vals):
+                hessian[i, i] = val
+
+            # Parse off-diagonal blocks: one block per (row_index),
+            # containing elements H[row, row+1], H[row, row+2], ..., H[row, n3-1]
+            row = 0
+            for block in sections[2:]:
+                vals = [float(v) for v in block.split()]
+                if not vals:
+                    continue
+                col_start = row + 1
+                for j, val in enumerate(vals):
+                    col = col_start + j
+                    if col < n3:
+                        hessian[row, col] = val
+                        hessian[col, row] = val
+                row += 1
+
+            # Tinker outputs Hessian in kcal/(mol·Å²); convert to Hartree/Bohr²
+            return hessian * KCALMOLA2_TO_HESSIAN_AU
 
     def frequencies(
         self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
