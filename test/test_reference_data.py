@@ -18,7 +18,7 @@ from q2mm.optimizers.objective import ReferenceData, _parse_fchk
 
 
 class TestFromMolecule:
-    def test_basic_ch3f(self):
+    def test_basic_ch3f(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol)
 
@@ -34,7 +34,7 @@ class TestFromMolecule:
         assert "bond_angle" in kinds
         assert "frequency" not in kinds
 
-    def test_default_weights(self):
+    def test_default_weights(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol)
 
@@ -44,7 +44,7 @@ class TestFromMolecule:
         assert all(v.weight == 10.0 for v in bond_vals)
         assert all(v.weight == 5.0 for v in angle_vals)
 
-    def test_custom_weights(self):
+    def test_custom_weights(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol, weights={"bond_length": 50.0, "bond_angle": 25.0})
 
@@ -54,7 +54,7 @@ class TestFromMolecule:
         assert all(v.weight == 50.0 for v in bond_vals)
         assert all(v.weight == 25.0 for v in angle_vals)
 
-    def test_atom_indices_populated(self):
+    def test_atom_indices_populated(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol)
 
@@ -65,7 +65,7 @@ class TestFromMolecule:
             elif v.kind == "bond_angle":
                 assert len(v.atom_indices) == 3
 
-    def test_bond_values_match_molecule(self):
+    def test_bond_values_match_molecule(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol)
 
@@ -73,7 +73,7 @@ class TestFromMolecule:
         for rb, mb in zip(ref_bonds, mol.bonds):
             assert abs(rb.value - mb.length) < 1e-10
 
-    def test_angle_values_match_molecule(self):
+    def test_angle_values_match_molecule(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol)
 
@@ -81,7 +81,7 @@ class TestFromMolecule:
         for ra, ma in zip(ref_angles, mol.angles):
             assert abs(ra.value - ma.value) < 1e-10
 
-    def test_with_frequencies(self):
+    def test_with_frequencies(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         freqs = np.array([100.0, 200.0, -50.0, 300.0])
         ref = ReferenceData.from_molecule(mol, frequencies=freqs)
@@ -89,7 +89,7 @@ class TestFromMolecule:
         freq_vals = [v for v in ref.values if v.kind == "frequency"]
         assert len(freq_vals) == 4
 
-    def test_with_frequencies_skip_imaginary(self):
+    def test_with_frequencies_skip_imaginary(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         freqs = np.array([100.0, 200.0, -50.0, 300.0])
         ref = ReferenceData.from_molecule(mol, frequencies=freqs, skip_imaginary=True)
@@ -98,13 +98,13 @@ class TestFromMolecule:
         assert len(freq_vals) == 3
         assert all(v.value >= 0 for v in freq_vals)
 
-    def test_molecule_idx_propagated(self):
+    def test_molecule_idx_propagated(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ref = ReferenceData.from_molecule(mol, molecule_idx=3)
 
         assert all(v.molecule_idx == 3 for v in ref.values)
 
-    def test_ts_molecule(self):
+    def test_ts_molecule(self) -> None:
         mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
         ref = ReferenceData.from_molecule(mol)
 
@@ -117,7 +117,7 @@ class TestFromMolecule:
 
 
 class TestFromMolecules:
-    def test_two_molecules(self):
+    def test_two_molecules(self) -> None:
         mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
         mol2 = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
         ref = ReferenceData.from_molecules([mol1, mol2])
@@ -129,7 +129,7 @@ class TestFromMolecules:
         assert len(mol1_vals) > 0
         assert ref.n_observations == len(mol0_vals) + len(mol1_vals)
 
-    def test_with_per_molecule_frequencies(self):
+    def test_with_per_molecule_frequencies(self) -> None:
         mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
         mol2 = Q2MMMolecule.from_xyz(CH3F_XYZ)
         freqs1 = np.array([100.0, 200.0])
@@ -142,7 +142,7 @@ class TestFromMolecules:
         assert len(freq_vals_0) == 2
         assert len(freq_vals_1) == 3
 
-    def test_mismatched_frequencies_raises(self):
+    def test_mismatched_frequencies_raises(self) -> None:
         mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="frequencies_list length"):
             ReferenceData.from_molecules([mol1], frequencies_list=[np.array([1.0]), np.array([2.0])])
@@ -152,24 +152,24 @@ class TestFromMolecules:
 
 
 class TestAddFrequenciesFromArray:
-    def test_basic(self):
+    def test_basic(self) -> None:
         ref = ReferenceData()
         added = ref.add_frequencies_from_array([100.0, 200.0, 300.0])
         assert added == 3
         assert ref.n_observations == 3
 
-    def test_skip_imaginary(self):
+    def test_skip_imaginary(self) -> None:
         ref = ReferenceData()
         added = ref.add_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
         assert added == 2
 
-    def test_data_idx_preserved(self):
+    def test_data_idx_preserved(self) -> None:
         ref = ReferenceData()
         ref.add_frequencies_from_array([100.0, -50.0, 300.0])
         indices = [v.data_idx for v in ref.values]
         assert indices == [0, 1, 2]
 
-    def test_data_idx_with_skip(self):
+    def test_data_idx_with_skip(self) -> None:
         """data_idx should reflect original position even when skipping."""
         ref = ReferenceData()
         ref.add_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
@@ -177,12 +177,12 @@ class TestAddFrequenciesFromArray:
         # Original positions 0 and 2 (skipped position 1)
         assert indices == [0, 2]
 
-    def test_weight_propagated(self):
+    def test_weight_propagated(self) -> None:
         ref = ReferenceData()
         ref.add_frequencies_from_array([100.0, 200.0], weight=3.5)
         assert all(v.weight == 3.5 for v in ref.values)
 
-    def test_numpy_array(self):
+    def test_numpy_array(self) -> None:
         ref = ReferenceData()
         ref.add_frequencies_from_array(np.array([100.0, 200.0]))
         assert ref.n_observations == 2
@@ -193,7 +193,7 @@ class TestAddFrequenciesFromArray:
 
 class TestParseFchk:
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_parse_gs(self):
+    def test_parse_gs(self) -> None:
         symbols, coords, hessian, charge, mult = _parse_fchk(GS_FCHK)
         assert len(symbols) == 8
         assert symbols.count("H") == 6
@@ -207,14 +207,14 @@ class TestParseFchk:
         np.testing.assert_allclose(hessian, hessian.T, atol=1e-15)
 
     @pytest.mark.skipif(not TS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_parse_ts(self):
+    def test_parse_ts(self) -> None:
         symbols, coords, hessian, charge, mult = _parse_fchk(TS_FCHK)
         assert len(symbols) == 8
         assert hessian is not None
         assert hessian.shape == (24, 24)
 
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_coordinates_reasonable(self):
+    def test_coordinates_reasonable(self) -> None:
         """Coordinates should be in Angstrom and within reasonable range."""
         symbols, coords, _, _, _ = _parse_fchk(GS_FCHK)
         # All coordinates should be within ~5 Angstrom of origin
@@ -230,7 +230,7 @@ class TestParseFchk:
 
 class TestFromFchk:
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_basic(self):
+    def test_basic(self) -> None:
         ref, mol = ReferenceData.from_fchk(GS_FCHK)
 
         assert mol.n_atoms == 8
@@ -243,14 +243,14 @@ class TestFromFchk:
         assert "bond_angle" in kinds
 
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_bond_count(self):
+    def test_bond_count(self) -> None:
         ref, mol = ReferenceData.from_fchk(GS_FCHK)
         n_bonds = len(mol.bonds)
         bond_refs = [v for v in ref.values if v.kind == "bond_length"]
         assert len(bond_refs) == n_bonds
 
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
-    def test_custom_weights(self):
+    def test_custom_weights(self) -> None:
         ref, _ = ReferenceData.from_fchk(GS_FCHK, weights={"bond_length": 100.0, "bond_angle": 50.0})
         bond_vals = [v for v in ref.values if v.kind == "bond_length"]
         angle_vals = [v for v in ref.values if v.kind == "bond_angle"]
@@ -261,7 +261,7 @@ class TestFromFchk:
         not GS_FCHK.exists() or not TS_FCHK.exists(),
         reason="Ethane fixtures not found",
     )
-    def test_gs_vs_ts_different_geometries(self):
+    def test_gs_vs_ts_different_geometries(self) -> None:
         """GS (staggered) and TS (eclipsed) should have different angles."""
         ref_gs, mol_gs = ReferenceData.from_fchk(GS_FCHK)
         ref_ts, mol_ts = ReferenceData.from_fchk(TS_FCHK)

@@ -31,6 +31,8 @@ Use ``-m`` to filter::
     pytest -m "openmm and slow"  # slow OpenMM tests only
 """
 
+from __future__ import annotations
+
 import pytest
 
 # Re-export shared constants and factories so conftest fixtures can use them.
@@ -78,7 +80,7 @@ _MARKER_TO_REGISTRY = {
 }
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--run-medium",
         action="store_true",
@@ -93,7 +95,7 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
+def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: marks tests as slow (>10s each)")
     config.addinivalue_line("markers", "medium: marks tests as medium speed (1-10s each)")
     config.addinivalue_line("markers", "openmm: requires OpenMM backend")
@@ -103,7 +105,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
 
 
-def pytest_collection_modifyitems(config, items):
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     run_slow = config.getoption("--run-slow")
     run_medium = config.getoption("--run-medium") or run_slow
 

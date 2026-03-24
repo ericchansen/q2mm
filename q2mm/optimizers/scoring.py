@@ -9,6 +9,8 @@ where :math:`w` is a weight, :math:`x_r` is the reference data point's
 value, and :math:`x_c` is the calculated (force field) value.
 """
 
+from __future__ import annotations
+
 from collections import defaultdict
 from collections.abc import Iterator
 import logging
@@ -20,7 +22,7 @@ from q2mm.optimizers.defaults import WEIGHTS
 logger = logging.getLogger(__name__)
 
 
-def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
+def compare_data(r_dict: dict, c_dict: dict, output: str | None = None, doprint: bool = False) -> float:
     """Compute the legacy chi-squared objective function score.
 
     Scoring formula per data point:
@@ -36,6 +38,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
 
     Returns:
         float: Total objective function score.
+
     """
     strings = []
     strings.append(
@@ -118,7 +121,7 @@ def compare_data(r_dict, c_dict, output=None, doprint=False) -> float:
     return score_tot
 
 
-def correlate_energies(r_data, c_data):
+def correlate_energies(r_data: np.ndarray, c_data: np.ndarray) -> None:
     """Align calculated energies to reference by setting the minimum to zero.
 
     Finds the minimum in the reference dataset, then shifts all calculated
@@ -129,6 +132,7 @@ def correlate_energies(r_data, c_data):
     Args:
         r_data (np.ndarray): Reference energy data points.
         c_data (np.ndarray): Calculated energy data points (modified in place).
+
     """
     for indices in select_group_of_energies(c_data):
         zero, zero_ind = min((x.val, i) for i, x in enumerate(r_data[indices]))
@@ -138,7 +142,7 @@ def correlate_energies(r_data, c_data):
             c_data[ind].val -= zero
 
 
-def select_group_of_energies(data) -> Iterator[np.ndarray]:
+def select_group_of_energies(data: np.ndarray) -> Iterator[np.ndarray]:
     """Yield index arrays for each group of energies in the dataset.
 
     Handles all energy types: relative (``e``, ``eo``) and absolute
@@ -151,6 +155,7 @@ def select_group_of_energies(data) -> Iterator[np.ndarray]:
 
     Yields:
         np.ndarray: Index array for each energy group within the dataset.
+
     """
     for energy_type in ["e", "eo", "ea", "eao"]:
         indices = np.where([x.typ == energy_type for x in data])[0]
@@ -160,7 +165,7 @@ def select_group_of_energies(data) -> Iterator[np.ndarray]:
             yield more_indices
 
 
-def import_weights(data):
+def import_weights(data: np.ndarray) -> None:
     """Set weights on data points from the default WEIGHTS table.
 
     Only sets weights on data points where ``datum.wht is None``.
@@ -170,6 +175,7 @@ def import_weights(data):
     Args:
         data (np.ndarray): Array of Datum objects whose weights may be updated
             in place.
+
     """
     for datum in data:
         if datum.wht is None:

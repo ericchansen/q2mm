@@ -31,11 +31,12 @@ class JaguarIn(File):
     kJ/(mol·Å²).
     """
 
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         """Initialize a JaguarIn instance.
 
         Args:
             path (str): Path to the Jaguar ``.in`` file.
+
         """
         super().__init__(path)
         self._structures = None
@@ -43,7 +44,7 @@ class JaguarIn(File):
         self._empty_atoms = None
         self._lines = None
 
-    def get_hessian(self, num_atoms: int):
+    def get_hessian(self, num_atoms: int) -> np.ndarray:
         """Read the Hessian matrix from a Jaguar ``.in`` file.
 
         Automatically removes Hessian elements corresponding to dummy
@@ -57,6 +58,7 @@ class JaguarIn(File):
         Returns:
             (numpy.ndarray): 2-D Hessian matrix of shape
                 ``(num_atoms * 3, num_atoms * 3)`` after unit conversion.
+
         """
         if self._hessian is None:
             num = num_atoms
@@ -89,7 +91,7 @@ class JaguarIn(File):
             logger.log(1, f">>> hessian.shape: {hessian.shape}")
         return self._hessian
 
-    def gen_lines(self):
+    def gen_lines(self) -> list[str]:
         """Generate output lines for the Jaguar ``.in`` file.
 
         Since it would be difficult to reproduce all original data, the
@@ -101,6 +103,7 @@ class JaguarIn(File):
 
         Returns:
             (list[str]): Generated lines for the ``.in`` file.
+
         """
         lines = []
         mae_name = None
@@ -122,11 +125,12 @@ class JaguarOut(File):
     Eigenvalues and eigenvectors are **not** mass-weighted.
     """
 
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         """Initialize a JaguarOut instance.
 
         Args:
             path (str): Path to the Jaguar ``.out`` file.
+
         """
         super().__init__(path)
         self._structures = None
@@ -134,10 +138,9 @@ class JaguarOut(File):
         self._eigenvectors = None
         self._frequencies = None
         self._dummy_atom_eigenvector_indices = None
-        # self._force_constants = None
 
     @property
-    def structures(self):
+    def structures(self) -> list[Structure]:
         """list[Structure]: Parsed molecular structures from the output file."""
         if self._structures is None:
             self.import_file()
@@ -151,34 +154,34 @@ class JaguarOut(File):
         return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
     @property
-    def eigenvalues(self):
+    def eigenvalues(self) -> np.ndarray:
         """numpy.ndarray: Eigenvalues derived from force constants and frequencies."""
         if self._eigenvalues is None:
             self.import_file()
         return self._eigenvalues
 
     @property
-    def eigenvectors(self):
+    def eigenvectors(self) -> np.ndarray:
         """numpy.ndarray: Cartesian eigenvectors with dummy-atom rows removed."""
         if self._eigenvectors is None:
             self.import_file()
         return self._eigenvectors
 
     @property
-    def frequencies(self):
+    def frequencies(self) -> np.ndarray:
         """numpy.ndarray: Vibrational frequencies in cm⁻¹."""
         if self._frequencies is None:
             self.import_file()
         return self._frequencies
 
     @property
-    def dummy_atom_eigenvector_indices(self):
+    def dummy_atom_eigenvector_indices(self) -> list[int]:
         """list[int]: Row indices in the eigenvector matrix that correspond to dummy atoms."""
         if self._dummy_atom_eigenvector_indices is None:
             self.import_file()
         return self._dummy_atom_eigenvector_indices
 
-    def import_file(self):
+    def import_file(self) -> None:
         """Parse the Jaguar ``.out`` file and populate all cached properties.
 
         Reads structures, frequencies, force constants, and eigenvectors
@@ -295,16 +298,7 @@ class JaguarOut(File):
         self._eigenvalues = np.array(eigenvalues)
         self._eigenvectors = np.array(eigenvectors)
         self._frequencies = np.array(frequencies)
-        # self._force_constants = np.array(force_constants)
         logger.log(5, f"  -- Read {len(self.structures)} structures")
         logger.log(5, f"  -- Read {len(self.frequencies)} frequencies.")
         logger.log(5, f"  -- Read {len(self.eigenvalues)} eigenvalues.")
         logger.log(5, f"  -- Read {self.eigenvectors.shape} eigenvectors.")
-        # num_atoms = len(structures[-1].atoms)
-        # logger.log(5,
-        #            '  -- ({}, {}) eigenvectors expected for linear '
-        #            'molecule.'.format(
-        #         num_atoms * 3 - 5, num_atoms * 3))
-        # logger.log(5, '  -- ({}, {}) eigenvectors expected for nonlinear '
-        #            'molecule.'.format(
-        #         num_atoms * 3 - 6, num_atoms * 3))

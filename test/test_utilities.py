@@ -8,18 +8,18 @@ ETHANE_MOL2 = REPO_ROOT / "examples" / "ethane" / "GS.mol2"
 
 
 class MakeInput:
-    def __init__(self):
-        self.out = []
+    def __init__(self) -> None:
+        self.out: list[str] = []
 
-    def write(self, str):
+    def write(self, str: str) -> None:
         self.out.append(str)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "".join(self.out)
 
 
 class TestAtomTypeConversion(unittest.TestCase):
-    def test_convert_atom_type(self):
+    def test_convert_atom_type(self) -> None:
         mol2_C3 = "C.3"
         mol2_metal = "Pd"
 
@@ -47,12 +47,12 @@ class TestAtomTypeConversion(unittest.TestCase):
 )
 class TestIdentifyAngles(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         from q2mm.parsers.mol2 import Mol2
 
         mol2 = Mol2(str(ETHANE_MOL2))
         cls.ethane_struct = mol2.structures[0]
 
-    def test_identify_angles_ethane(self):
+    def test_identify_angles_ethane(self) -> None:
         angles = self.ethane_struct.identify_angles()
         self.assertEqual(len(angles), 12)

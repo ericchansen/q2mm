@@ -26,6 +26,7 @@ class Element(NamedTuple):
         covalent_radius (float | None): Single-bond covalent radius in
             Angstroms from Cordero 2008, or ``None`` for elements without
             commonly observed covalent bonding.
+
     """
 
     z: int

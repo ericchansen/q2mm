@@ -12,9 +12,14 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from q2mm.backends.base import MMEngine
+    from q2mm.models.forcefield import ForceField
+    from q2mm.models.molecule import Q2MMMolecule
 
 
 @dataclass
@@ -36,6 +41,7 @@ class BenchmarkResult:
             and param_final.
         pes_distortion (dict | None): PES distortion results including
             modes (list), median_error_pct, max_error_pct, and elapsed_s.
+
     """
 
     metadata: dict = field(default_factory=dict)
@@ -51,11 +57,12 @@ class BenchmarkResult:
         Args:
             path (str | Path): Destination file path. Parent directories
                 are created if they do not exist.
+
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        def _convert(obj):
+        def _convert(obj: Any) -> Any:
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
             if isinstance(obj, (np.floating, np.integer)):
@@ -74,6 +81,7 @@ class BenchmarkResult:
 
         Returns:
             BenchmarkResult: Deserialized benchmark result.
+
         """
         with open(path) as f:
             data = json.load(f)
@@ -102,6 +110,7 @@ class BenchmarkResult:
         Returns:
             BenchmarkResult: Result populated with the given frequencies and
                 metadata suitable for leaderboard comparison.
+
         """
         return cls(
             metadata={
@@ -129,7 +138,7 @@ class BenchmarkResult:
         )
 
 
-def frequency_rmsd(a, b) -> float:
+def frequency_rmsd(a: np.ndarray | list, b: np.ndarray | list) -> float:
     """Compute RMSD between two frequency arrays (truncates to shorter).
 
     Args:
@@ -138,13 +147,14 @@ def frequency_rmsd(a, b) -> float:
 
     Returns:
         float: Root-mean-square deviation between the two arrays.
+
     """
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.sqrt(np.mean((arr_a[:n] - arr_b[:n]) ** 2)))
 
 
-def frequency_mae(a, b) -> float:
+def frequency_mae(a: np.ndarray | list, b: np.ndarray | list) -> float:
     """Compute mean absolute error between two frequency arrays.
 
     Args:
@@ -153,13 +163,14 @@ def frequency_mae(a, b) -> float:
 
     Returns:
         float: Mean absolute error between the two arrays.
+
     """
     arr_a, arr_b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
     n = min(len(arr_a), len(arr_b))
     return float(np.mean(np.abs(arr_a[:n] - arr_b[:n])))
 
 
-def real_frequencies(freqs, threshold: float = 50.0) -> np.ndarray:
+def real_frequencies(freqs: np.ndarray | list, threshold: float = 50.0) -> np.ndarray:
     """Extract and sort real (non-imaginary, non-translational) frequencies.
 
     Args:
@@ -169,12 +180,13 @@ def real_frequencies(freqs, threshold: float = 50.0) -> np.ndarray:
 
     Returns:
         np.ndarray: Sorted array of frequencies above the threshold.
+
     """
     arr = np.asarray(freqs)
     return np.sort(arr[arr > threshold])
 
 
-def _param_names(ff) -> list[str]:
+def _param_names(ff: ForceField) -> list[str]:
     """Build human-readable names for each parameter in get_param_vector() order.
 
     Args:
@@ -183,6 +195,7 @@ def _param_names(ff) -> list[str]:
 
     Returns:
         list[str]: Parameter name strings (e.g., ``'kb_C-H'``, ``'ka_H-C-H'``).
+
     """
     names = []
     for b in ff.bonds:
@@ -204,8 +217,8 @@ def _param_names(ff) -> list[str]:
 
 
 def run_benchmark(
-    engine,
-    molecule,
+    engine: MMEngine,
+    molecule: Q2MMMolecule,
     qm_freqs: np.ndarray,
     qm_hessian: np.ndarray | None = None,
     normal_modes: dict | None = None,
@@ -238,6 +251,7 @@ def run_benchmark(
 
     Returns:
         BenchmarkResult: Complete result with all metrics.
+
     """
     from q2mm.models.forcefield import ForceField
     from q2mm.models.seminario import estimate_force_constants

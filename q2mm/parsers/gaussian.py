@@ -23,8 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class GaussLog(File):
-    """
-    Retrieves data from Gaussian log files.
+    """Retrieves data from Gaussian log files.
 
     If you are extracting frequencies/Hessian data from this file, use
     the keyword NoSymmetry when running the Gaussian calculation.
@@ -43,8 +42,8 @@ class GaussLog(File):
         "_au_hessian",
     ]
 
-    def __init__(self, path: str, au_hessian=False):
-        """Instantiates a file object for the file at the location path passed.
+    def __init__(self, path: str, au_hessian: bool = False) -> None:
+        """Instantiate a file object for the file at the location path passed.
 
         Populates the directory and filename properties as well.
 
@@ -53,6 +52,7 @@ class GaussLog(File):
             au_hessian (bool, optional): If True, the Hessian will not be
                 converted to kJ/(mol·Å²) but rather left in atomic units
                 (Hartree/Bohr²). Defaults to False.
+
         """
         super().__init__(path)
         self._evals = None
@@ -63,7 +63,7 @@ class GaussLog(File):
         self._au_hessian = au_hessian
 
     @property
-    def evecs(self):
+    def evecs(self) -> np.ndarray | None:
         """Returns eigenvectors of frequency analysis if applicable.
 
         If not yet parsed, parses them from the log body, not the archive.
@@ -71,13 +71,14 @@ class GaussLog(File):
         Returns:
             (np.ndarray | None): Mass-weighted, normalized eigenvectors of the
                 Gaussian frequency analysis, or None if not a frequency job.
+
         """
         if self._evecs is None:
             self.read_out()
         return self._evecs
 
     @property
-    def evals(self):
+    def evals(self) -> np.ndarray | None:
         """Returns eigenvalues of frequency analysis if applicable.
 
         If not yet parsed, parses them from the log body, not the archive.
@@ -89,19 +90,21 @@ class GaussLog(File):
         Returns:
             (np.ndarray | None): Mass-weighted force constants in atomic units,
                 or None if not a frequency job.
+
         """
         if self._evals is None:
             self.read_out()
         return self._evals
 
     @property
-    def frequencies(self):
+    def frequencies(self) -> np.ndarray | None:
         """Vibrational frequencies in cm⁻¹ from the Gaussian frequency analysis.
 
         Negative values indicate imaginary modes (transition states).
 
         Returns:
             (np.ndarray | None): Frequencies in cm⁻¹, or None if not a frequency job.
+
         """
         if self._frequencies_cm is None:
             self.read_out()
@@ -118,9 +121,9 @@ class GaussLog(File):
 
         .. deprecated::
             Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
+
         """
         if self._structures is None:
-            # self.read_out()
             self.read_archive()
         return self._structures
 
@@ -139,6 +142,7 @@ class GaussLog(File):
             default), any attached Hessian has already been converted to
             kJ/(mol·Å²) and will **not** be forwarded to avoid silently
             mixing unit systems.
+
         """
         from q2mm.models.molecule import Q2MMMolecule
 
@@ -155,8 +159,8 @@ class GaussLog(File):
             molecules.append(Q2MMMolecule.from_structure(s, hessian=hess))
         return molecules
 
-    def read_out(self):
-        """Reads force constant and eigenvector data from a frequency calculation.
+    def read_out(self) -> None:
+        """Read force constant and eigenvector data from a frequency calculation.
 
         Populates ``_evals``, ``_evecs``, ``_frequencies_cm``, ``_structures``,
         and ``_esp_rms`` from the Gaussian log file body.
@@ -262,7 +266,7 @@ class GaussLog(File):
                     # Trim "Force constants ---". It's "Frc consts --" without
                     # "hpmodes".
                     for i, force_constant in enumerate(map(float, cols[3:])):
-                        # co.AU_TO_MDYNA = 15.569141
+                        # AU_TO_MDYNA conversion (15.569141)
                         force_constants[i] *= force_constant / co.AU_TO_MDYNA
 
                     # Force constants were calculated above as follows:
@@ -322,10 +326,8 @@ class GaussLog(File):
                         # the atom elements.
 
                         # This loop expands the LoL, evecs, as so.
-                        # Iteration 1:
-                        # [[x], [x], [x], [x], [x]]
-                        # Iteration 2:
-                        # [[x, x], [x, x], [x, x], [x, x], [x, x]]
+                        # Iteration 1: each sub-list has 1 element
+                        # Iteration 2: each sub-list has 2 elements
                         # ... etc. until the length of the sublist is equal to
                         # the number of atoms. Remember, for low precision
                         # eigenvectors it only adds in sets of 3, not 5.
@@ -384,14 +386,23 @@ class GaussLog(File):
 
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
-    def read_archive(self):
-        """Reads the last archive section from the Gaussian log file.
+    def read_archive(self) -> None:
+        r"""Read the last archive section from the Gaussian log file.
 
         Extracts atoms, coordinates, properties, and the Hessian (converted
         to kJ/(mol·Å²) unless ``au_hessian`` is True) from the archive block.
 
+        The Gaussian archive format uses ``\\\\`` as section separators and
+        ``\\`` within sections.  The fields always present are: user, date,
+        route/command, title, charge/multiplicity, and atom coordinates
+        (``element,x,y,z`` entries separated by ``\\``).  Optional fields
+        that may follow include ``HF``, ``ZeroPoint``, ``Thermal``,
+        ``NImag``, the Hessian (lower-triangular, comma-separated), and
+        eigenvalues.
+
         Raises:
             IndexError: If no archive section is found in the log file.
+
         """
         logger.log(5, f"READING: {self.filename}")
         struct = Structure(self.filename)
@@ -407,9 +418,6 @@ class GaussLog(File):
         #         in the archive).
         # We pull out the last one [-1] in case there are multiple archives
         # in a file.
-        #        print(self.path)
-        #        print(open(self.path,'r').read())
-        #        print(re.findall('(?s)(\s1\\\\1\\\\.*?[\\\\\n\s]+@)',open(self.path,'r').read()))
         try:
             with open(self.path) as fh:
                 arch = re.findall("(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", fh.read())[-1]
@@ -502,10 +510,7 @@ class GaussLog(File):
             )
             hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
             logger.log(5, f"  -- Created {hess.shape} Hessian matrix.")
-            # Code for if it was in upper triangle (it's not).
-            # hess[np.triu_indices_from(hess)] = hess_tri
-            # hess += np.triu(hess, -1).T
-            # Lower triangle code.
+            # Hessian is stored as lower triangle in the archive.
             hess[np.tril_indices_from(hess)] = hess_tri
             hess += np.tril(hess, -1).T
             if not self._au_hessian:
@@ -513,54 +518,3 @@ class GaussLog(File):
             struct.hess = hess
             # SECTION 6
             # Not sure what this is.
-
-        # stuff = re.search(
-        #     '\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)'
-        #     '\\\\(?P<date>.*?)'
-        #     '\\\\.*?\\\\\\\\(?P<com>.*?)'
-        #     '\\\\\\\\(?P<filename>.*?)'
-        #     '\\\\\\\\(?P<charge>.*?)'
-        #     ',(?P<multiplicity>.*?)'
-        #     '\\\\(?P<atoms>.*?)'
-        #     # This marks the end of what always shows up.
-        #     '\\\\\\\\'
-        #     # This stuff sometimes shows up.
-        #     # And it breaks if it doesn't show up.
-        #     '.*?HF=(?P<hf>.*?)'
-        #     '\\\\.*?ZeroPoint=(?P<zp>.*?)'
-        #     '\\\\.*?Thermal=(?P<thermal>.*?)'
-        #     '\\\\.*?\\\\NImag=\d+\\\\\\\\(?P<hess>.*?)'
-        #     '\\\\\\\\(?P<evals>.*?)'
-        #     '\\\\\\\\\\\\',
-        #     arch)
-        # logger.log(5, '  -- Read archive.')
-        # atoms = stuff.group('atoms')
-        # atoms = atoms.split('\\')
-        # for atom in atoms:
-        #     ele, x, y, z = atom.split(',')
-        #     struct.atoms.append(
-        #         Atom(element=ele, x=float(x), y=float(y), z=float(z)))
-        # logger.log(5, '  -- Read {} atoms.'.format(len(atoms)))
-        # self._structures = [struct]
-        # hess_tri = stuff.group('hess')
-        # hess_tri = hess_tri.split(',')
-        # logger.log(
-        #     5,
-        #     '  -- Read {} Hessian elements in lower triangular '
-        #     'form.'.format(len(hess_tri)))
-        # hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-        # logger.log(
-        #     5, '  -- Created {} Hessian matrix.'.format(hess.shape))
-        # # Code for if it was in upper triangle, but it's not.
-        # # hess[np.triu_indices_from(hess)] = hess_tri
-        # # hess += np.triu(hess, -1).T
-        # # Lower triangle code.
-        # hess[np.tril_indices_from(hess)] = hess_tri
-        # hess += np.tril(hess, -1).T
-        # hess *= co.HESSIAN_CONVERSION
-        # struct.hess = hess
-        # # Code to extract energies.
-        # # Still not sure exactly what energies we want to use.
-        # struct.props['hf'] = float(stuff.group('hf'))
-        # struct.props['zp'] = float(stuff.group('zp'))
-        # struct.props['thermal'] = float(stuff.group('thermal'))

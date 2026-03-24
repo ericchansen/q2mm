@@ -19,7 +19,14 @@ class TinkerFF(FF):
     supported with ``amoeba09.prm`` under development.
     """
 
-    def __init__(self, path=None, data=None, method=None, params=None, score=None):
+    def __init__(
+        self,
+        path: str | None = None,
+        data: list | None = None,
+        method: str | None = None,
+        params: list[Param] | None = None,
+        score: float | None = None,
+    ) -> None:
         """Initialize a TinkerFF instance.
 
         Args:
@@ -28,6 +35,7 @@ class TinkerFF(FF):
             method (str | None): Method used to generate this FF.
             params (list[Param] | None): List of Param objects.
             score (float | None): Objective function score.
+
         """
         super().__init__(path, data, method, params, score)
         self.sub_names = []
@@ -35,7 +43,7 @@ class TinkerFF(FF):
         self._lines = None
 
     @property
-    def lines(self):
+    def lines(self) -> list[str]:
         """list[str]: Lines of the parameter file, read lazily from disk."""
         if self._lines is None:
             with open(self.path) as f:
@@ -43,10 +51,10 @@ class TinkerFF(FF):
         return self._lines
 
     @lines.setter
-    def lines(self, x):
+    def lines(self, x: list[str]) -> None:
         self._lines = x
 
-    def import_ff(self, path=None, sub_search="OPT"):
+    def import_ff(self, path: str | None = None, sub_search: str = "OPT") -> None:
         """Import force field parameters from a Tinker parameter file.
 
         Reads bonds, angles, torsions, dipoles, pi-bonds, out-of-plane
@@ -57,6 +65,7 @@ class TinkerFF(FF):
             path (str | None): Path to read from. Defaults to ``self.path``.
             sub_search (str): Subsection keyword to match for gathering
                 parameters. Defaults to ``"OPT"``.
+
         """
         if path is None:
             path = self.path
@@ -171,7 +180,9 @@ class TinkerFF(FF):
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
-    def export_ff(self, path=None, params=None, lines=None):
+    def export_ff(
+        self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
+    ) -> None:
         """Export the force field to a file, typically ``mm3.fld``.
 
         Args:
@@ -180,6 +191,7 @@ class TinkerFF(FF):
                 ``self.params``.
             lines (list[str] | None): Base file lines to modify. Defaults
                 to ``self.lines``.
+
         """
         if path is None:
             path = self.path
@@ -232,7 +244,14 @@ class TinkerMM3A(FF):
     fixed-width column layout for export.
     """
 
-    def __init__(self, path=None, data=None, method=None, params=None, score=None):
+    def __init__(
+        self,
+        path: str | None = None,
+        data: list | None = None,
+        method: str | None = None,
+        params: list[Param] | None = None,
+        score: float | None = None,
+    ) -> None:
         """Initialize a TinkerMM3A instance.
 
         Args:
@@ -241,6 +260,7 @@ class TinkerMM3A(FF):
             method (str | None): Method used to generate this FF.
             params (list[Param] | None): List of Param objects.
             score (float | None): Objective function score.
+
         """
         super().__init__(path, data, method, params, score)
         self.sub_names = []
@@ -248,7 +268,7 @@ class TinkerMM3A(FF):
         self._lines = None
 
     @property
-    def lines(self):
+    def lines(self) -> list[str]:
         """list[str]: Lines of the parameter file, read lazily from disk."""
         if self._lines is None:
             with open(self.path) as f:
@@ -256,10 +276,10 @@ class TinkerMM3A(FF):
         return self._lines
 
     @lines.setter
-    def lines(self, x):
+    def lines(self, x: list[str]) -> None:
         self._lines = x
 
-    def import_ff(self, path=None, sub_search="OPT"):
+    def import_ff(self, path: str | None = None, sub_search: str = "OPT") -> None:
         """Import force field parameters from a Tinker MM3A parameter file.
 
         Reads bonds, angles, torsions, dipoles, pi-bonds, out-of-plane
@@ -270,6 +290,7 @@ class TinkerMM3A(FF):
             path (str | None): Path to read from. Defaults to ``self.path``.
             sub_search (str): Subsection keyword to match for gathering
                 parameters. Defaults to ``"OPT"``.
+
         """
         if path is None:
             path = self.path
@@ -383,7 +404,9 @@ class TinkerMM3A(FF):
                         )
         logger.log(15, f"  -- Read {len(self.params)} parameters.")
 
-    def export_ff(self, path=None, params=None, lines=None):
+    def export_ff(
+        self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
+    ) -> None:
         """Export the force field to a file, typically ``mm3.fld``.
 
         Uses a fixed-width column layout for the MM3A parameter format.
@@ -394,6 +417,7 @@ class TinkerMM3A(FF):
                 ``self.params``.
             lines (list[str] | None): Base file lines to modify. Defaults
                 to ``self.lines``.
+
         """
         if path is None:
             path = self.path
@@ -431,7 +455,6 @@ class TinkerMM3A(FF):
                     atoms[8 - n2 : 8] = linesplit[2]
                     n3 = len(value)
                     const[pos - n3 : pos] = value
-                #                    linesplit[3+col] = value
                 # angle A B C (4+(n-1))
                 elif "angle" in line:
                     n1 = len(linesplit[1])
@@ -442,7 +465,6 @@ class TinkerMM3A(FF):
                     atoms[12 - n3 : 12] = linesplit[3]
                     n4 = len(value)
                     const[pos - n4 : pos] = value
-                    # linesplit[4+col] = value
                 # torsion A B C D (5+3*(n-1))
                 elif "torsion" in line:
                     linesplit[5 + 3 * col] = value
@@ -458,8 +480,6 @@ class TinkerMM3A(FF):
                     atoms[16 - n4 : 16] = linesplit[4]
                     n5 = len(value)
                     const[pos - n5 : pos] = value
-                #                    linesplit[5+col] = value
-                #                lines[param.ff_row - 1] = ("\t".join(linesplit)+"\n")
                 lines[param.ff_row - 1] = par + atoms + const + "\n"
         with open(path, "w") as f:
             f.writelines(lines)

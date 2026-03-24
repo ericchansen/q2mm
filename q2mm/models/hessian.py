@@ -25,11 +25,14 @@ import copy
 import logging
 import warnings
 from collections.abc import Sequence
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
 from q2mm import constants as co
+
+if TYPE_CHECKING:
+    from q2mm.models.forcefield import ForceField
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,7 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
 
     Returns:
         list[str]: Non-dummy element symbols.
+
     """
     # Q2MMMolecule (has .symbols attribute)
     if hasattr(atoms_or_symbols, "symbols"):
@@ -93,6 +97,7 @@ def mass_weight_hessian(
         atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
             (deprecated) legacy ``Atom`` objects.
         reverse: If ``True``, un-mass-weight instead.
+
     """
     symbols = _resolve_symbols(atoms)
     inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols for _ in range(3)])
@@ -120,6 +125,7 @@ def mass_weight_force_constant(
 
     Returns:
         Mass-weighted (or un-weighted) force constant.
+
     """
     symbols = _resolve_symbols(atoms)
     masses = [co.MASSES[s] for s in symbols]
@@ -147,6 +153,7 @@ def mass_weight_eigenvectors(
         atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
             (deprecated) legacy ``Atom`` objects.
         reverse: If ``True``, un-mass-weight instead.
+
     """
     symbols = _resolve_symbols(atoms)
     sqrt_mass = []
@@ -175,6 +182,7 @@ def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
                 is of shape ``(n,)`` and eigenvectors is of shape ``(n, n)`` with
                 eigenvectors stored as **columns** (the ``np.linalg.eigh`` convention).
                 That is, ``eigenvectors[:, i]`` is the eigenvector for ``eigenvalues[i]``.
+
     """
     eigenvalues, eigenvectors = np.linalg.eigh(matrix)
     return eigenvalues, eigenvectors
@@ -182,10 +190,10 @@ def decompose(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 def replace_neg_eigenvalue(
     eigenvalues: np.ndarray,
-    replace_with=1.0,
-    zer_out_neg=False,
-    units=co.KJMOLA,
-    strict=True,
+    replace_with: float = 1.0,
+    zer_out_neg: bool = False,
+    units: int = co.KJMOLA,
+    strict: bool = True,
 ) -> np.ndarray:
     """Replace the most negative eigenvalue to invert TS curvature (Method C).
 
@@ -223,6 +231,7 @@ def replace_neg_eigenvalue(
     Raises:
         ValueError: When *strict* is True and more than one negative eigenvalue
             is present.
+
     """
     neg_indices = np.argwhere([eval < 0 for eval in eigenvalues])
 
@@ -262,6 +271,7 @@ def reform_hessian(eigenvalues: np.ndarray, eigenvectors: np.ndarray) -> np.ndar
 
     Returns:
         np.ndarray: Hessian matrix
+
     """
     reformed_hessian = eigenvectors.dot(np.diag(eigenvalues).dot(eigenvectors.T))
     return reformed_hessian
@@ -304,6 +314,7 @@ def transform_to_eigenmatrix(
         Both the Hessian and eigenvectors should be in the same unit
         system (typically mass-weighted Hartree/Bohr² after calling
         :func:`mass_weight_hessian` and :func:`mass_weight_eigenvectors`).
+
     """
     return eigenvectors.T @ hessian @ eigenvectors
 
@@ -326,6 +337,7 @@ def extract_eigenmatrix_data(
 
     Returns:
         List of ``(row, col, value)`` tuples with 0-based indices.
+
     """
     n = eigenmatrix.shape[0]
     data = []
@@ -359,6 +371,7 @@ def invert_ts_curvature(
 
     Raises:
         ValueError: If *method* is not ``"C"`` or ``"D"``.
+
     """
     if method not in ("C", "D"):
         raise ValueError(f"Unknown method {method!r}. Supported: 'C', 'D'.")
@@ -390,12 +403,13 @@ def keep_natural_eigenvalue(eigenvalues: np.ndarray) -> np.ndarray:
 
     Returns:
         Unmodified eigenvalues (a copy for safety).
+
     """
     return eigenvalues.copy()
 
 
 def detect_problematic_params(
-    forcefield,
+    forcefield: ForceField,
     *,
     fc_threshold: float = 0.0,
 ) -> dict[str, set[tuple]]:
@@ -412,6 +426,7 @@ def detect_problematic_params(
     Returns:
         Dict with ``"bonds"`` and ``"angles"`` keys, each containing a set
         of canonical parameter keys (element tuples from ``param.key``).
+
     """
     problematic: dict[str, set[tuple]] = {"bonds": set(), "angles": set()}
 
@@ -429,9 +444,9 @@ def detect_problematic_params(
 
 
 def lock_params(
-    forcefield,
+    forcefield: ForceField,
     lock_keys: dict[str, set[tuple]],
-    source_ff,
+    source_ff: ForceField,
 ) -> None:
     """Reset problematic parameters to values from a reference force field.
 
@@ -449,6 +464,7 @@ def lock_params(
             ``"bonds"`` and ``"angles"`` with sets of canonical keys.
         source_ff (ForceField): Reference ForceField to copy values from (typically
             the Method D result or a standard force field).
+
     """
     bond_keys = lock_keys.get("bonds", set())
     angle_keys = lock_keys.get("angles", set())

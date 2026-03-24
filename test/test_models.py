@@ -1,5 +1,7 @@
 """Tests for q2mm.models (molecule, forcefield, seminario)."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -20,12 +22,12 @@ RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "m
 
 
 class TestExtractElement:
-    def test_single_letter(self):
+    def test_single_letter(self) -> None:
         assert _extract_element("C1") == "C"
         assert _extract_element("F") == "F"
         assert _extract_element("H3") == "H"
 
-    def test_two_letter(self):
+    def test_two_letter(self) -> None:
         assert _extract_element("Cl1") == "Cl"
         assert _extract_element("Br") == "Br"
         assert _extract_element("Rh2") == "Rh"
@@ -33,7 +35,7 @@ class TestExtractElement:
         assert _extract_element("RH1") == "Rh"
         assert _extract_element("CL") == "Cl"
 
-    def test_whitespace(self):
+    def test_whitespace(self) -> None:
         assert _extract_element("  Cl1") == "Cl"
         assert _extract_element(" F") == "F"
 
@@ -42,32 +44,32 @@ class TestExtractElement:
 
 
 class TestMoleculeFromXYZ:
-    def test_load_ch3f(self):
+    def test_load_ch3f(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         assert mol.n_atoms == 5
         assert mol.symbols[0] == "C"
         assert mol.symbols[1] == "F"
         assert mol.geometry.shape == (5, 3)
 
-    def test_load_ts(self):
+    def test_load_ts(self) -> None:
         mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
         assert mol.n_atoms == 6
         assert mol.symbols.count("F") == 2
 
-    def test_bond_detection_default(self):
+    def test_bond_detection_default(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         bonds = mol.bonds
         assert len(bonds) > 0
         elements_found = {b.element_pair for b in bonds}
         assert ("C", "H") in elements_found or ("H", "C") in elements_found
 
-    def test_bond_detection_ts_tolerance(self):
+    def test_bond_detection_ts_tolerance(self) -> None:
         mol_tight = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.3)
         mol_loose = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
         # Looser tolerance should detect more bonds (partial TS bonds)
         assert len(mol_loose.bonds) >= len(mol_tight.bonds)
 
-    def test_angle_detection(self):
+    def test_angle_detection(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         angles = mol.angles
         assert len(angles) > 0
@@ -75,7 +77,7 @@ class TestMoleculeFromXYZ:
         center_elements = {a.elements[1] for a in angles}
         assert "C" in center_elements
 
-    def test_detected_env_ids_use_atom_types(self):
+    def test_detected_env_ids_use_atom_types(self) -> None:
         mol = Q2MMMolecule(
             symbols=["C", "H", "H"],
             atom_types=["1", "5", "5"],
@@ -95,13 +97,13 @@ class TestMoleculeFromXYZ:
 
 
 class TestForceField:
-    def test_create_for_molecule(self):
+    def test_create_for_molecule(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         ff = ForceField.create_for_molecule(mol)
         assert len(ff.bonds) > 0
         assert len(ff.angles) > 0
 
-    def test_n_params_matches_vector(self):
+    def test_n_params_matches_vector(self) -> None:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
@@ -110,7 +112,7 @@ class TestForceField:
         vec = ff.get_param_vector()
         assert ff.n_params == len(vec)
 
-    def test_param_vector_roundtrip(self):
+    def test_param_vector_roundtrip(self) -> None:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
@@ -122,7 +124,7 @@ class TestForceField:
         vec2 = ff2.get_param_vector()
         np.testing.assert_allclose(vec2, vec * 2)
 
-    def test_default_bounds_allow_negative_bond_k(self):
+    def test_default_bounds_allow_negative_bond_k(self) -> None:
         """TSFF requires negative bond force constants for reaction coordinates."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, -49.6)],
@@ -133,7 +135,7 @@ class TestForceField:
         assert bond_k_lower < 0, "Bond k lower bound must allow negative values for TSFF"
         assert bond_k_upper > 0
 
-    def test_default_bounds_allow_negative_angle_k(self):
+    def test_default_bounds_allow_negative_angle_k(self) -> None:
         """Angle force constants may also be negative in TSFF."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
@@ -143,7 +145,7 @@ class TestForceField:
         angle_k_lower, angle_k_upper = bounds[2]
         assert angle_k_lower < 0, "Angle k lower bound must allow negative values for TSFF"
 
-    def test_negative_fc_in_param_vector_roundtrip(self):
+    def test_negative_fc_in_param_vector_roundtrip(self) -> None:
         """Negative force constants must survive get/set param vector roundtrip."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, -49.6)],
@@ -157,7 +159,7 @@ class TestForceField:
         assert ff2.bonds[0].force_constant == pytest.approx(-49.6)
         assert ff2.angles[0].force_constant == pytest.approx(-10.8)
 
-    def test_torsion_in_param_vector(self):
+    def test_torsion_in_param_vector(self) -> None:
         """Torsion force constants appear in param vector after bonds/angles."""
         ff = ForceField(
             bonds=[BondParam(("C", "C"), 1.54, 323.7)],
@@ -177,7 +179,7 @@ class TestForceField:
         assert vec[5] == pytest.approx(-0.10)
         assert vec[6] == pytest.approx(0.25)
 
-    def test_torsion_param_vector_roundtrip(self):
+    def test_torsion_param_vector_roundtrip(self) -> None:
         """Torsion params survive get/set roundtrip."""
         ff = ForceField(
             bonds=[BondParam(("C", "C"), 1.54, 323.7)],
@@ -194,7 +196,7 @@ class TestForceField:
         assert ff2.torsions[0].force_constant == pytest.approx(0.30)
         assert ff2.torsions[1].force_constant == pytest.approx(0.20)
 
-    def test_torsion_bounds(self):
+    def test_torsion_bounds(self) -> None:
         """Torsion bounds included in get_bounds()."""
         ff = ForceField(
             bonds=[BondParam(("C", "C"), 1.54, 323.7)],
@@ -207,7 +209,7 @@ class TestForceField:
         assert torsion_lower < 0, "Torsion k must allow negative values"
         assert torsion_upper > 0
 
-    def test_get_torsion(self):
+    def test_get_torsion(self) -> None:
         """get_torsion finds by element quad + optional periodicity."""
         ff = ForceField(
             torsions=[
@@ -227,7 +229,7 @@ class TestForceField:
         assert t_rev is not None
         assert t_rev.force_constant == pytest.approx(0.30)
 
-    def test_mm3_loads_torsions(self):
+    def test_mm3_loads_torsions(self) -> None:
         """MM3 .fld loading should extract torsion parameters."""
         ff = ForceField.from_mm3_fld(RH_MM3)
         assert len(ff.torsions) > 0, "Expected torsion parameters from Rh-enamide mm3.fld"
@@ -235,7 +237,7 @@ class TestForceField:
         assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
         assert all(t.ff_row is not None for t in ff.torsions)
 
-    def test_mm3_export_roundtrip_generic(self, tmp_path):
+    def test_mm3_export_roundtrip_generic(self, tmp_path: Path) -> None:
         ff = ForceField(
             name="Generic MM3",
             bonds=[BondParam(("C", "F"), 1.381, 377.7, env_id="C1-F1")],
@@ -257,7 +259,7 @@ class TestForceField:
         assert angle.force_constant == pytest.approx(39.6, rel=1e-3)
         assert angle.equilibrium == pytest.approx(109.7)
 
-    def test_mm3_vdw_roundtrip_generic(self, tmp_path):
+    def test_mm3_vdw_roundtrip_generic(self, tmp_path: Path) -> None:
         ff = ForceField(name="Generic MM3", vdws=[VdwParam("F0", 1.71, 0.075), VdwParam("H1", 1.62, 0.02)])
         out_path = tmp_path / "generated_vdw.fld"
 
@@ -273,7 +275,7 @@ class TestForceField:
         assert hydrogen.radius == pytest.approx(1.62)
         assert hydrogen.epsilon == pytest.approx(0.02)
 
-    def test_mm3_standalone_torsion_roundtrip(self, tmp_path):
+    def test_mm3_standalone_torsion_roundtrip(self, tmp_path: Path) -> None:
         """Standalone MM3 export should include torsion parameters."""
         ff = ForceField(
             name="Torsion Test",
@@ -307,7 +309,7 @@ class TestForceField:
         assert len(ccch_v2) == 1
         assert ccch_v2[0].force_constant == pytest.approx(0.0)
 
-    def test_mm3_standalone_full_roundtrip(self, tmp_path):
+    def test_mm3_standalone_full_roundtrip(self, tmp_path: Path) -> None:
         """Standalone MM3 export with bonds, angles, torsions, and vdW."""
         ff = ForceField(
             name="Full Test",
@@ -333,7 +335,7 @@ class TestForceField:
         v1 = [t for t in roundtrip.torsions if t.periodicity == 1][0]
         assert v1.force_constant == pytest.approx(-0.5)
 
-    def test_mm3_export_updates_template(self, tmp_path):
+    def test_mm3_export_updates_template(self, tmp_path: Path) -> None:
         ff = ForceField.from_mm3_fld(RH_MM3)
         first_bond = ff.bonds[0]
         first_bond.force_constant += 1.234
@@ -347,7 +349,7 @@ class TestForceField:
         assert updated.force_constant == pytest.approx(first_bond.force_constant, rel=1e-3)
         assert updated.equilibrium == pytest.approx(first_bond.equilibrium)
 
-    def test_mm3_imports_vdw_table(self):
+    def test_mm3_imports_vdw_table(self) -> None:
         ff = ForceField.from_mm3_fld(RH_MM3)
 
         rh = ff.get_vdw(atom_type="RH")
@@ -359,7 +361,7 @@ class TestForceField:
         assert fluorine.radius == pytest.approx(1.71)
         assert fluorine.epsilon == pytest.approx(0.075)
 
-    def test_tinker_import_export_roundtrip(self, tmp_path):
+    def test_tinker_import_export_roundtrip(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "sample.prm"
         prm_path.write_text(
             "\n".join(
@@ -407,7 +409,7 @@ class TestForceField:
         assert generic_vdw.radius == pytest.approx(1.47)
         assert generic_vdw.epsilon == pytest.approx(0.061)
 
-    def test_tinker_import_generic_prm_without_q2mm_section(self, tmp_path):
+    def test_tinker_import_generic_prm_without_q2mm_section(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "generic.prm"
         prm_path.write_text(
             "\n".join(
@@ -438,7 +440,7 @@ class TestForceField:
         assert vdw.radius == pytest.approx(2.0400)
         assert vdw.epsilon == pytest.approx(0.0270)
 
-    def test_tinker_export_updates_primary_angle_only(self, tmp_path):
+    def test_tinker_export_updates_primary_angle_only(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "sample.prm"
         prm_path.write_text(
             "\n".join(
@@ -470,7 +472,7 @@ class TestForceField:
         assert angle_eqs[0] == pytest.approx(108.25)
         assert angle_eqs[1:] == [pytest.approx(111.0), pytest.approx(112.0)]
 
-    def test_tinker_export_updates_vdw(self, tmp_path):
+    def test_tinker_export_updates_vdw(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "sample_vdw.prm"
         prm_path.write_text(
             "\n".join(
@@ -497,9 +499,12 @@ class TestForceField:
         assert updated.radius == pytest.approx(1.55)
         assert updated.epsilon == pytest.approx(0.081)
 
-    def test_tinker_export_preserves_vdw_reduction(self, tmp_path):
-        """Regression: _update_tinker_vdw_lines must write match.reduction,
-        not copy the old tail from the file."""
+    def test_tinker_export_preserves_vdw_reduction(self, tmp_path: Path) -> None:
+        """Verify Tinker export preserves VDW reduction factor.
+
+        Regression: _update_tinker_vdw_lines must write match.reduction,
+        not copy the old tail from the file.
+        """
         prm_path = tmp_path / "vdw_reduction.prm"
         prm_path.write_text(
             "\n".join(
@@ -521,7 +526,7 @@ class TestForceField:
         roundtrip = ForceField.from_tinker_prm(out_path)
         assert roundtrip.vdws[0].reduction == pytest.approx(0.923)
 
-    def test_generic_prm_amoeba_style_atom_records(self, tmp_path):
+    def test_generic_prm_amoeba_style_atom_records(self, tmp_path: Path) -> None:
         """Parser must handle AMOEBA-style atom records with a class column."""
         prm_path = tmp_path / "amoeba_style.prm"
         prm_path.write_text(
@@ -549,7 +554,7 @@ UPSTREAM_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "upstream_q2mm.
 
 
 class TestAmberFrcmod:
-    def test_load_bonds(self):
+    def test_load_bonds(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.bonds) == 3
         assert ff.source_format == "amber_frcmod"
@@ -558,34 +563,34 @@ class TestAmberFrcmod:
         assert b.force_constant == pytest.approx(380.74)
         assert b.equilibrium == pytest.approx(1.7631)
 
-    def test_load_angles(self):
+    def test_load_angles(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.angles) == 7
 
-    def test_load_dihedrals(self):
+    def test_load_dihedrals(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         proper = [t for t in ff.torsions if "(improper)" not in t.label]
         assert len(proper) == 8
 
-    def test_load_impropers(self):
+    def test_load_impropers(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         improper = [t for t in ff.torsions if "(improper)" in t.label]
         assert len(improper) == 3
         assert improper[0].force_constant == pytest.approx(10.5)
 
-    def test_load_vdw(self):
+    def test_load_vdw(self) -> None:
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.vdws) == 1
         assert ff.vdws[0].atom_type == "c4"
 
-    def test_element_from_mass_section(self):
+    def test_element_from_mass_section(self) -> None:
         """MASS section should inform element identification."""
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         # c4 has mass 12.010 → element C
         b = ff.bonds[0]
         assert all(e == "C" for e in b.elements)
 
-    def test_standalone_roundtrip(self, tmp_path):
+    def test_standalone_roundtrip(self, tmp_path: Path) -> None:
         """Standalone save → reload should preserve all values."""
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         # Clear source info to force standalone mode
@@ -612,7 +617,7 @@ class TestAmberFrcmod:
         for orig, new in zip(ff.torsions, rt.torsions):
             assert orig.force_constant == pytest.approx(new.force_constant, abs=0.01)
 
-    def test_template_roundtrip(self, tmp_path):
+    def test_template_roundtrip(self, tmp_path: Path) -> None:
         """Template-based save should update values in-place."""
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         ff.bonds[0].force_constant = 999.0
@@ -627,7 +632,7 @@ class TestAmberFrcmod:
         # Other bonds unchanged
         assert rt.bonds[1].force_constant == pytest.approx(ff.bonds[1].force_constant)
 
-    def test_template_preserves_comments(self, tmp_path):
+    def test_template_preserves_comments(self, tmp_path: Path) -> None:
         """Template mode should preserve the remark line."""
         ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
         out = tmp_path / "preserved.frcmod"
@@ -635,7 +640,7 @@ class TestAmberFrcmod:
         content = out.read_text()
         assert content.startswith("Remark line goes here")
 
-    def test_template_preserves_inline_comments(self, tmp_path):
+    def test_template_preserves_inline_comments(self, tmp_path: Path) -> None:
         """Template mode should preserve trailing inline comments."""
         frcmod_with_comments = tmp_path / "commented.frcmod"
         frcmod_with_comments.write_text(
@@ -661,7 +666,7 @@ class TestAmberFrcmod:
         assert "400.0000" in content
         assert "60.0000" in content
 
-    def test_upstream_frcmod_irregular_spacing(self):
+    def test_upstream_frcmod_irregular_spacing(self) -> None:
         """Parser should handle upstream Q2MM frcmod with irregular spacing."""
         ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
         assert len(ff.bonds) == 3
@@ -672,18 +677,18 @@ class TestAmberFrcmod:
         assert len(improper) == 10
         assert len(ff.vdws) == 1
 
-    def test_upstream_idivf_division(self):
+    def test_upstream_idivf_division(self) -> None:
         """IDIVF=4 should divide barrier by 4."""
         ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
         ca_tor = next(t for t in ff.torsions if t.env_id == "ca-ca-ce-c")
         assert ca_tor.force_constant == pytest.approx(0.7)
 
-    def test_upstream_comment_lines_skipped(self):
+    def test_upstream_comment_lines_skipped(self) -> None:
         """Lines starting with # should be skipped."""
         ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
         assert ff.source_format == "amber_frcmod"
 
-    def test_upstream_roundtrip(self, tmp_path):
+    def test_upstream_roundtrip(self, tmp_path: Path) -> None:
         """Upstream frcmod should round-trip through standalone save."""
         ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
         ff_clean = ForceField(
@@ -709,28 +714,28 @@ class TestAmberFrcmod:
 
 class TestSeminario:
     @pytest.fixture
-    def ch3f_mol_with_hess(self):
+    def ch3f_mol_with_hess(self) -> Q2MMMolecule:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         hess = np.load(CH3F_HESS)
         return mol.with_hessian(hess)
 
     @pytest.fixture
-    def ts_mol_with_hess(self):
+    def ts_mol_with_hess(self) -> Q2MMMolecule:
         mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
         hess = np.load(TS_HESS)
         return mol.with_hessian(hess)
 
-    def test_estimate_runs(self, ch3f_mol_with_hess):
+    def test_estimate_runs(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         ff = estimate_force_constants(ch3f_mol_with_hess)
         assert len(ff.bonds) > 0
         assert len(ff.angles) > 0
 
-    def test_fc_values_positive_ground_state(self, ch3f_mol_with_hess):
+    def test_fc_values_positive_ground_state(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         ff = estimate_force_constants(ch3f_mol_with_hess)
         for b in ff.bonds:
             assert b.force_constant > 0, f"Bond {b.key} has non-positive FC"
 
-    def test_negative_fc_included_for_ts(self, ts_mol_with_hess):
+    def test_negative_fc_included_for_ts(self, ts_mol_with_hess: Q2MMMolecule) -> None:
         """Negative FCs from TS reaction coordinates should be included, not dropped."""
         ff = estimate_force_constants(ts_mol_with_hess)
         bond_fcs = [b.force_constant for b in ff.bonds]
@@ -738,7 +743,7 @@ class TestSeminario:
         # At minimum, verify the estimation completes and produces values
         assert len(bond_fcs) > 0
 
-    def test_raises_without_hessian(self):
+    def test_raises_without_hessian(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="Hessian"):
             estimate_force_constants(mol)
@@ -751,7 +756,7 @@ class TestSaverFormValidation:
     """Verify that savers reject incompatible functional forms."""
 
     @pytest.fixture()
-    def harmonic_ff(self):
+    def harmonic_ff(self) -> ForceField:
         from q2mm.models.forcefield import FunctionalForm
 
         return ForceField(
@@ -761,7 +766,7 @@ class TestSaverFormValidation:
         )
 
     @pytest.fixture()
-    def mm3_ff(self):
+    def mm3_ff(self) -> ForceField:
         from q2mm.models.forcefield import FunctionalForm
 
         return ForceField(
@@ -770,31 +775,31 @@ class TestSaverFormValidation:
             functional_form=FunctionalForm.MM3,
         )
 
-    def test_save_mm3_rejects_harmonic(self, tmp_path, harmonic_ff):
+    def test_save_mm3_rejects_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
         from q2mm.models.ff_io import save_mm3_fld
 
         with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*mm3_fld"):
             save_mm3_fld(harmonic_ff, tmp_path / "out.fld")
 
-    def test_save_tinker_rejects_harmonic(self, tmp_path, harmonic_ff):
+    def test_save_tinker_rejects_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
         from q2mm.models.ff_io import save_tinker_prm
 
         with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*tinker_prm"):
             save_tinker_prm(harmonic_ff, tmp_path / "out.prm")
 
-    def test_save_amber_rejects_mm3(self, tmp_path, mm3_ff):
+    def test_save_amber_rejects_mm3(self, tmp_path: Path, mm3_ff: ForceField) -> None:
         from q2mm.models.ff_io import save_amber_frcmod
 
         with pytest.raises(ValueError, match="Cannot save.*MM3.*amber_frcmod"):
             save_amber_frcmod(mm3_ff, tmp_path / "out.frcmod")
 
-    def test_save_amber_accepts_harmonic(self, tmp_path, harmonic_ff):
+    def test_save_amber_accepts_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
         from q2mm.models.ff_io import save_amber_frcmod
 
         result = save_amber_frcmod(harmonic_ff, tmp_path / "out.frcmod")
         assert result.exists()
 
-    def test_save_with_none_form_always_allowed(self, tmp_path):
+    def test_save_with_none_form_always_allowed(self, tmp_path: Path) -> None:
         """ForceField with functional_form=None is allowed everywhere (backward compat)."""
         from q2mm.models.ff_io import save_amber_frcmod
 

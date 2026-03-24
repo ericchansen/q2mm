@@ -24,6 +24,7 @@ def _discover_backends() -> list[tuple[str, type, str]]:
     Returns:
         list[tuple[str, type, str]]: List of ``(display_name, engine_class,
             registry_key)`` tuples for each available backend.
+
     """
     from q2mm.backends.registry import available_mm_engines, registered_mm_engines
 
@@ -47,6 +48,7 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
     Returns:
         list[tuple[str, dict]]: List of ``(label, config_dict)`` tuples.
             Each ``config_dict`` contains at minimum a ``'method'`` key.
+
     """
     configs: list[tuple[str, dict]] = [
         ("L-BFGS-B", {"method": "L-BFGS-B"}),
@@ -75,6 +77,7 @@ def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path
     Raises:
         FileNotFoundError: If the required reference files cannot be found
             in any candidate directory.
+
     """
     candidates = []
     if data_dir is not None:
@@ -126,6 +129,7 @@ def _run_matrix(
 
     Returns:
         list[BenchmarkResult]: One result per (backend, optimizer) combination.
+
     """
     from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
     from q2mm.diagnostics.pes_distortion import load_normal_modes
@@ -232,6 +236,7 @@ def _load_results(directory: Path) -> list:
     Returns:
         list[BenchmarkResult]: Successfully loaded results (files that
             fail to parse are skipped with a warning).
+
     """
     from q2mm.diagnostics.benchmark import BenchmarkResult
 
@@ -253,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         int: Exit code — ``0`` on success, ``1`` on error.
+
     """
     parser = argparse.ArgumentParser(
         prog="q2mm-benchmark",

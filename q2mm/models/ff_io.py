@@ -4,9 +4,15 @@ Standalone functions that handle format-specific conversion, keeping
 the ForceField dataclass itself format-agnostic.
 """
 
+from __future__ import annotations
+
 import contextlib
 import copy
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 from q2mm.models.forcefield import (
     AngleParam,
@@ -419,7 +425,7 @@ def save_tinker_prm(
 def save_openmm_xml(
     ff: ForceField,
     path: str | Path,
-    molecule=None,
+    molecule: Q2MMMolecule | list[Q2MMMolecule] | None = None,
 ) -> Path:
     """Write the force field to a standalone OpenMM ForceField XML file.
 
@@ -445,6 +451,7 @@ def save_openmm_xml(
 
     Returns:
         The resolved output path.
+
     """
     _validate_form_for_format(ff, "openmm_xml")
     import xml.etree.ElementTree as ET
@@ -1117,7 +1124,7 @@ def _save_amber_frcmod_template(ff: ForceField, output_path: Path, template: Pat
     return output_path
 
 
-def _update_torsion_param(param, torsions: list[TorsionParam]) -> None:
+def _update_torsion_param(param: Any, torsions: list[TorsionParam]) -> None:
     """Update a legacy ``df`` param from the ForceField's torsion list.
 
     Matches by ``ff_row`` + ``ff_col`` (periodicity).

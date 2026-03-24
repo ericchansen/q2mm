@@ -20,23 +20,24 @@ class File:
         path: Absolute path to the file.
         directory: Directory containing the file.
         filename: Base name of the file.
+
     """
 
     __slots__ = ["_lines", "path", "directory", "filename"]
 
-    def __init__(self, path: str):
-        """Instantiates a file object for the file at the location path passed.
+    def __init__(self, path: str) -> None:
+        """Instantiate a file object for the file at the location path passed.
 
         Populates the directory and filename properties as well.
 
         Args:
             path (str): location of the file
+
         """
         self._lines = None
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        # self.name = os.path.splitext(self.filename)[0]
 
     @property
     def lines(self) -> list[str]:
@@ -44,18 +45,20 @@ class File:
 
         Returns:
             (List[str]): lines of the file
+
         """
         if self._lines is None:
             with open(self.path) as f:
                 self._lines = f.readlines()
         return self._lines
 
-    def write(self, path, lines=None):
-        """Writes lines to file at path.
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at path.
 
         Args:
             path (str): location of file to write
             lines (List[str], optional): lines to write to file. Defaults to None, which then writes self.lines.
+
         """
         if lines is None:
             lines = self.lines
@@ -73,11 +76,19 @@ class FF:
         method: String describing method used to generate this FF.
         params: List of Param objects.
         score: Float objective function score.
+
     """
 
     __slots__ = ["path", "data", "method", "params", "score"]
 
-    def __init__(self, path=None, data=None, method=None, params=None, score=None):
+    def __init__(
+        self,
+        path: str | None = None,
+        data: list | None = None,
+        method: str | None = None,
+        params: list | None = None,
+        score: float | None = None,
+    ) -> None:
         """Initialize a force field instance.
 
         Args:
@@ -86,6 +97,7 @@ class FF:
             method (str | None): Method used to generate this FF.
             params (list[Param] | None): List of Param objects.
             score (float | None): Objective function score.
+
         """
         self.path = path
         self.data = data
@@ -93,5 +105,5 @@ class FF:
         self.params = params
         self.score = score
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}[{self.method}]({self.score})"

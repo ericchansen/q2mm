@@ -11,6 +11,8 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from q2mm.models.identifiers import (
@@ -18,6 +20,9 @@ from q2mm.models.identifiers import (
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
 )
+
+if TYPE_CHECKING:
+    from q2mm.parsers.structures import Structure
 
 try:
     import qcelemental as qcel
@@ -89,7 +94,7 @@ class Q2MMMolecule:
     _bonds: list[DetectedBond] | None = field(default=None, repr=False)
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate atom_types length and normalize geometry to float."""
         self.symbols = [str(symbol) for symbol in self.symbols]
         if self.atom_types is None:
@@ -180,9 +185,14 @@ class Q2MMMolecule:
         """Load from XYZ file.
 
         Args:
+            path: Path to the XYZ file.
+            charge: Molecular charge.
+            multiplicity: Spin multiplicity.
+            name: Display name; defaults to filename stem.
             bond_tolerance: Multiplier on sum of covalent radii for bond detection.
                            Use 1.3 for ground states, 1.4-1.5 for transition states
                            with partially formed/broken bonds.
+
         """
         path = Path(path)
         with open(path) as f:
@@ -207,7 +217,7 @@ class Q2MMMolecule:
     @classmethod
     def from_structure(
         cls,
-        structure,
+        structure: Structure,
         *,
         charge: int = 0,
         multiplicity: int = 1,

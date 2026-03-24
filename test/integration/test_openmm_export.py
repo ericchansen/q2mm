@@ -1,6 +1,9 @@
 """Integration tests for OpenMM XML export functionality."""
 
+from __future__ import annotations
+
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -39,10 +42,10 @@ def _water(angle_deg: float = 109.5, bond_length: float = 0.96) -> Q2MMMolecule:
 class TestSystemXMLExport:
     """Test OpenMMEngine.export_system_xml() round-trip serialization."""
 
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.engine = OpenMMEngine()
 
-    def test_export_creates_valid_xml_file(self, tmp_path):
+    def test_export_creates_valid_xml_file(self, tmp_path: Path) -> None:
         molecule = _diatomic()
         ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
@@ -52,7 +55,7 @@ class TestSystemXMLExport:
         tree = ET.parse(out)
         assert tree.getroot().tag == "System"
 
-    def test_system_xml_round_trip_preserves_energy(self, tmp_path):
+    def test_system_xml_round_trip_preserves_energy(self, tmp_path: Path) -> None:
         molecule = _diatomic(0.84)
         ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
@@ -76,7 +79,7 @@ class TestSystemXMLExport:
 
         assert loaded_energy == pytest.approx(original_energy, abs=1e-8)
 
-    def test_system_xml_round_trip_water_with_angles(self, tmp_path):
+    def test_system_xml_round_trip_water_with_angles(self, tmp_path: Path) -> None:
         molecule = _water(angle_deg=120.0)
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
@@ -101,7 +104,7 @@ class TestSystemXMLExport:
 
         assert loaded_energy == pytest.approx(original_energy, abs=1e-6)
 
-    def test_system_xml_with_vdw(self, tmp_path):
+    def test_system_xml_with_vdw(self, tmp_path: Path) -> None:
         molecule = Q2MMMolecule(
             symbols=["He", "He"],
             atom_types=["He", "He"],
@@ -128,7 +131,7 @@ class TestSystemXMLExport:
         assert loaded_energy == pytest.approx(original_energy, abs=1e-8)
 
     @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
-    def test_sn2_system_xml_round_trip(self, tmp_path):
+    def test_sn2_system_xml_round_trip(self, tmp_path: Path) -> None:
         from q2mm.models.seminario import estimate_force_constants
 
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
@@ -160,7 +163,7 @@ class TestSystemXMLExport:
 class TestForceFieldXMLExport:
     """Test ForceField.to_openmm_xml() standalone XML generation."""
 
-    def test_produces_valid_xml_with_bonds(self, tmp_path):
+    def test_produces_valid_xml_with_bonds(self, tmp_path: Path) -> None:
         ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
         out = ff.to_openmm_xml(tmp_path / "ff.xml")
@@ -176,7 +179,7 @@ class TestForceFieldXMLExport:
         bonds = bond_forces[0].findall("Bond")
         assert len(bonds) == 1
 
-    def test_produces_valid_xml_with_angles(self, tmp_path):
+    def test_produces_valid_xml_with_angles(self, tmp_path: Path) -> None:
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
             angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
@@ -192,7 +195,7 @@ class TestForceFieldXMLExport:
         angles = angle_forces[0].findall("Angle")
         assert len(angles) == 1
 
-    def test_produces_valid_xml_with_vdw(self, tmp_path):
+    def test_produces_valid_xml_with_vdw(self, tmp_path: Path) -> None:
         ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)])
 
         out = ff.to_openmm_xml(tmp_path / "ff.xml")
@@ -205,7 +208,7 @@ class TestForceFieldXMLExport:
         atoms = nb_forces[0].findall("Atom")
         assert len(atoms) == 1
 
-    def test_produces_valid_xml_with_torsions(self, tmp_path):
+    def test_produces_valid_xml_with_torsions(self, tmp_path: Path) -> None:
         ff = ForceField(
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5, phase=0.0),
@@ -222,7 +225,7 @@ class TestForceFieldXMLExport:
         torsions = torsion_forces[0].findall("Torsion")
         assert len(torsions) == 2
 
-    def test_with_molecule_generates_atom_types_and_residues(self, tmp_path):
+    def test_with_molecule_generates_atom_types_and_residues(self, tmp_path: Path) -> None:
         molecule = _water()
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
@@ -247,7 +250,7 @@ class TestForceFieldXMLExport:
         atoms = residue[0].findall("Atom")
         assert len(atoms) == 3  # O, H, H
 
-    def test_unit_conversions_are_correct(self, tmp_path):
+    def test_unit_conversions_are_correct(self, tmp_path: Path) -> None:
         """Verify that exported parameters use correct OpenMM units."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), equilibrium=1.38, force_constant=359.7)],
@@ -275,7 +278,7 @@ class TestForceFieldXMLExport:
             r = float(atom.get("radius"))
             assert r < 0.3  # nm, not Å
 
-    def test_save_openmm_xml_function_directly(self, tmp_path):
+    def test_save_openmm_xml_function_directly(self, tmp_path: Path) -> None:
         """Test the standalone save_openmm_xml function."""
         ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
 
@@ -285,12 +288,12 @@ class TestForceFieldXMLExport:
         tree = ET.parse(out)
         assert tree.getroot().tag == "ForceField"
 
-    def test_source_format_updated(self):
+    def test_source_format_updated(self) -> None:
         """Verify that 'openmm_xml' is a valid source_format value."""
         ff = ForceField(source_format="openmm_xml")
         assert ff.source_format == "openmm_xml"
 
-    def test_forcefield_xml_loadable_by_openmm_app(self, tmp_path):
+    def test_forcefield_xml_loadable_by_openmm_app(self, tmp_path: Path) -> None:
         """Verify exported XML is loadable by openmm.app.ForceField and can create a System."""
         from openmm import app, unit
 
@@ -330,7 +333,7 @@ class TestForceFieldXMLExport:
         assert np.isfinite(energy)
 
     @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
-    def test_sn2_forcefield_xml_export(self, tmp_path):
+    def test_sn2_forcefield_xml_export(self, tmp_path: Path) -> None:
         """Export Seminario-estimated SN2 force field to ForceField XML."""
         from q2mm.models.seminario import estimate_force_constants
 

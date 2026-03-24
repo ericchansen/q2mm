@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import unittest
 
 import numpy as np
@@ -8,13 +10,13 @@ from q2mm.parsers import FF, Structure  # noqa: F401 — used in skipped test si
 
 
 class MakeHessian:
-    def __init__(self):
-        self.out = []
+    def __init__(self) -> None:
+        self.out: list[str] = []
 
-    def write(self, str):
+    def write(self, str: str) -> None:
         self.out.append(str)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "".join(self.out)
 
 
@@ -28,7 +30,7 @@ evec_normd_sq3 = np.array([evec / np.linalg.norm(evec) for evec in evec_sq3])
 
 
 class TestLinearAlgebra(unittest.TestCase):
-    def test_replace_neg_eigenvalue(self):
+    def test_replace_neg_eigenvalue(self) -> None:
         """Replacement uses 1.0 a.u. converted to kJ/(mol·Å²·amu).
 
         Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
@@ -77,13 +79,13 @@ class TestLinearAlgebra(unittest.TestCase):
             err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
         )
 
-    def test_multi_neg_eigenvalue_strict_raises(self):
+    def test_multi_neg_eigenvalue_strict_raises(self) -> None:
         """Multiple negative eigenvalues should raise ValueError by default."""
         multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
         with self.assertRaises(ValueError, msg="Should raise on multiple negative eigenvalues"):
             hessian.replace_neg_eigenvalue(multi_neg)
 
-    def test_multi_neg_eigenvalue_nonstrict_warns(self):
+    def test_multi_neg_eigenvalue_nonstrict_warns(self) -> None:
         """Multiple negative eigenvalues with strict=False should warn, not raise."""
         import warnings
 
@@ -96,7 +98,7 @@ class TestLinearAlgebra(unittest.TestCase):
         # Most negative (-5.0) should be replaced
         self.assertGreater(result[0], 0.0)
 
-    def test_reform_hessian(self):
+    def test_reform_hessian(self) -> None:
         evals, evecs = hessian.decompose(example_sq3)
         reformed_sq3 = hessian.reform_hessian(evals, evecs)
         np.testing.assert_allclose(example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly.")
@@ -108,8 +110,8 @@ class TestLinearAlgebra(unittest.TestCase):
         structures: list[Structure],
         hessians: list[np.ndarray],
         zero_out: bool,
-        hessian_units=constants.GAUSSIAN,
-    ):
+        hessian_units: int = constants.GAUSSIAN,
+    ) -> None:
         # TODO: This test is incomplete. `log` (a JaguarOut-like object with .evecs/.evals)
         # and `min_hessian` need to be derived from the test parameters before this test
         # can run. See issue #128.

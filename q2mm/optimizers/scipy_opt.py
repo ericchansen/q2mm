@@ -27,8 +27,12 @@ equivalent or superior implementations with better numerical stability,
 convergence diagnostics, and bounds support.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -52,6 +56,7 @@ class OptimizationResult:
         final_params (np.ndarray): Parameter vector after optimization.
         history (list[float]): Objective value at each evaluation.
         method (str): Scipy method used for optimization.
+
     """
 
     success: bool
@@ -72,6 +77,7 @@ class OptimizationResult:
         Returns:
             float: ``(initial_score - final_score) / initial_score``,
                 or 0.0 if ``initial_score`` is zero.
+
         """
         if self.initial_score == 0.0:
             return 0.0
@@ -82,6 +88,7 @@ class OptimizationResult:
 
         Returns:
             str: Multi-line summary of the optimization result.
+
         """
         return (
             f"Method: {self.method}\n"
@@ -125,6 +132,7 @@ class ScipyOptimizer:
             disable.
         divergence_patience (int): Number of consecutive divergent
             callbacks required before stopping.
+
     """
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
@@ -140,7 +148,7 @@ class ScipyOptimizer:
         jac: str | None = None,
         divergence_factor: float | None = 3.0,
         divergence_patience: int = 5,
-    ):
+    ) -> None:
         """Initialize the optimizer.
 
         Args:
@@ -154,6 +162,7 @@ class ScipyOptimizer:
             divergence_factor (float | None): Early stopping threshold.
             divergence_patience (int): Consecutive divergent callbacks
                 before stopping.
+
         """
         self.method = method
         self.maxiter = maxiter
@@ -175,6 +184,7 @@ class ScipyOptimizer:
         Returns:
             OptimizationResult: Optimization outcome with final parameters
                 and convergence history.
+
         """
         objective.reset()
         x0 = objective.forcefield.get_param_vector().copy()
@@ -232,6 +242,7 @@ class ScipyOptimizer:
 
         Returns:
             OptimizationResult: Result of the minimization.
+
         """
         from scipy import optimize
 
@@ -310,6 +321,7 @@ class ScipyOptimizer:
 
         Returns:
             OptimizationResult: Result of the least-squares optimization.
+
         """
         from scipy import optimize
 
@@ -347,7 +359,7 @@ class ScipyOptimizer:
             method=f"least_squares({ls_method})",
         )
 
-    def _make_callback(self, objective: ObjectiveFunction, initial_score: float):
+    def _make_callback(self, objective: ObjectiveFunction, initial_score: float) -> Callable:
         """Create a callback for minimize with optional early stopping.
 
         Scipy calls this after each iteration.  If the callback returns
@@ -364,6 +376,7 @@ class ScipyOptimizer:
 
         Returns:
             Callable: Callback function for :func:`scipy.optimize.minimize`.
+
         """
         diverge_count = 0
         factor = self.divergence_factor
@@ -372,7 +385,7 @@ class ScipyOptimizer:
         # Mutable flag so _run_minimize can detect callback-triggered stops
         state = {"abandoned": False}
 
-        def callback(_xk, *args, **kwargs):
+        def callback(_xk: Any, *args: Any, **kwargs: Any) -> bool:
             nonlocal diverge_count
             score = objective.history[-1] if objective.history else float("nan")
 

@@ -35,6 +35,7 @@ def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
     Returns:
         tuple[list[str], np.ndarray]: ``(atom_labels, coordinates)`` where
             coordinates are in Å with shape ``(N, 3)``.
+
     """
     with open(path) as f:
         lines = f.readlines()
@@ -48,7 +49,7 @@ def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
     return atoms, np.array(coords)
 
 
-def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1):
+def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1) -> object:
     """Create a Psi4 molecule object from atoms and coordinates.
 
     Args:
@@ -59,6 +60,7 @@ def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, m
 
     Returns:
         A Psi4 ``Molecule`` object.
+
     """
     geom_str = f"    {charge} {multiplicity}\n"
     for atom, (x, y, z) in zip(atoms, coords):
@@ -77,6 +79,7 @@ class Psi4Engine(QMEngine):
         n_threads: Number of threads (default: 4)
         charge: Molecular charge (default: 0)
         multiplicity: Spin multiplicity (default: 1)
+
     """
 
     def __init__(
@@ -87,7 +90,7 @@ class Psi4Engine(QMEngine):
         n_threads: int = 4,
         charge: int = 0,
         multiplicity: int = 1,
-    ):
+    ) -> None:
         """Initialize the Psi4 engine.
 
         Args:
@@ -100,6 +103,7 @@ class Psi4Engine(QMEngine):
 
         Raises:
             ImportError: If Psi4 is not installed.
+
         """
         if not _HAS_PSI4:
             raise ImportError("Psi4 is not installed. Install via: conda install psi4 -c conda-forge")
@@ -119,6 +123,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             str: Engine name including method and basis set.
+
         """
         return f"Psi4 ({self._method}/{self._basis})"
 
@@ -127,10 +132,11 @@ class Psi4Engine(QMEngine):
 
         Returns:
             bool: ``True`` if the ``psi4`` package is importable.
+
         """
         return _HAS_PSI4
 
-    def _load_molecule(self, structure):
+    def _load_molecule(self, structure: str | tuple[list[str], np.ndarray]) -> object:
         """Load a molecule from an XYZ file path or ``(atoms, coords)`` tuple.
 
         Args:
@@ -139,6 +145,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             object: A Psi4 ``Molecule`` object with basis and reference set.
+
         """
         if isinstance(structure, str):
             atoms, coords = _read_xyz(structure)
@@ -149,7 +156,9 @@ class Psi4Engine(QMEngine):
         _psi4.set_options({"basis": self._basis, "reference": ref})
         return mol
 
-    def energy(self, structure, method: str = None, basis: str = None) -> float:
+    def energy(
+        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
+    ) -> float:
         """Calculate single-point energy in Hartrees.
 
         Args:
@@ -159,6 +168,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             float: Electronic energy in Hartrees.
+
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -166,7 +176,9 @@ class Psi4Engine(QMEngine):
             _psi4.set_options({"basis": basis})
         return _psi4.energy(m, molecule=mol)
 
-    def hessian(self, structure, method: str = None, basis: str = None) -> np.ndarray:
+    def hessian(
+        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
+    ) -> np.ndarray:
         """Calculate Hessian matrix (second derivatives of energy).
 
         Args:
@@ -176,6 +188,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
+
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -184,7 +197,13 @@ class Psi4Engine(QMEngine):
         _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
         return np.array(wfn.hessian())
 
-    def optimize(self, structure, method: str = None, basis: str = None, opt_type: str = "min") -> tuple:
+    def optimize(
+        self,
+        structure: str | tuple[list[str], np.ndarray],
+        method: str | None = None,
+        basis: str | None = None,
+        opt_type: str = "min",
+    ) -> tuple[float, list[str], np.ndarray]:
         """Optimize geometry.
 
         Args:
@@ -196,6 +215,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords_angstrom)`` with energy in Hartrees.
+
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -208,7 +228,9 @@ class Psi4Engine(QMEngine):
         atoms = [mol.symbol(i) for i in range(mol.natom())]
         return energy, atoms, coords_ang
 
-    def frequencies(self, structure, method: str = None, basis: str = None) -> list[float]:
+    def frequencies(
+        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
+    ) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
@@ -218,6 +240,7 @@ class Psi4Engine(QMEngine):
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
+
         """
         mol = self._load_molecule(structure)
         m = method or self._method
@@ -226,7 +249,7 @@ class Psi4Engine(QMEngine):
         _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
         return list(np.array(wfn.frequencies()))
 
-    def close(self):
+    def close(self) -> None:
         """Clean up temporary files created by Psi4."""
         if hasattr(self, "_tmpdir") and os.path.exists(self._tmpdir):
             shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -236,13 +259,14 @@ class Psi4Engine(QMEngine):
 
         Returns:
             Psi4Engine: This engine instance.
+
         """
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, *args: object) -> None:
         """Exit context manager and clean up temporary files."""
         self.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Destructor — clean up temporary files."""
         self.close()

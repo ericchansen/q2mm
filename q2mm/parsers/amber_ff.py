@@ -26,12 +26,20 @@ class AmberFF(FF):
             force field file.
         AMBER_STEPS (dict[str, float]): AMBER-specific step sizes that
             differ from the global defaults.
+
     """
 
     units = co.AMBERFF
 
-    def __init__(self, path=None, data=None, method=None, params=None, score=None):
-        """Initializes an AmberFF instance.
+    def __init__(
+        self,
+        path: str | None = None,
+        data: list | None = None,
+        method: str | None = None,
+        params: list[Param] | None = None,
+        score: float | None = None,
+    ) -> None:
+        """Initialize an AmberFF instance.
 
         Args:
             path (str | None, optional): Path to the AMBER force field file.
@@ -43,6 +51,7 @@ class AmberFF(FF):
                 Defaults to None.
             score (float | None, optional): Objective function score.
                 Defaults to None.
+
         """
         super().__init__(path, data, method, params, score)
         self.sub_names = []
@@ -53,12 +62,13 @@ class AmberFF(FF):
     AMBER_STEPS = {"bf": 10.0, "af": 10.0, "df": 10.0}
 
     @property
-    def lines(self):
+    def lines(self) -> list[str]:
         """Lines of the force field file.
 
         Returns:
             (list[str]): All lines from the force field file, lazily loaded
                 from disk on first access.
+
         """
         if self._lines is None:
             with open(self.path) as f:
@@ -66,11 +76,11 @@ class AmberFF(FF):
         return self._lines
 
     @lines.setter
-    def lines(self, x):
+    def lines(self, x: list[str]) -> None:
         self._lines = x
 
-    def import_ff(self, path=None, sub_search="OPT"):
-        """Reads parameters from an AMBER force field file.
+    def import_ff(self, path: str | None = None, sub_search: str = "OPT") -> None:
+        """Read parameters from an AMBER force field file.
 
         Parses bond, angle, dihedral, improper, and van der Waals parameters
         from the file, applying AMBER-specific step sizes.
@@ -80,6 +90,7 @@ class AmberFF(FF):
                 Defaults to ``self.path``.
             sub_search (str, optional): Marker string used to identify
                 optimizable sections. Defaults to ``"OPT"``.
+
         """
         if path is None:
             path = self.path
@@ -118,7 +129,6 @@ class AmberFF(FF):
                         el = split[0]
                         mass = split[1]
                         # no need for atom label
-                        # at = ["Z0", "P1", "CX"]
                     # BOND
                     if "ANGL" in line and count == 2:
                         count = 3
@@ -177,7 +187,7 @@ class AmberFF(FF):
                         count = 5
                         continue
                     elif count == 4 and "NONB" not in line:
-                        # (PK/IDIVF) * (1 + cos(PN*phi - PHASE))
+                        # Dihedral energy: (PK/IDIVF) × (1 + cos(PN·φ − PHASE))
                         # A4 IDIVF PK PHASE PN
                         nl = 2 + 3 * 3
                         AA = line[:nl].split("-")
@@ -212,13 +222,6 @@ class AmberFF(FF):
                             )
                         )
 
-                    #                    # Hbond
-                    #                    if "NONB" in line and count == 6:
-                    #                        count == 7
-                    #                        continue
-                    #                    elif count == 6:
-                    #                        0
-
                     # NONB
                     if count == 6:
                         continue
@@ -244,8 +247,10 @@ class AmberFF(FF):
             if param.ptype in self.AMBER_STEPS:
                 param.step = self.AMBER_STEPS[param.ptype]
 
-    def export_ff(self, path=None, params: list[Param] | None = None, lines=None):
-        """Exports the force field to a file.
+    def export_ff(
+        self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
+    ) -> None:
+        """Export the force field to a file.
 
         Args:
             path (str | None, optional): Output file path. Defaults to
@@ -254,6 +259,7 @@ class AmberFF(FF):
                 Defaults to ``self.params``.
             lines (list[str] | None, optional): Base file lines to modify.
                 Defaults to ``self.lines``.
+
         """
         if path is None:
             path = self.path
@@ -315,7 +321,7 @@ class AmberFF(FF):
         logger.log(10, f"WROTE: {path}")
 
     def get_DOFs_by_atom_type(self, structs: list[Structure]) -> dict:
-        """Groups degrees of freedom by force field row, keyed by atom type.
+        """Group degrees of freedom by force field row, keyed by atom type.
 
         Args:
             structs (list[Structure]): Structures whose DOFs are collected.
@@ -323,6 +329,7 @@ class AmberFF(FF):
         Returns:
             (dict): Mapping of ``ff_row`` to a list of :class:`DOF` instances
                 (bonds, angles, and torsions).
+
         """
         dof_by_param = dict()
         for param in self.params:
@@ -337,7 +344,7 @@ class AmberFF(FF):
         return dof_by_param
 
     def get_DOFs_by_param(self, structs: list[Structure]) -> dict:
-        """Groups degrees of freedom by parameter.
+        """Group degrees of freedom by parameter.
 
         Delegates to :meth:`get_DOFs_by_atom_type`.
 
@@ -346,5 +353,6 @@ class AmberFF(FF):
 
         Returns:
             (dict): Mapping of ``ff_row`` to a list of :class:`DOF` instances.
+
         """
         return self.get_DOFs_by_atom_type(structs)

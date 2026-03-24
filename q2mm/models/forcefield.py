@@ -9,10 +9,11 @@ from __future__ import annotations
 
 
 import copy
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import numpy as np
 
@@ -128,7 +129,7 @@ def _clean_atom_types(atom_types: list[str] | tuple[str, ...] | None, expected_l
     return cleaned[:expected_len]
 
 
-def _build_param_maps(params, secondary_key: str) -> tuple[dict, dict]:
+def _build_param_maps(params: list, secondary_key: str) -> tuple[dict, dict]:
     """Build ff_row and secondary-key lookup dicts for a list of parameters."""
     by_row = {p.ff_row: p for p in params if p.ff_row is not None}
     by_key = {getattr(p, secondary_key): p for p in params if getattr(p, secondary_key, None)}
@@ -147,7 +148,7 @@ def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str
     return _build_param_maps(vdws, "atom_type")
 
 
-def _match_for_export(param, by_row: dict, by_env: dict, expected_len: int, canonicalize_fn):
+def _match_for_export(param: Any, by_row: dict, by_env: dict, expected_len: int, canonicalize_fn: Callable) -> Any:
     """Match a parsed parameter to an internal param by ff_row or env_id."""
     if param.ff_row is not None and param.ff_row in by_row:
         return by_row[param.ff_row]
@@ -158,13 +159,13 @@ def _match_for_export(param, by_row: dict, by_env: dict, expected_len: int, cano
 
 
 def _match_bond_for_export(
-    param, bond_by_row: dict[int, BondParam], bond_by_env: dict[str, BondParam]
+    param: Any, bond_by_row: dict[int, BondParam], bond_by_env: dict[str, BondParam]
 ) -> BondParam | None:
     return _match_for_export(param, bond_by_row, bond_by_env, 2, canonicalize_bond_env_id)
 
 
 def _match_angle_for_export(
-    param,
+    param: Any,
     angle_by_row: dict[int, AngleParam],
     angle_by_env: dict[str, AngleParam],
 ) -> AngleParam | None:
@@ -245,7 +246,7 @@ class VdwParam:
     label: str = ""
     ff_row: int | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Normalize atom_type and auto-extract element if not provided."""
         self.atom_type = str(self.atom_type).strip()
         if not self.element:
@@ -321,6 +322,7 @@ class ForceField:
 
         Returns:
             VdwParam | None: Matching parameter, or None if not found.
+
         """
         if atom_type:
             normalized = atom_type.strip()
@@ -402,7 +404,7 @@ class ForceField:
                     return vdw
         return self.get_vdw(atom_type=atom_type, element=element)
 
-    def set_param_vector(self, vec: np.ndarray):
+    def set_param_vector(self, vec: np.ndarray) -> None:
         """Set parameters from a flat vector (inverse of get_param_vector)."""
         if len(vec) != self.n_params:
             raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
@@ -512,6 +514,7 @@ class ForceField:
         -------
         np.ndarray
             Array of step sizes, same length as :meth:`get_param_vector`.
+
         """
         from q2mm.optimizers.defaults import STEPS
 
@@ -530,6 +533,7 @@ class ForceField:
             Override default bounds per type. Keys: ``bond_k``,
             ``bond_eq``, ``angle_k``, ``angle_eq``, ``torsion_k``,
             ``vdw_radius``, ``vdw_epsilon``.
+
         """
         b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
         bounds: list[tuple[float, float]] = []
@@ -594,7 +598,7 @@ class ForceField:
     def to_openmm_xml(
         self,
         path: str | Path,
-        molecule=None,
+        molecule: Q2MMMolecule | list[Q2MMMolecule] | None = None,
     ) -> Path:
         """Export to OpenMM ForceField XML format.
 
@@ -610,6 +614,7 @@ class ForceField:
 
         Returns:
             The resolved output path.
+
         """
         from q2mm.models.ff_io import save_openmm_xml
 
@@ -837,7 +842,7 @@ def _parse_generic_tinker_prm(path: Path) -> tuple[list[BondParam], list[AnglePa
     return bonds, angles, vdws
 
 
-def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]):
+def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     by_row, by_type = _build_vdw_maps(vdws)
     for index, line in enumerate(lines):
@@ -855,7 +860,7 @@ def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _update_tinker_vdw_lines(path: Path, vdws: list[VdwParam]):
+def _update_tinker_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     by_row, by_type = _build_vdw_maps(vdws)
     for index, line in enumerate(lines):

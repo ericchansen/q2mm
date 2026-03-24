@@ -5,7 +5,10 @@ Hessian, and frequency calculations.  Supports both harmonic and MM3
 functional forms with runtime parameter updates via :class:`OpenMMHandle`.
 """
 
+from __future__ import annotations
+
 import copy
+from typing import Any
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -54,6 +57,7 @@ class _BondTerm:
         elements: Element symbols for the two atoms.
         env_id: Chemical environment identifier for parameter matching.
         ff_row: Row index in the source force field file, if applicable.
+
     """
 
     force_index: int
@@ -76,6 +80,7 @@ class _AngleTerm:
         elements: Element symbols for the three atoms.
         env_id: Chemical environment identifier for parameter matching.
         ff_row: Row index in the source force field file, if applicable.
+
     """
 
     force_index: int
@@ -96,6 +101,7 @@ class _VdwTerm:
         atom_type: Atom type label for parameter matching.
         element: Element symbol.
         ff_row: Row index in the source force field file, if applicable.
+
     """
 
     particle_index: int
@@ -112,6 +118,7 @@ class _Exception14:
         exception_index: Index of this exception in the OpenMM NonbondedForce.
         particle_i: First particle index.
         particle_j: Second particle index.
+
     """
 
     exception_index: int
@@ -136,6 +143,7 @@ class OpenMMHandle:
         vdw_terms: Mapping of atoms to vdW particle indices.
         exceptions_14: 1-4 nonbonded exceptions (harmonic form only).
         functional_form: The functional form used when the handle was created.
+
     """
 
     molecule: Q2MMMolecule
@@ -152,17 +160,18 @@ class OpenMMHandle:
     functional_form: FunctionalForm = FunctionalForm.MM3
 
 
-def _ensure_openmm():
+def _ensure_openmm() -> None:
     """Raise ``ImportError`` if OpenMM is not installed.
 
     Raises:
         ImportError: If the ``openmm`` package cannot be imported.
+
     """
     if not _HAS_OPENMM:
         raise ImportError('OpenMM is not installed. Install with `pip install openmm` or `pip install -e ".[openmm]"`.')
 
 
-def _as_molecule(structure) -> Q2MMMolecule:
+def _as_molecule(structure: Q2MMMolecule | str | Path) -> Q2MMMolecule:
     """Coerce *structure* to a :class:`Q2MMMolecule`.
 
     Args:
@@ -174,6 +183,7 @@ def _as_molecule(structure) -> Q2MMMolecule:
 
     Raises:
         TypeError: If *structure* is not a recognised type.
+
     """
     if isinstance(structure, Q2MMMolecule):
         return structure
@@ -191,6 +201,7 @@ def _coerce_forcefield(forcefield: ForceField | None, molecule: Q2MMMolecule) ->
 
     Returns:
         ForceField: The provided or auto-generated force field.
+
     """
     if forcefield is not None:
         return forcefield
@@ -205,6 +216,7 @@ def _bond_k_to_openmm(force_constant: float) -> float:
 
     Returns:
         float: Bond force constant in kJ/mol/Å².
+
     """
     return float(force_constant) * KCAL_TO_KJ
 
@@ -217,6 +229,7 @@ def _angle_k_to_openmm(force_constant: float) -> float:
 
     Returns:
         float: Angle force constant in kJ/mol/rad².
+
     """
     return float(force_constant) * KCAL_TO_KJ
 
@@ -233,6 +246,7 @@ def _bond_k_to_harmonic(force_constant: float) -> float:
 
     Returns:
         float: Bond force constant in kJ/mol/nm² with the ½ convention.
+
     """
     return 2.0 * float(force_constant) * KCAL_TO_KJ * 100.0
 
@@ -248,6 +262,7 @@ def _angle_k_to_harmonic(force_constant: float) -> float:
 
     Returns:
         float: Angle force constant in kJ/mol/rad² with the ½ convention.
+
     """
     return 2.0 * float(force_constant) * KCAL_TO_KJ
 
@@ -260,6 +275,7 @@ def _vdw_sigma_nm(radius: float) -> float:
 
     Returns:
         float: LJ sigma in nm.
+
     """
     return float(radius) * 2.0 / (2.0 ** (1.0 / 6.0)) * 0.1
 
@@ -272,6 +288,7 @@ def _vdw_radius_to_openmm(radius: float) -> float:
 
     Returns:
         float: Van der Waals radius in nm.
+
     """
     return float(radius) * 0.1
 
@@ -284,6 +301,7 @@ def _vdw_epsilon_to_openmm(epsilon: float) -> float:
 
     Returns:
         float: Well depth in kJ/mol.
+
     """
     return float(epsilon) * KCAL_TO_KJ
 
@@ -301,6 +319,7 @@ def _match_bond(
 
     Returns:
         BondParam | None: Matched parameter, or ``None`` if not found.
+
     """
     return forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
 
@@ -318,6 +337,7 @@ def _match_angle(
 
     Returns:
         AngleParam | None: Matched parameter, or ``None`` if not found.
+
     """
     return forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
 
@@ -335,6 +355,7 @@ def _match_vdw(
 
     Returns:
         VdwParam | None: Matched parameter, or ``None`` if not found.
+
     """
     return forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
 
@@ -348,7 +369,7 @@ class OpenMMEngine(MMEngine):
     updates during optimization loops.
     """
 
-    def __init__(self, platform_name: str | None = None):
+    def __init__(self, platform_name: str | None = None) -> None:
         """Initialize the OpenMM engine.
 
         Args:
@@ -357,6 +378,7 @@ class OpenMMEngine(MMEngine):
 
         Raises:
             ImportError: If OpenMM is not installed.
+
         """
         _ensure_openmm()
         self._platform_name = platform_name
@@ -367,6 +389,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             str: ``"OpenMM"``.
+
         """
         return "OpenMM"
 
@@ -375,6 +398,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             frozenset[str]: ``{"harmonic", "mm3"}``.
+
         """
         return frozenset({"harmonic", "mm3"})
 
@@ -383,6 +407,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             bool: ``True`` if the ``openmm`` package is importable.
+
         """
         return _HAS_OPENMM
 
@@ -391,10 +416,11 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             bool: Always ``True`` for OpenMM.
+
         """
         return True
 
-    def _positions(self, molecule: Q2MMMolecule):
+    def _positions(self, molecule: Q2MMMolecule) -> Any:
         """Convert molecule geometry to OpenMM position array.
 
         Args:
@@ -402,10 +428,11 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             Positions as an OpenMM ``Quantity`` in Å.
+
         """
         return np.asarray(molecule.geometry, dtype=float) * unit.angstrom
 
-    def _create_context(self, system):
+    def _create_context(self, system: Any) -> tuple[Any, Any]:
         """Create an OpenMM integrator and context for *system*.
 
         Args:
@@ -413,6 +440,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             tuple: ``(integrator, context)`` pair.
+
         """
         integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
         if self._platform_name:
@@ -422,7 +450,9 @@ class OpenMMEngine(MMEngine):
             context = mm.Context(system, integrator)
         return integrator, context
 
-    def create_context(self, structure, forcefield: ForceField | None = None) -> OpenMMHandle:
+    def create_context(
+        self, structure: Q2MMMolecule | str | Path, forcefield: ForceField | None = None
+    ) -> OpenMMHandle:
         """Build an OpenMM system and context for a molecule.
 
         Creates force objects (bond, angle, vdW) matching the force field's
@@ -443,6 +473,7 @@ class OpenMMEngine(MMEngine):
             KeyError: If an atom's element has no defined mass.
             ValueError: If no OpenMM terms could be created from the force
                 field, or if a vdW parameter is missing for an atom.
+
         """
         molecule = _as_molecule(structure)
         forcefield = _coerce_forcefield(forcefield, molecule)
@@ -672,7 +703,7 @@ class OpenMMEngine(MMEngine):
             functional_form=ff_form,
         )
 
-    def update_forcefield(self, handle: OpenMMHandle, forcefield: ForceField):
+    def update_forcefield(self, handle: OpenMMHandle, forcefield: ForceField) -> None:
         """Update per-term parameters in an existing OpenMM Context.
 
         Modifies bond, angle, and vdW parameters in-place, then pushes
@@ -686,6 +717,7 @@ class OpenMMEngine(MMEngine):
         Raises:
             ValueError: If the force field's functional form does not match
                 the handle's form, or if a required parameter is missing.
+
         """
         incoming_form = forcefield.functional_form
         if incoming_form is not None and incoming_form != handle.functional_form:
@@ -779,7 +811,7 @@ class OpenMMEngine(MMEngine):
     def export_system_xml(
         self,
         path: str | Path,
-        structure,
+        structure: Q2MMMolecule | str | Path | OpenMMHandle,
         forcefield: ForceField | None = None,
     ) -> Path:
         """Serialize the OpenMM System to XML.
@@ -804,6 +836,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             Path: The resolved output path.
+
         """
         handle = self._prepare_handle(structure, forcefield)
         xml_string = mm.XmlSerializer.serialize(handle.system)
@@ -820,12 +853,15 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             object: An ``openmm.System`` object.
+
         """
         _ensure_openmm()
         xml_string = Path(path).read_text(encoding="utf-8")
         return mm.XmlSerializer.deserialize(xml_string)
 
-    def _prepare_handle(self, structure, forcefield: ForceField | None = None) -> OpenMMHandle:
+    def _prepare_handle(
+        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
+    ) -> OpenMMHandle:
         """Get or create an :class:`OpenMMHandle`.
 
         If *structure* is already an :class:`OpenMMHandle`, optionally update
@@ -839,6 +875,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             OpenMMHandle: Ready-to-use handle.
+
         """
         if isinstance(structure, OpenMMHandle):
             handle = structure
@@ -847,7 +884,9 @@ class OpenMMEngine(MMEngine):
             return handle
         return self.create_context(structure, forcefield)
 
-    def energy(self, structure, forcefield: ForceField | None = None) -> float:
+    def energy(
+        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
+    ) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
@@ -857,13 +896,18 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             float: Potential energy in kcal/mol.
+
         """
         handle = self._prepare_handle(structure, forcefield)
         state = handle.context.getState(getEnergy=True)
         return float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
 
     def minimize(
-        self, structure, forcefield: ForceField | None = None, tolerance: float = 1.0, max_iterations: int = 200
+        self,
+        structure: Q2MMMolecule | str | Path | OpenMMHandle,
+        forcefield: ForceField | None = None,
+        tolerance: float = 1.0,
+        max_iterations: int = 200,
     ) -> tuple:
         """Energy-minimize structure using L-BFGS.
 
@@ -877,6 +921,7 @@ class OpenMMEngine(MMEngine):
         Returns:
             tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
                 where energy is in kcal/mol and coords are in Å.
+
         """
         handle = self._prepare_handle(structure, forcefield)
         mm.LocalEnergyMinimizer.minimize(handle.context, tolerance, max_iterations)
@@ -886,7 +931,12 @@ class OpenMMEngine(MMEngine):
         energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
         return energy, list(handle.molecule.symbols), coords
 
-    def hessian(self, structure, forcefield: ForceField | None = None, step: float = 1.0e-4) -> np.ndarray:
+    def hessian(
+        self,
+        structure: Q2MMMolecule | str | Path | OpenMMHandle,
+        forcefield: ForceField | None = None,
+        step: float = 1.0e-4,
+    ) -> np.ndarray:
         """Finite-difference Hessian in canonical units (Hartree/Bohr²).
 
         Internally computed in kJ/mol/nm² (OpenMM native) and converted
@@ -901,6 +951,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
+
         """
         handle = self._prepare_handle(structure, forcefield)
         positions = np.array(
@@ -940,7 +991,9 @@ class OpenMMEngine(MMEngine):
         # Convert from OpenMM native kJ/mol/nm² to canonical Hartree/Bohr²
         return hessian_symmetric * KJMOLNM2_TO_HESSIAN_AU
 
-    def frequencies(self, structure, forcefield: ForceField | None = None) -> list[float]:
+    def frequencies(
+        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
+    ) -> list[float]:
         """Approximate harmonic frequencies in cm⁻¹ from the numerical Hessian.
 
         Args:
@@ -950,6 +1003,7 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
+
         """
         handle = self._prepare_handle(structure, forcefield)
         hessian_au = self.hessian(handle)  # Hartree/Bohr²

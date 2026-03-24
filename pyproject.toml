@@ -117,7 +117,14 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "UP", "SIM"]
+select = [
+    "E", "F", "W",      # pycodestyle + pyflakes
+    "UP",                # pyupgrade
+    "SIM",               # flake8-simplify
+    "ANN",               # flake8-annotations (type hints)
+    "D",                 # pydocstyle (docstrings)
+    "ERA",               # eradicate (commented-out code)
+]
 ignore = [
     "E402",   # module-import-not-at-top (conditional imports)
     "E501",   # line too long (let formatter handle)
@@ -126,6 +133,20 @@ ignore = [
     "F841",   # unused variable (common in scientific iteration / tuple unpacking)
     "SIM102", # collapsible-if (readability preference)
     "SIM108", # ternary (readability preference in scientific code)
+    "ANN401", # any-type (too strict for scientific code with numpy/openmm)
+    "D105",   # undocumented-magic-method (usually obvious)
+    "D107",   # undocumented-public-init (docstring goes on class)
+    "D203",   # incorrect-blank-line-before-class (conflicts with D211)
+    "D213",   # multi-line-summary-second-line (conflicts with D212)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = [
+    "D100", # undocumented-public-module (test modules)
+    "D101", # undocumented-public-class (test classes)
+    "D102", # undocumented-public-method (test methods — name is the doc)
+    "D103", # undocumented-public-function (test helpers)
+    "D104", # undocumented-public-package
 ]
 
 [tool.mypy]

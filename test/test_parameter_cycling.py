@@ -10,7 +10,7 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionPar
 
 
 def _full_ff() -> ForceField:
-    """A FF with all parameter types for testing indices."""
+    """Build a FF with all parameter types for testing indices."""
     return ForceField(
         name="test-full",
         bonds=[
@@ -34,40 +34,40 @@ def _full_ff() -> ForceField:
 
 
 class TestParamIndicesByType:
-    def test_correct_keys(self):
+    def test_correct_keys(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         expected_keys = {"bond_k", "bond_eq", "angle_k", "angle_eq", "torsion_k", "vdw_radius", "vdw_epsilon"}
         assert set(indices.keys()) == expected_keys
 
-    def test_bond_indices(self):
+    def test_bond_indices(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         # 2 bonds: [k0, eq0, k1, eq1, ...]
         assert indices["bond_k"] == [0, 2]
         assert indices["bond_eq"] == [1, 3]
 
-    def test_angle_indices(self):
+    def test_angle_indices(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         # 1 angle starts after 2 bonds (index 4)
         assert indices["angle_k"] == [4]
         assert indices["angle_eq"] == [5]
 
-    def test_torsion_indices(self):
+    def test_torsion_indices(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         # 2 torsions start after bonds(4) + angles(2) = index 6
         assert indices["torsion_k"] == [6, 7]
 
-    def test_vdw_indices(self):
+    def test_vdw_indices(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         # 1 vdw starts after bonds(4) + angles(2) + torsions(2) = index 8
         assert indices["vdw_radius"] == [8]
         assert indices["vdw_epsilon"] == [9]
 
-    def test_total_indices_match_n_params(self):
+    def test_total_indices_match_n_params(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
         all_indices = []
@@ -76,13 +76,13 @@ class TestParamIndicesByType:
         assert len(all_indices) == ff.n_params
         assert sorted(all_indices) == list(range(ff.n_params))
 
-    def test_empty_ff(self):
+    def test_empty_ff(self) -> None:
         ff = ForceField(name="empty")
         indices = ff.get_param_indices_by_type()
         for idx_list in indices.values():
             assert idx_list == []
 
-    def test_indices_match_param_vector_values(self):
+    def test_indices_match_param_vector_values(self) -> None:
         """Verify that indices actually point to the right values."""
         ff = _full_ff()
         vec = ff.get_param_vector()
@@ -96,17 +96,17 @@ class TestParamIndicesByType:
         assert vec[indices["angle_k"][0]] == 71.9
         # torsion_k[0] should be the first torsion
         assert vec[indices["torsion_k"][0]] == 0.5
-        # vdw_radius[0]
+        # vdw_radius at index 0
         assert vec[indices["vdw_radius"][0]] == 1.7
 
 
 class TestParamTypeLabels:
-    def test_length_matches(self):
+    def test_length_matches(self) -> None:
         ff = _full_ff()
         labels = ff.get_param_type_labels()
         assert len(labels) == ff.n_params
 
-    def test_label_values(self):
+    def test_label_values(self) -> None:
         ff = _full_ff()
         labels = ff.get_param_type_labels()
         # 2 bonds: k, eq, k, eq
@@ -126,12 +126,12 @@ class TestParamTypeLabels:
 
 
 class TestStepSizes:
-    def test_length_matches(self):
+    def test_length_matches(self) -> None:
         ff = _full_ff()
         steps = ff.get_step_sizes()
         assert len(steps) == ff.n_params
 
-    def test_per_type_values(self):
+    def test_per_type_values(self) -> None:
         """Step sizes should match the STEPS dict values via the mapping."""
         from q2mm.optimizers.defaults import STEPS
 
@@ -153,7 +153,7 @@ class TestStepSizes:
         # vdw_epsilon → "vdwfc" → 0.02
         assert steps[9] == STEPS["vdwfc"]
 
-    def test_all_positive(self):
+    def test_all_positive(self) -> None:
         ff = _full_ff()
         steps = ff.get_step_sizes()
         assert np.all(steps > 0)
@@ -167,7 +167,7 @@ class TestStepSizes:
 
 
 class TestSensitivityResult:
-    def test_dataclass_fields(self):
+    def test_dataclass_fields(self) -> None:
         from q2mm.optimizers.cycling import SensitivityResult
 
         sr = SensitivityResult(
@@ -184,7 +184,7 @@ class TestSensitivityResult:
 
 
 class TestLoopResult:
-    def test_improvement(self):
+    def test_improvement(self) -> None:
         from q2mm.optimizers.cycling import LoopResult
 
         lr = LoopResult(
@@ -195,7 +195,7 @@ class TestLoopResult:
         )
         assert lr.improvement == pytest.approx(0.9)
 
-    def test_summary(self):
+    def test_summary(self) -> None:
         from q2mm.optimizers.cycling import LoopResult
 
         lr = LoopResult(
@@ -209,7 +209,7 @@ class TestLoopResult:
         assert "converged" in s
         assert "90.00%" in s
 
-    def test_zero_initial_score(self):
+    def test_zero_initial_score(self) -> None:
         from q2mm.optimizers.cycling import LoopResult
 
         lr = LoopResult(success=True, initial_score=0.0, final_score=0.0, n_cycles=0)

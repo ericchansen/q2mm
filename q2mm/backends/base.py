@@ -29,6 +29,7 @@ class QMEngine(ABC):
 
         Returns:
             Electronic energy in Hartrees.
+
         """
         ...
 
@@ -43,6 +44,7 @@ class QMEngine(ABC):
 
         Returns:
             Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
+
         """
         ...
 
@@ -57,6 +59,7 @@ class QMEngine(ABC):
 
         Returns:
             Optimized structure as ``(energy, atoms, coordinates)``.
+
         """
         ...
 
@@ -71,6 +74,7 @@ class QMEngine(ABC):
 
         Returns:
             Vibrational frequencies in cm⁻¹.
+
         """
         ...
 
@@ -79,6 +83,7 @@ class QMEngine(ABC):
 
         Returns:
             bool: ``True`` if the engine binary or library can be located.
+
         """
         return False
 
@@ -87,6 +92,7 @@ class QMEngine(ABC):
 
         Returns:
             bool: ``True`` if the engine supports in-place parameter updates.
+
         """
         return False
 
@@ -97,6 +103,7 @@ class QMEngine(ABC):
 
         Returns:
             str: Engine display name (e.g. ``"Psi4 (b3lyp/def2-svp)"``).
+
         """
         ...
 
@@ -135,6 +142,7 @@ class MMEngine(ABC):
 
         Returns:
             Potential energy in kcal/mol.
+
         """
         ...
 
@@ -148,6 +156,7 @@ class MMEngine(ABC):
 
         Returns:
             ``(energy, atoms, coordinates)`` tuple.
+
         """
         ...
 
@@ -161,6 +170,7 @@ class MMEngine(ABC):
 
         Returns:
             Shape ``(3N, 3N)`` Hessian in **Hartree/Bohr²** (atomic units).
+
         """
         ...
 
@@ -174,6 +184,7 @@ class MMEngine(ABC):
 
         Returns:
             Vibrational frequencies in cm⁻¹.
+
         """
         ...
 
@@ -182,6 +193,7 @@ class MMEngine(ABC):
 
         Returns:
             bool: ``True`` if the engine binary or library can be located.
+
         """
         return False
 
@@ -190,6 +202,7 @@ class MMEngine(ABC):
 
         Returns:
             bool: ``True`` if the engine supports in-place parameter updates.
+
         """
         return False
 
@@ -200,6 +213,7 @@ class MMEngine(ABC):
 
         Returns:
             bool: ``True`` if the engine provides analytical parameter gradients.
+
         """
         return False
 
@@ -220,6 +234,7 @@ class MMEngine(ABC):
         Raises:
             NotImplementedError: If the engine does not support analytical
                 gradients.
+
         """
         raise NotImplementedError(
             f"{self.name} does not implement energy_and_param_grad(). "
@@ -244,6 +259,7 @@ class MMEngine(ABC):
         Raises:
             NotImplementedError: If the engine does not support reusable
                 contexts.
+
         """
         raise NotImplementedError(
             f"{self.name} does not support reusable contexts. "
@@ -257,6 +273,7 @@ class MMEngine(ABC):
 
         Returns:
             str: Engine display name (e.g. ``"OpenMM"``, ``"Tinker"``).
+
         """
         ...
 
@@ -278,6 +295,7 @@ class MMEngine(ABC):
 
                 # A future AMOEBA-only engine:
                 return frozenset({"amoeba"})
+
         """
         from q2mm.models.forcefield import FunctionalForm
 
@@ -297,6 +315,7 @@ class MMEngine(ABC):
         Raises:
             ValueError: If the force field's functional form is not in the
                 set returned by :meth:`supported_functional_forms`.
+
         """
         ff_form = getattr(forcefield, "functional_form", None)
         if ff_form is None:

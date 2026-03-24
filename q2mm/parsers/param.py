@@ -28,6 +28,7 @@ class Param:
         ff_col: Column index in the FF file (1, 2, or 3).
         ff_row: Row number in the FF file.
         label: FF-specific label (e.g., first 2 chars of an MM3 line).
+
     """
 
     __slots__ = [
@@ -57,7 +58,7 @@ class Param:
         ff_col: int | None = None,
         ff_row: int | None = None,
         label: str | None = None,
-    ):
+    ) -> None:
         """Initialize a Param instance.
 
         Args:
@@ -72,6 +73,7 @@ class Param:
             ff_col (int | None): Column index in the FF file.
             ff_row (int | None): Row number in the FF file.
             label (str | None): FF-specific label string.
+
         """
         self._allowed_range = None
         self._step = None
@@ -119,6 +121,7 @@ class Param:
 
         Raises:
             TypeError: If any identity field is None (incomplete parameter).
+
         """
         if self.ptype is None or self.ff_row is None or self.ff_col is None:
             raise TypeError(
@@ -136,6 +139,7 @@ class Param:
 
         Returns:
             (tuple[float, float]): A ``(lower, upper)`` bound pair.
+
         """
         if self._allowed_range is None:
             if self.ptype in ("q", "df", "bf", "af"):
@@ -153,6 +157,7 @@ class Param:
 
         Returns:
             (float): The absolute step size.
+
         """
         if self._step is None:
             try:
@@ -176,6 +181,7 @@ class Param:
 
         Returns:
             (float | None): The parameter value, or None if unset.
+
         """
         return self._value
 
@@ -199,6 +205,7 @@ class Param:
 
         Returns:
             (float): The angle normalized to the range [0, 180].
+
         """
         if value > 180.0:
             v = value % 360.0
@@ -216,6 +223,7 @@ class Param:
 
         Raises:
             ParamError: If value is outside the allowed range.
+
         """
         lo, hi = self.allowed_range
         if lo <= value <= hi:

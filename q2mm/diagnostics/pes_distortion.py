@@ -15,6 +15,7 @@ import numpy as np
 from q2mm.constants import AMU_TO_KG, BOHR_TO_ANG, HARTREE_TO_J, SPEED_OF_LIGHT_MS
 
 if TYPE_CHECKING:
+    from q2mm.backends.base import MMEngine
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
 
@@ -33,6 +34,7 @@ def load_normal_modes(path: Path) -> dict:
     Returns:
         dict: Dictionary with keys ``'eigenvalues'``, ``'eigenvectors'``,
             and ``'masses_amu'``, each mapping to a ``numpy.ndarray``.
+
     """
     data = np.load(path, allow_pickle=False)
     return {
@@ -45,7 +47,7 @@ def load_normal_modes(path: Path) -> dict:
 def compute_distortions(
     mol: Q2MMMolecule,
     ff: ForceField,
-    engine,
+    engine: MMEngine,
     modes: dict,
     target_norms_ang: list[float] | None = None,
 ) -> tuple[list[dict], float, float]:
@@ -66,6 +68,7 @@ def compute_distortions(
               ``mode_idx``, ``freq_cm1``, and ``displacements``.
             - **e_eq** (*float*) — Equilibrium MM energy in kcal/mol.
             - **elapsed** (*float*) — Wall-clock time in seconds.
+
     """
     from q2mm.models.molecule import Q2MMMolecule as _Mol
 

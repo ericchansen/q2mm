@@ -135,8 +135,8 @@ from q2mm.elements import MASSES  # noqa: E402, F401
 # These cannot be re-exported here because the parsers package imports
 # constants, creating circular dependencies.  Import from the canonical
 # locations instead:
-#   from q2mm.optimizers.defaults import STEPS, WEIGHTS
-#   from q2mm.parsers.macromodel import COM_FORM, ...
+#   q2mm.optimizers.defaults  ->  STEPS, WEIGHTS
+#   q2mm.parsers.macromodel   ->  COM_FORM, ...
 #
 # For the most common case (co.STEPS / co.WEIGHTS), we re-export only
 # optimizers.defaults since it has no dependency on parsers.

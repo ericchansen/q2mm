@@ -13,6 +13,8 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
   9. Parameter vector length validation
 """
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
@@ -25,6 +27,7 @@ pytestmark = pytest.mark.openmm
 
 from test._shared import CH3F_HESS, CH3F_XYZ, make_water
 
+from q2mm.backends.base import MMEngine
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.optimizers.scoring import compare_data
 from q2mm.parsers import Datum
@@ -56,7 +59,7 @@ if _TINKER_DIR is None or _TINKER_PRM is None:
 _HAS_TINKER = _TINKER_DIR is not None and _TINKER_DIR.exists() and _TINKER_PRM is not None and _TINKER_PRM.exists()
 
 
-def _tinker_engine():
+def _tinker_engine() -> MMEngine:
     """Create a TinkerEngine if available."""
     from q2mm.backends.mm.tinker import TinkerEngine
 
@@ -70,7 +73,9 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
-def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> ForceField:
+def _water_ff(
+    bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5
+) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -78,7 +83,9 @@ def _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5) -> Force
     )
 
 
-def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
+def _make_water_problem(
+    engine: MMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
+) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, MMEngine]:
     """Create a water optimization problem with known true parameters.
 
     Returns (true_ff, guess_ff, molecules, reference_data, engine).
@@ -116,7 +123,9 @@ def _make_water_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
     return true_ff, guess_ff, [mol_eq, mol_wide, mol_long], ref, engine
 
 
-def _make_energy_only_problem(engine=None, perturb_k=1.5, perturb_eq=5.0):
+def _make_energy_only_problem(
+    engine: MMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
+) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, MMEngine]:
     """Water problem with energy-only references (works with any backend).
 
     Avoids frequencies so Tinker and OpenMM get identical reference values.
@@ -150,13 +159,13 @@ class TestSeminarioOptimizePipeline:
     """Validates the full QM → Seminario → scipy optimize pipeline."""
 
     @pytest.fixture
-    def ch3f_seminario_ff(self):
+    def ch3f_seminario_ff(self) -> tuple[ForceField, Q2MMMolecule]:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         hess = np.load(CH3F_HESS)
         mol_h = mol.with_hessian(hess)
         return estimate_force_constants(mol_h), mol
 
-    def test_seminario_ff_can_evaluate(self, ch3f_seminario_ff):
+    def test_seminario_ff_can_evaluate(self, ch3f_seminario_ff: tuple[ForceField, Q2MMMolecule]) -> None:
         """Seminario-derived FF can compute energy via OpenMM."""
         ff, mol = ch3f_seminario_ff
         engine = OpenMMEngine()
@@ -165,7 +174,7 @@ class TestSeminarioOptimizePipeline:
         assert np.isfinite(energy)
 
     @pytest.mark.medium
-    def test_optimize_improves_seminario_ff(self, ch3f_seminario_ff):
+    def test_optimize_improves_seminario_ff(self, ch3f_seminario_ff: tuple[ForceField, Q2MMMolecule]) -> None:
         """Optimizing Seminario FF against QM frequencies improves the score."""
         ff, mol = ch3f_seminario_ff
         engine = OpenMMEngine()
@@ -199,7 +208,7 @@ class TestSeminarioOptimizePipeline:
 class TestCrossBackendOptimization:
     """Optimize the same problem with OpenMM and Tinker, compare results."""
 
-    def test_openmm_vs_tinker_energy_parity(self):  # ~0.3s — fast
+    def test_openmm_vs_tinker_energy_parity(self) -> None:  # ~0.3s — fast
         """OpenMM and Tinker agree on energy for the same FF + geometry."""
         mol = _water()
         ff = _water_ff()
@@ -215,7 +224,7 @@ class TestCrossBackendOptimization:
         assert e_openmm == pytest.approx(e_tinker, abs=0.01), f"OpenMM={e_openmm:.6f} vs Tinker={e_tinker:.6f}"
 
     @pytest.mark.slow
-    def test_openmm_vs_tinker_optimization_convergence(self):
+    def test_openmm_vs_tinker_optimization_convergence(self) -> None:
         """Both backends converge to similar optimized parameters."""
         results = {}
         for label, engine in [("OpenMM", OpenMMEngine()), ("Tinker", _tinker_engine())]:
@@ -243,7 +252,7 @@ class TestMultiMethodConvergence:
     """Verify multiple scipy methods converge to the same optimum."""
 
     @pytest.mark.medium
-    def test_three_methods_agree(self):
+    def test_three_methods_agree(self) -> None:
         """L-BFGS-B, Nelder-Mead, and least_squares all improve significantly."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
 
@@ -287,7 +296,7 @@ class TestScoreParity:
     This is documented and tested below.
     """
 
-    def test_single_energy_scores_match(self):
+    def test_single_energy_scores_match(self) -> None:
         """With 1 energy point, new and legacy scores are identical."""
         mol = _water()
         ff = _water_ff()
@@ -312,7 +321,7 @@ class TestScoreParity:
         # N_type=1 ⇒ identical
         assert new_score == pytest.approx(legacy_score, rel=0.01), f"New={new_score}, Legacy={legacy_score}"
 
-    def test_multi_energy_normalization_relationship(self):
+    def test_multi_energy_normalization_relationship(self) -> None:
         """With N energy points, score relationship accounts for legacy correlation.
 
         The legacy compare_data correlates energies (shifts calculated values
@@ -357,7 +366,7 @@ class TestScoreParity:
         # With uniform offsets, correlation preserves the diffs, so:
         # new_score = sum((w*diff)^2) = 2 * (1.0 * 0.3)^2 = 0.18
         # legacy_score = sum(w^2 * diff^2 / N) = 0.09 (N=2)
-        # new_score = legacy_score * N
+        # Therefore: new_score equals legacy_score times N
         n_energy = 2
         assert new_score == pytest.approx(legacy_score * n_energy, rel=0.05), (
             f"New={new_score}, Legacy×N={legacy_score * n_energy}"
@@ -371,7 +380,7 @@ class TestOptimizationRoundtrip:
     """Verify optimizer can recover known parameters from perturbed start."""
 
     @pytest.mark.medium
-    def test_recover_bond_force_constant(self):
+    def test_recover_bond_force_constant(self) -> None:
         """Optimizer recovers correct bond k from energy data."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
 
@@ -390,7 +399,7 @@ class TestOptimizationRoundtrip:
         )
 
     @pytest.mark.medium
-    def test_convergence_history_monotonic(self):
+    def test_convergence_history_monotonic(self) -> None:
         """Score history should be roughly monotonically decreasing."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
 
@@ -407,7 +416,7 @@ class TestOptimizationRoundtrip:
 
     @pytest.mark.slow
     @pytest.mark.skipif(not _HAS_TINKER, reason="Tinker not installed")
-    def test_recover_params_with_tinker(self):
+    def test_recover_params_with_tinker(self) -> None:
         """Tinker backend also recovers correct parameters."""
         tinker = _tinker_engine()
         true_ff, guess_ff, mols, ref, engine = _make_energy_only_problem(engine=tinker)
@@ -433,7 +442,7 @@ class TestOptimizationRoundtrip:
 class TestForceFieldExportRoundtrip:
     """Verify optimized parameters survive export/re-import."""
 
-    def test_param_vector_roundtrip(self):
+    def test_param_vector_roundtrip(self) -> None:
         """set_param_vector(get_param_vector()) is identity."""
         ff = _water_ff()
         original = ff.get_param_vector().copy()
@@ -441,7 +450,7 @@ class TestForceFieldExportRoundtrip:
         roundtripped = ff.get_param_vector()
         np.testing.assert_array_equal(original, roundtripped)
 
-    def test_param_vector_roundtrip_after_mutation(self):
+    def test_param_vector_roundtrip_after_mutation(self) -> None:
         """Roundtrip still works after modifying individual parameters."""
         ff = _water_ff()
         vec = ff.get_param_vector().copy()
@@ -453,7 +462,7 @@ class TestForceFieldExportRoundtrip:
         np.testing.assert_array_almost_equal(vec, roundtripped, decimal=15)
 
     @pytest.mark.medium
-    def test_param_vector_roundtrip_optimized_ff(self):
+    def test_param_vector_roundtrip_optimized_ff(self) -> None:
         """Optimized FF survives get→set→get roundtrip."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
         obj = ObjectiveFunction(guess_ff, engine, mols, ref)
@@ -468,7 +477,7 @@ class TestForceFieldExportRoundtrip:
         vec_after = optimized_ff.get_param_vector()
         np.testing.assert_array_equal(vec_before, vec_after)
 
-    def test_copy_preserves_params(self):
+    def test_copy_preserves_params(self) -> None:
         """ForceField.copy() preserves the parameter vector exactly."""
         ff = _water_ff(bond_k=225.9, bond_r0=1.23, angle_k=30.2, angle_eq=109.5)
         ff_copy = ff.copy()
@@ -486,7 +495,7 @@ class TestForceFieldExportRoundtrip:
 class TestAtomIdentityMatching:
     """Verify atom-identity matching is order-independent."""
 
-    def test_bond_length_by_atom_indices(self):
+    def test_bond_length_by_atom_indices(self) -> None:
         """_extract_value finds the right bond via atom_indices."""
         calc = {
             "bond_lengths": [0.96, 0.97],
@@ -497,7 +506,7 @@ class TestAtomIdentityMatching:
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
-    def test_bond_length_atom_indices_order_independent(self):
+    def test_bond_length_atom_indices_order_independent(self) -> None:
         """atom_indices=(2, 0) finds same bond as (0, 2)."""
         calc = {
             "bond_lengths": [0.96, 0.97],
@@ -508,7 +517,7 @@ class TestAtomIdentityMatching:
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
-    def test_bond_angle_by_atom_indices(self):
+    def test_bond_angle_by_atom_indices(self) -> None:
         """_extract_value finds the right angle via atom_indices."""
         calc = {
             "bond_angles": [104.5],
@@ -518,7 +527,7 @@ class TestAtomIdentityMatching:
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
-    def test_bond_angle_reversed_order(self):
+    def test_bond_angle_reversed_order(self) -> None:
         """atom_indices=(2, 0, 1) finds same angle as (1, 0, 2)."""
         calc = {
             "bond_angles": [104.5],
@@ -529,7 +538,7 @@ class TestAtomIdentityMatching:
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
-    def test_fallback_to_data_idx(self):
+    def test_fallback_to_data_idx(self) -> None:
         """When atom_indices is None, data_idx still works (backwards compat)."""
         calc = {
             "bond_lengths": [0.96, 0.97, 0.98],
@@ -540,7 +549,7 @@ class TestAtomIdentityMatching:
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
-    def test_missing_atom_indices_raises(self):
+    def test_missing_atom_indices_raises(self) -> None:
         """KeyError raised for atom pair not in calculated data."""
         calc = {
             "bond_lengths": [0.96],
@@ -550,13 +559,13 @@ class TestAtomIdentityMatching:
         with pytest.raises(KeyError):
             ObjectiveFunction._extract_value(calc, ref)
 
-    def test_add_bond_length_requires_idx_or_atoms(self):
+    def test_add_bond_length_requires_idx_or_atoms(self) -> None:
         """ReferenceData.add_bond_length raises without data_idx or atom_indices."""
         ref = ReferenceData()
         with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
             ref.add_bond_length(0.96)
 
-    def test_add_bond_angle_requires_idx_or_atoms(self):
+    def test_add_bond_angle_requires_idx_or_atoms(self) -> None:
         """ReferenceData.add_bond_angle raises without data_idx or atom_indices."""
         ref = ReferenceData()
         with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
@@ -570,7 +579,7 @@ class TestOptimizationDeterminism:
     """Verify optimization is deterministic."""
 
     @pytest.mark.medium
-    def test_same_result_twice(self):
+    def test_same_result_twice(self) -> None:
         """Running the same optimization twice gives identical parameters."""
         results = []
         for _ in range(2):
@@ -588,7 +597,7 @@ class TestOptimizationDeterminism:
         assert results[0].final_score == pytest.approx(results[1].final_score, rel=1e-10)
 
     @pytest.mark.medium
-    def test_determinism_nelder_mead(self):
+    def test_determinism_nelder_mead(self) -> None:
         """Nelder-Mead is also deterministic (no stochastic elements)."""
         results = []
         for _ in range(2):
@@ -610,22 +619,22 @@ class TestOptimizationDeterminism:
 class TestParamVectorValidation:
     """Verify set_param_vector rejects wrong-length vectors."""
 
-    def test_short_vector_raises(self):
+    def test_short_vector_raises(self) -> None:
         ff = _water_ff()
         with pytest.raises(ValueError, match="does not match"):
             ff.set_param_vector(np.array([1.0]))  # too short
 
-    def test_long_vector_raises(self):
+    def test_long_vector_raises(self) -> None:
         ff = _water_ff()
         with pytest.raises(ValueError, match="does not match"):
             ff.set_param_vector(np.zeros(100))  # too long
 
-    def test_empty_vector_raises(self):
+    def test_empty_vector_raises(self) -> None:
         ff = _water_ff()
         with pytest.raises(ValueError, match="does not match"):
             ff.set_param_vector(np.array([]))
 
-    def test_exact_length_accepted(self):
+    def test_exact_length_accepted(self) -> None:
         ff = _water_ff()
         n = len(ff.get_param_vector())
         ff.set_param_vector(np.ones(n))  # should not raise
@@ -656,7 +665,7 @@ class TestGoldenFixtureRegression:
             "progress; exact reproducibility requires pinned environments."
         ),
     )
-    def test_matches_golden_fixture(self):
+    def test_matches_golden_fixture(self) -> None:
         """Exact match of final_score and final_params against golden fixture."""
         golden = json.loads(self.GOLDEN_PATH.read_text())
 
@@ -671,10 +680,12 @@ class TestGoldenFixtureRegression:
         for i, (got, want) in enumerate(zip(result.final_params, golden["final_params"])):
             assert got == pytest.approx(want, rel=1e-3), f"Param {i} drift: {got} vs {want}"
 
-    def test_optimizer_improves_score(self):
-        """Hard requirement: optimizer must substantially improve the score.
+    def test_optimizer_improves_score(self) -> None:
+        """Verify optimizer substantially improves the score.
+
         Also verifies initial_score stability (single evaluation, should be
-        deterministic across environments)."""
+        deterministic across environments).
+        """
         golden = json.loads(self.GOLDEN_PATH.read_text())
 
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()

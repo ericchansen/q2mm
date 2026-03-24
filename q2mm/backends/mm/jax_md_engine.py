@@ -42,6 +42,8 @@ full feature set of jax-md.
    includes improper parameters.
 """
 
+from __future__ import annotations
+
 import copy
 import math
 from collections.abc import Callable
@@ -59,7 +61,7 @@ from q2mm.constants import (
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
-from q2mm.models.forcefield import ForceField
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
 try:
@@ -94,7 +96,7 @@ except ImportError:  # pragma: no cover
 _KCALMOLA2_TO_HESSIAN_AU = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
 
 
-def _ensure_jax_md():
+def _ensure_jax_md() -> None:
     """Raise ``ImportError`` if jax-md is not installed."""
     if not _HAS_JAX:
         raise ImportError("JAX is required for JaxMDEngine. Install with: pip install jax jaxlib")
@@ -130,6 +132,7 @@ class JaxMDHandle:
         n_torsion_types: Number of unique torsion parameter types.
         n_vdw_types: Number of unique vdW parameter types.
         n_atoms: Number of atoms.
+
     """
 
     molecule: Q2MMMolecule
@@ -166,7 +169,12 @@ class JaxMDHandle:
 # ---------------------------------------------------------------------------
 
 
-def _match_bond(forcefield, elements, env_id="", ff_row=None):
+def _match_bond(
+    forcefield: ForceField,
+    elements: list[str],
+    env_id: str = "",
+    ff_row: int | None = None,
+) -> tuple[int | None, BondParam | None]:
     """Match a bond to its ForceField index."""
     matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
@@ -174,7 +182,12 @@ def _match_bond(forcefield, elements, env_id="", ff_row=None):
     return None, None
 
 
-def _match_angle(forcefield, elements, env_id="", ff_row=None):
+def _match_angle(
+    forcefield: ForceField,
+    elements: list[str],
+    env_id: str = "",
+    ff_row: int | None = None,
+) -> tuple[int | None, AngleParam | None]:
     """Match an angle to its ForceField index."""
     matched = forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
     if matched is not None:
@@ -182,7 +195,12 @@ def _match_angle(forcefield, elements, env_id="", ff_row=None):
     return None, None
 
 
-def _match_vdw(forcefield, atom_type="", element="", ff_row=None):
+def _match_vdw(
+    forcefield: ForceField,
+    atom_type: str = "",
+    element: str = "",
+    ff_row: int | None = None,
+) -> tuple[int | None, VdwParam | None]:
     """Match a vdW parameter to its ForceField index."""
     matched = forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
     if matched is not None:
@@ -195,7 +213,15 @@ def _match_vdw(forcefield, atom_type="", element="", ff_row=None):
 # ---------------------------------------------------------------------------
 
 
-def _build_jaxmd_params_fn(handle: JaxMDHandle):
+def _build_jaxmd_params_fn(
+    handle: JaxMDHandle,
+) -> Callable[
+    [jnp.ndarray],
+    tuple[
+        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    ],
+]:
     """Create a function that maps a flat param vector to jax-md Parameters.
 
     The returned function is pure JAX and differentiable, enabling
@@ -206,6 +232,7 @@ def _build_jaxmd_params_fn(handle: JaxMDHandle):
 
     Returns:
         Callable: ``build_params(param_vector) -> (bonded_tuple, nonbonded_tuple)``
+
     """
     n_bt = handle.n_bond_types
     n_at = handle.n_angle_types
@@ -228,7 +255,12 @@ def _build_jaxmd_params_fn(handle: JaxMDHandle):
     n_angles = len(handle.angle_param_map)
     n_torsions = len(handle.torsion_param_map)
 
-    def build_params(param_vector):
+    def build_params(
+        param_vector: jnp.ndarray,
+    ) -> tuple[
+        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+    ]:
         # Bonds: extract k and r0 per topology bond
         if n_bt > 0 and n_bonds > 0:
             bond_params = param_vector[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
@@ -281,7 +313,9 @@ def _build_jaxmd_params_fn(handle: JaxMDHandle):
 # ---------------------------------------------------------------------------
 
 
-def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_options):
+def _compile_energy_fn(
+    handle: JaxMDHandle, forcefield: ForceField, coulomb: object, nb_options: object
+) -> tuple[Callable, Callable, object, object]:
     """Compile the jax-md energy function for a specific topology.
 
     Args:
@@ -294,6 +328,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
         tuple: (energy_fn, scalar_energy_fn, neighbor_fn, nlist) where
             energy_fn takes (param_vector, coords) and returns a dict,
             scalar_energy_fn returns just the total scalar.
+
     """
     # Build jax-md topology arrays
     molecule = handle.molecule
@@ -304,7 +339,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
     angle_arr = handle.angle_indices
     torsion_arr = handle.torsion_indices
 
-    # Impropers (not yet in Q2MMMolecule)
+    # Improper torsions — placeholder, not yet supported
     improper_arr = np.empty((0, 4), dtype=np.int32)
 
     # Torsion periodicity and phase (static, from ForceField)
@@ -400,7 +435,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
     has_torsions = torsion_arr.shape[0] > 0
     has_vdw = handle.n_vdw_types > 0
 
-    def energy_fn(param_vector, coords, nlist_):
+    def energy_fn(param_vector: jnp.ndarray, coords: jnp.ndarray, nlist_: object) -> dict[str, jnp.ndarray]:
         """Compute total energy given param vector and coordinates.
 
         Returns dict with per-term breakdown.
@@ -437,7 +472,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
         if has_torsions:
             idx = _torsion_indices
 
-            def compute_dihedral(p0, p1, p2, p3):
+            def compute_dihedral(p0: jnp.ndarray, p1: jnp.ndarray, p2: jnp.ndarray, p3: jnp.ndarray) -> jnp.ndarray:
                 b0 = displacement_fn(p1, p0)
                 b1 = displacement_fn(p2, p1)
                 b2 = displacement_fn(p3, p2)
@@ -516,7 +551,7 @@ def _compile_energy_fn(handle: JaxMDHandle, forcefield: ForceField, coulomb, nb_
             "total": E_total,
         }
 
-    def scalar_energy_fn(param_vector, coords, nlist_):
+    def scalar_energy_fn(param_vector: jnp.ndarray, coords: jnp.ndarray, nlist_: object) -> jnp.ndarray:
         """Scalar total energy for gradient/hessian computation."""
         return energy_fn(param_vector, coords, nlist_)["total"]
 
@@ -552,14 +587,15 @@ class JaxMDEngine(MMEngine):
         >>> engine = JaxMDEngine(box=(50.0, 50.0, 50.0))
         >>> energy = engine.energy(molecule, forcefield)
         >>> energy, grad = engine.energy_and_param_grad(molecule, forcefield)
+
     """
 
     def __init__(
         self,
         box: tuple[float, float, float] = (100.0, 100.0, 100.0),
-        coulomb: "CoulombHandler | None" = None,
-        nb_options: "NonbondedOptions | None" = None,
-    ):
+        coulomb: CoulombHandler | None = None,
+        nb_options: NonbondedOptions | None = None,
+    ) -> None:
         _ensure_jax_md()
         self._box = np.array(box, dtype=np.float64)
         self._coulomb = coulomb if coulomb is not None else CutoffCoulomb(r_cut=12.0)
@@ -567,6 +603,7 @@ class JaxMDEngine(MMEngine):
 
     @property
     def name(self) -> str:
+        """Return the engine display name."""
         return "JAX-MD (OPLSAA)"
 
     def supported_functional_forms(self) -> frozenset[str]:
@@ -574,15 +611,20 @@ class JaxMDEngine(MMEngine):
         return frozenset({"harmonic"})
 
     def is_available(self) -> bool:
+        """Return whether JAX-MD dependencies are installed."""
         return _HAS_JAX_MD
 
     def supports_runtime_params(self) -> bool:
+        """Return True — JAX-MD supports runtime parameter updates."""
         return True
 
     def supports_analytical_gradients(self) -> bool:
+        """Return True — JAX-MD supports analytical gradients via autodiff."""
         return True
 
-    def create_context(self, structure, forcefield: ForceField | None = None) -> JaxMDHandle:
+    def create_context(
+        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField | None = None
+    ) -> JaxMDHandle:
         """Build jax-md topology and compile energy function.
 
         Args:
@@ -591,6 +633,7 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             JaxMDHandle: Compiled handle for energy evaluation.
+
         """
         if forcefield is not None:
             self._validate_forcefield(forcefield)
@@ -683,17 +726,17 @@ class JaxMDEngine(MMEngine):
 
         return handle
 
-    def _get_handle(self, structure, forcefield):
+    def _get_handle(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> JaxMDHandle:
         if isinstance(structure, JaxMDHandle):
             return structure
         return self.create_context(_as_molecule(structure), forcefield)
 
-    def _params_and_coords(self, handle, forcefield):
+    def _params_and_coords(self, handle: JaxMDHandle, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
         params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
         coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
         return params, coords
 
-    def energy(self, structure, forcefield) -> float:
+    def energy(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> float:
         """Calculate energy in kcal/mol.
 
         Args:
@@ -702,13 +745,14 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             float: Total energy in kcal/mol.
+
         """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
         result = handle._energy_fn(params, coords, handle._nlist)
         return float(result["total"])
 
-    def energy_breakdown(self, structure, forcefield) -> dict[str, float]:
+    def energy_breakdown(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> dict[str, float]:
         """Calculate energy with per-term breakdown.
 
         Args:
@@ -718,13 +762,16 @@ class JaxMDEngine(MMEngine):
         Returns:
             dict: Energy components (bond, angle, torsion, lj, coulomb, total)
                 in kcal/mol.
+
         """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
         result = handle._energy_fn(params, coords, handle._nlist)
         return {k: float(v) for k, v in result.items()}
 
-    def energy_and_param_grad(self, structure, forcefield) -> tuple[float, np.ndarray]:
+    def energy_and_param_grad(
+        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField
+    ) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
         Args:
@@ -734,6 +781,7 @@ class JaxMDEngine(MMEngine):
         Returns:
             tuple: ``(energy, grad)`` where energy is kcal/mol and grad
                 has same shape as ``forcefield.get_param_vector()``.
+
         """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
@@ -744,7 +792,7 @@ class JaxMDEngine(MMEngine):
         val, grad = handle._grad_fn(params, coords, handle._nlist)
         return float(val), np.asarray(grad)
 
-    def hessian(self, structure, forcefield) -> np.ndarray:
+    def hessian(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> np.ndarray:
         """Compute Hessian (d²E/dcoords²) in Hartree/Bohr².
 
         Args:
@@ -753,6 +801,7 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             np.ndarray: Shape ``(3N, 3N)`` Hessian.
+
         """
         handle = self._get_handle(structure, forcefield)
         params, coords = self._params_and_coords(handle, forcefield)
@@ -760,7 +809,7 @@ class JaxMDEngine(MMEngine):
         if handle._coord_hess_fn is None:
             nlist = handle._nlist
 
-            def _energy_of_flat_coords(flat_coords, params_):
+            def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
                 return handle._scalar_energy_fn(params_, flat_coords.reshape(-1, 3), nlist)
 
             handle._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
@@ -769,7 +818,7 @@ class JaxMDEngine(MMEngine):
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * _KCALMOLA2_TO_HESSIAN_AU
 
-    def frequencies(self, structure, forcefield) -> list[float]:
+    def frequencies(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> list[float]:
         """Compute vibrational frequencies in cm⁻¹.
 
         Args:
@@ -778,6 +827,7 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             list[float]: Frequencies sorted ascending.
+
         """
         handle = self._get_handle(structure, forcefield)
         hess_au = self.hessian(handle, forcefield)
@@ -805,7 +855,9 @@ class JaxMDEngine(MMEngine):
 
         return sorted(freqs)
 
-    def minimize(self, structure, forcefield, max_iterations=200) -> tuple:
+    def minimize(
+        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField, max_iterations: int = 200
+    ) -> tuple:
         """Minimize energy w.r.t. coordinates.
 
         Args:
@@ -815,6 +867,7 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             tuple: ``(energy, atoms, coords)``.
+
         """
         from scipy.optimize import minimize as scipy_minimize
 
@@ -827,18 +880,18 @@ class JaxMDEngine(MMEngine):
         # Mutable container for neighbor list — updated when atoms move
         nlist_ref = [handle._nlist]
 
-        def _update_nlist(new_coords):
+        def _update_nlist(new_coords: jnp.ndarray) -> None:
             """Re-allocate neighbor list for new coordinates."""
             nlist_ref[0] = neighbor_fn.allocate(new_coords)
 
-        def objective(x):
+        def objective(x: np.ndarray) -> float:
             c = jnp.array(x).reshape(-1, 3)
             _update_nlist(c)
             return float(scalar_fn(params, c, nlist_ref[0]))
 
         coord_grad_fn = jax.jit(jax.grad(lambda c, p, nl: scalar_fn(p, c.reshape(-1, 3), nl), argnums=0))
 
-        def gradient(x):
+        def gradient(x: np.ndarray) -> np.ndarray:
             c = jnp.array(x)
             _update_nlist(c.reshape(-1, 3))
             return np.asarray(coord_grad_fn(c, params, nlist_ref[0]))
@@ -863,7 +916,7 @@ class JaxMDEngine(MMEngine):
 # ---------------------------------------------------------------------------
 
 
-def _as_molecule(structure) -> Q2MMMolecule:
+def _as_molecule(structure: Q2MMMolecule | JaxMDHandle) -> Q2MMMolecule:
     """Coerce input to Q2MMMolecule."""
     if isinstance(structure, JaxMDHandle):
         return structure.molecule
