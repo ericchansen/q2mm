@@ -259,10 +259,11 @@ def _torsion_energy(
     # Normal vectors to the two planes
     n1 = jnp.cross(b0, b1)
     n2 = jnp.cross(b1, b2)
-    # atan2-based signed dihedral
+    # atan2-based signed dihedral (epsilon on x prevents NaN gradients
+    # at linear geometries where both cross products vanish)
     b1_len = _safe_norm(b1, axis=-1)
     m1 = jnp.cross(n1, b1 / jnp.maximum(b1_len, 1e-10)[:, None])
-    x = jnp.sum(n1 * n2, axis=-1)
+    x = jnp.sum(n1 * n2, axis=-1) + 1e-20
     y = jnp.sum(m1 * n2, axis=-1)
     phi = jnp.arctan2(y, x)
     return jnp.sum(k * (1.0 + jnp.cos(periodicity * phi - phase)))
