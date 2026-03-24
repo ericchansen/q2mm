@@ -23,6 +23,7 @@ from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
     HARTREE_TO_J,
+    KCAL_TO_KJ,
     SPEED_OF_LIGHT_MS,
     MM3_BOND_C3,
     MM3_BOND_C4,

@@ -699,6 +699,8 @@ class ReferenceData:
 
         """
         path = Path(path)
+        from q2mm.parsers.fchk import parse_fchk as _parse_fchk  # noqa: E402
+
         symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
 
         mol = Q2MMMolecule(
@@ -716,13 +718,21 @@ class ReferenceData:
         return ref, mol
 
 
-# ---- .fchk parser — delegated to q2mm.parsers.fchk ----
+# ---- Lazy re-exports (avoid circular imports at module load) ----
 
-from q2mm.parsers.fchk import parse_fchk as _parse_fchk  # noqa: E402
 
-# ---- Dihedral angle — delegated to geometry evaluator ----
+def __getattr__(name: str) -> Any:
+    """Lazy re-exports to preserve backward-compatible import paths."""
+    if name == "_parse_fchk":
+        from q2mm.parsers.fchk import parse_fchk
 
-from q2mm.optimizers.evaluators.geometry import dihedral_angle as _dihedral_angle  # noqa: E402, F401
+        return parse_fchk
+    if name == "_dihedral_angle":
+        from q2mm.optimizers.evaluators.geometry import dihedral_angle
+
+        return dihedral_angle
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # ---- Per-data-type evaluators (lazy-imported in ObjectiveFunction.__init__) ----
 
