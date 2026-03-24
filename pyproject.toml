@@ -72,6 +72,7 @@ qcel = [
 ]
 dev = [
     "pytest",
+    "pytest-benchmark",
     "ruff",
     "scipy",
     "parmed",
@@ -111,6 +112,11 @@ include = ["q2mm*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+markers = [
+    "benchmark: performance benchmark tests (requires pytest-benchmark; use -p benchmark to enable)",
+    "slow: slow tests >10s each (requires --run-slow)",
+    "medium: medium speed tests 1-10s each (requires --run-medium)",
+]
 
 [tool.ruff]
 line-length = 120
