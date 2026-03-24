@@ -32,6 +32,7 @@ def build_leaderboard_rows(results: list[BenchmarkResult]) -> list[dict]:
         list[dict]: Row dicts with keys ``backend``, ``optimizer``,
             ``rmsd``, ``mae``, ``time_s``, ``n_eval``, ``final_score``,
             ``converged``, ``message``, ``error``, and ``initial_rmsd``.
+
     """
     rows = []
     for r in results:
@@ -72,6 +73,7 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
     Returns:
         list[TablePrinter]: One ``TablePrinter`` per table. Call
             ``.flush()`` on each to print, or ``.to_string()`` to capture.
+
     """
     meta = result.metadata
     if combo_label is None:
@@ -178,6 +180,7 @@ def full_report(results: list[BenchmarkResult]) -> None:
     Args:
         results (list[BenchmarkResult]): One result per (backend, optimizer)
             combination.
+
     """
     # --- Leaderboard ---
     rows = build_leaderboard_rows(results)

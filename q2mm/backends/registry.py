@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 class EngineNotAvailable(RuntimeError):
     """Raised when a requested engine name is not found in the registry."""
 
-    def __init__(self, name: str, *, available: list[str] | None = None):
+    def __init__(self, name: str, *, available: list[str] | None = None) -> None:
         self.name = name
         self.available = available or []
         msg = f"Engine {name!r} is not registered."
@@ -58,7 +59,7 @@ _ENGINE_MODULES = [
 # ---- Decorators --------------------------------------------------------------
 
 
-def register_mm(name: str):
+def register_mm(name: str) -> Callable[[type[MMEngine]], type[MMEngine]]:
     """Class decorator that registers an :class:`MMEngine` subclass.
 
     Args:
@@ -69,16 +70,17 @@ def register_mm(name: str):
         @register_mm("openmm")
         class OpenMMEngine(MMEngine):
             ...
+
     """
 
-    def decorator(cls):
+    def decorator(cls: type[MMEngine]) -> type[MMEngine]:
         _MM_ENGINES[name] = cls
         return cls
 
     return decorator
 
 
-def register_qm(name: str):
+def register_qm(name: str) -> Callable[[type[QMEngine]], type[QMEngine]]:
     """Class decorator that registers a :class:`QMEngine` subclass.
 
     Args:
@@ -89,9 +91,10 @@ def register_qm(name: str):
         @register_qm("psi4")
         class Psi4Engine(QMEngine):
             ...
+
     """
 
-    def decorator(cls):
+    def decorator(cls: type[QMEngine]) -> type[QMEngine]:
         _QM_ENGINES[name] = cls
         return cls
 
@@ -139,6 +142,7 @@ def get_engine(name: str, **kwargs: Any) -> MMEngine | QMEngine:
 
     Raises:
         EngineNotAvailable: If *name* is not registered.
+
     """
     _discover()
     if name in _MM_ENGINES:
@@ -158,6 +162,7 @@ def get_mm_engine(name: str, **kwargs: Any) -> MMEngine:
 
     Raises:
         EngineNotAvailable: If *name* is not in the MM registry.
+
     """
     _discover()
     if name not in _MM_ENGINES:
@@ -174,6 +179,7 @@ def get_qm_engine(name: str, **kwargs: Any) -> QMEngine:
 
     Raises:
         EngineNotAvailable: If *name* is not in the QM registry.
+
     """
     _discover()
     if name not in _QM_ENGINES:

@@ -9,6 +9,8 @@ synthetic data.
 Requires ``--run-medium`` and OpenMM.
 """
 
+from __future__ import annotations
+
 import tempfile
 from pathlib import Path
 
@@ -41,27 +43,27 @@ _missing = [str(f) for f in _FIXTURE_FILES if not f.exists()]
 class TestDiagnosticsHelpers:
     """Fast tests for frequency metrics, TablePrinter, and BenchmarkResult serialization."""
 
-    def test_frequency_rmsd_identical(self):
+    def test_frequency_rmsd_identical(self) -> None:
         a = [100.0, 200.0, 300.0]
         assert frequency_rmsd(a, a) == pytest.approx(0.0)
 
-    def test_frequency_rmsd_known(self):
+    def test_frequency_rmsd_known(self) -> None:
         a = [100.0, 200.0]
         b = [110.0, 220.0]
         expected = np.sqrt((10**2 + 20**2) / 2)
         assert frequency_rmsd(a, b) == pytest.approx(expected)
 
-    def test_frequency_mae_known(self):
+    def test_frequency_mae_known(self) -> None:
         a = [100.0, 200.0]
         b = [110.0, 220.0]
         assert frequency_mae(a, b) == pytest.approx(15.0)
 
-    def test_real_frequencies_filters(self):
+    def test_real_frequencies_filters(self) -> None:
         freqs = [-300.0, -5.0, 0.0, 10.0, 49.0, 100.0, 500.0]
         real = real_frequencies(freqs)
         np.testing.assert_array_equal(real, [100.0, 500.0])
 
-    def test_table_printer_to_string(self):
+    def test_table_printer_to_string(self) -> None:
         t = TablePrinter()
         t.bar()
         t.title("TEST")
@@ -70,7 +72,7 @@ class TestDiagnosticsHelpers:
         assert "TEST" in s
         assert s.count("=") > 0
 
-    def test_benchmark_result_roundtrip(self):
+    def test_benchmark_result_roundtrip(self) -> None:
         """BenchmarkResult survives JSON serialization."""
         r = BenchmarkResult(
             metadata={"backend": "TestBackend", "optimizer": "L-BFGS-B", "molecule": "H2O"},
@@ -103,12 +105,12 @@ class TestDiagnosticsHelpers:
         finally:
             path.unlink(missing_ok=True)
 
-    def test_benchmark_result_from_upstream(self):
+    def test_benchmark_result_from_upstream(self) -> None:
         r = BenchmarkResult.from_upstream([100.0, 200.0, 300.0], molecule="CH3F", label="legacy")
         assert r.metadata["backend"] == "legacy"
         assert r.optimized["frequencies_cm1"] == [100.0, 200.0, 300.0]
 
-    def test_detailed_report_produces_tables(self):
+    def test_detailed_report_produces_tables(self) -> None:
         """detailed_report() should return TablePrinter objects for a complete result."""
         r = BenchmarkResult(
             metadata={"backend": "Fake", "optimizer": "L-BFGS-B"},
@@ -136,7 +138,7 @@ class TestDiagnosticsHelpers:
             s = t.to_string()
             assert len(s) > 0
 
-    def test_full_report_no_crash(self):
+    def test_full_report_no_crash(self) -> None:
         """full_report() shouldn't crash on a list of results."""
         results = [
             BenchmarkResult(
@@ -180,7 +182,7 @@ class TestBenchmarkPipeline:
     """
 
     @pytest.fixture(scope="class")
-    def result(self):
+    def result(self) -> BenchmarkResult:
         from q2mm.backends.mm.openmm import OpenMMEngine
         from q2mm.diagnostics.benchmark import run_benchmark
         from q2mm.models.molecule import Q2MMMolecule
@@ -202,7 +204,7 @@ class TestBenchmarkPipeline:
             level_of_theory="B3LYP/6-31+G(d)",
         )
 
-    def test_result_has_all_sections(self, result):
+    def test_result_has_all_sections(self, result: BenchmarkResult) -> None:
         assert result.metadata["backend"] == "OpenMM"
         assert result.qm_reference["frequencies_cm1"]
         assert result.default_ff is not None
@@ -225,19 +227,21 @@ class TestBenchmarkPipeline:
             "the optimizer still makes meaningful progress."
         ),
     )
-    def test_optimization_converged(self, result):
+    def test_optimization_converged(self, result: BenchmarkResult) -> None:
         """Strict convergence check — optimizer hit its gradient tolerance."""
         assert result.optimized["converged"]
 
-    def test_optimization_improved(self, result):
-        """Hard requirement: optimizer must improve the score, even if it
-        doesn't formally converge."""
+    def test_optimization_improved(self, result: BenchmarkResult) -> None:
+        """Verify optimizer improves the score.
+
+        Hard requirement: even if it doesn't formally converge.
+        """
         assert result.optimized["final_score"] < result.optimized["initial_score"]
 
-    def test_optimized_rmsd_better_than_default(self, result):
+    def test_optimized_rmsd_better_than_default(self, result: BenchmarkResult) -> None:
         assert result.optimized["rmsd"] < result.default_ff["rmsd"]
 
-    def test_json_roundtrip(self, result):
+    def test_json_roundtrip(self, result: BenchmarkResult) -> None:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = Path(f.name)
         try:
@@ -248,7 +252,7 @@ class TestBenchmarkPipeline:
         finally:
             path.unlink(missing_ok=True)
 
-    def test_report_generation(self, result, capsys):
+    def test_report_generation(self, result: BenchmarkResult, capsys: pytest.CaptureFixture[str]) -> None:
         """detailed_report + full_report work on real data."""
         tables = detailed_report(result)
         assert len(tables) >= 3

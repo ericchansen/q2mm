@@ -14,16 +14,23 @@ Ethane GS/TS tests validate the same pipeline on a simpler molecule.
 References
 ----------
 - Issue: https://github.com/ericchansen/q2mm/issues/74
+
 """
 
+from __future__ import annotations
+
 import json
+import re
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
-import re
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.optimizers.objective import ReferenceData
 
 from test._shared import GS_FCHK, REPO_ROOT, TS_FCHK
 
@@ -87,14 +94,14 @@ def _qm_frequencies_from_hessian(
 
 
 def _build_frequency_reference(
-    qm_freqs,
-    mm_all_freqs,
+    qm_freqs: np.ndarray,
+    mm_all_freqs: np.ndarray,
     *,
     threshold: float = 50.0,
     weight: float = 0.001,
     molecule_idx: int = 0,
-    ref=None,
-):
+    ref: ReferenceData | None = None,
+) -> tuple[ReferenceData, list[float]]:
     """Build (or extend) a ReferenceData with frequency observations.
 
     Maps QM real frequencies (>threshold) to MM real-mode indices.
@@ -127,14 +134,16 @@ class TestRhEnamideSeminarioTiming:
     """
 
     @pytest.fixture(scope="class")
-    def rh_molecules(self):
+    def rh_molecules(self) -> list[Q2MMMolecule]:
         """Load all 9 rh-enamide structures + Hessians."""
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.mark.slow
-    def test_seminario_pipeline_timing(self, rh_molecules, capsys):
+    def test_seminario_pipeline_timing(
+        self, rh_molecules: list[Q2MMMolecule], capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Time the full Seminario pipeline on 9 rh-enamide structures."""
         from q2mm.models.forcefield import ForceField
         from q2mm.models.seminario import estimate_force_constants
@@ -157,7 +166,7 @@ class TestRhEnamideSeminarioTiming:
         assert len(ff.angles) > 0, "No angle parameters"
 
     @pytest.mark.slow
-    def test_seminario_is_deterministic(self, rh_molecules):
+    def test_seminario_is_deterministic(self, rh_molecules: list[Q2MMMolecule]) -> None:
         """Two consecutive Seminario runs produce identical results."""
         from q2mm.models.forcefield import ForceField
         from q2mm.models.seminario import estimate_force_constants
@@ -182,7 +191,7 @@ class TestRhEnamideSeminarioTiming:
 # ===========================================================================
 
 
-def _load_rh_enamide_molecules():
+def _load_rh_enamide_molecules() -> list[Q2MMMolecule]:
     """Load 9 rh-enamide structures with Jaguar Hessians."""
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.parsers import JaguarIn, MacroModel
@@ -219,7 +228,7 @@ class TestRhEnamideFullLoop:
     """
 
     @pytest.fixture(scope="class")
-    def pipeline_result(self):
+    def pipeline_result(self) -> dict[str, object]:
         """Run the full rh-enamide pipeline."""
         from q2mm.backends.mm import OpenMMEngine
         from q2mm.models.forcefield import ForceField
@@ -288,44 +297,44 @@ class TestRhEnamideFullLoop:
             "t_optimize": t_optimize,
         }
 
-    def test_loads_9_molecules(self, pipeline_result):
+    def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
         """All 9 rh-enamide structures are loaded."""
         assert pipeline_result["n_molecules"] == 9
 
-    def test_seminario_182_params(self, pipeline_result):
+    def test_seminario_182_params(self, pipeline_result: dict[str, object]) -> None:
         """Seminario produces the expected parameter count."""
         assert pipeline_result["n_params"] == 182
         assert pipeline_result["n_bonds"] == 8
         assert pipeline_result["n_angles"] == 23
         assert pipeline_result["n_vdws"] == 36
 
-    def test_all_molecules_have_frequencies(self, pipeline_result):
+    def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
         """Every molecule contributes frequency reference data."""
         for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
             assert n > 0, f"Molecule {i} contributed 0 frequency references"
 
-    def test_initial_score_is_finite(self, pipeline_result):
+    def test_initial_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
         """Initial penalty score is finite and positive."""
         score = pipeline_result["initial_score"]
         assert np.isfinite(score), f"Initial score is not finite: {score}"
         assert score > 0, f"Initial score should be positive: {score}"
 
-    def test_optimization_improves_score(self, pipeline_result):
+    def test_optimization_improves_score(self, pipeline_result: dict[str, object]) -> None:
         """Optimizer reduces the penalty score."""
         assert pipeline_result["final_score"] < pipeline_result["initial_score"]
 
-    def test_improvement_is_meaningful(self, pipeline_result):
+    def test_improvement_is_meaningful(self, pipeline_result: dict[str, object]) -> None:
         """Score improves by at least 1%."""
         assert pipeline_result["improvement"] > 0.01, (
             f"Improvement too small: {pipeline_result['improvement'] * 100:.1f}%"
         )
 
-    def test_optimized_params_differ_from_seminario(self, pipeline_result):
+    def test_optimized_params_differ_from_seminario(self, pipeline_result: dict[str, object]) -> None:
         """Optimizer actually modifies parameters."""
         diff = np.abs(pipeline_result["optimized_params"] - pipeline_result["seminario_params"])
         assert np.any(diff > 1e-6), "Optimizer didn't change any parameters"
 
-    def test_timing_report(self, pipeline_result, capsys):
+    def test_timing_report(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
         """Log timing (informational, never fails)."""
         r = pipeline_result
         with capsys.disabled():
@@ -354,13 +363,13 @@ class TestEthaneFullLoop:
     """
 
     @pytest.fixture(scope="class")
-    def golden(self):
+    def golden(self) -> dict[str, object]:
         if not ETHANE_GS_GOLDEN.exists():
             pytest.skip("Golden fixture not found; run generate_golden_fixtures.py")
         return _load_golden(ETHANE_GS_GOLDEN)
 
     @pytest.fixture(scope="class")
-    def pipeline_result(self):
+    def pipeline_result(self) -> dict[str, object]:
         """Run the full pipeline and return all intermediate results."""
         from q2mm.backends.mm import OpenMMEngine
         from q2mm.models.seminario import estimate_force_constants
@@ -414,7 +423,7 @@ class TestEthaneFullLoop:
 
     # ---- Seminario stage ----
 
-    def test_seminario_params_match_golden(self, pipeline_result, golden):
+    def test_seminario_params_match_golden(self, pipeline_result: dict[str, object], golden: dict[str, object]) -> None:
         """Seminario parameter vector matches golden fixture exactly."""
         np.testing.assert_allclose(
             pipeline_result["seminario_params"],
@@ -423,7 +432,9 @@ class TestEthaneFullLoop:
             err_msg="Seminario params diverged from golden fixture",
         )
 
-    def test_seminario_score_matches_golden(self, pipeline_result, golden):
+    def test_seminario_score_matches_golden(
+        self, pipeline_result: dict[str, object], golden: dict[str, object]
+    ) -> None:
         """Seminario penalty score matches golden fixture."""
         np.testing.assert_allclose(
             pipeline_result["seminario_score"],
@@ -432,7 +443,7 @@ class TestEthaneFullLoop:
             err_msg="Seminario penalty score diverged from golden",
         )
 
-    def test_seminario_has_reasonable_params(self, pipeline_result):
+    def test_seminario_has_reasonable_params(self, pipeline_result: dict[str, object]) -> None:
         """Seminario parameters are physically reasonable for ethane."""
         params = pipeline_result["seminario_params"]
         # 8 params: [CH_k, CH_r0, CC_k, CC_r0, HCH_k, HCH_eq, CCH_k, CCH_eq]
@@ -448,7 +459,7 @@ class TestEthaneFullLoop:
 
     # ---- Optimization stage ----
 
-    def test_optimized_score_improves(self, pipeline_result):
+    def test_optimized_score_improves(self, pipeline_result: dict[str, object]) -> None:
         """Optimizer strictly improves the score over Seminario initial guess."""
         assert pipeline_result["optimized_score"] < pipeline_result["seminario_score"], (
             f"Optimizer failed to improve score: "
@@ -456,7 +467,9 @@ class TestEthaneFullLoop:
             f"{pipeline_result['seminario_score']:.6f}"
         )
 
-    def test_optimized_score_matches_golden(self, pipeline_result, golden):
+    def test_optimized_score_matches_golden(
+        self, pipeline_result: dict[str, object], golden: dict[str, object]
+    ) -> None:
         """Optimized penalty score matches golden fixture."""
         np.testing.assert_allclose(
             pipeline_result["optimized_score"],
@@ -465,7 +478,7 @@ class TestEthaneFullLoop:
             err_msg="Optimized penalty score diverged from golden",
         )
 
-    def test_optimized_params_match_golden(self, pipeline_result, golden):
+    def test_optimized_params_match_golden(self, pipeline_result: dict[str, object], golden: dict[str, object]) -> None:
         """Optimized parameter vector matches golden fixture."""
         np.testing.assert_allclose(
             pipeline_result["optimized_params"],
@@ -474,7 +487,7 @@ class TestEthaneFullLoop:
             err_msg="Optimized params diverged from golden fixture",
         )
 
-    def test_improvement_matches_golden(self, pipeline_result, golden):
+    def test_improvement_matches_golden(self, pipeline_result: dict[str, object], golden: dict[str, object]) -> None:
         """Improvement percentage matches golden fixture."""
         np.testing.assert_allclose(
             pipeline_result["improvement"] * 100,
@@ -485,7 +498,7 @@ class TestEthaneFullLoop:
 
     # ---- Frequency comparison ----
 
-    def test_qm_frequencies_match_golden(self, pipeline_result, golden):
+    def test_qm_frequencies_match_golden(self, pipeline_result: dict[str, object], golden: dict[str, object]) -> None:
         """QM frequencies extracted from Hessian match golden fixture count."""
         # pipeline_result["qm_real"] is truncated to match MM real-mode count
         # Golden stores all real QM frequencies; compare the matched subset
@@ -499,7 +512,7 @@ class TestEthaneFullLoop:
 
     # ---- Runtime benchmark ----
 
-    def test_full_loop_timing(self, pipeline_result, capsys):
+    def test_full_loop_timing(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
         """Log full-loop timing (informational, never fails)."""
         with capsys.disabled():
             print(
@@ -529,7 +542,7 @@ class TestEthaneTSSeminario:
     """
 
     @pytest.fixture(scope="class")
-    def ts_result(self):
+    def ts_result(self) -> dict[str, object]:
         from q2mm.models.seminario import estimate_force_constants
         from q2mm.optimizers.objective import ReferenceData
 
@@ -541,7 +554,7 @@ class TestEthaneTSSeminario:
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
         return {"mol": mol, "ff": ff, "qm_freqs": qm_freqs}
 
-    def test_ts_has_imaginary_frequency(self, ts_result):
+    def test_ts_has_imaginary_frequency(self, ts_result: dict[str, object]) -> None:
         """TS should have at least one imaginary (negative) frequency."""
         freqs = ts_result["qm_freqs"]
         imaginary = [f for f in freqs if f < -50.0]
@@ -549,7 +562,7 @@ class TestEthaneTSSeminario:
         # Ethane TS: ~305i cm⁻¹ torsional rotation
         assert any(-500 < f < -100 for f in imaginary), f"Imaginary freq out of expected range: {imaginary}"
 
-    def test_ts_seminario_params_reasonable(self, ts_result):
+    def test_ts_seminario_params_reasonable(self, ts_result: dict[str, object]) -> None:
         """TS Seminario bond/angle params should be close to GS values."""
         ff = ts_result["ff"]
         for b in ff.bonds:
@@ -559,7 +572,7 @@ class TestEthaneTSSeminario:
             assert 3.5 < a.force_constant < 360.0, f"Angle FC out of range: {a}"
             assert 80.0 < a.equilibrium < 130.0, f"Angle eq out of range: {a}"
 
-    def test_ts_seminario_matches_gs_approximately(self, ts_result):
+    def test_ts_seminario_matches_gs_approximately(self, ts_result: dict[str, object]) -> None:
         """TS and GS Seminario parameters should be similar (same molecule)."""
         from q2mm.models.seminario import estimate_force_constants
         from q2mm.optimizers.objective import ReferenceData
@@ -592,7 +605,7 @@ class TestEthaneTSSeminario:
 class TestPipelineDeterminism:
     """Verify the full pipeline produces identical results across runs."""
 
-    def test_full_pipeline_is_deterministic(self):
+    def test_full_pipeline_is_deterministic(self) -> None:
         """Two independent pipeline runs yield identical scores and params."""
         from q2mm.backends.mm import OpenMMEngine
         from q2mm.models.seminario import estimate_force_constants

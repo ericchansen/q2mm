@@ -10,6 +10,8 @@ Reference:
     Seminario, Int. J. Quantum Chem. 1996, 60, 1271-1277.
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 import logging
 import numpy as np
@@ -20,7 +22,7 @@ from q2mm.constants import AU_TO_MDYN_ANGLE as _AU_TO_MDYN_ANGLE
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 
 # AU → canonical: Hartree/Bohr² → kcal/(mol·Å²) for bonds,
 #                  Hartree/rad² → kcal/(mol·rad²) for angles.
@@ -54,7 +56,7 @@ def _coerce_molecules(
     return molecules
 
 
-def _match_mode(param, items: list) -> str:
+def _match_mode(param: BondParam | AngleParam, items: list) -> str:
     """Choose the most specific available matching strategy for parameters."""
     if param.ff_row is not None and any(item.ff_row is not None for item in items):
         return "ff_row"
@@ -65,7 +67,7 @@ def _match_mode(param, items: list) -> str:
 
 def _collect_matching(
     molecules: list[Q2MMMolecule],
-    param,
+    param: BondParam | AngleParam,
     items_attr: str,
     element_key_attr: str,
 ) -> list[tuple[Q2MMMolecule, object]]:
@@ -145,6 +147,7 @@ def seminario_bond_fc(
 
     Returns:
         Force constant in kcal/(mol·Å²) (scaled)
+
     """
     # Bidirectional: compute i->j and j->i, then average
     f_ij = _project_hessian_block(hessian, atom_i, atom_j, coords, au_units)
@@ -183,6 +186,7 @@ def seminario_angle_fc(
 
     Returns:
         Force constant in kcal/(mol·rad²) (scaled)
+
     """
     if au_units:
         coords_work = coords / BOHR_TO_ANG
@@ -239,7 +243,7 @@ def seminario_angle_fc(
         k_kj += evals_kj[n] * np.abs(np.dot(evecs_kj[:, n], u_kj))
     k_kj = k_kj.real
 
-    # Combine: 1/k_angle = 1/(k_ij * r_ij^2) + 1/(k_kj * r_kj^2)
+    # Combine via reciprocal sum: 1/k = 1/(k_ij·r_ij²) + 1/(k_kj·r_kj²)
     # Q2MM approximation (avoids FUERZA's 2x overestimate for angles)
     denom_ij = k_ij * r_ij_len**2
     denom_kj = k_kj * r_kj_len**2
@@ -288,6 +292,7 @@ def estimate_force_constants(
 
     Returns:
         ForceField with estimated parameters
+
     """
     molecules = _coerce_molecules(molecule)
     if any(item.hessian is None for item in molecules):
@@ -448,6 +453,7 @@ def estimate_force_constants_method_e(
                 ``"method_d"`` — ForceField from Method D,
                 ``"method_c"`` — ForceField from Method C,
                 ``"problematic"`` — dict from ``detect_problematic_params``.
+
     """
     common_kwargs = dict(
         forcefield=forcefield,

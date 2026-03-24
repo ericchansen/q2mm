@@ -49,7 +49,7 @@ def _water_ff(
 
 
 class TestReferenceData:
-    def test_add_energy(self):
+    def test_add_energy(self) -> None:
         ref = ReferenceData()
         ref.add_energy(10.0, weight=2.0, label="TS energy")
         assert ref.n_observations == 1
@@ -57,7 +57,7 @@ class TestReferenceData:
         assert ref.values[0].value == 10.0
         assert ref.values[0].weight == 2.0
 
-    def test_add_multiple_types(self):
+    def test_add_multiple_types(self) -> None:
         ref = ReferenceData()
         ref.add_energy(5.0)
         ref.add_frequency(1200.0, data_idx=0)
@@ -65,7 +65,7 @@ class TestReferenceData:
         ref.add_bond_angle(109.5, data_idx=0)
         assert ref.n_observations == 4
 
-    def test_multi_molecule(self):
+    def test_multi_molecule(self) -> None:
         ref = ReferenceData()
         ref.add_energy(5.0, molecule_idx=0)
         ref.add_energy(8.0, molecule_idx=1)
@@ -78,7 +78,7 @@ class TestReferenceData:
 
 
 class TestObjectiveFunction:
-    def test_callable(self):
+    def test_callable(self) -> None:
         """Objective is callable and returns a float."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -94,7 +94,7 @@ class TestObjectiveFunction:
         # At the target parameters, residual should be ~0
         assert score == pytest.approx(0.0, abs=1e-10)
 
-    def test_perturbed_params_increase_score(self):
+    def test_perturbed_params_increase_score(self) -> None:
         """Perturbing parameters away from reference should increase score."""
         # Use a displaced geometry so energy depends on force constant
         mol = _diatomic(0.80)  # displaced from r0=0.74
@@ -112,7 +112,7 @@ class TestObjectiveFunction:
         perturbed_score = obj(perturbed)
         assert perturbed_score > base_score
 
-    def test_residuals_vector(self):
+    def test_residuals_vector(self) -> None:
         """residuals() returns a weighted residual vector."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -126,7 +126,7 @@ class TestObjectiveFunction:
         assert r.shape == (1,)
         assert r[0] == pytest.approx(2.0, abs=0.1)  # weight * (ref - calc) ≈ 2*1
 
-    def test_tracks_history(self):
+    def test_tracks_history(self) -> None:
         """Objective tracks evaluation count and score history."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -142,7 +142,7 @@ class TestObjectiveFunction:
         assert obj.n_eval == 3
         assert len(obj.history) == 3
 
-    def test_reset(self):
+    def test_reset(self) -> None:
         """reset() clears history."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -156,7 +156,7 @@ class TestObjectiveFunction:
         assert obj.n_eval == 0
         assert len(obj.history) == 0
 
-    def test_frequency_reference(self):
+    def test_frequency_reference(self) -> None:
         """Objective works with frequency reference data."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -171,7 +171,7 @@ class TestObjectiveFunction:
         score = obj(ff.get_param_vector())
         assert score == pytest.approx(0.0, abs=1e-6)
 
-    def test_out_of_range_data_idx_raises(self):
+    def test_out_of_range_data_idx_raises(self) -> None:
         """Out-of-range data_idx raises IndexError, not silent zero."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
@@ -189,13 +189,13 @@ class TestObjectiveFunction:
 
 
 class TestForceFieldBounds:
-    def test_bounds_length_matches_param_vector(self):
+    def test_bounds_length_matches_param_vector(self) -> None:
         ff = _water_ff()
         bounds = ff.get_bounds()
         vec = ff.get_param_vector()
         assert len(bounds) == len(vec)
 
-    def test_bounds_are_tuples(self):
+    def test_bounds_are_tuples(self) -> None:
         ff = _h2_ff()
         bounds = ff.get_bounds()
         for lo, hi in bounds:
@@ -203,7 +203,7 @@ class TestForceFieldBounds:
             assert isinstance(hi, float)
             assert lo < hi
 
-    def test_initial_params_within_bounds(self):
+    def test_initial_params_within_bounds(self) -> None:
         ff = _water_ff()
         vec = ff.get_param_vector()
         bounds = ff.get_bounds()
@@ -215,7 +215,7 @@ class TestForceFieldBounds:
 
 
 class TestScipyOptimizer:
-    def test_optimize_to_known_energy(self):
+    def test_optimize_to_known_energy(self) -> None:
         """Optimizer can fit force constant to match target energies."""
         # Use two displaced geometries so both k and r0 are identifiable
         mol_short = _diatomic(0.70)
@@ -237,7 +237,7 @@ class TestScipyOptimizer:
         assert result.final_score < 1e-3
         assert result.improvement > 0.9
 
-    def test_nelder_mead(self):
+    def test_nelder_mead(self) -> None:
         """Nelder-Mead can optimize without bounds."""
         mol = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -254,7 +254,7 @@ class TestScipyOptimizer:
 
         assert result.final_score < result.initial_score
 
-    def test_least_squares(self):
+    def test_least_squares(self) -> None:
         """least_squares method uses residual vector."""
         mol = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -272,7 +272,7 @@ class TestScipyOptimizer:
         assert result.success
         assert result.final_score < 1e-6
 
-    def test_result_summary(self):
+    def test_result_summary(self) -> None:
         """OptimizationResult.summary() returns readable string."""
         mol = _diatomic(0.74)
         ff = _h2_ff(k=359.7, r0=0.74)
@@ -289,7 +289,7 @@ class TestScipyOptimizer:
         assert "Score" in summary
 
     @pytest.mark.medium
-    def test_water_bond_and_angle(self):
+    def test_water_bond_and_angle(self) -> None:
         """Optimizer can recover both bond and angle parameters."""
         mol = _water()
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
@@ -312,7 +312,7 @@ class TestScipyOptimizer:
         assert result.final_score < result.initial_score
         assert result.improvement > 0.5
 
-    def test_params_applied_to_ff(self):
+    def test_params_applied_to_ff(self) -> None:
         """After optimization, forcefield has the optimized parameters."""
         mol_short = _diatomic(0.70)
         mol_long = _diatomic(0.80)

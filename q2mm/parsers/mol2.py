@@ -28,6 +28,7 @@ class Mol2(File):
     Note:
         Format for the data in the file can be found by searching
         Tripos Mol2 File Format SYBYL.
+
     """
 
     TRIPOS_FLAG = "@<TRIPOS>"
@@ -37,11 +38,12 @@ class Mol2(File):
 
     __slots__ = ["_lines", "path", "directory", "filename", "_structures"]
 
-    def __init__(self, path: str):
+    def __init__(self, path: str) -> None:
         """Initialize a Mol2 instance.
 
         Args:
             path (str): Absolute path of the mol2 file.
+
         """
         super().__init__(path)
         self._structures: list[Structure] = None
@@ -58,6 +60,7 @@ class Mol2(File):
 
         .. deprecated::
             Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
+
         """
         if self._structures is None:
             self.parse_lines()
@@ -70,7 +73,7 @@ class Mol2(File):
 
         return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
-    def parse_lines(self):
+    def parse_lines(self) -> None:
         """Parse file lines to extract Structure objects into ``self.structures``.
 
         It is safe to parse this with ``split`` because the mol2 format
@@ -105,6 +108,7 @@ class Mol2(File):
 
         Returns:
             (list[Atom]): Atom objects parsed from *atom_lines*.
+
         """
         atoms = []
         for atom_entry in atom_lines:
@@ -143,6 +147,7 @@ class Mol2(File):
 
         Returns:
             (list[Bond]): Bond objects parsed from *bond_lines*.
+
         """
         bonds = []
         for bond_entry in bond_lines:
@@ -181,6 +186,7 @@ class Mol2(File):
         Returns:
             (Structure): The Structure object parsed from
                 *structure_chunk* data.
+
         """
         tripos_chunks = structure_chunk.split(self.TRIPOS_FLAG)
         molecule_lines = tripos_chunks[0].split("\n")

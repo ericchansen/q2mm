@@ -24,11 +24,11 @@ except ImportError:
 
 @pytest.mark.psi4
 class TestPsi4EngineAvailability:
-    def test_name(self):
+    def test_name(self) -> None:
         engine = Psi4Engine()
         assert "Psi4" in engine.name
 
-    def test_is_available(self):
+    def test_is_available(self) -> None:
         engine = Psi4Engine()
         assert engine.is_available()
 
@@ -42,15 +42,15 @@ class TestPsi4EnergyCH3F:
     """
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self) -> None:
         self.engine = Psi4Engine(charge=0, multiplicity=1)
         self.xyz = str(QM_REF / "ch3f-optimized.xyz")
 
-    def test_energy_returns_float(self):
+    def test_energy_returns_float(self) -> None:
         energy = self.engine.energy(self.xyz)
         assert isinstance(energy, float)
 
-    def test_energy_matches_reference(self):
+    def test_energy_matches_reference(self) -> None:
         """Energy should match the saved reference within 1e-5 Ha."""
         energy = self.engine.energy(self.xyz)
         ref_energy = -139.751112913417
@@ -61,7 +61,7 @@ class TestPsi4EnergyCH3F:
 class TestPsi4EngineLoadMolecule:
     """Test that Psi4Engine can load molecules from different sources."""
 
-    def test_load_from_xyz_file(self):
+    def test_load_from_xyz_file(self) -> None:
         engine = Psi4Engine(charge=0)
         xyz = str(QM_REF / "ch3f-optimized.xyz")
         if not Path(xyz).exists():
@@ -69,7 +69,7 @@ class TestPsi4EngineLoadMolecule:
         energy = engine.energy(xyz)
         assert np.isfinite(energy)
 
-    def test_load_from_atoms_coords(self):
+    def test_load_from_atoms_coords(self) -> None:
         engine = Psi4Engine(charge=0)
         atoms = ["H", "H"]
         coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]])
@@ -83,15 +83,15 @@ class TestPsi4EngineLoadMolecule:
 class TestPsi4HessianFixture:
     """Verify the saved Hessian fixture is valid (no Psi4 needed)."""
 
-    def test_hessian_shape(self):
+    def test_hessian_shape(self) -> None:
         hess = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
         assert hess.shape == (18, 18)
 
-    def test_hessian_symmetric(self):
+    def test_hessian_symmetric(self) -> None:
         hess = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
         np.testing.assert_allclose(hess, hess.T, atol=1e-10, err_msg="Hessian should be symmetric")
 
-    def test_hessian_has_negative_eigenvalue(self):
+    def test_hessian_has_negative_eigenvalue(self) -> None:
         """TS Hessian should have exactly 1 negative eigenvalue."""
         hess = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
         eigenvalues = np.linalg.eigvalsh(hess)

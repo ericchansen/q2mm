@@ -67,7 +67,7 @@ def _make_water_objective(
 
 
 class TestSubspaceObjective:
-    def test_full_subspace_matches_full_objective(self):
+    def test_full_subspace_matches_full_objective(self) -> None:
         """When all indices are active, SubspaceObjective == ObjectiveFunction."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -84,7 +84,7 @@ class TestSubspaceObjective:
         sub_obj = SubspaceObjective(obj, [0, 1], full_vec)
         assert sub_obj(full_vec) == pytest.approx(obj(full_vec), rel=1e-10)
 
-    def test_single_param_subspace(self):
+    def test_single_param_subspace(self) -> None:
         """Optimising one param while holding the other fixed."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -105,7 +105,7 @@ class TestSubspaceObjective:
         # Score at true k should be lower
         assert score_at_5 < score_at_7
 
-    def test_residuals(self):
+    def test_residuals(self) -> None:
         """residuals() returns array of correct length."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -124,7 +124,7 @@ class TestSubspaceObjective:
         assert isinstance(residuals, np.ndarray)
         assert len(residuals) == 1  # one reference data point
 
-    def test_get_bounds(self):
+    def test_get_bounds(self) -> None:
         """Bounds are correctly subset."""
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         mol = make_diatomic(0.74)
@@ -139,7 +139,7 @@ class TestSubspaceObjective:
         all_bounds = guess_ff.get_bounds()
         assert bounds == [all_bounds[1]]
 
-    def test_empty_indices_raises(self):
+    def test_empty_indices_raises(self) -> None:
         guess_ff = _h2_ff()
         mol = make_diatomic(0.74)
         engine = OpenMMEngine()
@@ -155,7 +155,7 @@ class TestSubspaceObjective:
 
 
 class TestSensitivity:
-    def test_basic_ranking(self):
+    def test_basic_ranking(self) -> None:
         """Sensitivity analysis returns valid ranking."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -175,7 +175,7 @@ class TestSensitivity:
         assert set(sens.ranking.tolist()) == {0, 1}
         assert sens.n_evals == 6  # 1 baseline + 2*2 params + 1 restore
 
-    def test_abs_d1_metric(self):
+    def test_abs_d1_metric(self) -> None:
         """abs_d1 metric ranks by largest normalised |d1/step| descending."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -194,7 +194,7 @@ class TestSensitivity:
         normalised = np.where(step_sizes != 0, sens.d1 / step_sizes, 0.0)
         assert np.abs(normalised[sens.ranking[0]]) >= np.abs(normalised[sens.ranking[1]])
 
-    def test_known_insensitive_param(self):
+    def test_known_insensitive_param(self) -> None:
         """A parameter at its optimal value should have near-zero d1."""
         mol = make_diatomic(0.74)  # at equilibrium for r0=0.74
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -212,7 +212,7 @@ class TestSensitivity:
         # d1 should be near zero for both params (we're at the minimum)
         assert np.all(np.abs(sens.d1) < 0.01)
 
-    def test_invalid_metric_raises(self):
+    def test_invalid_metric_raises(self) -> None:
         mol = make_diatomic(0.74)
         ff = _h2_ff()
         engine = OpenMMEngine()
@@ -229,7 +229,7 @@ class TestSensitivity:
 
 class TestOptimizationLoop:
     @pytest.mark.medium
-    def test_loop_improves_score(self):
+    def test_loop_improves_score(self) -> None:
         """OptimizationLoop should improve over a single-shot Nelder-Mead."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
@@ -256,7 +256,7 @@ class TestOptimizationLoop:
         assert result.improvement > 0
 
     @pytest.mark.medium
-    def test_loop_tracks_sensitivity(self):
+    def test_loop_tracks_sensitivity(self) -> None:
         """Each cycle should produce a sensitivity result."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
@@ -280,7 +280,7 @@ class TestOptimizationLoop:
 
 
 class TestConvergence:
-    def test_stops_at_convergence(self):
+    def test_stops_at_convergence(self) -> None:
         """Loop should stop early if already converged."""
         # Use true params as guess — already optimal, should converge immediately
         true_ff = _h2_ff(k=359.7, r0=0.74)
@@ -305,7 +305,7 @@ class TestConvergence:
         assert result.success
         assert result.n_cycles <= 2
 
-    def test_max_cycles_limit(self):
+    def test_max_cycles_limit(self) -> None:
         """Loop should respect max_cycles."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         guess_ff = _water_ff(bond_k=215.8, bond_r0=1.2, angle_k=21.6, angle_eq=120.0)
@@ -327,7 +327,7 @@ class TestConvergence:
         assert "max cycles" in result.message
 
     @pytest.mark.medium
-    def test_summary_output(self):
+    def test_summary_output(self) -> None:
         """LoopResult.summary() produces readable output."""
         true_ff = _h2_ff(k=359.7, r0=0.74)
         guess_ff = _h2_ff(k=503.6, r0=0.78)

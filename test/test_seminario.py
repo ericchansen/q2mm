@@ -16,21 +16,21 @@ RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "rh-enamide"
 class TestGaussLogParsing(unittest.TestCase):
     """Test that GaussLog can parse ethane Gaussian output."""
 
-    def test_parse_gs_log(self):
+    def test_parse_gs_log(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         self.assertGreater(len(log.structures), 0, "No structures parsed from GS.log")
 
-    def test_gs_log_has_atoms(self):
+    def test_gs_log_has_atoms(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         struct = log.structures[0]
         self.assertGreater(len(struct.atoms), 0, "No atoms in parsed structure")
 
-    def test_gs_log_has_hessian(self):
+    def test_gs_log_has_hessian(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         struct = log.structures[0]
         self.assertIsNotNone(struct.hess, "No Hessian parsed from GS.log")
 
-    def test_parse_ts_log(self):
+    def test_parse_ts_log(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "TS.log"))
         self.assertGreater(len(log.structures), 0, "No structures parsed from TS.log")
 
@@ -39,17 +39,17 @@ class TestGaussLogParsing(unittest.TestCase):
 class TestMol2Parsing(unittest.TestCase):
     """Test that Mol2 can parse ethane structure."""
 
-    def test_parse_mol2(self):
+    def test_parse_mol2(self) -> None:
         mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
         self.assertGreater(len(mol2.structures), 0, "No structures parsed from mol2")
 
-    def test_mol2_atom_count(self):
+    def test_mol2_atom_count(self) -> None:
         mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
         struct = mol2.structures[0]
         # Ethane: C2H6 = 8 atoms
         self.assertEqual(len(struct.atoms), 8, "Ethane should have 8 atoms")
 
-    def test_mol2_bond_count(self):
+    def test_mol2_bond_count(self) -> None:
         mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
         struct = mol2.structures[0]
         # Ethane: 7 bonds (1 C-C + 6 C-H)
@@ -60,18 +60,18 @@ class TestMol2Parsing(unittest.TestCase):
 class TestMM3FFParsing(unittest.TestCase):
     """Test MM3 force field parsing from q2mm.parsers."""
 
-    def setUp(self):
+    def setUp(self) -> None:
         self.ff = MM3(str(RH_SEMINARIO_DIR / "mm3.fld"))
         self.ff.import_ff()
 
-    def test_parse_mm3(self):
+    def test_parse_mm3(self) -> None:
         self.assertGreater(len(self.ff.params), 0, "No parameters parsed")
 
-    def test_mm3_has_bonds(self):
+    def test_mm3_has_bonds(self) -> None:
         bond_params = [p for p in self.ff.params if p.ptype in ("bf", "be")]
         self.assertGreater(len(bond_params), 0, "No bond parameters found")
 
-    def test_mm3_has_angles(self):
+    def test_mm3_has_angles(self) -> None:
         angle_params = [p for p in self.ff.params if p.ptype in ("af", "ae")]
         self.assertGreater(len(angle_params), 0, "No angle parameters found")
 
@@ -82,7 +82,7 @@ class TestMM3FFParsing(unittest.TestCase):
 class TestHessianMassWeighting(unittest.TestCase):
     """Test mass-weighting of Hessians."""
 
-    def test_mass_weight_roundtrip(self):
+    def test_mass_weight_roundtrip(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         mol2 = Mol2(str(ETHANE_DIR / "GS.mol2"))
         struct = mol2.structures[0]

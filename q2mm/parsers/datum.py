@@ -20,6 +20,7 @@ class Datum:
         atm_3: Third atom number.
         atm_4: Fourth atom number.
         ff_row: Force field file row number.
+
     """
 
     __slots__ = [
@@ -55,7 +56,7 @@ class Datum:
         atm_3: int | None = None,
         atm_4: int | None = None,
         ff_row: int | None = None,
-    ):
+    ) -> None:
         """Initialize a Datum instance.
 
         Args:
@@ -76,6 +77,7 @@ class Datum:
             atm_3 (int | None): Third atom number.
             atm_4 (int | None): Fourth atom number.
             ff_row (int | None): Force field file row number.
+
         """
         self._lbl = lbl
         self.val = val
@@ -103,6 +105,7 @@ class Datum:
         Returns:
             (str): A label string composed of type, source, index, and atom
                 fields joined by underscores.
+
         """
         if self._lbl is None:
             a = self.typ
@@ -114,7 +117,7 @@ class Datum:
         return self._lbl
 
 
-def remove_none(*args):
+def remove_none(*args: object) -> list:
     """Filter out None and empty-string values.
 
     Args:
@@ -122,5 +125,6 @@ def remove_none(*args):
 
     Returns:
         (list): A list containing only non-None, non-empty-string values.
+
     """
     return [x for x in args if x is not None and x != ""]

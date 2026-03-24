@@ -26,6 +26,7 @@ References
   University of Notre Dame, 2016).
 - Quinn, T.R. et al. *PLOS ONE* **2022**, 17, e0264960.
 - Upstream code: github.com/nsf-c-cas/q2mm-2 (``simplex.py``, ``opt.py``).
+
 """
 
 import logging
@@ -57,6 +58,7 @@ class SensitivityResult:
             (most sensitive first).
         metric (str): Which metric was used for ranking.
         n_evals (int): Number of objective function evaluations performed.
+
     """
 
     d1: np.ndarray
@@ -83,6 +85,7 @@ class LoopResult:
         sensitivity_results (list[SensitivityResult]): Full sensitivity
             analysis for each cycle.
         message (str): Human-readable summary.
+
     """
 
     success: bool
@@ -101,6 +104,7 @@ class LoopResult:
         Returns:
             float: Fractional improvement, or 0.0 if ``initial_score``
                 is zero.
+
         """
         if self.initial_score == 0:
             return 0.0
@@ -111,6 +115,7 @@ class LoopResult:
 
         Returns:
             str: Multi-line summary of the loop result.
+
         """
         lines = [
             f"OptimizationLoop: {'converged' if self.success else 'max cycles reached'}",
@@ -143,6 +148,7 @@ class SubspaceObjective:
             parameter vector that are active.
         full_vector (np.ndarray): The current full parameter vector
             (inactive params are taken from this snapshot).
+
     """
 
     def __init__(
@@ -150,7 +156,7 @@ class SubspaceObjective:
         objective: ObjectiveFunction,
         active_indices: list[int] | np.ndarray,
         full_vector: np.ndarray,
-    ):
+    ) -> None:
         """Initialize the subspace objective wrapper.
 
         Args:
@@ -161,6 +167,7 @@ class SubspaceObjective:
 
         Raises:
             ValueError: If ``active_indices`` is empty.
+
         """
         self.objective = objective
         self.active_indices = np.asarray(active_indices, dtype=int)
@@ -176,6 +183,7 @@ class SubspaceObjective:
 
         Returns:
             np.ndarray: Full parameter vector with active slots replaced.
+
         """
         full = self._base_vector.copy()
         full[self.active_indices] = sub_vector
@@ -189,6 +197,7 @@ class SubspaceObjective:
 
         Returns:
             float: Objective function score.
+
         """
         return float(self.objective(self.build_full_vector(sub_vector)))
 
@@ -200,15 +209,17 @@ class SubspaceObjective:
 
         Returns:
             np.ndarray: Weighted residual vector.
+
         """
         return self.objective.residuals(self.build_full_vector(sub_vector))
 
     def get_initial_vector(self) -> np.ndarray:
-        """The sub-vector corresponding to current active parameters.
+        """Return the sub-vector corresponding to current active parameters.
 
         Returns:
             np.ndarray: Copy of active parameter values from the base
                 vector.
+
         """
         return self._base_vector[self.active_indices].copy()
 
@@ -218,6 +229,7 @@ class SubspaceObjective:
         Returns:
             list[tuple[float, float]]: Lower/upper bound pairs for each
                 active parameter.
+
         """
         all_bounds = self.objective.forcefield.get_bounds()
         return [all_bounds[i] for i in self.active_indices]
@@ -264,6 +276,7 @@ def compute_sensitivity(
     Raises:
         ValueError: If ``step_sizes`` length does not match the parameter
             vector, or if *metric* is unknown.
+
     """
     ff = objective.forcefield
     x0 = ff.get_param_vector().copy()
@@ -370,6 +383,7 @@ class OptimizationLoop:
     References:
         Upstream ``loop.py:Loop.opt_loop()`` and
         ``simplex.py:Simplex.run()``.
+
     """
 
     def __init__(
@@ -386,7 +400,7 @@ class OptimizationLoop:
         sensitivity_metric: Literal["simp_var", "abs_d1"] = "simp_var",
         eps: float = 1e-3,
         verbose: bool = True,
-    ):
+    ) -> None:
         """Initialize the optimization loop.
 
         Args:
@@ -402,6 +416,7 @@ class OptimizationLoop:
             sensitivity_metric (str): Parameter ranking criterion.
             eps (float): Finite-difference step size.
             verbose (bool): Whether to log progress.
+
         """
         self.objective = objective
         self.max_params = max_params
@@ -421,6 +436,7 @@ class OptimizationLoop:
         Returns:
             LoopResult: Contains convergence status, per-cycle scores,
                 and selected parameter indices.
+
         """
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 

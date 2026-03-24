@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
@@ -85,7 +85,7 @@ class ReferenceData:
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a single energy reference value.
 
         Args:
@@ -93,6 +93,7 @@ class ReferenceData:
             weight (float): Weight for this entry.
             molecule_idx (int): Index into the molecules list.
             label (str): Human-readable label.
+
         """
         self.values.append(
             ReferenceValue(
@@ -112,7 +113,7 @@ class ReferenceData:
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a single vibrational frequency reference value.
 
         Args:
@@ -121,6 +122,7 @@ class ReferenceData:
             weight (float): Weight for this entry.
             molecule_idx (int): Index into the molecules list.
             label (str): Human-readable label.
+
         """
         self.values.append(
             ReferenceValue(
@@ -142,7 +144,7 @@ class ReferenceData:
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a single bond length reference value.
 
         Args:
@@ -158,6 +160,7 @@ class ReferenceData:
         Raises:
             ValueError: If neither ``atom_indices`` nor a non-negative
                 ``data_idx`` is provided.
+
         """
         if atom_indices is None and data_idx < 0:
             raise ValueError("Either atom_indices or data_idx must be provided for bond_length.")
@@ -182,7 +185,7 @@ class ReferenceData:
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a single bond angle reference value.
 
         Args:
@@ -198,6 +201,7 @@ class ReferenceData:
         Raises:
             ValueError: If neither ``atom_indices`` nor a non-negative
                 ``data_idx`` is provided.
+
         """
         if atom_indices is None and data_idx < 0:
             raise ValueError("Either atom_indices or data_idx must be provided for bond_angle.")
@@ -221,7 +225,7 @@ class ReferenceData:
         weight: float = 1.0,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a single torsion (dihedral) angle reference value.
 
         Args:
@@ -231,6 +235,7 @@ class ReferenceData:
             weight (float): Weight for this entry.
             molecule_idx (int): Index into the molecules list.
             label (str): Human-readable label.
+
         """
         self.values.append(
             ReferenceValue(
@@ -251,7 +256,7 @@ class ReferenceData:
         weight: float = 0.1,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add a diagonal element (eigenvalue) of the eigenmatrix.
 
         Args:
@@ -262,6 +267,7 @@ class ReferenceData:
                 first (imaginary) mode.
             molecule_idx (int): Index into the molecules list.
             label (str): Human-readable label.
+
         """
         self.values.append(
             ReferenceValue(
@@ -283,7 +289,7 @@ class ReferenceData:
         weight: float = 0.05,
         molecule_idx: int = 0,
         label: str = "",
-    ):
+    ) -> None:
         """Add an off-diagonal element of the eigenmatrix.
 
         Off-diagonal elements measure cross-coupling between modes.
@@ -298,6 +304,7 @@ class ReferenceData:
             weight (float): Weight for this entry. Legacy default: 0.05.
             molecule_idx (int): Index into the molecules list.
             label (str): Human-readable label.
+
         """
         self.values.append(
             ReferenceValue(
@@ -351,6 +358,7 @@ class ReferenceData:
 
         Returns:
             int: Number of entries added.
+
         """
         from q2mm.models.hessian import decompose, transform_to_eigenmatrix, extract_eigenmatrix_data
 
@@ -398,6 +406,7 @@ class ReferenceData:
 
         Returns:
             int: Length of the ``values`` list.
+
         """
         return len(self.values)
 
@@ -424,6 +433,7 @@ class ReferenceData:
 
         Returns:
             int: Number of frequency entries added.
+
         """
         freqs = np.asarray(frequencies, dtype=float).ravel()
         added = 0
@@ -483,6 +493,7 @@ class ReferenceData:
         Returns:
             ReferenceData: Populated with bond lengths, angles, and
                 (optionally) frequencies and eigenmatrix data.
+
         """
         w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
         if weights:
@@ -563,6 +574,7 @@ class ReferenceData:
         Raises:
             ValueError: If ``frequencies_list`` length does not match
                 ``molecules`` length.
+
         """
         if frequencies_list is not None and len(frequencies_list) != len(molecules):
             raise ValueError(
@@ -623,6 +635,7 @@ class ReferenceData:
             tuple[ReferenceData, Q2MMMolecule]: Populated reference data
                 and the parsed molecule (with Hessian attached if
                 available).
+
         """
         from q2mm.parsers.gaussian import GaussLog
         from q2mm.models.hessian import reform_hessian
@@ -684,6 +697,7 @@ class ReferenceData:
         Returns:
             tuple[ReferenceData, Q2MMMolecule]: Populated reference data
                 and the parsed molecule with Hessian.
+
         """
         path = Path(path)
         symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
@@ -725,6 +739,7 @@ def _parse_fchk(path: Path) -> tuple[list[str], np.ndarray, np.ndarray | None, i
 
     Raises:
         ValueError: If atomic numbers or coordinates cannot be parsed.
+
     """
     with open(path) as f:
         lines = f.readlines()
@@ -824,6 +839,7 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
 
     Returns:
         float: Dihedral angle in degrees, in the range [-180, 180].
+
     """
     b1 = np.asarray(p1) - np.asarray(p0)
     b2 = np.asarray(p2) - np.asarray(p1)
@@ -857,6 +873,7 @@ class ObjectiveFunction:
         engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
         molecules (list[Q2MMMolecule]): Training set molecules.
         reference (ReferenceData): QM/experimental reference observations.
+
     """
 
     def __init__(
@@ -865,7 +882,7 @@ class ObjectiveFunction:
         engine: MMEngine,
         molecules: list[Q2MMMolecule],
         reference: ReferenceData,
-    ):
+    ) -> None:
         """Initialize the objective function.
 
         Args:
@@ -875,6 +892,7 @@ class ObjectiveFunction:
             molecules (list[Q2MMMolecule]): Training set molecules.
             reference (ReferenceData): QM/experimental reference
                 observations.
+
         """
         self.forcefield = forcefield
         self.engine = engine
@@ -901,6 +919,7 @@ class ObjectiveFunction:
 
         Returns:
             float: Sum-of-squared weighted residuals.
+
         """
         self.forcefield.set_param_vector(param_vector)
 
@@ -919,6 +938,7 @@ class ObjectiveFunction:
 
         Returns:
             np.ndarray: Weighted residuals for each reference observation.
+
         """
         self.forcefield.set_param_vector(param_vector)
         r = self._compute_residuals()
@@ -931,6 +951,7 @@ class ObjectiveFunction:
 
         Returns:
             np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
+
         """
         calc_cache: dict[int, dict] = {}
 
@@ -983,6 +1004,7 @@ class ObjectiveFunction:
             NotImplementedError: If the reference data contains types
                 other than ``energy`` (Hessian/frequency/geometry gradient
                 support is planned).
+
         """
         if not self.engine.supports_analytical_gradients():
             raise TypeError(
@@ -1020,7 +1042,7 @@ class ObjectiveFunction:
 
         return total_grad
 
-    def _get_structure(self, mol_idx: int):
+    def _get_structure(self, mol_idx: int) -> Any:
         """Get the structure handle for a molecule, reusing if possible.
 
         For backends that support runtime parameter updates (OpenMM), this
@@ -1032,6 +1054,7 @@ class ObjectiveFunction:
 
         Returns:
             object: Engine-specific structure handle or raw molecule.
+
         """
         mol = self.molecules[mol_idx]
         if not self.engine.supports_runtime_params():
@@ -1050,6 +1073,7 @@ class ObjectiveFunction:
         Returns:
             dict: Calculated results keyed by data type (e.g.
                 ``"energy"``, ``"frequencies"``, ``"bond_lengths"``).
+
         """
         mol = self.molecules[mol_idx]
         structure = self._get_structure(mol_idx)
@@ -1131,6 +1155,7 @@ class ObjectiveFunction:
             KeyError: If atom-identity match fails.
             ValueError: If ``ref.kind`` is unknown or torsion is missing
                 atom indices.
+
         """
         if ref.kind == "energy":
             return calc["energy"]
@@ -1198,7 +1223,7 @@ class ObjectiveFunction:
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset evaluation counter, history, and cached engine handles."""
         self.n_eval = 0
         self.history.clear()

@@ -7,6 +7,8 @@ Requires: Tinker binaries on ``PATH`` or configured via *tinker_dir*
 parameter.  Download from: https://dasher.wustl.edu/tinker/
 """
 
+from __future__ import annotations
+
 import os
 import re
 import subprocess
@@ -16,6 +18,7 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
+from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
@@ -29,6 +32,7 @@ def _find_tinker_dir() -> str | None:
     Returns:
         str | None: Path to the Tinker bin directory, or ``None`` if not
             found.
+
     """
     # Check common locations
     candidates = [
@@ -61,6 +65,7 @@ def _exe(tinker_dir: str, name: str) -> str:
 
     Raises:
         FileNotFoundError: If the executable is not found in *tinker_dir*.
+
     """
     for ext in [".exe", ""]:
         path = os.path.join(tinker_dir, name + ext)
@@ -79,9 +84,12 @@ class TinkerEngine(MMEngine):
         bond_tolerance: Distance multiplier for bond detection. Two atoms
             are bonded when their distance is within
             ``bond_tolerance * (r_cov_A + r_cov_B)``. Default 1.3.
+
     """
 
-    def __init__(self, tinker_dir: str = None, params_file: str = None, bond_tolerance: float = 1.3):
+    def __init__(
+        self, tinker_dir: str | None = None, params_file: str | None = None, bond_tolerance: float = 1.3
+    ) -> None:
         """Initialize the Tinker engine.
 
         Args:
@@ -96,6 +104,7 @@ class TinkerEngine(MMEngine):
         Raises:
             FileNotFoundError: If Tinker binaries or the MM3 parameter file
                 cannot be found.
+
         """
         self._tinker_dir = tinker_dir or _find_tinker_dir()
         self._bond_tolerance = bond_tolerance
@@ -127,6 +136,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             str: ``"Tinker"``.
+
         """
         return "Tinker"
 
@@ -135,6 +145,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             frozenset[str]: ``{"mm3"}``.
+
         """
         return frozenset({"mm3"})
 
@@ -143,6 +154,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             bool: ``True`` if the executable can be located.
+
         """
         try:
             _exe(self._tinker_dir, "analyze")
@@ -150,7 +162,9 @@ class TinkerEngine(MMEngine):
         except FileNotFoundError:
             return False
 
-    def _write_tinker_xyz(self, structure, forcefield, workdir: str) -> str:
+    def _write_tinker_xyz(
+        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
+    ) -> str:
         """Write a Tinker-format XYZ file from a standard XYZ file.
 
         Args:
@@ -160,6 +174,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             Path to the Tinker XYZ file
+
         """
         # Default MM3 atom type mapping
         _default_type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
@@ -240,7 +255,7 @@ class TinkerEngine(MMEngine):
 
     @staticmethod
     def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = 1.3) -> dict:
-        """Simple distance-based bond detection using shared covalent radii.
+        """Detect bonds using distance-based shared covalent radii.
 
         Args:
             atoms: Element symbols for each atom.
@@ -249,6 +264,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             dict: Mapping of atom index to list of bonded atom indices.
+
         """
         from q2mm.models.molecule import COVALENT_RADII
 
@@ -265,7 +281,7 @@ class TinkerEngine(MMEngine):
 
     # Atomic numbers and masses for standalone .prm generation
     _ATOMIC_DATA: dict[str, tuple[int, float, int]] = {
-        # element: (atomic_number, mass, default_valence)
+        # Fields: atomic number, mass, default valence
         "H": (1, 1.008, 1),
         "He": (2, 4.003, 0),
         "C": (6, 12.011, 4),
@@ -278,7 +294,9 @@ class TinkerEngine(MMEngine):
         "Br": (35, 79.904, 1),
     }
 
-    def _write_standalone_prm(self, ff, prm_path: str, atoms: list[str], atom_type_numbers: list[int]):
+    def _write_standalone_prm(
+        self, ff: ForceField, prm_path: str, atoms: list[str], atom_type_numbers: list[int]
+    ) -> None:
         """Write a complete standalone Tinker .prm for a programmatic ForceField.
 
         Generates a self-contained parameter file with atom definitions,
@@ -296,6 +314,7 @@ class TinkerEngine(MMEngine):
         Note: This approach maps one Tinker type per element. Force fields
         that distinguish same-element params by env_id should use the
         template-based export path (source_format="tinker_prm").
+
         """
         # Build element → type_number map from the actual atoms + type numbers
         # used in the .xyz file (guarantees XYZ ↔ PRM consistency).
@@ -384,6 +403,7 @@ class TinkerEngine(MMEngine):
         Raises:
             RuntimeError: If the Tinker executable exits with a non-zero
                 return code.
+
         """
         exe = _exe(self._tinker_dir, exe_name)
         key_path = xyz_path.replace(".xyz", ".key")
@@ -395,7 +415,7 @@ class TinkerEngine(MMEngine):
             raise RuntimeError(f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}")
         return result
 
-    def energy(self, structure, forcefield=None) -> float:
+    def energy(self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
@@ -408,6 +428,7 @@ class TinkerEngine(MMEngine):
 
         Raises:
             RuntimeError: If the energy cannot be parsed from Tinker output.
+
         """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
@@ -417,7 +438,12 @@ class TinkerEngine(MMEngine):
                     return float(line.split(":")[1].split()[0])
         raise RuntimeError(f"Could not parse energy from Tinker output:\n{result.stdout}")
 
-    def minimize(self, structure, forcefield=None, rms_grad: float = 0.01) -> tuple:
+    def minimize(
+        self,
+        structure: str | Q2MMMolecule,
+        forcefield: ForceField | dict[str, int] | None = None,
+        rms_grad: float = 0.01,
+    ) -> tuple[float, list[str], np.ndarray]:
         """Energy-minimize structure.
 
         Args:
@@ -433,6 +459,7 @@ class TinkerEngine(MMEngine):
         Raises:
             RuntimeError: If the energy cannot be parsed from output or the
                 minimized coordinate file is not found.
+
         """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
@@ -464,7 +491,9 @@ class TinkerEngine(MMEngine):
 
             return energy, atoms, np.array(coords)
 
-    def hessian(self, structure, forcefield=None) -> np.ndarray:
+    def hessian(
+        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
+    ) -> np.ndarray:
         """Calculate MM Hessian matrix.
 
         Note:
@@ -481,10 +510,13 @@ class TinkerEngine(MMEngine):
         Raises:
             NotImplementedError: Always raised; use :meth:`frequencies`
                 instead.
+
         """
         raise NotImplementedError("Full Hessian extraction not yet implemented. Use frequencies() instead.")
 
-    def frequencies(self, structure, forcefield=None) -> list[float]:
+    def frequencies(
+        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
+    ) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
@@ -494,6 +526,7 @@ class TinkerEngine(MMEngine):
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
+
         """
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)

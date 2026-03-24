@@ -12,10 +12,13 @@ relative through Seminario eigenvalue decomposition — well below
 any physical significance.
 """
 
+from __future__ import annotations
+
 import json
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -47,7 +50,7 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def _natural_sort_key(path: Path):
+def _natural_sort_key(path: Path) -> list[int | str]:
     """Sort key that handles numeric components correctly (e.g. 2.in < 10.in)."""
     return [int(s) if s.isdigit() else s.lower() for s in re.split(r"(\d+)", path.name)]
 
@@ -57,17 +60,17 @@ def _int_keyed_map(values: dict[str, float | None]) -> dict[int, float | None]:
 
 
 @pytest.fixture(scope="module")
-def rh_enamide_fixture():
+def rh_enamide_fixture() -> dict[str, Any]:
     return _load_json(RH_FIXTURE_PATH)
 
 
 @pytest.fixture(scope="module")
-def sn2_fixture():
+def sn2_fixture() -> dict[str, Any]:
     return _load_json(SN2_FIXTURE_PATH)
 
 
 @pytest.fixture(scope="module")
-def rh_enamide_clean_results():
+def rh_enamide_clean_results() -> dict[str, ForceField]:
     structures = MacroModel(str(MMO_PATH)).structures
     hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)
     assert len(structures) == len(hessian_files)
@@ -103,7 +106,7 @@ def rh_enamide_clean_results():
     not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
     reason="Rh-enamide parity data or fixtures not found",
 )
-def test_from_structure_preserves_legacy_dof_metadata():
+def test_from_structure_preserves_legacy_dof_metadata() -> None:
     structures = MacroModel(str(MMO_PATH)).structures
     molecule = Q2MMMolecule.from_structure(structures[0], name="rh_enamide_1")
 
@@ -117,7 +120,9 @@ def test_from_structure_preserves_legacy_dof_metadata():
     not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
     reason="Rh-enamide parity data or fixtures not found",
 )
-def test_bond_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture):
+def test_bond_params_match_fixture(
+    rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
+) -> None:
     clean_start = rh_enamide_clean_results["clean_start"]
     clean_estimated = rh_enamide_clean_results["clean_estimated"]
     fixture_bf = _int_keyed_map(rh_enamide_fixture["parameters"]["bond_force_constants_mdyn_a"])
@@ -153,7 +158,9 @@ def test_bond_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture)
     not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
     reason="Rh-enamide parity data or fixtures not found",
 )
-def test_angle_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture):
+def test_angle_params_match_fixture(
+    rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
+) -> None:
     clean_start = rh_enamide_clean_results["clean_start"]
     clean_estimated = rh_enamide_clean_results["clean_estimated"]
     fixture_af = _int_keyed_map(rh_enamide_fixture["parameters"]["angle_force_constants_mdyn_a_rad2"])
@@ -189,7 +196,7 @@ def test_angle_params_match_fixture(rh_enamide_clean_results, rh_enamide_fixture
     not (SN2_FIXTURE_PATH.exists() and SN2_XYZ_PATH.exists() and SN2_HESSIAN_PATH.exists()),
     reason="SN2 parity fixtures not found",
 )
-def test_sn2_bond_projections_match_fixture(sn2_fixture):
+def test_sn2_bond_projections_match_fixture(sn2_fixture: dict[str, Any]) -> None:
     molecule = Q2MMMolecule.from_xyz(SN2_XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
     hessian = np.load(str(SN2_HESSIAN_PATH))
     scaling = float(sn2_fixture["metadata"]["dft_scaling"])
@@ -218,7 +225,7 @@ _RH_DATA_AVAILABLE = MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists(
 
 
 @pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
-def test_rh_enamide_forcefield_roundtrip():
+def test_rh_enamide_forcefield_roundtrip() -> None:
     """Loading, estimating, and re-loading FF gives consistent params."""
     structures = MacroModel(str(MMO_PATH)).structures
     hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)
@@ -247,7 +254,9 @@ def test_rh_enamide_forcefield_roundtrip():
 
 
 @pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
-def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fixture):
+def test_rh_enamide_param_vector_parity(
+    rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
+) -> None:
     """Parameter vector matches fixture values for all bond and angle params."""
     estimated = rh_enamide_clean_results["clean_estimated"]
     fixture_bf = _int_keyed_map(rh_enamide_fixture["parameters"]["bond_force_constants_mdyn_a"])
@@ -296,7 +305,9 @@ def test_rh_enamide_param_vector_parity(rh_enamide_clean_results, rh_enamide_fix
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
 @pytest.mark.slow
-def test_rh_enamide_seminario_benchmark(rh_enamide_clean_results, capsys):
+def test_rh_enamide_seminario_benchmark(
+    rh_enamide_clean_results: dict[str, ForceField], capsys: pytest.CaptureFixture[str]
+) -> None:
     """Benchmark: time the full rh-enamide Seminario pipeline (informational)."""
     structures = MacroModel(str(MMO_PATH)).structures
     hessian_files = sorted(JAG_DIR.glob("*.in"), key=_natural_sort_key)

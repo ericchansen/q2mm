@@ -30,23 +30,25 @@ class MacroModel(File):
     in the ``.mmo`` file.
     """
 
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         """Initialize a MacroModel instance.
 
         Args:
             path (str): Path to the MacroModel ``.mmo`` file.
+
         """
         super().__init__(path)
         self._structures = None
 
     @property
-    def structures(self):
+    def structures(self) -> list[Structure]:
         """list[Structure]: Parsed structures with bonds, angles, and torsions.
 
         Returns:
             (list[Structure]): Structure objects extracted from the ``.mmo``
                 file, each populated with sorted bonds, angles, and
                 torsions.
+
         """
         # TODO: make this read atoms for consistency and bc need num atoms for hessian read
         if self._structures is None or self._structures == []:
@@ -142,19 +144,15 @@ class MacroModel(File):
                     if section == "bond":
                         bond = self.read_line_for_bond(line)
                         if bond is not None:
-                            # current_structure.bonds.append(bond)
                             bonds.append(bond)
                     if section == "angle":
                         angle = self.read_line_for_angle(line)
                         if angle is not None:
-                            # current_structure.angles.append(angle)
                             angles.append(angle)
                     if section == "torsion":
                         torsion = self.read_line_for_torsion(line)
                         if torsion is not None:
-                            # current_structure.torsions.append(torsion)
                             torsions.append(torsion)
-            logger.log(5, f"  -- Imported {len(self._structures)} structure(s).")
         return self._structures
 
     @property
@@ -164,7 +162,7 @@ class MacroModel(File):
 
         return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
-    def read_line_for_bond(self, line):
+    def read_line_for_bond(self, line: str) -> Bond | None:
         """Parse a single line for bond data.
 
         Args:
@@ -173,6 +171,7 @@ class MacroModel(File):
         Returns:
             (Bond | None): A Bond object if the line matches the bond
                 pattern, otherwise ``None``.
+
         """
         match = co.RE_BOND.match(line)
         # TODO: MF find if atom_nums are atomic or index, where index bc need for sub_hessian seminario
@@ -185,7 +184,7 @@ class MacroModel(File):
         else:
             return None
 
-    def read_line_for_angle(self, line):
+    def read_line_for_angle(self, line: str) -> Angle | None:
         """Parse a single line for angle data.
 
         Terminal atoms are reordered so that the lower index comes first.
@@ -196,6 +195,7 @@ class MacroModel(File):
         Returns:
             (Angle | None): An Angle object if the line matches the angle
                 pattern, otherwise ``None``.
+
         """
         match = co.RE_ANGLE.match(line)
         if match:
@@ -210,7 +210,7 @@ class MacroModel(File):
         else:
             return None
 
-    def read_line_for_torsion(self, line):
+    def read_line_for_torsion(self, line: str) -> Torsion | None:
         """Parse a single line for torsion data.
 
         Atom indices are reordered so that the lower central-atom index
@@ -223,6 +223,7 @@ class MacroModel(File):
         Returns:
             (Torsion | None): A Torsion object if the line matches the
                 torsion pattern, otherwise ``None``.
+
         """
         match = co.RE_TORSION.match(line)
         if match:
@@ -243,23 +244,25 @@ class MacroModelLog(File):
     The Hessian matrix read from these files is mass-weighted.
     """
 
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         """Initialize a MacroModelLog instance.
 
         Args:
             path (str): Path to the MacroModel log file.
+
         """
         super().__init__(path)
         self._hessian = None
         self._structures = None
 
     @property
-    def hessian(self):
+    def hessian(self) -> np.ndarray:
         """numpy.ndarray: Mass-weighted Hessian matrix read from the log file.
 
         Returns:
             (numpy.ndarray): 2-D Hessian of shape ``(N*3, N*3)`` where
                 *N* is the number of atoms.
+
         """
         if self._hessian is None:
             logger.log(10, f"READING: {self.filename}")
@@ -322,12 +325,13 @@ class MacroModelLog(File):
         return self._hessian
 
     @property
-    def structures(self):
+    def structures(self) -> list[Structure]:
         """list[Structure]: Parsed structures from the log file.
 
         Returns:
             (list[Structure]): Structure objects extracted from the
                 MacroModel log file.
+
         """
         if self._structures is None:
             logger.log(10, f"READING: {self.filename}")
@@ -399,17 +403,14 @@ class MacroModelLog(File):
                     if section == "bond":
                         bond = self.read_line_for_bond(line)
                         if bond is not None:
-                            # current_structure.bonds.append(bond)
                             bonds.append(bond)
                     if section == "angle":
                         angle = self.read_line_for_angle(line)
                         if angle is not None:
-                            # current_structure.angles.append(angle)
                             angles.append(angle)
                     if section == "torsion":
                         torsion = self.read_line_for_torsion(line)
                         if torsion is not None:
-                            # current_structure.torsions.append(torsion)
                             torsions.append(torsion)
                     if "Connection Table" in line:
                         # Sort the bonds, angles, and torsions before the start

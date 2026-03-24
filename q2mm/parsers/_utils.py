@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-Contains basic utility methods for use in Q2MM.
-"""
+"""Basic utility methods for use in Q2MM."""
 
 import numpy as np
 
@@ -19,6 +17,7 @@ def convert_atom_type(atom_type: str) -> str:
 
     Returns:
         (str): Normalized uppercase alphanumeric atom type.
+
     """
     q2mm_atom_type = "".join(filter(str.isalnum, atom_type))
     q2mm_atom_type = q2mm_atom_type.upper()
@@ -36,13 +35,14 @@ def convert_atom_type_pair(atom_type_pair: list[str]) -> list[str]:
 
     Returns:
         (list[str]): A list of normalized uppercase alphanumeric atom types.
+
     """
     q2mm_atom_type_pair = [convert_atom_type(atom_type) for atom_type in atom_type_pair]
     return q2mm_atom_type_pair
 
 
 def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
-    """Returns bond length between 2 sets of coordinates.
+    """Return bond length between 2 sets of coordinates.
 
     Args:
         coords1 (np.ndarray): atom1 coordinates [x, y, z]
@@ -50,13 +50,14 @@ def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
 
     Returns:
         (float): measured bond length
+
     """
     vector = coords2 - coords1
     return np.sqrt(vector.dot(vector))  # Used over np.linalg.norm due to speed advantage
 
 
 def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray) -> float:
-    """Returns angle between 3 sets of coordinates in degrees.
+    """Return angle between 3 sets of coordinates in degrees.
 
     Args:
         coords1 (np.ndarray): atom1 coordinates [x, y, z]
@@ -65,6 +66,7 @@ def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray)
 
     Returns:
         (float): Angle between coords1, coords2, coords3 in degrees
+
     """
     vector21 = coords1 - coords2
     vector23 = coords3 - coords2

@@ -32,6 +32,7 @@ def _strip_ansi(text: str) -> str:
 
     Returns:
         str: String with all ANSI escape sequences removed.
+
     """
     return _ANSI_RE.sub("", text)
 
@@ -44,6 +45,7 @@ def _visible_len(text: str) -> int:
 
     Returns:
         int: Number of visible characters.
+
     """
     return len(_strip_ansi(text))
 
@@ -56,6 +58,7 @@ def _color_enabled() -> bool:
 
     Returns:
         bool: ``True`` if ANSI color output is enabled.
+
     """
     env = os.environ.get("Q2MM_COLOR", "").lower()
     if env in ("0", "false", "no"):
@@ -77,6 +80,7 @@ def _ansi(code: int | str, text: str) -> str:
 
     Returns:
         str: *text* wrapped with the ANSI escape and a reset suffix.
+
     """
     return f"\033[{code}m{text}\033[0m"
 
@@ -94,6 +98,7 @@ def _lerp_color(value: float, lo: float, hi: float) -> str | None:
     Returns:
         str | None: An ANSI 256-color SGR parameter string (e.g.,
             ``'38;5;46'``), or ``None`` if the range is degenerate.
+
     """
     if hi <= lo:
         return None
@@ -122,6 +127,7 @@ def colorize_pct(text: str, pct_err: float, *, lo: float = 0.0, hi: float = 50.0
     Returns:
         str: *text* with ANSI color codes, or unchanged if color is
             not applicable.
+
     """
     code = _lerp_color(abs(pct_err), lo, hi)
     return _ansi(code, text) if code else text
@@ -139,6 +145,7 @@ def colorize_rmsd(text: str, rmsd: float, *, good: float = 50.0, bad: float = 50
     Returns:
         str: *text* with ANSI color codes, or unchanged if color is
             not applicable.
+
     """
     code = _lerp_color(rmsd, good, bad)
     return _ansi(code, text) if code else text
@@ -154,12 +161,13 @@ def explain_scipy_message(message: str) -> str:
     Returns:
         str: A short human-readable explanation, or an empty string
             if the message is already self-explanatory.
+
     """
     msg = (message or "").strip()
     msg_upper = msg.upper().replace(" ", "_")
 
     translations = {
-        # L-BFGS-B (Fortran-style)
+        # L-BFGS-B Fortran-style messages
         "CONVERGENCE:_NORM_OF_PROJECTED_GRADIENT_<=_PGTOL": "Gradient near zero — converged to a minimum.",
         "CONVERGENCE:_REL_REDUCTION_OF_F_<=_FACTR*EPSMCH": "Score stopped changing — converged.",
         "STOP:_TOTAL_NO._OF_ITERATIONS_REACHED_LIMIT": "Hit max iterations before convergence tolerance was met.",
@@ -211,49 +219,53 @@ class TablePrinter:
         t.flush()
     """
 
-    def __init__(self, *, color: bool | None = None):
+    def __init__(self, *, color: bool | None = None) -> None:
         """Initialize the table printer.
 
         Args:
             color (bool | None): Force color on (``True``) or off
                 (``False``). If ``None``, auto-detect from the terminal.
+
         """
         self._entries: list[tuple[str, str | None]] = []
         self.color = _color_enabled() if color is None else color
 
-    def title(self, text: str):
+    def title(self, text: str) -> None:
         """Append a title line (indented two spaces).
 
         Args:
             text (str): Title text.
+
         """
         self._entries.append(("text", f"  {text}"))
 
-    def row(self, text: str):
+    def row(self, text: str) -> None:
         """Append a content row (indented two spaces).
 
         Args:
             text (str): Row text.
+
         """
         self._entries.append(("text", f"  {text}"))
 
-    def bar(self):
+    def bar(self) -> None:
         """Full-width ``=====`` section delimiter."""
         self._entries.append(("bar", None))
 
-    def sep(self):
+    def sep(self) -> None:
         """Content-width ``-----`` sub-separator (indented 2 spaces)."""
         self._entries.append(("sep", None))
 
-    def blank(self):
+    def blank(self) -> None:
         """Append an empty line."""
         self._entries.append(("blank", None))
 
-    def flush(self, file=None):
+    def flush(self, file: Any = None) -> None:
         """Print everything with bars dynamically sized to content.
 
         Args:
             file: Writable file-like object. Defaults to ``sys.stdout``.
+
         """
         text_lines = [text for _, text in self._entries if text is not None]
         w = max(_visible_len(line) for line in text_lines) if text_lines else 60
@@ -273,6 +285,7 @@ class TablePrinter:
 
         Returns:
             str: The complete table as a string (with trailing newline).
+
         """
         buf = io.StringIO()
         self.flush(file=buf)
@@ -305,6 +318,7 @@ def frequency_progression_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     import numpy as np
 
@@ -385,6 +399,7 @@ def pes_distortion_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     import numpy as np
 
@@ -477,6 +492,7 @@ def timing_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     t = TablePrinter()
     t.blank()
@@ -525,6 +541,7 @@ def parameter_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     t = TablePrinter()
     t.blank()
@@ -601,6 +618,7 @@ def convergence_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     t = TablePrinter()
     t.blank()
@@ -657,6 +675,7 @@ def leaderboard_table(
     Returns:
         TablePrinter: Populated table ready for ``flush()`` or
             ``to_string()``.
+
     """
     t = TablePrinter()
     t.blank()

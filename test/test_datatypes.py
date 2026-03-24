@@ -13,33 +13,33 @@ from q2mm.parsers.mm3 import (
 
 
 class TestMM3LabelMatching(unittest.TestCase):
-    def test_match_mm3_label_bond(self):
+    def test_match_mm3_label_bond(self) -> None:
         self.assertTrue(match_mm3_bond(" 1"))
 
-    def test_match_mm3_label_geo_dep_bond(self):
+    def test_match_mm3_label_geo_dep_bond(self) -> None:
         self.assertTrue(match_mm3_bond("a1"))
 
-    def test_match_mm3_label_angle(self):
+    def test_match_mm3_label_angle(self) -> None:
         self.assertTrue(match_mm3_angle(" 2"))
 
-    def test_match_mm3_label_stretch_bend(self):
+    def test_match_mm3_label_stretch_bend(self) -> None:
         self.assertTrue(match_mm3_stretch_bend(" 3"))
 
-    def test_match_mm3_label_lower_torsion(self):
+    def test_match_mm3_label_lower_torsion(self) -> None:
         self.assertTrue(match_mm3_lower_torsion(" 4"))
 
-    def test_match_mm3_label_higher_torsion(self):
+    def test_match_mm3_label_higher_torsion(self) -> None:
         self.assertTrue(match_mm3_higher_torsion("54"))
 
-    def test_match_mm3_label_improper(self):
+    def test_match_mm3_label_improper(self) -> None:
         self.assertTrue(match_mm3_improper(" 5"))
 
-    def test_match_mm3_label_various(self):
+    def test_match_mm3_label_various(self) -> None:
         # Verify match_mm3_label accepts any valid lowercase+digit combo
         for label in ["a1", "b2", "c3", "d4", "e5", "z1"]:
             self.assertTrue(match_mm3_label(label), f"Should match: {label!r}")
 
-    def test_no_match_invalid_label(self):
+    def test_no_match_invalid_label(self) -> None:
         self.assertFalse(match_mm3_bond(" 2"))  # ' 2' is angle, not bond
         self.assertFalse(match_mm3_angle(" 1"))  # ' 1' is bond, not angle
 

@@ -11,6 +11,8 @@ It also provides utilities for manipulating Hessian matrices with respect
 to dummy atoms.
 """
 
+from __future__ import annotations
+
 import logging
 
 import numpy as np
@@ -54,17 +56,17 @@ class Atom:
         atom_type_name: str = None,
         atomic_num: int = None,
         atomic_mass: float = None,
-        bonded_atom_indices=None,
-        coords=None,
-        coords_type=None,
+        bonded_atom_indices: list[int] | None = None,
+        coords: list[float] | None = None,
+        coords_type: str | None = None,
         element: str = None,
-        exact_mass=None,
+        exact_mass: float | None = None,
         index: int = None,
         partial_charge: float = None,
         x: float = None,
         y: float = None,
         z: float = None,
-    ):
+    ) -> None:
         """Atom object containing relevant properties and metadata.
 
         Units: Angstrom
@@ -102,6 +104,7 @@ class Atom:
             x (float, optional): X coordinate of the atom. Defaults to None.
             y (float, optional): Y coordinate of the atom. Defaults to None.
             z (float, optional): Z coordinate of the atom. Defaults to None.
+
         """
         self.atom_type = atom_type
         self.atom_type_name = atom_type_name
@@ -122,7 +125,7 @@ class Atom:
             self.z = float(coords[2])
         self.props = {}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.atom_type_name}[{self.x},{self.y},{self.z}]"
 
     @property
@@ -131,16 +134,18 @@ class Atom:
 
         Returns:
             (np.ndarray): Array of Cartesian coordinates of atom of form [x, y, z].
+
         """
         return np.array([self.x, self.y, self.z])
 
     @coords.setter
-    def coords(self, value):
+    def coords(self, value: list[float] | np.ndarray) -> None:
         """Setter method for coords property.
 
         Args:
             value (list[float] | np.ndarray): Cartesian coordinates of atom
                 of form ``[x, y, z]``.
+
         """
         try:
             self.x = value[0]
@@ -150,41 +155,44 @@ class Atom:
             pass
 
     @property
-    def element(self):
+    def element(self) -> str:
         """Element symbol for this atom.
 
         Returns:
             (str): Element symbol (e.g. ``'C'``, ``'N'``, ``'O'``).
+
         """
         if self._element is None:
             self._element = list(co.MASSES.keys())[self.atomic_num - 1]
         return self._element
 
     @element.setter
-    def element(self, value):
+    def element(self, value: str) -> None:
         self._element = value
 
     @property
-    def exact_mass(self):
+    def exact_mass(self) -> float:
         """Exact isotopic mass of this atom.
 
         Returns:
             (float): Exact mass in atomic mass units.
+
         """
         if self._exact_mass is None:
             self._exact_mass = co.MASSES[self.element]
         return self._exact_mass
 
     @exact_mass.setter
-    def exact_mass(self, value):
+    def exact_mass(self, value: float) -> None:
         self._exact_mass = value
 
     @property
-    def is_dummy(self):
+    def is_dummy(self) -> bool:
         """Return whether this atom is a dummy atom.
 
         Returns:
             (bool): ``True`` if the atom is a dummy atom, ``False`` otherwise.
+
         """
         return self.atom_type_name == "Du" or self.element == "X" or self.atomic_num == -2
 
@@ -200,7 +208,7 @@ class DOF:
         comment: str = None,
         value: float = None,
         ff_row: int = None,
-    ):
+    ) -> None:
         """Abstract class for a degree of freedom (DOF).
 
         Contains the bare-bones properties necessary for any DOF.
@@ -213,6 +221,7 @@ class DOF:
             value (float, optional): Value of the DOF. Defaults to None.
             ff_row (int, optional): Row of the FF which models the DOF.
                 Defaults to None.
+
         """
         self.atom_nums: list[int] = atom_nums
         """ TODO atom_indices is a more intuitive name,
@@ -222,10 +231,10 @@ class DOF:
         self.value = value
         self.ff_row = ff_row
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "{}[{}]({})".format(self.__class__.__name__, "-".join(map(str, self.atom_nums)), self.value)
 
-    def as_data(self, **kwargs):
+    def as_data(self, **kwargs: object) -> Datum:
         """Convert this DOF into a Datum object for data collection.
 
         Args:
@@ -234,6 +243,7 @@ class DOF:
 
         Returns:
             (Datum): A Datum representation of this DOF.
+
         """
         # Sort of silly to have all this stuff about angles and
         # torsions in here, but they both inherit from this class.
@@ -267,7 +277,7 @@ class Bond(DOF):
         value: float = None,
         ff_row: int = None,
         order: str = None,
-    ):
+    ) -> None:
         """Bond object containing the bare-bones properties necessary.
 
         Note:
@@ -288,6 +298,7 @@ class Bond(DOF):
                 Defaults to None.
             order (str, optional): Bond order (e.g. single bond ``'1'``,
                 double bond ``'2'``). Defaults to None.
+
         """
         super().__init__(atom_nums, comment, value, ff_row)
         self.order = order
@@ -296,7 +307,13 @@ class Bond(DOF):
 class Angle(DOF):
     """Data class for a single angle."""
 
-    def __init__(self, atom_nums=None, comment=None, value=None, ff_row=None):
+    def __init__(
+        self,
+        atom_nums: list[int] | None = None,
+        comment: str | None = None,
+        value: float | None = None,
+        ff_row: int | None = None,
+    ) -> None:
         """Angle object containing the bare-bones properties necessary.
 
         Args:
@@ -308,6 +325,7 @@ class Angle(DOF):
                 to None.
             ff_row (int, optional): Row of the FF which models the angle.
                 Defaults to None.
+
         """
         super().__init__(atom_nums, comment, value, ff_row)
 
@@ -315,7 +333,13 @@ class Angle(DOF):
 class Torsion(DOF):
     """Data class for a single torsion."""
 
-    def __init__(self, atom_nums=None, comment=None, value=None, ff_row=None):
+    def __init__(
+        self,
+        atom_nums: list[int] | None = None,
+        comment: str | None = None,
+        value: float | None = None,
+        ff_row: int | None = None,
+    ) -> None:
         """Torsion/dihedral object containing the bare-bones properties necessary.
 
         Args:
@@ -327,6 +351,7 @@ class Torsion(DOF):
                 Defaults to None.
             ff_row (int, optional): Row of the FF which models the torsion.
                 Defaults to None.
+
         """
         super().__init__(atom_nums, comment, value, ff_row)
 
@@ -336,12 +361,13 @@ class Structure:
 
     __slots__ = ["_atoms", "_bonds", "_angles", "_torsions", "hess", "props", "origin_name"]
 
-    def __init__(self, origin_name: str):
+    def __init__(self, origin_name: str) -> None:
         """Initialise a Structure.
 
         Args:
             origin_name (str): Name or path of the file from which this
                 structure originates.
+
         """
         self._atoms: list[Atom] = None
         self._bonds: list[Bond] = None
@@ -352,21 +378,23 @@ class Structure:
         self.origin_name: str = origin_name
 
     @property
-    def coords(self):
+    def coords(self) -> list[np.ndarray]:
         """Atomic coordinates for every atom in the structure.
 
         Returns:
             (list[np.ndarray]): List of coordinate arrays, one per atom.
+
         """
         return [atom.coords for atom in self._atoms]
 
     @property
-    def num_atoms(self):
+    def num_atoms(self) -> int:
         """Number of atoms in the structure.
 
         Returns:
             (int): Atom count, or a guess based on bond indices when atoms
                 are not yet populated.
+
         """
         if self._atoms is None or self._atoms == []:
             return self.guess_atoms()
@@ -374,44 +402,48 @@ class Structure:
             return len(self.atoms)
 
     @property
-    def atoms(self):
+    def atoms(self) -> list[Atom]:
         """List of atoms in the structure.
 
         Returns:
             (list[Atom]): Atoms belonging to this structure.
+
         """
         if self._atoms is None:
             self._atoms: list[Atom] = []
         return self._atoms
 
     @property
-    def bonds(self):
+    def bonds(self) -> list[Bond]:
         """List of bonds in the structure.
 
         Returns:
             (list[Bond]): Bonds belonging to this structure.
+
         """
         if self._bonds is None:
             self._bonds: list[Bond] = []
         return self._bonds
 
     @property
-    def angles(self):
+    def angles(self) -> list[Angle]:
         """List of angles in the structure.
 
         Returns:
             (list[Angle]): Angles belonging to this structure.
+
         """
         if self._angles is None:
             self._angles: list[Angle] = []
         return self._angles
 
     @property
-    def torsions(self):
+    def torsions(self) -> list[Torsion]:
         """List of torsions in the structure.
 
         Returns:
             (list[Torsion]): Torsions belonging to this structure.
+
         """
         if self._torsions is None:
             self._torsions: list[Torsion] = []
@@ -422,6 +454,7 @@ class Structure:
 
         Returns:
             (int): The highest atom index found across all bonds.
+
         """
         max_atom_index = 0
         for bond in self.bonds:
@@ -430,7 +463,7 @@ class Structure:
                 max_atom_index = max_in_bond
         return max_atom_index
 
-    def format_coords(self, format="latex", indices_use_charge=None):
+    def format_coords(self, format: str = "latex", indices_use_charge: list[int] | None = None) -> list[str]:
         """Format atomic coordinates for output in various file formats.
 
         Args:
@@ -445,6 +478,7 @@ class Structure:
 
         Returns:
             (list[str]): Formatted coordinate lines.
+
         """
         # Formatted for LaTeX.
         if format == "latex":
@@ -465,8 +499,6 @@ class Structure:
                     ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
                     ele = atom.element
-                # Used only for a problem Eric experienced.
-                # if ele == '': ele = 'Pd'
                 if indices_use_charge:
                     if atom.index in indices_use_charge:
                         output.append(f" {ele:s}--{atom.partial_charge:.5f}{atom.x:>16.6f}{atom.y:16.6f}{atom.z:16.6f}")
@@ -483,8 +515,6 @@ class Structure:
                     ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
                     ele = atom.element
-                # Used only for a problem Eric experienced.
-                # if ele == '': ele = 'Pd'
                 label = f"{ele}{atom.index}"
                 output.append(f" {label:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}")
             return output
@@ -500,6 +530,7 @@ class Structure:
 
         Returns:
             (list[Angle]): Angles found in this structure.
+
         """
         angles: list[Angle] = []
         for i, a in enumerate(self.bonds):
@@ -548,5 +579,6 @@ class Structure:
 
         Returns:
             (list[Atom]): Atom objects involved in the DOF.
+
         """
         return [self.atoms[idx - 1] for idx in dof.atom_nums]
