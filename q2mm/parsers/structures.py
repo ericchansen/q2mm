@@ -1,5 +1,10 @@
 """Data classes for molecular structures, atoms, and degrees of freedom.
 
+.. deprecated::
+    This module is deprecated. Use :class:`q2mm.models.molecule.Q2MMMolecule`
+    instead for molecular structure representation. Parsers now expose a
+    ``.molecules`` property that returns ``Q2MMMolecule`` objects directly.
+
 This module defines the core data structures used to represent molecular
 geometry: atoms, bonds, angles, torsions, and full molecular structures.
 It also provides utilities for manipulating Hessian matrices with respect
@@ -7,12 +12,20 @@ to dummy atoms.
 """
 
 import logging
+
 import numpy as np
+
 from q2mm import constants as co
 from q2mm.parsers import _utils as utilities
 from q2mm.parsers.datum import Datum
 
 logger = logging.getLogger(__name__)
+
+_DEPRECATION_MSG = (
+    "{cls} is deprecated and will be removed in a future release. "
+    "Use q2mm.models.molecule.Q2MMMolecule instead. "
+    "Parsers now expose a .molecules property returning Q2MMMolecule objects."
+)
 
 
 class Atom:

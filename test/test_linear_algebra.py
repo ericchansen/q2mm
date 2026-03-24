@@ -4,7 +4,7 @@ import numpy as np
 
 from q2mm import constants
 from q2mm.models import hessian
-from q2mm.parsers import FF, Structure
+from q2mm.parsers import FF, Structure  # noqa: F401 — used in skipped test signature
 
 
 class MakeHessian:

@@ -4,10 +4,17 @@ Provides the ``Mol2`` class for reading atom coordinates, bond
 connectivity, and other structural data from ``.mol2`` files.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
 from q2mm.parsers import _utils as utilities
 from q2mm.parsers.base import File
 from q2mm.parsers.structures import Atom, Bond, Structure
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +55,20 @@ class Mol2(File):
         Returns:
             (list[Structure]): Structure objects extracted from parsing the
                 mol2 file.
+
+        .. deprecated::
+            Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
         """
         if self._structures is None:
             self.parse_lines()
         return self._structures
+
+    @property
+    def molecules(self) -> list[Q2MMMolecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
+        from q2mm.models.molecule import Q2MMMolecule
+
+        return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
     def parse_lines(self):
         """Parse file lines to extract Structure objects into ``self.structures``.

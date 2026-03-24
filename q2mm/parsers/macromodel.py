@@ -5,12 +5,20 @@ torsions) from ``.mmo`` files and ``MacroModelLog`` for reading
 mass-weighted Hessian matrices from MacroModel log files.
 """
 
+from __future__ import annotations
+
 import logging
-import numpy as np
 import re
+from typing import TYPE_CHECKING
+
+import numpy as np
+
 from q2mm import constants as co
 from q2mm.parsers.base import File
-from q2mm.parsers.structures import Atom, Bond, Angle, Torsion, Structure
+from q2mm.parsers.structures import Angle, Atom, Bond, Structure, Torsion
+
+if TYPE_CHECKING:
+    from q2mm.models.molecule import Q2MMMolecule
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +156,13 @@ class MacroModel(File):
                             torsions.append(torsion)
             logger.log(5, f"  -- Imported {len(self._structures)} structure(s).")
         return self._structures
+
+    @property
+    def molecules(self) -> list[Q2MMMolecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
+        from q2mm.models.molecule import Q2MMMolecule
+
+        return [Q2MMMolecule.from_structure(s) for s in self.structures]
 
     def read_line_for_bond(self, line):
         """Parse a single line for bond data.
@@ -412,3 +427,10 @@ class MacroModelLog(File):
                             current_structure.torsions.extend(torsions)
             logger.log(5, f"  -- Imported {len(self._structures)} structure(s).")
         return self._structures
+
+    @property
+    def molecules(self) -> list[Q2MMMolecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
+        from q2mm.models.molecule import Q2MMMolecule
+
+        return [Q2MMMolecule.from_structure(s) for s in self.structures]

@@ -24,87 +24,139 @@ from __future__ import annotations
 import copy
 import logging
 import warnings
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 
 from q2mm import constants as co
 
-if TYPE_CHECKING:
-    from q2mm.parsers.structures import Atom
-
 logger = logging.getLogger(__name__)
+
+
+def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
+    """Normalise the *atoms* argument to a plain list of element symbols.
+
+    Accepts:
+      - ``list[str]`` — element symbols directly (new API)
+      - Any object with a ``.symbols`` attribute (``Q2MMMolecule``)
+      - Legacy ``list[Atom]`` — reads ``.element`` and filters ``.is_dummy``
+
+    Returns:
+        list[str]: Non-dummy element symbols.
+    """
+    # Q2MMMolecule (has .symbols attribute)
+    if hasattr(atoms_or_symbols, "symbols"):
+        return list(atoms_or_symbols.symbols)
+
+    items = list(atoms_or_symbols)
+    if not items:
+        return []
+
+    # Plain strings
+    if isinstance(items[0], str):
+        return items
+
+    # Legacy Atom objects (duck-typed: .element, .is_dummy)
+    warnings.warn(
+        "Passing Atom objects to mass-weighting functions is deprecated. "
+        "Pass element symbols (list[str]) or a Q2MMMolecule instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return [a.element for a in items if not getattr(a, "is_dummy", False)]
 
 
 # ---- Mass-weighting functions ----
 
 
-def mass_weight_hessian(hess, atoms, reverse=False):
-    """Mass weights Hessian by multiplying my 1/sqrt(mass1 * mass2). If reverse is True,
-     it un-mass weights the Hessian. Note that this does not return a new object but rather
-     modifies the one passed as hess.
+def mass_weight_hessian(
+    hess: np.ndarray,
+    atoms: Sequence[str] | object,
+    reverse: bool = False,
+) -> None:
+    """Mass-weight (or un-weight) a Hessian matrix **in place**.
+
+    Multiplies each element ``H[i,j]`` by ``1 / sqrt(m_i * m_j)`` where
+    ``m_i`` is the atomic mass of the atom owning Cartesian coordinate ``i``.
+    When *reverse* is ``True``, the operation is inverted.
 
     Args:
-        hess (_type_): Hessian matrix to mass-weight, modifies the variable itself.
-        atoms (_type_): Atom objects related to the Hessian (must be in correct order).
-        reverse (bool, optional): Whether to reverse mass-weight (* sqrt(mass1 * mass2)). Defaults to False.
+        hess: ``(3N, 3N)`` Hessian matrix — modified in place.
+        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
+            (deprecated) legacy ``Atom`` objects.
+        reverse: If ``True``, un-mass-weight instead.
     """
-    masses = [co.MASSES[x.element] for x in atoms if not x.is_dummy]
-    changes = []
-    for mass in masses:
-        changes.extend([1 / np.sqrt(mass)] * 3)
-    x, y = hess.shape
-    for i in range(0, x):
-        for j in range(0, y):
+    symbols = _resolve_symbols(atoms)
+    masses = [co.MASSES[s] for s in symbols]
+    inv_sqrt = []
+    for m in masses:
+        inv_sqrt.extend([1.0 / np.sqrt(m)] * 3)
+    rows, cols = hess.shape
+    for i in range(rows):
+        for j in range(cols):
             if reverse:
-                hess[i, j] = hess[i, j] / changes[i] / changes[j]
+                hess[i, j] /= inv_sqrt[i] * inv_sqrt[j]
             else:
-                hess[i, j] = hess[i, j] * changes[i] * changes[j]
+                hess[i, j] *= inv_sqrt[i] * inv_sqrt[j]
 
 
-def mass_weight_force_constant(force_const: float, atoms: list[Atom], reverse: bool = False, rm: bool = False) -> float:
-    """Mass weights force constant. If reverse is True, it un-mass weights
-    the force constant.
+def mass_weight_force_constant(
+    force_const: float,
+    atoms: Sequence[str] | object,
+    reverse: bool = False,
+    rm: bool = False,
+) -> float:
+    """Mass-weight a force constant.
 
     Args:
-        force_const (float): force constant value to mass-weight or un-mass-weight.
-        atoms (List[Atom]): Atoms associated with the force constant.
-        reverse (bool, optional): Whether to un-mass-weight the force constant instead. Defaults to False.
-        rm (bool, optional): Whether to instead convert the force constant to reduced mass representation. Defaults to False.
+        force_const: Force constant value.
+        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
+            (deprecated) legacy ``Atom`` objects.
+        reverse: If ``True``, un-mass-weight instead.
+        rm: If ``True``, convert to reduced-mass representation instead.
 
     Returns:
-        float: mass-weighted or un-mass-weighted value of force constant.
+        Mass-weighted (or un-weighted) force constant.
     """
-    force_constant = force_const
-    masses = [co.MASSES[x.element] for x in atoms]
-    changes = []
+    symbols = _resolve_symbols(atoms)
+    masses = [co.MASSES[s] for s in symbols]
+    result = force_const
     if rm:
-        return force_constant * np.sqrt(masses[0] + masses[1])
-    for mass in masses:
-        change = 1 / np.sqrt(mass)
+        return result * np.sqrt(masses[0] + masses[1])
+    for m in masses:
+        factor = 1.0 / np.sqrt(m)
         if reverse:
-            force_constant = force_constant / change
+            result /= factor
         else:
-            force_constant = force_constant * change
-    return force_constant
+            result *= factor
+    return result
 
 
-def mass_weight_eigenvectors(evecs, atoms, reverse=False):
+def mass_weight_eigenvectors(
+    evecs: np.ndarray,
+    atoms: Sequence[str] | object,
+    reverse: bool = False,
+) -> None:
+    """Mass-weight (or un-weight) eigenvectors **in place**.
+
+    Args:
+        evecs: ``(3N, 3N)`` eigenvector matrix — modified in place.
+        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
+            (deprecated) legacy ``Atom`` objects.
+        reverse: If ``True``, un-mass-weight instead.
     """
-    Mass weights eigenvectors. If reverse is True, it un-mass weights
-    the eigenvectors. TODO
-    """
-    changes = []
-    for atom in atoms:
-        if not atom.is_dummy:
-            changes.extend([np.sqrt(atom.exact_mass)] * 3)
-    x, y = evecs.shape
-    for i in range(0, x):
-        for j in range(0, y):
+    symbols = _resolve_symbols(atoms)
+    sqrt_mass = []
+    for s in symbols:
+        sqrt_mass.extend([np.sqrt(co.MASSES[s])] * 3)
+    rows, cols = evecs.shape
+    for i in range(rows):
+        for j in range(cols):
             if reverse:
-                evecs[i, j] /= changes[j]
+                evecs[i, j] /= sqrt_mass[j]
             else:
-                evecs[i, j] *= changes[j]
+                evecs[i, j] *= sqrt_mass[j]
 
 
 # ---- Linear algebra operations ----
