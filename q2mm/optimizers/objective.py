@@ -724,12 +724,7 @@ from q2mm.parsers.fchk import parse_fchk as _parse_fchk  # noqa: E402
 
 from q2mm.optimizers.evaluators.geometry import dihedral_angle as _dihedral_angle  # noqa: E402, F401
 
-# ---- Per-data-type evaluators ----
-
-from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator as _EigenmatrixEvaluator  # noqa: E402
-from q2mm.optimizers.evaluators.energy import EnergyEvaluator as _EnergyEvaluator  # noqa: E402
-from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator as _FrequencyEvaluator  # noqa: E402
-from q2mm.optimizers.evaluators.geometry import GeometryEvaluator as _GeometryEvaluator  # noqa: E402
+# ---- Per-data-type evaluators (lazy-imported in ObjectiveFunction.__init__) ----
 
 
 # ---- Objective function ----
@@ -779,10 +774,17 @@ class ObjectiveFunction:
         # evaluation — critical for optimization performance.
         self._handles: dict[int, object] = {}
         # Per-data-type evaluator instances (created once, reused).
-        self._energy_evaluator = _EnergyEvaluator()
-        self._frequency_evaluator = _FrequencyEvaluator()
-        self._geometry_evaluator = _GeometryEvaluator()
-        self._eigenmatrix_evaluator = _EigenmatrixEvaluator()
+        # Lazy imports to break circular dependency (evaluators import
+        # ReferenceValue from this module).
+        from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+        from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
+        from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+
+        self._energy_evaluator = EnergyEvaluator()
+        self._frequency_evaluator = FrequencyEvaluator()
+        self._geometry_evaluator = GeometryEvaluator()
+        self._eigenmatrix_evaluator = EigenmatrixEvaluator()
 
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
@@ -968,11 +970,11 @@ class ObjectiveFunction:
         needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
 
         if "energy" in needed:
-            er = self._energy_evaluator.compute(self.engine, mol, self.forcefield, structure=structure)
+            er = self._energy_evaluator.compute(self.engine, mol, forcefield, structure=structure)
             result["energy"] = er.energy
 
         if "frequency" in needed:
-            fr = self._frequency_evaluator.compute(self.engine, mol, self.forcefield, structure=structure)
+            fr = self._frequency_evaluator.compute(self.engine, mol, forcefield, structure=structure)
             result["frequencies"] = fr.frequencies
 
         if needed & self._geometry_evaluator.GEOMETRY_KINDS:
@@ -981,7 +983,7 @@ class ObjectiveFunction:
             gr = self._geometry_evaluator.compute(
                 self.engine,
                 mol,
-                self.forcefield,
+                forcefield,
                 needed_kinds=geo_needed,
             )
             if "bond_length" in geo_needed:
@@ -997,7 +999,7 @@ class ObjectiveFunction:
             emr = self._eigenmatrix_evaluator.compute(
                 self.engine,
                 mol,
-                self.forcefield,
+                forcefield,
                 structure=structure,
                 mol_idx=mol_idx,
             )
@@ -1025,14 +1027,19 @@ class ObjectiveFunction:
                 atom indices.
 
         """
+        from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
+        from q2mm.optimizers.evaluators.energy import EnergyEvaluator
+        from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
+        from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+
         if ref.kind == "energy":
-            return _EnergyEvaluator.extract_value(calc, ref)
+            return EnergyEvaluator.extract_value(calc, ref)
         elif ref.kind == "frequency":
-            return _FrequencyEvaluator.extract_value(calc, ref)
-        elif ref.kind in _GeometryEvaluator.GEOMETRY_KINDS:
-            return _GeometryEvaluator.extract_value(calc, ref)
-        elif ref.kind in _EigenmatrixEvaluator.EIGENMATRIX_KINDS:
-            return _EigenmatrixEvaluator.extract_value(calc, ref)
+            return FrequencyEvaluator.extract_value(calc, ref)
+        elif ref.kind in GeometryEvaluator.GEOMETRY_KINDS:
+            return GeometryEvaluator.extract_value(calc, ref)
+        elif ref.kind in EigenmatrixEvaluator.EIGENMATRIX_KINDS:
+            return EigenmatrixEvaluator.extract_value(calc, ref)
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind}")
 
