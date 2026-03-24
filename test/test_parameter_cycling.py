@@ -96,7 +96,7 @@ class TestParamIndicesByType:
         assert vec[indices["angle_k"][0]] == 71.9
         # torsion_k[0] should be the first torsion
         assert vec[indices["torsion_k"][0]] == 0.5
-        # vdw_radius at index 0
+        # vdw_radius[0] should be the first vdw radius
         assert vec[indices["vdw_radius"][0]] == 1.7
 
 

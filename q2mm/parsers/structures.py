@@ -52,20 +52,20 @@ class Atom:
 
     def __init__(
         self,
-        atom_type: str = None,
-        atom_type_name: str = None,
-        atomic_num: int = None,
-        atomic_mass: float = None,
+        atom_type: str | None = None,
+        atom_type_name: str | None = None,
+        atomic_num: int | None = None,
+        atomic_mass: float | None = None,
         bonded_atom_indices: list[int] | None = None,
         coords: list[float] | None = None,
         coords_type: str | None = None,
-        element: str = None,
+        element: str | None = None,
         exact_mass: float | None = None,
-        index: int = None,
-        partial_charge: float = None,
-        x: float = None,
-        y: float = None,
-        z: float = None,
+        index: int | None = None,
+        partial_charge: float | None = None,
+        x: float | None = None,
+        y: float | None = None,
+        z: float | None = None,
     ) -> None:
         """Atom object containing relevant properties and metadata.
 
@@ -204,10 +204,10 @@ class DOF:
 
     def __init__(
         self,
-        atom_nums: list[int] = None,
-        comment: str = None,
-        value: float = None,
-        ff_row: int = None,
+        atom_nums: list[int] | None = None,
+        comment: str | None = None,
+        value: float | None = None,
+        ff_row: int | None = None,
     ) -> None:
         """Abstract class for a degree of freedom (DOF).
 
@@ -272,11 +272,11 @@ class Bond(DOF):
 
     def __init__(
         self,
-        atom_nums: list[int] = None,
-        comment: str = None,
-        value: float = None,
-        ff_row: int = None,
-        order: str = None,
+        atom_nums: list[int] | None = None,
+        comment: str | None = None,
+        value: float | None = None,
+        ff_row: int | None = None,
+        order: str | None = None,
     ) -> None:
         """Bond object containing the bare-bones properties necessary.
 

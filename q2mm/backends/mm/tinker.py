@@ -387,7 +387,7 @@ class TinkerEngine(MMEngine):
                 f.write(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
 
     def _run_tinker(
-        self, exe_name: str, xyz_path: str, args: list = None, stdin: str = None
+        self, exe_name: str, xyz_path: str, args: list | None = None, stdin: str | None = None
     ) -> subprocess.CompletedProcess:
         """Run a Tinker executable.
 
