@@ -5,9 +5,13 @@ Usage::
     q2mm-benchmark                      # Run all available backends x optimizers
     q2mm-benchmark --backend openmm     # Only OpenMM backend
     q2mm-benchmark --optimizer L-BFGS-B # Only L-BFGS-B optimizer
-    q2mm-benchmark --output results/    # Save JSON results to directory
+    q2mm-benchmark --output results/    # Save to custom directory
+    q2mm-benchmark --no-save            # Run without saving results
     q2mm-benchmark --load results/      # Load saved results and print report
     q2mm-benchmark --list               # Show available backends and optimizers
+
+By default, results (JSON + force field files) are saved to
+``./benchmark_results/``.  Use ``--no-save`` to disable.
 """
 
 import argparse
@@ -216,13 +220,22 @@ def _run_matrix(
 
     # Save results if output directory specified
     if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for i, r in enumerate(results):
+        results_dir = output_dir / "results"
+        ff_dir = output_dir / "forcefields"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        ff_dir.mkdir(parents=True, exist_ok=True)
+
+        for r in results:
             meta = r.metadata
-            fname = f"{meta.get('backend', 'unk')}_{meta.get('optimizer', 'unk')}_{i:02d}.json"
-            fname = fname.replace("+", "_").replace(" ", "_")
-            r.to_json(output_dir / fname)
-        print(f"\n  Results saved to: {output_dir}")
+            stem = f"{meta.get('backend', 'unk')}_{meta.get('optimizer', 'unk')}"
+            stem = stem.replace("+", "_").replace(" ", "_")
+            r.to_json(results_dir / f"{stem}.json")
+            saved_ffs = r.save_forcefields(ff_dir, stem=stem, molecule=molecule)
+            if saved_ffs:
+                exts = ", ".join(p.suffix for p in saved_ffs)
+                print(f"    FF saved: {stem} ({exts})")
+
+        print(f"\n  Results saved to: {output_dir}/")
 
     return results
 
@@ -286,7 +299,13 @@ def main(argv: list[str] | None = None) -> int:
         "-o",
         type=Path,
         metavar="DIR",
-        help="Save JSON results to this directory.",
+        default=Path("benchmark_results"),
+        help="Save results to this directory (default: ./benchmark_results/). Use --no-save to disable.",
+    )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Do not save results to disk (overrides --output).",
     )
     parser.add_argument(
         "--load",
@@ -308,6 +327,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+
+    # --no-save suppresses all output saving
+    output_dir: Path | None = None if args.no_save else args.output
 
     all_backends = _discover_backends()
     all_optimizers = _optimizer_configs()
@@ -333,11 +355,13 @@ def main(argv: list[str] | None = None) -> int:
         if not args.load.is_dir():
             print(f"Error: {args.load} is not a directory", file=sys.stderr)
             return 1
-        results = _load_results(args.load)
+        # Support both new layout (results/ subdir) and flat layout
+        load_dir = args.load / "results" if (args.load / "results").is_dir() else args.load
+        results = _load_results(load_dir)
         if not results:
             print(f"No results found in {args.load}", file=sys.stderr)
             return 1
-        print(f"Loaded {len(results)} results from {args.load}\n")
+        print(f"Loaded {len(results)} results from {load_dir}\n")
     else:
         # Filter backends
         backends = all_backends
@@ -365,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Combos:     {len(backends) * len(optimizers)}\n")
 
         results = _run_matrix(
-            backends, optimizers, output_dir=args.output, leaderboard_only=args.leaderboard_only, data_dir=args.data_dir
+            backends, optimizers, output_dir=output_dir, leaderboard_only=args.leaderboard_only, data_dir=args.data_dir
         )
 
     if not results:

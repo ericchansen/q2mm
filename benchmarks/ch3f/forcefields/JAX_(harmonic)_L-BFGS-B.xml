@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ForceField>
+  <AtomTypes>
+    <Type name="q2mm-C" element="C" mass="12.0000" class="C" />
+    <Type name="q2mm-F" element="F" mass="18.9984" class="F" />
+    <Type name="q2mm-H" element="H" mass="1.0078" class="H" />
+  </AtomTypes>
+  <Residues>
+    <Residue name="Q2MM">
+      <Atom name="C1" type="q2mm-C" />
+      <Atom name="F2" type="q2mm-F" />
+      <Atom name="H3" type="q2mm-H" />
+      <Atom name="H4" type="q2mm-H" />
+      <Atom name="H5" type="q2mm-H" />
+      <Bond atomName1="C1" atomName2="F2" />
+      <Bond atomName1="C1" atomName2="H3" />
+      <Bond atomName1="C1" atomName2="H4" />
+      <Bond atomName1="C1" atomName2="H5" />
+    </Residue>
+  </Residues>
+  <CustomBondForce energy="k*(10*(r-r0))^2*(1-2.55*(10*(r-r0))+3.793125*(10*(r-r0))^2)">
+    <PerBondParameter name="k" />
+    <PerBondParameter name="r0" />
+    <Bond class1="C" class2="F" k="1138.192579" r0="0.050000" />
+    <Bond class1="C" class2="H" k="1483.868235" r0="0.112099" />
+  </CustomBondForce>
+  <CustomAngleForce energy="k*(theta-theta0)^2*(1+-0.014*((theta-theta0)*57.29577951308232)+5.6e-05*((theta-theta0)*57.29577951308232)^2+-7e-07*((theta-theta0)*57.29577951308232)^3+9e-10*((theta-theta0)*57.29577951308232)^4)">
+    <PerAngleParameter name="k" />
+    <PerAngleParameter name="theta0" />
+    <Angle class1="F" class2="C" class3="H" k="276.291418" theta0="1.907080" />
+    <Angle class1="H" class2="C" class3="H" k="178.209664" theta0="1.967296" />
+  </CustomAngleForce>
+</ForceField>
