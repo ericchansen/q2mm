@@ -60,6 +60,7 @@ KJPerMolAngSq = NewType("KJPerMolAngSq", float)
 KJPerMolRadSq = NewType("KJPerMolRadSq", float)
 KJPerMolNmSq = NewType("KJPerMolNmSq", float)
 HartreePerBohrSq = NewType("HartreePerBohrSq", float)
+HartreePerRadSq = NewType("HartreePerRadSq", float)
 MdynPerAng = NewType("MdynPerAng", float)
 MdynAngPerRadSq = NewType("MdynAngPerRadSq", float)
 
@@ -92,11 +93,11 @@ KCALMOLA2_TO_MDYNA: float = 1.0 / MDYNA_TO_KCALMOLA2
 KCALMOLRAD2_TO_MDYNA_RAD2: float = 1.0 / MDYNA_RAD2_TO_KCALMOLRAD2
 
 # Hessian: kcal/(mol·Å²) → Hartree/Bohr² (two-step via kJ intermediary)
-_KCALMOLA2_TO_HESSIAN_AU: float = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
+KCALMOLA2_TO_HESSIAN_AU: float = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
 
 # QM → canonical (Seminario path): AU → mdyn → kcal
-_AU_BOND_K_TO_CANONICAL: float = AU_TO_MDYNA * MDYNA_TO_KCALMOLA2
-_AU_ANGLE_K_TO_CANONICAL: float = AU_TO_MDYN_ANGLE * MDYNA_RAD2_TO_KCALMOLRAD2
+AU_BOND_K_TO_CANONICAL: float = AU_TO_MDYNA * MDYNA_TO_KCALMOLA2
+AU_ANGLE_K_TO_CANONICAL: float = AU_TO_MDYN_ANGLE * MDYNA_RAD2_TO_KCALMOLRAD2
 
 # =====================================================================
 # MM3 boundary conversions
@@ -249,12 +250,12 @@ def qm_to_canonical_bond_k(k: float) -> KcalPerMolAngSq:
 
     Uses the Seminario two-step path: AU → mdyn/Å → kcal/mol/Å².
     """
-    return KcalPerMolAngSq(float(k) * _AU_BOND_K_TO_CANONICAL)
+    return KcalPerMolAngSq(float(k) * AU_BOND_K_TO_CANONICAL)
 
 
 def canonical_to_qm_bond_k(k: float) -> HartreePerBohrSq:
     """Convert canonical bond k (kcal/mol/Å²) → QM (Hartree/Bohr²)."""
-    return HartreePerBohrSq(float(k) / _AU_BOND_K_TO_CANONICAL)
+    return HartreePerBohrSq(float(k) / AU_BOND_K_TO_CANONICAL)
 
 
 def qm_to_canonical_angle_k(k: float) -> KcalPerMolRadSq:
@@ -262,12 +263,12 @@ def qm_to_canonical_angle_k(k: float) -> KcalPerMolRadSq:
 
     Uses the Seminario two-step path: AU → mdyn·Å/rad² → kcal/mol/rad².
     """
-    return KcalPerMolRadSq(float(k) * _AU_ANGLE_K_TO_CANONICAL)
+    return KcalPerMolRadSq(float(k) * AU_ANGLE_K_TO_CANONICAL)
 
 
-def canonical_to_qm_angle_k(k: float) -> float:
+def canonical_to_qm_angle_k(k: float) -> HartreePerRadSq:
     """Convert canonical angle k (kcal/mol/rad²) → QM (Hartree/rad²)."""
-    return float(k) / _AU_ANGLE_K_TO_CANONICAL
+    return HartreePerRadSq(float(k) / AU_ANGLE_K_TO_CANONICAL)
 
 
 def qm_to_canonical_energy(e: float) -> KcalPerMol:
@@ -297,12 +298,12 @@ def ang_to_bohr(length: float) -> Bohr:
 
 def hessian_kcalmola2_to_au(k: float) -> HartreePerBohrSq:
     """Convert Hessian element kcal/(mol·Å²) → Hartree/Bohr²."""
-    return HartreePerBohrSq(float(k) * _KCALMOLA2_TO_HESSIAN_AU)
+    return HartreePerBohrSq(float(k) * KCALMOLA2_TO_HESSIAN_AU)
 
 
 def hessian_au_to_kcalmola2(k: float) -> KcalPerMolAngSq:
     """Convert Hessian element Hartree/Bohr² → kcal/(mol·Å²)."""
-    return KcalPerMolAngSq(float(k) / _KCALMOLA2_TO_HESSIAN_AU)
+    return KcalPerMolAngSq(float(k) / KCALMOLA2_TO_HESSIAN_AU)
 
 
 def hessian_kjmolnm2_to_au(k: float) -> HartreePerBohrSq:

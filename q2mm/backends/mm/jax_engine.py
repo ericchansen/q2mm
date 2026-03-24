@@ -31,7 +31,7 @@ from q2mm.constants import (
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
-from q2mm.models.units import _KCALMOLA2_TO_HESSIAN_AU
+from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
@@ -65,7 +65,7 @@ def _ensure_jax() -> None:
 
 # ---------------------------------------------------------------------------
 # Hessian unit conversion: kcal/mol/Å² → Hartree/Bohr²
-# Imported from q2mm.models.units as _KCALMOLA2_TO_HESSIAN_AU
+# Imported from q2mm.models.units as KCALMOLA2_TO_HESSIAN_AU
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -716,7 +716,7 @@ class JaxEngine(MMEngine):
 
         flat_coords = coords.flatten()
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
-        return np.asarray(hess_kcal_a2) * _KCALMOLA2_TO_HESSIAN_AU
+        return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
 
     def frequencies(self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField) -> list[float]:
         """Compute vibrational frequencies in cm⁻¹ from the Hessian.
