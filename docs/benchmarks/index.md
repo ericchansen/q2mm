@@ -82,10 +82,8 @@ Best result per QM source, sorted by wall-clock time.
 
 - [**Small Molecules**](small-molecules.md) — CH₃F: combined speed + accuracy
   leaderboard, cross-engine parity, frequency accuracy analysis
-- [**Rh-Enamide (Jaguar)**](rh-enamide-jaguar.md) — 9-structure
-  organometallic training set with Jaguar B3LYP/LACVP** reference data
-- [**Rh-Enamide (Psi4)**](rh-enamide-psi4.md) — Same system with Psi4
-  B3LYP/def2-SVP reference data
+- [**Rh-Enamide**](rh-enamide.md) — 9-structure organometallic training set
+  with Jaguar B3LYP/LACVP** reference data
 
 ---
 

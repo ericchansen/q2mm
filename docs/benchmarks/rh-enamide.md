@@ -1,4 +1,4 @@
-# Rh-Enamide — Jaguar Reference Data
+# Rh-Enamide
 
 Full-loop validation on a real organometallic system using Jaguar
 B3LYP/LACVP** QM reference data.
