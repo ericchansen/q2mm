@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from q2mm import constants as co
+from q2mm.models.units import hessian_au_to_kjmola2
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
@@ -255,9 +256,7 @@ def replace_neg_eigenvalue(
     if zer_out_neg:
         for neg_index in neg_indices:
             replaced_eigenvalues[neg_index[0]] = 0.00
-    replaced_eigenvalues[index_to_replace] = (
-        replace_with * co.HESSIAN_CONVERSION if units == co.KJMOLA else replace_with
-    )
+    replaced_eigenvalues[index_to_replace] = hessian_au_to_kjmola2(replace_with) if units == co.KJMOLA else replace_with
 
     return replaced_eigenvalues
 

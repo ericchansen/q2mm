@@ -16,6 +16,7 @@ import numpy as np
 
 from q2mm.backends.base import QMEngine
 from q2mm.backends.registry import register_qm
+from q2mm.constants import BOHR_TO_ANG
 
 try:
     import psi4 as _psi4
@@ -224,7 +225,7 @@ class Psi4Engine(QMEngine):
         _psi4.set_options({"opt_type": opt_type, "geom_maxiter": 100})
         energy = _psi4.optimize(m, molecule=mol)
         coords_bohr = mol.geometry().np
-        coords_ang = coords_bohr * 0.529177  # Bohr to Angstrom
+        coords_ang = coords_bohr * BOHR_TO_ANG
         atoms = [mol.symbol(i) for i in range(mol.natom())]
         return energy, atoms, coords_ang
 
