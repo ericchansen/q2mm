@@ -333,7 +333,10 @@ class TestObjectiveFunctionEigenmatrix:
 
         # Use MM Hessian == QM Hessian → self-projection should be diagonal
         engine = StubMMEngine(qm_hessian)
-        obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
+        from q2mm.models.forcefield import ForceField
+
+        stub_ff = ForceField()
+        obj = ObjectiveFunction(forcefield=stub_ff, engine=engine, molecules=[mol], reference=ref)
 
         result = obj._evaluate_molecule(0, obj.forcefield)
         assert "eigenmatrix" in result
