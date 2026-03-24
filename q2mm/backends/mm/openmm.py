@@ -493,6 +493,14 @@ class OpenMMEngine(MMEngine):
         if platform_name is None:
             platform_name = detect_best_platform()
         self._platform_name = platform_name
+
+        _VALID_PRECISIONS = {"single", "mixed", "double"}
+        if precision is not None:
+            precision = precision.strip().lower()
+            if precision not in _VALID_PRECISIONS:
+                raise ValueError(
+                    f"Invalid precision {precision!r}. Allowed values: {', '.join(sorted(_VALID_PRECISIONS))}."
+                )
         self._precision = precision
         logger.info("OpenMM platform: %s", self._platform_name)
 

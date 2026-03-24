@@ -64,7 +64,7 @@ jax-md = [
     "scipy",
 ]
 gpu = [
-    "jax[cuda12]",
+    "jax[cuda12]; sys_platform != 'win32'",
     "scipy",
 ]
 qcel = [

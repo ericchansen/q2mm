@@ -205,7 +205,7 @@ class TestBenchmarkPipeline:
         )
 
     def test_result_has_all_sections(self, result: BenchmarkResult) -> None:
-        assert result.metadata["backend"].startswith("OpenMM")
+        assert result.metadata["backend"] == "OpenMM"
         assert result.qm_reference["frequencies_cm1"]
         assert result.default_ff is not None
         assert result.seminario is not None
