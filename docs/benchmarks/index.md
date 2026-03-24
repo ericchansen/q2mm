@@ -13,6 +13,11 @@ QM reference: B3LYP/6-31+G(d).
 See the [small-molecules](small-molecules.md) page for the full
 backend × optimizer matrix.
 
+**Data:**
+[QM inputs](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference) ·
+[Results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results) ·
+[Force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
+
 | Backend | Optimizer | Score Δ | Time |
 |---------|-----------|---------|-----:|
 | **JAX** | Nelder-Mead | 0.221 → 0.000 (100%) | 0.8 s |

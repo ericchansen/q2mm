@@ -34,37 +34,7 @@ nav:
   - Backend Engines: backends.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
-  - API Reference:
-    - reference/index.md
-    - Models:
-      - ForceField: reference/models/forcefield.md
-      - Molecule: reference/models/molecule.md
-      - I/O: reference/models/ff_io.md
-      - Seminario: reference/models/seminario.md
-      - Hessian: reference/models/hessian.md
-      - Units: reference/models/units.md
-    - Backends:
-      - Base: reference/backends/base.md
-      - OpenMM: reference/backends/openmm.md
-      - Tinker: reference/backends/tinker.md
-      - JAX: reference/backends/jax.md
-      - Psi4: reference/backends/psi4.md
-    - Optimizers:
-      - Objective: reference/optimizers/objective.md
-      - SciPy: reference/optimizers/scipy_opt.md
-      - Cycling: reference/optimizers/cycling.md
-      - Scoring: reference/optimizers/scoring.md
-    - Parsers:
-      - Gaussian: reference/parsers/gaussian.md
-      - AMBER: reference/parsers/amber_ff.md
-      - MM3: reference/parsers/mm3.md
-      - Tinker: reference/parsers/tinker_ff.md
-      - Jaguar: reference/parsers/jaguar.md
-    - Diagnostics:
-      - Benchmark: reference/diagnostics/benchmark.md
-      - PES Distortion: reference/diagnostics/pes_distortion.md
-      - Report: reference/diagnostics/report.md
-    - Constants: reference/constants.md
+  - API Reference: reference/
   - Benchmarks:
     - Overview: benchmarks/index.md
     - Small Molecules: benchmarks/small-molecules.md
@@ -91,6 +61,12 @@ markdown_extensions:
 
 plugins:
   - search
+  - gen-files:
+      scripts:
+        - scripts/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
   - mkdocstrings:
       default_handler: python
       handlers:

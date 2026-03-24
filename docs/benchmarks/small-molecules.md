@@ -4,6 +4,15 @@ Benchmarks on CH₃F (5 atoms, 8 parameters) optimized against B3LYP/6-31+G(d)
 QM frequencies.  All methods start from identical Seminario-estimated
 parameters.  Results cover speed, accuracy, and cross-engine agreement.
 
+!!! info "Data"
+    **Inputs:**
+    [QM reference data](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference)
+    (optimized geometry, Hessian, frequencies, normal modes)
+
+    **Outputs:**
+    [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results) ·
+    [Optimized force fields (.fld, .prm, .xml)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
+
 ---
 
 ## Backend Leaderboard by Optimizer
