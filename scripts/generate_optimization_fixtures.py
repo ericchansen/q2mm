@@ -46,7 +46,9 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5) -> ForceField:
+def _water_ff(
+    bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5
+) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -54,7 +56,9 @@ def _water_ff(bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.
     )
 
 
-def _make_water_problem(engine: OpenMMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, OpenMMEngine]:
+def _make_water_problem(
+    engine: OpenMMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
+) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, OpenMMEngine]:
     """Create a water optimization problem with known true parameters."""
     if engine is None:
         engine = OpenMMEngine()
