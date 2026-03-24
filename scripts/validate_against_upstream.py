@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Validate current Q2MM behavior against pinned fixtures or live upstream code."""
 
+from __future__ import annotations
+
 import argparse
 from dataclasses import asdict, dataclass, field
 import json
@@ -11,6 +13,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from collections.abc import Callable
+from types import TracebackType
 from typing import Literal
 
 import numpy as np
@@ -53,6 +56,8 @@ Status = Literal["passed", "failed", "blocked"]
 
 @dataclass(frozen=True)
 class CaseDefinition:
+    """Definition of a validation test case."""
+
     case_id: str
     description: str
     category: str
@@ -64,6 +69,8 @@ class CaseDefinition:
 
 @dataclass
 class CaseResult:
+    """Result of running a single validation case."""
+
     case_id: str
     description: str
     category: str
@@ -132,12 +139,12 @@ def _int_keyed_map(values: dict[str, float | None]) -> dict[int, float | None]:
 
 
 class _DisableLogging:
-    def __enter__(self):
+    def __enter__(self) -> _DisableLogging:
         self._previous = logging.root.manager.disable
         logging.disable(logging.CRITICAL)
         return self
 
-    def __exit__(self, exc_type, exc, tb):
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> bool:
         logging.disable(self._previous)
         return False
 
@@ -411,7 +418,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=57.6, equilibrium=104.5)],
     )
 
-    def _water(angle_deg=104.5, bond_length=0.96):
+    def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
         theta = np.deg2rad(angle_deg)
         return Q2MMMolecule(
             symbols=["O", "H", "H"],
@@ -586,6 +593,7 @@ def _write_report(path: Path, results: list[CaseResult]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run validation cases against pinned fixtures or live upstream code."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--mode",

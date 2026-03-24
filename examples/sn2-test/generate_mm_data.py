@@ -1,4 +1,4 @@
-"""Run Tinker MM3 calculations on the SN2 TS geometry.
+r"""Run Tinker MM3 calculations on the SN2 TS geometry.
 
 Run with: python examples/sn2-test/generate_mm_data.py
 Requires Tinker binaries on PATH or at C:\\Users\\ericc\\tinker\\bin-windows

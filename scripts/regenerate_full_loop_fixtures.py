@@ -52,7 +52,8 @@ def qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> n
     return freqs
 
 
-def main():
+def main() -> None:
+    """Regenerate ethane GS golden fixture for full-loop parity tests."""
     if not GS_FCHK.exists():
         raise FileNotFoundError(f"Ethane GS.fchk not found at {GS_FCHK}")
 

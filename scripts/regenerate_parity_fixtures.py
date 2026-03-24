@@ -316,6 +316,7 @@ def _write_fixture(path: Path, payload: dict[str, Any], system_name: str) -> Non
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Regenerate legacy Seminario parity fixtures from an upstream worktree."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--worktree",
