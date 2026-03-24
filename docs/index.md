@@ -29,7 +29,7 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 
 ```mermaid
 flowchart LR
-    subgraph Parsers["Parsers"]
+    subgraph Parsers
         direction TB
         G[Gaussian]
         M[MOL2]
@@ -45,17 +45,9 @@ flowchart LR
         RD[ReferenceData]
     end
 
-    subgraph Seminario["Seminario Method"]
-        SEM["QM Hessian → initial\nbond/angle force constants"]
-    end
-
-    subgraph Objective["Objective Function"]
-        OBJ["Weighted residuals:\nQM ref vs MM prediction"]
-    end
-
-    subgraph Optimizer["Optimizer"]
-        OPT["scipy.optimize\n(L-BFGS-B, Nelder-Mead, …)"]
-    end
+    SEM[Seminario]
+    OBJ[Objective]
+    OPT[Optimizer]
 
     subgraph Backends["MM Backends"]
         direction TB
@@ -65,13 +57,13 @@ flowchart LR
     end
 
     Parsers --> Models
-    Models --> Seminario --> FF
-    FF --> Objective
-    RD --> Objective
-    Objective --> Optimizer
-    Optimizer -->|evaluate| Backends
-    Backends -->|energies, gradients| Objective
-    Optimizer -->|optimized| FF
+    Models --> SEM --> FF
+    FF --> OBJ
+    RD --> OBJ
+    OBJ --> OPT
+    OPT -->|evaluate| Backends
+    Backends -->|energies, gradients| OBJ
+    OPT -->|optimized| FF
 ```
 
 **Pipeline overview:**

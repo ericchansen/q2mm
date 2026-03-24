@@ -31,7 +31,11 @@ nav:
   - Architecture: architecture.md
   - Tutorial: tutorial.md
   - Data Types: data-types.md
-  - Backend Engines: backends.md
+  - Backend Engines:
+    - Overview: backends/index.md
+    - OpenMM: backends/openmm.md
+    - Tinker: backends/tinker.md
+    - JAX: backends/jax.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
   - Benchmarks:
