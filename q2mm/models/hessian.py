@@ -204,8 +204,9 @@ def replace_neg_eigenvalue(
     the MM force field.
 
     The default replacement is 1.0 Hartree/Bohr², converted to
-    kJ/mol/Å² via ``co.HESSIAN_CONVERSION`` (≈ 9376).  This operates
-    on **Cartesian** Hessian eigenvalues — not mass-weighted ones.
+    kJ/(mol·Å²) via :func:`~q2mm.models.units.hessian_au_to_kjmola2`
+    (≈ 9376).  This operates on **Cartesian** Hessian eigenvalues —
+    not mass-weighted ones.
 
     Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
     without forced replacement) gives ~13× lower RMS error, but can produce
@@ -218,8 +219,9 @@ def replace_neg_eigenvalue(
         replace_with (float): Replacement value in Hartree/Bohr². Defaults to 1.0.
         zer_out_neg (bool): If True, zero out remaining negative eigenvalues after
             replacing the most negative. Defaults to False.
-        units (int): Target units for the replacement. If ``co.KJMOLA`` (default),
-            *replace_with* is converted via ``constants.HESSIAN_CONVERSION``.
+        units (int): Target units for the replacement. If ``co.KJMOLA``
+            (default), *replace_with* is converted via
+            :func:`~q2mm.models.units.hessian_au_to_kjmola2`.
         strict (bool): If True, raise ValueError when more than one negative
             eigenvalue is found (indicates a higher-order saddle point or
             corrupted Hessian).  If False, proceed with a warning. Defaults
