@@ -17,8 +17,8 @@ backend × optimizer matrix.
 |---------|-----------|---------|-----:|
 | **JAX** | Nelder-Mead | 0.221 → 0.000 (100%) | 0.8 s |
 | **JAX-MD** | Nelder-Mead | 0.221 → 0.000 (100%) | 1.2 s |
-| **OpenMM** | Nelder-Mead | 0.221 → 0.001 (99%) | 2.0 s |
-| **Tinker** | Nelder-Mead | 0.221 → 0.001 (99%) | 286.9 s |
+| **OpenMM** | Nelder-Mead | 0.221 → 0.000 (100%) | 85.1 s |
+| **Tinker** | Nelder-Mead | 0.223 → 0.000 (100%) | 167.7 s |
 
 ---
 

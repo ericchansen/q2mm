@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields as field_list, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -41,6 +41,8 @@ class BenchmarkResult:
             and param_final.
         pes_distortion (dict | None): PES distortion results including
             modes (list), median_error_pct, max_error_pct, and elapsed_s.
+        optimized_ff (ForceField | None): The optimized force field object.
+            Not serialized to JSON — use :meth:`save_forcefields` to persist.
 
     """
 
@@ -50,9 +52,13 @@ class BenchmarkResult:
     seminario: dict | None = None
     optimized: dict | None = None
     pes_distortion: dict | None = None
+    optimized_ff: ForceField | None = field(default=None, repr=False)
 
     def to_json(self, path: str | Path) -> None:
         """Save result to a JSON file.
+
+        The :attr:`optimized_ff` field is excluded from serialization.
+        Use :meth:`save_forcefields` to persist the force field object.
 
         Args:
             path (str | Path): Destination file path. Parent directories
@@ -62,6 +68,9 @@ class BenchmarkResult:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        data = asdict(self)
+        data.pop("optimized_ff", None)
+
         def _convert(obj: Any) -> Any:
             if isinstance(obj, np.ndarray):
                 return obj.tolist()
@@ -70,7 +79,7 @@ class BenchmarkResult:
             raise TypeError(f"Cannot serialize {type(obj)}")
 
         with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2, default=_convert)
+            json.dump(data, f, indent=2, default=_convert)
 
     @classmethod
     def from_json(cls, path: str | Path) -> BenchmarkResult:
@@ -85,7 +94,75 @@ class BenchmarkResult:
         """
         with open(path) as f:
             data = json.load(f)
+        # Drop keys not in the dataclass (e.g. optimized_ff is never serialized)
+        valid_fields = {f.name for f in field_list(cls)}
+        data = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**data)
+
+    def save_forcefields(
+        self,
+        directory: str | Path,
+        stem: str | None = None,
+        molecule: Q2MMMolecule | None = None,
+    ) -> list[Path]:
+        """Save the optimized force field in all compatible native formats.
+
+        Writes one file per format that is compatible with the force
+        field's functional form (e.g. MM3 → ``.fld``, ``.prm``, ``.xml``
+        but not ``.frcmod``; harmonic → ``.frcmod`` only).
+
+        Args:
+            directory (str | Path): Output directory (created if needed).
+            stem (str | None): Base filename without extension. Defaults to
+                ``'{backend}_{optimizer}'`` from metadata.
+            molecule (Q2MMMolecule | None): Molecule for OpenMM XML residue
+                generation. If ``None``, a minimal XML is written.
+
+        Returns:
+            list[Path]: Paths to the files that were successfully written.
+
+        """
+        if self.optimized_ff is None:
+            return []
+
+        from q2mm.models.ff_io import (
+            save_amber_frcmod,
+            save_mm3_fld,
+            save_openmm_xml,
+            save_tinker_prm,
+        )
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+
+        if stem is None:
+            backend = self.metadata.get("backend", "unk")
+            optimizer = self.metadata.get("optimizer", "unk")
+            stem = f"{backend}_{optimizer}".replace(" ", "_").replace("+", "_")
+
+        ff = self.optimized_ff
+        form = getattr(ff, "functional_form", None)
+        form_value = form.value if hasattr(form, "value") else str(form) if form else "mm3"
+
+        # Map format name → (saver function, extension, extra kwargs)
+        savers: list[tuple[Any, str, dict[str, Any]]] = []
+        if form_value == "mm3":
+            savers.append((save_mm3_fld, ".fld", {}))
+            savers.append((save_tinker_prm, ".prm", {}))
+            savers.append((save_openmm_xml, ".xml", {"molecule": molecule}))
+        if form_value == "harmonic":
+            savers.append((save_amber_frcmod, ".frcmod", {}))
+
+        saved: list[Path] = []
+        for save_fn, ext, kwargs in savers:
+            out_path = directory / (stem + ext)
+            try:
+                save_fn(ff, out_path, **kwargs)
+                saved.append(out_path)
+            except Exception:
+                pass  # skip formats that fail (e.g. missing atom types)
+
+        return saved
 
     @classmethod
     def from_upstream(
@@ -373,5 +450,7 @@ def run_benchmark(
             "max_error_pct": float(np.max(all_errs)) if all_errs else 0.0,
             "elapsed_s": dist_elapsed,
         }
+
+    result.optimized_ff = ff_to_optimize.copy()
 
     return result
