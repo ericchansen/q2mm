@@ -178,6 +178,14 @@ class TestMatchTorsion:
         matches = ff.match_torsion(("O", "N", "C", "H"))
         assert len(matches) == 1
 
+    def test_match_reversed_env_id(self) -> None:
+        """match_torsion matches when env_id is reversed (D-C-B-A vs A-B-C-D)."""
+        ff = ForceField(
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5, env_id="H1-C1-C2-H2")],
+        )
+        matches = ff.match_torsion(("H", "C", "C", "H"), env_id="H2-C2-C1-H1")
+        assert len(matches) == 1
+
     def test_match_by_periodicity(self) -> None:
         """match_torsion filters by periodicity when specified."""
         ff = ForceField(

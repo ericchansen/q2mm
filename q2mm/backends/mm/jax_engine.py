@@ -896,7 +896,7 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
             per_atom_radius = vdw_params[_atom_vdw_map, 0]
             per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
             # Convert radius to sigma for 12-6 LJ: sigma = 2*radius / 2^(1/6)
-            # (MM3/OPLS use radius as Rmin / 2^(1/6))
+            # (here radius is Rmin/2, so sigma = Rmin / 2^(1/6))
             per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
             E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
 

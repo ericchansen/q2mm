@@ -21,6 +21,7 @@ from q2mm.models.identifiers import (
     _extract_element,
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
+    canonicalize_torsion_env_id,
 )
 
 if TYPE_CHECKING:
@@ -440,8 +441,11 @@ class ForceField:
                 continue
             if is_improper is not None and t.is_improper != is_improper:
                 continue
-            if env_id and t.env_id and t.env_id != env_id:
-                continue
+            if env_id and t.env_id:
+                canon_env = canonicalize_torsion_env_id(env_id.split("-"))
+                canon_t = canonicalize_torsion_env_id(t.env_id.split("-"))
+                if canon_t != canon_env:
+                    continue
             if periodicity is not None and t.periodicity != periodicity:
                 continue
             results.append(t)
