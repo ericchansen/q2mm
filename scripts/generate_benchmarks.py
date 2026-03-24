@@ -57,7 +57,9 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
     )
 
 
-def _water_ff(bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5) -> ForceField:
+def _water_ff(
+    bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5
+) -> ForceField:
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
@@ -89,7 +91,14 @@ def build_problem(engine: MMEngine) -> tuple[ForceField, list[Q2MMMolecule], Ref
     return guess_ff, mols, ref
 
 
-def run_benchmark(engine: MMEngine, method: str, guess_ff: ForceField, mols: list[Q2MMMolecule], ref: ReferenceData, use_bounds: bool = True) -> dict[str, object]:
+def run_benchmark(
+    engine: MMEngine,
+    method: str,
+    guess_ff: ForceField,
+    mols: list[Q2MMMolecule],
+    ref: ReferenceData,
+    use_bounds: bool = True,
+) -> dict[str, object]:
     """Run a single optimizer benchmark from a FRESH copy of guess_ff."""
     # Deep copy the guess FF so each method starts from identical params
     fresh_ff = _water_ff(

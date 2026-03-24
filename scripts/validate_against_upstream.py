@@ -144,7 +144,9 @@ class _DisableLogging:
         logging.disable(logging.CRITICAL)
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> bool:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> bool:
         logging.disable(self._previous)
         return False
 
