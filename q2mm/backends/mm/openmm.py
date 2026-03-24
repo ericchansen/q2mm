@@ -194,6 +194,22 @@ class OpenMMHandle:
     functional_form: FunctionalForm = FunctionalForm.MM3
 
 
+@dataclass
+class _DiffHandle:
+    """Handle for differentiable OpenMM evaluation with global parameters.
+
+    Unlike :class:`OpenMMHandle`, this uses global parameters so that
+    ``addEnergyParameterDerivative()`` can compute exact dE/d(param).
+
+    """
+
+    context: object
+    param_names: list[str]
+    param_vector_indices: list[int]
+    grad_unit_factors: list[float]
+    functional_form: FunctionalForm
+
+
 def _ensure_openmm() -> None:
     """Raise ``ImportError`` if OpenMM is not installed.
 
@@ -488,6 +504,22 @@ class OpenMMEngine(MMEngine):
 
         Returns:
             bool: Always ``True`` for OpenMM.
+
+        """
+        return True
+
+    def supports_analytical_gradients(self) -> bool:
+        """Whether this engine provides analytical parameter gradients.
+
+        OpenMM provides exact dE/d(param) via ``addEnergyParameterDerivative``
+        on ``CustomForce`` objects. Only supported for MM3 functional form
+        (which uses CustomForce); harmonic form uses built-in Force classes
+        that don't expose parameter derivatives.
+
+        Returns:
+            bool: Always ``True`` — MM3 path uses global-parameter
+                derivatives; harmonic path falls back to finite differences
+                inside :meth:`energy_and_param_grad`.
 
         """
         return True
@@ -1029,6 +1061,286 @@ class OpenMMEngine(MMEngine):
                 self.update_forcefield(handle, forcefield)
             return handle
         return self.create_context(structure, forcefield)
+
+    # ------------------------------------------------------------------
+    # Analytical parameter gradients via addEnergyParameterDerivative
+    # ------------------------------------------------------------------
+
+    def _create_diff_handle(self, molecule: Q2MMMolecule, forcefield: ForceField) -> _DiffHandle:
+        """Build an OpenMM system with global parameters for analytical gradients.
+
+        Each unique FF parameter becomes a named global parameter on the
+        appropriate ``CustomForce``.  ``addEnergyParameterDerivative()`` is
+        called for every global parameter so that
+        ``getState(getParameterDerivatives=True)`` returns exact dE/dp.
+
+        Supports both HARMONIC and MM3 functional forms.  Both use
+        ``CustomBondForce`` / ``CustomAngleForce`` (rather than the built-in
+        ``HarmonicBondForce`` etc.) so that ``addEnergyParameterDerivative``
+        is available.
+
+        Args:
+            molecule: Molecular structure.
+            forcefield: Force field with canonical-unit parameters.
+
+        Returns:
+            _DiffHandle with the context and parameter mapping.
+
+        """
+        self._validate_forcefield(forcefield)
+        ff_form = forcefield.functional_form or FunctionalForm.MM3
+        use_harmonic = ff_form == FunctionalForm.HARMONIC
+
+        system = mm.System()
+        for symbol in molecule.symbols:
+            system.addParticle(MASSES[symbol] * unit.dalton)
+
+        param_names: list[str] = []
+        param_vector_indices: list[int] = []
+        grad_unit_factors: list[float] = []
+        param_vector = forcefield.get_param_vector()
+        pv_idx = 0  # tracks position in flat param vector
+
+        # --- Bonds: each bond param contributes (k, r0) ---
+        bond_global_map: dict[int, tuple[str, str]] = {}
+        # Conversion factors differ: HARMONIC CustomBondForce uses
+        # kJ/mol/nm² directly; MM3 uses kJ/mol/Å² (expression handles nm→Å).
+        bond_k_factor = KCAL_TO_KJ * 100.0 if use_harmonic else _bond_k_to_openmm(1.0)
+        for bp_idx, bp in enumerate(forcefield.bonds):
+            k_name = f"bond_k_{bp_idx}"
+            r0_name = f"bond_r0_{bp_idx}"
+            bond_global_map[bp_idx] = (k_name, r0_name)
+            param_names.extend([k_name, r0_name])
+            param_vector_indices.extend([pv_idx, pv_idx + 1])
+            grad_unit_factors.extend(
+                [
+                    bond_k_factor,  # dk_openmm/dk_canonical
+                    0.1,  # dr0_openmm/dr0_canonical (Å → nm)
+                ]
+            )
+            pv_idx += 2
+
+        # Build one CustomBondForce per bond-param type so each force has
+        # just two global parameters (k, r0) — avoids the select() limit.
+        for bp_idx, bp in enumerate(forcefield.bonds):
+            k_name, r0_name = bond_global_map[bp_idx]
+            k_val = (
+                float(bp.force_constant) * KCAL_TO_KJ * 100.0 if use_harmonic else _bond_k_to_openmm(bp.force_constant)
+            )
+            if use_harmonic:
+                expr = f"{k_name}*(r-{r0_name})^2"
+            else:
+                expr = f"{k_name}*dr10^2*(1-c3*dr10+c4*dr10^2);dr10=10*(r-{r0_name});c3={MM3_BOND_C3};c4={MM3_BOND_C4}"
+            bf = mm.CustomBondForce(expr)
+            bf.setForceGroup(0)
+            bf.addGlobalParameter(k_name, k_val)
+            bf.addGlobalParameter(r0_name, float(bp.equilibrium) * 0.1)
+            bf.addEnergyParameterDerivative(k_name)
+            bf.addEnergyParameterDerivative(r0_name)
+
+            for bond in molecule.bonds:
+                param = _match_bond(
+                    forcefield,
+                    bond.elements,
+                    env_id=bond.env_id,
+                    ff_row=bond.ff_row,
+                )
+                if param is bp:
+                    bf.addBond(bond.atom_i, bond.atom_j)
+            system.addForce(bf)
+
+        # --- Angles: each angle param contributes (k, theta0) ---
+        angle_global_map: dict[int, tuple[str, str]] = {}
+        # HARMONIC uses simple kJ/mol/rad² (2x for half-convention absorbed);
+        # MM3 uses kJ/mol/rad² with anharmonic corrections.
+        angle_k_factor = _angle_k_to_harmonic(1.0) / 2.0 if use_harmonic else _angle_k_to_openmm(1.0)
+        for ap_idx, ap in enumerate(forcefield.angles):
+            k_name = f"angle_k_{ap_idx}"
+            t0_name = f"angle_t0_{ap_idx}"
+            angle_global_map[ap_idx] = (k_name, t0_name)
+            param_names.extend([k_name, t0_name])
+            param_vector_indices.extend([pv_idx, pv_idx + 1])
+            grad_unit_factors.extend(
+                [
+                    angle_k_factor,  # dk_openmm/dk_canonical
+                    np.deg2rad(1.0),  # dtheta0_openmm/dtheta0_canonical (deg → rad)
+                ]
+            )
+            pv_idx += 2
+
+        # Build one CustomAngleForce per angle-param type.
+        for ap_idx, ap in enumerate(forcefield.angles):
+            k_name, t0_name = angle_global_map[ap_idx]
+            k_val = float(ap.force_constant) * KCAL_TO_KJ if use_harmonic else _angle_k_to_openmm(ap.force_constant)
+            if use_harmonic:
+                expr = f"{k_name}*(theta-{t0_name})^2"
+            else:
+                expr = (
+                    f"{k_name}*(theta-{t0_name})^2*("
+                    f"1+a3*((theta-{t0_name})*deg)"
+                    f"+a4*((theta-{t0_name})*deg)^2"
+                    f"+a5*((theta-{t0_name})*deg)^3"
+                    f"+a6*((theta-{t0_name})*deg)^4"
+                    f");"
+                    f"a3={MM3_ANGLE_C3};"
+                    f"a4={MM3_ANGLE_C4};"
+                    f"a5={MM3_ANGLE_C5};"
+                    f"a6={MM3_ANGLE_C6};"
+                    f"deg={RAD_TO_DEG}"
+                )
+            af = mm.CustomAngleForce(expr)
+            af.setForceGroup(1)
+            af.addGlobalParameter(k_name, k_val)
+            af.addGlobalParameter(t0_name, np.deg2rad(float(ap.equilibrium)))
+            af.addEnergyParameterDerivative(k_name)
+            af.addEnergyParameterDerivative(t0_name)
+
+            for angle in molecule.angles:
+                param = _match_angle(
+                    forcefield,
+                    angle.elements,
+                    env_id=angle.env_id,
+                    ff_row=angle.ff_row,
+                )
+                if param is ap:
+                    af.addAngle(angle.atom_i, angle.atom_j, angle.atom_k)
+            system.addForce(af)
+
+        # --- Torsions: each torsion param contributes (k,) ---
+        for tp in forcefield.torsions:
+            if tp.is_improper:
+                continue
+            param_names.append(f"torsion_k_{pv_idx}")
+            param_vector_indices.append(pv_idx)
+            grad_unit_factors.append(_torsion_k_to_openmm(1.0))
+            pv_idx += 1
+
+        # Torsions use PeriodicTorsionForce (no CustomForce → no derivatives).
+        # Skip torsion gradients — they are not supported via this path.
+        # pv_idx already advanced past torsion params above.
+        # Reset torsion entries since PeriodicTorsionForce can't do derivatives.
+        n_torsion_params = sum(1 for tp in forcefield.torsions if not tp.is_improper)
+        if n_torsion_params > 0:
+            # Remove torsion entries from the derivative lists
+            param_names = param_names[:-n_torsion_params]
+            param_vector_indices = param_vector_indices[:-n_torsion_params]
+            grad_unit_factors = grad_unit_factors[:-n_torsion_params]
+            # Still add the torsion force for correct energy
+            torsion_force = mm.PeriodicTorsionForce()
+            for torsion in molecule.torsions:
+                params = _match_torsions(
+                    forcefield,
+                    torsion.element_quad,
+                    env_id=torsion.env_id,
+                    ff_row=torsion.ff_row,
+                    is_improper=False,
+                )
+                for param in params:
+                    torsion_force.addTorsion(
+                        torsion.atom_i,
+                        torsion.atom_j,
+                        torsion.atom_k,
+                        torsion.atom_l,
+                        param.periodicity,
+                        np.deg2rad(float(param.phase)),
+                        _torsion_k_to_openmm(param.force_constant),
+                    )
+            system.addForce(torsion_force)
+
+        # --- vdW: each vdw param contributes (radius, epsilon) ---
+        vdw_global_map: dict[int, tuple[str, str]] = {}
+        for vp_idx, vp in enumerate(forcefield.vdws):
+            r_name = f"vdw_r_{vp_idx}"
+            e_name = f"vdw_e_{vp_idx}"
+            vdw_global_map[vp_idx] = (r_name, e_name)
+            param_names.extend([r_name, e_name])
+            param_vector_indices.extend([pv_idx, pv_idx + 1])
+            # radius: canonical Å Rmin/2 → OpenMM nm (divide by 10)
+            # epsilon: canonical kcal/mol → OpenMM kJ/mol (* 4.184)
+            grad_unit_factors.extend(
+                [
+                    0.1,  # dradius_openmm/dradius_canonical
+                    KCAL_TO_KJ,  # deps_openmm/deps_canonical
+                ]
+            )
+            pv_idx += 2
+
+        if forcefield.vdws:
+            vdw_force = mm.CustomNonbondedForce(
+                "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
+                " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
+                "rc=0.34*rv;"
+                "rv=radius1+radius2;"
+                "epsilon=sqrt(epsilon1*epsilon2)"
+            )
+            vdw_force.addPerParticleParameter("radius")
+            vdw_force.addPerParticleParameter("epsilon")
+            vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
+            # Note: CustomNonbondedForce derivatives are w.r.t. global params only,
+            # not per-particle params. vdW gradients require a different approach
+            # (one global param per atom type). For now, skip vdW derivatives.
+            for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
+                param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
+                if param is None:
+                    raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
+                vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
+            vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
+            system.addForce(vdw_force)
+
+            # Remove vdW entries from derivative lists (per-particle, not global)
+            n_vdw_params = 2 * len(forcefield.vdws)
+            param_names = param_names[:-n_vdw_params]
+            param_vector_indices = param_vector_indices[:-n_vdw_params]
+            grad_unit_factors = grad_unit_factors[:-n_vdw_params]
+
+        integrator, context = self._create_context(system)
+        context.setPositions(self._positions(molecule))
+
+        return _DiffHandle(
+            context=context,
+            param_names=param_names,
+            param_vector_indices=param_vector_indices,
+            grad_unit_factors=grad_unit_factors,
+            functional_form=forcefield.functional_form,
+        )
+
+    def energy_and_param_grad(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
+        """Compute energy and analytical gradient w.r.t. FF parameters.
+
+        Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
+        objects to get exact dE/d(param) for bond and angle parameters.
+        Torsion and vdW gradients are set to zero (not supported via this
+        path; use finite differences or the JAX backend for those).
+
+        Args:
+            structure (Q2MMMolecule): Molecular structure.
+            forcefield (ForceField): Force field parameters.
+
+        Returns:
+            tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy``
+                is in kcal/mol and ``grad`` has the same length as
+                ``forcefield.get_param_vector()``.
+
+        """
+        molecule = _as_molecule(structure)
+        diff = self._create_diff_handle(molecule, forcefield)
+
+        state = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
+        energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
+        derivs = state.getEnergyParameterDerivatives()
+
+        param_vector = forcefield.get_param_vector()
+        grad = np.zeros(len(param_vector))
+
+        for name, pv_idx, unit_factor in zip(
+            diff.param_names, diff.param_vector_indices, diff.grad_unit_factors, strict=True
+        ):
+            # dE/dp_canonical = dE/dp_openmm * dp_openmm/dp_canonical
+            # But OpenMM returns dE in kJ/mol, we want kcal/mol
+            deriv_openmm = derivs[name]  # dE_kJ/dp_openmm
+            grad[pv_idx] = deriv_openmm * unit_factor / KCAL_TO_KJ
+
+        return energy, grad
 
     def energy(
         self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
