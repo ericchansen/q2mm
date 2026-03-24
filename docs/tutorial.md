@@ -132,7 +132,7 @@ the log file with Q2MM's `GaussLog` parser:
 
 ```python
 from q2mm.parsers.gaussian import GaussLog
-from q2mm import linear_algebra
+from q2mm.models.hessian import reform_hessian
 
 log = GaussLog("sn2-ts.log", au_hessian=True)
 
@@ -143,7 +143,7 @@ atoms = structures[-1].atoms         # last (optimized) geometry
 # Reconstruct the Cartesian Hessian from eigenvalues / eigenvectors
 eigenvalues = log.evals
 eigenvectors = log.evecs
-hessian = linear_algebra.reform_hessian(eigenvalues, eigenvectors)
+hessian = reform_hessian(eigenvalues, eigenvectors)
 ```
 
 !!! note "Hessian units"
@@ -260,7 +260,7 @@ geometry.
     ```python
     from q2mm.parsers.gaussian import GaussLog
     from q2mm.models.molecule import Q2MMMolecule
-    from q2mm import linear_algebra
+    from q2mm.models.hessian import reform_hessian
 
     log = GaussLog("sn2-ts.log", au_hessian=True)
 
@@ -270,7 +270,7 @@ geometry.
         structure,
         charge=-1,
         bond_tolerance=1.4,
-        hessian=linear_algebra.reform_hessian(log.evals, log.evecs),
+        hessian=reform_hessian(log.evals, log.evecs),
     )
     ```
 
@@ -857,7 +857,7 @@ from q2mm.models.seminario import estimate_force_constants
 from q2mm.models.ff_io import save_mm3_fld
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
-from q2mm import linear_algebra
+from q2mm.models.hessian import decompose, reform_hessian
 
 QM_REF = Path("examples/sn2-test/qm-reference")
 
@@ -908,7 +908,7 @@ ref = ReferenceData.from_molecule(
 print(f"\nReference observations: {ref.n_observations}")
 
 # ── Step 4: Hessian analysis ──────────────────────────────────────
-eigenvalues, eigenvectors = linear_algebra.decompose(hessian)
+eigenvalues, eigenvectors = decompose(hessian)
 n_negative = sum(1 for e in eigenvalues if e < -0.001)
 print(f"\nHessian eigenvalues: {len(eigenvalues)} total, "
       f"{n_negative} negative (reaction coordinate)")

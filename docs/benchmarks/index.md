@@ -6,17 +6,32 @@ RAM, Python 3.12.
 
 ---
 
-## Head-to-Head Summary
+## CH₃F (5 atoms, 8 parameters)
 
-| System | QM Source | Params | Freq Refs | Seminario | Optimizer | Score Δ | Time |
-|--------|-----------|--------|-----------|-----------|-----------|---------|------|
-| CH₃F | Gaussian B3LYP/6-31+G(d) | 8 | 9 | 0.001 s | L-BFGS-B | 0.221 → 0.018 (92%) | 4.2 s |
-| CH₃F | Gaussian B3LYP/6-31+G(d) | 8 | 9 | 0.001 s | Nelder-Mead | 0.221 → 0.001 (99%) | 2.0 s |
-| CH₃F | Gaussian B3LYP/6-31+G(d) | 8 | 9 | 0.001 s | Powell | 0.221 → 0.001 (99%) | 3.8 s |
-| Rh-enamide (9 mol) | Jaguar B3LYP/LACVP** | 182 | 1,030 | 0.03 s | Nelder-Mead | 434,172 → 101,077 (76.7%) | 369 s |
-| Rh-enamide (9 mol) | Psi4 B3LYP/def2-SVP | 182 | — | 0.03 s | Nelder-Mead | — | — |
+Best result per MM backend, sorted by wall-clock time.
+QM reference: B3LYP/6-31+G(d).
+See the [small-molecules](small-molecules.md) page for the full
+backend × optimizer matrix.
 
-*Rh-enamide Psi4 row will be populated after Psi4 generation completes.*
+| Backend | Optimizer | Score Δ | Time |
+|---------|-----------|---------|-----:|
+| **JAX** | Nelder-Mead | 0.221 → 0.000 (100%) | 0.8 s |
+| **JAX-MD** | Nelder-Mead | 0.221 → 0.000 (100%) | 1.2 s |
+| **OpenMM** | Nelder-Mead | 0.221 → 0.001 (99%) | 2.0 s |
+| **Tinker** | Nelder-Mead | 0.221 → 0.001 (99%) | 286.9 s |
+
+---
+
+## Rh-Enamide (9 molecules, 182 parameters)
+
+Best result per QM source, sorted by wall-clock time.
+
+| Backend | QM Source | Optimizer | Score Δ | Time |
+|---------|-----------|-----------|---------|-----:|
+| **OpenMM** | Jaguar B3LYP/LACVP** | Nelder-Mead | 434,172 → 101,077 (76.7%) | 369 s |
+| **OpenMM** | Psi4 B3LYP/def2-SVP | Nelder-Mead | — | — |
+
+*Psi4 row will be populated after Psi4 generation completes.*
 
 ---
 
