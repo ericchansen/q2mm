@@ -335,7 +335,7 @@ class TestObjectiveFunctionEigenmatrix:
         engine = StubMMEngine(qm_hessian)
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
 
-        result = obj._evaluate_molecule(0)
+        result = obj._evaluate_molecule(0, obj.forcefield)
         assert "eigenmatrix" in result
 
         eigmat = np.array(result["eigenmatrix"], dtype=float)
@@ -349,7 +349,7 @@ class TestObjectiveFunctionEigenmatrix:
         # Second call: swap in a scaled engine, eigenvectors stay cached
         engine2 = StubMMEngine(2.0 * qm_hessian)
         obj.engine = engine2
-        result2 = obj._evaluate_molecule(0)
+        result2 = obj._evaluate_molecule(0, obj.forcefield)
         eigmat2 = np.array(result2["eigenmatrix"], dtype=float)
 
         # Diagonal should scale by 2

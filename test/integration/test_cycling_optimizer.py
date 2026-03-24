@@ -173,7 +173,7 @@ class TestSensitivity:
         assert len(sens.d2) == 2
         assert len(sens.ranking) == 2
         assert set(sens.ranking.tolist()) == {0, 1}
-        assert sens.n_evals == 6  # 1 baseline + 2*2 params + 1 restore
+        assert sens.n_evals == 5  # 1 baseline + 2*2 params
 
     def test_abs_d1_metric(self) -> None:
         """abs_d1 metric ranks by largest normalised |d1/step| descending."""

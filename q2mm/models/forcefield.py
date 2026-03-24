@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
@@ -493,6 +493,51 @@ class ForceField:
             vdw.radius = vec[idx]
             vdw.epsilon = vec[idx + 1]
             idx += 2
+
+    def with_params(self, vec: np.ndarray) -> ForceField:
+        """Return a new ForceField with parameters set from *vec*.
+
+        Unlike :meth:`set_param_vector`, this does **not** mutate the
+        current instance.  The returned object shares metadata (labels,
+        env_ids, source_path, …) but has independent parameter values.
+
+        Args:
+            vec: Flat parameter vector (same layout as
+                :meth:`get_param_vector`).
+
+        Returns:
+            A new :class:`ForceField` with updated parameter values.
+
+        Raises:
+            ValueError: If *vec* length does not match :attr:`n_params`.
+
+        """
+        if len(vec) != self.n_params:
+            raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
+        idx = 0
+        new_bonds = []
+        for b in self.bonds:
+            new_bonds.append(replace(b, force_constant=vec[idx], equilibrium=vec[idx + 1]))
+            idx += 2
+        new_angles = []
+        for a in self.angles:
+            new_angles.append(replace(a, force_constant=vec[idx], equilibrium=vec[idx + 1]))
+            idx += 2
+        new_torsions = []
+        for t in self.torsions:
+            new_torsions.append(replace(t, force_constant=vec[idx]))
+            idx += 1
+        new_vdws = []
+        for vdw in self.vdws:
+            new_vdws.append(replace(vdw, radius=vec[idx], epsilon=vec[idx + 1]))
+            idx += 2
+        return replace(
+            self,
+            bonds=new_bonds,
+            angles=new_angles,
+            torsions=new_torsions,
+            vdws=new_vdws,
+        )
 
     # Default bounds per parameter type (min, max) in canonical units.
     # bond_k allows negative values for transition-state force fields (TSFF),
