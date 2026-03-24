@@ -9,6 +9,7 @@ parameter.  Download from: https://dasher.wustl.edu/tinker/
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import subprocess
@@ -21,6 +22,8 @@ from q2mm.backends.registry import register_mm
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
+
+logger = logging.getLogger(__name__)
 
 
 def _find_tinker_dir() -> str | None:
@@ -327,14 +330,42 @@ class TinkerEngine(MMEngine):
                 )
             elem_to_type[elem] = tnum
 
-        # Filter out FF parameters referencing placeholder/wildcard elements
-        # (e.g., "00" from MM3 atom-type encodings) that aren't real atoms.
-        def _has_real_elements(elements: tuple[str, ...]) -> bool:
-            return all(el in elem_to_type for el in elements)
+        # Only skip FF parameters whose elements are known MM3 placeholder
+        # labels (e.g. "00" for wildcard atom types).  Real elements that
+        # aren't in the molecule are genuine errors — raise immediately so
+        # they aren't silently hidden.
+        _KNOWN_PLACEHOLDERS = {"00"}
 
-        bonds = [b for b in ff.bonds if _has_real_elements(b.elements)]
-        angles = [a for a in ff.angles if _has_real_elements(a.elements)]
-        vdws = [v for v in ff.vdws if not v.element or v.element in elem_to_type]
+        def _check_elements(elements: tuple[str, ...], label: str) -> bool:
+            """Return True if all *elements* are in elem_to_type.
+
+            Skips (with a debug log) if a placeholder is detected.
+            Raises ValueError for real elements missing from the molecule.
+            """
+            for el in elements:
+                if el in elem_to_type:
+                    continue
+                if el in _KNOWN_PLACEHOLDERS:
+                    logger.debug("Skipping %s with placeholder element '%s'", label, el)
+                    return False
+                raise ValueError(
+                    f"FF {label} references element '{el}' not present in molecule atoms (and not a known placeholder)"
+                )
+            return True
+
+        bonds = [b for b in ff.bonds if _check_elements(b.elements, "bond")]
+        angles = [a for a in ff.angles if _check_elements(a.elements, "angle")]
+        vdws = []
+        for v in ff.vdws:
+            if not v.element or v.element in elem_to_type:
+                vdws.append(v)
+            elif v.element in _KNOWN_PLACEHOLDERS:
+                logger.debug("Skipping vdW with placeholder element '%s'", v.element)
+            else:
+                raise ValueError(
+                    f"FF vdW references element '{v.element}' not present "
+                    f"in molecule atoms (and not a known placeholder)"
+                )
 
         with open(prm_path, "w") as f:
             # MM3 functional form header (matches mm3.prm conventions)
@@ -531,27 +562,41 @@ class TinkerEngine(MMEngine):
             if len(sections) < 2:
                 raise RuntimeError("Could not parse .hes file: no diagonal section found")
 
-            # Parse diagonal elements
-            diag_vals = [float(v) for v in sections[1].split()]
-            n3 = len(diag_vals)
-            hessian = np.zeros((n3, n3))
-            for i, val in enumerate(diag_vals):
-                hessian[i, i] = val
+            try:
+                # Parse diagonal elements
+                diag_vals = [float(v) for v in sections[1].split()]
+                n3 = len(diag_vals)
+                hessian = np.zeros((n3, n3))
+                for i, val in enumerate(diag_vals):
+                    hessian[i, i] = val
 
-            # Parse off-diagonal blocks: one block per (row_index),
-            # containing elements H[row, row+1], H[row, row+2], ..., H[row, n3-1]
-            row = 0
-            for block in sections[2:]:
-                vals = [float(v) for v in block.split()]
-                if not vals:
-                    continue
-                col_start = row + 1
-                for j, val in enumerate(vals):
-                    col = col_start + j
-                    if col < n3:
+                # Parse off-diagonal blocks: one block per (row_index),
+                # containing elements H[row, row+1], H[row, row+2], ..., H[row, n3-1]
+                expected_blocks = n3 - 1
+                row = 0
+                for block_idx, block in enumerate(sections[2:]):
+                    vals = [float(v) for v in block.split()]
+                    if not vals:
+                        continue
+                    expected_vals = n3 - row - 1
+                    if len(vals) != expected_vals:
+                        raise ValueError(
+                            f"Off-diagonal block {block_idx} (row {row}): "
+                            f"expected {expected_vals} values, got {len(vals)}"
+                        )
+                    col_start = row + 1
+                    for j, val in enumerate(vals):
+                        col = col_start + j
                         hessian[row, col] = val
                         hessian[col, row] = val
-                row += 1
+                    row += 1
+            except (ValueError, IndexError) as exc:
+                n3_str = str(n3) if "n3" in locals() else "?"
+                raise RuntimeError(
+                    f"Failed to parse .hes file: {exc}. "
+                    f"File had {len(sections)} sections, "
+                    f"expected diagonal size {n3_str}."
+                ) from exc
 
             # Tinker outputs Hessian in kcal/(mol·Å²); convert to Hartree/Bohr²
             return hessian * KCALMOLA2_TO_HESSIAN_AU
