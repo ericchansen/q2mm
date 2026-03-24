@@ -203,6 +203,24 @@ class TestKnownValues:
         expected = 2.0 * 50.0 * KCAL_TO_KJ * 100.0
         assert result == pytest.approx(expected, rel=1e-14)
 
+    def test_openmm_bond_k_nm_no_half(self) -> None:
+        """CustomBondForce k (no ½) = k_canonical * 4.184 * 100."""
+        from q2mm.models.units import canonical_to_openmm_bond_k_nm
+
+        k = 50.0  # kcal/mol/Å²
+        result = canonical_to_openmm_bond_k_nm(k)
+        expected = 50.0 * KCAL_TO_KJ * 100.0
+        assert result == pytest.approx(expected, rel=1e-14)
+        # Exactly half of the harmonic version
+        assert result == pytest.approx(canonical_to_openmm_harmonic_bond_k(k) / 2.0, rel=1e-14)
+
+    def test_kj_to_kcal(self) -> None:
+        """kJ/mol → kcal/mol divides by 4.184."""
+        from q2mm.models.units import kj_to_kcal
+
+        assert kj_to_kcal(4.184) == pytest.approx(1.0, rel=1e-14)
+        assert kj_to_kcal(0.0) == 0.0
+
     def test_openmm_harmonic_angle_k_includes_half(self) -> None:
         """HarmonicAngleForce k = 2 * k_canonical * 4.184."""
         k = 80.0  # kcal/mol/rad²

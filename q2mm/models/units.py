@@ -142,6 +142,16 @@ def openmm_to_canonical_bond_k(k: float) -> KcalPerMolAngSq:
     return KcalPerMolAngSq(float(k) / KCAL_TO_KJ)
 
 
+def canonical_to_openmm_bond_k_nm(k: float) -> KJPerMolNmSq:
+    """Convert canonical bond k (kcal/mol/Å²) → kJ/(mol·nm²) without ½ convention.
+
+    For CustomBondForce expressions that use E = k·(r−r₀)² with r in nm.
+    Differs from :func:`canonical_to_openmm_harmonic_bond_k` which includes
+    the 2× factor for HarmonicBondForce's E = ½·k·(r−r₀)² convention.
+    """
+    return KJPerMolNmSq(float(k) * KCAL_TO_KJ * 100.0)
+
+
 def canonical_to_openmm_angle_k(k: float) -> KJPerMolRadSq:
     """Convert canonical angle k (kcal/mol/rad²) → OpenMM custom-force k (kJ/mol/rad²)."""
     return KJPerMolRadSq(float(k) * KCAL_TO_KJ)
@@ -196,6 +206,16 @@ def canonical_to_openmm_epsilon(eps: float) -> KJPerMol:
 def openmm_to_canonical_epsilon(eps: float) -> KcalPerMol:
     """Convert OpenMM vdW epsilon (kJ/mol) → canonical epsilon (kcal/mol)."""
     return KcalPerMol(float(eps) / KCAL_TO_KJ)
+
+
+def kj_to_kcal(energy: float) -> KcalPerMol:
+    """Convert energy in kJ/mol → kcal/mol."""
+    return KcalPerMol(float(energy) / KCAL_TO_KJ)
+
+
+def kcal_to_kj(energy: float) -> KJPerMol:
+    """Convert energy in kcal/mol → kJ/mol."""
+    return KJPerMol(float(energy) * KCAL_TO_KJ)
 
 
 def ang_to_nm(length: float) -> Nanometer:
