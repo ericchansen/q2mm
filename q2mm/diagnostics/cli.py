@@ -383,10 +383,10 @@ def main(argv: list[str] | None = None) -> int:
         backends = all_backends
         if args.backend:
             filter_names = {b.lower() for b in args.backend}
-            backends = [(n, c, m) for n, c, m in all_backends if n.lower() in filter_names]
+            backends = [(n, c, m) for n, c, m in all_backends if m.lower() in filter_names]
             if not backends:
                 print(f"Error: no matching backends for {args.backend}", file=sys.stderr)
-                print(f"Available: {[n for n, _, _ in all_backends]}", file=sys.stderr)
+                print(f"Available: {[m for _, _, m in all_backends]}", file=sys.stderr)
                 return 1
 
         # Filter optimizers
