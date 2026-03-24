@@ -663,12 +663,13 @@ class JaxMDEngine(MMEngine):
         # entries (one per periodicity component)
         torsion_atom_indices: list[tuple[int, int, int, int]] = []
         torsion_param_map: list[int] = []
+        torsion_param_index = {id(p): i for i, p in enumerate(forcefield.torsions)}
         for torsion in molecule.torsions:
             matches = forcefield.match_torsion(
                 torsion.element_quad, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
             )
             for param in matches:
-                j_ff = forcefield.torsions.index(param)
+                j_ff = torsion_param_index[id(param)]
                 torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
                 torsion_param_map.append(j_ff)
 

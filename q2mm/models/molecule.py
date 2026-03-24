@@ -50,11 +50,12 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
     n2 = np.cross(b2, b3)
     n1_norm = np.linalg.norm(n1)
     n2_norm = np.linalg.norm(n2)
-    if n1_norm < 1e-10 or n2_norm < 1e-10:
+    b2_norm = np.linalg.norm(b2)
+    if n1_norm < 1e-10 or n2_norm < 1e-10 or b2_norm < 1e-10:
         return 0.0
     n1 = n1 / n1_norm
     n2 = n2 / n2_norm
-    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
+    m1 = np.cross(n1, b2 / b2_norm)
     x = float(np.dot(n1, n2))
     y = float(np.dot(m1, n2))
     return float(np.degrees(np.arctan2(y, x)))

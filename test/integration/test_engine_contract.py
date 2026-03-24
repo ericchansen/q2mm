@@ -490,6 +490,8 @@ class TestTorsionEnergy:
         self._skip_if_no_torsion_support(engine)
         if engine.name == "OpenMM":
             pytest.skip("Reference engine")
+        if "openmm" not in available_mm_engines():
+            pytest.skip("OpenMM not available for reference comparison")
         openmm = get_mm_engine("openmm")
         mol, ff = ethane
         e_engine = engine.energy(mol, ff)
