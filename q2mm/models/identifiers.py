@@ -38,3 +38,13 @@ def canonicalize_angle_env_id(atom_types: Sequence[str]) -> str:
         return "-".join(cleaned)
     outer = sorted([cleaned[0], cleaned[2]])
     return "-".join([outer[0], cleaned[1], outer[1]])
+
+
+def canonicalize_torsion_env_id(atom_types: Sequence[str]) -> str:
+    """Canonicalize torsion atom-type labels so A-B-C-D == D-C-B-A."""
+    cleaned = [item.strip() for item in atom_types if item and item.strip() and item.strip() != "-"]
+    if len(cleaned) < 4:
+        return "-".join(cleaned)
+    forward = cleaned[:4]
+    reverse = list(reversed(forward))
+    return "-".join(min(forward, reverse))

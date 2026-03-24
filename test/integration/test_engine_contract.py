@@ -15,12 +15,13 @@ import pytest
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import available_mm_engines, get_mm_engine
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 from test._shared import (
     SN2_HESSIAN,
     SN2_XYZ,
     make_diatomic,
+    make_ethane,
     make_noble_gas_pair,
     make_water,
 )
@@ -79,6 +80,24 @@ def _vdw_ff(engine: MMEngine) -> ForceField:
     )
 
 
+def _ethane_ff(engine: MMEngine, torsion_k: float = 0.15) -> ForceField:
+    return ForceField(
+        functional_form=_functional_form(engine),
+        bonds=[
+            BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54),
+            BondParam(elements=("C", "H"), force_constant=340.0, equilibrium=1.09),
+        ],
+        angles=[
+            AngleParam(elements=("H", "C", "C"), force_constant=37.5, equilibrium=109.5),
+            AngleParam(elements=("H", "C", "H"), force_constant=33.0, equilibrium=109.5),
+        ],
+        torsions=[
+            # Periodicity=1 so staggered ethane has nonzero torsion energy
+            TorsionParam(elements=("H", "C", "C", "H"), periodicity=1, force_constant=torsion_k, phase=0.0),
+        ],
+    )
+
+
 @pytest.fixture(scope="module", params=_AVAILABLE, ids=_AVAILABLE)
 def engine_name(request: pytest.FixtureRequest) -> str:
     """Yield each available MM engine name in turn."""
@@ -119,6 +138,12 @@ def water_bent(engine: MMEngine) -> tuple[Q2MMMolecule, ForceField]:
 def noble_pair(engine: MMEngine) -> tuple[Q2MMMolecule, ForceField]:
     """He₂ at moderate distance with vdW force field."""
     return make_noble_gas_pair(distance=3.0), _vdw_ff(engine)
+
+
+@pytest.fixture
+def ethane(engine: MMEngine) -> tuple[Q2MMMolecule, ForceField]:
+    """Staggered ethane with bond + angle + torsion FF."""
+    return make_ethane(), _ethane_ff(engine)
 
 
 class TestEngineMetadata:
@@ -415,3 +440,47 @@ class TestRealMolecule:
         energy, grad = engine.energy_and_param_grad(mol, ff)
         assert np.isfinite(energy)
         assert np.all(np.isfinite(grad))
+
+
+class TestTorsionEnergy:
+    """Engines must compute torsion energy contributions."""
+
+    @staticmethod
+    def _skip_if_no_torsion_support(engine: MMEngine) -> None:
+        """Skip engines that don't yet support torsion energy."""
+        unsupported = {"Tinker", "JAX (harmonic)", "JAX-MD (OPLSAA)"}
+        if engine.name in unsupported:
+            pytest.skip(f"{engine.name} does not yet support torsion energy evaluation")
+
+    def test_energy_finite_with_torsions(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
+        self._skip_if_no_torsion_support(engine)
+        mol, ff = ethane
+        e = engine.energy(mol, ff)
+        assert np.isfinite(e)
+
+    def test_energy_changes_with_torsion_k(self, engine: MMEngine) -> None:
+        """Changing torsion k should change total energy."""
+        self._skip_if_no_torsion_support(engine)
+        mol = make_ethane()
+        ff_low = _ethane_ff(engine, torsion_k=0.05)
+        ff_high = _ethane_ff(engine, torsion_k=1.00)
+        e_low = engine.energy(mol, ff_low)
+        e_high = engine.energy(mol, ff_high)
+        assert np.isfinite(e_low)
+        assert np.isfinite(e_high)
+        assert e_low != e_high
+
+    def test_torsion_energy_nonzero_for_nonzero_k(self, engine: MMEngine) -> None:
+        """With torsion k > 0, total energy should differ from torsion-free."""
+        self._skip_if_no_torsion_support(engine)
+        mol = make_ethane()
+        ff_with = _ethane_ff(engine, torsion_k=0.50)
+        ff_without = ForceField(
+            functional_form=_functional_form(engine),
+            bonds=ff_with.bonds[:],
+            angles=ff_with.angles[:],
+            torsions=[],
+        )
+        e_with = engine.energy(mol, ff_with)
+        e_without = engine.energy(mol, ff_without)
+        assert abs(e_with - e_without) > 1e-6

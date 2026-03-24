@@ -32,7 +32,7 @@ from q2mm.constants import (
     KJMOLNM2_TO_HESSIAN_AU,
     MASSES,
 )
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 
 try:
@@ -127,6 +127,34 @@ class _Exception14:
 
 
 @dataclass
+class _TorsionTerm:
+    """Internal record mapping a molecule torsion to its OpenMM force index.
+
+    Attributes:
+        force_index: Index of this torsion in the OpenMM torsion force object.
+        atom_i: First atom index.
+        atom_j: Second atom index.
+        atom_k: Third atom index.
+        atom_l: Fourth atom index.
+        elements: Element symbols for the four atoms.
+        periodicity: Fourier component periodicity (1, 2, or 3).
+        env_id: Chemical environment identifier for parameter matching.
+        ff_row: Row index in the source force field file, if applicable.
+
+    """
+
+    force_index: int
+    atom_i: int
+    atom_j: int
+    atom_k: int
+    atom_l: int
+    elements: tuple[str, str, str, str]
+    periodicity: int = 1
+    env_id: str = ""
+    ff_row: int | None = None
+
+
+@dataclass
 class OpenMMHandle:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
@@ -137,9 +165,11 @@ class OpenMMHandle:
         context: The ``openmm.Context`` for energy evaluation.
         bond_force: The OpenMM bond force object, or ``None`` if no bonds.
         angle_force: The OpenMM angle force object, or ``None`` if no angles.
+        torsion_force: The OpenMM torsion force object, or ``None`` if no torsions.
         vdw_force: The OpenMM vdW force object, or ``None`` if no vdW terms.
         bond_terms: Mapping of molecule bonds to force indices.
         angle_terms: Mapping of molecule angles to force indices.
+        torsion_terms: Mapping of molecule torsions to force indices.
         vdw_terms: Mapping of atoms to vdW particle indices.
         exceptions_14: 1-4 nonbonded exceptions (harmonic form only).
         functional_form: The functional form used when the handle was created.
@@ -152,9 +182,11 @@ class OpenMMHandle:
     context: object
     bond_force: object | None
     angle_force: object | None
+    torsion_force: object | None
     vdw_force: object | None
     bond_terms: list[_BondTerm]
     angle_terms: list[_AngleTerm]
+    torsion_terms: list[_TorsionTerm]
     vdw_terms: list[_VdwTerm]
     exceptions_14: list[_Exception14] = field(default_factory=list)
     functional_form: FunctionalForm = FunctionalForm.MM3
@@ -360,6 +392,44 @@ def _match_vdw(
     return forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
 
 
+def _torsion_k_to_openmm(force_constant: float) -> float:
+    """Convert canonical torsion force constant (kcal/mol) to kJ/mol.
+
+    Args:
+        force_constant: Torsion force constant in kcal/mol.
+
+    Returns:
+        float: Torsion force constant in kJ/mol.
+
+    """
+    return float(force_constant) * KCAL_TO_KJ
+
+
+def _match_torsions(
+    forcefield: ForceField,
+    elements: tuple[str, str, str, str],
+    env_id: str = "",
+    ff_row: int | None = None,
+    is_improper: bool | None = None,
+) -> list[TorsionParam]:
+    """Look up torsion parameters from the force field.
+
+    Returns all periodicity components matching the given torsion.
+
+    Args:
+        forcefield: Force field to search.
+        elements: Element symbols of the four torsion atoms.
+        env_id: Chemical environment identifier.
+        ff_row: Optional row index hint for matching.
+        is_improper: If set, only match proper (False) or improper (True).
+
+    Returns:
+        list[TorsionParam]: All matching torsion parameter components.
+
+    """
+    return forcefield.match_torsion(elements, env_id=env_id, ff_row=ff_row, is_improper=is_improper)
+
+
 @register_mm("openmm")
 class OpenMMEngine(MMEngine):
     """Molecular mechanics backend powered by OpenMM.
@@ -518,6 +588,10 @@ class OpenMMEngine(MMEngine):
             angle_force.addPerAngleParameter("k")
             angle_force.addPerAngleParameter("theta0")
 
+        # Torsion force: both harmonic (AMBER) and MM3 use PeriodicTorsionForce
+        # E = k * (1 + cos(n*θ − phase))
+        torsion_force = mm.PeriodicTorsionForce()
+
         if use_harmonic:
             vdw_force = mm.NonbondedForce()
             vdw_force.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
@@ -600,6 +674,71 @@ class OpenMMEngine(MMEngine):
                 )
             )
 
+        # --- Assign proper torsion parameters ---
+        torsion_terms: list[_TorsionTerm] = []
+        for torsion in molecule.torsions:
+            params = _match_torsions(
+                forcefield,
+                torsion.element_quad,
+                env_id=torsion.env_id,
+                ff_row=torsion.ff_row,
+                is_improper=False,
+            )
+            for param in params:
+                force_index = torsion_force.addTorsion(
+                    torsion.atom_i,
+                    torsion.atom_j,
+                    torsion.atom_k,
+                    torsion.atom_l,
+                    param.periodicity,
+                    np.deg2rad(float(param.phase)),
+                    _torsion_k_to_openmm(param.force_constant),
+                )
+                torsion_terms.append(
+                    _TorsionTerm(
+                        force_index=force_index,
+                        atom_i=torsion.atom_i,
+                        atom_j=torsion.atom_j,
+                        atom_k=torsion.atom_k,
+                        atom_l=torsion.atom_l,
+                        elements=torsion.element_quad,
+                        periodicity=param.periodicity,
+                        env_id=torsion.env_id,
+                        ff_row=param.ff_row,
+                    )
+                )
+
+        # --- Assign improper torsion parameters ---
+        # Improper torsions come from the force field, not geometry detection.
+        # Match improper TorsionParams to detected torsions by element quad.
+        for imp in forcefield.improper_torsions:
+            imp_elems = imp.elements
+            for torsion in molecule.torsions:
+                quad = torsion.element_quad
+                if quad == imp_elems or quad == tuple(reversed(imp_elems)):
+                    force_index = torsion_force.addTorsion(
+                        torsion.atom_i,
+                        torsion.atom_j,
+                        torsion.atom_k,
+                        torsion.atom_l,
+                        imp.periodicity,
+                        np.deg2rad(float(imp.phase)),
+                        _torsion_k_to_openmm(imp.force_constant),
+                    )
+                    torsion_terms.append(
+                        _TorsionTerm(
+                            force_index=force_index,
+                            atom_i=torsion.atom_i,
+                            atom_j=torsion.atom_j,
+                            atom_k=torsion.atom_k,
+                            atom_l=torsion.atom_l,
+                            elements=quad,
+                            periodicity=imp.periodicity,
+                            env_id=imp.env_id,
+                            ff_row=imp.ff_row,
+                        )
+                    )
+
         # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []
         if forcefield.vdws:
@@ -665,9 +804,9 @@ class OpenMMEngine(MMEngine):
             else:
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
-        if not bond_terms and not angle_terms and not vdw_terms:
+        if not bond_terms and not angle_terms and not torsion_terms and not vdw_terms:
             raise ValueError(
-                "No OpenMM terms were created. Force field did not match any detected bonds, angles, or vdW types."
+                "No OpenMM terms were created. Force field did not match any detected bonds, angles, torsions, or vdW types."
             )
 
         if bond_terms:
@@ -679,6 +818,11 @@ class OpenMMEngine(MMEngine):
             system.addForce(angle_force)
         else:
             angle_force = None
+
+        if torsion_terms:
+            system.addForce(torsion_force)
+        else:
+            torsion_force = None
 
         if vdw_terms:
             system.addForce(vdw_force)
@@ -695,9 +839,11 @@ class OpenMMEngine(MMEngine):
             context=context,
             bond_force=bond_force,
             angle_force=angle_force,
+            torsion_force=torsion_force,
             vdw_force=vdw_force,
             bond_terms=bond_terms,
             angle_terms=angle_terms,
+            torsion_terms=torsion_terms,
             vdw_terms=vdw_terms,
             exceptions_14=exceptions_14 if use_harmonic and vdw_terms else [],
             functional_form=ff_form,
@@ -773,6 +919,28 @@ class OpenMMEngine(MMEngine):
                         [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
                     )
             handle.angle_force.updateParametersInContext(handle.context)
+
+        if handle.torsion_force is not None:
+            for term in handle.torsion_terms:
+                params = _match_torsions(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                matched = [p for p in params if p.periodicity == term.periodicity]
+                if not matched:
+                    raise ValueError(
+                        f"Updated force field is missing torsion parameter for "
+                        f"{term.elements} periodicity={term.periodicity}."
+                    )
+                param = matched[0]
+                handle.torsion_force.setTorsionParameters(
+                    term.force_index,
+                    term.atom_i,
+                    term.atom_j,
+                    term.atom_k,
+                    term.atom_l,
+                    param.periodicity,
+                    np.deg2rad(float(param.phase)),
+                    _torsion_k_to_openmm(param.force_constant),
+                )
+            handle.torsion_force.updateParametersInContext(handle.context)
 
         if handle.vdw_force is not None:
             for term in handle.vdw_terms:

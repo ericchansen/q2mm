@@ -107,3 +107,31 @@ def make_noble_gas_pair(
         name="He2",
         bond_tolerance=bond_tolerance,
     )
+
+
+def make_ethane() -> Q2MMMolecule:
+    """Staggered ethane (C₂H₆) for torsion testing.
+
+    C-C along x-axis, tetrahedral H arrangement, staggered by 60°.
+    Has 9 H-C-C-H torsions with ≈60° or 180° dihedral angles.
+    """
+    from q2mm.models.molecule import Q2MMMolecule
+
+    r_cc = 1.54
+    r_ch = 1.09
+    theta = np.radians(109.5)
+    cos_t = np.cos(theta)
+    sin_t = np.sin(theta)
+    c1 = np.array([0.0, 0.0, 0.0])
+    c2 = np.array([r_cc, 0.0, 0.0])
+    h1 = c1 + r_ch * np.array([cos_t, sin_t, 0.0])
+    h2 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(2 * np.pi / 3), sin_t * np.sin(2 * np.pi / 3)])
+    h3 = c1 + r_ch * np.array([cos_t, sin_t * np.cos(4 * np.pi / 3), sin_t * np.sin(4 * np.pi / 3)])
+    h4 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi / 3), sin_t * np.sin(np.pi / 3)])
+    h5 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi), sin_t * np.sin(np.pi)])
+    h6 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(5 * np.pi / 3), sin_t * np.sin(5 * np.pi / 3)])
+    return Q2MMMolecule(
+        symbols=["C", "C", "H", "H", "H", "H", "H", "H"],
+        geometry=np.array([c1, c2, h1, h2, h3, h4, h5, h6]),
+        name="ethane",
+    )

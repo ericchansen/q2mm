@@ -886,6 +886,7 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
                         env_id="-".join(types),
                         ff_row=row,
                         label=f"frcmod row {row} (improper)",
+                        is_improper=True,
                     )
                 )
 
@@ -1025,8 +1026,8 @@ def _save_amber_frcmod_standalone(ff: ForceField, output_path: Path, remark: str
         lines.append("\n")
 
     if ff.torsions:
-        proper = [t for t in ff.torsions if "(improper)" not in t.label]
-        improper = [t for t in ff.torsions if "(improper)" in t.label]
+        proper = [t for t in ff.torsions if not t.is_improper]
+        improper = [t for t in ff.torsions if t.is_improper]
         if proper:
             lines.append("DIHE\n")
             for tor in proper:

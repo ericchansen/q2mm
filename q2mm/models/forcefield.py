@@ -223,6 +223,11 @@ class TorsionParam:
     Each object represents a single Fourier component (V_n).  An MM3
     torsion line with V1, V2, V3 produces three ``TorsionParam``
     objects with ``periodicity`` 1, 2, 3 respectively.
+
+    Improper torsions (out-of-plane bending) are distinguished by
+    ``is_improper=True``.  They originate from the AMBER IMPROPER
+    section or equivalent force field blocks rather than molecular
+    geometry detection.
     """
 
     elements: tuple[str, str, str, str]
@@ -232,6 +237,7 @@ class TorsionParam:
     label: str = ""
     env_id: str = ""  # Environment ID for disambiguating same-element params
     ff_row: int | None = None  # Source force-field row for legacy parity
+    is_improper: bool = False
 
 
 @dataclass
@@ -395,6 +401,65 @@ class ForceField:
             if matched is not None:
                 return matched
         return self.get_angle(elements[0], elements[1], elements[2])
+
+    def match_torsion(
+        self,
+        elements: tuple[str, str, str, str],
+        periodicity: int | None = None,
+        env_id: str = "",
+        ff_row: int | None = None,
+        is_improper: bool | None = None,
+    ) -> list[TorsionParam]:
+        """Match torsion parameters using ff_row, then env_id, then elements.
+
+        Returns all matching ``TorsionParam`` entries (one per periodicity
+        component).  Returns an empty list if no match is found.
+
+        Args:
+            elements: Element symbols of the four torsion atoms.
+            periodicity: If set, only match this periodicity component.
+            env_id: Chemical environment identifier.
+            ff_row: Optional row index hint for matching.
+            is_improper: If set, only match proper (False) or improper (True)
+                torsions.  ``None`` matches both.
+
+        """
+        if ff_row is not None:
+            matches = [t for t in self.torsions if t.ff_row == ff_row]
+            if is_improper is not None:
+                matches = [t for t in matches if t.is_improper == is_improper]
+            if matches:
+                if periodicity is not None:
+                    matches = [t for t in matches if t.periodicity == periodicity]
+                return matches
+        target = elements
+        target_rev = (elements[3], elements[2], elements[1], elements[0])
+        results: list[TorsionParam] = []
+        for t in self.torsions:
+            if t.elements not in (target, target_rev):
+                continue
+            if is_improper is not None and t.is_improper != is_improper:
+                continue
+            if env_id and t.env_id and t.env_id != env_id:
+                continue
+            if periodicity is not None and t.periodicity != periodicity:
+                continue
+            results.append(t)
+        if not results and env_id:
+            return self.match_torsion(
+                elements, periodicity=periodicity, env_id="", ff_row=None, is_improper=is_improper
+            )
+        return results
+
+    @property
+    def proper_torsions(self) -> list[TorsionParam]:
+        """Proper torsion parameters only (not improper)."""
+        return [t for t in self.torsions if not t.is_improper]
+
+    @property
+    def improper_torsions(self) -> list[TorsionParam]:
+        """Improper torsion parameters only."""
+        return [t for t in self.torsions if t.is_improper]
 
     def match_vdw(self, atom_type: str = "", element: str = "", ff_row: int | None = None) -> VdwParam | None:
         """Match a vdW parameter using ff_row, then atom_type/element lookup (with fallback)."""

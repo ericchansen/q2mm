@@ -19,6 +19,7 @@ from q2mm.models.identifiers import (
     _extract_element,
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
+    canonicalize_torsion_env_id,
 )
 
 if TYPE_CHECKING:
@@ -35,6 +36,28 @@ except ImportError:
 
 # Covalent radii — imported from the single-source-of-truth element table.
 from q2mm.elements import COVALENT_RADII  # noqa: E402
+
+
+def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
+    """Compute signed dihedral angle (degrees) for four points using atan2.
+
+    Returns a value in [-180, 180].
+    """
+    b1 = np.asarray(p1) - np.asarray(p0)
+    b2 = np.asarray(p2) - np.asarray(p1)
+    b3 = np.asarray(p3) - np.asarray(p2)
+    n1 = np.cross(b1, b2)
+    n2 = np.cross(b2, b3)
+    n1_norm = np.linalg.norm(n1)
+    n2_norm = np.linalg.norm(n2)
+    if n1_norm < 1e-10 or n2_norm < 1e-10:
+        return 0.0
+    n1 = n1 / n1_norm
+    n2 = n2 / n2_norm
+    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
+    x = float(np.dot(n1, n2))
+    y = float(np.dot(m1, n2))
+    return float(np.degrees(np.arctan2(y, x)))
 
 
 @dataclass
@@ -74,6 +97,27 @@ class DetectedAngle:
 
 
 @dataclass
+class DetectedTorsion:
+    """A torsion/dihedral detected from molecular bonds."""
+
+    atom_i: int  # 0-based (end)
+    atom_j: int  # 0-based (central)
+    atom_k: int  # 0-based (central)
+    atom_l: int  # 0-based (end)
+    elements: tuple[str, str, str, str]
+    value: float  # dihedral angle in degrees, [-180, 180]
+    env_id: str = ""
+    ff_row: int | None = None
+
+    @property
+    def element_quad(self) -> tuple[str, str, str, str]:
+        """Canonical element quad: forward or reversed, whichever is lexically smaller."""
+        fwd = self.elements
+        rev = (fwd[3], fwd[2], fwd[1], fwd[0])
+        return min(fwd, rev)
+
+
+@dataclass
 class Q2MMMolecule:
     """Q2MM's internal molecular structure representation.
 
@@ -93,6 +137,7 @@ class Q2MMMolecule:
     hessian: np.ndarray | None = None  # Shape (3N, 3N), Hartree/Bohr^2
     _bonds: list[DetectedBond] | None = field(default=None, repr=False)
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
+    _torsions: list[DetectedTorsion] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate atom_types length and normalize geometry to float."""
@@ -123,6 +168,13 @@ class Q2MMMolecule:
         if self._angles is None:
             self._angles = self._detect_angles()
         return self._angles
+
+    @property
+    def torsions(self) -> list[DetectedTorsion]:
+        """Auto-detected torsion/dihedral angles from bonds."""
+        if self._torsions is None:
+            self._torsions = self._detect_torsions()
+        return self._torsions
 
     def _detect_bonds(self, tolerance: float = 1.3) -> list[DetectedBond]:
         """Detect bonds based on covalent radii with tolerance factor."""
@@ -175,6 +227,54 @@ class Q2MMMolecule:
                         )
                     )
         return angles
+
+    def _detect_torsions(self) -> list[DetectedTorsion]:
+        """Detect torsion/dihedral angles from detected bonds.
+
+        For each bond B-C, finds all atoms A bonded to B (A ≠ C) and all
+        atoms D bonded to C (D ≠ B) to form torsions A-B-C-D.  Deduplicates
+        so that A-B-C-D and D-C-B-A are not both stored.
+        """
+        adj: dict[int, list[int]] = {i: [] for i in range(self.n_atoms)}
+        for bond in self.bonds:
+            adj[bond.atom_i].append(bond.atom_j)
+            adj[bond.atom_j].append(bond.atom_i)
+
+        seen: set[tuple[int, int, int, int]] = set()
+        torsions: list[DetectedTorsion] = []
+        for bond in self.bonds:
+            b, c = bond.atom_i, bond.atom_j
+            for a in adj[b]:
+                if a == c:
+                    continue
+                for d in adj[c]:
+                    if d in (b, a):
+                        continue
+                    key = (a, b, c, d)
+                    key_rev = (d, c, b, a)
+                    if key in seen or key_rev in seen:
+                        continue
+                    seen.add(key)
+                    value = _dihedral_angle(self.geometry[a], self.geometry[b], self.geometry[c], self.geometry[d])
+                    torsions.append(
+                        DetectedTorsion(
+                            atom_i=a,
+                            atom_j=b,
+                            atom_k=c,
+                            atom_l=d,
+                            elements=(
+                                self.symbols[a],
+                                self.symbols[b],
+                                self.symbols[c],
+                                self.symbols[d],
+                            ),
+                            value=value,
+                            env_id=canonicalize_torsion_env_id(
+                                [self.atom_types[a], self.atom_types[b], self.atom_types[c], self.atom_types[d]]
+                            ),
+                        )
+                    )
+        return torsions
 
     # ---- Factory methods ----
 
