@@ -615,10 +615,16 @@ class TinkerEngine(MMEngine):
             list[float]: Vibrational frequencies in cm⁻¹.
 
         """
-        with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
-            txyz = self._write_tinker_xyz(structure, forcefield, workdir)
-            result = self._run_tinker("vibrate", txyz, stdin="A\n")
-            freqs = []
-            for m in re.finditer(r"Frequency\s+([-\d.]+)\s+cm-1", result.stdout):
-                freqs.append(float(m.group(1)))
-            return freqs
+        from q2mm.models.hessian import hessian_to_frequencies
+
+        hessian_au = self.hessian(structure, forcefield)
+
+        if isinstance(structure, Q2MMMolecule):
+            symbols = list(structure.symbols)
+        else:
+            with open(structure) as f:
+                lines = f.readlines()
+            n_atoms = int(lines[0].strip())
+            symbols = [lines[2 + i].split()[0] for i in range(n_atoms)]
+
+        return hessian_to_frequencies(hessian_au, symbols)
