@@ -110,13 +110,10 @@ def _as_int(value: Any, name: str, context: str) -> int:
 
 
 def _as_int_list(value: Any, name: str, context: str) -> list[int]:
-    """Coerce *value* to a list of ints."""
+    """Coerce *value* to a list of ints with per-element validation."""
     if not isinstance(value, list):
         raise ReferenceYAMLError(f"'{name}' must be a list of integers in {context}, got {type(value).__name__}.")
-    try:
-        return [int(v) for v in value]
-    except (TypeError, ValueError) as exc:
-        raise ReferenceYAMLError(f"'{name}' must be a list of integers in {context}.") from exc
+    return [_as_int(v, f"{name}[{idx}]", context) for idx, v in enumerate(value)]
 
 
 def _as_float_list(value: Any, name: str, context: str) -> list[float]:
@@ -200,6 +197,8 @@ def _parse_datum(
 
         if atoms_raw is not None:
             atoms = _as_int_list(atoms_raw, "atoms", context)
+            if any(a < 0 for a in atoms):
+                raise ReferenceYAMLError(f"'atoms' indices must be non-negative in {context}, got {atoms}.")
             required = _ATOMS_REQUIRED[kind]
             if len(atoms) != required:
                 raise ReferenceYAMLError(
@@ -337,7 +336,10 @@ def _load_molecule(
             )
         symbols = [str(s) for s in symbols_raw]
         coords = _require_key(geo, "coordinates", f"{ctx}.geometry")
-        coords_arr = np.array(coords, dtype=float)
+        try:
+            coords_arr = np.array(coords, dtype=float)
+        except (ValueError, TypeError) as exc:
+            raise ReferenceYAMLError(f"'coordinates' contains non-numeric entries in {ctx}.geometry: {exc}") from exc
         if coords_arr.ndim != 2 or coords_arr.shape[1] != 3:
             raise ReferenceYAMLError(
                 f"'coordinates' must be an Nx3 array in {ctx}.geometry, got shape {coords_arr.shape}."
@@ -432,7 +434,7 @@ def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolec
     if not path.exists():
         raise FileNotFoundError(f"Reference YAML file not found: {path}")
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         try:
             raw = yaml.safe_load(f)
         except yaml.YAMLError as exc:
