@@ -156,8 +156,17 @@ class Atom:
         Returns:
             (str): Element symbol (e.g. ``'C'``, ``'N'``, ``'O'``).
 
+        Raises:
+            ValueError: If ``atomic_num`` is ``None`` or invalid and no
+                element was explicitly set.
+
         """
         if self._element is None:
+            if self.atomic_num is None or self.atomic_num < 1:
+                raise ValueError(
+                    f"Cannot derive element: atomic_num={self.atomic_num!r}. "
+                    "Set the element explicitly for dummy or special atoms."
+                )
             self._element = list(co.MASSES.keys())[self.atomic_num - 1]
         return self._element
 
@@ -189,7 +198,12 @@ class Atom:
             (bool): ``True`` if the atom is a dummy atom, ``False`` otherwise.
 
         """
-        return self.atom_type_name == "Du" or self.element == "X" or self.atomic_num == -2
+        if self.atom_type_name == "Du" or self.atomic_num == -2:
+            return True
+        try:
+            return self.element == "X"
+        except ValueError:
+            return False
 
 
 class DOF:
