@@ -126,8 +126,10 @@ class EnergyEvaluator:
                 f"{engine.name} does not support energy_and_param_grad(). Cannot compute analytical energy gradient."
             )
 
-        target = structure if structure is not None else mol
-        calc_energy, de_dp = engine.energy_and_param_grad(target, ff)
+        # energy_and_param_grad operates on the molecule, not cached handles,
+        # since some engines (e.g. OpenMM) only accept Q2MMMolecule for
+        # parameter gradient computation.
+        calc_energy, de_dp = engine.energy_and_param_grad(mol, ff)
 
         if len(de_dp) != n_params:
             raise ValueError(f"energy_and_param_grad returned {len(de_dp)} derivatives but expected {n_params}")

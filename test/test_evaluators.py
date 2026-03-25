@@ -109,10 +109,6 @@ class RuntimeHandleStubEngine(GradStubEngine):
         structure: object,
         forcefield: object = None,
     ) -> tuple[float, np.ndarray]:
-        from q2mm.models.molecule import Q2MMMolecule
-
-        if isinstance(structure, Q2MMMolecule):
-            raise TypeError("RuntimeHandleStubEngine received a raw Q2MMMolecule instead of a runtime handle")
         return self._energy, np.array(self._param_grad)
 
 
@@ -703,7 +699,7 @@ class TestObjectiveFunctionGradient:
         assert grad[0] != 0.0
 
     def test_runtime_handle_engine_receives_handle_not_molecule(self) -> None:
-        """Engine with supports_runtime_params=True gets a handle via _get_structure."""
+        """Engine with supports_runtime_params=True: gradient uses raw molecule for energy_and_param_grad."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
         de_dp = np.array([1.0])
@@ -720,7 +716,9 @@ class TestObjectiveFunctionGradient:
             reference=ref,
         )
 
-        # Should NOT raise — the engine receives a handle, not a raw molecule
+        # energy_and_param_grad always receives the raw molecule
+        # (not a handle), since some engines (e.g. OpenMM) only
+        # accept Q2MMMolecule for parameter gradient computation.
         grad = obj.gradient(np.array([0.0]))
         expected = -2.0 * 1.0**2 * (12.0 - 10.0) * de_dp
         np.testing.assert_allclose(grad, expected)
