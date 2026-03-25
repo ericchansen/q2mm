@@ -285,6 +285,17 @@ class ForceField:
     )
     functional_form: FunctionalForm | None = field(default=None, repr=True)
 
+    # Schema for the flat parameter vector layout.  Each entry is
+    # (collection_attribute, [param_attribute_names...]).  This is the
+    # single source of truth consumed by n_params, get_param_vector,
+    # set_param_vector, and with_params.
+    _PARAM_SLOTS: ClassVar[list[tuple[str, list[str]]]] = [
+        ("bonds", ["force_constant", "equilibrium"]),
+        ("angles", ["force_constant", "equilibrium"]),
+        ("torsions", ["force_constant"]),
+        ("vdws", ["radius", "epsilon"]),
+    ]
+
     @property
     def n_params(self) -> int:
         """Number of adjustable scalar parameters in get_param_vector().
@@ -292,7 +303,7 @@ class ForceField:
         Layout: 2 per bond (k, r0) + 2 per angle (k, theta0)
         + 1 per torsion (k) + 2 per vdw (radius, epsilon).
         """
-        return 2 * len(self.bonds) + 2 * len(self.angles) + len(self.torsions) + 2 * len(self.vdws)
+        return sum(len(slots) * len(getattr(self, attr)) for attr, slots in self._PARAM_SLOTS)
 
     def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
         """Find bond parameter by element pair and optional environment ID."""
@@ -364,15 +375,10 @@ class ForceField:
 
         Order: bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon).
         """
-        values = []
-        for b in self.bonds:
-            values.extend([b.force_constant, b.equilibrium])
-        for a in self.angles:
-            values.extend([a.force_constant, a.equilibrium])
-        for t in self.torsions:
-            values.append(t.force_constant)
-        for vdw in self.vdws:
-            values.extend([vdw.radius, vdw.epsilon])
+        values: list[float] = []
+        for attr, slots in self._PARAM_SLOTS:
+            for param in getattr(self, attr):
+                values.extend(getattr(param, s) for s in slots)
         return np.array(values)
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
@@ -478,21 +484,11 @@ class ForceField:
         if len(vec) != self.n_params:
             raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
         idx = 0
-        for b in self.bonds:
-            b.force_constant = vec[idx]
-            b.equilibrium = vec[idx + 1]
-            idx += 2
-        for a in self.angles:
-            a.force_constant = vec[idx]
-            a.equilibrium = vec[idx + 1]
-            idx += 2
-        for t in self.torsions:
-            t.force_constant = vec[idx]
-            idx += 1
-        for vdw in self.vdws:
-            vdw.radius = vec[idx]
-            vdw.epsilon = vec[idx + 1]
-            idx += 2
+        for attr, slots in self._PARAM_SLOTS:
+            for param in getattr(self, attr):
+                for s in slots:
+                    setattr(param, s, vec[idx])
+                    idx += 1
 
     def with_params(self, vec: np.ndarray) -> ForceField:
         """Return a new ForceField with parameters set from *vec*.
@@ -515,29 +511,17 @@ class ForceField:
         if len(vec) != self.n_params:
             raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
         idx = 0
-        new_bonds = []
-        for b in self.bonds:
-            new_bonds.append(replace(b, force_constant=vec[idx], equilibrium=vec[idx + 1]))
-            idx += 2
-        new_angles = []
-        for a in self.angles:
-            new_angles.append(replace(a, force_constant=vec[idx], equilibrium=vec[idx + 1]))
-            idx += 2
-        new_torsions = []
-        for t in self.torsions:
-            new_torsions.append(replace(t, force_constant=vec[idx]))
-            idx += 1
-        new_vdws = []
-        for vdw in self.vdws:
-            new_vdws.append(replace(vdw, radius=vec[idx], epsilon=vec[idx + 1]))
-            idx += 2
-        return replace(
-            self,
-            bonds=new_bonds,
-            angles=new_angles,
-            torsions=new_torsions,
-            vdws=new_vdws,
-        )
+        new_collections: dict[str, list] = {}
+        for attr, slots in self._PARAM_SLOTS:
+            new_list = []
+            for param in getattr(self, attr):
+                updates = {}
+                for s in slots:
+                    updates[s] = vec[idx]
+                    idx += 1
+                new_list.append(replace(param, **updates))
+            new_collections[attr] = new_list
+        return replace(self, **new_collections)
 
     # Default bounds per parameter type (min, max) in canonical units.
     # bond_k allows negative values for transition-state force fields (TSFF),
