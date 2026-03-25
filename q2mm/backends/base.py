@@ -3,13 +3,50 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
+
+
+def coerce_molecule(structure: Any, *, engine_name: str = "MMEngine") -> Q2MMMolecule:
+    """Coerce *structure* to a :class:`Q2MMMolecule`.
+
+    Handles common input patterns across MM backends:
+
+    - :class:`Q2MMMolecule` — returned as-is.
+    - Engine handle with a ``.molecule`` attribute — returns the molecule.
+    - ``str`` / ``Path`` — loaded via :meth:`Q2MMMolecule.from_xyz`.
+
+    Args:
+        structure: Input to coerce.
+        engine_name: Name shown in ``TypeError`` messages.
+
+    Returns:
+        Q2MMMolecule: The coerced molecule.
+
+    Raises:
+        TypeError: If *structure* cannot be coerced.
+
+    """
+    from q2mm.models.molecule import Q2MMMolecule
+
+    if isinstance(structure, Q2MMMolecule):
+        return structure
+    # Duck-typed handle support (JaxHandle, JaxMDHandle, etc.)
+    mol = getattr(structure, "molecule", None)
+    if mol is not None and isinstance(mol, Q2MMMolecule):
+        return mol
+    if isinstance(structure, (str, Path)):
+        return Q2MMMolecule.from_xyz(structure)
+    raise TypeError(
+        f"{engine_name} expects a Q2MMMolecule, compatible handle, or XYZ path; "
+        f"got {type(structure).__name__}."
+    )
 
 
 class QMEngine(ABC):
@@ -174,19 +211,26 @@ class MMEngine(ABC):
         """
         ...
 
-    @abstractmethod
     def frequencies(self, structure: Q2MMMolecule, forcefield: ForceField) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
+        Default implementation: compute Hessian via :meth:`hessian` then
+        convert to frequencies via :func:`~q2mm.models.hessian.hessian_to_frequencies`.
+        Engines with specialised needs (e.g. path-based inputs) may override.
+
         Args:
-            structure: Molecular structure.
+            structure: Molecular structure (or engine-specific handle).
             forcefield: Force field parameters.
 
         Returns:
             Vibrational frequencies in cm⁻¹.
 
         """
-        ...
+        from q2mm.models.hessian import hessian_to_frequencies
+
+        hess_au = self.hessian(structure, forcefield)
+        mol = coerce_molecule(structure)
+        return hessian_to_frequencies(hess_au, list(mol.symbols))
 
     def is_available(self) -> bool:
         """Check if this engine is installed and accessible.

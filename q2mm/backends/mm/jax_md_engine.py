@@ -53,7 +53,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from q2mm.backends.base import MMEngine
+from q2mm.backends.base import MMEngine, coerce_molecule
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import ForceField
@@ -588,7 +588,7 @@ class JaxMDEngine(MMEngine):
         """
         if forcefield is not None:
             self._validate_forcefield(forcefield)
-        molecule = _as_molecule(structure)
+        molecule = coerce_molecule(structure, engine_name="JaxMDEngine")
         if forcefield is None:
             forcefield = ForceField.create_for_molecule(molecule)
 
@@ -683,7 +683,7 @@ class JaxMDEngine(MMEngine):
     def _get_handle(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> JaxMDHandle:
         if isinstance(structure, JaxMDHandle):
             return structure
-        return self.create_context(_as_molecule(structure), forcefield)
+        return self.create_context(coerce_molecule(structure, engine_name="JaxMDEngine"), forcefield)
 
     def _params_and_coords(self, handle: JaxMDHandle, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
         params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
@@ -772,23 +772,6 @@ class JaxMDEngine(MMEngine):
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
 
-    def frequencies(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> list[float]:
-        """Compute vibrational frequencies in cm⁻¹.
-
-        Args:
-            structure: Molecule or handle.
-            forcefield: Force field parameters.
-
-        Returns:
-            list[float]: Frequencies sorted ascending.
-
-        """
-        from q2mm.models.hessian import hessian_to_frequencies
-
-        handle = self._get_handle(structure, forcefield)
-        hess_au = self.hessian(handle, forcefield)
-        return hessian_to_frequencies(hess_au, list(handle.molecule.symbols))
-
     def minimize(
         self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField, max_iterations: int = 200
     ) -> tuple:
@@ -850,10 +833,3 @@ class JaxMDEngine(MMEngine):
 # ---------------------------------------------------------------------------
 
 
-def _as_molecule(structure: Q2MMMolecule | JaxMDHandle) -> Q2MMMolecule:
-    """Coerce input to Q2MMMolecule."""
-    if isinstance(structure, JaxMDHandle):
-        return structure.molecule
-    if isinstance(structure, Q2MMMolecule):
-        return structure
-    raise TypeError(f"JaxMDEngine expects a Q2MMMolecule or JaxMDHandle, got {type(structure).__name__}.")
