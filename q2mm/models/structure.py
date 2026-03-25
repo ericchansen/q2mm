@@ -2,8 +2,6 @@
 
 This module defines the core data structures used to represent molecular
 geometry: atoms, bonds, angles, torsions, and full molecular structures.
-It also provides utilities for manipulating Hessian matrices with respect
-to dummy atoms.
 
 Note:
     :class:`q2mm.models.molecule.Q2MMMolecule` is the preferred
@@ -105,7 +103,7 @@ class Atom:
         """
         self.atom_type = atom_type
         self.atom_type_name = atom_type_name
-        self.atomic_num = atomic_num  # This is the atom index in the original structure file, 1-based NOT 0-based
+        self.atomic_num = atomic_num
         self.atomic_mass = atomic_mass
         self.bonded_atom_indices = bonded_atom_indices
         self.coords_type = coords_type
@@ -244,18 +242,15 @@ class DOF:
         """
         from q2mm.parsers.datum import Datum
 
-        # Sort of silly to have all this stuff about angles and
-        # torsions in here, but they both inherit from this class.
-        # I suppose it'd make more sense to create a structural
-        # element class that these all inherit from.
-        # Warning that I recently changed these labels, and that
-        # may have consequences.
-        if self.__class__.__name__.lower() == "bond":
-            typ = "b"
-        elif self.__class__.__name__.lower() == "angle":
-            typ = "a"
-        elif self.__class__.__name__.lower() == "torsion":
-            typ = "t"
+        _typ_map = {"bond": "b", "angle": "a", "torsion": "t"}
+        cls_name = self.__class__.__name__.lower()
+        try:
+            typ = _typ_map[cls_name]
+        except KeyError as exc:
+            raise ValueError(
+                f"Unsupported DOF subclass '{self.__class__.__name__}' for as_data(); "
+                "expected one of Bond, Angle, or Torsion."
+            ) from exc
         datum = Datum(val=self.value, typ=typ, ff_row=self.ff_row)
         for i, atom_num in enumerate(self.atom_nums):
             setattr(datum, f"atm_{i + 1}", atom_num)
@@ -384,7 +379,7 @@ class Structure:
             (list[np.ndarray]): List of coordinate arrays, one per atom.
 
         """
-        return [atom.coords for atom in self._atoms]
+        return [atom.coords for atom in self.atoms]
 
     @property
     def num_atoms(self) -> int:
@@ -482,7 +477,7 @@ class Structure:
         # Formatted for LaTeX.
         if format == "latex":
             output = ["\\begin{tabular}{l S[table-format=3.6] S[table-format=3.6] S[table-format=3.6]}"]
-            for i, atom in enumerate(self._atoms):
+            for i, atom in enumerate(self.atoms):
                 if atom.element is None:
                     ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
@@ -493,7 +488,7 @@ class Structure:
         # Formatted for Gaussian .com's.
         elif format == "gauss":
             output = []
-            for i, atom in enumerate(self._atoms):
+            for i, atom in enumerate(self.atoms):
                 if atom.element is None:
                     ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
@@ -509,7 +504,7 @@ class Structure:
         # Formatted for Jaguar.
         elif format == "jaguar":
             output = []
-            for i, atom in enumerate(self._atoms):
+            for i, atom in enumerate(self.atoms):
                 if atom.element is None:
                     ele = list(co.MASSES.keys())[atom.atomic_num - 1]
                 else:
