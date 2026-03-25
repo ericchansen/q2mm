@@ -680,3 +680,63 @@ class TestEdgeCases:
         )
         _, mols = load_reference_yaml(p)
         assert mols[0].bond_tolerance == pytest.approx(1.5)
+
+    def test_as_int_list_rejects_booleans(self, tmp_path: Path) -> None:
+        """Booleans in an atom-index list should be rejected, not silently coerced."""
+        p = tmp_path / "bool_atoms.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: bond_length\n"
+            "        atoms: [true, 1]\n"
+            "        value: 1.0\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="must be an integer"):
+            load_reference_yaml(p)
+
+    def test_as_int_list_rejects_non_integer_floats(self, tmp_path: Path) -> None:
+        """Non-integer floats in an atom-index list should be rejected."""
+        p = tmp_path / "float_atoms.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: bond_length\n"
+            "        atoms: [0, 1.9]\n"
+            "        value: 1.0\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="must be an integer"):
+            load_reference_yaml(p)
+
+    def test_negative_atom_indices_rejected(self, tmp_path: Path) -> None:
+        """Negative atom indices should be rejected."""
+        p = tmp_path / "neg_atoms.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: bond_length\n"
+            "        atoms: [-1, 0]\n"
+            "        value: 1.0\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="non-negative"):
+            load_reference_yaml(p)
+
+    def test_non_numeric_coordinates_rejected(self, tmp_path: Path) -> None:
+        """Non-numeric coordinate entries should raise a clear error."""
+        p = tmp_path / "bad_coords.yaml"
+        p.write_text(
+            "molecules:\n  - name: test\n    geometry:\n      symbols: [H]\n      coordinates: [[0, 0, abc]]\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="non-numeric"):
+            load_reference_yaml(p)
