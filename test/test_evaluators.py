@@ -89,9 +89,9 @@ class RuntimeHandleStubEngine(GradStubEngine):
     """Stub engine with ``supports_runtime_params() = True``.
 
     When the objective function dispatches through ``_get_structure``,
-    the engine receives a handle from ``create_context`` instead of
-    the raw molecule.  The ``energy_and_param_grad`` method verifies
-    it receives the handle, not a ``Q2MMMolecule``.
+    the engine receives a handle from ``create_context`` for compute
+    calls, but ``energy_and_param_grad`` must receive the raw molecule
+    (not a handle) since engines like OpenMM only accept Q2MMMolecule.
     """
 
     name = "runtime_handle_stub"
@@ -109,6 +109,8 @@ class RuntimeHandleStubEngine(GradStubEngine):
         structure: object,
         forcefield: object = None,
     ) -> tuple[float, np.ndarray]:
+        if structure is self._HANDLE_SENTINEL:
+            raise TypeError("energy_and_param_grad received the runtime handle, expected Q2MMMolecule")
         return self._energy, np.array(self._param_grad)
 
 
@@ -698,8 +700,8 @@ class TestObjectiveFunctionGradient:
         np.testing.assert_allclose(grad, expected_energy_grad, atol=1e-6)
         assert grad[0] != 0.0
 
-    def test_runtime_handle_engine_receives_handle_not_molecule(self) -> None:
-        """Engine with supports_runtime_params=True: gradient uses raw molecule for energy_and_param_grad."""
+    def test_runtime_handle_engine_receives_molecule_not_handle(self) -> None:
+        """Engine with supports_runtime_params=True: gradient passes raw molecule (not handle) to energy_and_param_grad."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
         de_dp = np.array([1.0])
