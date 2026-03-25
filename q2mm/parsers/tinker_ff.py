@@ -10,13 +10,146 @@ from q2mm.parsers.param import Param
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Keyword lists shared by both Tinker format variants
+# ---------------------------------------------------------------------------
+_BONDS = ["bond", "bond3", "bond4", "bond5"]
+_PIBONDS = ["pibond", "pibond3", "pibond4", "pibond5"]
+_ANGLES = ["angle", "angle3", "angle4", "angle5"]
+_TORSIONS = ["torsion", "torsion4", "torsion5"]
+_DIPOLES = ["dipole", "dipole3", "dipole4", "dipole5"]
 
-class TinkerFF(FF):
-    """Tinker force field parameter file reader/writer.
 
-    Handles Tinker ``.prm`` parameter files (e.g. ``mm3.prm``). The
-    parameter structure varies by force field; currently ``mm3.prm`` is
-    supported with ``amoeba09.prm`` under development.
+def _import_params(path: str) -> tuple[list[Param], list[str]]:
+    """Read Tinker-format parameters from a Q2MM-annotated file.
+
+    Scans *path* for the ``# Q2MM`` marker, then collects bond, angle,
+    torsion, dipole, pi-bond, out-of-plane bend, and van der Waals
+    parameters from subsections marked ``OPT``.
+
+    Args:
+        path: Path to the Tinker ``.prm`` / ``.fld`` file.
+
+    Returns:
+        A ``(params, sub_names)`` tuple where *params* is the list of
+        :class:`Param` objects and *sub_names* is the list of subsection
+        header strings found in the Q2MM block.
+
+    """
+    params: list[Param] = []
+    sub_names: list[str] = []
+    q2mm_sec = False
+    gather_data = False
+    with open(path) as f:
+        logger.log(15, f"READING: {path}")
+        for i, line in enumerate(f):
+            split = line.split()
+            if not q2mm_sec and "# Q2MM" in line:
+                q2mm_sec = True
+            elif q2mm_sec and "#" in line[0]:
+                sub_names.append(line[1:])
+                if "OPT" in line:
+                    gather_data = True
+                else:
+                    gather_data = False
+            if gather_data and split:
+                if split[0] == "atom":
+                    at = split[1]
+                    el = split[2]
+                    _des = split[3][1:-1]
+                    _atnum = split[4]
+                    mass = split[5]
+                    # still don't know what this colum does. I don't even
+                    # know if its valence
+                    # Number of bonds - KJK
+                    valence = split[6]
+                if split[0] in _BONDS:
+                    at = [split[1], split[2]]
+                    params.extend(
+                        (
+                            Param(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                            Param(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                        )
+                    )
+                if split[0] in _DIPOLES:
+                    at = [split[1], split[2]]
+                    params.extend(
+                        (
+                            Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                            # I think this second value is the position of the
+                            # dipole along the bond. I've only seen 0.5 which
+                            # indicates the dipole is positioned at the center
+                            # of the bond.
+                            Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                        )
+                    )
+                if split[0] in _PIBONDS:
+                    at = [split[1], split[2]]
+                    # I'm still not sure how these effect the potential
+                    # energy but I believe they are correcting factors for
+                    # atoms in a pi system with the pi_b being for the bond
+                    # and pi_t being for torsions.
+                    params.extend(
+                        (
+                            Param(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
+                            Param(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                        )
+                    )
+                if split[0] in _ANGLES:
+                    at = [split[1], split[2], split[3]]
+                    # TINKER param file might include several equillibrum
+                    # bond angles which are for a central atom with 0, 1,
+                    # or 2 additional hydrogens on the central atom.
+                    params.extend(
+                        (
+                            Param(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
+                            Param(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
+                        )
+                    )
+                    if len(split) == 8:
+                        params.extend(
+                            (
+                                Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
+                                Param(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
+                            )
+                        )
+                    elif len(split) == 7:
+                        params.append(
+                            Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
+                        )
+                if split[0] in _TORSIONS:
+                    at = [split[1], split[2], split[3], split[4]]
+                    params.extend(
+                        (
+                            Param(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
+                            Param(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
+                            Param(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
+                        )
+                    )
+                if split[0] == "opbend":
+                    at = [split[1], split[2], split[3], split[4]]
+                    params.append(
+                        Param(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
+                    )
+                if split[0] == "vdw":
+                    # The first float is the vdw radius, the second has to do
+                    # with homoatomic well depths and the last is a reduction
+                    # factor for univalent atoms (I don't think we will need
+                    # any of these except for the first one).
+                    at = [split[1]]
+                    params.append(
+                        Param(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
+                    )
+    logger.log(15, f"  -- Read {len(params)} parameters.")
+    return params, sub_names
+
+
+class _TinkerBase(FF):
+    """Shared base for Tinker FF parser variants.
+
+    Provides the common ``__init__``, lazy ``lines`` property, and
+    ``import_ff`` used by both :class:`TinkerFF` and :class:`TinkerMM3A`.
+    Subclasses must implement :meth:`export_ff`.
     """
 
     def __init__(
@@ -27,20 +160,10 @@ class TinkerFF(FF):
         params: list[Param] | None = None,
         score: float | None = None,
     ) -> None:
-        """Initialize a TinkerFF instance.
-
-        Args:
-            path (str | None): Path to the Tinker parameter file.
-            data (list[Datum] | None): List of Datum objects.
-            method (str | None): Method used to generate this FF.
-            params (list[Param] | None): List of Param objects.
-            score (float | None): Objective function score.
-
-        """
         super().__init__(path, data, method, params, score)
-        self.sub_names = []
+        self.sub_names: list[str] = []
         self._atom_types = None
-        self._lines = None
+        self._lines: list[str] | None = None
 
     @property
     def lines(self) -> list[str]:
@@ -69,116 +192,16 @@ class TinkerFF(FF):
         """
         if path is None:
             path = self.path
-        bonds = ["bond", "bond3", "bond4", "bond5"]
-        pibonds = ["pibond", "pibond3", "pibond4", "pibond5"]
-        angles = ["angle", "angle3", "angle4", "angle5"]
-        torsions = ["torsion", "torsion4", "torsion5"]
-        dipoles = ["dipole", "dipole3", "dipole4", "dipole5"]
-        self.params = []
-        q2mm_sec = False
-        gather_data = False
-        self.sub_names = []
-        with open(path) as f:
-            logger.log(15, f"READING: {path}")
-            for i, line in enumerate(f):
-                split = line.split()
-                if not q2mm_sec and "# Q2MM" in line:
-                    q2mm_sec = True
-                elif q2mm_sec and "#" in line[0]:
-                    self.sub_names.append(line[1:])
-                    if "OPT" in line:
-                        gather_data = True
-                    else:
-                        gather_data = False
-                if gather_data and split:
-                    if split[0] == "atom":
-                        at = split[1]
-                        el = split[2]
-                        _des = split[3][1:-1]
-                        _atnum = split[4]
-                        mass = split[5]
-                        # still don't know what this colum does. I don't even
-                        # know if its valence
-                        # Number of bonds - KJK
-                        valence = split[6]
-                    if split[0] in bonds:
-                        at = [split[1], split[2]]
-                        self.params.extend(
-                            (
-                                Param(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                Param(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
-                            )
-                        )
-                    if split[0] in dipoles:
-                        at = [split[1], split[2]]
-                        self.params.extend(
-                            (
-                                Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                # I think this second value is the position of the
-                                # dipole along the bond. I've only seen 0.5 which
-                                # indicates the dipole is positioned at the center
-                                # of the bond.
-                                Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
-                            )
-                        )
-                    if split[0] in pibonds:
-                        at = [split[1], split[2]]
-                        # I'm still not sure how these effect the potential
-                        # energy but I believe they are correcting factors for
-                        # atoms in a pi system with the pi_b being for the bond
-                        # and pi_t being for torsions.
-                        self.params.extend(
-                            (
-                                Param(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                                Param(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
-                            )
-                        )
-                    if split[0] in angles:
-                        at = [split[1], split[2], split[3]]
-                        # TINKER param file might include several equillibrum
-                        # bond angles which are for a central atom with 0, 1,
-                        # or 2 additional hydrogens on the central atom.
-                        self.params.extend(
-                            (
-                                Param(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
-                                Param(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
-                            )
-                        )
-                        if len(split) == 8:
-                            self.params.extend(
-                                (
-                                    Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
-                                    Param(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
-                                )
-                            )
-                        elif len(split) == 7:
-                            self.params.append(
-                                Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6]))
-                            )
-                    if split[0] in torsions:
-                        at = [split[1], split[2], split[3], split[4]]
-                        self.params.extend(
-                            (
-                                Param(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
-                                Param(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
-                                Param(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
-                            )
-                        )
-                    if split[0] == "opbend":
-                        at = [split[1], split[2], split[3], split[4]]
-                        self.params.append(
-                            Param(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
-                        )
-                    if split[0] == "vdw":
-                        # The first float is the vdw radius, the second has to do
-                        # with homoatomic well depths and the last is a reduction
-                        # factor for univalent atoms (I don't think we will need
-                        # any of these except for the first one).
-                        at = [split[1]]
-                        self.params.append(
-                            Param(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
-                        )
-        logger.log(15, f"  -- Read {len(self.params)} parameters.")
+        self.params, self.sub_names = _import_params(path)
+
+
+class TinkerFF(_TinkerBase):
+    """Tinker force field parameter file reader/writer.
+
+    Handles Tinker ``.prm`` parameter files (e.g. ``mm3.prm``). The
+    parameter structure varies by force field; currently ``mm3.prm`` is
+    supported with ``amoeba09.prm`` under development.
+    """
 
     def export_ff(
         self, path: str | None = None, params: list[Param] | None = None, lines: list[str] | None = None
@@ -439,32 +462,33 @@ class TinkerMM3A(FF):
                 pos = 12 * (col + 1)
                 linesplit = line.split()
                 value = f"{param.value:7.4f}"
-                par = " " * 12  # (12 * 1)
+                # Use lists (not strings) so slice assignment works
+                par = list(" " * 12)
                 n = len(linesplit[0])
-                par[:n] = linesplit[0]
-                atoms = " " * 5 * 4  # (5 * 4)
-                const = " " * 4 * 12  # (4 * 12)
+                par[:n] = list(linesplit[0])
+                atoms = list(" " * 5 * 4)
+                const = list(" " * 4 * 12)
 
-                if "pibond" in lines:
-                    0
+                if "pibond" in line:
+                    pass
                 # bond A B Kb b (3+(n-1))
                 elif "bond" in line:
                     n1 = len(linesplit[1])
                     n2 = len(linesplit[2])
-                    atoms[4 - n1 : 4] = linesplit[1]
-                    atoms[8 - n2 : 8] = linesplit[2]
+                    atoms[4 - n1 : 4] = list(linesplit[1])
+                    atoms[8 - n2 : 8] = list(linesplit[2])
                     n3 = len(value)
-                    const[pos - n3 : pos] = value
+                    const[pos - n3 : pos] = list(value)
                 # angle A B C (4+(n-1))
                 elif "angle" in line:
                     n1 = len(linesplit[1])
                     n2 = len(linesplit[2])
                     n3 = len(linesplit[3])
-                    atoms[4 - n1 : 4] = linesplit[1]
-                    atoms[8 - n2 : 8] = linesplit[2]
-                    atoms[12 - n3 : 12] = linesplit[3]
+                    atoms[4 - n1 : 4] = list(linesplit[1])
+                    atoms[8 - n2 : 8] = list(linesplit[2])
+                    atoms[12 - n3 : 12] = list(linesplit[3])
                     n4 = len(value)
-                    const[pos - n4 : pos] = value
+                    const[pos - n4 : pos] = list(value)
                 # torsion A B C D (5+3*(n-1))
                 elif "torsion" in line:
                     linesplit[5 + 3 * col] = value
@@ -474,13 +498,13 @@ class TinkerMM3A(FF):
                     n2 = len(linesplit[2])
                     n3 = len(linesplit[3])
                     n4 = len(linesplit[4])
-                    atoms[4 - n1 : 4] = linesplit[1]
-                    atoms[8 - n2 : 8] = linesplit[2]
-                    atoms[12 - n3 : 12] = linesplit[3]
-                    atoms[16 - n4 : 16] = linesplit[4]
+                    atoms[4 - n1 : 4] = list(linesplit[1])
+                    atoms[8 - n2 : 8] = list(linesplit[2])
+                    atoms[12 - n3 : 12] = list(linesplit[3])
+                    atoms[16 - n4 : 16] = list(linesplit[4])
                     n5 = len(value)
-                    const[pos - n5 : pos] = value
-                lines[param.ff_row - 1] = par + atoms + const + "\n"
+                    const[pos - n5 : pos] = list(value)
+                lines[param.ff_row - 1] = "".join(par) + "".join(atoms) + "".join(const) + "\n"
         with open(path, "w") as f:
             f.writelines(lines)
         logger.log(10, f"WROTE: {path}")

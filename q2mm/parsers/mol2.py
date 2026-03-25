@@ -91,7 +91,7 @@ class Mol2(File):
 
         if len(structure_chunks) - 1 != len(self._structures):
             logger.log(
-                logging.WARN,
+                logging.WARNING,
                 "Only "
                 + str(len(self._structures))
                 + " structures could be parsed from "
@@ -194,8 +194,9 @@ class Mol2(File):
         bond_chunk = 2
         bond_lines = tripos_chunks[bond_chunk].split("\n")
 
-        # assert that data was chunked correctly:
-        assert atom_lines[0].strip() == self.ATOM_FLAG
+        # Validate that data was chunked correctly:
+        if atom_lines[0].strip() != self.ATOM_FLAG:
+            raise ValueError(f"Expected {self.ATOM_FLAG} but got {atom_lines[0].strip()!r}")
         while bond_lines[0].strip() != self.BOND_FLAG:
             bond_chunk += 1
             try:
@@ -222,19 +223,16 @@ class Mol2(File):
         struct._atoms = self.parse_atoms(atom_lines)
 
         # use num atoms from @<TRIPOS>MOLECULE to verify parse is correct
-        assert len(struct._atoms) == num_atoms, (
-            f"Parsed {len(struct.atoms)} atoms but only expected {num_atoms} atoms based on Mol2 data."
-        )
-        assert all(struct.atoms[i].index == i + 1 for i in range(len(struct.atoms))), (
-            "Mol2 atom index values do not match their ordering."
-        )
+        if len(struct._atoms) != num_atoms:
+            raise ValueError(f"Parsed {len(struct.atoms)} atoms but expected {num_atoms} atoms based on Mol2 data.")
+        if not all(struct.atoms[i].index == i + 1 for i in range(len(struct.atoms))):
+            raise ValueError("Mol2 atom index values do not match their ordering.")
 
         # send chunk from @<TRIPOS>BOND to end-of-file to parse_bonds
         struct._bonds = self.parse_bonds(bond_lines, struct)
 
         # use num bonds from @<TRIPOS>MOLECULE to verify parse is correct
-        assert len(struct._bonds) == num_bonds, (
-            f"Parsed {len(struct.bonds)} bonds but only expected {num_bonds} bonds based on Mol2 data."
-        )
+        if len(struct._bonds) != num_bonds:
+            raise ValueError(f"Parsed {len(struct.bonds)} bonds but expected {num_bonds} bonds based on Mol2 data.")
 
         return struct
