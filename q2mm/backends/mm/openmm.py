@@ -20,10 +20,6 @@ logger = logging.getLogger(__name__)
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
 from q2mm.constants import (
-    AMU_TO_KG,
-    BOHR_TO_ANG,
-    HARTREE_TO_J,
-    SPEED_OF_LIGHT_MS,
     MM3_BOND_C3,
     MM3_BOND_C4,
     MM3_ANGLE_C3,
@@ -1571,18 +1567,8 @@ class OpenMMEngine(MMEngine):
             list[float]: Vibrational frequencies in cm⁻¹.
 
         """
+        from q2mm.models.hessian import hessian_to_frequencies
+
         handle = self._prepare_handle(structure, forcefield)
         hessian_au = self.hessian(handle)  # Hartree/Bohr²
-
-        # Convert Hartree/Bohr² → J/m² (per molecule, not per mol)
-        bohr_to_m = BOHR_TO_ANG * 1e-10
-        hessian_si = hessian_au * HARTREE_TO_J / (bohr_to_m**2)
-
-        masses = np.array([MASSES[symbol] * AMU_TO_KG for symbol in handle.molecule.symbols], dtype=float)
-        mass_vector = np.repeat(masses, 3)
-        mass_weighted = hessian_si / np.sqrt(np.outer(mass_vector, mass_vector))
-
-        eigenvalues = np.linalg.eigvalsh(mass_weighted)
-        frequencies = np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues))
-        frequencies /= 2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0
-        return frequencies.tolist()
+        return hessian_to_frequencies(hessian_au, list(handle.molecule.symbols))

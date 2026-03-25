@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -56,12 +55,6 @@ logger = logging.getLogger(__name__)
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
-from q2mm.constants import (
-    AMU_TO_KG,
-    BOHR_TO_ANG,
-    MASSES,
-    SPEED_OF_LIGHT_MS,
-)
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
@@ -836,31 +829,11 @@ class JaxMDEngine(MMEngine):
             list[float]: Frequencies sorted ascending.
 
         """
+        from q2mm.models.hessian import hessian_to_frequencies
+
         handle = self._get_handle(structure, forcefield)
         hess_au = self.hessian(handle, forcefield)
-
-        masses = np.array([MASSES[s] for s in handle.molecule.symbols])
-        mass_weights = np.repeat(masses, 3)
-        sqrt_inv_mass = 1.0 / np.sqrt(mass_weights)
-        mw_hess = hess_au * np.outer(sqrt_inv_mass, sqrt_inv_mass)
-
-        eigenvalues = np.linalg.eigvalsh(mw_hess)
-
-        hartree_to_j = 4.359744650e-18
-        bohr_to_m = BOHR_TO_ANG * 1e-10
-        factor = hartree_to_j / (AMU_TO_KG * bohr_to_m**2)
-
-        freqs = []
-        for ev in eigenvalues:
-            val = ev * factor
-            if val < 0:
-                omega = -math.sqrt(-val)
-            else:
-                omega = math.sqrt(val)
-            freq_cm = omega / (2.0 * math.pi * SPEED_OF_LIGHT_MS * 100.0)
-            freqs.append(freq_cm)
-
-        return sorted(freqs)
+        return hessian_to_frequencies(hess_au, list(handle.molecule.symbols))
 
     def minimize(
         self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField, max_iterations: int = 200

@@ -169,6 +169,67 @@ def mass_weight_eigenvectors(
                 evecs[i, j] *= sqrt_mass[j]
 
 
+# ---- Frequency pipeline ----
+
+
+def hessian_to_frequencies(
+    hessian_au: np.ndarray,
+    symbols: list[str] | Sequence[str],
+    *,
+    sort: bool = True,
+) -> list[float]:
+    """Convert a Hessian matrix (Hartree/Bohr²) to vibrational frequencies (cm⁻¹).
+
+    Pipeline:
+    1. Mass-weight the Hessian using atomic masses
+    2. Diagonalize (eigenvalues only)
+    3. Convert eigenvalues to frequencies in cm⁻¹
+    4. Handle imaginary frequencies (negative eigenvalues → negative cm⁻¹)
+
+    The conversion factor from mass-weighted atomic-unit eigenvalues
+    (Hartree / (amu · Bohr²)) to angular-frequency² (s⁻²) is::
+
+        factor = HARTREE_TO_J / (AMU_TO_KG * bohr_to_m²)
+
+    Angular frequencies (rad/s) are then divided by ``2π · c`` (with *c*
+    in cm/s) to obtain wavenumbers in cm⁻¹.
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Hessian in Hartree/Bohr².
+        symbols: Element symbols for mass lookup (length *N*).
+        sort: If ``True`` (default), return frequencies sorted ascending.
+
+    Returns:
+        List of ``3N`` frequencies in cm⁻¹.  Negative values represent
+        imaginary frequencies (from negative eigenvalues, e.g. at
+        transition states).
+
+    """
+    symbols_list = _resolve_symbols(symbols)
+
+    # 1. Mass-weight (copy to avoid mutating the caller's array)
+    hess = hessian_au.copy()
+    mass_weight_hessian(hess, symbols_list)
+
+    # 2. Diagonalize — eigenvalues only (sorted ascending by numpy)
+    eigenvalues = np.linalg.eigvalsh(hess)
+
+    # 3. Convert eigenvalues [Hartree / (amu · Bohr²)] → s⁻²
+    bohr_to_m = co.BOHR_TO_ANG * 1e-10
+    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
+    vals_si = eigenvalues * factor
+
+    # 4. eigenvalue → angular frequency → cm⁻¹
+    #    Negative eigenvalue → imaginary frequency (negative cm⁻¹)
+    freqs = np.sign(vals_si) * np.sqrt(np.abs(vals_si))
+    freqs /= 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
+
+    result = freqs.tolist()
+    if sort:
+        result.sort()
+    return result
+
+
 # ---- Linear algebra operations ----
 
 
