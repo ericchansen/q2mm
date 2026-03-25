@@ -180,3 +180,91 @@ class TestJaxOptimizerIntegration:
             fd_grad[i] = (f_plus - f_minus) / (2 * eps)
 
         np.testing.assert_allclose(analytical_grad, fd_grad, atol=1e-3, rtol=1e-3)
+
+
+class TestJaxBatchedSensitivity:
+    """Test vmap-batched sensitivity analysis on JaxEngine."""
+
+    def setup_method(self) -> None:
+        self.engine = JaxEngine()
+
+    def test_batched_energy_matches_sequential(self) -> None:
+        """batched_energy should match individual energy calls."""
+        mol = make_diatomic(distance=0.80, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        handle = self.engine.create_context(mol, ff)
+
+        vecs = np.array(
+            [
+                ff.get_param_vector(),
+                ff.get_param_vector() + [10.0, 0.01],
+                ff.get_param_vector() - [10.0, 0.01],
+            ]
+        )
+        batched = self.engine.batched_energy(handle, ff, vecs)
+
+        sequential = np.array([self.engine.energy(handle, ff.with_params(v)) for v in vecs])
+        np.testing.assert_allclose(batched, sequential, atol=1e-10)
+
+    def test_supports_batched_energy(self) -> None:
+        assert self.engine.supports_batched_energy() is True
+
+    def test_is_energy_only(self) -> None:
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+        ff = _h2_ff()
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        obj = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        assert obj.is_energy_only() is True
+
+    def test_batched_scores_matches_sequential(self) -> None:
+        """batched_scores via vmap should match sequential __call__."""
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_diatomic(distance=0.80, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        ref = ReferenceData()
+        ref.add_energy(value=5.0, molecule_idx=0, weight=1.0)
+
+        obj_batch = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj_seq = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+
+        vecs = np.array(
+            [
+                ff.get_param_vector(),
+                ff.get_param_vector() + [10.0, 0.01],
+                ff.get_param_vector() - [10.0, 0.01],
+            ]
+        )
+
+        batched = obj_batch.batched_scores(vecs)
+        sequential = np.array([obj_seq(v) for v in vecs])
+        np.testing.assert_allclose(batched, sequential, atol=1e-10)
+
+    def test_compute_sensitivity_batched(self) -> None:
+        """compute_sensitivity should produce identical results via batched path."""
+        from q2mm.optimizers.cycling import compute_sensitivity
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_diatomic(distance=0.80, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        ref = ReferenceData()
+        ref.add_energy(value=5.0, molecule_idx=0, weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+
+        # Verify the batched path is used (energy-only + JAX)
+        assert obj.is_energy_only()
+        assert self.engine.supports_batched_energy()
+
+        sens = compute_sensitivity(obj, metric="simp_var")
+
+        # Sanity checks
+        assert sens.n_evals == 2 * ff.n_params + 1
+        assert len(sens.d1) == ff.n_params
+        assert len(sens.d2) == ff.n_params
+        assert len(sens.ranking) == ff.n_params
+        # d1 should be nonzero for active params
+        assert np.any(sens.d1 != 0)

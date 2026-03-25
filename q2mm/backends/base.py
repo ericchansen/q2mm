@@ -260,6 +260,46 @@ class MMEngine(ABC):
         """
         return False
 
+    def supports_batched_energy(self) -> bool:
+        """Whether this engine supports vectorised energy evaluation.
+
+        Engines returning ``True`` must implement :meth:`batched_energy`,
+        which evaluates energy for multiple parameter vectors in a single
+        call (e.g. via ``jax.vmap``).
+
+        Returns:
+            bool: ``True`` if :meth:`batched_energy` is available.
+
+        """
+        return False
+
+    def batched_energy(
+        self,
+        structure: Q2MMMolecule,
+        forcefield: ForceField,
+        param_matrix: np.ndarray,
+    ) -> np.ndarray:
+        """Evaluate energy for a batch of parameter vectors.
+
+        Default implementation loops sequentially. JAX-based engines
+        override this with ``jax.vmap`` for GPU-parallel evaluation.
+
+        Args:
+            structure: Molecular structure or engine-specific handle.
+            forcefield: Base force field (topology/types only; the actual
+                parameter values come from *param_matrix*).
+            param_matrix: Shape ``(batch, n_params)`` parameter vectors.
+
+        Returns:
+            np.ndarray: Shape ``(batch,)`` energies in kcal/mol.
+
+        """
+        energies = np.empty(len(param_matrix))
+        for i, pvec in enumerate(param_matrix):
+            ff_i = forcefield.with_params(pvec)
+            energies[i] = self.energy(structure, ff_i)
+        return energies
+
     def energy_and_param_grad(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. MM parameters.
 

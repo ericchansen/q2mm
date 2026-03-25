@@ -595,6 +595,38 @@ class JaxEngine(MMEngine):
         val, grad = handle._grad_fn(params, coords)
         return float(val), np.asarray(grad)
 
+    def supports_batched_energy(self) -> bool:  # noqa: D102
+        return True
+
+    def batched_energy(
+        self,
+        structure: Q2MMMolecule | JaxHandle,
+        forcefield: ForceField,
+        param_matrix: np.ndarray,
+    ) -> np.ndarray:
+        """Evaluate energy for a batch of parameter vectors via ``jax.vmap``.
+
+        All ``param_matrix`` rows are evaluated in a single vectorised
+        call, enabling GPU-parallel sensitivity analysis.
+
+        Args:
+            structure: Molecule or cached :class:`JaxHandle`.
+            forcefield: Base force field (topology only).
+            param_matrix: Shape ``(batch, n_params)`` parameter vectors.
+
+        Returns:
+            np.ndarray: Shape ``(batch,)`` energies in kcal/mol.
+
+        """
+        handle = self._get_handle(structure, forcefield)
+        coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
+        batch_params = jnp.array(param_matrix, dtype=jnp.float64)
+
+        if not hasattr(handle, "_batched_energy_fn") or handle._batched_energy_fn is None:
+            handle._batched_energy_fn = jax.jit(jax.vmap(handle._energy_fn, in_axes=(0, None)))
+
+        return np.asarray(handle._batched_energy_fn(batch_params, coords))
+
     def hessian(self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField) -> np.ndarray:
         """Compute Hessian via ``jax.hessian`` (d²E/dcoords²) in Hartree/Bohr².
 
