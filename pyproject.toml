@@ -112,8 +112,9 @@ include = ["q2mm*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+addopts = ""
 markers = [
-    "benchmark: performance benchmark tests (requires pytest-benchmark; use -p benchmark to enable)",
+    "benchmark: performance benchmark tests (requires pytest-benchmark; use --benchmark-enable to collect timing)",
     "slow: slow tests >10s each (requires --run-slow)",
     "medium: medium speed tests 1-10s each (requires --run-medium)",
 ]

@@ -99,7 +99,8 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "slow: marks tests as slow (>10s each)")
     config.addinivalue_line("markers", "medium: marks tests as medium speed (1-10s each)")
     config.addinivalue_line(
-        "markers", "benchmark: performance benchmark tests (disabled by default; use --benchmark-enable to run)"
+        "markers",
+        "benchmark: benchmark timing disabled by default; use --benchmark-enable to collect timing",
     )
     config.addinivalue_line("markers", "openmm: requires OpenMM backend")
     config.addinivalue_line("markers", "tinker: requires Tinker backend")

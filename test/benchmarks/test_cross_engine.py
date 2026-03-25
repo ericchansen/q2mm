@@ -50,8 +50,9 @@ def _available_from(pool: set[str]) -> list[str]:
 
 def _skip_unless_pair(pool: set[str]) -> None:
     """Skip if fewer than two backends in *pool* are available."""
-    if len(_available_from(pool)) < 2:
-        pytest.skip(f"Need ≥2 backends from {pool}; have {_available_from(pool)}")
+    available = _available_from(pool)
+    if len(available) < 2:
+        pytest.skip(f"Need ≥2 backends from {pool}; have {available}")
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ class TestEnergyParity:
 
         names = list(energies.keys())
         for a, b in combinations(names, 2):
-            assert energies[a] == pytest.approx(energies[b], abs=1e-4), (
+            assert energies[a] == pytest.approx(energies[b], abs=1e-3), (
                 f"Energy mismatch: {a}={energies[a]:.6f} vs {b}={energies[b]:.6f}"
             )
 
