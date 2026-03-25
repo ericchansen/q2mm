@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+yaml = pytest.importorskip("yaml", reason="pyyaml not installed")
+
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 from q2mm.parsers.reference_yaml import (
