@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "molecule": "rh-enamide",
+    "engine": "jax",
+    "device": "cpu",
+    "max_cycles": 10,
+    "max_params": 5,
+    "convergence": 0.01,
+    "full_method": "L-BFGS-B",
+    "simp_method": "Nelder-Mead",
+    "full_maxiter": 200,
+    "simp_maxiter": 200,
+    "n_molecules": 9,
+    "total_modes": 1273,
+    "n_params": 94,
+    "ff_type": "harmonic (auto)"
+  },
+  "results": {
+    "success": true,
+    "initial_score": 2160.9356999492575,
+    "final_score": 32.77959674587637,
+    "n_cycles": 4,
+    "cycle_scores": [
+      2160.9356999492575,
+      34.97934255491775,
+      32.91443519695968,
+      32.93993051730712,
+      32.77959674587637
+    ],
+    "improvement": 0.9848308319647613,
+    "message": "converged",
+    "total_elapsed_s": 716.0441527829971,
+    "load_elapsed_s": 3.7152888190175872,
+    "n_eval": 1842
+  }
+}
