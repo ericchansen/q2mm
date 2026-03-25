@@ -258,6 +258,10 @@ def compute_sensitivity(
     for simplex) or *descending* ``|d1|`` (largest gradient = most
     sensitive), depending on *metric*.
 
+    When the engine supports :meth:`~MMEngine.batched_energy` and all
+    references are energy-only, all ``2N + 1`` evaluations are vectorised
+    into a single call (e.g. ``jax.vmap`` on GPU).
+
     Cost: ``2N + 1`` objective evaluations (1 baseline + 2 per parameter
     for central differentiation).
 
@@ -288,29 +292,36 @@ def compute_sensitivity(
     if len(step_sizes) != n:
         raise ValueError(f"step_sizes length {len(step_sizes)} != param vector length {n}")
 
-    d1 = np.zeros(n)
-    d2 = np.zeros(n)
-    n_evals = 0
-
-    # Baseline evaluation
-    f0 = float(objective(x0))
-    n_evals = 1
-
+    # Build the full (2N+1) parameter matrix: [x0, x0+h0, x0-h0, x0+h1, x0-h1, ...]
+    param_rows = [x0]
+    active_mask = step_sizes != 0
     for i in range(n):
-        h = step_sizes[i]
-        if h == 0:
+        if not active_mask[i]:
             continue
-
         x_fwd = x0.copy()
         x_bwd = x0.copy()
-        x_fwd[i] += h
-        x_bwd[i] -= h
+        x_fwd[i] += step_sizes[i]
+        x_bwd[i] -= step_sizes[i]
+        param_rows.append(x_fwd)
+        param_rows.append(x_bwd)
 
-        f_fwd = float(objective(x_fwd))
-        f_bwd = float(objective(x_bwd))
-        n_evals += 2
+    param_matrix = np.array(param_rows)  # (2K+1, n) where K = active params
+    n_evals = len(param_matrix)
 
-        # Unnormalised derivatives (upstream convention)
+    # Evaluate all parameter vectors — batched when possible
+    all_scores = objective.batched_scores(param_matrix)
+
+    # Unpack: first row is baseline, then pairs of (fwd, bwd)
+    f0 = all_scores[0]
+    d1 = np.zeros(n)
+    d2 = np.zeros(n)
+    pair_idx = 1
+    for i in range(n):
+        if not active_mask[i]:
+            continue
+        f_fwd = all_scores[pair_idx]
+        f_bwd = all_scores[pair_idx + 1]
+        pair_idx += 2
         d1[i] = (f_fwd - f_bwd) * 0.5
         d2[i] = f_fwd + f_bwd - 2.0 * f0
 

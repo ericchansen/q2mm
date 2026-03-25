@@ -746,6 +746,36 @@ class JaxMDEngine(MMEngine):
         val, grad = handle._grad_fn(params, coords, handle._nlist)
         return float(val), np.asarray(grad)
 
+    def supports_batched_energy(self) -> bool:  # noqa: D102
+        return True
+
+    def batched_energy(
+        self,
+        structure: Q2MMMolecule | JaxMDHandle,
+        forcefield: ForceField,
+        param_matrix: np.ndarray,
+    ) -> np.ndarray:
+        """Evaluate energy for a batch of parameter vectors via ``jax.vmap``.
+
+        Args:
+            structure: Molecule or cached :class:`JaxMDHandle`.
+            forcefield: Base force field (topology only).
+            param_matrix: Shape ``(batch, n_params)`` parameter vectors.
+
+        Returns:
+            np.ndarray: Shape ``(batch,)`` energies in kcal/mol.
+
+        """
+        handle = self._get_handle(structure, forcefield)
+        coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
+        batch_params = jnp.array(param_matrix, dtype=jnp.float64)
+        nlist = handle._nlist
+
+        if not hasattr(handle, "_batched_energy_fn") or handle._batched_energy_fn is None:
+            handle._batched_energy_fn = jax.jit(jax.vmap(handle._scalar_energy_fn, in_axes=(0, None, None)))
+
+        return np.asarray(handle._batched_energy_fn(batch_params, coords, nlist))
+
     def hessian(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> np.ndarray:
         """Compute Hessian (d²E/dcoords²) in Hartree/Bohr².
 

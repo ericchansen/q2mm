@@ -877,6 +877,72 @@ class ObjectiveFunction:
         self.history.append(float(np.sum(r**2)))
         return r
 
+    def is_energy_only(self) -> bool:
+        """Return ``True`` if every reference is an energy value.
+
+        When true, :meth:`batched_scores` can use the engine's vectorised
+        ``batched_energy`` path (e.g. ``jax.vmap``) for GPU-parallel
+        sensitivity analysis.
+        """
+        return all(ref.kind == "energy" for ref in self.reference.values)
+
+    def batched_scores(self, param_matrix: np.ndarray) -> np.ndarray:
+        """Evaluate objective for multiple parameter vectors in one call.
+
+        When the engine supports :meth:`~MMEngine.batched_energy` and all
+        references are energy-only, energy evaluations are vectorised
+        (e.g. via ``jax.vmap``) for GPU-parallel evaluation.
+
+        Otherwise falls back to sequential ``__call__`` per vector.
+
+        Args:
+            param_matrix: Shape ``(batch, n_params)`` parameter vectors.
+
+        Returns:
+            np.ndarray: Shape ``(batch,)`` objective scores.
+
+        """
+        use_batched = self.engine.supports_batched_energy() and self.is_energy_only()
+        if not use_batched:
+            return np.array([self(pvec) for pvec in param_matrix])
+
+        return self._batched_energy_scores(param_matrix)
+
+    def _batched_energy_scores(self, param_matrix: np.ndarray) -> np.ndarray:
+        """Compute scores for a batch of param vectors (energy-only fast path).
+
+        Uses :meth:`MMEngine.batched_energy` to evaluate all parameter
+        vectors in a single vectorised call per molecule.
+        """
+        batch_size = len(param_matrix)
+        # Group energy references by molecule index
+        mol_refs: dict[int, list] = {}
+        for ref in self.reference.values:
+            mol_refs.setdefault(ref.molecule_idx, []).append(ref)
+
+        # For each molecule, batch-evaluate energies
+        mol_energies: dict[int, np.ndarray] = {}
+        for mol_idx in mol_refs:
+            structure = self._get_structure(mol_idx)
+            mol_energies[mol_idx] = self.engine.batched_energy(
+                structure,
+                self.forcefield,
+                param_matrix,
+            )
+
+        # Compute residuals and scores
+        scores = np.zeros(batch_size)
+        for ref in self.reference.values:
+            energies = mol_energies[ref.molecule_idx]
+            residuals = ref.weight * (ref.value - energies)
+            scores += residuals**2
+
+        n = len(param_matrix)
+        self.n_eval += n
+        for s in scores:
+            self.history.append(float(s))
+        return scores
+
     def _compute_residuals(self, forcefield: ForceField) -> np.ndarray:
         """Compute weighted residuals for all reference observations.
 
