@@ -89,6 +89,8 @@ def _validate_kind(kind: str, context: str) -> str:
 
 def _as_float(value: Any, name: str, context: str) -> float:
     """Coerce *value* to float with a clear error on failure."""
+    if isinstance(value, bool):
+        raise ReferenceYAMLError(f"'{name}' must be a number in {context}, got {value!r}.")
     try:
         return float(value)
     except (TypeError, ValueError) as exc:
@@ -235,6 +237,8 @@ def _parse_datum(
     if kind == "eig_diagonal":
         value = _as_float(_require_key(datum, "value", context), "value", context)
         mode_idx = _as_int(_require_key(datum, "mode_idx", context), "mode_idx", context)
+        if mode_idx < 0:
+            raise ReferenceYAMLError(f"'mode_idx' must be non-negative in {context}, got {mode_idx}.")
         return [
             ReferenceValue(
                 kind="eig_diagonal",
@@ -250,6 +254,8 @@ def _parse_datum(
         value = _as_float(_require_key(datum, "value", context), "value", context)
         row = _as_int(_require_key(datum, "row", context), "row", context)
         col = _as_int(_require_key(datum, "col", context), "col", context)
+        if row < 0 or col < 0:
+            raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
         return [
             ReferenceValue(
                 kind="eig_offdiagonal",
@@ -315,7 +321,10 @@ def _load_molecule(
 
     mol: Q2MMMolecule
     if "xyz" in mol_dict:
-        xyz_path = base_dir / mol_dict["xyz"]
+        xyz_raw = mol_dict["xyz"]
+        if not isinstance(xyz_raw, str):
+            raise ReferenceYAMLError(f"'xyz' must be a string path in {ctx}, got {type(xyz_raw).__name__}.")
+        xyz_path = base_dir / xyz_raw
         if not xyz_path.exists():
             raise ReferenceYAMLError(f"XYZ file not found: {xyz_path} (referenced in {ctx}).")
         mol = Q2MMMolecule.from_xyz(
@@ -368,7 +377,10 @@ def _load_molecule(
 
     # ---- Hessian ----------------------------------------------------------
     if "hessian" in mol_dict:
-        hessian_path = base_dir / mol_dict["hessian"]
+        hessian_spec = mol_dict["hessian"]
+        if not isinstance(hessian_spec, str):
+            raise ReferenceYAMLError(f"'hessian' must be a string path in {ctx}, got {type(hessian_spec).__name__}.")
+        hessian_path = base_dir / hessian_spec
         if not hessian_path.exists():
             raise ReferenceYAMLError(f"Hessian file not found: {hessian_path} (referenced in {ctx}).")
         hessian = np.load(str(hessian_path))

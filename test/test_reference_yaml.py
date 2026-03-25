@@ -7,8 +7,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-yaml = pytest.importorskip("yaml", reason="pyyaml not installed")
-
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 from q2mm.parsers.reference_yaml import (
@@ -739,4 +737,72 @@ class TestEdgeCases:
             "molecules:\n  - name: test\n    geometry:\n      symbols: [H]\n      coordinates: [[0, 0, abc]]\n"
         )
         with pytest.raises(ReferenceYAMLError, match="non-numeric"):
+            load_reference_yaml(p)
+
+    def test_as_float_rejects_booleans(self, tmp_path: Path) -> None:
+        """Boolean values should not be silently coerced to float."""
+        p = tmp_path / "bool_value.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: bond_length\n"
+            "        atoms: [0, 1]\n"
+            "        value: true\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="must be a number"):
+            load_reference_yaml(p)
+
+    def test_xyz_non_string_rejected(self, tmp_path: Path) -> None:
+        """Non-string xyz values should raise ReferenceYAMLError."""
+        p = tmp_path / "bad_xyz.yaml"
+        p.write_text("molecules:\n  - name: test\n    xyz: 123\n    data: []\n")
+        with pytest.raises(ReferenceYAMLError, match="must be a string"):
+            load_reference_yaml(p)
+
+    def test_hessian_non_string_rejected(self, tmp_path: Path) -> None:
+        """Non-string hessian values should raise ReferenceYAMLError."""
+        xyz = tmp_path / "mol.xyz"
+        xyz.write_text("2\n\nH 0 0 0\nH 1 0 0\n")
+        p = tmp_path / "bad_hess.yaml"
+        p.write_text("molecules:\n  - name: test\n    xyz: mol.xyz\n    hessian: 42\n    data: []\n")
+        with pytest.raises(ReferenceYAMLError, match="must be a string"):
+            load_reference_yaml(p)
+
+    def test_negative_eig_diagonal_mode_idx(self, tmp_path: Path) -> None:
+        """Negative mode_idx in eig_diagonal should be rejected."""
+        p = tmp_path / "neg_eig.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: eig_diagonal\n"
+            "        mode_idx: -1\n"
+            "        value: 0.5\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="non-negative"):
+            load_reference_yaml(p)
+
+    def test_negative_eig_offdiagonal_row_col(self, tmp_path: Path) -> None:
+        """Negative row/col in eig_offdiagonal should be rejected."""
+        p = tmp_path / "neg_offdiag.yaml"
+        p.write_text(
+            "molecules:\n"
+            "  - name: test\n"
+            "    geometry:\n"
+            "      symbols: [H, H]\n"
+            "      coordinates: [[0,0,0],[1,0,0]]\n"
+            "    data:\n"
+            "      - kind: eig_offdiagonal\n"
+            "        row: -1\n"
+            "        col: 0\n"
+            "        value: 0.1\n"
+        )
+        with pytest.raises(ReferenceYAMLError, match="non-negative"):
             load_reference_yaml(p)
