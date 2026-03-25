@@ -119,7 +119,7 @@ class Atom:
         self.x = x
         self.y = y
         self.z = z
-        if coords:  # coordinates are all in Angstroms and Cartesian
+        if coords is not None:  # coordinates are all in Angstroms and Cartesian
             self.x = float(coords[0])
             self.y = float(coords[1])
             self.z = float(coords[2])
