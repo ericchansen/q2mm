@@ -29,35 +29,19 @@ logger = logging.getLogger(__name__)
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
+from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
-try:
-    import jax
-    import jax.numpy as jnp
-
-    # JAX defaults to float32 which is insufficient for MM parameter
-    # optimization (energy differences ~1e-6 kcal/mol matter).  This is
-    # standard practice in JAX-based chemistry packages.  Guard: only set
-    # if not already configured (respects JAX_ENABLE_X64 env var).
-    if not jax.config.jax_enable_x64:
-        jax.config.update("jax_enable_x64", True)
-    _HAS_JAX = True
-except ImportError:  # pragma: no cover
-    jax = None  # type: ignore[assignment]
-    jnp = None  # type: ignore[assignment]
-    _HAS_JAX = False
-
-
-def _ensure_jax() -> None:
-    """Raise ``ImportError`` if JAX is not installed.
-
-    Raises:
-        ImportError: If the ``jax`` package cannot be imported.
-
-    """
-    if not _HAS_JAX:
-        raise ImportError("JAX is required for JaxEngine. Install with: pip install jax jaxlib")
+from q2mm.backends.mm._jax_common import (
+    _HAS_JAX,
+    compute_param_offsets,
+    ensure_jax as _ensure_jax,
+    jax,
+    jnp,
+    match_angle as _match_angle,
+    match_bond as _match_bond,
+    match_vdw as _match_vdw,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -351,77 +335,6 @@ class JaxHandle:
     _energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
     _coord_hess_fn: Callable | None = field(default=None, repr=False)
-
-
-# ---------------------------------------------------------------------------
-# Matching helpers (reuse OpenMM logic patterns)
-# ---------------------------------------------------------------------------
-
-
-def _match_bond(
-    forcefield: ForceField, elements: tuple[str, str], env_id: str = "", ff_row: int | None = None
-) -> tuple[int | None, BondParam | None]:
-    """Match a bond to its ForceField index.
-
-    Args:
-        forcefield: Force field to search.
-        elements: Element symbols of the two bonded atoms.
-        env_id: Chemical environment identifier.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        tuple[int | None, BondParam | None]: ``(index, param)`` or
-            ``(None, None)`` if unmatched.
-
-    """
-    matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.bonds.index(matched), matched
-    return None, None
-
-
-def _match_angle(
-    forcefield: ForceField, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
-) -> tuple[int | None, AngleParam | None]:
-    """Match an angle to its ForceField index.
-
-    Args:
-        forcefield: Force field to search.
-        elements: Element symbols of the three atoms.
-        env_id: Chemical environment identifier.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        tuple[int | None, AngleParam | None]: ``(index, param)`` or
-            ``(None, None)`` if unmatched.
-
-    """
-    matched = forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.angles.index(matched), matched
-    return None, None
-
-
-def _match_vdw(
-    forcefield: ForceField, atom_type: str = "", element: str = "", ff_row: int | None = None
-) -> tuple[int | None, VdwParam | None]:
-    """Match a vdW parameter to its ForceField index.
-
-    Args:
-        forcefield: Force field to search.
-        atom_type: Atom type label for matching.
-        element: Element symbol for fallback matching.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        tuple[int | None, VdwParam | None]: ``(index, param)`` or
-            ``(None, None)`` if unmatched.
-
-    """
-    matched = forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.vdws.index(matched), matched
-    return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -838,10 +751,11 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     n_vt = handle.n_vdw_types
 
     # Param vector offsets
-    bond_offset = 0
-    angle_offset = 2 * n_bt
-    torsion_offset = angle_offset + 2 * n_at
-    vdw_offset = torsion_offset + n_tt
+    _offsets = compute_param_offsets(n_bt, n_at, n_tt)
+    bond_offset = _offsets["bond"]
+    angle_offset = _offsets["angle"]
+    torsion_offset = _offsets["torsion"]
+    vdw_offset = _offsets["vdw"]
 
     @jax.jit
     def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:

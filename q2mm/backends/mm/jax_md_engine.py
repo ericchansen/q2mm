@@ -56,20 +56,18 @@ logger = logging.getLogger(__name__)
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
+from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
-try:
-    import jax
-    import jax.numpy as jnp
-
-    if not jax.config.jax_enable_x64:
-        jax.config.update("jax_enable_x64", True)
-    _HAS_JAX = True
-except ImportError:  # pragma: no cover
-    jax = None  # type: ignore[assignment]
-    jnp = None  # type: ignore[assignment]
-    _HAS_JAX = False
+from q2mm.backends.mm._jax_common import (
+    compute_param_offsets,
+    ensure_jax,
+    jax,
+    jnp,
+    match_angle as _match_angle,
+    match_bond as _match_bond,
+    match_vdw as _match_vdw,
+)
 
 try:
     from jax_md.mm_forcefields.base import (
@@ -92,8 +90,7 @@ except ImportError:  # pragma: no cover
 
 def _ensure_jax_md() -> None:
     """Raise ``ImportError`` if jax-md is not installed."""
-    if not _HAS_JAX:
-        raise ImportError("JAX is required for JaxMDEngine. Install with: pip install jax jaxlib")
+    ensure_jax("JaxMDEngine")
     if not _HAS_JAX_MD:
         raise ImportError("jax-md is required for JaxMDEngine. Install with: pip install jax-md")
 
@@ -159,50 +156,6 @@ class JaxMDHandle:
 
 
 # ---------------------------------------------------------------------------
-# Matching helpers
-# ---------------------------------------------------------------------------
-
-
-def _match_bond(
-    forcefield: ForceField,
-    elements: list[str],
-    env_id: str = "",
-    ff_row: int | None = None,
-) -> tuple[int | None, BondParam | None]:
-    """Match a bond to its ForceField index."""
-    matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.bonds.index(matched), matched
-    return None, None
-
-
-def _match_angle(
-    forcefield: ForceField,
-    elements: list[str],
-    env_id: str = "",
-    ff_row: int | None = None,
-) -> tuple[int | None, AngleParam | None]:
-    """Match an angle to its ForceField index."""
-    matched = forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.angles.index(matched), matched
-    return None, None
-
-
-def _match_vdw(
-    forcefield: ForceField,
-    atom_type: str = "",
-    element: str = "",
-    ff_row: int | None = None,
-) -> tuple[int | None, VdwParam | None]:
-    """Match a vdW parameter to its ForceField index."""
-    matched = forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
-    if matched is not None:
-        return forcefield.vdws.index(matched), matched
-    return None, None
-
-
-# ---------------------------------------------------------------------------
 # Parameter builder (differentiable: ForceField param vector → jax-md params)
 # ---------------------------------------------------------------------------
 
@@ -240,10 +193,11 @@ def _build_jaxmd_params_fn(
     atom_vdw_map = jnp.array(handle.atom_vdw_map, dtype=jnp.int32)
 
     # Param vector offsets (same layout as ForceField.get_param_vector)
-    bond_offset = 0
-    angle_offset = 2 * n_bt
-    torsion_offset = angle_offset + 2 * n_at
-    vdw_offset = torsion_offset + n_tt
+    _offsets = compute_param_offsets(n_bt, n_at, n_tt)
+    bond_offset = _offsets["bond"]
+    angle_offset = _offsets["angle"]
+    torsion_offset = _offsets["torsion"]
+    vdw_offset = _offsets["vdw"]
 
     n_bonds = len(handle.bond_param_map)
     n_angles = len(handle.angle_param_map)
