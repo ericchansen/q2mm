@@ -41,6 +41,7 @@ from q2mm.backends.mm._jax_common import (
     match_angle as _match_angle,
     match_bond as _match_bond,
     match_vdw as _match_vdw,
+    params_and_coords as _params_and_coords_impl,
 )
 
 
@@ -552,20 +553,8 @@ class JaxEngine(MMEngine):
         return self.create_context(molecule, forcefield)
 
     def _params_and_coords(self, handle: JaxHandle, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
-        """Extract JAX arrays from force field and molecule.
-
-        Args:
-            handle: A :class:`JaxHandle` containing the molecule.
-            forcefield: Force field whose parameter vector to extract.
-
-        Returns:
-            tuple[jnp.ndarray, jnp.ndarray]: ``(params, coords)`` as JAX
-                float64 arrays.
-
-        """
-        params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
-        coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
-        return params, coords
+        """Extract JAX arrays from force field and molecule."""
+        return _params_and_coords_impl(handle.molecule.geometry, forcefield)
 
     def energy(self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField) -> float:
         """Calculate energy in kcal/mol.

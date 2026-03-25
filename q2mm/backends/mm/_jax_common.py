@@ -159,3 +159,26 @@ def match_vdw(
     if matched is not None:
         return forcefield.vdws.index(matched), matched
     return None, None
+
+
+def params_and_coords(
+    molecule_geometry: object,
+    forcefield: ForceField,
+) -> tuple:
+    """Extract parameter and coordinate JAX arrays.
+
+    Shared helper for :class:`~jax_engine.JaxEngine` and
+    :class:`~jax_md_engine.JaxMDEngine`.
+
+    Args:
+        molecule_geometry: ``handle.molecule.geometry`` array-like.
+        forcefield: Force field whose parameter vector to extract.
+
+    Returns:
+        tuple[jnp.ndarray, jnp.ndarray]: ``(params, coords)`` as JAX
+            float64 arrays.
+
+    """
+    params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
+    coords = jnp.array(molecule_geometry, dtype=jnp.float64)
+    return params, coords
