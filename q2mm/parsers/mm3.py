@@ -12,7 +12,7 @@ import logging
 import re
 from q2mm import constants as co
 from q2mm.parsers.base import FF
-from q2mm.parsers.structures import Structure, DOF
+from q2mm.models.structure import DOF, Structure
 from q2mm.parsers.param import Param
 
 # MM3 fixed-format column positions

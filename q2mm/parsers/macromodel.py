@@ -15,7 +15,7 @@ import numpy as np
 
 from q2mm import constants as co
 from q2mm.parsers.base import File
-from q2mm.parsers.structures import Angle, Atom, Bond, Structure, Torsion
+from q2mm.models.structure import Angle, Atom, Bond, Structure, Torsion
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule

@@ -14,7 +14,7 @@ import numpy as np
 
 from q2mm import constants as co
 from q2mm.parsers.base import File
-from q2mm.parsers.structures import Atom, Structure
+from q2mm.models.structure import Atom, Structure
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
