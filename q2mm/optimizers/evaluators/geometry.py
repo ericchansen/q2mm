@@ -25,7 +25,7 @@ def dihedral_angle(
 ) -> float:
     """Compute dihedral angle (degrees) for four points.
 
-    Uses the atan2 formulation that returns values in [-180, 180].
+    Delegates to :func:`q2mm.geometry.dihedral_angle`.
 
     Args:
         p0: Coordinates of the first atom.
@@ -37,21 +37,9 @@ def dihedral_angle(
         Dihedral angle in degrees, in the range [-180, 180].
 
     """
-    b1 = np.asarray(p1) - np.asarray(p0)
-    b2 = np.asarray(p2) - np.asarray(p1)
-    b3 = np.asarray(p3) - np.asarray(p2)
-    n1 = np.cross(b1, b2)
-    n2 = np.cross(b2, b3)
-    n1_norm = np.linalg.norm(n1)
-    n2_norm = np.linalg.norm(n2)
-    if n1_norm < 1e-10 or n2_norm < 1e-10:
-        return 0.0
-    n1 = n1 / n1_norm
-    n2 = n2 / n2_norm
-    m1 = np.cross(n1, b2 / np.linalg.norm(b2))
-    x = float(np.dot(n1, n2))
-    y = float(np.dot(m1, n2))
-    return float(np.degrees(np.arctan2(y, x)))
+    from q2mm.geometry import dihedral_angle as _dihedral
+
+    return _dihedral(p0, p1, p2, p3)
 
 
 @dataclass

@@ -19,6 +19,7 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
+from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
@@ -91,7 +92,7 @@ class TinkerEngine(MMEngine):
     """
 
     def __init__(
-        self, tinker_dir: str | None = None, params_file: str | None = None, bond_tolerance: float = 1.3
+        self, tinker_dir: str | None = None, params_file: str | None = None, bond_tolerance: float = DEFAULT_BOND_TOLERANCE
     ) -> None:
         """Initialize the Tinker engine.
 
@@ -257,7 +258,7 @@ class TinkerEngine(MMEngine):
         return txyz_path
 
     @staticmethod
-    def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = 1.3) -> dict:
+    def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = DEFAULT_BOND_TOLERANCE) -> dict:
         """Detect bonds using distance-based shared covalent radii.
 
         Args:

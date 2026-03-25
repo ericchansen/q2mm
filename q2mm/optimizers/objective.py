@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from q2mm.backends.base import MMEngine
+from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
@@ -601,7 +602,7 @@ class ReferenceData:
         path: str | Path,
         *,
         weights: dict[str, float] | None = None,
-        bond_tolerance: float = 1.3,
+        bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
         charge: int = 0,
         multiplicity: int = 1,
         include_frequencies: bool = True,
@@ -673,7 +674,7 @@ class ReferenceData:
         path: str | Path,
         *,
         weights: dict[str, float] | None = None,
-        bond_tolerance: float = 1.3,
+        bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
         charge: int = 0,
         multiplicity: int = 1,
     ) -> tuple[ReferenceData, Q2MMMolecule]:

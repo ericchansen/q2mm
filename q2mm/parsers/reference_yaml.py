@@ -38,6 +38,7 @@ try:
 except ImportError:  # pragma: no cover
     yaml = None  # type: ignore[assignment]
 
+from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 
@@ -311,7 +312,7 @@ def _load_molecule(
     name = str(mol_dict.get("name", f"mol_{molecule_idx}"))
     charge = _as_int(mol_dict.get("charge", 0), "charge", ctx)
     multiplicity = _as_int(mol_dict.get("multiplicity", 1), "multiplicity", ctx)
-    bond_tolerance = _as_float(mol_dict.get("bond_tolerance", 1.3), "bond_tolerance", ctx)
+    bond_tolerance = _as_float(mol_dict.get("bond_tolerance", DEFAULT_BOND_TOLERANCE), "bond_tolerance", ctx)
 
     # ---- Geometry (required) ----------------------------------------------
     if "xyz" not in mol_dict and "geometry" not in mol_dict:
@@ -541,7 +542,7 @@ def _molecule_to_dict(mol: Q2MMMolecule) -> dict[str, Any]:
         d["charge"] = mol.charge
     if mol.multiplicity != 1:
         d["multiplicity"] = mol.multiplicity
-    if mol.bond_tolerance != 1.3:
+    if mol.bond_tolerance != DEFAULT_BOND_TOLERANCE:
         d["bond_tolerance"] = mol.bond_tolerance
 
     return d

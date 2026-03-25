@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.constants import REAL_FREQUENCY_THRESHOLD
+
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
     from q2mm.models.forcefield import ForceField
@@ -262,7 +264,7 @@ def frequency_mae(a: np.ndarray | list, b: np.ndarray | list) -> float:
     return float(np.mean(np.abs(arr_a[:n] - arr_b[:n])))
 
 
-def real_frequencies(freqs: np.ndarray | list, threshold: float = 50.0) -> np.ndarray:
+def real_frequencies(freqs: np.ndarray | list, threshold: float = REAL_FREQUENCY_THRESHOLD) -> np.ndarray:
     """Extract and sort real (non-imaginary, non-translational) frequencies.
 
     Args:
@@ -353,7 +355,7 @@ def run_benchmark(
     if optimizer_kwargs is None:
         optimizer_kwargs = {}
 
-    qm_real = np.sort(np.asarray(qm_freqs)[np.asarray(qm_freqs) > 50.0])
+    qm_real = np.sort(np.asarray(qm_freqs)[np.asarray(qm_freqs) > REAL_FREQUENCY_THRESHOLD])
 
     result = BenchmarkResult(
         metadata={
@@ -408,7 +410,7 @@ def run_benchmark(
 
     # Build reference data with correct data_idx mapping
     mm_all = engine.frequencies(molecule, ff_to_optimize)
-    mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
+    mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > REAL_FREQUENCY_THRESHOLD])
 
     ref = ReferenceData()
     n = min(len(qm_real), len(mm_real_indices))
