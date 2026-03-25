@@ -103,6 +103,42 @@ class TestLinearAlgebra(unittest.TestCase):
         reformed_sq3 = hessian.reform_hessian(evals, evecs)
         np.testing.assert_allclose(example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly.")
 
+    def test_hessian_to_frequencies_diatomic(self) -> None:
+        """Deterministic H₂ stretch: k=0.5 Hartree/Bohr² → 5120.49 cm⁻¹."""
+        k = 0.5  # Hartree/Bohr²
+        hess = np.zeros((6, 6))
+        # z-z block coupling between atom 1 (idx 2) and atom 2 (idx 5)
+        hess[2, 2] = k
+        hess[5, 5] = k
+        hess[2, 5] = -k
+        hess[5, 2] = -k
+        freqs = hessian.hessian_to_frequencies(hess, ["H", "H"])
+        self.assertEqual(len(freqs), 6)
+        # 5 zero-frequency modes (translation/rotation), 1 stretch
+        nonzero = [f for f in freqs if abs(f) > 1.0]
+        self.assertEqual(len(nonzero), 1)
+        self.assertAlmostEqual(nonzero[0], 5120.49, places=0)
+
+    def test_hessian_to_frequencies_negative_eigenvalue(self) -> None:
+        """Negative force constant → imaginary (negative) frequency."""
+        k = -0.5
+        hess = np.zeros((6, 6))
+        hess[2, 2] = k
+        hess[5, 5] = k
+        hess[2, 5] = -k
+        hess[5, 2] = -k
+        freqs = hessian.hessian_to_frequencies(hess, ["H", "H"])
+        negative = [f for f in freqs if f < -1.0]
+        self.assertEqual(len(negative), 1)
+        self.assertAlmostEqual(negative[0], -5120.49, places=0)
+
+    def test_hessian_to_frequencies_no_mutation(self) -> None:
+        """Input Hessian must not be mutated."""
+        hess = np.eye(6) * 0.3
+        original = hess.copy()
+        hessian.hessian_to_frequencies(hess, ["H", "H"])
+        np.testing.assert_array_equal(hess, original)
+
     @unittest.skip("Incomplete — requires refactoring (upstream TODO)")
     def test_last(
         self,
