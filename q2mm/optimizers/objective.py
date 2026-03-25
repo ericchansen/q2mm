@@ -901,7 +901,16 @@ class ObjectiveFunction:
         Returns:
             np.ndarray: Shape ``(batch,)`` objective scores.
 
+        Raises:
+            ValueError: If *param_matrix* has wrong number of columns.
+
         """
+        param_matrix = np.atleast_2d(np.asarray(param_matrix, dtype=float))
+        if param_matrix.ndim != 2 or param_matrix.shape[1] != self.forcefield.n_params:
+            raise ValueError(
+                f"param_matrix must have shape (batch, {self.forcefield.n_params}), got {param_matrix.shape}"
+            )
+
         use_batched = self.engine.supports_batched_energy() and self.is_energy_only()
         if not use_batched:
             return np.array([self(pvec) for pvec in param_matrix])
