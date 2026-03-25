@@ -79,6 +79,7 @@ class GeometryEvaluator:
     """
 
     GEOMETRY_KINDS = frozenset({"bond_length", "bond_angle", "torsion_angle"})
+    HANDLED_KINDS = GEOMETRY_KINDS
 
     def compute(
         self,
@@ -265,6 +266,7 @@ class GeometryEvaluator:
         """Extract a calculated geometry value from a results dict.
 
         Backward-compatible bridge for ObjectiveFunction._extract_value.
+        Delegates to :meth:`_extract` via a temporary :class:`GeometryResult`.
 
         Args:
             calc: Results dict from ``_evaluate_molecule``.
@@ -274,52 +276,11 @@ class GeometryEvaluator:
             The calculated geometry value.
 
         """
-        if ref.kind == "bond_length":
-            if ref.atom_indices is not None:
-                key = tuple(sorted(ref.atom_indices[:2]))
-                by_atoms = calc.get("bond_lengths_by_atoms", {})
-                if key not in by_atoms:
-                    raise KeyError(
-                        f"No bond found for atoms {key}. Available bonds: {list(by_atoms.keys())}. Label: {ref.label!r}"
-                    )
-                return by_atoms[key]
-            lengths = calc["bond_lengths"]
-            if ref.data_idx < 0 or ref.data_idx >= len(lengths):
-                raise IndexError(
-                    f"Bond data_idx={ref.data_idx} out of range "
-                    f"(molecule has {len(lengths)} bonds). "
-                    f"Label: {ref.label!r}"
-                )
-            return lengths[ref.data_idx]
-        elif ref.kind == "bond_angle":
-            if ref.atom_indices is not None:
-                by_atoms = calc.get("bond_angles_by_atoms", {})
-                key = tuple(ref.atom_indices[:3])
-                if key not in by_atoms:
-                    key = (key[2], key[1], key[0])
-                if key not in by_atoms:
-                    raise KeyError(
-                        f"No angle found for atoms {ref.atom_indices[:3]}. "
-                        f"Available angles: {list(by_atoms.keys())}. "
-                        f"Label: {ref.label!r}"
-                    )
-                return by_atoms[key]
-            angles = calc["bond_angles"]
-            if ref.data_idx < 0 or ref.data_idx >= len(angles):
-                raise IndexError(
-                    f"Angle data_idx={ref.data_idx} out of range "
-                    f"(molecule has {len(angles)} angles). "
-                    f"Label: {ref.label!r}"
-                )
-            return angles[ref.data_idx]
-        elif ref.kind == "torsion_angle":
-            if ref.atom_indices is None or len(ref.atom_indices) < 4:
-                raise ValueError(f"torsion_angle requires atom_indices with 4 atoms. Label: {ref.label!r}")
-            coords = calc["torsion_coords"]
-            return dihedral_angle(
-                coords[ref.atom_indices[0]],
-                coords[ref.atom_indices[1]],
-                coords[ref.atom_indices[2]],
-                coords[ref.atom_indices[3]],
-            )
-        raise ValueError(f"GeometryEvaluator cannot handle kind: {ref.kind}")
+        result = GeometryResult(
+            bond_lengths=calc.get("bond_lengths", []),
+            bond_lengths_by_atoms=calc.get("bond_lengths_by_atoms", {}),
+            bond_angles=calc.get("bond_angles", []),
+            bond_angles_by_atoms=calc.get("bond_angles_by_atoms", {}),
+            torsion_coords=calc.get("torsion_coords"),
+        )
+        return GeometryEvaluator._extract(result, ref)

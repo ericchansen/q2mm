@@ -32,6 +32,8 @@ class EnergyEvaluator:
     per molecule and compares against reference energy values.
     """
 
+    HANDLED_KINDS = frozenset({"energy"})
+
     def compute(
         self,
         engine: MMEngine,

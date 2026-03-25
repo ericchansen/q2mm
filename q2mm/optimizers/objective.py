@@ -832,10 +832,12 @@ class ObjectiveFunction:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
 
-        self._energy_evaluator = EnergyEvaluator()
-        self._frequency_evaluator = FrequencyEvaluator()
-        self._geometry_evaluator = GeometryEvaluator()
-        self._eigenmatrix_evaluator = EigenmatrixEvaluator()
+        self._evaluators = [EnergyEvaluator(), FrequencyEvaluator(), GeometryEvaluator(), EigenmatrixEvaluator()]
+        # Build kind → evaluator lookup from HANDLED_KINDS
+        self._kind_to_evaluator: dict[str, Any] = {}
+        for ev in self._evaluators:
+            for kind in ev.HANDLED_KINDS:
+                self._kind_to_evaluator[kind] = ev
 
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
@@ -1117,15 +1119,18 @@ class ObjectiveFunction:
             ValueError: If the kind is unknown.
 
         """
-        if kind == "energy":
-            return "energy"
-        elif kind == "frequency":
-            return "frequency"
-        elif kind in ("bond_length", "bond_angle", "torsion_angle"):
-            return "geometry"
-        elif kind in ("eig_diagonal", "eig_offdiagonal"):
-            return "eigenmatrix"
-        raise ValueError(f"Unknown reference kind: {kind}")
+        _KIND_CATEGORIES = {
+            "energy": "energy",
+            "frequency": "frequency",
+            "bond_length": "geometry",
+            "bond_angle": "geometry",
+            "torsion_angle": "geometry",
+            "eig_diagonal": "eigenmatrix",
+            "eig_offdiagonal": "eigenmatrix",
+        }
+        if kind not in _KIND_CATEGORIES:
+            raise ValueError(f"Unknown reference kind: {kind}")
+        return _KIND_CATEGORIES[kind]
 
     def _get_evaluator(self, category: str) -> Any:
         """Get the evaluator instance for a category.
@@ -1140,15 +1145,14 @@ class ObjectiveFunction:
             ValueError: If the category is unknown.
 
         """
-        evaluators: dict[str, Any] = {
-            "energy": self._energy_evaluator,
-            "frequency": self._frequency_evaluator,
-            "geometry": self._geometry_evaluator,
-            "eigenmatrix": self._eigenmatrix_evaluator,
-        }
-        if category not in evaluators:
-            raise ValueError(f"Unknown evaluator category: {category}")
-        return evaluators[category]
+        # Find the first evaluator whose HANDLED_KINDS intersects with
+        # the kinds in this category.
+        for ev in self._evaluators:
+            # Check if this evaluator handles any kind in the category
+            for kind in ev.HANDLED_KINDS:
+                if self._kind_to_category(kind) == category:
+                    return ev
+        raise ValueError(f"Unknown evaluator category: {category}")
 
     def _get_structure(self, mol_idx: int) -> Any:
         """Get the structure handle for a molecule, reusing if possible.
@@ -1195,18 +1199,23 @@ class ObjectiveFunction:
         # Determine what data types are needed for this molecule
         needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
 
-        if "energy" in needed:
-            er = self._energy_evaluator.compute(self.engine, mol, forcefield, structure=structure)
+        energy_ev = self._kind_to_evaluator.get("energy")
+        freq_ev = self._kind_to_evaluator.get("frequency")
+        geom_ev = self._kind_to_evaluator.get("bond_length")
+        eigm_ev = self._kind_to_evaluator.get("eig_diagonal")
+
+        if "energy" in needed and energy_ev is not None:
+            er = energy_ev.compute(self.engine, mol, forcefield, structure=structure)
             result["energy"] = er.energy
 
-        if "frequency" in needed:
-            fr = self._frequency_evaluator.compute(self.engine, mol, forcefield, structure=structure)
+        if "frequency" in needed and freq_ev is not None:
+            fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure)
             result["frequencies"] = fr.frequencies
 
-        if needed & self._geometry_evaluator.GEOMETRY_KINDS:
-            geo_needed = frozenset(needed & self._geometry_evaluator.GEOMETRY_KINDS)
+        if geom_ev is not None and needed & geom_ev.HANDLED_KINDS:
+            geo_needed = frozenset(needed & geom_ev.HANDLED_KINDS)
             # Geometry evaluator runs minimize internally on the raw molecule.
-            gr = self._geometry_evaluator.compute(
+            gr = geom_ev.compute(
                 self.engine,
                 mol,
                 forcefield,
@@ -1221,8 +1230,8 @@ class ObjectiveFunction:
             if "torsion_angle" in geo_needed:
                 result["torsion_coords"] = gr.torsion_coords
 
-        if needed & self._eigenmatrix_evaluator.EIGENMATRIX_KINDS:
-            emr = self._eigenmatrix_evaluator.compute(
+        if eigm_ev is not None and needed & eigm_ev.HANDLED_KINDS:
+            emr = eigm_ev.compute(
                 self.engine,
                 mol,
                 forcefield,
@@ -1238,6 +1247,7 @@ class ObjectiveFunction:
         """Extract a calculated value matching a reference observation.
 
         Delegates to per-data-type evaluators for extraction logic.
+        Uses each evaluator's ``HANDLED_KINDS`` to find the right handler.
 
         Args:
             calc (dict): Calculated results from :meth:`_evaluate_molecule`.
@@ -1258,20 +1268,17 @@ class ObjectiveFunction:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
 
-        if ref.kind == "energy":
-            return EnergyEvaluator.extract_value(calc, ref)
-        elif ref.kind == "frequency":
-            return FrequencyEvaluator.extract_value(calc, ref)
-        elif ref.kind in GeometryEvaluator.GEOMETRY_KINDS:
-            return GeometryEvaluator.extract_value(calc, ref)
-        elif ref.kind in EigenmatrixEvaluator.EIGENMATRIX_KINDS:
-            return EigenmatrixEvaluator.extract_value(calc, ref)
-        else:
-            raise ValueError(f"Unknown reference kind: {ref.kind}")
+        _EVALUATOR_CLASSES = [EnergyEvaluator, FrequencyEvaluator, GeometryEvaluator, EigenmatrixEvaluator]
+        for cls in _EVALUATOR_CLASSES:
+            if ref.kind in cls.HANDLED_KINDS:
+                return cls.extract_value(calc, ref)
+        raise ValueError(f"Unknown reference kind: {ref.kind}")
 
     def reset(self) -> None:
         """Reset evaluation counter, history, and cached engine handles."""
         self.n_eval = 0
         self.history.clear()
         self._handles.clear()
-        self._eigenmatrix_evaluator.reset()
+        for ev in self._evaluators:
+            if hasattr(ev, "reset"):
+                ev.reset()
