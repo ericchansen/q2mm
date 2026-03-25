@@ -44,8 +44,7 @@ def coerce_molecule(structure: Any, *, engine_name: str = "MMEngine") -> Q2MMMol
     if isinstance(structure, (str, Path)):
         return Q2MMMolecule.from_xyz(structure)
     raise TypeError(
-        f"{engine_name} expects a Q2MMMolecule, compatible handle, or XYZ path; "
-        f"got {type(structure).__name__}."
+        f"{engine_name} expects a Q2MMMolecule, compatible handle, or XYZ path; got {type(structure).__name__}."
     )
 
 
@@ -229,7 +228,7 @@ class MMEngine(ABC):
         from q2mm.models.hessian import hessian_to_frequencies
 
         hess_au = self.hessian(structure, forcefield)
-        mol = coerce_molecule(structure)
+        mol = coerce_molecule(structure, engine_name=self.__class__.__name__)
         return hessian_to_frequencies(hess_au, list(mol.symbols))
 
     def is_available(self) -> bool:

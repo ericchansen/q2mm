@@ -92,7 +92,10 @@ class TinkerEngine(MMEngine):
     """
 
     def __init__(
-        self, tinker_dir: str | None = None, params_file: str | None = None, bond_tolerance: float = DEFAULT_BOND_TOLERANCE
+        self,
+        tinker_dir: str | None = None,
+        params_file: str | None = None,
+        bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
     ) -> None:
         """Initialize the Tinker engine.
 
