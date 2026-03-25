@@ -21,6 +21,11 @@ import pytest
 try:
     import pytest_benchmark  # noqa: F401
 except ImportError:
+    # CI backend containers install with --no-deps and lack pytest-benchmark.
+    # Provide a passthrough so tests still run as correctness checks.
+    # Note: if pytest-benchmark is installed but disabled via -p no:benchmark,
+    # the import succeeds and this fallback is not triggered; use
+    # --benchmark-disable instead of -p no:benchmark in that case.
     from collections.abc import Callable
     from typing import Any
 
