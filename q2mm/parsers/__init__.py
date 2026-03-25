@@ -3,10 +3,13 @@
 Provides parsers for various computational chemistry file formats and
 force field parameter files. Import convenience:
 
-    from q2mm.parsers import GaussLog, Mol2, MacroModel, Structure
+    from q2mm.parsers import GaussLog, Mol2, MacroModel
+
+Structural data classes (``Atom``, ``Bond``, ``Angle``, ``Torsion``,
+``Structure``) now live in :mod:`q2mm.models.structure` and are
+re-exported here for backward compatibility.
 
 Submodules:
-    structures  — Atom, Bond, Angle, Torsion, Structure
     base        — File base class
     gaussian    — GaussLog parser
     mol2        — Mol2 parser
@@ -14,7 +17,7 @@ Submodules:
     macromodel  — MacroModel, MacroModelLog parsers
 """
 
-from q2mm.parsers.structures import (  # noqa: F401
+from q2mm.models.structure import (  # noqa: F401
     Atom,
     Angle,
     Bond,

@@ -7,7 +7,7 @@ dihedral, improper, and van der Waals parameters for Q2MM optimization.
 import logging
 from q2mm import constants as co
 from q2mm.parsers.base import FF
-from q2mm.parsers.structures import Structure, DOF
+from q2mm.models.structure import DOF, Structure
 from q2mm.parsers.param import Param
 
 logger = logging.getLogger(__name__)

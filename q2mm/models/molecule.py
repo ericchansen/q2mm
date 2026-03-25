@@ -23,7 +23,7 @@ from q2mm.models.identifiers import (
 )
 
 if TYPE_CHECKING:
-    from q2mm.parsers.structures import Structure
+    from q2mm.models.structure import Structure
 
 try:
     import qcelemental as qcel

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from q2mm.parsers import _utils as utilities
 from q2mm.parsers.base import File
-from q2mm.parsers.structures import Atom, Bond, Structure
+from q2mm.models.structure import Atom, Bond, Structure
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
