@@ -110,6 +110,13 @@ AMU_TO_KG = 1.66053906660e-27
 SPEED_OF_LIGHT_MS = 299792458.0
 RAD_TO_DEG = 180.0 / math.pi
 
+# --- Domain defaults ---
+# Multiplier applied to sum of covalent radii for bond detection.
+# Use 1.4+ for transition states.
+DEFAULT_BOND_TOLERANCE: float = 1.3
+# Frequencies below this value (cm⁻¹) are treated as translations/rotations.
+REAL_FREQUENCY_THRESHOLD: float = 50.0
+
 # --- MM3 functional form coefficients ---
 MM3_BOND_C3 = 2.55
 MM3_BOND_C4 = (7.0 / 12.0) * 2.55**2

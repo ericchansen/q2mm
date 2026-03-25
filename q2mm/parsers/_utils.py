@@ -44,6 +44,8 @@ def convert_atom_type_pair(atom_type_pair: list[str]) -> list[str]:
 def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
     """Return bond length between 2 sets of coordinates.
 
+    Delegates to :func:`q2mm.geometry.bond_length`.
+
     Args:
         coords1 (np.ndarray): atom1 coordinates [x, y, z]
         coords2 (np.ndarray): atom2 coordinates [x, y, z]
@@ -52,12 +54,15 @@ def measure_bond(coords1: np.ndarray, coords2: np.ndarray) -> float:
         (float): measured bond length
 
     """
-    vector = coords2 - coords1
-    return np.sqrt(vector.dot(vector))  # Used over np.linalg.norm due to speed advantage
+    from q2mm.geometry import bond_length
+
+    return bond_length(coords1, coords2)
 
 
 def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray) -> float:
     """Return angle between 3 sets of coordinates in degrees.
+
+    Delegates to :func:`q2mm.geometry.bond_angle`.
 
     Args:
         coords1 (np.ndarray): atom1 coordinates [x, y, z]
@@ -68,11 +73,9 @@ def measure_angle(coords1: np.ndarray, coords2: np.ndarray, coords3: np.ndarray)
         (float): Angle between coords1, coords2, coords3 in degrees
 
     """
-    vector21 = coords1 - coords2
-    vector23 = coords3 - coords2
-    cos_angle = np.dot(vector21, vector23) / (np.sqrt(vector21.dot(vector21)) * np.sqrt(vector23.dot(vector23)))
-    angle = np.arccos(cos_angle)
-    return np.degrees(angle)
+    from q2mm.geometry import bond_angle
+
+    return bond_angle(coords1, coords2, coords3)
 
 
 # endregion Atom Type Handling
