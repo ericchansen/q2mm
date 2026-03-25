@@ -26,7 +26,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from q2mm.backends.base import MMEngine
+from q2mm.backends.base import MMEngine, coerce_molecule
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import ForceField
@@ -438,7 +438,7 @@ class JaxEngine(MMEngine):
         """
         if forcefield is not None:
             self._validate_forcefield(forcefield)
-        molecule = _as_molecule(structure)
+        molecule = coerce_molecule(structure, engine_name="JaxEngine")
         if forcefield is None:
             forcefield = ForceField.create_for_molecule(molecule)
 
@@ -548,7 +548,7 @@ class JaxEngine(MMEngine):
         """
         if isinstance(structure, JaxHandle):
             return structure
-        molecule = _as_molecule(structure)
+        molecule = coerce_molecule(structure, engine_name="JaxEngine")
         return self.create_context(molecule, forcefield)
 
     def _params_and_coords(self, handle: JaxHandle, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -630,23 +630,6 @@ class JaxEngine(MMEngine):
         flat_coords = coords.flatten()
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
-
-    def frequencies(self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField) -> list[float]:
-        """Compute vibrational frequencies in cm⁻¹ from the Hessian.
-
-        Args:
-            structure (Q2MMMolecule | JaxHandle): A :class:`Q2MMMolecule` or :class:`JaxHandle`.
-            forcefield (ForceField): Force field parameters.
-
-        Returns:
-            list[float]: Vibrational frequencies in cm⁻¹, sorted ascending.
-
-        """
-        from q2mm.models.hessian import hessian_to_frequencies
-
-        handle = self._get_handle(structure, forcefield)
-        hess_au = self.hessian(handle, forcefield)
-        return hessian_to_frequencies(hess_au, list(handle.molecule.symbols))
 
     def minimize(
         self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField, max_iterations: int = 200
@@ -801,21 +784,3 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
 # ---------------------------------------------------------------------------
 
 
-def _as_molecule(structure: Q2MMMolecule | JaxHandle) -> Q2MMMolecule:
-    """Coerce input to a :class:`Q2MMMolecule`.
-
-    Args:
-        structure: A :class:`JaxHandle`, :class:`Q2MMMolecule`, or other.
-
-    Returns:
-        Q2MMMolecule: The coerced molecule.
-
-    Raises:
-        TypeError: If *structure* is not a recognised type.
-
-    """
-    if isinstance(structure, JaxHandle):
-        return structure.molecule
-    if isinstance(structure, Q2MMMolecule):
-        return structure
-    raise TypeError(f"JaxEngine expects a Q2MMMolecule or JaxHandle, got {type(structure).__name__}.")
