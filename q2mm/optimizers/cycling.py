@@ -259,11 +259,13 @@ def compute_sensitivity(
     sensitive), depending on *metric*.
 
     When the engine supports :meth:`~MMEngine.batched_energy` and all
-    references are energy-only, all ``2N + 1`` evaluations are vectorised
-    into a single call (e.g. ``jax.vmap`` on GPU).
+    references are energy-only, all required ``2K + 1`` evaluations
+    (for the ``K`` parameters with nonzero step sizes, ``K ≤ N``) are
+    vectorised into a single call where possible (e.g. ``jax.vmap`` on GPU).
 
-    Cost: ``2N + 1`` objective evaluations (1 baseline + 2 per parameter
-    for central differentiation).
+    Cost: ``2K + 1`` objective evaluations (1 baseline + 2 per *active*
+    parameter for central differentiation; in the worst case ``K = N``,
+    giving ``2N + 1``).
 
     Args:
         objective (ObjectiveFunction): Must already be evaluable (engine
