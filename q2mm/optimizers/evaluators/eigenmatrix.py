@@ -42,6 +42,7 @@ class EigenmatrixEvaluator:
     """
 
     EIGENMATRIX_KINDS = frozenset({"eig_diagonal", "eig_offdiagonal"})
+    HANDLED_KINDS = EIGENMATRIX_KINDS
 
     def __init__(self) -> None:
         """Initialize with empty eigenvector cache."""
@@ -177,6 +178,7 @@ class EigenmatrixEvaluator:
         """Extract a calculated eigenmatrix value from a results dict.
 
         Backward-compatible bridge for ObjectiveFunction._extract_value.
+        Delegates to :meth:`_extract` via a temporary :class:`EigenmatrixResult`.
 
         Args:
             calc: Results dict from ``_evaluate_molecule``.
@@ -186,18 +188,7 @@ class EigenmatrixEvaluator:
             The calculated eigenmatrix element.
 
         """
-        eigenmatrix = calc["eigenmatrix"]
-        if ref.kind == "eig_diagonal":
-            n = eigenmatrix.shape[0]
-            if ref.data_idx < 0 or ref.data_idx >= n:
-                raise IndexError(
-                    f"Eigenmatrix data_idx={ref.data_idx} out of range (matrix has {n} modes). Label: {ref.label!r}"
-                )
-            return float(eigenmatrix[ref.data_idx, ref.data_idx])
-        elif ref.kind == "eig_offdiagonal":
-            row, col = ref.atom_indices[:2]
-            return float(eigenmatrix[row, col])
-        raise ValueError(f"EigenmatrixEvaluator cannot handle kind: {ref.kind}")
+        return EigenmatrixEvaluator._extract(EigenmatrixResult(eigenmatrix=calc["eigenmatrix"]), ref)
 
     def reset(self) -> None:
         """Clear cached QM eigenvectors."""

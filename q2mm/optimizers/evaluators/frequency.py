@@ -32,6 +32,8 @@ class FrequencyEvaluator:
     positional mode index (``data_idx``).
     """
 
+    HANDLED_KINDS = frozenset({"frequency"})
+
     def compute(
         self,
         engine: MMEngine,
