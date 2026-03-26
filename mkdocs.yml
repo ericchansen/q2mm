@@ -35,7 +35,8 @@ nav:
     - Overview: backends/index.md
     - OpenMM: backends/openmm.md
     - Tinker: backends/tinker.md
-    - JAX: backends/jax.md
+    - JAX: backends/jax-engine.md
+    - JAX-MD: backends/jax-md.md
   - Optimization Guide: optimization-guide.md
   - API Overview: api.md
   - Benchmarks:
