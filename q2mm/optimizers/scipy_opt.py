@@ -276,6 +276,19 @@ class ScipyOptimizer:
         # Only pass bounds for methods that support them
         effective_bounds = bounds if (bounds and self.method in self.BOUNDED_METHODS) else None
 
+        # For methods that don't natively support bounds (Powell, Nelder-Mead),
+        # wrap the objective to clamp parameters into the feasible region.
+        if bounds and self.method not in self.BOUNDED_METHODS:
+            lower = np.array([b[0] for b in bounds])
+            upper = np.array([b[1] for b in bounds])
+
+            def clamped_objective(x: np.ndarray) -> float:
+                return float(objective(np.clip(x, lower, upper)))
+
+            eval_fn = clamped_objective
+        else:
+            eval_fn = objective
+
         callback = self._make_callback(objective, initial_score)
 
         # Analytical Jacobian via JAX
@@ -286,7 +299,7 @@ class ScipyOptimizer:
                 logger.info("  Using analytical JAX gradients (jac='analytical')")
 
         scipy_result = optimize.minimize(
-            objective,
+            eval_fn,
             x0,
             method=self.method,
             jac=jac,
@@ -294,6 +307,11 @@ class ScipyOptimizer:
             options=options,
             callback=callback,
         )
+
+        # For clamped methods, project final params into bounds
+        final_x = scipy_result.x.copy()
+        if bounds and self.method not in self.BOUNDED_METHODS:
+            final_x = np.clip(final_x, lower, upper)
 
         # Detect callback-triggered early stop
         abandoned = getattr(callback, "state", {}).get("abandoned", False)
@@ -310,7 +328,7 @@ class ScipyOptimizer:
             n_iterations=int(scipy_result.get("nit", 0)),
             n_evaluations=objective.n_eval - n_eval_before,
             initial_params=x0,
-            final_params=scipy_result.x.copy(),
+            final_params=final_x,
             history=list(objective.history),
             method=self.method,
         )

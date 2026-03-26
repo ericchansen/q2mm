@@ -26,7 +26,7 @@ against the upstream code path.
 
 from __future__ import annotations
 
-
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -37,6 +37,8 @@ from q2mm.backends.base import MMEngine
 from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -819,6 +821,7 @@ class ObjectiveFunction:
         self.molecules = molecules
         self.reference = reference
         self.n_eval = 0
+        self.fd_step = 1e-4
         self.history: list[float] = []
         # Reusable engine handles for backends that support runtime parameter
         # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
@@ -1064,6 +1067,16 @@ class ObjectiveFunction:
                     )
                     total_grad += grad
 
+        # Warn about zero-gradient slots which may indicate incomplete
+        # analytical gradient support (e.g. missing improper torsions).
+        n_zero = int(np.sum(total_grad == 0))
+        if n_zero > 0:
+            logger.debug(
+                "gradient: %d/%d parameter slots have zero gradient",
+                n_zero,
+                len(total_grad),
+            )
+
         return total_grad
 
     def _finite_difference_gradient(
@@ -1072,7 +1085,7 @@ class ObjectiveFunction:
         mol_idx: int,
         category: str,
         refs: list[ReferenceValue],
-        step: float = 1e-4,  # TODO: make configurable via OptConfig (#166)
+        step: float | None = None,
     ) -> np.ndarray:
         """Compute finite-difference gradient for one evaluator's contribution.
 
@@ -1097,12 +1110,15 @@ class ObjectiveFunction:
             category: Evaluator category (``"energy"``, ``"frequency"``,
                 ``"geometry"``, or ``"eigenmatrix"``).
             refs: Reference values for this evaluator and molecule.
-            step: Finite-difference step size.
+            step: Finite-difference step size. Defaults to
+                :attr:`fd_step` (configurable, initially ``1e-4``).
 
         Returns:
             Gradient vector of shape ``(n_params,)``.
 
         """
+        if step is None:
+            step = self.fd_step
         n_params = len(param_vector)
         grad = np.zeros(n_params)
 
