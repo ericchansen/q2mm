@@ -27,15 +27,23 @@ backend × optimizer matrix.
 
 ---
 
-## Rh-Enamide (9 molecules, 182 parameters)
+## Rh-Enamide (9 molecules, 94–182 parameters)
 
-Best result per MM backend (Nelder-Mead, 2 iterations, preliminary).
 QM reference: Jaguar B3LYP/LACVP**.
 See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 
 **Data:**
 [QM inputs](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide) ·
 [Results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/results)
+
+### GRAD→SIMP Cycling (converged)
+
+| Backend | FF Form | Device | Cycles | Score Δ | Time |
+|---------|---------|--------|-------:|---------|-----:|
+| **JAX** | harmonic | GPU | 3 | 2,161 → 34.3 (↓98.4%) | 1,722 s |
+| **JAX** | harmonic | CPU | 4 | 2,161 → 32.8 (↓98.5%) | 716 s |
+
+### Single-shot (2 iterations, preliminary)
 
 | Backend | FF Form | Optimizer | Score Δ | Time |
 |---------|---------|-----------|---------|-----:|
@@ -44,10 +52,10 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 | **OpenMM** | MM3 | Nelder-Mead | 422,326 → ⏱ timeout | >300 s |
 | **Tinker** | MM3 | all | — → 🐛 bug | — |
 
-!!! note "Preliminary results"
-    These are 2-iteration runs to assess convergence direction.  OpenMM and
-    Tinker are too slow per evaluation for 182-parameter optimization — see
-    [issue #147](https://github.com/ericchansen/q2mm/issues/147).
+!!! note "Single-shot vs cycling"
+    Single-shot results are 2-iteration runs to assess convergence direction.
+    GRAD→SIMP cycling results use full L-BFGS-B + Nelder-Mead alternation
+    until convergence.  See the [GPU page](gpu.md) for device comparison.
 
 ---
 
@@ -58,31 +66,36 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
    JIT-compile energy functions as pure JAX, eliminating Python ↔ C++
    marshalling overhead.
 
-2. **All engines agree to machine precision** — JAX, JAX-MD, and OpenMM
+2. **GPU acceleration scales with molecule size** — on an RTX 5090, the JAX
+   backend is 3.5× faster per-evaluation for rh-enamide (36–62 atoms) vs CPU,
+   but slower for CH₃F (5 atoms) due to kernel launch overhead.  See the
+   [GPU benchmark page](gpu.md) for details and guidance on when to use GPU.
+
+3. **All engines agree to machine precision** — JAX, JAX-MD, and OpenMM
    produce identical energies (< 10⁻¹⁸ kcal/mol) and frequencies
    (< 0.001 cm⁻¹) for the same force field and functional form.  This
    validates implementation correctness across backends.  Note: parity
    only holds when engines share the same functional form and non-bonded
    treatment (combining rules, 1-4 scaling, cutoffs).
 
-3. **Nelder-Mead is the most robust optimizer** — converges on both small
+4. **Nelder-Mead is the most robust optimizer** — converges on both small
    (8-param) and large (182-param) systems.  Powell works well on small
    molecules but crashes on larger systems.  L-BFGS-B with finite-difference
    gradients diverges on high-dimensional problems.
 
-4. **JAX and JAX-MD support analytical parameter gradients** via ``jax.grad``,
+5. **JAX and JAX-MD support analytical parameter gradients** via ``jax.grad``,
    which will eliminate the 2N+1 finite-difference overhead once the optimizer
    is wired to use ``energy_and_param_grad()``.
 
-5. **Speed matters for scaling** — with 182 parameters and 9 molecules,
+6. **Speed matters for scaling** — with 182 parameters and 9 molecules,
    OpenMM and Tinker are too slow per function evaluation for practical
    optimization (even 2 Nelder-Mead iterations exceed 5 min).  JAX backends
    complete the same work in under a minute.
 
-6. **The Seminario method is effectively free** — even 182-parameter
+7. **The Seminario method is effectively free** — even 182-parameter
    organometallic systems complete in < 50 ms.
 
-7. **Functional form flexibility** — the same Seminario parameters work
+8. **Functional form flexibility** — the same Seminario parameters work
    with both MM3 (OpenMM/Tinker) and harmonic (JAX/JAX-MD) functional
    forms, enabling cross-engine comparison on any training set.
 
@@ -94,6 +107,8 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
   leaderboard, cross-engine parity, frequency accuracy analysis
 - [**Rh-Enamide**](rh-enamide.md) — 9-structure organometallic training set
   with Jaguar B3LYP/LACVP** reference data
+- [**GPU Acceleration**](gpu.md) — GPU vs CPU benchmarks, scaling analysis,
+  and guidance on when GPU acceleration helps
 
 ---
 

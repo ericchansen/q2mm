@@ -65,9 +65,7 @@ flowchart LR
 ## Results (2 iterations, preliminary)
 
 These are preliminary results with only 2 optimizer iterations — enough to
-reveal convergence direction and identify scaling problems.  Full
-convergence runs are tracked in
-[issue #147](https://github.com/ericchansen/q2mm/issues/147).
+reveal convergence direction and identify scaling problems.
 
 ### JAX Engines (harmonic FF)
 
@@ -108,6 +106,31 @@ convergence runs are tracked in
     exceed the 5-minute timeout.  See
     [issue #147](https://github.com/ericchansen/q2mm/issues/147) for planned
     improvements.
+
+---
+
+## GRAD→SIMP Cycling (converged)
+
+Full optimization using L-BFGS-B (GRAD) → Nelder-Mead (SIMP) alternation
+with up to 5 parameters per cycle.  Uses auto-generated harmonic FF from
+molecular topology (94 parameters across 9 molecules, 1,273 frequency
+reference values).
+
+| Device | Cycles | Evals | Opt time | Final score | Improvement |
+|--------|-------:|------:|---------:|------------:|:-----------:|
+| GPU (RTX 5090) | 3 | 15,530 | 1,714 s | 34.30 | 98.41% |
+| CPU | 4 | 1,842 | 712 s | 32.78 | 98.48% |
+
+Both devices achieve >98% improvement from the Seminario starting point.
+The GPU is 3.5× faster per evaluation but the optimizer takes a different
+convergence path (more evaluations per cycle).  See the
+[GPU acceleration page](gpu.md) for a detailed analysis of per-eval
+throughput, VRAM usage, and guidance on when to use GPU.
+
+!!! success "Key result"
+    GRAD→SIMP cycling reduces the score from **2,161 → ~33** (98.5%
+    improvement) in 3–4 cycles.  This confirms that the cycling optimizer
+    and JAX backend can handle real organometallic systems end-to-end.
 
 ---
 

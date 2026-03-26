@@ -42,6 +42,7 @@ nav:
     - Overview: benchmarks/index.md
     - Small Molecules: benchmarks/small-molecules.md
     - Rh-Enamide: benchmarks/rh-enamide.md
+    - GPU Acceleration: benchmarks/gpu.md
   - API Reference: reference/
   - References: references.md
 
