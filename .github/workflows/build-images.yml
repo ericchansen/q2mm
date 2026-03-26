@@ -1,7 +1,7 @@
 name: Build CI Images
 
-# Manual-only — run when you bump backend versions (a few times a year).
-# Select a specific backend or rebuild all.
+# Manual-only by default — also triggers on env/Docker changes pushed to master.
+# Select a specific backend or rebuild all via manual dispatch.
 
 on:
   workflow_dispatch:

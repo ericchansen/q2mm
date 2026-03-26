@@ -120,11 +120,11 @@ class ScipyOptimizer:
             :meth:`ForceField.get_bounds`.
         verbose (bool): Log progress during optimization.
         jac (str | None): Jacobian computation strategy.
-            ``None`` (default) auto-detects: if the engine supports
-            analytical gradients and the method is gradient-based,
-            uses :meth:`ObjectiveFunction.gradient` for a hybrid
-            analytical+FD Jacobian.  Falls back to scipy's built-in
-            finite differences when analytical gradients are unavailable.
+            ``None`` (default) uses scipy's built-in finite differences.
+            ``'auto'`` probes the engine: if it supports analytical
+            gradients and the method is gradient-based, uses
+            :meth:`ObjectiveFunction.gradient` for a hybrid
+            analytical+FD Jacobian; otherwise falls back to scipy FD.
             ``'analytical'`` forces :meth:`ObjectiveFunction.gradient`
             regardless of engine support. Only applies to
             ``scipy.optimize.minimize`` paths; not supported for
@@ -214,9 +214,9 @@ class ScipyOptimizer:
             )
 
         if self.method == "least_squares":
-            if self.jac == "analytical":
+            if self.jac in ("analytical", "auto"):
                 raise ValueError(
-                    "jac='analytical' is not supported with method='least_squares'. "
+                    f"jac='{self.jac}' is not supported with method='least_squares'. "
                     "Use a minimize-based method (e.g. 'L-BFGS-B') for analytical gradients, "
                     "or set jac=None for least_squares."
                 )
@@ -283,14 +283,14 @@ class ScipyOptimizer:
 
         # Resolve Jacobian strategy:
         #   - jac="analytical" → always use objective.gradient
-        #   - jac=None + gradient-based method + engine supports it → auto-enable
-        #   - otherwise → None (scipy uses its own finite differences)
+        #   - jac="auto" + gradient-based method + engine supports it → auto-enable
+        #   - jac=None → scipy's own finite differences (default, safest)
         jac = None
         if self.jac == "analytical":
             jac = objective.gradient
             if self.verbose:
                 logger.info("  Using analytical gradients (jac='analytical')")
-        elif self.jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+        elif self.jac == "auto" and self.method not in self.DERIVATIVE_FREE_METHODS:
             if objective.engine.supports_analytical_gradients():
                 jac = objective.gradient
                 if self.verbose:
