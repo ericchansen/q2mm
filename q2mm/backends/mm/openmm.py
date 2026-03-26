@@ -578,15 +578,14 @@ class OpenMMEngine(MMEngine):
     def supports_analytical_gradients(self) -> bool:
         """Whether this engine provides analytical parameter gradients.
 
-        Both HARMONIC and MM3 functional forms use ``CustomBondForce``
-        and ``CustomAngleForce`` with global parameters, so
-        ``addEnergyParameterDerivative()`` provides exact dE/d(param)
-        for bond and angle parameters.
+        Both HARMONIC and MM3 functional forms use ``CustomBondForce``,
+        ``CustomAngleForce``, and ``CustomTorsionForce`` with global
+        parameters, so ``addEnergyParameterDerivative()`` provides exact
+        dE/d(param) for bond, angle, and torsion parameters.
 
-        Torsion parameters use ``PeriodicTorsionForce`` (no global-param
-        derivatives) and vdW parameters are per-particle, so their
-        gradient entries are returned as zero.  Use finite differences
-        or the JAX backend for those.
+        vdW parameters are per-particle, so their gradient entries are
+        returned as zero.  Use finite differences or the JAX backend
+        for those.
 
         Returns:
             bool: Always ``True``.
@@ -1281,27 +1280,39 @@ class OpenMMEngine(MMEngine):
                     af.addAngle(angle.atom_i, angle.atom_j, angle.atom_k)
             system.addForce(af)
 
-        # --- Torsions: each torsion param contributes (k,) ---
-        for tp in forcefield.torsions:
+        # --- Torsions: each proper torsion param contributes (k,) ---
+        # Use CustomTorsionForce with global parameters so that
+        # addEnergyParameterDerivative() provides exact dE/dk.
+        # One CustomTorsionForce per (torsion_param, periodicity) to keep
+        # each force object's global params small — same pattern as bonds/angles.
+        torsion_global_map: dict[int, str] = {}
+        torsion_k_factor = _torsion_k_to_openmm(1.0)
+        for tp_idx, tp in enumerate(forcefield.torsions):
             if tp.is_improper:
+                pv_idx += 1
                 continue
-            param_names.append(f"torsion_k_{pv_idx}")
+            k_name = f"torsion_k_{tp_idx}"
+            torsion_global_map[tp_idx] = k_name
+            param_names.append(k_name)
             param_vector_indices.append(pv_idx)
-            grad_unit_factors.append(_torsion_k_to_openmm(1.0))
+            grad_unit_factors.append(torsion_k_factor)
             pv_idx += 1
 
-        # Torsions use PeriodicTorsionForce (no CustomForce → no derivatives).
-        # Skip torsion gradients — they are not supported via this path.
-        # pv_idx already advanced past torsion params above.
-        # Reset torsion entries since PeriodicTorsionForce can't do derivatives.
-        n_torsion_params = sum(1 for tp in forcefield.torsions if not tp.is_improper)
-        if n_torsion_params > 0:
-            # Remove torsion entries from the derivative lists
-            param_names = param_names[:-n_torsion_params]
-            param_vector_indices = param_vector_indices[:-n_torsion_params]
-            grad_unit_factors = grad_unit_factors[:-n_torsion_params]
-            # Still add the torsion force for correct energy
-            torsion_force = mm.PeriodicTorsionForce()
+        # Build one CustomTorsionForce per proper-torsion param type.
+        for tp_idx, tp in enumerate(forcefield.torsions):
+            if tp.is_improper:
+                continue
+            k_name = torsion_global_map[tp_idx]
+            k_val = _torsion_k_to_openmm(tp.force_constant)
+            phase_rad = np.deg2rad(float(tp.phase))
+            n = tp.periodicity
+            # Periodic torsion: E = k·(1 + cos(n·θ − φ))
+            expr = f"{k_name}*(1+cos({n}*theta-{phase_rad:.15g}))"
+            tf = mm.CustomTorsionForce(expr)
+            tf.setForceGroup(1)
+            tf.addGlobalParameter(k_name, k_val)
+            tf.addEnergyParameterDerivative(k_name)
+
             for torsion in molecule.torsions:
                 params = _match_torsions(
                     forcefield,
@@ -1311,16 +1322,15 @@ class OpenMMEngine(MMEngine):
                     is_improper=False,
                 )
                 for param in params:
-                    torsion_force.addTorsion(
-                        torsion.atom_i,
-                        torsion.atom_j,
-                        torsion.atom_k,
-                        torsion.atom_l,
-                        param.periodicity,
-                        np.deg2rad(float(param.phase)),
-                        _torsion_k_to_openmm(param.force_constant),
-                    )
-            system.addForce(torsion_force)
+                    if param is tp:
+                        tf.addTorsion(
+                            torsion.atom_i,
+                            torsion.atom_j,
+                            torsion.atom_k,
+                            torsion.atom_l,
+                            [],
+                        )
+            system.addForce(tf)
 
         # --- vdW: advance pv_idx past vdW params (no derivatives available) ---
         # vdW uses per-particle parameters, not global parameters, so
@@ -1412,9 +1422,10 @@ class OpenMMEngine(MMEngine):
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
-        objects to get exact dE/d(param) for bond and angle parameters.
-        Torsion and vdW gradients are set to zero (not supported via this
-        path; use finite differences or the JAX backend for those).
+        objects to get exact dE/d(param) for bond, angle, and torsion
+        parameters.  vdW gradients are set to zero (per-particle parameters
+        have no global-param derivative path; use finite differences or
+        the JAX backend for those).
 
         Args:
             structure (Q2MMMolecule): Molecular structure.
