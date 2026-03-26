@@ -120,9 +120,13 @@ class ScipyOptimizer:
             :meth:`ForceField.get_bounds`.
         verbose (bool): Log progress during optimization.
         jac (str | None): Jacobian computation strategy.
-            ``None`` (default) uses scipy's built-in finite differences.
-            ``'analytical'`` uses :meth:`ObjectiveFunction.gradient` for
-            exact analytical gradients via JAX autodiff. Only applies to
+            ``None`` (default) auto-detects: if the engine supports
+            analytical gradients and the method is gradient-based,
+            uses :meth:`ObjectiveFunction.gradient` for a hybrid
+            analytical+FD Jacobian.  Falls back to scipy's built-in
+            finite differences when analytical gradients are unavailable.
+            ``'analytical'`` forces :meth:`ObjectiveFunction.gradient`
+            regardless of engine support. Only applies to
             ``scipy.optimize.minimize`` paths; not supported for
             ``method='least_squares'``.
         divergence_factor (float | None): Early stopping threshold. If
@@ -134,6 +138,9 @@ class ScipyOptimizer:
             callbacks required before stopping.
 
     """
+
+    # Derivative-free methods — never use a Jacobian
+    DERIVATIVE_FREE_METHODS = {"Nelder-Mead", "Powell"}
 
     BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
 
@@ -269,21 +276,32 @@ class ScipyOptimizer:
         else:
             options["ftol"] = self.ftol
 
-        # Finite-difference step for gradient-based methods
-        if self.method not in ("Nelder-Mead", "Powell") and self.jac != "analytical":
-            options["eps"] = self.eps
-
         # Only pass bounds for methods that support them
         effective_bounds = bounds if (bounds and self.method in self.BOUNDED_METHODS) else None
 
         callback = self._make_callback(objective, initial_score)
 
-        # Analytical Jacobian via JAX
+        # Resolve Jacobian strategy:
+        #   - jac="analytical" → always use objective.gradient
+        #   - jac=None + gradient-based method + engine supports it → auto-enable
+        #   - otherwise → None (scipy uses its own finite differences)
         jac = None
         if self.jac == "analytical":
             jac = objective.gradient
             if self.verbose:
-                logger.info("  Using analytical JAX gradients (jac='analytical')")
+                logger.info("  Using analytical gradients (jac='analytical')")
+        elif self.jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+            if objective.engine.supports_analytical_gradients():
+                jac = objective.gradient
+                if self.verbose:
+                    logger.info(
+                        "  Auto-detected analytical gradient support from %s — using analytical+FD hybrid Jacobian",
+                        type(objective.engine).__name__,
+                    )
+
+        # Finite-difference step: only needed when scipy computes its own FD gradient
+        if jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+            options["eps"] = self.eps
 
         scipy_result = optimize.minimize(
             objective,

@@ -2,12 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    # Weekly slow/benchmark run — Sundays at 04:00 UTC
+    - cron: "0 4 * * 0"
 
 jobs:
-  # ---- Fast: lint + core tests (no backends, ~30s) ----
+  # ================================================================
+  # Tier 1 — Fast feedback on every push and PR (~30s)
+  # ================================================================
   lint:
     runs-on: ubuntu-latest
     permissions:
@@ -36,12 +40,14 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
 
-  # ---- Backend tests (parallel, using pre-built container images) ----
-  # Images are published by the "Build CI Images" workflow (build-images.yml)
-  # to ghcr.io/ericchansen/q2mm/ci-<backend>:latest.
-  # Rebuild images when backend versions change (a few times per year).
-
+  # ================================================================
+  # Tier 2 — Backend tests on PRs + master merges (parallel, 2-10 min)
+  # Gated behind Tier 1 so lint/core failures are caught first.
+  # Images: ghcr.io/ericchansen/q2mm/ci-<backend>:latest
+  # ================================================================
   test-openmm:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,6 +62,8 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -m pytest -m openmm --run-slow -q
 
   test-tinker:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -70,6 +78,8 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -m pytest -m tinker --run-slow -q
 
   test-jax:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -84,6 +94,8 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-slow -q
 
   test-jax-md:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -98,6 +110,8 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -c "import jax_md" && python -m pytest -m jax_md --run-slow -q
 
   test-psi4:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -112,6 +126,8 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 --run-slow -q
 
   test-cross-backend:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || github.event_name == 'schedule'
+    needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -6,21 +6,21 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
 [ -z "$STAGED" ] && exit 0
 
 echo "pre-commit: ruff format"
-python -m ruff format --check $STAGED
+python3 -m ruff format --check $STAGED
 FORMAT_EXIT=$?
 
 echo "pre-commit: ruff check"
-python -m ruff check $STAGED
+python3 -m ruff check $STAGED
 LINT_EXIT=$?
 
 if [ $FORMAT_EXIT -ne 0 ]; then
     echo ""
-    echo "Formatting errors. Run:  python -m ruff format q2mm test scripts examples"
+    echo "Formatting errors. Run:  python3 -m ruff format q2mm test scripts examples"
     exit 1
 fi
 
 if [ $LINT_EXIT -ne 0 ]; then
     echo ""
-    echo "Lint errors. Run:  python -m ruff check . --fix"
+    echo "Lint errors. Run:  python3 -m ruff check . --fix"
     exit 1
 fi
