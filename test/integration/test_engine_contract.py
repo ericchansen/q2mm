@@ -446,12 +446,6 @@ class TestTorsionEnergy:
     """Engines must compute torsion energy contributions."""
 
     @staticmethod
-    def _skip_if_no_torsion_support(engine: MMEngine) -> None:
-        """Skip engines that don't yet support torsion energy."""
-        # All current backends support torsion energy evaluation.
-        pass
-
-    @staticmethod
     def _skip_if_requires_torsion_params(engine: MMEngine) -> None:
         """Skip engines that require torsion params when torsion topology exists.
 
@@ -463,14 +457,12 @@ class TestTorsionEnergy:
             pytest.skip(f"{engine.name} requires torsion params when torsion topology exists")
 
     def test_energy_finite_with_torsions(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
-        self._skip_if_no_torsion_support(engine)
         mol, ff = ethane
         e = engine.energy(mol, ff)
         assert np.isfinite(e)
 
     def test_energy_changes_with_torsion_k(self, engine: MMEngine) -> None:
         """Changing torsion k should change total energy."""
-        self._skip_if_no_torsion_support(engine)
         mol = make_ethane()
         ff_low = _ethane_ff(engine, torsion_k=0.05)
         ff_high = _ethane_ff(engine, torsion_k=1.00)
@@ -482,7 +474,6 @@ class TestTorsionEnergy:
 
     def test_torsion_energy_nonzero_for_nonzero_k(self, engine: MMEngine) -> None:
         """With torsion k > 0, total energy should differ from torsion-free."""
-        self._skip_if_no_torsion_support(engine)
         self._skip_if_requires_torsion_params(engine)
         mol = make_ethane()
         ff_with = _ethane_ff(engine, torsion_k=0.50)
@@ -498,7 +489,6 @@ class TestTorsionEnergy:
 
     def test_torsion_energy_matches_openmm(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
         """Cross-engine parity: torsion energy must agree with OpenMM reference."""
-        self._skip_if_no_torsion_support(engine)
         if engine.name.startswith("OpenMM"):
             pytest.skip("Reference engine")
         if "openmm" not in available_mm_engines():
