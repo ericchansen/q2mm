@@ -8,7 +8,8 @@ For detailed information on each backend, see the individual pages:
 
 - [OpenMM](openmm.md) — mature, dual functional-form support (Harmonic + MM3)
 - [Tinker](tinker.md) — subprocess-based MM3 engine
-- [JAX](jax.md) — differentiable engines with analytical gradients (JaxEngine + JaxMDEngine)
+- [JAX](jax-engine.md) — pure-JAX differentiable engine with analytical gradients
+- [JAX-MD](jax-md.md) — JAX-MD engine with periodic boundaries and neighbor lists
 
 ---
 
