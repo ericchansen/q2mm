@@ -107,7 +107,7 @@ than needed.  Switching to float32 would unlock the full 104.8 TFLOPS
 on the RTX 5090, a potential **64× throughput increase**.  Float64
 would become necessary when VdW terms (with 1/r¹² − 1/r⁶ near-
 cancellation), Morse potentials, or very soft modes (~10 cm⁻¹) are
-involved.  See [Next Steps](#next-steps) for the plan to validate this.
+involved.  See [Future Directions](#future-directions) for the plan to validate this.
 
 Sources: [TechPowerUp RTX 5090 specs][tp5090], [NVIDIA A100 datasheet][a100]
 
@@ -172,24 +172,67 @@ because they show what GPU-friendly force field fitting looks like:
 |--------|-----------|----------------|
 | Molecule batching | `vmap` over all geometries in one call | Per-molecule Python loop |
 | Derivatives needed | 1st order (gradients only) | 2nd order (Hessians for frequencies) |
+| Optimization | Gradient-based L-BFGS (via JAX) | L-BFGS-B (GRAD) + Nelder-Mead (SIMP) via Scipy |
 | Loss function | Single JIT-compiled params → loss | Python loop calling engine per molecule |
 | Precision | float32 sufficient | float64 (but [may not be needed](#1-float64-on-a-consumer-gpu)) |
 | System sizes | 100s of atoms | 5–62 atoms |
 
-Note that q2mm already uses gradient-based L-BFGS for the GRAD step in
-cycling — the optimisation method itself is not the gap.  The critical
-difference is **how the loss function is structured**.  JAX-ReaxFF
-compiles a single function from parameters to scalar loss via
-`jax.jit`, letting XLA fuse all per-molecule evaluations, gradient
-computations, and the loss reduction into one optimised GPU kernel.
-q2mm instead calls back into Python between each molecule, which
-prevents XLA from seeing the full computation graph.
+The optimization row deserves careful discussion.  q2mm already uses
+gradient-based L-BFGS-B for the GRAD step in its cycling loop, so
+the optimizer itself is not the primary gap.  However, there is a
+subtle but important difference in **what those gradients flow
+through**.  In JAX-ReaxFF, L-BFGS operates on a single JIT-compiled
+function that maps parameters all the way to a scalar loss — the
+gradients are analytical derivatives of the loss with respect to
+every parameter, computed via `jax.grad` through the entire
+computation graph in one fused kernel.  In q2mm, L-BFGS-B operates
+on a loss function that internally calls back into Python for each
+molecule, computes Hessians, converts to frequencies via NumPy
+eigenvalue decomposition, and sums residuals — the parameter
+gradients for L-BFGS are computed by Scipy via finite differences or
+by q2mm's own per-evaluator gradient methods, not by differentiating
+through the full pipeline.  This means q2mm's L-BFGS cannot take
+advantage of XLA kernel fusion or GPU-native gradient computation,
+even though it is technically the same algorithm.
+
+A natural question is whether q2mm could also use gradient-based
+L-BFGS through the full frequency pipeline — i.e., differentiate
+through the eigenvalue decomposition to get analytical parameter
+gradients of the frequency loss.  JAX supports differentiating
+through `jnp.linalg.eigh`, so this is feasible in principle.
+Doing so would eliminate the need for finite-difference parameter
+gradients in the GRAD step and could significantly reduce the number
+of evaluations needed per L-BFGS iteration.
+
+The loss function structure is the other critical difference.
+JAX-ReaxFF compiles a single function from parameters to scalar
+loss via `jax.jit`, letting XLA fuse all per-molecule evaluations,
+gradient computations, and the loss reduction into one optimised
+GPU kernel.  q2mm instead calls back into Python between each
+molecule, which prevents XLA from seeing the full computation
+graph and makes it impossible to amortise kernel-launch overhead
+across molecules.
 
 Their speedup compared to prior ReaxFF tools is also partly
 **algorithmic**: replacing genetic algorithms with gradient-based
-optimisation reduces the number of evaluations by ~1000×.  q2mm
-already uses gradient-based methods, so that particular advantage
-does not apply here.
+optimisation reduces the number of evaluations by ~1000×.  Since
+q2mm already uses gradient-based methods for the GRAD step, that
+particular improvement does not directly apply.  However, if q2mm
+could differentiate through the full frequency pipeline, the number
+of evaluations per L-BFGS iteration would drop from O(parameters)
+(finite-difference) to O(1) (analytical gradient), which is a
+substantial saving for systems like rh-enamide with 94 parameters.
+
+There are two (non-exclusive) paths forward.  One is to integrate
+[JAX-ReaxFF][jaxreaxff] as a backend or adopt its architecture for
+q2mm's own engines — this would give immediate access to a
+battle-tested `vmap`-batched, JIT-compiled, gradient-based pipeline
+for reactive force fields.  The other is to restructure q2mm's own
+objective function into an end-to-end JIT-compiled
+`params → loss` function, which would work with any JAX-based engine
+(not just ReaxFF) and preserve q2mm's existing cycling workflow.
+Both approaches are worth exploring and are tracked as open
+questions in the future directions below.
 
 [jaxreaxff]: https://github.com/cagrikymk/JAX-ReaxFF
 
@@ -201,27 +244,53 @@ Source: [JAX-ReaxFF paper (ChemRxiv)][jaxreaxff-paper],
 
 ---
 
-## Next Steps
+## Future Directions
 
-The path to making GPU acceleration viable for q2mm involves three
-independent improvements, each of which also benefits CPU performance.
-Tracked in [issue #176](https://github.com/ericchansen/q2mm/issues/176).
+Several independent improvements could make GPU acceleration viable
+for q2mm.  Each also benefits CPU performance.  Some are experiments
+to validate assumptions; others are architectural changes.  They are
+listed roughly in order of effort, but they are not strictly
+sequential — results from earlier items may change the priority of
+later ones.
+
+Tracked in [issue #176](https://github.com/ericchansen/q2mm/issues/176)
+and linked issues.
 
 ### Float32 viability test
 
 Run existing benchmarks with `jax_enable_x64=False` and compare
 frequency accuracy against the float64 baseline.  If frequencies
 agree to < 0.1 cm⁻¹ for harmonic force fields, float32 can be used
-by default on consumer GPUs, unlocking 64× more throughput.  Float64
-would remain available (and recommended) for force fields with VdW,
-Morse, or other terms prone to cancellation in autodiff.
+by default on consumer GPUs — unlocking the full 104.8 TFLOPS on
+the RTX 5090 (a 64× throughput increase over float64).  Float64
+would remain available and recommended for force fields with VdW,
+Morse, or other terms prone to cancellation in autodiff.  Even if
+float32 is not sufficient for final production runs, it may be
+useful for early optimisation cycles where rough convergence is
+acceptable before switching to float64 for refinement.
 
-### Batching Hessians across molecules with `vmap`
+### Batch kernel launches across molecules with `vmap`
 
 Pad molecules to a uniform atom count and use `jax.vmap(hessian_fn)`
 to compute all Hessians in a single kernel launch, replacing the
 per-molecule Python loop.  This directly addresses
 [factors 2 and 3](#2-small-matrices-many-kernel-launches) above.
+The energy-only path already supports batching via
+[`JaxEngine.batched_energy`][q2mm.backends.mm.jax_engine.JaxEngine.batched_energy],
+so the pattern is proven within q2mm; extending it to Hessians is
+the next logical step.  For rh-enamide, this would consolidate 9
+separate kernel launches into one, giving the GPU a much larger
+workload to parallelise.
+
+### `vmap` over molecules in the objective function
+
+A related but distinct idea: instead of (or in addition to) batching
+Hessians at the engine level, `vmap` the entire per-molecule
+evaluation at the objective function level.  This would require the
+objective to be expressible as a pure JAX function — no Python
+control flow between molecules — but would let XLA see all molecules
+at once for maximum kernel fusion.  This overlaps with the
+end-to-end JIT approach below.
 
 ### End-to-end JIT-compiled loss function
 
@@ -230,7 +299,20 @@ function: `params → energy → hessian → eigenvalues → frequencies →
 residuals → loss`.  This lets XLA fuse the entire computation graph
 into optimised kernels, eliminates Python loop overhead, and enables
 `jax.grad(loss)` for analytical parameter gradients through the full
-pipeline — including through the eigenvalue decomposition.
+pipeline — including through the eigenvalue decomposition.  If this
+works, it would also enable gradient-based L-BFGS through the full
+frequency loss (not just finite-difference gradients), reducing the
+per-iteration cost from O(parameters) evaluations to O(1).
+
+### JAX-ReaxFF integration
+
+Explore integrating [JAX-ReaxFF][jaxreaxff] as a backend or adopting
+its architecture.  JAX-ReaxFF already has a mature, GPU-optimised
+pipeline for reactive force fields with `vmap` batching, JIT
+compilation, and gradient-based L-BFGS.  Supporting it as an engine
+would give q2mm access to reactive force field fitting with proven
+GPU speedups.  Alternatively, studying its architecture could inform
+how to restructure q2mm's own objective function.
 
 ---
 
