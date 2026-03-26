@@ -583,9 +583,9 @@ class OpenMMEngine(MMEngine):
         parameters, so ``addEnergyParameterDerivative()`` provides exact
         dE/d(param) for bond, angle, and torsion parameters.
 
-        vdW parameters are per-particle, so their gradient entries are
-        returned as zero.  Use finite differences or the JAX backend
-        for those.
+        vdW parameters use per-particle values and are supplemented
+        with central finite differences inside ``energy_and_param_grad``,
+        so the returned gradient is always complete.
 
         Returns:
             bool: Always ``True``.
@@ -1332,10 +1332,9 @@ class OpenMMEngine(MMEngine):
                         )
             system.addForce(tf)
 
-        # --- vdW: advance pv_idx past vdW params (no derivatives available) ---
-        # vdW uses per-particle parameters, not global parameters, so
-        # CustomNonbondedForce cannot compute dE/d(param).  We still need
-        # to advance the param-vector index to keep alignment correct.
+        # --- vdW: advance pv_idx past vdW params ---
+        # vdW uses per-particle parameters (no global-param derivatives).
+        # Gradients are computed via finite differences in energy_and_param_grad().
         pv_idx += 2 * len(forcefield.vdws)
 
         if forcefield.vdws:
@@ -1423,9 +1422,9 @@ class OpenMMEngine(MMEngine):
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
         objects to get exact dE/d(param) for bond, angle, and torsion
-        parameters.  vdW gradients are set to zero (per-particle parameters
-        have no global-param derivative path; use finite differences or
-        the JAX backend for those).
+        parameters.  vdW parameters use per-particle values that cannot
+        be differentiated via global parameters, so their gradients are
+        computed via central finite differences automatically.
 
         Args:
             structure (Q2MMMolecule): Molecular structure.
@@ -1450,10 +1449,28 @@ class OpenMMEngine(MMEngine):
         for name, pv_idx, unit_factor in zip(
             diff.param_names, diff.param_vector_indices, diff.grad_unit_factors, strict=True
         ):
-            # dE/dp_canonical = dE/dp_openmm * dp_openmm/dp_canonical
-            # But OpenMM returns dE in kJ/mol, we want kcal/mol
             deriv_openmm = derivs[name]  # dE_kJ/dp_openmm
             grad[pv_idx] = kj_to_kcal(deriv_openmm * unit_factor)
+
+        # vdW parameters use per-particle values without global-parameter
+        # derivatives.  Supplement with central finite differences so the
+        # returned gradient is complete.
+        if forcefield.vdws:
+            vdw_start = (
+                2 * len(forcefield.bonds)
+                + 2 * len(forcefield.angles)
+                + len(forcefield.torsions)
+            )
+            vdw_end = vdw_start + 2 * len(forcefield.vdws)
+            step = 1e-4
+            for i in range(vdw_start, vdw_end):
+                pv_plus = param_vector.copy()
+                pv_plus[i] += step
+                pv_minus = param_vector.copy()
+                pv_minus[i] -= step
+                e_plus = self.energy(molecule, forcefield.with_params(pv_plus))
+                e_minus = self.energy(molecule, forcefield.with_params(pv_minus))
+                grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
 
