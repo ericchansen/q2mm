@@ -307,12 +307,11 @@ class TinkerEngine(MMEngine):
         """Write a complete standalone Tinker .prm for a programmatic ForceField.
 
         Generates a self-contained parameter file with atom definitions,
-        MM3 functional form headers, and only the bond/angle/vdW terms
-        defined in the ForceField. This ensures Tinker evaluates exactly
-        the same terms as OpenMM for cross-backend parity.
+        MM3 functional form headers, and bond/angle/torsion/vdW terms
+        defined in the ForceField.
 
         Args:
-            ff: ForceField model with bonds, angles, vdws.
+            ff: ForceField model with bonds, angles, torsions, and vdws.
             prm_path: Output path for the .prm file.
             atoms: Element symbols for each atom (same order as .xyz).
             atom_type_numbers: Tinker type numbers assigned in _write_tinker_xyz
@@ -405,6 +404,21 @@ class TinkerEngine(MMEngine):
                 f.write(
                     f"angle  {t1:5d} {t2:5d} {t3:5d}         {canonical_to_mm3_angle_k(angle.force_constant):8.4f}   {angle.equilibrium:8.4f}\n"
                 )
+
+            # Torsion parameters — group by element quad, one line per quad
+            # Format: torsion T1 T2 T3 T4 k1 phase1 n1 [k2 phase2 n2] [k3 phase3 n3]
+            proper_torsions = [t for t in ff.torsions if not t.is_improper and _check_elements(t.elements, "torsion")]
+            torsion_groups: dict[tuple[str, ...], list] = {}
+            for tp in proper_torsions:
+                torsion_groups.setdefault(tp.elements, []).append(tp)
+            for elems, tps in torsion_groups.items():
+                types = [elem_to_type[e] for e in elems]
+                # Sort by periodicity for consistent output
+                tps_sorted = sorted(tps, key=lambda t: t.periodicity)
+                parts = []
+                for tp in tps_sorted:
+                    parts.extend([f"{tp.force_constant:8.4f}", f"{tp.phase:6.1f}", f" {tp.periodicity}"])
+                f.write(f"torsion {types[0]:4d} {types[1]:4d} {types[2]:4d} {types[3]:4d}  {'  '.join(parts)}\n")
 
             # vdW parameters
             for vdw in vdws:

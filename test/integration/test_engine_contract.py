@@ -448,9 +448,19 @@ class TestTorsionEnergy:
     @staticmethod
     def _skip_if_no_torsion_support(engine: MMEngine) -> None:
         """Skip engines that don't yet support torsion energy."""
-        unsupported = {"Tinker"}
-        if engine.name in unsupported:
-            pytest.skip(f"{engine.name} does not yet support torsion energy evaluation")
+        # All current backends support torsion energy evaluation.
+        pass
+
+    @staticmethod
+    def _skip_if_requires_torsion_params(engine: MMEngine) -> None:
+        """Skip engines that require torsion params when torsion topology exists.
+
+        Tinker auto-detects torsions from bond topology and errors if
+        the PRM file lacks a matching torsion line.  Tests that create
+        torsion-free FFs for molecules with torsion topology must skip.
+        """
+        if engine.name == "Tinker":
+            pytest.skip(f"{engine.name} requires torsion params when torsion topology exists")
 
     def test_energy_finite_with_torsions(self, engine: MMEngine, ethane: tuple[Q2MMMolecule, ForceField]) -> None:
         self._skip_if_no_torsion_support(engine)
@@ -473,6 +483,7 @@ class TestTorsionEnergy:
     def test_torsion_energy_nonzero_for_nonzero_k(self, engine: MMEngine) -> None:
         """With torsion k > 0, total energy should differ from torsion-free."""
         self._skip_if_no_torsion_support(engine)
+        self._skip_if_requires_torsion_params(engine)
         mol = make_ethane()
         ff_with = _ethane_ff(engine, torsion_k=0.50)
         ff_without = ForceField(
