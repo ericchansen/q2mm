@@ -300,10 +300,14 @@ class ScipyOptimizer:
         # objective during optimization because clamping distorts the simplex
         # geometry and can cause divergence.
         final_x = scipy_result.x.copy()
+        final_score = float(scipy_result.fun)
         if bounds and self.method not in self.BOUNDED_METHODS:
             lower = np.array([b[0] for b in bounds])
             upper = np.array([b[1] for b in bounds])
-            final_x = np.clip(final_x, lower, upper)
+            clipped = np.clip(final_x, lower, upper)
+            if not np.array_equal(clipped, final_x):
+                final_score = float(objective(clipped))
+            final_x = clipped
 
         # Detect callback-triggered early stop
         abandoned = getattr(callback, "state", {}).get("abandoned", False)
@@ -316,7 +320,7 @@ class ScipyOptimizer:
             success=bool(scipy_result.success),
             message=message,
             initial_score=objective.history[0] if objective.history else 0.0,
-            final_score=float(scipy_result.fun),
+            final_score=final_score,
             n_iterations=int(scipy_result.get("nit", 0)),
             n_evaluations=objective.n_eval - n_eval_before,
             initial_params=x0,

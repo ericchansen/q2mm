@@ -164,6 +164,56 @@ class TestTorsionDetection:
         assert len(env_ids) == 1
         assert env_ids.pop() == "H-C-C-H"  # palindrome, same in both directions
 
+    def test_formaldehyde_improper_detection(self) -> None:
+        """Formaldehyde (H2CO) has one trigonal centre (C) → one improper."""
+        mol = Q2MMMolecule(
+            symbols=["C", "O", "H", "H"],
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.2],
+                    [0.94, 0.0, -0.54],
+                    [-0.94, 0.0, -0.54],
+                ]
+            ),
+        )
+        impropers = mol.improper_torsions
+        assert len(impropers) == 1
+        imp = impropers[0]
+        # Centre atom (C, index 0) goes in j position (MM3 convention)
+        assert imp.atom_j == 0
+        # Neighbours sorted by index: O(1), H(2), H(3)
+        assert imp.atom_i == 1
+        assert imp.atom_k == 2
+        assert imp.atom_l == 3
+        assert np.isfinite(imp.value)
+        assert imp.env_id is not None
+
+    def test_ethane_no_impropers(self) -> None:
+        """Ethane has no trigonal centres (each C has 4 bonds) → no impropers."""
+        mol = make_ethane()
+        assert len(mol.improper_torsions) == 0
+
+    def test_improper_deterministic_ordering(self) -> None:
+        """Improper neighbour ordering is deterministic (sorted by index)."""
+        mol = Q2MMMolecule(
+            symbols=["C", "O", "H", "H"],
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.2],
+                    [0.94, 0.0, -0.54],
+                    [-0.94, 0.0, -0.54],
+                ]
+            ),
+        )
+        # Call twice to verify deterministic
+        imp1 = mol.improper_torsions
+        imp2 = mol.improper_torsions
+        assert len(imp1) == len(imp2)
+        for a, b in zip(imp1, imp2):
+            assert (a.atom_i, a.atom_j, a.atom_k, a.atom_l) == (b.atom_i, b.atom_j, b.atom_k, b.atom_l)
+
 
 class TestMatchTorsion:
     def test_match_by_elements(self) -> None:
@@ -488,6 +538,52 @@ class TestForceField:
         assert all(isinstance(t, TorsionParam) for t in ff.torsions)
         assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
         assert all(t.ff_row is not None for t in ff.torsions)
+
+    def test_mm3_imp_conversion(self) -> None:
+        """ff_io converts imp1/imp2 MM3 params to TorsionParam(is_improper=True)."""
+        from q2mm.parsers.mm3 import Param
+        from q2mm.models.ff_io import load_mm3_fld
+        from unittest.mock import patch, MagicMock
+
+        # Create mock MM3 parser output with imp1 and imp2 params
+        mock_mm3 = MagicMock()
+        mock_mm3.params = [
+            Param(
+                atom_labels=["C2", "O2", "H1", "H1"],
+                atom_types=["C2", "O2", "H1", "H1"],
+                ptype="imp1",
+                ff_col=1,
+                ff_row=100,
+                label=" 5",
+                value=0.0,
+            ),
+            Param(
+                atom_labels=["C2", "O2", "H1", "H1"],
+                atom_types=["C2", "O2", "H1", "H1"],
+                ptype="imp2",
+                ff_col=2,
+                ff_row=100,
+                label=" 5",
+                value=0.8,
+            ),
+        ]
+        with (
+            patch("q2mm.parsers.mm3.MM3", return_value=mock_mm3),
+            patch("q2mm.models.ff_io._parse_mm3_vdw_params", return_value=[]),
+        ):
+            ff = load_mm3_fld("/fake/path.fld")
+
+        assert len(ff.torsions) == 2
+        imp1 = [t for t in ff.torsions if t.periodicity == 1]
+        imp2 = [t for t in ff.torsions if t.periodicity == 2]
+        assert len(imp1) == 1
+        assert len(imp2) == 1
+        assert imp1[0].is_improper is True
+        assert imp2[0].is_improper is True
+        assert imp1[0].force_constant == pytest.approx(0.0)
+        assert imp2[0].force_constant == pytest.approx(0.8)
+        assert imp1[0].ff_row == 100
+        assert imp2[0].ff_row == 100
 
     def test_mm3_export_roundtrip_generic(self, tmp_path: Path) -> None:
         ff = ForceField(
