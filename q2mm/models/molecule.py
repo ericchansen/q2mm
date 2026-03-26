@@ -301,8 +301,10 @@ class Q2MMMolecule:
                 continue
             a, b, d = nbrs
             value = _dihedral_angle(
-                self.geometry[a], self.geometry[centre],
-                self.geometry[b], self.geometry[d],
+                self.geometry[a],
+                self.geometry[centre],
+                self.geometry[b],
+                self.geometry[d],
             )
             impropers.append(
                 DetectedTorsion(
@@ -318,8 +320,7 @@ class Q2MMMolecule:
                     ),
                     value=value,
                     env_id=canonicalize_torsion_env_id(
-                        [self.atom_types[a], self.atom_types[centre],
-                         self.atom_types[b], self.atom_types[d]]
+                        [self.atom_types[a], self.atom_types[centre], self.atom_types[b], self.atom_types[d]]
                     ),
                 )
             )
