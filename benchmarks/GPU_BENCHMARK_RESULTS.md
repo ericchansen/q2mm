@@ -1,6 +1,6 @@
 # GPU Benchmark Results
 
-RTX 5090 (32 GB VRAM, Blackwell sm_120) vs CPU (JAX backend, float64)
+RTX 5090 (32 GB VRAM, Blackwell sm_120) vs AMD Ryzen 7 7800X3D (JAX backend, float64)
 
 ## Per-Evaluation Throughput
 

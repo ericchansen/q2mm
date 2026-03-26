@@ -51,24 +51,38 @@ overhead dominates for a 5-atom molecule.
 
 ### rh-enamide (9 structures, 36–62 atoms, 94 parameters)
 
-| Device | Cycles | Evals | Opt time | Final score | Improvement |
-|--------|-------:|------:|---------:|------------:|:-----------:|
-| GPU | 3 | 15,530 | 1,714 s | 34.30 | 98.41% |
-| CPU | 4 | 1,842 | 712 s | 32.78 | 98.48% |
+!!! warning "Apples-to-oranges caveat"
+    This benchmark uses an **auto-generated harmonic force field** (94
+    parameters) because JAX does not support MM3.  The scores here are
+    *not* comparable to the 182-parameter MM3 results on the
+    [rh-enamide page](rh-enamide.md).  The purpose is to compare GPU vs
+    CPU on the *same* problem, not to compare force field quality.
 
-Both devices converge to comparable final scores (~98.4% improvement).
-The GPU is **3.5× faster per evaluation** but the optimizer takes
-**8.4× more evaluations** on GPU, resulting in longer total wall-clock
-time.  The evaluation count difference arises from different numerical
-paths through the optimization landscape — floating-point differences
-between GPU and CPU BLAS libraries cause the optimizer to make different
-step-size decisions.
+| Device | Cycles | Evals | ms/eval | Opt time | Final score |
+|--------|-------:|------:|--------:|---------:|------------:|
+| GPU | 3 | 15,530 | **110** | 1,714 s¹ | 34.30 |
+| CPU | 4 | 1,842 | 387 | 712 s | 32.78 |
 
-!!! note "Evaluation count ≠ quality"
-    The GPU optimizer reaches 98.41% improvement in 3 cycles (vs 4 on
-    CPU) despite doing more evaluations.  The extra evaluations happen
-    *within* the L-BFGS-B and Nelder-Mead stages, not at the cycling
-    level.  This is a property of the optimizer, not the hardware.
+¹ *Includes ~7 min of JIT compilation on first evaluation.  Excluding
+JIT, the GPU optimization time is ~1,300 s.*
+
+**Score** is the weighted sum of squared frequency deviations (QM − MM)
+across all 1,273 vibrational modes.  Lower is better; initial score is
+2,161.  Both runs start from identical Seminario-estimated parameters.
+
+The GPU is **3.5× faster per evaluation** (110 ms vs 387 ms), but the
+optimizer takes **8.4× more evaluations** on GPU.  The evaluation count
+difference is an open question — GPU and CPU produce slightly different
+floating-point results (different BLAS/LAPACK libraries, different FMA
+behavior), which causes the L-BFGS-B line search to make different step
+decisions.  Whether this is a systematic issue or run-dependent noise
+requires repeated trials to determine.
+
+!!! note "Single run — no confidence intervals"
+    These are single-run results.  The eval count difference may vary
+    across runs depending on optimizer sensitivity to floating-point
+    rounding.  Repeated trials with different random seeds are needed
+    for robust conclusions about total wall-clock time.
 
 ---
 
@@ -127,6 +141,7 @@ structures evaluated simultaneously.
 | Component | Version |
 |-----------|---------|
 | GPU | NVIDIA RTX 5090 (32 GB, Blackwell sm_120) |
+| CPU | AMD Ryzen 7 7800X3D (8 cores, 16 threads) |
 | CUDA | 12.8 |
 | Container | `q2mm-gpu:latest` (nvidia/cuda:12.8.0 + micromamba) |
 | JAX | 0.5.x with CUDA 12 support |
