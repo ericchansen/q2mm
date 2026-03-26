@@ -160,8 +160,12 @@ def main() -> None:
     parser.add_argument("--simp-method", default="Nelder-Mead", help="Simplex optimizer")
     parser.add_argument("--full-maxiter", type=int, default=200, help="Full-space max iterations")
     parser.add_argument("--simp-maxiter", type=int, default=200, help="Simplex max iterations")
-    parser.add_argument("--jac", choices=["analytical", "finite-diff"], default="finite-diff",
-                        help="Jacobian strategy for GRAD phase (default: finite-diff)")
+    parser.add_argument(
+        "--jac",
+        choices=["analytical", "finite-diff"],
+        default="finite-diff",
+        help="Jacobian strategy for GRAD phase (default: finite-diff)",
+    )
     parser.add_argument("--output", type=str, default=None, help="Output directory for results")
     parser.add_argument("--data-dir", type=str, default=None, help="Root directory of q2mm repo (default: auto-detect)")
     args = parser.parse_args()
