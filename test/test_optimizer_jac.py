@@ -46,9 +46,9 @@ class TestJacAutoDetection:
     """Verify the optimizer auto-detects analytical gradient support."""
 
     def test_lbfgsb_auto_enables_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        """L-BFGS-B should auto-detect and use analytical gradients."""
+        """L-BFGS-B with jac='auto' should auto-detect and use analytical gradients."""
         obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True, jac="auto")
 
         with caplog.at_level(logging.INFO):
             _run_ignoring_errors(opt, obj)
@@ -56,19 +56,30 @@ class TestJacAutoDetection:
         assert "Auto-detected analytical gradient support" in caplog.text
 
     def test_lbfgsb_no_analytical_when_unsupported(self, caplog: pytest.LogCaptureFixture) -> None:
-        """L-BFGS-B should NOT use analytical gradients when engine doesn't support them."""
+        """L-BFGS-B with jac='auto' should fall back when engine doesn't support grads."""
         obj = _MockObjective(engine_supports_grad=False)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True, jac="auto")
 
         with caplog.at_level(logging.INFO):
             _run_ignoring_errors(opt, obj)
 
         assert "Auto-detected" not in caplog.text
 
-    def test_nelder_mead_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Nelder-Mead is derivative-free — should never auto-detect."""
+    def test_lbfgsb_default_jac_none_uses_fd(self, caplog: pytest.LogCaptureFixture) -> None:
+        """L-BFGS-B with default jac=None should NOT auto-detect, even if engine supports grads."""
         obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=1, verbose=True)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True)
+
+        with caplog.at_level(logging.INFO):
+            _run_ignoring_errors(opt, obj)
+
+        assert "Auto-detected" not in caplog.text
+        assert "analytical" not in caplog.text.lower()
+
+    def test_nelder_mead_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Nelder-Mead is derivative-free — should never auto-detect even with jac='auto'."""
+        obj = _MockObjective(engine_supports_grad=True)
+        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=1, verbose=True, jac="auto")
 
         with caplog.at_level(logging.INFO):
             _run_ignoring_errors(opt, obj)
@@ -77,9 +88,9 @@ class TestJacAutoDetection:
         assert "analytical" not in caplog.text.lower()
 
     def test_powell_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Powell is derivative-free — should never auto-detect."""
+        """Powell is derivative-free — should never auto-detect even with jac='auto'."""
         obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="Powell", maxiter=1, verbose=True)
+        opt = ScipyOptimizer(method="Powell", maxiter=1, verbose=True, jac="auto")
 
         with caplog.at_level(logging.INFO):
             _run_ignoring_errors(opt, obj)
