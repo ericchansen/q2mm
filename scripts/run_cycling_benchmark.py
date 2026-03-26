@@ -74,9 +74,13 @@ def _load_rh_enamide(engine: object, data_dir: Path) -> tuple:
     xyz_dir = rh_dir / "rh_enamide_training_set" / "raw_xyz"
     jag_dir = rh_dir / "rh_enamide_training_set" / "jaguar_spe_freq_in_out"
 
-    # Map xyz files to jaguar output files by leading digit
+    # Map xyz files to jaguar output files by leading digit.
+    # Both directories use matching numeric prefixes (1_, 2_, ..., 9_) so
+    # sorted order gives the correct pairing.
     xyz_files = sorted(xyz_dir.glob("*.xyz"))
     jag_files = sorted(jag_dir.glob("*.out"))
+    if len(xyz_files) != len(jag_files):
+        raise ValueError(f"XYZ/Jaguar file count mismatch: {len(xyz_files)} xyz vs {len(jag_files)} jag files")
 
     # Load molecules first
     molecules = []

@@ -118,14 +118,14 @@ reference values).
 
 | Device | Cycles | Evals | Opt time | Final score | Improvement |
 |--------|-------:|------:|---------:|------------:|:-----------:|
-| GPU (RTX 5090) | 3 | 15,530 | 1,714 s | 34.30 | 98.41% |
-| CPU | 4 | 1,842 | 712 s | 32.78 | 98.48% |
+| GPU (RTX 5090) | 3 | 30,637 | 1,117 s | 34.56 | 98.40% |
+| CPU | 4 | 30,936 | 686 s | 32.78 | 98.48% |
 
-Both devices achieve >98% improvement from the Seminario starting point.
-The GPU is 3.5× faster per evaluation but the optimizer takes a different
-convergence path (more evaluations per cycle).  See the
+Both devices achieve >98% improvement from the Seminario starting point
+with nearly identical eval counts (~30 k).  **CPU is 1.6× faster** due
+to float64 overhead on consumer GPUs.  See the
 [GPU acceleration page](gpu.md) for a detailed analysis of per-eval
-throughput, VRAM usage, and guidance on when to use GPU.
+throughput, why CPU wins, and the path to making GPU viable.
 
 !!! success "Key result"
     GRAD→SIMP cycling reduces the score from **2,161 → ~33** (98.5%

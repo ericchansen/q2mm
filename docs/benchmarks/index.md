@@ -40,8 +40,8 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 
 | Backend | FF Form | Device | Cycles | Score Δ | Time |
 |---------|---------|--------|-------:|---------|-----:|
-| **JAX** | harmonic | GPU | 3 | 2,161 → 34.3 (↓98.4%) | 1,722 s |
-| **JAX** | harmonic | CPU | 4 | 2,161 → 32.8 (↓98.5%) | 716 s |
+| **JAX** | harmonic | GPU | 3 | 2,161 → 34.6 (↓98.4%) | 1,117 s |
+| **JAX** | harmonic | CPU | 4 | 2,161 → 32.8 (↓98.5%) | 686 s |
 
 ### Single-shot (2 iterations, preliminary)
 
@@ -66,10 +66,11 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
    JIT-compile energy functions as pure JAX, eliminating Python ↔ C++
    marshalling overhead.
 
-2. **GPU acceleration scales with molecule size** — on an RTX 5090, the JAX
-   backend is 3.5× faster per-evaluation for rh-enamide (36–62 atoms) vs CPU,
-   but slower for CH₃F (5 atoms) due to kernel launch overhead.  See the
-   [GPU benchmark page](gpu.md) for details and guidance on when to use GPU.
+2. **CPU beats GPU for current workloads** — on an RTX 5090, the JAX
+   backend is 1.6× slower than CPU for rh-enamide (36–62 atoms) due to
+   float64 overhead on consumer GPUs, small Hessian sizes, and sequential
+   molecule evaluation.  See the [GPU benchmark page](gpu.md) for a
+   detailed analysis and the path to making GPU viable.
 
 3. **All engines agree to machine precision** — JAX, JAX-MD, and OpenMM
    produce identical energies (< 10⁻¹⁸ kcal/mol) and frequencies
