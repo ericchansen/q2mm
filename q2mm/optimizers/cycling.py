@@ -78,6 +78,8 @@ class LoopResult:
         initial_score (float): Objective value before any optimisation.
         final_score (float): Objective value after the last cycle.
         n_cycles (int): Number of GRAD→SIMP cycles completed.
+        n_eval (int): Total objective function evaluations across all
+            cycles (GRAD + sensitivity + SIMP).
         cycle_scores (list[float]): Objective value at the end of each
             cycle.
         selected_indices (list[list[int]]): Parameter indices selected
@@ -92,6 +94,7 @@ class LoopResult:
     initial_score: float
     final_score: float
     n_cycles: int
+    n_eval: int
     cycle_scores: list[float] = field(default_factory=list)
     selected_indices: list[list[int]] = field(default_factory=list)
     sensitivity_results: list[SensitivityResult] = field(default_factory=list)
@@ -120,6 +123,7 @@ class LoopResult:
         lines = [
             f"OptimizationLoop: {'converged' if self.success else 'max cycles reached'}",
             f"  Cycles:      {self.n_cycles}",
+            f"  Evaluations: {self.n_eval}",
             f"  Score:       {self.initial_score:.6f} → {self.final_score:.6f}",
             f"  Improvement: {self.improvement:.2%}",
         ]
@@ -405,6 +409,7 @@ class OptimizationLoop:
         simp_maxiter: int = 200,
         sensitivity_metric: Literal["simp_var", "abs_d1"] = "simp_var",
         eps: float = 1e-3,
+        full_jac: str | None = None,
         verbose: bool = True,
     ) -> None:
         """Initialize the optimization loop.
@@ -421,6 +426,9 @@ class OptimizationLoop:
             simp_maxiter (int): Max iterations for the subspace pass.
             sensitivity_metric (str): Parameter ranking criterion.
             eps (float): Finite-difference step size.
+            full_jac (str | None): Jacobian strategy for the full-space
+                pass.  ``None`` uses scipy finite differences;
+                ``'analytical'`` uses :meth:`ObjectiveFunction.gradient`.
             verbose (bool): Whether to log progress.
 
         """
@@ -434,6 +442,7 @@ class OptimizationLoop:
         self.simp_maxiter = simp_maxiter
         self.sensitivity_metric = sensitivity_metric
         self.eps = eps
+        self.full_jac = full_jac
         self.verbose = verbose
 
     def run(self) -> LoopResult:
@@ -450,6 +459,7 @@ class OptimizationLoop:
         x0 = ff.get_param_vector().copy()
         initial_score = float(self.objective(x0))
 
+        n_eval_start = self.objective.n_eval  # track cumulative evals
         cycle_scores: list[float] = [initial_score]
         selected_indices: list[list[int]] = []
         sensitivity_results: list[SensitivityResult] = []
@@ -470,6 +480,7 @@ class OptimizationLoop:
                 method=self.full_method,
                 maxiter=self.full_maxiter,
                 eps=self.eps,
+                jac=self.full_jac,
                 verbose=False,
             )
             full_result = full_opt.optimize(self.objective)
@@ -593,12 +604,14 @@ class OptimizationLoop:
 
         final_score = cycle_scores[-1]
         n_cycles = len(cycle_scores) - 1  # exclude initial
+        total_evals = self.objective.n_eval - n_eval_start
 
         return LoopResult(
             success=converged,
             initial_score=initial_score,
             final_score=final_score,
             n_cycles=n_cycles,
+            n_eval=total_evals,
             cycle_scores=cycle_scores,
             selected_indices=selected_indices,
             sensitivity_results=sensitivity_results,

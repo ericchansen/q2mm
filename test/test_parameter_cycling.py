@@ -192,6 +192,7 @@ class TestLoopResult:
             initial_score=100.0,
             final_score=10.0,
             n_cycles=3,
+            n_eval=500,
         )
         assert lr.improvement == pytest.approx(0.9)
 
@@ -203,6 +204,7 @@ class TestLoopResult:
             initial_score=100.0,
             final_score=10.0,
             n_cycles=3,
+            n_eval=500,
             message="converged",
         )
         s = lr.summary()
@@ -212,5 +214,5 @@ class TestLoopResult:
     def test_zero_initial_score(self) -> None:
         from q2mm.optimizers.cycling import LoopResult
 
-        lr = LoopResult(success=True, initial_score=0.0, final_score=0.0, n_cycles=0)
+        lr = LoopResult(success=True, initial_score=0.0, final_score=0.0, n_cycles=0, n_eval=0)
         assert lr.improvement == 0.0

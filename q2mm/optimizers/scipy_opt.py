@@ -186,7 +186,13 @@ class ScipyOptimizer:
                 and convergence history.
 
         """
-        objective.reset()
+        # Clear history for a fresh divergence-callback baseline but do NOT
+        # reset n_eval or cached engine handles.  Resetting n_eval broke
+        # cumulative eval tracking in OptimizationLoop, and clearing handles
+        # forced expensive re-JIT compilation every cycle.
+        objective.history.clear()
+        n_eval_before = objective.n_eval
+
         x0 = objective.forcefield.get_param_vector().copy()
         initial_score = objective(x0)
 
@@ -207,9 +213,9 @@ class ScipyOptimizer:
                     "Use a minimize-based method (e.g. 'L-BFGS-B') for analytical gradients, "
                     "or set jac=None for least_squares."
                 )
-            result = self._run_least_squares(objective, x0, bounds)
+            result = self._run_least_squares(objective, x0, bounds, n_eval_before)
         else:
-            result = self._run_minimize(objective, x0, bounds, initial_score)
+            result = self._run_minimize(objective, x0, bounds, initial_score, n_eval_before)
 
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(result.final_params)
@@ -231,6 +237,7 @@ class ScipyOptimizer:
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
         initial_score: float,
+        n_eval_before: int,
     ) -> OptimizationResult:
         """Run scipy.optimize.minimize.
 
@@ -239,6 +246,8 @@ class ScipyOptimizer:
             x0 (np.ndarray): Initial parameter vector.
             bounds (list[tuple[float, float]] | None): Parameter bounds.
             initial_score (float): Objective value at ``x0``.
+            n_eval_before (int): ``objective.n_eval`` before this run,
+                used to compute the evaluation count delta.
 
         Returns:
             OptimizationResult: Result of the minimization.
@@ -299,7 +308,7 @@ class ScipyOptimizer:
             initial_score=objective.history[0] if objective.history else 0.0,
             final_score=float(scipy_result.fun),
             n_iterations=int(scipy_result.get("nit", 0)),
-            n_evaluations=objective.n_eval,
+            n_evaluations=objective.n_eval - n_eval_before,
             initial_params=x0,
             final_params=scipy_result.x.copy(),
             history=list(objective.history),
@@ -311,6 +320,7 @@ class ScipyOptimizer:
         objective: ObjectiveFunction,
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
+        n_eval_before: int,
     ) -> OptimizationResult:
         """Run scipy.optimize.least_squares (Levenberg-Marquardt or trf).
 
@@ -318,6 +328,8 @@ class ScipyOptimizer:
             objective (ObjectiveFunction): The objective function.
             x0 (np.ndarray): Initial parameter vector.
             bounds (list[tuple[float, float]] | None): Parameter bounds.
+            n_eval_before (int): ``objective.n_eval`` before this run,
+                used to compute the evaluation count delta.
 
         Returns:
             OptimizationResult: Result of the least-squares optimization.
@@ -352,7 +364,7 @@ class ScipyOptimizer:
             initial_score=objective.history[0] if objective.history else 0.0,
             final_score=final_score,
             n_iterations=int(getattr(scipy_result, "njev", 0)),
-            n_evaluations=int(scipy_result.nfev),
+            n_evaluations=objective.n_eval - n_eval_before,
             initial_params=x0,
             final_params=scipy_result.x.copy(),
             history=list(objective.history),

@@ -160,6 +160,8 @@ def main() -> None:
     parser.add_argument("--simp-method", default="Nelder-Mead", help="Simplex optimizer")
     parser.add_argument("--full-maxiter", type=int, default=200, help="Full-space max iterations")
     parser.add_argument("--simp-maxiter", type=int, default=200, help="Simplex max iterations")
+    parser.add_argument("--jac", choices=["analytical", "finite-diff"], default="finite-diff",
+                        help="Jacobian strategy for GRAD phase (default: finite-diff)")
     parser.add_argument("--output", type=str, default=None, help="Output directory for results")
     parser.add_argument("--data-dir", type=str, default=None, help="Root directory of q2mm repo (default: auto-detect)")
     args = parser.parse_args()
@@ -190,6 +192,8 @@ def main() -> None:
     print(f"║  Max cycles:  {args.max_cycles:<35d}║")
     print(f"║  Max params:  {args.max_params:<35d}║")
     print(f"║  Convergence: {args.convergence:<35g}║")
+    jac_value = "analytical" if args.jac == "analytical" else None
+    print(f"║  Jacobian:    {args.jac:<35s}║")
     print("╚══════════════════════════════════════════════════╝")
     print()
 
@@ -222,6 +226,7 @@ def main() -> None:
         simp_method=args.simp_method,
         full_maxiter=args.full_maxiter,
         simp_maxiter=args.simp_maxiter,
+        full_jac=jac_value,
         verbose=True,
     )
 
@@ -254,6 +259,7 @@ def main() -> None:
                 "simp_method": args.simp_method,
                 "full_maxiter": args.full_maxiter,
                 "simp_maxiter": args.simp_maxiter,
+                "jac": args.jac,
                 **meta,
             },
             "results": {
@@ -266,7 +272,7 @@ def main() -> None:
                 "message": result.message,
                 "total_elapsed_s": opt_elapsed,
                 "load_elapsed_s": load_elapsed,
-                "n_eval": obj.n_eval,
+                "n_eval": result.n_eval,
             },
         }
 
