@@ -1505,11 +1505,7 @@ class OpenMMEngine(MMEngine):
         # Reuse a single OpenMMHandle to avoid rebuilding the OpenMM
         # context for each perturbation.
         if forcefield.vdws:
-            vdw_start = (
-                2 * len(forcefield.bonds)
-                + 2 * len(forcefield.angles)
-                + len(forcefield.torsions)
-            )
+            vdw_start = 2 * len(forcefield.bonds) + 2 * len(forcefield.angles) + len(forcefield.torsions)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
             handle = self.create_context(molecule, forcefield)

@@ -85,9 +85,7 @@ class JaguarIn(File):
 
             logger.log(1, f">>> hessian:\n{hessian}")
             logger.log(5, f"  -- Created {hessian.shape} Hessian matrix (w/o dummy atoms).")
-            self._hessian = (
-                hessian * co.HESSIAN_CONVERSION
-            )  # Hartree/Bohr² → kJ/(mol·Å²); see constants.py
+            self._hessian = hessian * co.HESSIAN_CONVERSION  # Hartree/Bohr² → kJ/(mol·Å²); see constants.py
             logger.log(1, f">>> hessian.shape: {hessian.shape}")
         return self._hessian
 
