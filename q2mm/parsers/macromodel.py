@@ -50,7 +50,8 @@ class MacroModel(File):
                 torsions.
 
         """
-        # TODO: make this read atoms for consistency and bc need num atoms for hessian read
+        # Atom reading not yet implemented; would be needed for
+        # Hessian extraction (requires atom count for matrix shape).
         if self._structures is None or self._structures == []:
             logger.log(10, f"READING: {self.filename}")
             self._structures = []
@@ -174,7 +175,7 @@ class MacroModel(File):
 
         """
         match = co.RE_BOND.match(line)
-        # TODO: MF find if atom_nums are atomic or index, where index bc need for sub_hessian seminario
+        # atom_nums are 1-based atom indices (not atomic numbers)
         if match:
             atom_nums = [int(x) for x in [match.group(1), match.group(2)]]
             value = float(match.group(3))

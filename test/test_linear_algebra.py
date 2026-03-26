@@ -6,8 +6,8 @@ import numpy as np
 
 from q2mm import constants
 from q2mm.models import hessian
-from q2mm.models.structure import Structure  # noqa: F401 — used in skipped test signature
-from q2mm.parsers import FF  # noqa: F401 — used in skipped test signature
+from q2mm.models.structure import Structure  # noqa: F401 — used in test signatures
+from q2mm.parsers import FF  # noqa: F401 — used in test signatures
 
 
 class MakeHessian:
@@ -139,17 +139,3 @@ class TestLinearAlgebra(unittest.TestCase):
         original = hess.copy()
         hessian.hessian_to_frequencies(hess, ["H", "H"])
         np.testing.assert_array_equal(hess, original)
-
-    @unittest.skip("Incomplete — requires refactoring (upstream TODO)")
-    def test_last(
-        self,
-        force_field: FF,
-        structures: list[Structure],
-        hessians: list[np.ndarray],
-        zero_out: bool,
-        hessian_units: int = constants.GAUSSIAN,
-    ) -> None:
-        # TODO: This test is incomplete. `log` (a JaguarOut-like object with .evecs/.evals)
-        # and `min_hessian` need to be derived from the test parameters before this test
-        # can run. See issue #128.
-        pass
