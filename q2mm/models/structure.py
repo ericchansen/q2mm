@@ -233,9 +233,8 @@ class DOF:
 
         """
         self.atom_nums: list[int] = atom_nums
-        """ TODO atom_indices is a more intuitive name,
-        but use of this property is too widespread (with poor referencing) to change atm,
-        refactor this name when there is time."""
+        # Note: atom_nums are 1-based atom indices. The name is legacy;
+        # atom_indices would be clearer but is used widely in downstream code.
         self.comment = comment
         self.value = value
         self.ff_row = ff_row
