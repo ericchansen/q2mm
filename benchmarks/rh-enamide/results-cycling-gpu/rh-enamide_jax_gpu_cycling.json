@@ -1,35 +1,19 @@
 {
-  "metadata": {
-    "molecule": "rh-enamide",
-    "engine": "jax",
-    "device": "gpu",
-    "max_cycles": 10,
-    "max_params": 5,
-    "convergence": 0.01,
-    "full_method": "L-BFGS-B",
-    "simp_method": "Nelder-Mead",
-    "full_maxiter": 200,
-    "simp_maxiter": 200,
-    "n_molecules": 9,
-    "total_modes": 1273,
-    "n_params": 94,
-    "ff_type": "harmonic (auto)"
-  },
-  "results": {
-    "success": true,
-    "initial_score": 2160.935699949259,
-    "final_score": 34.301120851594476,
-    "n_cycles": 3,
-    "cycle_scores": [
-      2160.935699949259,
-      35.63769851885381,
-      34.508482847945245,
-      34.301120851594476
-    ],
-    "improvement": 0.9841267276706105,
-    "message": "converged",
-    "total_elapsed_s": 1721.4812999450078,
-    "load_elapsed_s": 7.653099214017857,
-    "n_eval": 15530
-  }
+  "device": "gpu",
+  "n_molecules": 9,
+  "n_params": 94,
+  "n_modes": 1273,
+  "jit_warmup_s": 5.646752000000561,
+  "per_eval_ms": 36.207375599769875,
+  "n_cycles": 3,
+  "n_eval": 30637,
+  "opt_time_s": 1116.679600906995,
+  "initial_score": 2160.935699949259,
+  "final_score": 34.55987216029757,
+  "cycle_scores": [
+    2160.935699949259,
+    35.173309131866034,
+    34.562716604867965,
+    34.55987216029757
+  ]
 }
