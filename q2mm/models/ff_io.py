@@ -151,6 +151,22 @@ def load_mm3_fld(path: str | Path) -> ForceField:
                 )
             )
 
+        elif param.ptype in ("imp1", "imp2") and len(atom_types) >= 4:
+            elems = tuple(_extract_element(t) for t in atom_types[:4])
+            env_id = "-".join(t.strip() for t in atom_types[:4])
+            periodicity = 1 if param.ptype == "imp1" else 2
+            torsions.append(
+                TorsionParam(
+                    elements=elems,
+                    periodicity=periodicity,
+                    force_constant=param.value,
+                    label=f"MM3 row {param.ff_row} imp V{periodicity}",
+                    env_id=env_id,
+                    ff_row=param.ff_row,
+                    is_improper=True,
+                )
+            )
+
     return ForceField(
         name=f"MM3 from {Path(path).name}",
         bonds=bonds,

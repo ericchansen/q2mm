@@ -820,6 +820,40 @@ class OpenMMEngine(MMEngine):
         # walks), which is tracked as future work.  The improper params in
         # the ForceField are preserved but not assigned to OpenMM forces.
 
+        # --- Assign improper torsion parameters ---
+        for imp_torsion in molecule.improper_torsions:
+            params = _match_torsions(
+                forcefield,
+                imp_torsion.element_quad,
+                env_id=imp_torsion.env_id,
+                ff_row=imp_torsion.ff_row,
+                is_improper=True,
+            )
+            for param in params:
+                force_index = torsion_force.addTorsion(
+                    imp_torsion.atom_i,
+                    imp_torsion.atom_j,
+                    imp_torsion.atom_k,
+                    imp_torsion.atom_l,
+                    param.periodicity,
+                    np.deg2rad(float(param.phase)),
+                    _torsion_k_to_openmm(param.force_constant),
+                )
+                torsion_terms.append(
+                    _TorsionTerm(
+                        force_index=force_index,
+                        atom_i=imp_torsion.atom_i,
+                        atom_j=imp_torsion.atom_j,
+                        atom_k=imp_torsion.atom_k,
+                        atom_l=imp_torsion.atom_l,
+                        elements=imp_torsion.element_quad,
+                        periodicity=param.periodicity,
+                        env_id=imp_torsion.env_id,
+                        ff_row=param.ff_row,
+                        is_improper=True,
+                    )
+                )
+
         # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []
         if forcefield.vdws:
@@ -1280,7 +1314,7 @@ class OpenMMEngine(MMEngine):
                     af.addAngle(angle.atom_i, angle.atom_j, angle.atom_k)
             system.addForce(af)
 
-        # --- Torsions: each proper torsion param contributes (k,) ---
+        # --- Torsions: each torsion param (proper and improper) contributes (k,) ---
         # Use CustomTorsionForce with global parameters so that
         # addEnergyParameterDerivative() provides exact dE/dk.
         # One CustomTorsionForce per (torsion_param, periodicity) to keep
@@ -1288,9 +1322,6 @@ class OpenMMEngine(MMEngine):
         torsion_global_map: dict[int, str] = {}
         torsion_k_factor = _torsion_k_to_openmm(1.0)
         for tp_idx, tp in enumerate(forcefield.torsions):
-            if tp.is_improper:
-                pv_idx += 1
-                continue
             k_name = f"torsion_k_{tp_idx}"
             torsion_global_map[tp_idx] = k_name
             param_names.append(k_name)
@@ -1298,10 +1329,8 @@ class OpenMMEngine(MMEngine):
             grad_unit_factors.append(torsion_k_factor)
             pv_idx += 1
 
-        # Build one CustomTorsionForce per proper-torsion param type.
+        # Build one CustomTorsionForce per torsion param type.
         for tp_idx, tp in enumerate(forcefield.torsions):
-            if tp.is_improper:
-                continue
             k_name = torsion_global_map[tp_idx]
             k_val = _torsion_k_to_openmm(tp.force_constant)
             phase_rad = np.deg2rad(float(tp.phase))
@@ -1313,23 +1342,44 @@ class OpenMMEngine(MMEngine):
             tf.addGlobalParameter(k_name, k_val)
             tf.addEnergyParameterDerivative(k_name)
 
-            for torsion in molecule.torsions:
-                params = _match_torsions(
-                    forcefield,
-                    torsion.element_quad,
-                    env_id=torsion.env_id,
-                    ff_row=torsion.ff_row,
-                    is_improper=False,
-                )
-                for param in params:
-                    if param is tp:
-                        tf.addTorsion(
-                            torsion.atom_i,
-                            torsion.atom_j,
-                            torsion.atom_k,
-                            torsion.atom_l,
-                            [],
-                        )
+            # Match proper torsions from molecule topology
+            if not tp.is_improper:
+                for torsion in molecule.torsions:
+                    params = _match_torsions(
+                        forcefield,
+                        torsion.element_quad,
+                        env_id=torsion.env_id,
+                        ff_row=torsion.ff_row,
+                        is_improper=False,
+                    )
+                    for param in params:
+                        if param is tp:
+                            tf.addTorsion(
+                                torsion.atom_i,
+                                torsion.atom_j,
+                                torsion.atom_k,
+                                torsion.atom_l,
+                                [],
+                            )
+            else:
+                # Match improper torsions from trigonal centres
+                for imp in molecule.improper_torsions:
+                    params = _match_torsions(
+                        forcefield,
+                        imp.element_quad,
+                        env_id=imp.env_id,
+                        ff_row=imp.ff_row,
+                        is_improper=True,
+                    )
+                    for param in params:
+                        if param is tp:
+                            tf.addTorsion(
+                                imp.atom_i,
+                                imp.atom_j,
+                                imp.atom_k,
+                                imp.atom_l,
+                                [],
+                            )
             system.addForce(tf)
 
         # --- vdW: advance pv_idx past vdW params ---

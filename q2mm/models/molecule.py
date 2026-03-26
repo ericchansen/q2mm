@@ -127,6 +127,7 @@ class Q2MMMolecule:
     _bonds: list[DetectedBond] | None = field(default=None, repr=False)
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
     _torsions: list[DetectedTorsion] | None = field(default=None, repr=False)
+    _improper_torsions: list[DetectedTorsion] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Validate atom_types length and normalize geometry to float."""
@@ -164,6 +165,19 @@ class Q2MMMolecule:
         if self._torsions is None:
             self._torsions = self._detect_torsions()
         return self._torsions
+
+    @property
+    def improper_torsions(self) -> list[DetectedTorsion]:
+        """Auto-detected improper torsions at trigonal (sp2) centres.
+
+        A trigonal centre is an atom bonded to exactly 3 neighbours.
+        For centre C with neighbours A, B, D, the improper is stored
+        as (A, C, B, D) so that C is in position j (same convention as
+        MM3 out-of-plane bending).
+        """
+        if self._improper_torsions is None:
+            self._improper_torsions = self._detect_improper_torsions()
+        return self._improper_torsions
 
     def _detect_bonds(self, tolerance: float = 1.3) -> list[DetectedBond]:
         """Detect bonds based on covalent radii with tolerance factor."""
@@ -264,6 +278,52 @@ class Q2MMMolecule:
                         )
                     )
         return torsions
+
+    def _detect_improper_torsions(self) -> list[DetectedTorsion]:
+        """Detect improper torsions at trigonal (sp2) centres.
+
+        For each atom with exactly 3 bonded neighbours, generates an
+        improper torsion quad.  The centre atom goes in position j
+        (second slot) following the MM3 out-of-plane convention:
+        ``(neighbour_0, centre, neighbour_1, neighbour_2)``.
+
+        Neighbours are sorted by index for deterministic ordering.
+        """
+        adj: dict[int, list[int]] = {i: [] for i in range(self.n_atoms)}
+        for bond in self.bonds:
+            adj[bond.atom_i].append(bond.atom_j)
+            adj[bond.atom_j].append(bond.atom_i)
+
+        impropers: list[DetectedTorsion] = []
+        for centre in range(self.n_atoms):
+            nbrs = sorted(adj[centre])
+            if len(nbrs) != 3:
+                continue
+            a, b, d = nbrs
+            value = _dihedral_angle(
+                self.geometry[a], self.geometry[centre],
+                self.geometry[b], self.geometry[d],
+            )
+            impropers.append(
+                DetectedTorsion(
+                    atom_i=a,
+                    atom_j=centre,
+                    atom_k=b,
+                    atom_l=d,
+                    elements=(
+                        self.symbols[a],
+                        self.symbols[centre],
+                        self.symbols[b],
+                        self.symbols[d],
+                    ),
+                    value=value,
+                    env_id=canonicalize_torsion_env_id(
+                        [self.atom_types[a], self.atom_types[centre],
+                         self.atom_types[b], self.atom_types[d]]
+                    ),
+                )
+            )
+        return impropers
 
     # ---- Factory methods ----
 
