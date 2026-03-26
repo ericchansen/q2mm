@@ -815,12 +815,10 @@ class OpenMMEngine(MMEngine):
                     )
                 )
 
-        # NOTE: Improper torsions are not yet supported.  Proper improper
-        # detection requires identifying trigonal centres (not bond-graph
-        # walks), which is tracked as future work.  The improper params in
-        # the ForceField are preserved but not assigned to OpenMM forces.
-
         # --- Assign improper torsion parameters ---
+        # Improper torsions are detected from trigonal centres in the
+        # molecule topology and matched against FF params with
+        # is_improper=True.
         for imp_torsion in molecule.improper_torsions:
             params = _match_torsions(
                 forcefield,
@@ -1503,8 +1501,9 @@ class OpenMMEngine(MMEngine):
             grad[pv_idx] = kj_to_kcal(deriv_openmm * unit_factor)
 
         # vdW parameters use per-particle values without global-parameter
-        # derivatives.  Supplement with central finite differences so the
-        # returned gradient is complete.
+        # derivatives.  Supplement with central finite differences.
+        # Reuse a single OpenMMHandle to avoid rebuilding the OpenMM
+        # context for each perturbation.
         if forcefield.vdws:
             vdw_start = (
                 2 * len(forcefield.bonds)
@@ -1513,13 +1512,14 @@ class OpenMMEngine(MMEngine):
             )
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
+            handle = self.create_context(molecule, forcefield)
             for i in range(vdw_start, vdw_end):
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step
                 pv_minus = param_vector.copy()
                 pv_minus[i] -= step
-                e_plus = self.energy(molecule, forcefield.with_params(pv_plus))
-                e_minus = self.energy(molecule, forcefield.with_params(pv_minus))
+                e_plus = self.energy(handle, forcefield.with_params(pv_plus))
+                e_minus = self.energy(handle, forcefield.with_params(pv_minus))
                 grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
