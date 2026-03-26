@@ -94,7 +94,7 @@ class LoopResult:
     initial_score: float
     final_score: float
     n_cycles: int
-    n_eval: int
+    n_eval: int = 0
     cycle_scores: list[float] = field(default_factory=list)
     selected_indices: list[list[int]] = field(default_factory=list)
     sensitivity_results: list[SensitivityResult] = field(default_factory=list)
