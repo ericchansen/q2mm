@@ -106,6 +106,7 @@ def _run_matrix(
     data_dir: Path | None = None,
     platform: str | None = None,
     system_key: str = "ch3f",
+    max_iter: int = 10_000,
 ) -> list:
     """Run the full backend × optimizer matrix.
 
@@ -125,6 +126,7 @@ def _run_matrix(
             backends.  ``None`` triggers auto-detection.
         system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
             ``"rh-enamide"``).
+        max_iter (int): Maximum optimizer iterations.
 
     Returns:
         list[BenchmarkResult]: One result per (backend, optimizer) combination.
@@ -190,7 +192,7 @@ def _run_matrix(
                         sys_data=sys_data,
                         optimizer_method=method,
                         optimizer_kwargs=extra_kwargs,
-                        maxiter=10_000,
+                        maxiter=max_iter,
                         backend_name=backend_name,
                         molecule_name=molecule_name,
                         level_of_theory=level_of_theory,
@@ -221,7 +223,7 @@ def _run_matrix(
                         normal_modes=normal_modes,
                         optimizer_method=method,
                         optimizer_kwargs=extra_kwargs,
-                        maxiter=10_000,
+                        maxiter=max_iter,
                         backend_name=backend_name,
                         molecule_name=molecule_name,
                         level_of_theory=level_of_theory,
@@ -267,7 +269,7 @@ def _run_matrix(
     # Save results if output directory specified
     if output_dir is not None:
         # Use system-specific subdirectory
-        system_output = output_dir / system_key if system_key != "ch3f" else output_dir
+        system_output = output_dir
         results_dir = system_output / "results"
         ff_dir = system_output / "forcefields"
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -346,7 +348,7 @@ def _run_multi_molecule_benchmark(
     obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
     initial_score = obj(seminario_params)
 
-    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False}
+    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
     opt_kwargs.update(optimizer_kwargs)
     opt = ScipyOptimizer(**opt_kwargs)
 
@@ -476,6 +478,13 @@ def main(argv: list[str] | None = None) -> int:
         default="ch3f",
         help="Benchmark system to run (e.g. ch3f, rh-enamide). Default: ch3f. Use --list to see available systems.",
     )
+    parser.add_argument(
+        "--max-iter",
+        type=int,
+        metavar="N",
+        default=10_000,
+        help="Maximum optimizer iterations (default: 10000). Use a small value for quick benchmarks.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -554,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
             data_dir=args.data_dir,
             platform=args.platform,
             system_key=args.system,
+            max_iter=args.max_iter,
         )
 
     if not results:
