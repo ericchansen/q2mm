@@ -89,8 +89,10 @@ RTX 5090.  All start from Seminario estimates (RMSD = 156.9 cm⁻¹).
     Powell reaches a **near-perfect fit** (RMSD 0.02 cm⁻¹) in 8.3 s on GPU.
     Nelder-Mead and L-BFGS-B both converge to poor RMSD values (1038,
     813).  L-BFGS-B's poor performance is due to noisy finite-difference
-    gradients; setting ``jac="auto"`` to enable analytical gradients
-    would likely improve this.
+    gradients.  Note that ``jac="auto"`` would not help here because this
+    benchmark uses a frequency objective, and analytical frequency
+    gradients are not yet implemented — ``jac="auto"`` currently only
+    benefits energy-based objectives.
 
 ### Takeaway
 
