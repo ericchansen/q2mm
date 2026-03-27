@@ -55,13 +55,13 @@ except ImportError:
 _HAS_JAX = True
 try:
     from q2mm.backends.mm.jax_engine import JaxEngine  # noqa: F401
-except Exception:
+except (ImportError, ModuleNotFoundError):
     _HAS_JAX = False
 
 _HAS_JAX_MD = True
 try:
     from q2mm.backends.mm.jax_md_engine import JaxMDEngine  # noqa: F401
-except Exception:
+except (ImportError, ModuleNotFoundError):
     _HAS_JAX_MD = False
 
 requires_openmm = pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed")
@@ -649,7 +649,6 @@ class TestPipelineDeterminism:
 def _rh_enamide_harmonic_pipeline(
     engine: MMEngine,
     molecules: list[Q2MMMolecule],
-    capsys_disabled: object | None = None,
 ) -> dict[str, object]:
     """Shared pipeline for JAX/JAX-MD Rh-enamide full-loop tests.
 
