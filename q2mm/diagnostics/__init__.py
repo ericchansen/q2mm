@@ -13,10 +13,14 @@ from q2mm.diagnostics.benchmark import (
 )
 from q2mm.diagnostics.pes_distortion import compute_distortions, load_normal_modes
 from q2mm.diagnostics.report import detailed_report, full_report
+from q2mm.diagnostics.systems import SYSTEMS, BenchmarkSystem, SystemData
 from q2mm.diagnostics.tables import TablePrinter
 
 __all__ = [
     "BenchmarkResult",
+    "BenchmarkSystem",
+    "SYSTEMS",
+    "SystemData",
     "TablePrinter",
     "compute_distortions",
     "detailed_report",
