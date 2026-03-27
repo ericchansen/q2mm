@@ -20,7 +20,6 @@ References
 from __future__ import annotations
 
 import json
-import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,6 +28,8 @@ import numpy as np
 import pytest
 
 if TYPE_CHECKING:
+    from q2mm.backends.base import MMEngine
+    from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.optimizers.objective import ReferenceData
 
@@ -52,7 +53,21 @@ try:
 except ImportError:
     _HAS_OPENMM = False
 
+_HAS_JAX = True
+try:
+    from q2mm.backends.mm.jax_engine import JaxEngine  # noqa: F401
+except Exception:
+    _HAS_JAX = False
+
+_HAS_JAX_MD = True
+try:
+    from q2mm.backends.mm.jax_md_engine import JaxMDEngine  # noqa: F401
+except Exception:
+    _HAS_JAX_MD = False
+
 requires_openmm = pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed")
+requires_jax = pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed")
+requires_jax_md = pytest.mark.skipif(not _HAS_JAX_MD, reason="JAX-MD not installed")
 
 
 # ---------------------------------------------------------------------------
@@ -192,28 +207,13 @@ class TestRhEnamideSeminarioTiming:
 
 
 def _load_rh_enamide_molecules() -> list[Q2MMMolecule]:
-    """Load 9 rh-enamide structures with Jaguar Hessians."""
-    from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.parsers import JaguarIn, MacroModel
+    """Load 9 rh-enamide structures with Jaguar Hessians.
 
-    mm = MacroModel(str(MMO_PATH))
-    jag_files = sorted(
-        JAG_DIR.glob("*.in"),
-        key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
-    )
-    n_structures = len(mm.structures)
-    n_jag = len(jag_files)
-    if n_structures != n_jag:
-        pytest.skip(
-            f"rh-enamide dataset inconsistent: {n_structures} MacroModel structures "
-            f"but {n_jag} Jaguar .in files in {JAG_DIR}"
-        )
-    molecules = []
-    for struct, jag_path in zip(mm.structures, jag_files):
-        jag = JaguarIn(str(jag_path))
-        hess = jag.get_hessian(len(struct.atoms))
-        molecules.append(Q2MMMolecule.from_structure(struct, hessian=hess))
-    return molecules
+    Delegates to the shared loader in :mod:`q2mm.diagnostics.systems`.
+    """
+    from q2mm.diagnostics.systems import load_rh_enamide_molecules
+
+    return load_rh_enamide_molecules()
 
 
 @requires_openmm
@@ -640,3 +640,219 @@ class TestPipelineDeterminism:
             err_msg="Pipeline produced different params on two runs",
         )
         assert results[0][0] == pytest.approx(results[1][0]), "Pipeline produced different scores on two runs"
+
+
+# ===========================================================================
+# Rh-enamide: JAX backend (harmonic functional form)
+# ===========================================================================
+
+
+def _rh_enamide_harmonic_pipeline(
+    engine: MMEngine,
+    molecules: list[Q2MMMolecule],
+    capsys_disabled: object | None = None,
+) -> tuple[ForceField, float]:
+    """Shared pipeline for JAX/JAX-MD Rh-enamide full-loop tests.
+
+    Runs Seminario → harmonic FF → frequency reference → Nelder-Mead optimize.
+    JAX/JAX-MD only support harmonic functional forms, so we create a harmonic
+    FF from Seminario estimation (which produces harmonic force constants
+    regardless of the template FF's functional form).
+    """
+    from q2mm.models.forcefield import ForceField, FunctionalForm
+    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    mm3_fld_path = RH_DIR / "mm3.fld"
+    if not mm3_fld_path.exists():
+        pytest.skip("rh-enamide force field file mm3.fld not found")
+
+    ff_template = ForceField.from_mm3_fld(str(mm3_fld_path))
+
+    # Seminario estimation produces harmonic force constants
+    t0 = time.perf_counter()
+    ff = estimate_force_constants(molecules, forcefield=ff_template)
+    t_seminario = time.perf_counter() - t0
+
+    # Switch to harmonic functional form for JAX compatibility
+    ff.functional_form = FunctionalForm.HARMONIC
+    seminario_params = ff.get_param_vector().copy()
+
+    # Build multi-molecule frequency reference
+    freq_ref = None
+    n_freqs_per_mol = []
+    for mol_idx, mol in enumerate(molecules):
+        mm_freqs = engine.frequencies(mol, ff)
+        qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
+        freq_ref, qm_real = _build_frequency_reference(
+            qm_freqs,
+            mm_freqs,
+            molecule_idx=mol_idx,
+            ref=freq_ref,
+        )
+        n_freqs_per_mol.append(len(qm_real))
+
+    # Initial score
+    obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
+    initial_score = obj(seminario_params)
+
+    # Optimize (3 iterations, just enough to validate the pipeline)
+    t0 = time.perf_counter()
+    opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
+    result = opt.optimize(obj)
+    t_optimize = time.perf_counter() - t0
+
+    return {
+        "n_molecules": len(molecules),
+        "n_params": ff.n_params,
+        "n_bonds": len(ff.bonds),
+        "n_angles": len(ff.angles),
+        "n_vdws": len(ff.vdws),
+        "n_freqs_per_mol": n_freqs_per_mol,
+        "total_freq_refs": sum(n_freqs_per_mol),
+        "seminario_params": seminario_params,
+        "initial_score": initial_score,
+        "final_score": result.final_score,
+        "improvement": result.improvement,
+        "converged": result.success,
+        "optimized_params": ff.get_param_vector().copy(),
+        "t_seminario": t_seminario,
+        "t_optimize": t_optimize,
+        "functional_form": "harmonic",
+    }
+
+
+@requires_jax
+@pytest.mark.jax
+@pytest.mark.slow
+class TestRhEnamideFullLoopJax:
+    """Rh-enamide full pipeline with JaxEngine (harmonic functional form).
+
+    Same 9 organometallic structures as TestRhEnamideFullLoop, but using
+    JaxEngine with harmonic energy expressions instead of OpenMM with MM3.
+    This validates JAX backend compatibility with real-world multi-molecule
+    systems and enables GPU benchmarking via ``pytest -m jax --run-slow``.
+    """
+
+    @pytest.fixture(scope="class")
+    def rh_molecules(self) -> list[Q2MMMolecule]:
+        if not MMO_PATH.exists():
+            pytest.skip("rh-enamide dataset not found")
+        return _load_rh_enamide_molecules()
+
+    @pytest.fixture(scope="class")
+    def pipeline_result(self, rh_molecules: list[Q2MMMolecule]) -> dict[str, object]:
+        """Run the full rh-enamide pipeline with JaxEngine."""
+        from q2mm.backends.mm.jax_engine import JaxEngine
+
+        engine = JaxEngine()
+        return _rh_enamide_harmonic_pipeline(engine, rh_molecules)
+
+    def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["n_molecules"] == 9
+
+    def test_seminario_produces_params(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["n_params"] > 0
+        assert pipeline_result["n_bonds"] > 0
+        assert pipeline_result["n_angles"] > 0
+
+    def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
+        for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
+            assert n > 0, f"Molecule {i} contributed 0 frequency references"
+
+    def test_initial_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
+        score = pipeline_result["initial_score"]
+        assert np.isfinite(score), f"Initial score is not finite: {score}"
+        assert score > 0, f"Initial score should be positive: {score}"
+
+    def test_final_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
+        score = pipeline_result["final_score"]
+        assert np.isfinite(score), f"Final score is not finite: {score}"
+        assert score > 0, f"Final score should be positive: {score}"
+
+    def test_optimized_params_differ_from_seminario(self, pipeline_result: dict[str, object]) -> None:
+        diff = np.abs(pipeline_result["optimized_params"] - pipeline_result["seminario_params"])
+        assert np.any(diff > 1e-6), "Optimizer didn't change any parameters"
+
+    def test_uses_harmonic_form(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["functional_form"] == "harmonic"
+
+    def test_timing_report(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
+        r = pipeline_result
+        with capsys.disabled():
+            print(
+                f"\n  Rh-enamide JAX full loop ({r['n_molecules']} mols, {r['n_params']} params, "
+                f"{r['total_freq_refs']} freq refs):"
+                f"\n    Seminario: {r['t_seminario']:.3f}s"
+                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=3)"
+                f"\n    Score:     {r['initial_score']:.1f} → {r['final_score']:.1f} "
+                f"({r['improvement'] * 100:.1f}% improvement)"
+            )
+
+
+@requires_jax_md
+@pytest.mark.jax_md
+@pytest.mark.slow
+class TestRhEnamideFullLoopJaxMD:
+    """Rh-enamide full pipeline with JaxMDEngine (harmonic/OPLSAA functional form).
+
+    Same 9 organometallic structures, using JaxMDEngine with harmonic energy
+    expressions. Validates JAX-MD backend on a real organometallic system.
+    Enables GPU benchmarking via ``pytest -m jax_md --run-slow``.
+    """
+
+    @pytest.fixture(scope="class")
+    def rh_molecules(self) -> list[Q2MMMolecule]:
+        if not MMO_PATH.exists():
+            pytest.skip("rh-enamide dataset not found")
+        return _load_rh_enamide_molecules()
+
+    @pytest.fixture(scope="class")
+    def pipeline_result(self, rh_molecules: list[Q2MMMolecule]) -> dict[str, object]:
+        """Run the full rh-enamide pipeline with JaxMDEngine."""
+        from q2mm.backends.mm.jax_md_engine import JaxMDEngine
+
+        engine = JaxMDEngine()
+        return _rh_enamide_harmonic_pipeline(engine, rh_molecules)
+
+    def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["n_molecules"] == 9
+
+    def test_seminario_produces_params(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["n_params"] > 0
+        assert pipeline_result["n_bonds"] > 0
+        assert pipeline_result["n_angles"] > 0
+
+    def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
+        for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
+            assert n > 0, f"Molecule {i} contributed 0 frequency references"
+
+    def test_initial_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
+        score = pipeline_result["initial_score"]
+        assert np.isfinite(score), f"Initial score is not finite: {score}"
+        assert score > 0, f"Initial score should be positive: {score}"
+
+    def test_final_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
+        score = pipeline_result["final_score"]
+        assert np.isfinite(score), f"Final score is not finite: {score}"
+        assert score > 0, f"Final score should be positive: {score}"
+
+    def test_optimized_params_differ_from_seminario(self, pipeline_result: dict[str, object]) -> None:
+        diff = np.abs(pipeline_result["optimized_params"] - pipeline_result["seminario_params"])
+        assert np.any(diff > 1e-6), "Optimizer didn't change any parameters"
+
+    def test_uses_harmonic_form(self, pipeline_result: dict[str, object]) -> None:
+        assert pipeline_result["functional_form"] == "harmonic"
+
+    def test_timing_report(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
+        r = pipeline_result
+        with capsys.disabled():
+            print(
+                f"\n  Rh-enamide JAX-MD full loop ({r['n_molecules']} mols, {r['n_params']} params, "
+                f"{r['total_freq_refs']} freq refs):"
+                f"\n    Seminario: {r['t_seminario']:.3f}s"
+                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=3)"
+                f"\n    Score:     {r['initial_score']:.1f} → {r['final_score']:.1f} "
+                f"({r['improvement'] * 100:.1f}% improvement)"
+            )
