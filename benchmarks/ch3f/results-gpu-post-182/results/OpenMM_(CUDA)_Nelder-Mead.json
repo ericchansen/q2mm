@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "backend": "OpenMM (CUDA)",
+    "optimizer": "Nelder-Mead",
+    "molecule": "CH3F",
+    "source": "q2mm",
+    "error": "Error loading CUDA module: CUDA_ERROR_UNSUPPORTED_PTX_VERSION (222)"
+  },
+  "qm_reference": {},
+  "default_ff": null,
+  "seminario": null,
+  "optimized": null,
+  "pes_distortion": null
+}

@@ -84,9 +84,12 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
    molecules but crashes on larger systems.  L-BFGS-B with finite-difference
    gradients diverges on high-dimensional problems.
 
-5. **JAX and JAX-MD support analytical parameter gradients** via ``jax.grad``,
-   which will eliminate the 2N+1 finite-difference overhead once the optimizer
-   is wired to use ``energy_and_param_grad()``.
+5. **JAX and JAX-MD provide analytical parameter gradients** via ``jax.grad``.
+   The optimizer supports these through ``jac="auto"`` (auto-detects engine
+   capability) or ``jac="analytical"`` (requires engine support).  For
+   energy-based evaluators this eliminates the 2N+1 finite-difference
+   overhead; frequency evaluators still use finite differences while
+   differentiation through the Hessian eigendecomposition is in progress.
 
 6. **Speed matters for scaling** — with 182 parameters and 9 molecules,
    OpenMM and Tinker are too slow per function evaluation for practical

@@ -59,8 +59,10 @@ wall-clock time (fastest first).
   and JAX-MD.  These derivative-free methods are robust for small parameter
   spaces.
 - **L-BFGS-B underperforms** with finite-difference gradients — it converges
-  to a suboptimal point on all backends.  Connecting ``energy_and_param_grad()``
-  (analytical gradients via ``jax.grad``) would likely fix this.
+  to a suboptimal point on all backends.  Setting ``jac="auto"`` on the
+  optimizer enables analytical gradients via ``energy_and_param_grad()`` on
+  JAX and JAX-MD backends, which should improve L-BFGS-B convergence for
+  energy-based objectives.
 - **JAX backends are 5–10× faster** than OpenMM per evaluation.  JIT-compiled
   pure JAX eliminates Python ↔ C++ marshalling overhead.
 - **JAX-MD is ~30% slower than JAX** due to neighbor list management and
@@ -138,8 +140,11 @@ frequencies within floating-point precision.
 L-BFGS-B converges to a suboptimal local minimum on all backends.  With
 finite-difference gradients (eps=1e-3), it cannot navigate the shallow
 objective landscape — particularly for coupled bending/stretching modes.
-Connecting ``energy_and_param_grad()`` (analytical gradients) would likely
-fix this.
+Setting ``jac="auto"`` on ``ScipyOptimizer`` enables analytical gradients
+via ``energy_and_param_grad()`` on JAX and JAX-MD backends, which should
+improve convergence for energy-based evaluators.  Frequency-based
+objectives still require finite differences while differentiation through
+the Hessian eigendecomposition is in progress.
 
 ---
 
@@ -199,7 +204,9 @@ Optimization loop        ██████████████████�
 3. **Reduce evaluations** — Nelder-Mead converges in ~400 evaluations
 4. **Fewer molecules/geometries** — each adds one energy call per evaluation
 5. **Analytical gradients** — JAX and JAX-MD support ``energy_and_param_grad()``
-   via ``jax.grad``, eliminating the 2N+1 finite-difference overhead
+   via ``jax.grad``.  Use ``ScipyOptimizer(jac="auto")`` to auto-enable
+   analytical gradients when the engine supports them, eliminating the 2N+1
+   finite-difference overhead for energy-based evaluators
 
 ---
 

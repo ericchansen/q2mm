@@ -300,6 +300,10 @@ flowchart TD
     reaches 0.000. This is exactly why the GRAD→SIMP loop exists — the
     simplex pass cleans up what the gradient pass leaves behind.
 
+    For JAX and JAX-MD backends, setting `jac="auto"` on `ScipyOptimizer`
+    enables analytical gradients via `energy_and_param_grad()` for
+    energy-based evaluators, which should improve L-BFGS-B convergence.
+
 !!! tip "Seminario initialization matters"
     Starting from Seminario-estimated parameters (extracted from the QM
     Hessian) puts you much closer to the optimum. The optimizer then needs
