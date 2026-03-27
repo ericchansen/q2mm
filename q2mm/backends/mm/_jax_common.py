@@ -21,11 +21,12 @@ try:
     # harmonic-only force fields, float32 may be viable and unlocks 64×
     # throughput on consumer GPUs (see issue #178).
     #
-    # Honour the standard JAX_ENABLE_X64 env-var: when explicitly set to "0"
-    # we do NOT override, allowing float32 experiments.  Otherwise we enable
-    # float64 as before (standard practice in JAX-based chemistry packages).
-    _user_disabled_x64 = os.environ.get("JAX_ENABLE_X64", "").strip() == "0"
-    if not jax.config.jax_enable_x64 and not _user_disabled_x64:
+    # Honour the standard JAX_ENABLE_X64 env-var: when the user has set it
+    # explicitly, we do NOT override JAX's own interpretation.  Otherwise we
+    # enable float64 as before (standard practice in JAX-based chemistry
+    # packages).
+    _user_set_jax_enable_x64 = "JAX_ENABLE_X64" in os.environ
+    if not jax.config.jax_enable_x64 and not _user_set_jax_enable_x64:
         jax.config.update("jax_enable_x64", True)
     _HAS_JAX = True
 except ImportError:  # pragma: no cover

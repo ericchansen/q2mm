@@ -73,16 +73,27 @@ def run_experiment(output_path: str) -> None:
         print(f"  Rh-enamide mol{i}: {len(freqs)} freqs, {elapsed:.4f}s")
 
     # --- Throughput: repeated energy evals (post-JIT) ---
+    # NOTE: engine.energy() returns a Python float which forces a
+    # device→host sync on GPU.  For pure GPU throughput measurement,
+    # call the jitted _energy_fn directly with block_until_ready().
+    # Here we measure the realistic engine-level throughput including
+    # the sync, since that's what the optimizer actually calls.
+    import jax
+
     mol = ch3f_data.molecules[0]
     ff = ch3f_data.forcefield
+    handle = engine._get_handle(mol, ff)
+    params, coords = engine._params_and_coords(handle, ff)
+
     # Warm up JIT
     for _ in range(3):
-        engine.energy(mol, ff)
+        handle._energy_fn(params, coords).block_until_ready()
 
+    # Pure-JAX throughput (no device→host sync per call)
     n_iters = 500
     t0 = time.perf_counter()
     for _ in range(n_iters):
-        engine.energy(mol, ff)
+        handle._energy_fn(params, coords).block_until_ready()
     elapsed = time.perf_counter() - t0
     results["throughput_ch3f"] = {
         "n_iters": n_iters,
@@ -94,13 +105,16 @@ def run_experiment(output_path: str) -> None:
     # Rh-enamide throughput (larger molecule)
     mol_rh = rh_data.molecules[0]
     ff_rh = rh_data.forcefield
+    handle_rh = engine._get_handle(mol_rh, ff_rh)
+    params_rh, coords_rh = engine._params_and_coords(handle_rh, ff_rh)
+
     for _ in range(3):
-        engine.energy(mol_rh, ff_rh)
+        handle_rh._energy_fn(params_rh, coords_rh).block_until_ready()
 
     n_rh = 100
     t0 = time.perf_counter()
     for _ in range(n_rh):
-        engine.energy(mol_rh, ff_rh)
+        handle_rh._energy_fn(params_rh, coords_rh).block_until_ready()
     elapsed = time.perf_counter() - t0
     results["throughput_rh"] = {
         "n_iters": n_rh,
@@ -125,11 +139,23 @@ def compare_results(f64_file: str, f32_file: str) -> None:
     print("FLOAT32 vs FLOAT64 COMPARISON")
     print("=" * 70)
 
-    all_diffs = []
-    system_summaries = []
+    all_diffs: list[float] = []
 
-    for key in sorted(f64.keys()):
-        if key in ("precision", "throughput_ch3f", "throughput_rh"):
+    # Validate that both files have comparable system keys
+    meta_keys = {"precision", "throughput_ch3f", "throughput_rh"}
+    f64_systems = sorted(k for k in f64 if k not in meta_keys)
+    f32_systems = sorted(k for k in f32 if k not in meta_keys)
+    if f64_systems != f32_systems:
+        missing_in_f32 = set(f64_systems) - set(f32_systems)
+        missing_in_f64 = set(f32_systems) - set(f64_systems)
+        if missing_in_f32:
+            print(f"  WARNING: keys in f64 but not f32: {missing_in_f32}")
+        if missing_in_f64:
+            print(f"  WARNING: keys in f32 but not f64: {missing_in_f64}")
+
+    for key in f64_systems:
+        if key not in f32:
+            print(f"  {key}: MISSING in f32 file, skipping")
             continue
         freqs_64 = np.array(f64[key]["frequencies"])
         freqs_32 = np.array(f32[key]["frequencies"])
@@ -145,7 +171,6 @@ def compare_results(f64_file: str, f32_file: str) -> None:
         all_diffs.extend(abs_diff.tolist())
 
         rmsd = np.sqrt(np.mean(abs_diff**2))
-        system_summaries.append((key, len(freqs_64), np.max(abs_diff), np.mean(abs_diff), np.max(rel_diff), rmsd))
 
         print(f"\n  {key}:")
         print(f"    Frequencies:   {len(freqs_64)}")
@@ -160,6 +185,10 @@ def compare_results(f64_file: str, f32_file: str) -> None:
             print(f"      freq[{idx}]: f64={freqs_64[idx]:.4f}, f32={freqs_32[idx]:.4f}, diff={abs_diff[idx]:.6f} cm-1")
 
     all_diffs_arr = np.array(all_diffs)
+    if len(all_diffs_arr) == 0:
+        print("\n  No comparable frequencies found. Check input files.")
+        return
+
     print("\n  OVERALL:")
     print(f"    Total frequencies compared: {len(all_diffs_arr)}")
     print(f"    Max abs diff:  {np.max(all_diffs_arr):.6f} cm-1")
