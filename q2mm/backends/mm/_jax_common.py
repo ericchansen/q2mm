@@ -7,6 +7,7 @@ offset calculations, and ForceField matching helpers used by both
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
@@ -15,11 +16,16 @@ try:
     import jax
     import jax.numpy as jnp
 
-    # JAX defaults to float32 which is insufficient for MM parameter
-    # optimization (energy differences ~1e-6 kcal/mol matter).  This is
-    # standard practice in JAX-based chemistry packages.  Guard: only set
-    # if not already configured (respects JAX_ENABLE_X64 env var).
-    if not jax.config.jax_enable_x64:
+    # JAX defaults to float32.  For MM parameter optimization float64 is the
+    # safe default (energy differences ~1e-6 kcal/mol matter).  However, for
+    # harmonic-only force fields, float32 may be viable and unlocks 64×
+    # throughput on consumer GPUs (see issue #178).
+    #
+    # Honour the standard JAX_ENABLE_X64 env-var: when explicitly set to "0"
+    # we do NOT override, allowing float32 experiments.  Otherwise we enable
+    # float64 as before (standard practice in JAX-based chemistry packages).
+    _user_disabled_x64 = os.environ.get("JAX_ENABLE_X64", "").strip() == "0"
+    if not jax.config.jax_enable_x64 and not _user_disabled_x64:
         jax.config.update("jax_enable_x64", True)
     _HAS_JAX = True
 except ImportError:  # pragma: no cover
