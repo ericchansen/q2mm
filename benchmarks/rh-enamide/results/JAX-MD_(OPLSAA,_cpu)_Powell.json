@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "backend": "JAX-MD (OPLSAA, cpu)",
+    "optimizer": "Powell",
+    "molecule": "Rh-enamide",
+    "source": "q2mm",
+    "error": "Eigenvalues did not converge"
+  },
+  "qm_reference": {},
+  "default_ff": null,
+  "seminario": null,
+  "optimized": null,
+  "pes_distortion": null
+}

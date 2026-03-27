@@ -419,7 +419,7 @@ def run_benchmark(
 
     obj = ObjectiveFunction(ff_to_optimize, engine, [molecule], ref)
 
-    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False}
+    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
     opt_kwargs.update(optimizer_kwargs)
     opt = ScipyOptimizer(**opt_kwargs)
 

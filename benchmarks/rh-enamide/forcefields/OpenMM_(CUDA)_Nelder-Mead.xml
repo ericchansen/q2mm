@@ -1,0 +1,225 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ForceField>
+  <AtomTypes>
+    <Type name="q2mm-C1" element="C" mass="12.0000" class="C1" />
+    <Type name="q2mm-C2" element="C" mass="12.0000" class="C2" />
+    <Type name="q2mm-C3" element="C" mass="12.0000" class="C3" />
+    <Type name="q2mm-H1" element="H" mass="1.0078" class="H1" />
+    <Type name="q2mm-H3" element="H" mass="1.0078" class="H3" />
+    <Type name="q2mm-N1" element="N" mass="14.0031" class="N1" />
+    <Type name="q2mm-N2" element="N" mass="14.0031" class="N2" />
+    <Type name="q2mm-O2" element="O" mass="15.9949" class="O2" />
+    <Type name="q2mm-P3" element="P" mass="30.9738" class="P3" />
+    <Type name="q2mm-RH" element="Rh" mass="102.9055" class="RH" />
+  </AtomTypes>
+  <Residues>
+    <Residue name="Q2MM">
+      <Atom name="Rh1" type="q2mm-RH" />
+      <Atom name="O2" type="q2mm-O2" />
+      <Atom name="C3" type="q2mm-C2" />
+      <Atom name="N4" type="q2mm-N2" />
+      <Atom name="C5" type="q2mm-C2" />
+      <Atom name="C6" type="q2mm-C2" />
+      <Atom name="C7" type="q2mm-C1" />
+      <Atom name="N8" type="q2mm-N1" />
+      <Atom name="H9" type="q2mm-H1" />
+      <Atom name="H10" type="q2mm-H1" />
+      <Atom name="H11" type="q2mm-H3" />
+      <Atom name="H12" type="q2mm-H1" />
+      <Atom name="P13" type="q2mm-P3" />
+      <Atom name="P14" type="q2mm-P3" />
+      <Atom name="C15" type="q2mm-C2" />
+      <Atom name="C16" type="q2mm-C2" />
+      <Atom name="H17" type="q2mm-H1" />
+      <Atom name="H18" type="q2mm-H1" />
+      <Atom name="C19" type="q2mm-C3" />
+      <Atom name="C20" type="q2mm-C3" />
+      <Atom name="C21" type="q2mm-C3" />
+      <Atom name="C22" type="q2mm-C3" />
+      <Atom name="H23" type="q2mm-H1" />
+      <Atom name="H24" type="q2mm-H1" />
+      <Atom name="H25" type="q2mm-H1" />
+      <Atom name="H26" type="q2mm-H1" />
+      <Atom name="H27" type="q2mm-H1" />
+      <Atom name="H28" type="q2mm-H1" />
+      <Atom name="H29" type="q2mm-H1" />
+      <Atom name="H30" type="q2mm-H1" />
+      <Atom name="H31" type="q2mm-H1" />
+      <Atom name="H32" type="q2mm-H1" />
+      <Atom name="H33" type="q2mm-H1" />
+      <Atom name="H34" type="q2mm-H1" />
+      <Atom name="H35" type="q2mm-H1" />
+      <Atom name="H36" type="q2mm-H1" />
+      <Bond atomName1="Rh1" atomName2="O2" />
+      <Bond atomName1="Rh1" atomName2="C5" />
+      <Bond atomName1="Rh1" atomName2="P13" />
+      <Bond atomName1="Rh1" atomName2="P14" />
+      <Bond atomName1="Rh1" atomName2="H17" />
+      <Bond atomName1="Rh1" atomName2="H18" />
+      <Bond atomName1="O2" atomName2="C3" />
+      <Bond atomName1="C3" atomName2="N4" />
+      <Bond atomName1="C3" atomName2="H12" />
+      <Bond atomName1="N4" atomName2="C5" />
+      <Bond atomName1="N4" atomName2="H11" />
+      <Bond atomName1="C5" atomName2="C6" />
+      <Bond atomName1="C5" atomName2="C7" />
+      <Bond atomName1="C6" atomName2="H9" />
+      <Bond atomName1="C6" atomName2="H10" />
+      <Bond atomName1="C6" atomName2="H18" />
+      <Bond atomName1="C7" atomName2="N8" />
+      <Bond atomName1="P13" atomName2="C15" />
+      <Bond atomName1="P13" atomName2="C19" />
+      <Bond atomName1="P13" atomName2="C20" />
+      <Bond atomName1="P14" atomName2="C16" />
+      <Bond atomName1="P14" atomName2="C21" />
+      <Bond atomName1="P14" atomName2="C22" />
+      <Bond atomName1="C15" atomName2="C16" />
+      <Bond atomName1="C15" atomName2="H27" />
+      <Bond atomName1="C16" atomName2="H28" />
+      <Bond atomName1="C19" atomName2="H23" />
+      <Bond atomName1="C19" atomName2="H33" />
+      <Bond atomName1="C19" atomName2="H34" />
+      <Bond atomName1="C20" atomName2="H24" />
+      <Bond atomName1="C20" atomName2="H35" />
+      <Bond atomName1="C20" atomName2="H36" />
+      <Bond atomName1="C21" atomName2="H25" />
+      <Bond atomName1="C21" atomName2="H31" />
+      <Bond atomName1="C21" atomName2="H32" />
+      <Bond atomName1="C22" atomName2="H26" />
+      <Bond atomName1="C22" atomName2="H29" />
+      <Bond atomName1="C22" atomName2="H30" />
+    </Residue>
+  </Residues>
+  <CustomBondForce energy="k*(10*(r-r0))^2*(1-2.55*(10*(r-r0))+3.793125*(10*(r-r0))^2)">
+    <PerBondParameter name="k" />
+    <PerBondParameter name="r0" />
+    <Bond class1="HX" class2="RH" k="15062.400000" r0="0.156393" />
+    <Bond class1="PX" class2="RH" k="15062.400000" r0="0.239436" />
+    <Bond class1="PX" class2="RH" k="15062.400000" r0="0.229344" />
+    <Bond class1="HX" class2="RH" k="15062.400000" r0="0.162666" />
+    <Bond class1="C2" class2="RH" k="15062.400000" r0="0.234077" />
+    <Bond class1="C2" class2="RH" k="15062.400000" r0="0.222658" />
+    <Bond class1="C2" class2="HX" k="-15062.400000" r0="0.153892" />
+    <Bond class1="C2" class2="C2" k="15062.400000" r0="0.142336" />
+  </CustomBondForce>
+  <CustomAngleForce energy="k*(theta-theta0)^2*(1+-0.014*((theta-theta0)*57.29577951308232)+5.6e-05*((theta-theta0)*57.29577951308232)^2+-7e-07*((theta-theta0)*57.29577951308232)^3+9e-10*((theta-theta0)*57.29577951308232)^4)">
+    <PerAngleParameter name="k" />
+    <PerAngleParameter name="theta0" />
+    <Angle class1="HX" class2="RH" class3="PX" k="3012.480000" theta0="1.470542" />
+    <Angle class1="HX" class2="RH" class3="PX" k="3012.480000" theta0="1.384187" />
+    <Angle class1="HX" class2="RH" class3="HX" k="3012.480000" theta0="1.482336" />
+    <Angle class1="C2" class2="RH" class3="HX" k="3012.480000" theta0="2.831512" />
+    <Angle class1="C2" class2="RH" class3="HX" k="3012.480000" theta0="1.625096" />
+    <Angle class1="HX" class2="RH" class3="PX" k="3012.480000" theta0="2.947746" />
+    <Angle class1="HX" class2="RH" class3="PX" k="3012.480000" theta0="1.562866" />
+    <Angle class1="C2" class2="RH" class3="PX" k="3012.480000" theta0="1.888988" />
+    <Angle class1="C2" class2="RH" class3="PX" k="3012.480000" theta0="1.985040" />
+    <Angle class1="C2" class2="RH" class3="PX" k="3012.480000" theta0="1.567035" />
+    <Angle class1="C2" class2="RH" class3="PX" k="3012.480000" theta0="2.994798" />
+    <Angle class1="C2" class2="RH" class3="HX" k="3012.480000" theta0="1.450040" />
+    <Angle class1="C2" class2="RH" class3="HX" k="3012.480000" theta0="1.625307" />
+    <Angle class1="C2" class2="RH" class3="C2" k="3012.480000" theta0="1.303062" />
+    <Angle class1="C2" class2="HX" class3="RH" k="3012.480000" theta0="1.598155" />
+    <Angle class1="00" class2="C2" class3="HX" k="3012.480000" theta0="1.629368" />
+    <Angle class1="C2" class2="C2" class3="HX" k="3012.480000" theta0="1.979587" />
+    <Angle class1="C0" class2="C2" class3="RH" k="3012.480000" theta0="1.967627" />
+    <Angle class1="C2" class2="C2" class3="RH" k="748.774658" theta0="1.955367" />
+    <Angle class1="C2" class2="C2" class3="RH" k="3012.480000" theta0="1.236448" />
+    <Angle class1="RH" class2="C2" class3="RH" k="3012.480000" theta0="1.833763" />
+    <Angle class1="N2" class2="C2" class3="RH" k="3012.480000" theta0="2.006302" />
+    <Angle class1="PX" class2="RH" class3="PX" k="3012.480000" theta0="1.509933" />
+  </CustomAngleForce>
+  <CustomTorsionForce energy="k*(1+cos(n*theta-phase))">
+    <PerTorsionParameter name="k" />
+    <PerTorsionParameter name="n" />
+    <PerTorsionParameter name="phase" />
+    <Torsion class1="00" class2="RH" class3="PX" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="PX" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="PX" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="HX" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="HX" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="HX" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="00" class2="RH" class3="C2" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="HX" class3="C2" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="HX" class3="C2" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="HX" class3="C2" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="00" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="00" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="00" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="N2" class4="00" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="N2" class4="00" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="N2" class4="00" k="0.000017" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000017" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000017" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000017" n="3" phase="0.000000" />
+  </CustomTorsionForce>
+  <CustomNonbondedForce energy="epsilon*(-2.25*(rv/r)^6+184000*exp(-12*r/rv));rv=radius1+radius2;epsilon=sqrt(epsilon1*epsilon2)" bondCutoff="2">
+    <PerParticleParameter name="radius" />
+    <PerParticleParameter name="epsilon" />
+    <Atom class="C1" radius="0.194160" epsilon="0.234497" />
+    <Atom class="C2" radius="0.194160" epsilon="0.234497" />
+    <Atom class="C2" radius="0.196162" epsilon="0.234497" />
+    <Atom class="C3" radius="0.204168" epsilon="0.113061" />
+    <Atom class="CP" radius="0.194160" epsilon="0.234497" />
+    <Atom class="CR" radius="0.196162" epsilon="0.234497" />
+    <Atom class="O2" radius="0.182150" epsilon="0.247059" />
+    <Atom class="O3" radius="0.182150" epsilon="0.247059" />
+    <Atom class="OM" radius="0.182150" epsilon="0.247059" />
+    <Atom class="OP" radius="0.182150" epsilon="0.247059" />
+    <Atom class="OQ" radius="0.182150" epsilon="0.247059" />
+    <Atom class="H1" radius="0.162134" epsilon="0.083749" />
+    <Atom class="H1" radius="0.162134" epsilon="0.083749" />
+    <Atom class="H2" radius="0.160132" epsilon="0.066999" />
+    <Atom class="H3" radius="0.160132" epsilon="0.062812" />
+    <Atom class="H3" radius="0.160132" epsilon="0.075374" />
+    <Atom class="H4" radius="0.160132" epsilon="0.142373" />
+    <Atom class="N1" radius="0.193159" epsilon="0.180060" />
+    <Atom class="N2" radius="0.193159" epsilon="0.180060" />
+    <Atom class="N3" radius="0.193159" epsilon="0.180060" />
+    <Atom class="N4" radius="0.193159" epsilon="0.180060" />
+    <Atom class="N5" radius="0.193159" epsilon="0.180060" />
+    <Atom class="B2" radius="0.215177" epsilon="0.058624" />
+    <Atom class="B3" radius="0.215177" epsilon="0.058624" />
+    <Atom class="SX" radius="0.215177" epsilon="0.845865" />
+    <Atom class="PX" radius="0.222183" epsilon="0.703491" />
+    <Atom class="F0" radius="0.171141" epsilon="0.314059" />
+    <Atom class="Cl" radius="0.207171" epsilon="1.004988" />
+    <Atom class="Br" radius="0.222183" epsilon="1.339983" />
+    <Atom class="I0" radius="0.236195" epsilon="1.775478" />
+    <Atom class="Si" radius="0.229189" epsilon="0.586243" />
+    <Atom class="Z0" radius="0.200165" epsilon="2.638092" />
+    <Atom class="RH" radius="0.269222" epsilon="0.586243" />
+    <Atom class="H5" radius="0.162134" epsilon="0.083749" />
+    <Atom class="H6" radius="0.162134" epsilon="0.083749" />
+    <Atom class="H7" radius="0.162134" epsilon="0.083749" />
+  </CustomNonbondedForce>
+</ForceField>
