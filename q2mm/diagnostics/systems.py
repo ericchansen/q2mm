@@ -52,24 +52,13 @@ def _qm_frequencies_from_hessian(
     hessian_au: np.ndarray,
     symbols: list[str],
 ) -> np.ndarray:
-    """Compute harmonic frequencies (cm-1) from a Cartesian Hessian in AU."""
-    from q2mm.constants import (
-        AMU_TO_KG,
-        BOHR_TO_ANG,
-        HARTREE_TO_J,
-        MASSES,
-        SPEED_OF_LIGHT_MS,
-    )
+    """Compute harmonic frequencies (cm⁻¹) from a Cartesian Hessian in AU.
 
-    bohr_to_m = BOHR_TO_ANG * 1e-10
-    hessian_si = hessian_au * HARTREE_TO_J / (bohr_to_m**2)
-    masses = np.array([MASSES[s] * AMU_TO_KG for s in symbols], dtype=float)
-    mass_vec = np.repeat(masses, 3)
-    mw = hessian_si / np.sqrt(np.outer(mass_vec, mass_vec))
-    eigenvalues = np.linalg.eigvalsh(mw)
-    freqs = np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues))
-    freqs /= 2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0
-    return freqs
+    Delegates to :func:`q2mm.models.hessian.hessian_to_frequencies`.
+    """
+    from q2mm.models.hessian import hessian_to_frequencies
+
+    return np.array(hessian_to_frequencies(hessian_au, symbols, sort=False))
 
 
 def _build_frequency_reference(
@@ -225,7 +214,7 @@ def load_rh_enamide(engine: Any) -> SystemData:
         SystemData with 9 Rh-enamide molecules and frequency references.
 
     """
-    from q2mm.models.forcefield import ForceField
+    from q2mm.models.forcefield import ForceField, FunctionalForm
     from q2mm.models.seminario import estimate_force_constants
 
     mm3_path = _RH_DIR / "mm3.fld"
@@ -235,6 +224,14 @@ def load_rh_enamide(engine: Any) -> SystemData:
     molecules = load_rh_enamide_molecules()
     ff_template = ForceField.from_mm3_fld(str(mm3_path))
     ff = estimate_force_constants(molecules, forcefield=ff_template)
+
+    # Seminario produces harmonic force constants regardless of the template's
+    # functional form.  Switch to HARMONIC so JAX/JAX-MD engines (which only
+    # support harmonic) can use the result.  OpenMM handles both forms and
+    # defaults to MM3 when functional_form is None, so HARMONIC is safe there too.
+    supported = getattr(engine, "supported_functional_forms", lambda: frozenset())()
+    if supported and FunctionalForm.MM3.value not in supported:
+        ff.functional_form = FunctionalForm.HARMONIC
 
     # Build multi-molecule frequency reference
     freq_ref = None

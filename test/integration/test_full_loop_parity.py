@@ -29,7 +29,6 @@ import pytest
 
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
-    from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.optimizers.objective import ReferenceData
 
@@ -651,7 +650,7 @@ def _rh_enamide_harmonic_pipeline(
     engine: MMEngine,
     molecules: list[Q2MMMolecule],
     capsys_disabled: object | None = None,
-) -> tuple[ForceField, float]:
+) -> dict[str, object]:
     """Shared pipeline for JAX/JAX-MD Rh-enamide full-loop tests.
 
     Runs Seminario → harmonic FF → frequency reference → Nelder-Mead optimize.
@@ -753,9 +752,9 @@ class TestRhEnamideFullLoopJax:
         assert pipeline_result["n_molecules"] == 9
 
     def test_seminario_produces_params(self, pipeline_result: dict[str, object]) -> None:
-        assert pipeline_result["n_params"] > 0
-        assert pipeline_result["n_bonds"] > 0
-        assert pipeline_result["n_angles"] > 0
+        assert pipeline_result["n_params"] == 182
+        assert pipeline_result["n_bonds"] == 8
+        assert pipeline_result["n_angles"] == 23
 
     def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
         for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
@@ -795,7 +794,7 @@ class TestRhEnamideFullLoopJax:
 @pytest.mark.jax_md
 @pytest.mark.slow
 class TestRhEnamideFullLoopJaxMD:
-    """Rh-enamide full pipeline with JaxMDEngine (harmonic/OPLSAA functional form).
+    """Rh-enamide full pipeline with JaxMDEngine (harmonic functional form).
 
     Same 9 organometallic structures, using JaxMDEngine with harmonic energy
     expressions. Validates JAX-MD backend on a real organometallic system.
@@ -820,9 +819,9 @@ class TestRhEnamideFullLoopJaxMD:
         assert pipeline_result["n_molecules"] == 9
 
     def test_seminario_produces_params(self, pipeline_result: dict[str, object]) -> None:
-        assert pipeline_result["n_params"] > 0
-        assert pipeline_result["n_bonds"] > 0
-        assert pipeline_result["n_angles"] > 0
+        assert pipeline_result["n_params"] == 182
+        assert pipeline_result["n_bonds"] == 8
+        assert pipeline_result["n_angles"] == 23
 
     def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
         for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):

@@ -76,50 +76,6 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
     return configs
 
 
-def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path, Path | None]:
-    """Locate CH3F reference data files (legacy helper for CH3F system).
-
-    Args:
-        data_dir (Path | None): Explicit directory to search. Falls back
-            to the repo ``examples/`` directory and CWD if ``None``.
-
-    Returns:
-        tuple[Path, Path, Path, Path | None]: A 4-tuple of
-            ``(xyz_path, hessian_path, frequencies_path, normal_modes_path)``.
-            The normal-modes path is ``None`` if the ``.npz`` file is absent.
-
-    Raises:
-        FileNotFoundError: If the required reference files cannot be found
-            in any candidate directory.
-
-    """
-    candidates = []
-    if data_dir is not None:
-        candidates.append(data_dir)
-    # Fallback: try relative to repo checkout, then CWD
-    candidates.extend(
-        [
-            Path(__file__).resolve().parent.parent.parent / "examples" / "sn2-test" / "qm-reference",
-            Path.cwd() / "examples" / "sn2-test" / "qm-reference",
-        ]
-    )
-
-    for qm_ref in candidates:
-        xyz = qm_ref / "ch3f-optimized.xyz"
-        hess = qm_ref / "ch3f-hessian.npy"
-        freqs = qm_ref / "ch3f-frequencies.txt"
-        modes = qm_ref / "ch3f-normal-modes.npz"
-
-        if xyz.exists() and hess.exists() and freqs.exists():
-            return xyz, hess, freqs, modes if modes.exists() else None
-
-    raise FileNotFoundError(
-        "Cannot find CH3F reference data. Use --data-dir to specify the "
-        "directory containing ch3f-optimized.xyz, ch3f-hessian.npy, etc. "
-        "For a git checkout, run from the repo root."
-    )
-
-
 def _resolve_system(system_key: str) -> BenchmarkSystem:
     """Look up a benchmark system by key.
 
@@ -418,6 +374,7 @@ def _run_multi_molecule_benchmark(
         "message": opt_result.message,
         "param_final": ff.get_param_vector().tolist(),
     }
+    result.optimized_ff = ff.copy()
 
     return result
 
