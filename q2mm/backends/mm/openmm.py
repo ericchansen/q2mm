@@ -608,6 +608,9 @@ class OpenMMEngine(MMEngine):
     def _create_context(self, system: Any) -> tuple[Any, Any]:
         """Create an OpenMM integrator and context for *system*.
 
+        If the selected GPU platform (CUDA/OpenCL) fails (e.g., PTX version
+        mismatch on newer GPUs), logs a warning and falls back to CPU.
+
         Args:
             system: An ``openmm.System`` object.
 
@@ -622,7 +625,22 @@ class OpenMMEngine(MMEngine):
         if self._platform_name in gpu_platforms:
             precision = self._precision or "mixed"
             prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
-            context = mm.Context(system, integrator, platform, {prop_key: precision})
+            try:
+                context = mm.Context(system, integrator, platform, {prop_key: precision})
+            except Exception as e:
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "%s platform failed (%s), falling back to CPU. "
+                    "This often means the GPU architecture is not supported "
+                    "by the installed OpenMM CUDA plugin.",
+                    self._platform_name,
+                    e,
+                )
+                self._platform_name = "CPU"
+                integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
+                platform = mm.Platform.getPlatformByName("CPU")
+                context = mm.Context(system, integrator, platform)
         else:
             context = mm.Context(system, integrator, platform)
         return integrator, context

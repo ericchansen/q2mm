@@ -2,22 +2,32 @@
 
 Usage::
 
-    q2mm-benchmark                      # Run all available backends x optimizers
-    q2mm-benchmark --backend openmm     # Only OpenMM backend
-    q2mm-benchmark --optimizer L-BFGS-B # Only L-BFGS-B optimizer
-    q2mm-benchmark --output results/    # Save to custom directory
-    q2mm-benchmark --no-save            # Run without saving results
-    q2mm-benchmark --load results/      # Load saved results and print report
-    q2mm-benchmark --list               # Show available backends and optimizers
+    q2mm-benchmark                              # Run CH3F (default) across all backends
+    q2mm-benchmark --system rh-enamide          # Run Rh-enamide (9 molecules)
+    q2mm-benchmark --backend openmm             # Only OpenMM backend
+    q2mm-benchmark --optimizer L-BFGS-B         # Only L-BFGS-B optimizer
+    q2mm-benchmark --output results/            # Save to custom directory
+    q2mm-benchmark --no-save                    # Run without saving results
+    q2mm-benchmark --load results/              # Load saved results and print report
+    q2mm-benchmark --list                       # Show available backends, optimizers, systems
+    q2mm-benchmark --platform CUDA              # Force OpenMM CUDA platform
 
 By default, results (JSON + force field files) are saved to
 ``./benchmark_results/``.  Use ``--no-save`` to disable.
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from q2mm.backends.base import MMEngine
+    from q2mm.diagnostics.benchmark import BenchmarkResult
+    from q2mm.diagnostics.systems import BenchmarkSystem, SystemData
 
 import numpy as np
 
@@ -67,7 +77,7 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
 
 
 def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path, Path | None]:
-    """Locate CH3F reference data files.
+    """Locate CH3F reference data files (legacy helper for CH3F system).
 
     Args:
         data_dir (Path | None): Explicit directory to search. Falls back
@@ -110,6 +120,27 @@ def _find_reference_data(data_dir: Path | None = None) -> tuple[Path, Path, Path
     )
 
 
+def _resolve_system(system_key: str) -> BenchmarkSystem:
+    """Look up a benchmark system by key.
+
+    Args:
+        system_key: System name (e.g. ``"ch3f"``, ``"rh-enamide"``).
+
+    Returns:
+        BenchmarkSystem: The system configuration.
+
+    Raises:
+        KeyError: If the system is not registered.
+
+    """
+    from q2mm.diagnostics.systems import SYSTEMS
+
+    if system_key not in SYSTEMS:
+        available = ", ".join(sorted(SYSTEMS))
+        raise KeyError(f"Unknown system {system_key!r}. Available: {available}")
+    return SYSTEMS[system_key]
+
+
 def _run_matrix(
     backends: list[tuple[str, type, str]],
     optimizers: list[tuple[str, dict]],
@@ -118,6 +149,7 @@ def _run_matrix(
     leaderboard_only: bool = False,
     data_dir: Path | None = None,
     platform: str | None = None,
+    system_key: str = "ch3f",
 ) -> list:
     """Run the full backend × optimizer matrix.
 
@@ -130,10 +162,13 @@ def _run_matrix(
             Created if it does not exist.
         leaderboard_only (bool): If ``True``, skip streaming detailed
             SI tables during the run.
-        data_dir (Path | None): Override for QM reference data directory.
+        data_dir (Path | None): Override for QM reference data directory
+            (only used for CH3F system).
         platform (str | None): OpenMM platform override (e.g. ``"CUDA"``).
             Passed to :class:`OpenMMEngine` when instantiating OpenMM
             backends.  ``None`` triggers auto-detection.
+        system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
+            ``"rh-enamide"``).
 
     Returns:
         list[BenchmarkResult]: One result per (backend, optimizer) combination.
@@ -142,14 +177,8 @@ def _run_matrix(
     from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
     from q2mm.diagnostics.pes_distortion import load_normal_modes
     from q2mm.diagnostics.report import detailed_report
-    from q2mm.models.molecule import Q2MMMolecule
 
-    xyz, hess_path, freqs_path, modes_path = _find_reference_data(data_dir)
-
-    molecule = Q2MMMolecule.from_xyz(xyz, bond_tolerance=1.5)
-    qm_freqs = np.loadtxt(freqs_path)
-    qm_hessian = np.load(hess_path)
-    normal_modes = load_normal_modes(modes_path) if modes_path else None
+    system_cfg = _resolve_system(system_key)
 
     results: list[BenchmarkResult] = []
     total = len(backends) * len(optimizers)
@@ -168,6 +197,26 @@ def _run_matrix(
             print(f"  Skipping {backend_name}: {e}", file=sys.stderr)
             continue
 
+        # Load system data with this engine (engine computes MM frequencies)
+        try:
+            if system_key == "ch3f" and data_dir is not None:
+                # CH3F supports data_dir override
+                from q2mm.diagnostics.systems import load_ch3f
+
+                sys_data = load_ch3f(engine, data_dir=data_dir)
+            else:
+                sys_data = system_cfg.loader(engine)
+        except Exception as e:
+            print(f"  Skipping {backend_name}: cannot load {system_key} data: {e}", file=sys.stderr)
+            continue
+
+        molecule_name = sys_data.metadata.get("molecule_name", system_key)
+        level_of_theory = sys_data.metadata.get("level_of_theory", "unknown")
+
+        # For single-molecule systems, use run_benchmark directly
+        # For multi-molecule systems, use the system's freq_ref + objective
+        is_multi = len(sys_data.molecules) > 1
+
         for opt_label, opt_config in optimizers:
             idx += 1
             combo = f"{backend_name} + {opt_label}"
@@ -178,19 +227,50 @@ def _run_matrix(
                 extra_kwargs = {k: v for k, v in opt_config.items() if k != "method"}
 
                 t0 = time.perf_counter()
-                r = run_benchmark(
-                    engine,
-                    molecule,
-                    qm_freqs,
-                    qm_hessian=qm_hessian,
-                    normal_modes=normal_modes,
-                    optimizer_method=method,
-                    optimizer_kwargs=extra_kwargs,
-                    maxiter=10_000,
-                    backend_name=backend_name,
-                    molecule_name="CH3F",
-                    level_of_theory="B3LYP/6-31+G(d)",
-                )
+
+                if is_multi:
+                    r = _run_multi_molecule_benchmark(
+                        engine=engine,
+                        sys_data=sys_data,
+                        optimizer_method=method,
+                        optimizer_kwargs=extra_kwargs,
+                        maxiter=10_000,
+                        backend_name=backend_name,
+                        molecule_name=molecule_name,
+                        level_of_theory=level_of_theory,
+                    )
+                else:
+                    # Load CH3F-specific data for PES distortion support
+                    normal_modes = None
+                    qm_hessian = None
+                    if system_key == "ch3f":
+                        try:
+                            qm_dir = data_dir or (
+                                Path(__file__).resolve().parent.parent.parent / "examples" / "sn2-test" / "qm-reference"
+                            )
+                            hess_path = qm_dir / "ch3f-hessian.npy"
+                            modes_path = qm_dir / "ch3f-normal-modes.npz"
+                            if hess_path.exists():
+                                qm_hessian = np.load(hess_path)
+                            if modes_path.exists():
+                                normal_modes = load_normal_modes(modes_path)
+                        except Exception:
+                            pass
+
+                    r = run_benchmark(
+                        engine,
+                        sys_data.molecules[0],
+                        sys_data.qm_freqs_per_mol[0],
+                        qm_hessian=qm_hessian,
+                        normal_modes=normal_modes,
+                        optimizer_method=method,
+                        optimizer_kwargs=extra_kwargs,
+                        maxiter=10_000,
+                        backend_name=backend_name,
+                        molecule_name=molecule_name,
+                        level_of_theory=level_of_theory,
+                    )
+
                 elapsed = time.perf_counter() - t0
                 results.append(r)
 
@@ -221,7 +301,7 @@ def _run_matrix(
                         metadata={
                             "backend": backend_name,
                             "optimizer": opt_label,
-                            "molecule": "CH3F",
+                            "molecule": molecule_name,
                             "source": "q2mm",
                             "error": str(e),
                         },
@@ -230,8 +310,10 @@ def _run_matrix(
 
     # Save results if output directory specified
     if output_dir is not None:
-        results_dir = output_dir / "results"
-        ff_dir = output_dir / "forcefields"
+        # Use system-specific subdirectory
+        system_output = output_dir / system_key if system_key != "ch3f" else output_dir
+        results_dir = system_output / "results"
+        ff_dir = system_output / "forcefields"
         results_dir.mkdir(parents=True, exist_ok=True)
         ff_dir.mkdir(parents=True, exist_ok=True)
 
@@ -240,14 +322,104 @@ def _run_matrix(
             stem = f"{meta.get('backend', 'unk')}_{meta.get('optimizer', 'unk')}"
             stem = stem.replace("+", "_").replace(" ", "_")
             r.to_json(results_dir / f"{stem}.json")
-            saved_ffs = r.save_forcefields(ff_dir, stem=stem, molecule=molecule)
-            if saved_ffs:
-                exts = ", ".join(p.suffix for p in saved_ffs)
-                print(f"    FF saved: {stem} ({exts})")
+            # For multi-molecule systems, save with first molecule
+            mol_for_save = sys_data.molecules[0] if sys_data else None
+            if mol_for_save is not None:
+                saved_ffs = r.save_forcefields(ff_dir, stem=stem, molecule=mol_for_save)
+                if saved_ffs:
+                    exts = ", ".join(p.suffix for p in saved_ffs)
+                    print(f"    FF saved: {stem} ({exts})")
 
-        print(f"\n  Results saved to: {output_dir}/")
+        print(f"\n  Results saved to: {system_output}/")
 
     return results
+
+
+def _run_multi_molecule_benchmark(
+    engine: MMEngine,
+    sys_data: SystemData,
+    optimizer_method: str,
+    optimizer_kwargs: dict,
+    maxiter: int,
+    backend_name: str,
+    molecule_name: str,
+    level_of_theory: str,
+) -> BenchmarkResult:
+    """Run a benchmark on a multi-molecule system (e.g. Rh-enamide).
+
+    Uses the pre-built frequency reference from SystemData.
+    """
+    from q2mm.diagnostics.benchmark import BenchmarkResult, frequency_rmsd, real_frequencies
+    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    ff = sys_data.forcefield.copy()
+    seminario_params = ff.get_param_vector().copy()
+
+    # Compute aggregate QM frequencies for RMSD reporting
+    all_qm_real = np.concatenate(sys_data.qm_freqs_per_mol)
+
+    # Compute aggregate MM frequencies for initial RMSD
+    all_mm_real = []
+    for mol in sys_data.molecules:
+        mm_freqs = engine.frequencies(mol, ff)
+        mm_real = real_frequencies(mm_freqs)
+        all_mm_real.extend(mm_real.tolist())
+    all_mm_real = np.array(sorted(all_mm_real))
+
+    n = min(len(all_qm_real), len(all_mm_real))
+    initial_rmsd = frequency_rmsd(np.sort(all_qm_real)[:n], all_mm_real[:n])
+
+    result = BenchmarkResult(
+        metadata={
+            "backend": backend_name,
+            "optimizer": optimizer_method,
+            "molecule": molecule_name,
+            "n_molecules": len(sys_data.molecules),
+            "source": "q2mm",
+            "level_of_theory": level_of_theory,
+        },
+    )
+
+    result.seminario = {
+        "rmsd": initial_rmsd,
+        "param_values": seminario_params.tolist(),
+    }
+
+    # Optimize
+    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
+    initial_score = obj(seminario_params)
+
+    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False}
+    opt_kwargs.update(optimizer_kwargs)
+    opt = ScipyOptimizer(**opt_kwargs)
+
+    t0 = time.perf_counter()
+    opt_result = opt.optimize(obj)
+    opt_elapsed = time.perf_counter() - t0
+
+    # Final aggregate RMSD
+    all_mm_real_final = []
+    for mol in sys_data.molecules:
+        mm_freqs = engine.frequencies(mol, ff)
+        mm_real = real_frequencies(mm_freqs)
+        all_mm_real_final.extend(mm_real.tolist())
+    all_mm_real_final = np.array(sorted(all_mm_real_final))
+    n_final = min(len(all_qm_real), len(all_mm_real_final))
+    final_rmsd = frequency_rmsd(np.sort(all_qm_real)[:n_final], all_mm_real_final[:n_final])
+
+    result.optimized = {
+        "rmsd": final_rmsd,
+        "elapsed_s": opt_elapsed,
+        "n_eval": opt_result.n_evaluations,
+        "converged": opt_result.success,
+        "initial_score": opt_result.initial_score,
+        "final_score": opt_result.final_score,
+        "message": opt_result.message,
+        "param_final": ff.get_param_vector().tolist(),
+    }
+
+    return result
 
 
 def _load_results(directory: Path) -> list:
@@ -341,6 +513,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="OpenMM platform to use (e.g. CPU, CUDA, OpenCL). Default: auto-detect fastest available.",
     )
+    parser.add_argument(
+        "--system",
+        metavar="NAME",
+        default="ch3f",
+        help="Benchmark system to run (e.g. ch3f, rh-enamide). Default: ch3f. Use --list to see available systems.",
+    )
 
     args = parser.parse_args(argv)
 
@@ -352,6 +530,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # --list: show what's available
     if args.list:
+        from q2mm.diagnostics.systems import SYSTEMS
+
+        print("\nAvailable systems:")
+        for key, sys_cfg in SYSTEMS.items():
+            print(f"  {key:<14} {sys_cfg.description}")
+
         print("\nAvailable backends:")
         if all_backends:
             for name, _, marker in all_backends:
@@ -400,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
         print("\nQ2MM Benchmark Matrix")
+        print(f"  System:     {args.system}")
         print(f"  Backends:   {', '.join(n for n, _, _ in backends)}")
         print(f"  Optimizers: {', '.join(l for l, _ in optimizers)}")
         print(f"  Combos:     {len(backends) * len(optimizers)}\n")
@@ -411,6 +596,7 @@ def main(argv: list[str] | None = None) -> int:
             leaderboard_only=args.leaderboard_only,
             data_dir=args.data_dir,
             platform=args.platform,
+            system_key=args.system,
         )
 
     if not results:
