@@ -61,6 +61,37 @@ the per-eval throughput gap, not from algorithmic differences.
     not comparable to the 182-parameter MM3 results on the
     [rh-enamide page](rh-enamide.md).
 
+### Single-shot optimizer comparison (CH₃F, GPU)
+
+Single-shot results for each optimizer on JAX and JAX-MD using the
+RTX 5090.  All start from Seminario estimates (RMSD = 156.9 cm⁻¹).
+
+**Data:**
+[Results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results-gpu-post-182/results)
+
+| Backend | Optimizer | Final RMSD | Evals | Time | ms/eval |
+|---------|-----------|----------:|------:|-----:|--------:|
+| **JAX (gpu)** | Powell | **0.02** | 2,544 | 8.3 s | 3.3 |
+| **JAX (gpu)** | Nelder-Mead | 1,037.9 | 1,193 | 4.2 s | 3.5 |
+| **JAX (gpu)** | L-BFGS-B | 813.4 | 361 | 1.7 s | 4.8 |
+| **JAX-MD (gpu)** | Powell | **0.02** | 2,655 | 9.6 s | 3.6 |
+| **JAX-MD (gpu)** | Nelder-Mead | 1,037.9 | 1,216 | 5.0 s | 4.1 |
+| **JAX-MD (gpu)** | L-BFGS-B | 813.4 | 523 | 3.0 s | 5.7 |
+
+!!! note "Comparison with CPU"
+    On CPU, Powell and Nelder-Mead reach RMSD 0.0 and 4.0 respectively
+    in 1.3 s and 0.8 s — **faster than GPU** due to the small Hessian
+    sizes (15 × 15).  GPU per-eval throughput (3.3–5.7 ms) is ~8× slower
+    than CPU (~0.4 ms) for this 5-atom system.  The GPU advantage only
+    emerges at larger system sizes; see [Why CPU Wins](#why-cpu-wins).
+
+!!! tip "Powell is the best single-shot GPU optimizer for CH₃F"
+    Powell reaches a **near-perfect fit** (RMSD 0.02 cm⁻¹) in 8.3 s on GPU.
+    Nelder-Mead and L-BFGS-B both converge to poor RMSD values (1038,
+    813).  L-BFGS-B's poor performance is due to noisy finite-difference
+    gradients; setting ``jac="auto"`` to enable analytical gradients
+    would likely improve this.
+
 ### Takeaway
 
 **CPU is faster than GPU for these workloads.**  The rh-enamide system
