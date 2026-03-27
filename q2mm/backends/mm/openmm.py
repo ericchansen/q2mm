@@ -627,7 +627,7 @@ class OpenMMEngine(MMEngine):
             prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
             try:
                 context = mm.Context(system, integrator, platform, {prop_key: precision})
-            except Exception as e:
+            except mm.OpenMMException as e:
                 import logging
 
                 logging.getLogger(__name__).warning(

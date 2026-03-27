@@ -9,7 +9,7 @@ Usage::
     from q2mm.diagnostics.systems import SYSTEMS, BenchmarkSystem
 
     system = SYSTEMS["rh-enamide"]
-    molecules, qm_freqs, ... = system.load()
+    sys_data = system.loader(engine)
 """
 
 from __future__ import annotations

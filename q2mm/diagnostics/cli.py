@@ -86,14 +86,14 @@ def _resolve_system(system_key: str) -> BenchmarkSystem:
         BenchmarkSystem: The system configuration.
 
     Raises:
-        KeyError: If the system is not registered.
+        SystemExit: If the system is not registered.
 
     """
     from q2mm.diagnostics.systems import SYSTEMS
 
     if system_key not in SYSTEMS:
         available = ", ".join(sorted(SYSTEMS))
-        raise KeyError(f"Unknown system {system_key!r}. Available: {available}")
+        raise SystemExit(f"Error: unknown system {system_key!r}. Available: {available}")
     return SYSTEMS[system_key]
 
 
@@ -339,14 +339,15 @@ def _run_multi_molecule_benchmark(
         },
     )
 
-    result.seminario = {
-        "rmsd": initial_rmsd,
-        "param_values": seminario_params.tolist(),
-    }
-
     # Optimize
     obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
     initial_score = obj(seminario_params)
+
+    result.seminario = {
+        "rmsd": initial_rmsd,
+        "param_values": seminario_params.tolist(),
+        "score": initial_score,
+    }
 
     opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
     opt_kwargs.update(optimizer_kwargs)
