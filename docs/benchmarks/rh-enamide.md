@@ -62,50 +62,50 @@ flowchart LR
 
 ---
 
-## Results (2 iterations, preliminary)
+## Results (2 iterations)
 
-These are preliminary results with only 2 optimizer iterations — enough to
-reveal convergence direction and identify scaling problems.
+Results generated with `q2mm-benchmark --system rh-enamide --max-iter 2`.
+All results use the new `BenchmarkResult` JSON format.
 
 ### JAX Engines (harmonic FF)
 
-| Backend | Optimizer | Score₀ | Score | Δ% | Evals | Time |
-|---------|-----------|-------:|------:|---:|------:|-----:|
-| JAX (harmonic) | **Nelder-Mead** | 385,737 | 341,407 | **↓ 11.5%** | 185 | 17 s |
-| JAX (harmonic) | L-BFGS-B | 385,737 | 2,024,868 | ↑ 425% | 1,648 | 91 s |
-| JAX (harmonic) | Powell | 385,737 | — | crash | — | 79 s |
-| JAX-MD (OPLSAA) | **Nelder-Mead** | 663,711 | 316,575 | **↓ 52.3%** | 186 | 56 s |
-| JAX-MD (OPLSAA) | L-BFGS-B | 663,711 | 5,234,397 | ↑ 689% | 1,099 | 248 s |
-| JAX-MD (OPLSAA) | Powell | 663,711 | — | timeout | — | 300 s |
+| Backend | Optimizer | RMSD₀ | RMSD | Evals | Time |
+|---------|-----------|------:|-----:|------:|-----:|
+| JAX (harmonic) | L-BFGS-B | 18,177 | 36,105 | 1,648 | 50 s |
+| JAX (harmonic) | **Nelder-Mead** | 18,177 | 82,597 | 186 | 8 s |
+| JAX (harmonic) | Powell | — | LinAlgError | — | — |
+| JAX-MD (OPLSAA) | L-BFGS-B | 24,727 | 67,391 | 1,099 | 229 s |
+| JAX-MD (OPLSAA) | **Nelder-Mead** | 24,727 | 68,857 | 187 | 39 s |
+| JAX-MD (OPLSAA) | Powell | — | LinAlgError | — | — |
 
 ### MM3 Engines (MM3 FF)
 
-| Backend | Optimizer | Score₀ | Status | Notes |
-|---------|-----------|-------:|--------|-------|
-| OpenMM | L-BFGS-B | 422,326 | ⏱ timeout | >5 min for 2 iterations |
-| OpenMM | Nelder-Mead | 422,326 | ⏱ timeout | >5 min for 2 iterations |
-| OpenMM | Powell | 422,326 | ⏱ timeout | >5 min for 2 iterations |
-| Tinker | all | — | 🐛 bug | `_write_standalone_prm` element '00' error |
+| Backend | Optimizer | RMSD₀ | RMSD | Evals | Time |
+|---------|-----------|------:|-----:|------:|-----:|
+| OpenMM (CUDA) | **Nelder-Mead** | 19,342 | 78,134 | 187 | 172 s |
+| OpenMM (CUDA) | L-BFGS-B | — | too slow | — | >30 min |
+| OpenMM (CUDA) | Powell | — | too slow | — | >10 min |
 
 !!! success "Key findings"
-    - **Nelder-Mead is the only viable optimizer** for 182-parameter systems
-      with finite-difference gradients
-    - **JAX-MD + Nelder-Mead** achieved **52.3% improvement in just 2
-      iterations** (56 s) — the strongest early convergence of any combination
-    - **L-BFGS-B diverges** on all backends — finite-difference gradients are
-      unreliable at 182 parameters (each gradient step requires 365 function
-      evaluations)
-    - **Powell crashes** with `LinAlgError` — line-search drives parameters
-      to physically unreasonable values
+    - **OpenMM CUDA now works on Blackwell (RTX 5090)** — install
+      `OpenMM-CUDA-12` pip package; the engine falls back gracefully
+      to CPU if CUDA context creation fails
+    - **Nelder-Mead completes on all backends** including OpenMM CUDA
+      (172 s for 9 molecules × 182 params)
+    - **L-BFGS-B is impractical for OpenMM** — frequency gradients use
+      finite differences (183 evals per gradient step), making each
+      L-BFGS-B iteration extremely slow
+    - **Powell crashes** with `LinAlgError` on JAX/JAX-MD — line-search
+      drives parameters to physically unreasonable values
+    - All results use `jac="auto"` which auto-enables analytical
+      gradients for engines that support them (currently energy-only;
+      frequency gradients still use finite differences)
 
-!!! warning "Scaling bottleneck"
-    OpenMM and Tinker are too slow per function evaluation for 182-parameter
-    optimization with 9 molecules.  Each Nelder-Mead iteration requires ~185
-    evaluations, and each evaluation computes frequencies for all 9 molecules.
-    At ~2.5 s/eval for OpenMM (vs ~0.1 s/eval for JAX), even 2 iterations
-    exceed the 5-minute timeout.  See
-    [issue #147](https://github.com/ericchansen/q2mm/issues/147) for planned
-    improvements.
+!!! warning "RMSD increases with only 2 iterations"
+    With `maxiter=2`, Nelder-Mead does not have enough iterations to
+    converge for 182-parameter systems.  The RMSD *increases* because
+    the simplex has barely started exploring.  Use GRAD→SIMP cycling
+    (below) for converged results.
 
 ---
 

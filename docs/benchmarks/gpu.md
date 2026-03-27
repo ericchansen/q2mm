@@ -375,7 +375,7 @@ compiled kernel.
 | Component | Status |
 |-----------|--------|
 | JAX CUDA (Blackwell / sm_120) | ✅ Works |
-| OpenMM CUDA (Blackwell / sm_120) | ❌ PTX error 222 |
+| OpenMM CUDA (Blackwell / sm_120) | ✅ Works (install `OpenMM-CUDA-12`) |
 | JAX force fields | Harmonic only (no MM3) |
 
 ---
