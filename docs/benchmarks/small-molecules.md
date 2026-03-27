@@ -61,8 +61,10 @@ wall-clock time (fastest first).
 - **L-BFGS-B underperforms** with finite-difference gradients — it converges
   to a suboptimal point on all backends.  Setting ``jac="auto"`` on the
   optimizer enables analytical gradients via ``energy_and_param_grad()`` on
-  JAX and JAX-MD backends, which should improve L-BFGS-B convergence for
-  energy-based objectives.
+  engines that support them (JAX, JAX-MD, OpenMM), which should improve
+  L-BFGS-B convergence for energy-based objectives.  For the QM frequency
+  benchmark on this page, however, ``jac="auto"`` currently has no effect
+  because frequency analytical gradients are not yet implemented.
 - **JAX backends are 5–10× faster** than OpenMM per evaluation.  JIT-compiled
   pure JAX eliminates Python ↔ C++ marshalling overhead.
 - **JAX-MD is ~30% slower than JAX** due to neighbor list management and
@@ -141,10 +143,10 @@ L-BFGS-B converges to a suboptimal local minimum on all backends.  With
 finite-difference gradients (eps=1e-3), it cannot navigate the shallow
 objective landscape — particularly for coupled bending/stretching modes.
 Setting ``jac="auto"`` on ``ScipyOptimizer`` enables analytical gradients
-via ``energy_and_param_grad()`` on JAX and JAX-MD backends, which should
-improve convergence for energy-based evaluators.  Frequency-based
-objectives still require finite differences while differentiation through
-the Hessian eigendecomposition is in progress.
+via ``energy_and_param_grad()`` on engines that support them (JAX, JAX-MD,
+OpenMM), which should improve convergence for energy-based evaluators.
+Frequency-based objectives still require finite differences while
+differentiation through the Hessian eigendecomposition is in progress.
 
 ---
 
