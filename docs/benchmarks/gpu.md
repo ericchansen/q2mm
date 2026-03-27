@@ -129,14 +129,17 @@ comparable to the Ryzen 7 7800X3D CPU, which executes float64 at full
 speed with no penalty relative to float32.  This single factor accounts
 for most of the GPU's disadvantage.
 
-However, **float32 is not viable** for larger molecules.  Testing
-showed that for harmonic force fields, frequency errors reach
-0.78 cm⁻¹ in rh-enamide's real vibrational modes — above the
+However, **float32 is not straightforward** for larger molecules.  Testing
+both full-float32 and mixed-precision (float32 Hessian, float64
+eigendecomp) showed that frequency errors reach 0.44–0.78 cm⁻¹ in
+rh-enamide's softest real vibrational modes — above the strict
 0.1 cm⁻¹ threshold.  Small molecules like CH₃F (5 atoms) pass
-easily (max error 0.0002 cm⁻¹), but the eigenvalue decomposition
-of larger Hessians (186 × 186 for 62-atom molecules) loses too
-much precision in float32.  See [Float32 viability test](#float32-viability-test-completed)
-for full results.
+easily (max error 0.0002 cm⁻¹).  The bottleneck is the Hessian
+computation itself: `jax.hessian` in float32 introduces ~10⁻⁶
+relative errors in matrix elements, which propagate into eigenvalues
+of soft modes.  See [Float32 viability test](#float32-viability-test)
+for full methodology and results, including a mixed-precision path
+that may be viable for relaxed thresholds or early optimisation cycles.
 
 Sources: [TechPowerUp RTX 5090 specs][tp5090], [NVIDIA A100 datasheet][a100]
 
@@ -203,7 +206,7 @@ because they show what GPU-friendly force field fitting looks like:
 | Derivatives needed | 1st order (gradients only) | 2nd order (Hessians for frequencies) |
 | Optimization | Gradient-based L-BFGS (via JAX) | L-BFGS-B (GRAD) + Nelder-Mead (SIMP) via Scipy |
 | Loss function | Single JIT-compiled params → loss | Python loop calling engine per molecule |
-| Precision | float32 sufficient | float64 required ([tested](#float32-viability-test-completed)) |
+| Precision | float32 sufficient | float64 default; mixed precision under investigation ([details](#float32-viability-test)) |
 | System sizes | 100s of atoms | 5–62 atoms |
 
 The optimization row deserves careful discussion.  q2mm already uses
@@ -285,13 +288,48 @@ later ones.
 Tracked in [issue #176](https://github.com/ericchansen/q2mm/issues/176)
 and linked issues.
 
-### Float32 viability test ✅ Completed
+### Float32 viability test
 
-**Result: Float32 is NOT viable for the strict 0.1 cm⁻¹ threshold.**
-Errors up to 0.78 cm⁻¹ appear in real vibrational modes for
-rh-enamide (62 atoms).  Near-zero translation/rotation modes show
-errors up to 9.1 cm⁻¹ due to the eigenvalue decomposition losing
-precision in float32.  CH₃F (5 atoms) passes easily (max 0.0002 cm⁻¹).
+Tracked in [#178](https://github.com/ericchansen/q2mm/issues/178).
+
+#### Methodology
+
+Three precision configurations were tested:
+
+1. **Full float64** (baseline) — Hessian computation and eigendecomposition
+   both in float64.  This is the current default.
+2. **Full float32** — `JAX_ENABLE_X64=0` before import, so `jax.hessian`
+   and all JAX operations use float32.  Eigendecomposition via numpy's
+   `eigvalsh` still uses float64 internally, but the *input* Hessian is
+   float32-precision.
+3. **Mixed precision** — Hessian computed in float32 via JAX (GPU-friendly),
+   then explicitly cast to float64 before eigendecomposition.  This tests
+   whether the Hessian itself retains enough precision in float32 for the
+   eigenvalue solver to produce accurate frequencies.
+
+The pipeline under test is:
+
+```
+params, coords → jax.hessian(energy_fn) → Hess (kcal/mol/Å²)
+    → unit conversion (Hartree/Bohr²) → mass-weighting → eigvalsh → cm⁻¹
+```
+
+"Real modes" are frequencies with |ν| > 50 cm⁻¹, excluding the 6
+near-zero translation/rotation modes which are numerically unstable
+regardless of precision.
+
+Tests run inside the `ci-jax` Docker container on CPU (AMD Ryzen 7
+7800X3D).  CPU float32 and float64 have identical throughput, so the
+precision comparison is isolated from hardware effects.  On GPU, the
+benefit would be the FP32:FP64 throughput ratio (64× on RTX 5090).
+
+Scripts:
+[`scripts/float32_experiment.py`](https://github.com/ericchansen/q2mm/blob/master/scripts/float32_experiment.py)
+(full float32 vs float64),
+[`scripts/mixed_precision_experiment.py`](https://github.com/ericchansen/q2mm/blob/master/scripts/mixed_precision_experiment.py)
+(mixed precision).
+
+#### Results: Full float32
 
 | System | Modes | Max Δ (cm⁻¹) | Mean Δ | RMSD |
 |--------|------:|-------------:|-------:|-----:|
@@ -300,20 +338,73 @@ precision in float32.  CH₃F (5 atoms) passes easily (max 0.0002 cm⁻¹).
 | rh-enamide (all modes) | 1,404 | 9.127 | 0.174 | 1.007 |
 | rh-enamide (real modes, >50 cm⁻¹) | 1,347 | **0.785** | 0.021 | 0.074 |
 
-CPU throughput is **identical** for float32 vs float64 (1.00×), so the
-benefit would only come on GPU hardware.  On a datacenter GPU (A100,
-FP64:FP32 = 1:2), the advantage would be modest.  On consumer GPUs
-(RTX 5090, FP64:FP32 = 1:64), float32 would unlock 64× throughput
-— but the accuracy loss is too high for molecules with >30 atoms.
+Full float32 fails the 0.1 cm⁻¹ threshold for rh-enamide by ~8×.
+Near-zero modes show errors up to 9.1 cm⁻¹.
 
-**Recommendation:** Keep float64 as default.  Float32 is conditionally
-viable for small, stiff molecules (≤10 atoms) or for early optimisation
-cycles where ±1 cm⁻¹ accuracy is acceptable.  The `JAX_ENABLE_X64=0`
-environment variable can be used to opt in.  See
-[scripts/float32_experiment.py](https://github.com/ericchansen/q2mm/blob/master/scripts/float32_experiment.py)
-for the full experiment.
+#### Results: Mixed precision (float32 Hessian → float64 eigendecomp)
 
-Tracked in [#178](https://github.com/ericchansen/q2mm/issues/178).
+| System | Atoms | DOF | Hess max Δ | Hess rel max | Freq max Δ (real) | Mean Δ | RMSD | Verdict |
+|--------|------:|----:|-----------:|-------------:|------------------:|-------:|-----:|---------|
+| CH₃F | 5 | 15 | 1.1 × 10⁻⁴ | 8.0 × 10⁻⁸ | **0.0002** | 0.0001 | 0.0001 | ✅ Pass |
+| rh-enamide mol0 | 36 | 108 | 18.7 | 1.9 × 10⁻⁶ | **0.443** | 0.022 | 0.061 | ❌ Fail |
+
+"Hess max Δ" is the maximum absolute difference between any element of
+the float64 and float32 Hessians (in kcal/mol/Å²).  "Hess rel max" is
+relative to the largest Hessian element.
+
+Mixed precision is **better** than full float32 (0.44 vs 0.78 cm⁻¹ max
+error) but still exceeds the 0.1 cm⁻¹ threshold by ~4×.
+
+The worst errors concentrate in the **lowest-frequency real modes**
+(60–86 cm⁻¹) — soft, floppy motions where small Hessian perturbations
+are amplified through the eigenvalue decomposition:
+
+```
+freq[ 35]:  f64=  65.0674   mixed=  65.5104   Δ=0.443 cm⁻¹
+freq[ 38]:  f64=  85.5928   mixed=  85.7688   Δ=0.176 cm⁻¹
+freq[ 37]:  f64=  79.5196   mixed=  79.6864   Δ=0.167 cm⁻¹
+freq[ 34]:  f64=  60.6396   mixed=  60.7742   Δ=0.135 cm⁻¹
+```
+
+High-frequency modes (>500 cm⁻¹) are much less affected because the
+corresponding Hessian eigenvalues are larger relative to the float32
+noise floor.
+
+#### Analysis: Where does precision matter?
+
+The error budget breaks down as:
+
+| Stage | Error source | Impact |
+|-------|-------------|--------|
+| Energy function | float32 evaluates `E = k(r−r₀)²` etc. | Negligible — terms are well-conditioned |
+| `jax.hessian` (autodiff) | Forward-over-reverse in float32 | 18.7 kcal/mol/Å² max element error (1.9 × 10⁻⁶ relative) |
+| Unit conversion | Linear scaling by `KCALMOLA2_TO_HESSIAN_AU` | No additional error (uniform scaling doesn't change condition number) |
+| Mass-weighting | Divides by √(mᵢ · mⱼ); mass range H(1)–Rh(103) | Amplifies existing errors non-uniformly |
+| `eigvalsh` | Eigenvalue decomposition | In float64: accurate.  Float32 Hessian errors propagate into eigenvalues of soft modes |
+
+The bottleneck is the **Hessian computation itself**, not the
+eigendecomposition.  Even with float64 `eigvalsh`, the float32
+Hessian has ~10⁻⁶ relative errors that are large enough to shift
+eigenvalues of the softest modes by ~0.4 cm⁻¹.
+
+#### Interpretation
+
+The 0.1 cm⁻¹ threshold is strict but physically motivated: it ensures
+that optimised parameters reproduce QM frequencies within typical
+experimental resolution.  Whether a relaxed threshold (e.g. 0.5 or
+1.0 cm⁻¹) is acceptable depends on the application:
+
+- **Final production fits:** 0.1 cm⁻¹ is appropriate → float64 required
+- **Early optimisation cycles / coarse exploration:** 0.5 cm⁻¹ may be
+  acceptable → mixed precision could accelerate by 64× on consumer GPUs
+- **Small molecules (≤10 atoms):** float32 passes easily → always safe
+- **Stiff molecules (no soft modes <100 cm⁻¹):** likely safe even at
+  30+ atoms, but not yet tested
+
+**Recommendation:** Keep float64 as default.  The `JAX_ENABLE_X64=0`
+environment variable allows opt-in for specific use cases.  A future
+adaptive strategy could use float32 for early cycles and switch to
+float64 for refinement.
 
 ### Batch kernel launches across molecules with `vmap`
 
