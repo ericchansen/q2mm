@@ -129,18 +129,14 @@ comparable to the Ryzen 7 7800X3D CPU, which executes float64 at full
 speed with no penalty relative to float32.  This single factor accounts
 for most of the GPU's disadvantage.
 
-However, **float64 may not be strictly necessary** for the current
-harmonic-only JaxEngine.  For harmonic terms like `E = k(r − r₀)²`,
-the Hessian is exactly `2k` — there is no catastrophic cancellation in
-the autodiff tape that would corrupt float32 results.  Numerical
-analysis shows that resolving 1 cm⁻¹ at a 1000 cm⁻¹ mode requires
-only ~8 % relative precision in the Hessian element, while float32
-provides 1.2 × 10⁻⁷ relative precision — five orders of magnitude more
-than needed.  Switching to float32 would unlock the full 104.8 TFLOPS
-on the RTX 5090, a potential **64× throughput increase**.  Float64
-would become necessary when VdW terms (with 1/r¹² − 1/r⁶ near-
-cancellation), Morse potentials, or very soft modes (~10 cm⁻¹) are
-involved.  See [Future Directions](#future-directions) for the plan to validate this.
+However, **float32 is not viable** for larger molecules.  Testing
+showed that for harmonic force fields, frequency errors reach
+0.78 cm⁻¹ in rh-enamide's real vibrational modes — above the
+0.1 cm⁻¹ threshold.  Small molecules like CH₃F (5 atoms) pass
+easily (max error 0.0002 cm⁻¹), but the eigenvalue decomposition
+of larger Hessians (186 × 186 for 62-atom molecules) loses too
+much precision in float32.  See [Float32 viability test](#float32-viability-test-completed)
+for full results.
 
 Sources: [TechPowerUp RTX 5090 specs][tp5090], [NVIDIA A100 datasheet][a100]
 
@@ -207,7 +203,7 @@ because they show what GPU-friendly force field fitting looks like:
 | Derivatives needed | 1st order (gradients only) | 2nd order (Hessians for frequencies) |
 | Optimization | Gradient-based L-BFGS (via JAX) | L-BFGS-B (GRAD) + Nelder-Mead (SIMP) via Scipy |
 | Loss function | Single JIT-compiled params → loss | Python loop calling engine per molecule |
-| Precision | float32 sufficient | float64 (but [may not be needed](#1-float64-on-a-consumer-gpu)) |
+| Precision | float32 sufficient | float64 required ([tested](#float32-viability-test-completed)) |
 | System sizes | 100s of atoms | 5–62 atoms |
 
 The optimization row deserves careful discussion.  q2mm already uses
@@ -289,18 +285,35 @@ later ones.
 Tracked in [issue #176](https://github.com/ericchansen/q2mm/issues/176)
 and linked issues.
 
-### Float32 viability test
+### Float32 viability test ✅ Completed
 
-Run existing benchmarks with `jax_enable_x64=False` and compare
-frequency accuracy against the float64 baseline.  If frequencies
-agree to < 0.1 cm⁻¹ for harmonic force fields, float32 can be used
-by default on consumer GPUs — unlocking the full 104.8 TFLOPS on
-the RTX 5090 (a 64× throughput increase over float64).  Float64
-would remain available and recommended for force fields with VdW,
-Morse, or other terms prone to cancellation in autodiff.  Even if
-float32 is not sufficient for final production runs, it may be
-useful for early optimisation cycles where rough convergence is
-acceptable before switching to float64 for refinement.
+**Result: Float32 is NOT viable for the strict 0.1 cm⁻¹ threshold.**
+Errors up to 0.78 cm⁻¹ appear in real vibrational modes for
+rh-enamide (62 atoms).  Near-zero translation/rotation modes show
+errors up to 9.1 cm⁻¹ due to the eigenvalue decomposition losing
+precision in float32.  CH₃F (5 atoms) passes easily (max 0.0002 cm⁻¹).
+
+| System | Modes | Max Δ (cm⁻¹) | Mean Δ | RMSD |
+|--------|------:|-------------:|-------:|-----:|
+| CH₃F (all modes) | 15 | 0.224 | 0.053 | 0.099 |
+| CH₃F (real modes, >50 cm⁻¹) | 9 | **0.0002** | 0.0001 | 0.0001 |
+| rh-enamide (all modes) | 1,404 | 9.127 | 0.174 | 1.007 |
+| rh-enamide (real modes, >50 cm⁻¹) | 1,347 | **0.785** | 0.021 | 0.074 |
+
+CPU throughput is **identical** for float32 vs float64 (1.00×), so the
+benefit would only come on GPU hardware.  On a datacenter GPU (A100,
+FP64:FP32 = 1:2), the advantage would be modest.  On consumer GPUs
+(RTX 5090, FP64:FP32 = 1:64), float32 would unlock 64× throughput
+— but the accuracy loss is too high for molecules with >30 atoms.
+
+**Recommendation:** Keep float64 as default.  Float32 is conditionally
+viable for small, stiff molecules (≤10 atoms) or for early optimisation
+cycles where ±1 cm⁻¹ accuracy is acceptable.  The `JAX_ENABLE_X64=0`
+environment variable can be used to opt in.  See
+[scripts/float32_experiment.py](https://github.com/ericchansen/q2mm/blob/master/scripts/float32_experiment.py)
+for the full experiment.
+
+Tracked in [#178](https://github.com/ericchansen/q2mm/issues/178).
 
 ### Batch kernel launches across molecules with `vmap`
 
