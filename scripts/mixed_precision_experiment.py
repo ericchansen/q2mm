@@ -132,8 +132,8 @@ def run() -> None:
                 max_nz = float(np.max(diff_mixed[near_zero]))
                 print(f"\n    Near-zero modes (|freq| ≤ 50): max Δ = {max_nz:.4f} cm⁻¹ (informational)")
 
-            # Only first mol for rh-enamide
-            if sys_name == "rh-enamide" and mol_i >= 0:
+            # Only process the first molecule for rh-enamide
+            if sys_name == "rh-enamide":
                 break
 
     # Re-enable x64 at end
