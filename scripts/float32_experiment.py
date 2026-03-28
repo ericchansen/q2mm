@@ -34,15 +34,16 @@ def run_experiment(output_path: str) -> None:
     import jax.numpy as jnp
 
     precision = "float64" if jax.config.jax_enable_x64 else "float32"
+    backend = jax.default_backend()
     print(f"\n{'=' * 60}")
-    print(f"Running with {precision} (x64_enabled={jax.config.jax_enable_x64})")
+    print(f"Running with {precision} on {backend} (x64_enabled={jax.config.jax_enable_x64})")
     # Verify actual dtype
     test_arr = jnp.array([1.0])
     print(f"jnp.array([1.0]).dtype = {test_arr.dtype}")
     print(f"{'=' * 60}")
 
     engine = JaxEngine()
-    results: dict[str, dict] = {"precision": precision}
+    results: dict[str, dict] = {"precision": precision, "backend": backend}
 
     # --- CH3F ---
     ch3f = SYSTEMS["ch3f"]
@@ -199,7 +200,10 @@ def compare_results(f64_file: str, f32_file: str) -> None:
     if "throughput_ch3f" in f64 and "throughput_ch3f" in f32:
         tp64_ch3f = f64["throughput_ch3f"]["evals_per_sec"]
         tp32_ch3f = f32["throughput_ch3f"]["evals_per_sec"]
-        print("\n  THROUGHPUT (CPU):")
+        print("\n  THROUGHPUT:")
+        b64 = f64.get("backend", "unknown")
+        b32 = f32.get("backend", "unknown")
+        print(f"    (devices: f64={b64}, f32={b32})")
         print(f"    CH3F     float64: {tp64_ch3f:.0f} evals/s")
         print(f"    CH3F     float32: {tp32_ch3f:.0f} evals/s  ({tp32_ch3f / tp64_ch3f:.2f}x)")
 
@@ -234,9 +238,21 @@ if __name__ == "__main__":
 
     cmd = sys.argv[1]
     if cmd == "run64":
+        import jax
+
+        if not jax.config.jax_enable_x64:
+            print("ERROR: run64 requires float64 but jax_enable_x64 is False.")
+            print("       Unset JAX_ENABLE_X64 or set JAX_ENABLE_X64=1")
+            sys.exit(1)
         out = sys.argv[2] if len(sys.argv) > 2 else "/tmp/float64_results.json"
         run_experiment(out)
     elif cmd == "run32":
+        import jax
+
+        if jax.config.jax_enable_x64:
+            print("ERROR: run32 requires float32 but jax_enable_x64 is True.")
+            print("       Set JAX_ENABLE_X64=0 before running this script.")
+            sys.exit(1)
         out = sys.argv[2] if len(sys.argv) > 2 else "/tmp/float32_results.json"
         run_experiment(out)
     elif cmd == "compare":

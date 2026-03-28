@@ -12,6 +12,9 @@ file covers only behaviour unique to the JAX backend:
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -28,6 +31,37 @@ from test._shared import make_diatomic
 
 from q2mm.backends.mm.jax_engine import JaxEngine, _build_vdw_pairs
 from q2mm.models.forcefield import BondParam, ForceField
+
+
+class TestJaxEnableX64EnvVar:
+    """Verify _jax_common respects JAX_ENABLE_X64 env var."""
+
+    _CHECK_SCRIPT = "import jax; from q2mm.backends.mm._jax_common import _HAS_JAX; print(jax.config.jax_enable_x64)"
+
+    def test_default_enables_x64(self) -> None:
+        """Without JAX_ENABLE_X64, importing _jax_common enables float64."""
+        result = subprocess.run(
+            [sys.executable, "-c", self._CHECK_SCRIPT],
+            capture_output=True,
+            text=True,
+            env={k: v for k, v in __import__("os").environ.items() if k != "JAX_ENABLE_X64"},
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "True"
+
+    def test_explicit_zero_disables_x64(self) -> None:
+        """JAX_ENABLE_X64=0 prevents _jax_common from forcing float64."""
+        import os
+
+        env = {**os.environ, "JAX_ENABLE_X64": "0"}
+        result = subprocess.run(
+            [sys.executable, "-c", self._CHECK_SCRIPT],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "False"
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
