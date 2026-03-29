@@ -37,7 +37,17 @@ class TestParamIndicesByType:
     def test_correct_keys(self) -> None:
         ff = _full_ff()
         indices = ff.get_param_indices_by_type()
-        expected_keys = {"bond_k", "bond_eq", "angle_k", "angle_eq", "torsion_k", "vdw_radius", "vdw_epsilon"}
+        expected_keys = {
+            "bond_k",
+            "bond_eq",
+            "angle_k",
+            "angle_eq",
+            "torsion_k",
+            "vdw_radius",
+            "vdw_epsilon",
+            "ub_k",
+            "ub_eq",
+        }
         assert set(indices.keys()) == expected_keys
 
     def test_bond_indices(self) -> None:

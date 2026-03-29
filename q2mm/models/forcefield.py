@@ -201,6 +201,10 @@ class AngleParam:
 
     Units (canonical): ``force_constant`` in kcal/(mol·rad²),
     ``equilibrium`` in degrees.  Energy convention: ``E = k·(θ − θ₀)²``.
+
+    Optional Urey-Bradley 1-3 distance term (CHARMM):
+    ``E_UB = ub_force_constant · (r_13 − ub_equilibrium)²``
+    where ``r_13`` is the distance between the first and third atoms.
     """
 
     elements: tuple[str, str, str]  # (outer, center, outer)
@@ -209,6 +213,8 @@ class AngleParam:
     label: str = ""
     env_id: str = ""  # Environment ID for disambiguating same-element params
     ff_row: int | None = None  # Source force-field row for exact legacy parity
+    ub_force_constant: float | None = None  # kcal/(mol·Å²), None = no UB term
+    ub_equilibrium: float | None = None  # Å, None = no UB term
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -297,13 +303,25 @@ class ForceField:
     ]
 
     @property
+    def _ub_angles(self) -> list[AngleParam]:
+        """Angles that have Urey-Bradley parameters set."""
+        return [a for a in self.angles if a.ub_force_constant is not None and a.ub_equilibrium is not None]
+
+    @property
+    def has_urey_bradley(self) -> bool:
+        """Whether any angle has Urey-Bradley parameters."""
+        return len(self._ub_angles) > 0
+
+    @property
     def n_params(self) -> int:
         """Number of adjustable scalar parameters in get_param_vector().
 
         Layout: 2 per bond (k, r0) + 2 per angle (k, theta0)
-        + 1 per torsion (k) + 2 per vdw (radius, epsilon).
+        + 1 per torsion (k) + 2 per vdw (radius, epsilon)
+        + 2 per UB angle (ub_k, ub_eq).
         """
-        return sum(len(slots) * len(getattr(self, attr)) for attr, slots in self._PARAM_SLOTS)
+        base = sum(len(slots) * len(getattr(self, attr)) for attr, slots in self._PARAM_SLOTS)
+        return base + 2 * len(self._ub_angles)
 
     def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
         """Find bond parameter by element pair and optional environment ID."""
@@ -373,12 +391,16 @@ class ForceField:
     def get_param_vector(self) -> np.ndarray:
         """Get all adjustable parameters as a flat vector.
 
-        Order: bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon).
+        Order: bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon),
+        UB (ub_k, ub_eq) for angles with Urey-Bradley terms.
         """
         values: list[float] = []
         for attr, slots in self._PARAM_SLOTS:
             for param in getattr(self, attr):
                 values.extend(getattr(param, s) for s in slots)
+        for angle in self._ub_angles:
+            values.append(angle.ub_force_constant)
+            values.append(angle.ub_equilibrium)
         return np.array(values)
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
@@ -489,6 +511,10 @@ class ForceField:
                 for s in slots:
                     setattr(param, s, vec[idx])
                     idx += 1
+        for angle in self._ub_angles:
+            angle.ub_force_constant = vec[idx]
+            angle.ub_equilibrium = vec[idx + 1]
+            idx += 2
 
     def with_params(self, vec: np.ndarray) -> ForceField:
         """Return a new ForceField with parameters set from *vec*.
@@ -521,6 +547,14 @@ class ForceField:
                     idx += 1
                 new_list.append(replace(param, **updates))
             new_collections[attr] = new_list
+        # Update UB params on the new angle list
+        ub_angles = [
+            a for a in new_collections["angles"] if a.ub_force_constant is not None and a.ub_equilibrium is not None
+        ]
+        for angle in ub_angles:
+            angle.ub_force_constant = float(vec[idx])
+            angle.ub_equilibrium = float(vec[idx + 1])
+            idx += 2
         return replace(self, **new_collections)
 
     # Default bounds per parameter type (min, max) in canonical units.
@@ -535,6 +569,8 @@ class ForceField:
         "torsion_k": (-20.0, 20.0),
         "vdw_radius": (0.5, 5.0),
         "vdw_epsilon": (0.001, 2.0),
+        "ub_k": (0.0, 500.0),
+        "ub_eq": (1.0, 4.0),
     }
 
     # Maps ForceField param-vector slot types to legacy STEPS keys for
@@ -547,15 +583,17 @@ class ForceField:
         "torsion_k": "df",
         "vdw_radius": "vdwr",
         "vdw_epsilon": "vdwfc",
+        "ub_k": "bf",
+        "ub_eq": "be",
     }
 
     def get_param_indices_by_type(self) -> dict[str, list[int]]:
         """Map parameter type names to their indices in the param vector.
 
         Returns a dict with keys ``bond_k``, ``bond_eq``, ``angle_k``,
-        ``angle_eq``, ``torsion_k``, ``vdw_radius``, ``vdw_epsilon`` and
-        values that are lists of integer indices into
-        :meth:`get_param_vector`.
+        ``angle_eq``, ``torsion_k``, ``vdw_radius``, ``vdw_epsilon``,
+        ``ub_k``, ``ub_eq`` and values that are lists of integer indices
+        into :meth:`get_param_vector`.
         """
         idx = 0
         result: dict[str, list[int]] = {
@@ -566,6 +604,8 @@ class ForceField:
             "torsion_k": [],
             "vdw_radius": [],
             "vdw_epsilon": [],
+            "ub_k": [],
+            "ub_eq": [],
         }
         for _ in self.bonds:
             result["bond_k"].append(idx)
@@ -581,6 +621,10 @@ class ForceField:
         for _ in self.vdws:
             result["vdw_radius"].append(idx)
             result["vdw_epsilon"].append(idx + 1)
+            idx += 2
+        for _ in self._ub_angles:
+            result["ub_k"].append(idx)
+            result["ub_eq"].append(idx + 1)
             idx += 2
         return result
 
@@ -599,6 +643,8 @@ class ForceField:
             labels.append("torsion_k")
         for _ in self.vdws:
             labels.extend(["vdw_radius", "vdw_epsilon"])
+        for _ in self._ub_angles:
+            labels.extend(["ub_k", "ub_eq"])
         return labels
 
     def get_step_sizes(self) -> np.ndarray:
@@ -623,14 +669,15 @@ class ForceField:
         """Get (min, max) bounds for each element of the param vector.
 
         Matches the layout of :meth:`get_param_vector`:
-        bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon).
+        bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon),
+        UB (ub_k, ub_eq) for angles with Urey-Bradley terms.
 
         Parameters
         ----------
         overrides : dict, optional
             Override default bounds per type. Keys: ``bond_k``,
             ``bond_eq``, ``angle_k``, ``angle_eq``, ``torsion_k``,
-            ``vdw_radius``, ``vdw_epsilon``.
+            ``vdw_radius``, ``vdw_epsilon``, ``ub_k``, ``ub_eq``.
 
         """
         b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
@@ -646,6 +693,9 @@ class ForceField:
         for _vdw in self.vdws:
             bounds.append(b["vdw_radius"])
             bounds.append(b["vdw_epsilon"])
+        for _ub in self._ub_angles:
+            bounds.append(b["ub_k"])
+            bounds.append(b["ub_eq"])
         return bounds
 
     def copy(self) -> ForceField:
