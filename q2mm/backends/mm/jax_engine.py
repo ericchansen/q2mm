@@ -466,6 +466,7 @@ class JaxHandle:
     _energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
     _coord_hess_fn: Callable | None = field(default=None, repr=False)
+    _batched_coord_hess_fn: Callable | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------

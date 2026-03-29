@@ -955,8 +955,85 @@ class ObjectiveFunction:
             self.history.append(float(s))
         return scores
 
+    def _can_batch_hessians(self) -> bool:
+        """Check whether batched Hessian evaluation can be used.
+
+        Batching is possible when the engine is a
+        :class:`~q2mm.backends.mm.jax_engine.JaxEngine`, there are at
+        least two molecules, and some references require Hessian-derived
+        data (frequencies or eigenmatrix).
+        """
+        try:
+            from q2mm.backends.mm.jax_engine import JaxEngine
+        except ImportError:
+            return False
+
+        if not isinstance(self.engine, JaxEngine):
+            return False
+        if len(self.molecules) < 2:
+            return False
+
+        hessian_kinds = {"frequency", "eig_diagonal", "eig_offdiagonal"}
+        return any(ref.kind in hessian_kinds for ref in self.reference.values)
+
+    def _precompute_batched_hessians(
+        self,
+        forcefield: ForceField,
+    ) -> dict[int, np.ndarray]:
+        """Pre-compute Hessians for topology-compatible molecule groups.
+
+        Groups molecules that share the same topology and uses
+        ``jax.vmap`` via :func:`~q2mm.backends.mm.batched.batched_hessians`
+        to compute all Hessians in a single vectorised call per group.
+
+        Returns a mapping from molecule index to its ``(3N, 3N)`` Hessian
+        in Hartree/Bohr².  Only molecules that need Hessian-derived data
+        are included.
+        """
+        from q2mm.backends.mm.batched import batched_hessians, group_by_topology
+
+        hessian_kinds = {"frequency", "eig_diagonal", "eig_offdiagonal"}
+        mol_indices_needing_hess: set[int] = set()
+        for ref in self.reference.values:
+            if ref.kind in hessian_kinds:
+                mol_indices_needing_hess.add(ref.molecule_idx)
+
+        if not mol_indices_needing_hess:
+            return {}
+
+        mols_subset = [self.molecules[i] for i in sorted(mol_indices_needing_hess)]
+        idx_list = sorted(mol_indices_needing_hess)
+
+        # Build handle cache for molecules that already have handles
+        handle_cache: dict[int, object] = {}
+        for pos, mol_idx in enumerate(idx_list):
+            if mol_idx in self._handles:
+                handle_cache[pos] = self._handles[mol_idx]
+
+        groups = group_by_topology(
+            mols_subset,
+            forcefield,
+            self.engine,  # type: ignore[arg-type]
+            handles=handle_cache,  # type: ignore[arg-type]
+        )
+
+        hess_map: dict[int, np.ndarray] = {}
+        for group in groups:
+            hessians = batched_hessians(group, forcefield)
+            for local_i, hess in enumerate(hessians):
+                original_idx = idx_list[group.mol_indices[local_i]]
+                hess_map[original_idx] = hess
+
+        return hess_map
+
     def _compute_residuals(self, forcefield: ForceField) -> np.ndarray:
         """Compute weighted residuals for all reference observations.
+
+        When the engine is a :class:`~q2mm.backends.mm.jax_engine.JaxEngine`
+        and multiple molecules share the same topology, Hessians are
+        computed in a single ``jax.vmap`` call per topology group
+        (batched path).  Otherwise, falls back to per-molecule sequential
+        evaluation.
 
         Args:
             forcefield: The force field to evaluate (typically a temporary
@@ -966,13 +1043,29 @@ class ObjectiveFunction:
             np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
 
         """
+        # Attempt batched Hessian pre-computation
+        precomputed_hessians: dict[int, np.ndarray] = {}
+        if self._can_batch_hessians():
+            try:
+                precomputed_hessians = self._precompute_batched_hessians(forcefield)
+            except Exception:
+                logger.debug(
+                    "Batched Hessian pre-computation failed; falling back to sequential evaluation.",
+                    exc_info=True,
+                )
+                precomputed_hessians = {}
+
         calc_cache: dict[int, dict] = {}
 
         residuals = []
         for ref in self.reference.values:
             mol_idx = ref.molecule_idx
             if mol_idx not in calc_cache:
-                calc_cache[mol_idx] = self._evaluate_molecule(mol_idx, forcefield)
+                calc_cache[mol_idx] = self._evaluate_molecule(
+                    mol_idx,
+                    forcefield,
+                    precomputed_hessian=precomputed_hessians.get(mol_idx),
+                )
 
             calc = calc_cache[mol_idx]
             calc_value = self._extract_value(calc, ref)
@@ -1267,16 +1360,28 @@ class ObjectiveFunction:
             self._handles[mol_idx] = self.engine.create_context(mol, self.forcefield)
         return self._handles[mol_idx]
 
-    def _evaluate_molecule(self, mol_idx: int, forcefield: ForceField) -> dict:
+    def _evaluate_molecule(
+        self,
+        mol_idx: int,
+        forcefield: ForceField,
+        *,
+        precomputed_hessian: np.ndarray | None = None,
+    ) -> dict:
         """Run MM calculations for a single molecule.
 
         Delegates to per-data-type evaluators where available, populating
         the results dict with the same keys for backward compatibility.
 
+        When *precomputed_hessian* is provided (from batched vmap
+        evaluation), it is used directly for frequency and eigenmatrix
+        calculations, avoiding a redundant ``engine.hessian()`` call.
+
         Args:
             mol_idx (int): Index into the molecules list.
             forcefield: The force field to evaluate (typically a temporary
                 instance from :meth:`~ForceField.with_params`).
+            precomputed_hessian: Optional ``(3N, 3N)`` Hessian in
+                Hartree/Bohr² from batched evaluation.
 
         Returns:
             dict: Calculated results keyed by data type (e.g.
@@ -1300,8 +1405,16 @@ class ObjectiveFunction:
             result["energy"] = er.energy
 
         if "frequency" in needed and freq_ev is not None:
-            fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure)
-            result["frequencies"] = fr.frequencies
+            if precomputed_hessian is not None:
+                from q2mm.models.hessian import hessian_to_frequencies
+
+                result["frequencies"] = hessian_to_frequencies(
+                    precomputed_hessian,
+                    list(mol.symbols),
+                )
+            else:
+                fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure)
+                result["frequencies"] = fr.frequencies
 
         if geom_ev is not None and needed & geom_ev.HANDLED_KINDS:
             geo_needed = frozenset(needed & geom_ev.HANDLED_KINDS)
@@ -1322,14 +1435,35 @@ class ObjectiveFunction:
                 result["torsion_coords"] = gr.torsion_coords
 
         if eigm_ev is not None and needed & eigm_ev.HANDLED_KINDS:
-            emr = eigm_ev.compute(
-                self.engine,
-                mol,
-                forcefield,
-                structure=structure,
-                mol_idx=mol_idx,
-            )
-            result["eigenmatrix"] = emr.eigenmatrix
+            if precomputed_hessian is not None:
+                from q2mm.models.hessian import decompose, transform_to_eigenmatrix
+
+                # Use precomputed Hessian to build eigenmatrix directly
+                eigm_evaluator = eigm_ev
+                if mol_idx not in eigm_evaluator._qm_eigenvectors:
+                    if mol.hessian is None:
+                        raise ValueError(
+                            f"Molecule {mol_idx} ({mol.name}) has no QM Hessian. "
+                            "Eigenmatrix training requires a QM Hessian for the "
+                            "eigenvector basis."
+                        )
+                    _, qm_evecs = decompose(mol.hessian)
+                    eigm_evaluator._qm_eigenvectors[mol_idx] = qm_evecs
+
+                qm_evecs = eigm_evaluator._qm_eigenvectors[mol_idx]
+                result["eigenmatrix"] = transform_to_eigenmatrix(
+                    precomputed_hessian,
+                    qm_evecs,
+                )
+            else:
+                emr = eigm_ev.compute(
+                    self.engine,
+                    mol,
+                    forcefield,
+                    structure=structure,
+                    mol_idx=mol_idx,
+                )
+                result["eigenmatrix"] = emr.eigenmatrix
 
         return result
 
