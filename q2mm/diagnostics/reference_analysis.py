@@ -91,8 +91,8 @@ class FrequencyComparison:
         rmsd: Root-mean-square deviation (cm⁻¹).
         mae: Mean absolute error (cm⁻¹).
         max_deviation: Largest absolute difference (cm⁻¹).
-        per_mode: Per-mode detail as list of dicts with keys ``qm``,
-            ``other``, ``diff``, ``pct_err``.
+        per_mode: Per-mode detail as list of dicts with keys ``mode``
+            (int), ``qm``, ``other``, ``diff``, ``pct_err`` (float).
 
     """
 
@@ -102,7 +102,7 @@ class FrequencyComparison:
     rmsd: float
     mae: float
     max_deviation: float
-    per_mode: list[dict[str, float]] = field(default_factory=list)
+    per_mode: list[dict[str, int | float]] = field(default_factory=list)
 
 
 @dataclass
@@ -116,6 +116,7 @@ class ModeCouplingAnalysis:
         mean_coupling: Mean normalized off-diagonal value.
         strongly_coupled_pairs: List of ``(i, j, value)`` tuples for
             pairs exceeding *coupling_threshold*.
+        coupling_threshold: Threshold used to flag strongly coupled pairs.
 
     """
 
@@ -123,6 +124,7 @@ class ModeCouplingAnalysis:
     max_coupling: float
     mean_coupling: float
     strongly_coupled_pairs: list[tuple[int, int, float]] = field(default_factory=list)
+    coupling_threshold: float = 0.1
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +364,7 @@ def analyze_mode_coupling(
         max_coupling=max_coupling,
         mean_coupling=mean_coupling,
         strongly_coupled_pairs=pairs,
+        coupling_threshold=coupling_threshold,
     )
 
 
@@ -466,7 +469,7 @@ def format_hessian_report(
         lines.append(f"  Max coupling:    {coupling.max_coupling:.4f}")
         lines.append(f"  Mean coupling:   {coupling.mean_coupling:.4f}")
         if coupling.strongly_coupled_pairs:
-            lines.append(f"  Strongly coupled pairs (>{coupling.strongly_coupled_pairs[0][2]:.2f}):")
+            lines.append(f"  Strongly coupled pairs (>{coupling.coupling_threshold:.2f}):")
             for i, j, val in coupling.strongly_coupled_pairs[:10]:
                 lines.append(f"    modes {i:3d}–{j:3d}: {val:.4f}")
 
