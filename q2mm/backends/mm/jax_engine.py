@@ -1,17 +1,21 @@
 """JAX-based differentiable MM backend for analytical gradients.
 
-Provides a pure-JAX molecular mechanics engine using harmonic bond/angle,
-cosine torsion (atan2-based signed dihedral), and 12-6 Lennard-Jones energy
-functions.  All energy functions are differentiable via ``jax.grad``,
-enabling analytical gradient computation for force field parameter
-optimization.
+Provides a pure-JAX molecular mechanics engine supporting both harmonic
+(OPLSAA-style) and MM3 functional forms.  All energy functions are
+differentiable via ``jax.grad``, enabling analytical gradient computation
+for force field parameter optimization.
+
+**Harmonic forms** (default): harmonic bond/angle, 12-6 Lennard-Jones vdW,
+cosine torsion.
+
+**MM3 forms**: cubic bond stretch, sextic angle bend, Buckingham exp-6 vdW,
+cosine torsion (shared with harmonic).  Based on Allinger et al., JACS 1989,
+111, 8551.
 
 ForceField stores parameters in canonical units (kcal/mol/Å² for bond_k,
 kcal/mol/rad² for angle_k) with energy convention ``E = k·(x − x₀)²``.
 The JAX energy functions use the same convention, so no unit conversion is
 needed at the engine boundary.
-
-For MM3-specific JAX forms, see issue #91.
 """
 
 from __future__ import annotations
@@ -202,6 +206,130 @@ def _lj_12_6_energy(
     return jnp.sum(4.0 * eps_ij * (sr6**2 - sr6))
 
 
+# ---------------------------------------------------------------------------
+# MM3-style energy functions (pure JAX, differentiable)
+# ---------------------------------------------------------------------------
+# Allinger et al., JACS 1989, 111, 8551.
+
+_MM3_BOND_C3 = 2.55
+_MM3_BOND_C4 = (7.0 / 12.0) * 2.55**2
+_MM3_ANGLE_C3 = -0.014
+_MM3_ANGLE_C4 = 5.6e-5
+_MM3_ANGLE_C5 = -7.0e-7
+_MM3_ANGLE_C6 = 9.0e-10
+_RAD_TO_DEG = 180.0 / jnp.pi if jnp is not None else 57.29577951308232
+
+
+def _mm3_bond_energy(k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_indices: jnp.ndarray) -> jnp.ndarray:
+    """MM3 cubic bond stretch: ``E = Σ k·dr²·(1 − 2.55·dr + c4·dr²)``.
+
+    Args:
+        k: Force constants, shape ``(n_bonds,)``, kcal/mol/Å².
+        r0: Equilibrium distances, shape ``(n_bonds,)``, Å.
+        coords: Cartesian coordinates, shape ``(n_atoms, 3)``, Å.
+        bond_indices: Atom index pairs, shape ``(n_bonds, 2)``.
+
+    Returns:
+        Scalar total bond energy in kcal/mol.
+
+    """
+    dr_vec = coords[bond_indices[:, 0]] - coords[bond_indices[:, 1]]
+    r = _safe_norm(dr_vec, axis=-1)
+    dr = r - r0
+    return jnp.sum(k * dr**2 * (1.0 - _MM3_BOND_C3 * dr + _MM3_BOND_C4 * dr**2))
+
+
+def _mm3_angle_energy(
+    k: jnp.ndarray, theta0: jnp.ndarray, coords: jnp.ndarray, angle_indices: jnp.ndarray
+) -> jnp.ndarray:
+    """MM3 sextic angle bend with degree-based anharmonic corrections.
+
+    ``E = Σ k·dθ²·(1 + a3·dθ_deg + a4·dθ_deg² + a5·dθ_deg³ + a6·dθ_deg⁴)``
+
+    where ``dθ_deg = (θ − θ₀) · (180/π)`` is the angular deviation in
+    degrees, matching the MM3 convention.
+
+    Args:
+        k: Force constants, shape ``(n_angles,)``, kcal/mol/rad².
+        theta0: Equilibrium angles, shape ``(n_angles,)``, radians.
+        coords: Cartesian coordinates, shape ``(n_atoms, 3)``, Å.
+        angle_indices: Atom index triples ``(i, j, k)``, shape
+            ``(n_angles, 3)``, where ``j`` is the central atom.
+
+    Returns:
+        Scalar total angle energy in kcal/mol.
+
+    """
+    rij = coords[angle_indices[:, 0]] - coords[angle_indices[:, 1]]
+    rkj = coords[angle_indices[:, 2]] - coords[angle_indices[:, 1]]
+    rij_norm = rij / _safe_norm_keepdims(rij, axis=-1)
+    rkj_norm = rkj / _safe_norm_keepdims(rkj, axis=-1)
+    cos_theta = jnp.sum(rij_norm * rkj_norm, axis=-1)
+    theta = _safe_arccos(cos_theta)
+    dtheta = theta - theta0
+    dtheta_deg = dtheta * _RAD_TO_DEG
+    anharmonic = (
+        1.0
+        + _MM3_ANGLE_C3 * dtheta_deg
+        + _MM3_ANGLE_C4 * dtheta_deg**2
+        + _MM3_ANGLE_C5 * dtheta_deg**3
+        + _MM3_ANGLE_C6 * dtheta_deg**4
+    )
+    return jnp.sum(k * dtheta**2 * anharmonic)
+
+
+def _mm3_vdw_energy(
+    per_atom_radius: jnp.ndarray,
+    per_atom_epsilon: jnp.ndarray,
+    coords: jnp.ndarray,
+    pair_indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """MM3 Buckingham exp-6 vdW with short-range repulsive wall.
+
+    ``E = ε·(184000·exp(−12·r/rv) − 2.25·(rv/r)⁶)``
+
+    where ``rv = r_i + r_j`` and ``ε = √(ε_i·ε_j)``.  Below ``r < 0.34·rv``
+    the attractive r⁻⁶ dominates the exponential, so we switch to a hard
+    r⁻¹² repulsion: ``ε·184000·exp(−12·rc/rv)·(rc/r)¹²``.
+
+    Args:
+        per_atom_radius: Per-atom vdW radius, shape ``(n_atoms,)``, Å.
+        per_atom_epsilon: Per-atom well depth, shape ``(n_atoms,)``,
+            kcal/mol.
+        coords: Cartesian coordinates, shape ``(n_atoms, 3)``, Å.
+        pair_indices: Non-excluded atom pairs ``(i, j)`` with
+            ``i < j``, shape ``(n_pairs, 2)``.
+
+    Returns:
+        Scalar total vdW energy in kcal/mol.
+
+    """
+    if pair_indices.shape[0] == 0:
+        return jnp.float64(0.0)
+
+    rad_i = per_atom_radius[pair_indices[:, 0]]
+    rad_j = per_atom_radius[pair_indices[:, 1]]
+    eps_i = per_atom_epsilon[pair_indices[:, 0]]
+    eps_j = per_atom_epsilon[pair_indices[:, 1]]
+
+    rv = rad_i + rad_j
+    eps_ij = jnp.sqrt(eps_i * eps_j)
+
+    dr_vec = coords[pair_indices[:, 0]] - coords[pair_indices[:, 1]]
+    r = _safe_norm(dr_vec, axis=-1)
+
+    rc = 0.34 * rv
+
+    # Normal Buckingham exp-6 region (r >= rc)
+    ratio = rv / r
+    e_buckingham = eps_ij * (184000.0 * jnp.exp(-12.0 * r / rv) - 2.25 * ratio**6)
+
+    # Short-range repulsive wall (r < rc)
+    e_wall = eps_ij * 184000.0 * jnp.exp(-12.0 * rc / rv) * (rc / r) ** 12
+
+    return jnp.sum(jnp.where(r >= rc, e_buckingham, e_wall))
+
+
 def _torsion_energy(
     k: jnp.ndarray,
     periodicity: jnp.ndarray,
@@ -332,6 +460,8 @@ class JaxHandle:
     n_angle_types: int
     n_torsion_types: int
     n_vdw_types: int
+    # Functional form used to compile the energy function
+    functional_form: str = "harmonic"
     # Compiled energy function (captures topology, JIT-compiled)
     _energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
@@ -378,20 +508,20 @@ class JaxEngine(MMEngine):
         """Human-readable engine name including device type.
 
         Returns:
-            str: e.g. ``"JAX (harmonic, gpu)"`` or ``"JAX (harmonic, cpu)"``.
+            str: e.g. ``"JAX (harmonic, gpu)"`` or ``"JAX (mm3, cpu)"``.
 
         """
         backend = jax.default_backend()
-        return f"JAX (harmonic, {backend})"
+        return f"JAX ({backend})"
 
     def supported_functional_forms(self) -> frozenset[str]:
-        """JAX currently supports harmonic forms only (see issue #91 for MM3).
+        """JAX supports harmonic and MM3 functional forms.
 
         Returns:
-            frozenset[str]: ``{"harmonic"}``.
+            frozenset[str]: ``{"harmonic", "mm3"}``.
 
         """
-        return frozenset({"harmonic"})
+        return frozenset({"harmonic", "mm3"})
 
     def is_available(self) -> bool:
         """Check if JAX is installed.
@@ -530,6 +660,7 @@ class JaxEngine(MMEngine):
             n_angle_types=len(forcefield.angles),
             n_torsion_types=len(forcefield.torsions),
             n_vdw_types=len(forcefield.vdws),
+            functional_form=_resolve_form(forcefield),
         )
 
         # Compile energy function
@@ -703,6 +834,18 @@ class JaxEngine(MMEngine):
 # ---------------------------------------------------------------------------
 
 
+def _resolve_form(forcefield: ForceField) -> str:
+    """Resolve the functional form string from a ForceField.
+
+    Defaults to ``"harmonic"`` when unset (unlike OpenMM which defaults
+    to MM3 for backward compatibility).
+
+    """
+    if forcefield.functional_form is None:
+        return "harmonic"
+    return forcefield.functional_form.value
+
+
 def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     """Create a JIT-compiled energy function for a specific topology.
 
@@ -710,6 +853,9 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     where ``params`` is the flat parameter vector from
     ``ForceField.get_param_vector()`` and ``coords`` is shape
     ``(n_atoms, 3)`` in Å. Energy is returned in kcal/mol.
+
+    Selects harmonic or MM3 energy functions based on
+    ``handle.functional_form``.
 
     Args:
         handle: A :class:`JaxHandle` with topology arrays populated.
@@ -720,6 +866,8 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
         Callable: JIT-compiled ``energy_fn(params, coords)`` closure.
 
     """
+    use_mm3 = handle.functional_form == "mm3"
+
     # Capture topology as JAX arrays in the closure
     has_bonds = handle.n_bond_types > 0 and len(handle.bond_indices) > 0
     has_angles = handle.n_angle_types > 0 and len(handle.angle_indices) > 0
@@ -761,41 +909,70 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     torsion_offset = _offsets["torsion"]
     vdw_offset = _offsets["vdw"]
 
-    @jax.jit
-    def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
-        E = jnp.float64(0.0)
+    if use_mm3:
 
-        if has_bonds:
-            bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
-            # bond_k already in kcal/mol/Å² (canonical units)
-            k = bond_params[_bond_map, 0] * _BOND_K_CONV
-            r0 = bond_params[_bond_map, 1]
-            E = E + _harmonic_bond_energy(k, r0, coords, _bond_indices)
+        @jax.jit
+        def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
+            E = jnp.float64(0.0)
 
-        if has_angles:
-            angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
-            # angle_k already in kcal/mol/rad² (canonical units)
-            k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
-            theta0_deg = angle_params[_angle_map, 1]
-            theta0 = theta0_deg * (jnp.pi / 180.0)
-            E = E + _harmonic_angle_energy(k, theta0, coords, _angle_indices)
+            if has_bonds:
+                bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
+                k = bond_params[_bond_map, 0] * _BOND_K_CONV
+                r0 = bond_params[_bond_map, 1]
+                E = E + _mm3_bond_energy(k, r0, coords, _bond_indices)
 
-        if has_torsions:
-            torsion_k = params[torsion_offset : torsion_offset + n_tt]
-            k = torsion_k[_torsion_map]
-            E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
+            if has_angles:
+                angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
+                k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
+                theta0_deg = angle_params[_angle_map, 1]
+                theta0 = theta0_deg * (jnp.pi / 180.0)
+                E = E + _mm3_angle_energy(k, theta0, coords, _angle_indices)
 
-        if has_vdw:
-            vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
-            # Map per-type → per-atom (radius and epsilon)
-            per_atom_radius = vdw_params[_atom_vdw_map, 0]
-            per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
-            # Convert radius to sigma for 12-6 LJ: sigma = 2*radius / 2^(1/6)
-            # (here radius is Rmin/2, so sigma = Rmin / 2^(1/6))
-            per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
-            E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
+            if has_torsions:
+                torsion_k = params[torsion_offset : torsion_offset + n_tt]
+                k = torsion_k[_torsion_map]
+                E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
 
-        return E
+            if has_vdw:
+                vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
+                per_atom_radius = vdw_params[_atom_vdw_map, 0]
+                per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
+                E = E + _mm3_vdw_energy(per_atom_radius, per_atom_epsilon, coords, _vdw_pairs)
+
+            return E
+
+    else:
+
+        @jax.jit
+        def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
+            E = jnp.float64(0.0)
+
+            if has_bonds:
+                bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
+                k = bond_params[_bond_map, 0] * _BOND_K_CONV
+                r0 = bond_params[_bond_map, 1]
+                E = E + _harmonic_bond_energy(k, r0, coords, _bond_indices)
+
+            if has_angles:
+                angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
+                k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
+                theta0_deg = angle_params[_angle_map, 1]
+                theta0 = theta0_deg * (jnp.pi / 180.0)
+                E = E + _harmonic_angle_energy(k, theta0, coords, _angle_indices)
+
+            if has_torsions:
+                torsion_k = params[torsion_offset : torsion_offset + n_tt]
+                k = torsion_k[_torsion_map]
+                E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
+
+            if has_vdw:
+                vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
+                per_atom_radius = vdw_params[_atom_vdw_map, 0]
+                per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
+                per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
+                E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
+
+            return E
 
     return energy_fn
 
