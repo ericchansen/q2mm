@@ -167,6 +167,28 @@ class _TorsionTerm:
 
 
 @dataclass
+class _UBTerm:
+    """Internal record mapping a Urey-Bradley 1-3 pair to its OpenMM force index.
+
+    Attributes:
+        force_index: Index of this UB bond in the OpenMM bond force object.
+        atom_i: First atom of the angle (outer).
+        atom_k: Third atom of the angle (outer).
+        elements: Element symbols for the three angle atoms (for matching).
+        env_id: Chemical environment identifier for parameter matching.
+        ff_row: Row index in the source force field file, if applicable.
+
+    """
+
+    force_index: int
+    atom_i: int
+    atom_k: int
+    elements: tuple[str, str, str]
+    env_id: str = ""
+    ff_row: int | None = None
+
+
+@dataclass
 class OpenMMHandle:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
@@ -179,10 +201,12 @@ class OpenMMHandle:
         angle_force: The OpenMM angle force object, or ``None`` if no angles.
         torsion_force: The OpenMM torsion force object, or ``None`` if no torsions.
         vdw_force: The OpenMM vdW force object, or ``None`` if no vdW terms.
+        ub_force: The OpenMM HarmonicBondForce for Urey-Bradley terms, or ``None``.
         bond_terms: Mapping of molecule bonds to force indices.
         angle_terms: Mapping of molecule angles to force indices.
         torsion_terms: Mapping of molecule torsions to force indices.
         vdw_terms: Mapping of atoms to vdW particle indices.
+        ub_terms: Mapping of Urey-Bradley 1-3 pairs to force indices.
         exceptions_14: 1-4 nonbonded exceptions (harmonic form only).
         functional_form: The functional form used when the handle was created.
 
@@ -196,10 +220,12 @@ class OpenMMHandle:
     angle_force: object | None
     torsion_force: object | None
     vdw_force: object | None
+    ub_force: object | None
     bond_terms: list[_BondTerm]
     angle_terms: list[_AngleTerm]
     torsion_terms: list[_TorsionTerm]
     vdw_terms: list[_VdwTerm]
+    ub_terms: list[_UBTerm] = field(default_factory=list)
     exceptions_14: list[_Exception14] = field(default_factory=list)
     functional_form: FunctionalForm = FunctionalForm.MM3
 
@@ -799,6 +825,35 @@ class OpenMMEngine(MMEngine):
                 )
             )
 
+        # --- Assign Urey-Bradley terms (1-3 distance for CHARMM angles) ---
+        ub_force = None
+        ub_terms: list[_UBTerm] = []
+        for angle_term in angle_terms:
+            param = _match_angle(forcefield, angle_term.elements, env_id=angle_term.env_id, ff_row=angle_term.ff_row)
+            if param is None or param.ub_force_constant is None:
+                continue
+            if ub_force is None:
+                ub_force = mm.HarmonicBondForce()
+            # UB uses atom_i and atom_k (the two outer atoms of the angle)
+            # Convert: k in kcal/(mol·Å²) → kJ/(mol·nm²) via _bond_k_to_harmonic
+            # eq in Å → nm via ang_to_nm
+            force_index = ub_force.addBond(
+                angle_term.atom_i,
+                angle_term.atom_k,
+                ang_to_nm(param.ub_equilibrium),
+                _bond_k_to_harmonic(param.ub_force_constant),
+            )
+            ub_terms.append(
+                _UBTerm(
+                    force_index=force_index,
+                    atom_i=angle_term.atom_i,
+                    atom_k=angle_term.atom_k,
+                    elements=angle_term.elements,
+                    env_id=angle_term.env_id,
+                    ff_row=angle_term.ff_row,
+                )
+            )
+
         # --- Assign proper torsion parameters ---
         torsion_terms: list[_TorsionTerm] = []
         for torsion in molecule.torsions:
@@ -960,6 +1015,11 @@ class OpenMMEngine(MMEngine):
         else:
             vdw_force = None
 
+        if ub_terms:
+            system.addForce(ub_force)
+        else:
+            ub_force = None
+
         integrator, context = self._create_context(system)
         context.setPositions(self._positions(molecule))
 
@@ -972,10 +1032,12 @@ class OpenMMEngine(MMEngine):
             angle_force=angle_force,
             torsion_force=torsion_force,
             vdw_force=vdw_force,
+            ub_force=ub_force,
             bond_terms=bond_terms,
             angle_terms=angle_terms,
             torsion_terms=torsion_terms,
             vdw_terms=vdw_terms,
+            ub_terms=ub_terms,
             exceptions_14=exceptions_14 if use_harmonic and vdw_terms else [],
             functional_form=ff_form,
         )
@@ -1108,6 +1170,20 @@ class OpenMMEngine(MMEngine):
                     )
 
             handle.vdw_force.updateParametersInContext(handle.context)
+
+        if handle.ub_force is not None:
+            for term in handle.ub_terms:
+                param = _match_angle(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                if param is None or param.ub_force_constant is None:
+                    raise ValueError(f"Updated force field is missing UB parameter for angle {term.elements}.")
+                handle.ub_force.setBondParameters(
+                    term.force_index,
+                    term.atom_i,
+                    term.atom_k,
+                    ang_to_nm(param.ub_equilibrium),
+                    _bond_k_to_harmonic(param.ub_force_constant),
+                )
+            handle.ub_force.updateParametersInContext(handle.context)
 
     def export_system_xml(
         self,

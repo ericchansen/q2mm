@@ -166,6 +166,32 @@ def _harmonic_angle_energy(
     return jnp.sum(k * (theta - theta0) ** 2)
 
 
+def _ub_energy(
+    k: jnp.ndarray,
+    r0: jnp.ndarray,
+    coords: jnp.ndarray,
+    ub_indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """Urey-Bradley 1-3 interaction: ``E = Σ k_i · (r_13_i − r0_i)²``.
+
+    Args:
+        k (jnp.ndarray): Force constants, shape ``(n_ub,)``, in kcal/mol/Å².
+        r0 (jnp.ndarray): Equilibrium distances, shape ``(n_ub,)``, in Å.
+        coords (jnp.ndarray): Cartesian coordinates, shape ``(n_atoms, 3)``,
+            in Å.
+        ub_indices (jnp.ndarray): Atom index pairs ``(i, k)`` from the outer
+            atoms of each UB-enabled angle, shape ``(n_ub, 2)``.
+
+    Returns:
+        jnp.ndarray: Scalar total UB energy in kcal/mol.
+
+    """
+    r_ij = coords[ub_indices[:, 0]] - coords[ub_indices[:, 1]]
+    r = _safe_norm(r_ij, axis=-1)
+    dr = r - r0
+    return jnp.sum(k * dr**2)
+
+
 def _lj_12_6_energy(
     per_atom_sigma: jnp.ndarray, per_atom_epsilon: jnp.ndarray, coords: jnp.ndarray, pair_indices: jnp.ndarray
 ) -> jnp.ndarray:
@@ -430,6 +456,8 @@ class JaxHandle:
         torsion_indices: Atom index quadruples, shape
             ``(n_matched_torsions, 4)``.
         vdw_pair_indices: Non-excluded pairs, shape ``(n_vdw_pairs, 2)``.
+        ub_indices: Atom index pairs ``(i, k)`` for Urey-Bradley 1-3 terms,
+            shape ``(n_ub_terms, 2)``.
         bond_param_map: Maps each matched bond → index into
             ``ForceField.bonds``.
         angle_param_map: Maps each matched angle → index into
@@ -437,10 +465,12 @@ class JaxHandle:
         torsion_param_map: Maps each matched torsion → index into
             ``ForceField.torsions``.
         atom_vdw_map: Maps each atom → index into ``ForceField.vdws``.
+        ub_param_map: Maps each UB term → index into ``ForceField._ub_angles``.
         n_bond_types: Number of unique bond parameter types.
         n_angle_types: Number of unique angle parameter types.
         n_torsion_types: Number of unique torsion parameter types.
         n_vdw_types: Number of unique vdW parameter types.
+        n_ub_types: Number of unique UB parameter types.
 
     """
 
@@ -460,6 +490,10 @@ class JaxHandle:
     n_angle_types: int
     n_torsion_types: int
     n_vdw_types: int
+    # Urey-Bradley
+    ub_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
+    ub_param_map: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    n_ub_types: int = 0
     # Functional form used to compile the energy function
     functional_form: str = "harmonic"
     # Compiled energy function (captures topology, JIT-compiled)
@@ -591,6 +625,19 @@ class JaxEngine(MMEngine):
                 angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
                 angle_param_map.append(idx)
 
+        # Match Urey-Bradley terms (1-3 distance for CHARMM angles)
+        ub_angles = forcefield._ub_angles
+        ub_angle_to_ub_idx = {id(a): i for i, a in enumerate(ub_angles)}
+        ub_atom_indices: list[tuple[int, int]] = []
+        ub_param_map: list[int] = []
+        for angle in molecule.angles:
+            matched = forcefield.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+            if matched is not None and matched.ub_force_constant is not None and matched.ub_equilibrium is not None:
+                ub_idx = ub_angle_to_ub_idx.get(id(matched))
+                if ub_idx is not None:
+                    ub_atom_indices.append((angle.atom_i, angle.atom_k))
+                    ub_param_map.append(ub_idx)
+
         # Match torsions — each detected torsion may match multiple FF
         # entries (one per periodicity component), each becoming a separate
         # term.  Only proper torsions from molecule geometry are matched.
@@ -645,6 +692,9 @@ class JaxEngine(MMEngine):
         torsion_indices_arr = (
             np.array(torsion_atom_indices, dtype=np.int32) if torsion_atom_indices else np.empty((0, 4), dtype=np.int32)
         )
+        ub_indices_arr = (
+            np.array(ub_atom_indices, dtype=np.int32) if ub_atom_indices else np.empty((0, 2), dtype=np.int32)
+        )
 
         handle = JaxHandle(
             molecule=copy.deepcopy(molecule),
@@ -660,6 +710,9 @@ class JaxEngine(MMEngine):
             n_angle_types=len(forcefield.angles),
             n_torsion_types=len(forcefield.torsions),
             n_vdw_types=len(forcefield.vdws),
+            ub_indices=ub_indices_arr,
+            ub_param_map=np.array(ub_param_map, dtype=np.int32),
+            n_ub_types=len(ub_angles),
             functional_form=_resolve_form(forcefield),
         )
 
@@ -901,13 +954,21 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     n_at = handle.n_angle_types
     n_tt = handle.n_torsion_types
     n_vt = handle.n_vdw_types
+    n_ubt = handle.n_ub_types
 
     # Param vector offsets
-    _offsets = compute_param_offsets(n_bt, n_at, n_tt)
+    _offsets = compute_param_offsets(n_bt, n_at, n_tt, n_vdw_types=n_vt)
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
     vdw_offset = _offsets["vdw"]
+    # UB params are appended at the end of the param vector
+    ub_offset = _offsets["ub"]
+
+    # Urey-Bradley topology
+    has_ub = n_ubt > 0 and len(handle.ub_indices) > 0
+    _ub_indices = jnp.array(handle.ub_indices) if has_ub else None
+    _ub_map = jnp.array(handle.ub_param_map) if has_ub else None
 
     if use_mm3:
 
@@ -938,6 +999,12 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
                 per_atom_radius = vdw_params[_atom_vdw_map, 0]
                 per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
                 E = E + _mm3_vdw_energy(per_atom_radius, per_atom_epsilon, coords, _vdw_pairs)
+
+            if has_ub:
+                ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
+                k = ub_params[_ub_map, 0]
+                r0 = ub_params[_ub_map, 1]
+                E = E + _ub_energy(k, r0, coords, _ub_indices)
 
             return E
 
@@ -971,6 +1038,12 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
                 per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
                 per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
                 E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
+
+            if has_ub:
+                ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
+                k = ub_params[_ub_map, 0]
+                r0 = ub_params[_ub_map, 1]
+                E = E + _ub_energy(k, r0, coords, _ub_indices)
 
             return E
 
