@@ -475,15 +475,15 @@ class JaxHandle:
 
 @register_mm("jax")
 class JaxEngine(MMEngine):
-    """Differentiable MM backend using JAX with OPLSAA-style energy functions.
+    """Differentiable MM backend using JAX.
 
     Provides analytical gradients of the energy with respect to force field
     parameters via ``jax.grad``, eliminating the need for finite differences
     in parameter optimization.
 
-    The energy functions use standard harmonic/LJ forms (not MM3). Near
-    equilibrium, results are similar to MM3 but not identical. For exact
-    MM3 parity, use :class:`~q2mm.backends.mm.openmm.OpenMMEngine`.
+    Supports both harmonic/LJ and MM3 (cubic bond, sextic angle, Buckingham
+    exp-6 vdW) functional forms. Select the form via
+    :attr:`ForceField.functional_form`; defaults to harmonic when unset.
 
     Example:
         >>> engine = JaxEngine()
@@ -508,7 +508,7 @@ class JaxEngine(MMEngine):
         """Human-readable engine name including device type.
 
         Returns:
-            str: e.g. ``"JAX (harmonic, gpu)"`` or ``"JAX (mm3, cpu)"``.
+            str: e.g. ``"JAX (gpu)"`` or ``"JAX (cpu)"``.
 
         """
         backend = jax.default_backend()

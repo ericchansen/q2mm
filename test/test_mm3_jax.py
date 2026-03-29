@@ -1,7 +1,7 @@
 """Tests for MM3 functional forms in JaxEngine (issue #91).
 
 Verifies:
-- MM3 cubic bond, sextic angle, and buffered 14-7 vdW energy functions
+- MM3 cubic bond, sextic angle, and Buckingham exp-6 vdW energy functions
 - JaxEngine(functional_form="mm3") produces correct energies
 - jax.grad works correctly through all MM3 forms
 - Parity with OpenMM MM3 implementation (when OpenMM available)
@@ -365,7 +365,7 @@ class TestMM3ParityJaxVsOpenMM:
         ff = _h2_ff_mm3()
 
         jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine().energy(mol, ff)
+        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
         assert jax_e == pytest.approx(omm_e, abs=1e-6)
 
     def test_water_parity(self) -> None:
@@ -376,7 +376,7 @@ class TestMM3ParityJaxVsOpenMM:
         ff = _water_ff_mm3()
 
         jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine().energy(mol, ff)
+        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
         assert jax_e == pytest.approx(omm_e, abs=1e-5)
 
     def test_vdw_parity(self) -> None:
@@ -387,5 +387,5 @@ class TestMM3ParityJaxVsOpenMM:
         ff = _he2_ff_mm3()
 
         jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine().energy(mol, ff)
+        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
         assert jax_e == pytest.approx(omm_e, abs=1e-6)
