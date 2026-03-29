@@ -1,0 +1,4362 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/benchmarks/gpu/">
+      
+      
+        <link rel="prev" href="../rh-enamide/">
+      
+      
+        <link rel="next" href="../../reference/q2mm/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>GPU Acceleration - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#gpu-acceleration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              GPU Acceleration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-evaluation-throughput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-evaluation throughput
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gradsimp-cycling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAD→SIMP cycling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#single-shot-optimizer-comparison-ch3f-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single-shot optimizer comparison (CH₃F, GPU)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#takeaway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Takeaway
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-cpu-wins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why CPU Wins
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why CPU Wins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-float64-on-a-consumer-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Float64 on a consumer GPU
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-small-matrices-many-kernel-launches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Small matrices, many kernel launches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sequential-molecule-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Sequential molecule evaluation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-jax-reaxff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with JAX-ReaxFF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-directions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Directions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Future Directions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#float32-viability-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Float32 viability test
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Float32 viability test">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#methodology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results-full-float32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: Full float32
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results-mixed-precision-float32-hessian-float64-eigendecomp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: Mixed precision (float32 Hessian → float64 eigendecomp)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis-where-does-precision-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis: Where does precision matter?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpretation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#batch-kernel-launches-across-molecules-with-vmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch kernel launches across molecules with vmap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vmap-over-molecules-in-the-objective-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vmap over molecules in the objective function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#end-to-end-jit-compiled-loss-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end JIT-compiled loss function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jax-reaxff-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JAX-ReaxFF integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jit-compilation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JIT Compilation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware &amp; Software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further Reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1" id="__nav_10_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1" id="__nav_10_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1_2" id="__nav_10_1_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/qm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1_3" id="__nav_10_1_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    qm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/qm/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/diagnostics/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnostics
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_3" id="__nav_10_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    diagnostics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/pes_distortion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pes_distortion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/reference_analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/diagnostics/tables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_6" id="__nav_10_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/ff_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ff_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_7" id="__nav_10_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/defaults/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    defaults
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_7_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/optimizers/evaluators/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluators
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_7_3" id="__nav_10_1_7_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_7_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_7_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    evaluators
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/evaluators/eigenmatrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    eigenmatrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/evaluators/energy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    energy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/evaluators/frequency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    frequency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/evaluators/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/objective/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objective
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/scoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/parsers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parsers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_8" id="__nav_10_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    parsers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/amber_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/datum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    datum
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/param/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    param
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/reference_yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_yaml
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/parsers/tinker_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-evaluation-throughput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-evaluation throughput
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gradsimp-cycling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAD→SIMP cycling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#single-shot-optimizer-comparison-ch3f-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single-shot optimizer comparison (CH₃F, GPU)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#takeaway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Takeaway
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-cpu-wins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why CPU Wins
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why CPU Wins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-float64-on-a-consumer-gpu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Float64 on a consumer GPU
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-small-matrices-many-kernel-launches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Small matrices, many kernel launches
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sequential-molecule-evaluation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Sequential molecule evaluation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-jax-reaxff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with JAX-ReaxFF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#future-directions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Future Directions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Future Directions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#float32-viability-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Float32 viability test
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Float32 viability test">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#methodology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results-full-float32" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: Full float32
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results-mixed-precision-float32-hessian-float64-eigendecomp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results: Mixed precision (float32 Hessian → float64 eigendecomp)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#analysis-where-does-precision-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Analysis: Where does precision matter?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpretation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#batch-kernel-launches-across-molecules-with-vmap" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Batch kernel launches across molecules with vmap
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vmap-over-molecules-in-the-objective-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        vmap over molecules in the objective function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#end-to-end-jit-compiled-loss-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        End-to-end JIT-compiled loss function
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jax-reaxff-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JAX-ReaxFF integration
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jit-compilation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JIT Compilation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reproducing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reproducing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware &amp; Software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#further-reading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Further Reading
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="gpu-acceleration">GPU Acceleration<a class="headerlink" href="#gpu-acceleration" title="Permanent link">&para;</a></h1>
+<p>GPU vs CPU benchmarks using the JAX backend on an NVIDIA RTX 5090
+(32 GB VRAM, Blackwell sm_120) with an AMD Ryzen 7 7800X3D CPU.
+All runs use float64 precision.</p>
+<p><strong>The headline result is counter-intuitive: CPU is faster than GPU for
+every workload tested.</strong>  This page explains why, what would need to
+change, and the planned path to making GPU acceleration viable.</p>
+<hr />
+<h2 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h2>
+<h3 id="per-evaluation-throughput">Per-evaluation throughput<a class="headerlink" href="#per-evaluation-throughput" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Atoms</th>
+<th style="text-align: right;">Modes</th>
+<th style="text-align: right;">Params</th>
+<th style="text-align: right;">GPU (ms/eval)</th>
+<th style="text-align: right;">CPU (ms/eval)</th>
+<th style="text-align: right;">Speedup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;">8</td>
+<td style="text-align: right;">2.20</td>
+<td style="text-align: right;">0.40</td>
+<td style="text-align: right;">0.18×</td>
+</tr>
+<tr>
+<td>rh-enamide</td>
+<td style="text-align: right;">36–62</td>
+<td style="text-align: right;">1,273</td>
+<td style="text-align: right;">94</td>
+<td style="text-align: right;">36.2</td>
+<td style="text-align: right;">21.9</td>
+<td style="text-align: right;">0.60×</td>
+</tr>
+</tbody>
+</table>
+<p>Per-eval times measured as the mean of 50 (CH₃F) or 10 (rh-enamide)
+isolated calls after JIT warmup.</p>
+<p>Each "eval" computes the full objective: for every molecule in the
+training set, run the energy function, compute the Hessian
+(<code>jax.hessian</code>), diagonalise it to get vibrational frequencies, and sum
+the weighted squared deviations from QM reference values.</p>
+<h3 id="gradsimp-cycling">GRAD→SIMP cycling<a class="headerlink" href="#gradsimp-cycling" title="Permanent link">&para;</a></h3>
+<p>Full <a class="autorefs autorefs-internal" title="            OptimizationLoop" href="../../reference/q2mm/optimizers/cycling/#q2mm.optimizers.cycling.OptimizationLoop"><code>OptimizationLoop</code></a>
+with L-BFGS-B (GRAD, <code>maxiter=200</code>) and Nelder-Mead (SIMP,
+<code>maxiter=200</code>, <code>max_params=5</code>, <code>convergence=0.01</code>).</p>
+<p><strong>CH₃F</strong> (1 molecule, 8 parameters, synthetic reference):</p>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th style="text-align: right;">Cycles</th>
+<th style="text-align: right;">Evals</th>
+<th style="text-align: right;">Wall time</th>
+<th style="text-align: right;">Final score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">664</td>
+<td style="text-align: right;">2.3 s</td>
+<td style="text-align: right;">1.9 × 10⁻⁵</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">682</td>
+<td style="text-align: right;">0.8 s</td>
+<td style="text-align: right;">1.9 × 10⁻⁵</td>
+</tr>
+</tbody>
+</table>
+<p><strong>rh-enamide</strong> (9 molecules, 94 parameters, QM frequency reference):</p>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th style="text-align: right;">Cycles</th>
+<th style="text-align: right;">Evals</th>
+<th style="text-align: right;">Wall time</th>
+<th style="text-align: right;">Final score</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">30,637</td>
+<td style="text-align: right;">1,117 s</td>
+<td style="text-align: right;">34.56</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">30,936</td>
+<td style="text-align: right;">686 s</td>
+<td style="text-align: right;">32.78</td>
+</tr>
+</tbody>
+</table>
+<p>Score is the weighted sum of squared frequency deviations (QM − MM)
+across all modes.  Lower is better; initial score is 2,161 for both
+runs.</p>
+<p>Both devices converge to similar scores and use nearly identical eval
+counts (~30 k).  The 1.6× wall-time difference comes entirely from
+the per-eval throughput gap, not from algorithmic differences.</p>
+<div class="admonition warning">
+<p class="admonition-title">Force field caveat</p>
+<p>rh-enamide uses an auto-generated <strong>harmonic</strong> force field (94
+params) because JaxEngine does not support MM3.  These scores are
+not comparable to the 182-parameter MM3 results on the
+<a href="../rh-enamide/">rh-enamide page</a>.</p>
+</div>
+<h3 id="single-shot-optimizer-comparison-ch3f-gpu">Single-shot optimizer comparison (CH₃F, GPU)<a class="headerlink" href="#single-shot-optimizer-comparison-ch3f-gpu" title="Permanent link">&para;</a></h3>
+<p>Single-shot results for each optimizer on JAX and JAX-MD using the
+RTX 5090.  All start from Seminario estimates (RMSD = 156.9 cm⁻¹).</p>
+<p><strong>Data:</strong>
+<a href="https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results-gpu-post-182/results">Results (JSON)</a></p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Optimizer</th>
+<th style="text-align: right;">Final RMSD</th>
+<th style="text-align: right;">Evals</th>
+<th style="text-align: right;">Time</th>
+<th style="text-align: right;">ms/eval</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>JAX (gpu)</strong></td>
+<td>Powell</td>
+<td style="text-align: right;"><strong>0.02</strong></td>
+<td style="text-align: right;">2,544</td>
+<td style="text-align: right;">8.3 s</td>
+<td style="text-align: right;">3.3</td>
+</tr>
+<tr>
+<td><strong>JAX (gpu)</strong></td>
+<td>Nelder-Mead</td>
+<td style="text-align: right;">1,037.9</td>
+<td style="text-align: right;">1,193</td>
+<td style="text-align: right;">4.2 s</td>
+<td style="text-align: right;">3.5</td>
+</tr>
+<tr>
+<td><strong>JAX (gpu)</strong></td>
+<td>L-BFGS-B</td>
+<td style="text-align: right;">813.4</td>
+<td style="text-align: right;">361</td>
+<td style="text-align: right;">1.7 s</td>
+<td style="text-align: right;">4.8</td>
+</tr>
+<tr>
+<td><strong>JAX-MD (gpu)</strong></td>
+<td>Powell</td>
+<td style="text-align: right;"><strong>0.02</strong></td>
+<td style="text-align: right;">2,655</td>
+<td style="text-align: right;">9.6 s</td>
+<td style="text-align: right;">3.6</td>
+</tr>
+<tr>
+<td><strong>JAX-MD (gpu)</strong></td>
+<td>Nelder-Mead</td>
+<td style="text-align: right;">1,037.9</td>
+<td style="text-align: right;">1,216</td>
+<td style="text-align: right;">5.0 s</td>
+<td style="text-align: right;">4.1</td>
+</tr>
+<tr>
+<td><strong>JAX-MD (gpu)</strong></td>
+<td>L-BFGS-B</td>
+<td style="text-align: right;">813.4</td>
+<td style="text-align: right;">523</td>
+<td style="text-align: right;">3.0 s</td>
+<td style="text-align: right;">5.7</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Comparison with CPU</p>
+<p>On CPU, Powell and Nelder-Mead reach RMSD 0.0 and 4.0 respectively
+in 1.3 s and 0.8 s — <strong>faster than GPU</strong> due to the small Hessian
+sizes (15 × 15).  GPU per-eval throughput (3.3–5.7 ms) is ~8× slower
+than CPU (~0.4 ms) for this 5-atom system.  The GPU advantage only
+emerges at larger system sizes; see <a href="#why-cpu-wins">Why CPU Wins</a>.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Powell is the best single-shot GPU optimizer for CH₃F</p>
+<p>Powell reaches a <strong>near-perfect fit</strong> (RMSD 0.02 cm⁻¹) in 8.3 s on GPU.
+Nelder-Mead and L-BFGS-B both converge to poor RMSD values (1038,
+813).  L-BFGS-B's poor performance is due to noisy finite-difference
+gradients.  Note that <code>jac="auto"</code> would not help here because this
+benchmark uses a frequency objective, and analytical frequency
+gradients are not yet implemented — <code>jac="auto"</code> currently only
+benefits energy-based objectives.</p>
+</div>
+<h3 id="takeaway">Takeaway<a class="headerlink" href="#takeaway" title="Permanent link">&para;</a></h3>
+<p><strong>CPU is faster than GPU for these workloads.</strong>  The rh-enamide system
+(the larger of the two) shows a 1.6× CPU advantage, and CH₃F is
+5.5× faster on CPU.  The smaller the molecule, the worse the GPU
+performs — exactly what you would expect given the factors described
+below.</p>
+<hr />
+<h2 id="why-cpu-wins">Why CPU Wins<a class="headerlink" href="#why-cpu-wins" title="Permanent link">&para;</a></h2>
+<p>Three factors combine to make GPUs slower for q2mm's current workloads.
+Understanding each one is important because they point to different
+solutions.</p>
+<h3 id="1-float64-on-a-consumer-gpu">1. Float64 on a consumer GPU<a class="headerlink" href="#1-float64-on-a-consumer-gpu" title="Permanent link">&para;</a></h3>
+<p>q2mm currently forces float64 (double precision) globally for
+numerically stable Hessians and eigenvalue decomposition.  Consumer
+NVIDIA GPUs artificially limit double-precision throughput to push
+scientific users toward datacenter cards:</p>
+<table>
+<thead>
+<tr>
+<th>Card</th>
+<th style="text-align: right;">FP32 (TFLOPS)</th>
+<th style="text-align: right;">FP64 (TFLOPS)</th>
+<th style="text-align: center;">FP64 : FP32</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>RTX 5090</strong></td>
+<td style="text-align: right;">104.8</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: center;"><strong>1 : 64</strong></td>
+</tr>
+<tr>
+<td>RTX 4090</td>
+<td style="text-align: right;">82.6</td>
+<td style="text-align: right;">1.3</td>
+<td style="text-align: center;">1 : 64</td>
+</tr>
+<tr>
+<td>A100 (datacenter)</td>
+<td style="text-align: right;">19.5</td>
+<td style="text-align: right;">9.7</td>
+<td style="text-align: center;">1 : 2</td>
+</tr>
+<tr>
+<td>H100 (datacenter)</td>
+<td style="text-align: right;">67</td>
+<td style="text-align: right;">34</td>
+<td style="text-align: center;">1 : 2</td>
+</tr>
+</tbody>
+</table>
+<p>The RTX 5090 delivers only <strong>1.6 TFLOPS</strong> in float64 — roughly
+comparable to the Ryzen 7 7800X3D CPU, which executes float64 at full
+speed with no penalty relative to float32.  This single factor accounts
+for most of the GPU's disadvantage.</p>
+<p>However, <strong>float32 is not straightforward</strong> for larger molecules.  Testing
+both full-float32 and mixed-precision (float32 Hessian, float64
+eigendecomp) showed that frequency errors reach 0.44–0.78 cm⁻¹ in
+rh-enamide's softest real vibrational modes — above the strict
+0.1 cm⁻¹ threshold.  Small molecules like CH₃F (5 atoms) pass
+easily (max error 0.0002 cm⁻¹).  The bottleneck is the Hessian
+computation itself: <code>jax.hessian</code> in float32 introduces ~10⁻⁶
+relative errors in matrix elements, which propagate into eigenvalues
+of soft modes.  See <a href="#float32-viability-test">Float32 viability test</a>
+for full methodology and results, including a mixed-precision path
+that may be viable for relaxed thresholds or early optimisation cycles.</p>
+<p>Sources: <a href="https://www.techpowerup.com/gpu-specs/geforce-rtx-5090.c4216">TechPowerUp RTX 5090 specs</a>, <a href="https://www.nvidia.com/en-us/data-center/a100/">NVIDIA A100 datasheet</a></p>
+<h3 id="2-small-matrices-many-kernel-launches">2. Small matrices, many kernel launches<a class="headerlink" href="#2-small-matrices-many-kernel-launches" title="Permanent link">&para;</a></h3>
+<p>Every GPU operation incurs fixed kernel-launch overhead — the time to
+dispatch work to the GPU, regardless of how much work there is.
+JAX's own <a href="https://docs.jax.dev/en/latest/benchmarking.html">benchmarking guide</a> demonstrates that <strong>for
+10×10 matrices, GPU is 10× slower than CPU</strong>; the GPU only pulls
+ahead around 1000×1000.</p>
+<p>q2mm's Hessian sizes fall well below the crossover:</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Atoms</th>
+<th style="text-align: left;">Hessian shape</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: left;">15 × 15</td>
+</tr>
+<tr>
+<td>rh-enamide (largest)</td>
+<td style="text-align: right;">62</td>
+<td style="text-align: left;">186 × 186</td>
+</tr>
+</tbody>
+</table>
+<p>At these sizes the GPU spends more time launching kernels than doing
+actual arithmetic.  Worse, each molecule gets its own independent
+kernel launch — for rh-enamide that is 9 separate Hessian computations
+per eval, each too small to keep the GPU busy.</p>
+<h3 id="3-sequential-molecule-evaluation">3. Sequential molecule evaluation<a class="headerlink" href="#3-sequential-molecule-evaluation" title="Permanent link">&para;</a></h3>
+<p>The objective function loops over molecules in Python, calling the JAX
+engine once per molecule:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">for</span> <span class="n">ref</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">reference</span><span class="o">.</span><span class="n">values</span><span class="p">:</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="k">if</span> <span class="n">mol_idx</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">calc_cache</span><span class="p">:</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>        <span class="n">calc_cache</span><span class="p">[</span><span class="n">mol_idx</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evaluate_molecule</span><span class="p">(</span><span class="n">mol_idx</span><span class="p">,</span> <span class="n">ff</span><span class="p">)</span>
+</code></pre></div>
+<p>Each <code>_evaluate_molecule</code> → <code>engine.hessian()</code> → one JAX kernel launch.
+There is no <code>vmap</code> over molecules for the frequency objective — each
+of those 9 small Hessian kernels is dispatched and completed
+sequentially.  This is the worst-case pattern for GPU utilisation:
+many tiny kernels with Python overhead between each one, giving the
+GPU no opportunity to amortise its fixed costs.</p>
+<p>The energy-only path already supports batching via
+<a class="autorefs autorefs-internal" title="            batched_energy" href="../../reference/q2mm/backends/mm/jax_engine/#q2mm.backends.mm.jax_engine.JaxEngine.batched_energy"><code>JaxEngine.batched_energy</code></a>,
+which uses <code>jax.vmap</code> to evaluate many parameter vectors in a single
+kernel.  Extending this pattern to the Hessian/frequency pipeline is
+a key part of the path forward.</p>
+<hr />
+<h2 id="comparison-with-jax-reaxff">Comparison with JAX-ReaxFF<a class="headerlink" href="#comparison-with-jax-reaxff" title="Permanent link">&para;</a></h2>
+<p><a href="https://github.com/cagrikymk/JAX-ReaxFF">JAX-ReaxFF</a> reports <strong>10–100× GPU speedup</strong> for reactive
+force field parameter fitting.  Their design choices are instructive
+because they show what GPU-friendly force field fitting looks like:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>JAX-ReaxFF</th>
+<th>q2mm (current)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Molecule batching</td>
+<td><code>vmap</code> over all geometries in one call</td>
+<td>Per-molecule Python loop</td>
+</tr>
+<tr>
+<td>Derivatives needed</td>
+<td>1st order (gradients only)</td>
+<td>2nd order (Hessians for frequencies)</td>
+</tr>
+<tr>
+<td>Optimization</td>
+<td>Gradient-based L-BFGS (via JAX)</td>
+<td>L-BFGS-B (GRAD) + Nelder-Mead (SIMP) via Scipy</td>
+</tr>
+<tr>
+<td>Loss function</td>
+<td>Single JIT-compiled params → loss</td>
+<td>Python loop calling engine per molecule</td>
+</tr>
+<tr>
+<td>Precision</td>
+<td>float32 sufficient</td>
+<td>float64 default; mixed precision under investigation (<a href="#float32-viability-test">details</a>)</td>
+</tr>
+<tr>
+<td>System sizes</td>
+<td>100s of atoms</td>
+<td>5–62 atoms</td>
+</tr>
+</tbody>
+</table>
+<p>The optimization row deserves careful discussion.  q2mm already uses
+gradient-based L-BFGS-B for the GRAD step in its cycling loop, so
+the optimizer itself is not the primary gap.  However, there is a
+subtle but important difference in <strong>what those gradients flow
+through</strong>.  In JAX-ReaxFF, L-BFGS operates on a single JIT-compiled
+function that maps parameters all the way to a scalar loss — the
+gradients are analytical derivatives of the loss with respect to
+every parameter, computed via <code>jax.grad</code> through the entire
+computation graph in one fused kernel.  In q2mm, L-BFGS-B operates
+on a loss function that internally calls back into Python for each
+molecule, computes Hessians, converts to frequencies via NumPy
+eigenvalue decomposition, and sums residuals — the parameter
+gradients for L-BFGS are computed by Scipy via finite differences or
+by q2mm's own per-evaluator gradient methods, not by differentiating
+through the full pipeline.  This means q2mm's L-BFGS cannot take
+advantage of XLA kernel fusion or GPU-native gradient computation,
+even though it is technically the same algorithm.</p>
+<p>A natural question is whether q2mm could also use gradient-based
+L-BFGS through the full frequency pipeline — i.e., differentiate
+through the eigenvalue decomposition to get analytical parameter
+gradients of the frequency loss.  JAX supports differentiating
+through <code>jnp.linalg.eigh</code>, so this is feasible in principle.
+Doing so would eliminate the need for finite-difference parameter
+gradients in the GRAD step and could significantly reduce the number
+of evaluations needed per L-BFGS iteration.</p>
+<p>The loss function structure is the other critical difference.
+JAX-ReaxFF compiles a single function from parameters to scalar
+loss via <code>jax.jit</code>, letting XLA fuse all per-molecule evaluations,
+gradient computations, and the loss reduction into one optimised
+GPU kernel.  q2mm instead calls back into Python between each
+molecule, which prevents XLA from seeing the full computation
+graph and makes it impossible to amortise kernel-launch overhead
+across molecules.</p>
+<p>Their speedup compared to prior ReaxFF tools is also partly
+<strong>algorithmic</strong>: replacing genetic algorithms with gradient-based
+optimisation reduces the number of evaluations by ~1000×.  Since
+q2mm already uses gradient-based methods for the GRAD step, that
+particular improvement does not directly apply.  However, if q2mm
+could differentiate through the full frequency pipeline, the number
+of evaluations per L-BFGS iteration would drop from O(parameters)
+(finite-difference) to O(1) (analytical gradient), which is a
+substantial saving for systems like rh-enamide with 94 parameters.</p>
+<p>There are two (non-exclusive) paths forward.  One is to integrate
+<a href="https://github.com/cagrikymk/JAX-ReaxFF">JAX-ReaxFF</a> as a backend or adopt its architecture for
+q2mm's own engines — this would give immediate access to a
+battle-tested <code>vmap</code>-batched, JIT-compiled, gradient-based pipeline
+for reactive force fields.  The other is to restructure q2mm's own
+objective function into an end-to-end JIT-compiled
+<code>params → loss</code> function, which would work with any JAX-based engine
+(not just ReaxFF) and preserve q2mm's existing cycling workflow.
+Both approaches are worth exploring and are tracked as open
+questions in the future directions below.</p>
+<p>Source: <a href="https://chemrxiv.org/doi/pdf/10.26434/chemrxiv-2021-b342n">JAX-ReaxFF paper (ChemRxiv)</a>,
+<a href="https://zenodo.org/records/6863899">JAX-ReaxFF poster (Zenodo)</a></p>
+<hr />
+<h2 id="future-directions">Future Directions<a class="headerlink" href="#future-directions" title="Permanent link">&para;</a></h2>
+<p>Several independent improvements could make GPU acceleration viable
+for q2mm.  Each also benefits CPU performance.  Some are experiments
+to validate assumptions; others are architectural changes.  They are
+listed roughly in order of effort, but they are not strictly
+sequential — results from earlier items may change the priority of
+later ones.</p>
+<p>Tracked in <a href="https://github.com/ericchansen/q2mm/issues/176">issue #176</a>
+and linked issues.</p>
+<h3 id="float32-viability-test">Float32 viability test<a class="headerlink" href="#float32-viability-test" title="Permanent link">&para;</a></h3>
+<p>Tracked in <a href="https://github.com/ericchansen/q2mm/issues/178">#178</a>.</p>
+<h4 id="methodology">Methodology<a class="headerlink" href="#methodology" title="Permanent link">&para;</a></h4>
+<p>Three precision configurations were tested:</p>
+<ol>
+<li><strong>Full float64</strong> (baseline) — Hessian computation and eigendecomposition
+   both in float64.  This is the current default.</li>
+<li><strong>Full float32</strong> — <code>JAX_ENABLE_X64=0</code> before import, so <code>jax.hessian</code>
+   and all JAX operations use float32.  Eigendecomposition via numpy's
+   <code>eigvalsh</code> still uses float64 internally, but the <em>input</em> Hessian is
+   float32-precision.</li>
+<li><strong>Mixed precision</strong> — Hessian computed in float32 via JAX (GPU-friendly),
+   then explicitly cast to float64 before eigendecomposition.  This tests
+   whether the Hessian itself retains enough precision in float32 for the
+   eigenvalue solver to produce accurate frequencies.</li>
+</ol>
+<p>The pipeline under test is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>params, coords → jax.hessian(energy_fn) → Hess (kcal/mol/Å²)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    → unit conversion (Hartree/Bohr²) → mass-weighting → eigvalsh → cm⁻¹
+</code></pre></div>
+<p>"Real modes" are frequencies with |ν| &gt; 50 cm⁻¹, excluding the 6
+near-zero translation/rotation modes which are numerically unstable
+regardless of precision.</p>
+<p>Tests run inside the <code>ci-jax</code> Docker container on CPU (AMD Ryzen 7
+7800X3D).  CPU float32 and float64 have identical throughput, so the
+precision comparison is isolated from hardware effects.  On GPU, the
+benefit would be the FP32:FP64 throughput ratio (64× on RTX 5090).</p>
+<p>Scripts:
+<a href="https://github.com/ericchansen/q2mm/blob/master/scripts/float32_experiment.py"><code>scripts/float32_experiment.py</code></a>
+(full float32 vs float64),
+<a href="https://github.com/ericchansen/q2mm/blob/master/scripts/mixed_precision_experiment.py"><code>scripts/mixed_precision_experiment.py</code></a>
+(mixed precision).</p>
+<h4 id="results-full-float32">Results: Full float32<a class="headerlink" href="#results-full-float32" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Modes</th>
+<th style="text-align: right;">Max Δ (cm⁻¹)</th>
+<th style="text-align: right;">Mean Δ</th>
+<th style="text-align: right;">RMSD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F (all modes)</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">0.224</td>
+<td style="text-align: right;">0.053</td>
+<td style="text-align: right;">0.099</td>
+</tr>
+<tr>
+<td>CH₃F (real modes, &gt;50 cm⁻¹)</td>
+<td style="text-align: right;">9</td>
+<td style="text-align: right;"><strong>0.0002</strong></td>
+<td style="text-align: right;">0.0001</td>
+<td style="text-align: right;">0.0001</td>
+</tr>
+<tr>
+<td>rh-enamide (all modes)</td>
+<td style="text-align: right;">1,404</td>
+<td style="text-align: right;">9.127</td>
+<td style="text-align: right;">0.174</td>
+<td style="text-align: right;">1.007</td>
+</tr>
+<tr>
+<td>rh-enamide (real modes, &gt;50 cm⁻¹)</td>
+<td style="text-align: right;">1,347</td>
+<td style="text-align: right;"><strong>0.785</strong></td>
+<td style="text-align: right;">0.021</td>
+<td style="text-align: right;">0.074</td>
+</tr>
+</tbody>
+</table>
+<p>Full float32 fails the 0.1 cm⁻¹ threshold for rh-enamide by ~8×.
+Near-zero modes show errors up to 9.1 cm⁻¹.</p>
+<h4 id="results-mixed-precision-float32-hessian-float64-eigendecomp">Results: Mixed precision (float32 Hessian → float64 eigendecomp)<a class="headerlink" href="#results-mixed-precision-float32-hessian-float64-eigendecomp" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Atoms</th>
+<th style="text-align: right;">DOF</th>
+<th style="text-align: right;">Hess max Δ</th>
+<th style="text-align: right;">Hess rel max</th>
+<th style="text-align: right;">Freq max Δ (real)</th>
+<th style="text-align: right;">Mean Δ</th>
+<th style="text-align: right;">RMSD</th>
+<th>Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">1.1 × 10⁻⁴</td>
+<td style="text-align: right;">8.0 × 10⁻⁸</td>
+<td style="text-align: right;"><strong>0.0002</strong></td>
+<td style="text-align: right;">0.0001</td>
+<td style="text-align: right;">0.0001</td>
+<td>✅ Pass</td>
+</tr>
+<tr>
+<td>rh-enamide mol0</td>
+<td style="text-align: right;">36</td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;">18.7</td>
+<td style="text-align: right;">1.9 × 10⁻⁶</td>
+<td style="text-align: right;"><strong>0.443</strong></td>
+<td style="text-align: right;">0.022</td>
+<td style="text-align: right;">0.061</td>
+<td>❌ Fail</td>
+</tr>
+</tbody>
+</table>
+<p>"Hess max Δ" is the maximum absolute difference between any element of
+the float64 and float32 Hessians (in kcal/mol/Å²).  "Hess rel max" is
+relative to the largest Hessian element.</p>
+<p>Mixed precision is <strong>better</strong> than full float32 (0.44 vs 0.78 cm⁻¹ max
+error) but still exceeds the 0.1 cm⁻¹ threshold by ~4×.</p>
+<p>The worst errors concentrate in the <strong>lowest-frequency real modes</strong>
+(60–86 cm⁻¹) — soft, floppy motions where small Hessian perturbations
+are amplified through the eigenvalue decomposition:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>freq[ 35]:  f64=  65.0674   mixed=  65.5104   Δ=0.443 cm⁻¹
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>freq[ 38]:  f64=  85.5928   mixed=  85.7688   Δ=0.176 cm⁻¹
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>freq[ 37]:  f64=  79.5196   mixed=  79.6864   Δ=0.167 cm⁻¹
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>freq[ 34]:  f64=  60.6396   mixed=  60.7742   Δ=0.135 cm⁻¹
+</code></pre></div>
+<p>High-frequency modes (&gt;500 cm⁻¹) are much less affected because the
+corresponding Hessian eigenvalues are larger relative to the float32
+noise floor.</p>
+<h4 id="analysis-where-does-precision-matter">Analysis: Where does precision matter?<a class="headerlink" href="#analysis-where-does-precision-matter" title="Permanent link">&para;</a></h4>
+<p>The error budget breaks down as:</p>
+<table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Error source</th>
+<th>Impact</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Energy function</td>
+<td>float32 evaluates <code>E = k(r−r₀)²</code> etc.</td>
+<td>Negligible — terms are well-conditioned</td>
+</tr>
+<tr>
+<td><code>jax.hessian</code> (autodiff)</td>
+<td>Forward-over-reverse in float32</td>
+<td>18.7 kcal/mol/Å² max element error (1.9 × 10⁻⁶ relative)</td>
+</tr>
+<tr>
+<td>Unit conversion</td>
+<td>Linear scaling by <code>KCALMOLA2_TO_HESSIAN_AU</code></td>
+<td>No additional error (uniform scaling doesn't change condition number)</td>
+</tr>
+<tr>
+<td>Mass-weighting</td>
+<td>Divides by √(mᵢ · mⱼ); mass range H(1)–Rh(103)</td>
+<td>Amplifies existing errors non-uniformly</td>
+</tr>
+<tr>
+<td><code>eigvalsh</code></td>
+<td>Eigenvalue decomposition</td>
+<td>In float64: accurate.  Float32 Hessian errors propagate into eigenvalues of soft modes</td>
+</tr>
+</tbody>
+</table>
+<p>The bottleneck is the <strong>Hessian computation itself</strong>, not the
+eigendecomposition.  Even with float64 <code>eigvalsh</code>, the float32
+Hessian has ~10⁻⁶ relative errors that are large enough to shift
+eigenvalues of the softest modes by ~0.4 cm⁻¹.</p>
+<h4 id="interpretation">Interpretation<a class="headerlink" href="#interpretation" title="Permanent link">&para;</a></h4>
+<p>The 0.1 cm⁻¹ threshold is strict but physically motivated: it ensures
+that optimised parameters reproduce QM frequencies within typical
+experimental resolution.  Whether a relaxed threshold (e.g. 0.5 or
+1.0 cm⁻¹) is acceptable depends on the application:</p>
+<ul>
+<li><strong>Final production fits:</strong> 0.1 cm⁻¹ is appropriate → float64 required</li>
+<li><strong>Early optimisation cycles / coarse exploration:</strong> 0.5 cm⁻¹ may be
+  acceptable → mixed precision could accelerate by 64× on consumer GPUs</li>
+<li><strong>Small molecules (≤10 atoms):</strong> float32 passes easily → always safe</li>
+<li><strong>Stiff molecules (no soft modes &lt;100 cm⁻¹):</strong> likely safe even at
+  30+ atoms, but not yet tested</li>
+</ul>
+<p><strong>Recommendation:</strong> Keep float64 as default.  The <code>JAX_ENABLE_X64=0</code>
+environment variable allows opt-in for specific use cases.  A future
+adaptive strategy could use float32 for early cycles and switch to
+float64 for refinement.</p>
+<h3 id="batch-kernel-launches-across-molecules-with-vmap">Batch kernel launches across molecules with <code>vmap</code><a class="headerlink" href="#batch-kernel-launches-across-molecules-with-vmap" title="Permanent link">&para;</a></h3>
+<p>Pad molecules to a uniform atom count and use <code>jax.vmap(hessian_fn)</code>
+to compute all Hessians in a single kernel launch, replacing the
+per-molecule Python loop.  This directly addresses
+<a href="#2-small-matrices-many-kernel-launches">factors 2 and 3</a> above.
+The energy-only path already supports batching via
+<a class="autorefs autorefs-internal" title="            batched_energy" href="../../reference/q2mm/backends/mm/jax_engine/#q2mm.backends.mm.jax_engine.JaxEngine.batched_energy"><code>JaxEngine.batched_energy</code></a>,
+so the pattern is proven within q2mm; extending it to Hessians is
+the next logical step.  For rh-enamide, this would consolidate 9
+separate kernel launches into one, giving the GPU a much larger
+workload to parallelise.</p>
+<h3 id="vmap-over-molecules-in-the-objective-function"><code>vmap</code> over molecules in the objective function<a class="headerlink" href="#vmap-over-molecules-in-the-objective-function" title="Permanent link">&para;</a></h3>
+<p>A related but distinct idea: instead of (or in addition to) batching
+Hessians at the engine level, <code>vmap</code> the entire per-molecule
+evaluation at the objective function level.  This would require the
+objective to be expressible as a pure JAX function — no Python
+control flow between molecules — but would let XLA see all molecules
+at once for maximum kernel fusion.  This overlaps with the
+end-to-end JIT approach below.</p>
+<h3 id="end-to-end-jit-compiled-loss-function">End-to-end JIT-compiled loss function<a class="headerlink" href="#end-to-end-jit-compiled-loss-function" title="Permanent link">&para;</a></h3>
+<p>Restructure the frequency objective as a single <code>jax.jit</code>-compiled
+function: <code>params → energy → hessian → eigenvalues → frequencies →
+residuals → loss</code>.  This lets XLA fuse the entire computation graph
+into optimised kernels, eliminates Python loop overhead, and enables
+<code>jax.grad(loss)</code> for analytical parameter gradients through the full
+pipeline — including through the eigenvalue decomposition.  If this
+works, it would also enable gradient-based L-BFGS through the full
+frequency loss (not just finite-difference gradients), reducing the
+per-iteration cost from O(parameters) evaluations to O(1).</p>
+<h3 id="jax-reaxff-integration">JAX-ReaxFF integration<a class="headerlink" href="#jax-reaxff-integration" title="Permanent link">&para;</a></h3>
+<p>Explore integrating <a href="https://github.com/cagrikymk/JAX-ReaxFF">JAX-ReaxFF</a> as a backend or adopting
+its architecture.  JAX-ReaxFF already has a mature, GPU-optimised
+pipeline for reactive force fields with <code>vmap</code> batching, JIT
+compilation, and gradient-based L-BFGS.  Supporting it as an engine
+would give q2mm access to reactive force field fitting with proven
+GPU speedups.  Alternatively, studying its architecture could inform
+how to restructure q2mm's own objective function.</p>
+<hr />
+<h2 id="jit-compilation">JIT Compilation<a class="headerlink" href="#jit-compilation" title="Permanent link">&para;</a></h2>
+<p>JAX compiles functions on the first call.  Subsequent calls reuse the
+compiled kernel.</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">JIT warmup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F</td>
+<td style="text-align: right;">&lt; 1 s</td>
+</tr>
+<tr>
+<td>rh-enamide (9 molecules)</td>
+<td style="text-align: right;">~6 s (GPU), ~3 s (CPU)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="memory">Memory<a class="headerlink" href="#memory" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Peak VRAM</th>
+<th style="text-align: right;">Available</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CH₃F (1 molecule)</td>
+<td style="text-align: right;">~2 GB</td>
+<td style="text-align: right;">32 GB</td>
+</tr>
+<tr>
+<td>rh-enamide (9 molecules)</td>
+<td style="text-align: right;">~30 GB</td>
+<td style="text-align: right;">32 GB</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="compatibility">Compatibility<a class="headerlink" href="#compatibility" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>JAX CUDA (Blackwell / sm_120)</td>
+<td>✅ Works</td>
+</tr>
+<tr>
+<td>OpenMM CUDA (Blackwell / sm_120)</td>
+<td>✅ Works (install <code>OpenMM-CUDA-12</code>)</td>
+</tr>
+<tr>
+<td>JAX force fields</td>
+<td>Harmonic only (no MM3)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="reproducing">Reproducing<a class="headerlink" href="#reproducing" title="Permanent link">&para;</a></h2>
+<p>Each benchmark was run <strong>alone</strong> on an otherwise idle system.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># GPU — rh-enamide</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--gpus<span class="w"> </span>all<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/work&quot;</span><span class="w"> </span>-w<span class="w"> </span>/work<span class="w"> </span>q2mm-gpu:latest<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="s2">&quot;pip install -e . --no-deps -q &amp;&amp; \</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="s2">   python scripts/run_cycling_benchmark.py \</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="s2">     --molecule rh-enamide --engine jax \</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="s2">     --max-cycles 10 --max-params 5 --convergence 0.01 \</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="s2">     --output benchmarks/rh-enamide/results-cycling-gpu&quot;</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="c1"># CPU — rh-enamide (same container, JAX forced to CPU)</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-v<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">:/work&quot;</span><span class="w"> </span>-w<span class="w"> </span>/work<span class="w"> </span>q2mm-gpu:latest<span class="w"> </span>bash<span class="w"> </span>-c<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="s2">&quot;pip install -e . --no-deps -q &amp;&amp; \</span>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="s2">   JAX_PLATFORMS=cpu python scripts/run_cycling_benchmark.py \</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="s2">     --molecule rh-enamide --engine jax \</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="s2">     --max-cycles 10 --max-params 5 --convergence 0.01 \</span>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="s2">     --output benchmarks/rh-enamide/results-cycling-cpu&quot;</span>
+</code></pre></div>
+<p>Raw JSON results: <code>benchmarks/{molecule}/results-cycling-{gpu,cpu}/</code>.</p>
+<h2 id="hardware-software">Hardware &amp; Software<a class="headerlink" href="#hardware-software" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GPU</td>
+<td>NVIDIA RTX 5090 (32 GB, Blackwell sm_120)</td>
+</tr>
+<tr>
+<td>CPU</td>
+<td>AMD Ryzen 7 7800X3D (8 cores, 16 threads)</td>
+</tr>
+<tr>
+<td>CUDA</td>
+<td>12.8</td>
+</tr>
+<tr>
+<td>Container</td>
+<td><code>q2mm-gpu:latest</code> (nvidia/cuda:12.8.0 + micromamba)</td>
+</tr>
+<tr>
+<td>JAX</td>
+<td>0.5.x with CUDA 12</td>
+</tr>
+<tr>
+<td>Precision</td>
+<td>float64</td>
+</tr>
+</tbody>
+</table>
+<h2 id="further-reading">Further Reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="https://docs.jax.dev/en/latest/gpu_performance_tips.html">JAX GPU Performance Tips</a> — official guide on maximizing GPU throughput</li>
+<li><a href="https://docs.jax.dev/en/latest/benchmarking.html">JAX Benchmarking Guide</a> — <code>block_until_ready</code>, CPU vs GPU crossover points</li>
+<li><a href="https://stackoverflow.com/questions/70572362/compute-efficiently-hessian-matrices-in-jax">Efficient Hessians in JAX</a> — <code>jacfwd(jacrev(...))</code> patterns</li>
+<li><a href="https://github.com/jax-ml/jax/issues/18816">JAX GPU slower than CPU (issue #18816)</a> — community reports of same phenomenon</li>
+<li><a href="https://chemrxiv.org/doi/pdf/10.26434/chemrxiv-2021-b342n">JAX-ReaxFF paper</a> — gradient-based FF optimization with GPU speedup</li>
+<li><a href="https://github.com/deepmodeling/DMFF">DMFF</a> — differentiable molecular force field platform</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

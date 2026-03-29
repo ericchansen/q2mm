@@ -1,0 +1,4362 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/reference/q2mm/parsers/gaussian/">
+      
+      
+        <link rel="prev" href="../fchk/">
+      
+      
+        <link rel="next" href="../jaguar/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>gaussian - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#q2mm.parsers.gaussian" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              gaussian
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1" id="__nav_10_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_10_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1" id="__nav_10_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1_2" id="__nav_10_1_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/qm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_1_3" id="__nav_10_1_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    qm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/qm/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagnostics/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnostics
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_3" id="__nav_10_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    diagnostics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/pes_distortion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pes_distortion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/reference_analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagnostics/tables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_6" id="__nav_10_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/ff_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ff_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_7" id="__nav_10_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/defaults/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    defaults
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_7_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../optimizers/evaluators/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluators
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_7_3" id="__nav_10_1_7_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_10_1_7_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10_1_7_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    evaluators
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/evaluators/eigenmatrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    eigenmatrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/evaluators/energy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    energy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/evaluators/frequency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    frequency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/evaluators/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/objective/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objective
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/scoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10_1_8" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parsers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_10_1_8" id="__nav_10_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_10_1_8_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_10_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    parsers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../amber_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    datum
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;gaussian
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" gaussian">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;GaussLog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" GaussLog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.evecs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;evecs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.evals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;evals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.frequencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;frequencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.structures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;structures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.molecules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;molecules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.read_out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_out
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.read_archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_archive
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../param/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    param
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference_yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_yaml
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tinker_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;gaussian
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" gaussian">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;GaussLog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" GaussLog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.evecs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;evecs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.evals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;evals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.frequencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;frequencies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.structures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;structures
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.molecules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;molecules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.read_out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_out
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.parsers.gaussian.GaussLog.read_archive" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_archive
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>gaussian</h1>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="q2mm.parsers.gaussian" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-module"></code>            <span class="doc doc-object-name doc-module-name">gaussian</span>
+
+
+<a href="#q2mm.parsers.gaussian" class="headerlink" title="Permanent link">&para;</a></h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Parser for Gaussian log files.</p>
+<p>Extracts structures, Hessians, eigenvectors, eigenvalues, frequencies,
+and ESP data from Gaussian output files.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="q2mm.parsers.gaussian.GaussLog" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">GaussLog</span>
+
+
+<a href="#q2mm.parsers.gaussian.GaussLog" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">GaussLog</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n"><span title="str">str</span></span><span class="p">,</span> <span class="n">au_hessian</span><span class="p">:</span> <span class="n"><span title="bool">bool</span></span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="            File (q2mm.parsers.base.File)" href="../base/#q2mm.parsers.base.File">File</a></code></p>
+
+
+
+        <p>Retrieves data from Gaussian log files.</p>
+<p>If you are extracting frequencies/Hessian data from this file, use
+the keyword NoSymmetry when running the Gaussian calculation.</p>
+
+        <p>Instantiate a file object for the file at the location path passed.</p>
+<p>Populates the directory and filename properties as well.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Location of the Gaussian log file.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>au_hessian</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, the Hessian will not be
+converted to kJ/(mol·Å²) but rather left in atomic units
+(Hartree/Bohr²). Defaults to False.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+                  <details class="mkdocstrings-source">
+                    <summary>Source code in <code>q2mm/parsers/gaussian.py</code></summary>
+                    <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-45">45</a></span>
+<span class="normal"><a href="#__codelineno-0-46">46</a></span>
+<span class="normal"><a href="#__codelineno-0-47">47</a></span>
+<span class="normal"><a href="#__codelineno-0-48">48</a></span>
+<span class="normal"><a href="#__codelineno-0-49">49</a></span>
+<span class="normal"><a href="#__codelineno-0-50">50</a></span>
+<span class="normal"><a href="#__codelineno-0-51">51</a></span>
+<span class="normal"><a href="#__codelineno-0-52">52</a></span>
+<span class="normal"><a href="#__codelineno-0-53">53</a></span>
+<span class="normal"><a href="#__codelineno-0-54">54</a></span>
+<span class="normal"><a href="#__codelineno-0-55">55</a></span>
+<span class="normal"><a href="#__codelineno-0-56">56</a></span>
+<span class="normal"><a href="#__codelineno-0-57">57</a></span>
+<span class="normal"><a href="#__codelineno-0-58">58</a></span>
+<span class="normal"><a href="#__codelineno-0-59">59</a></span>
+<span class="normal"><a href="#__codelineno-0-60">60</a></span>
+<span class="normal"><a href="#__codelineno-0-61">61</a></span>
+<span class="normal"><a href="#__codelineno-0-62">62</a></span>
+<span class="normal"><a href="#__codelineno-0-63">63</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-45" name="__codelineno-0-45"></a><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">au_hessian</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-46" name="__codelineno-0-46"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Instantiate a file object for the file at the location path passed.</span>
+<a id="__codelineno-0-47" name="__codelineno-0-47"></a>
+<a id="__codelineno-0-48" name="__codelineno-0-48"></a><span class="sd">    Populates the directory and filename properties as well.</span>
+<a id="__codelineno-0-49" name="__codelineno-0-49"></a>
+<a id="__codelineno-0-50" name="__codelineno-0-50"></a><span class="sd">    Args:</span>
+<a id="__codelineno-0-51" name="__codelineno-0-51"></a><span class="sd">        path (str): Location of the Gaussian log file.</span>
+<a id="__codelineno-0-52" name="__codelineno-0-52"></a><span class="sd">        au_hessian (bool, optional): If True, the Hessian will not be</span>
+<a id="__codelineno-0-53" name="__codelineno-0-53"></a><span class="sd">            converted to kJ/(mol·Å²) but rather left in atomic units</span>
+<a id="__codelineno-0-54" name="__codelineno-0-54"></a><span class="sd">            (Hartree/Bohr²). Defaults to False.</span>
+<a id="__codelineno-0-55" name="__codelineno-0-55"></a>
+<a id="__codelineno-0-56" name="__codelineno-0-56"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-57" name="__codelineno-0-57"></a>    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<a id="__codelineno-0-58" name="__codelineno-0-58"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_evals</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-59" name="__codelineno-0-59"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-60" name="__codelineno-0-60"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_frequencies_cm</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-61" name="__codelineno-0-61"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_structures</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-62" name="__codelineno-0-62"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_esp_rms</span> <span class="o">=</span> <span class="kc">None</span>
+<a id="__codelineno-0-63" name="__codelineno-0-63"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_au_hessian</span> <span class="o">=</span> <span class="n">au_hessian</span>
+</code></pre></div></td></tr></table></div>
+                  </details>
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.evecs" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">evecs</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#q2mm.parsers.gaussian.GaussLog.evecs" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">evecs</span><span class="p">:</span> <span class="n"><span title="numpy.ndarray">ndarray</span></span> <span class="o">|</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Returns eigenvectors of frequency analysis if applicable.</p>
+<p>If not yet parsed, parses them from the log body, not the archive.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="numpy.ndarray">ndarray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mass-weighted, normalized eigenvectors of the
+Gaussian frequency analysis, or None if not a frequency job.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.evals" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">evals</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#q2mm.parsers.gaussian.GaussLog.evals" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">evals</span><span class="p">:</span> <span class="n"><span title="numpy.ndarray">ndarray</span></span> <span class="o">|</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Returns eigenvalues of frequency analysis if applicable.</p>
+<p>If not yet parsed, parses them from the log body, not the archive.</p>
+<p>These are mass-weighted force constants in atomic units
+(sign × force_constant / (reduced_mass × AU_TO_MDYNA)), NOT vibrational
+frequencies in cm⁻¹.  Use :attr:<code>frequencies</code> for cm⁻¹ values.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="numpy.ndarray">ndarray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mass-weighted force constants in atomic units,
+or None if not a frequency job.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.frequencies" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">frequencies</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#q2mm.parsers.gaussian.GaussLog.frequencies" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">frequencies</span><span class="p">:</span> <span class="n"><span title="numpy.ndarray">ndarray</span></span> <span class="o">|</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Vibrational frequencies in cm⁻¹ from the Gaussian frequency analysis.</p>
+<p>Negative values indicate imaginary modes (transition states).</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="numpy.ndarray">ndarray</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frequencies in cm⁻¹, or None if not a frequency job.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.structures" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">structures</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#q2mm.parsers.gaussian.GaussLog.structures" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">structures</span><span class="p">:</span> <span class="n"><span title="list">list</span></span><span class="p">[</span><span class="n"><a class="autorefs autorefs-internal" title="            Structure (q2mm.models.structure.Structure)" href="../../models/structure/#q2mm.models.structure.Structure">Structure</a></span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Returns Structure objects parsed from the Gaussian log file.</p>
+<p>If None, parses the archive of the log file for structures.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<a class="autorefs autorefs-internal" title="            Structure (q2mm.models.structure.Structure)" href="../../models/structure/#q2mm.models.structure.Structure">Structure</a>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Structures parsed from log file archive.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+        <p>.. deprecated::
+    Use :attr:<code>molecules</code> instead for <code>Q2MMMolecule</code> objects.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.molecules" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">molecules</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#q2mm.parsers.gaussian.GaussLog.molecules" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">molecules</span><span class="p">:</span> <span class="n"><span title="list">list</span></span><span class="p">[</span><span class="n"><a class="autorefs autorefs-internal" title="            Q2MMMolecule
+
+
+  
+      dataclass
+   (q2mm.models.molecule.Q2MMMolecule)" href="../../models/molecule/#q2mm.models.molecule.Q2MMMolecule">Q2MMMolecule</a></span><span class="p">]</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Parsed structures as :class:<code>~q2mm.models.molecule.Q2MMMolecule</code> objects.</p>
+<p>Each structure is converted via
+:meth:<code>Q2MMMolecule.from_structure</code>, preserving any Hessian data
+attached to the underlying <code>Structure</code> when it is stored in
+atomic units (Hartree/Bohr²).</p>
+
+
+<details class="note" open>
+  <summary>Note</summary>
+  <p><code>Q2MMMolecule.hessian</code> is documented in Hartree/Bohr².  When
+this parser was constructed with <code>au_hessian=False</code> (the
+default), any attached Hessian has already been converted to
+kJ/(mol·Å²) and will <strong>not</strong> be forwarded to avoid silently
+mixing unit systems.</p>
+</details>
+    </div>
+
+</div>
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.read_out" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">read_out</span>
+
+
+<a href="#q2mm.parsers.gaussian.GaussLog.read_out" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">read_out</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Read force constant and eigenvector data from a frequency calculation.</p>
+<p>Populates <code>_evals</code>, <code>_evecs</code>, <code>_frequencies_cm</code>, <code>_structures</code>,
+and <code>_esp_rms</code> from the Gaussian log file body.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>q2mm/parsers/gaussian.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-162">162</a></span>
+<span class="normal"><a href="#__codelineno-0-163">163</a></span>
+<span class="normal"><a href="#__codelineno-0-164">164</a></span>
+<span class="normal"><a href="#__codelineno-0-165">165</a></span>
+<span class="normal"><a href="#__codelineno-0-166">166</a></span>
+<span class="normal"><a href="#__codelineno-0-167">167</a></span>
+<span class="normal"><a href="#__codelineno-0-168">168</a></span>
+<span class="normal"><a href="#__codelineno-0-169">169</a></span>
+<span class="normal"><a href="#__codelineno-0-170">170</a></span>
+<span class="normal"><a href="#__codelineno-0-171">171</a></span>
+<span class="normal"><a href="#__codelineno-0-172">172</a></span>
+<span class="normal"><a href="#__codelineno-0-173">173</a></span>
+<span class="normal"><a href="#__codelineno-0-174">174</a></span>
+<span class="normal"><a href="#__codelineno-0-175">175</a></span>
+<span class="normal"><a href="#__codelineno-0-176">176</a></span>
+<span class="normal"><a href="#__codelineno-0-177">177</a></span>
+<span class="normal"><a href="#__codelineno-0-178">178</a></span>
+<span class="normal"><a href="#__codelineno-0-179">179</a></span>
+<span class="normal"><a href="#__codelineno-0-180">180</a></span>
+<span class="normal"><a href="#__codelineno-0-181">181</a></span>
+<span class="normal"><a href="#__codelineno-0-182">182</a></span>
+<span class="normal"><a href="#__codelineno-0-183">183</a></span>
+<span class="normal"><a href="#__codelineno-0-184">184</a></span>
+<span class="normal"><a href="#__codelineno-0-185">185</a></span>
+<span class="normal"><a href="#__codelineno-0-186">186</a></span>
+<span class="normal"><a href="#__codelineno-0-187">187</a></span>
+<span class="normal"><a href="#__codelineno-0-188">188</a></span>
+<span class="normal"><a href="#__codelineno-0-189">189</a></span>
+<span class="normal"><a href="#__codelineno-0-190">190</a></span>
+<span class="normal"><a href="#__codelineno-0-191">191</a></span>
+<span class="normal"><a href="#__codelineno-0-192">192</a></span>
+<span class="normal"><a href="#__codelineno-0-193">193</a></span>
+<span class="normal"><a href="#__codelineno-0-194">194</a></span>
+<span class="normal"><a href="#__codelineno-0-195">195</a></span>
+<span class="normal"><a href="#__codelineno-0-196">196</a></span>
+<span class="normal"><a href="#__codelineno-0-197">197</a></span>
+<span class="normal"><a href="#__codelineno-0-198">198</a></span>
+<span class="normal"><a href="#__codelineno-0-199">199</a></span>
+<span class="normal"><a href="#__codelineno-0-200">200</a></span>
+<span class="normal"><a href="#__codelineno-0-201">201</a></span>
+<span class="normal"><a href="#__codelineno-0-202">202</a></span>
+<span class="normal"><a href="#__codelineno-0-203">203</a></span>
+<span class="normal"><a href="#__codelineno-0-204">204</a></span>
+<span class="normal"><a href="#__codelineno-0-205">205</a></span>
+<span class="normal"><a href="#__codelineno-0-206">206</a></span>
+<span class="normal"><a href="#__codelineno-0-207">207</a></span>
+<span class="normal"><a href="#__codelineno-0-208">208</a></span>
+<span class="normal"><a href="#__codelineno-0-209">209</a></span>
+<span class="normal"><a href="#__codelineno-0-210">210</a></span>
+<span class="normal"><a href="#__codelineno-0-211">211</a></span>
+<span class="normal"><a href="#__codelineno-0-212">212</a></span>
+<span class="normal"><a href="#__codelineno-0-213">213</a></span>
+<span class="normal"><a href="#__codelineno-0-214">214</a></span>
+<span class="normal"><a href="#__codelineno-0-215">215</a></span>
+<span class="normal"><a href="#__codelineno-0-216">216</a></span>
+<span class="normal"><a href="#__codelineno-0-217">217</a></span>
+<span class="normal"><a href="#__codelineno-0-218">218</a></span>
+<span class="normal"><a href="#__codelineno-0-219">219</a></span>
+<span class="normal"><a href="#__codelineno-0-220">220</a></span>
+<span class="normal"><a href="#__codelineno-0-221">221</a></span>
+<span class="normal"><a href="#__codelineno-0-222">222</a></span>
+<span class="normal"><a href="#__codelineno-0-223">223</a></span>
+<span class="normal"><a href="#__codelineno-0-224">224</a></span>
+<span class="normal"><a href="#__codelineno-0-225">225</a></span>
+<span class="normal"><a href="#__codelineno-0-226">226</a></span>
+<span class="normal"><a href="#__codelineno-0-227">227</a></span>
+<span class="normal"><a href="#__codelineno-0-228">228</a></span>
+<span class="normal"><a href="#__codelineno-0-229">229</a></span>
+<span class="normal"><a href="#__codelineno-0-230">230</a></span>
+<span class="normal"><a href="#__codelineno-0-231">231</a></span>
+<span class="normal"><a href="#__codelineno-0-232">232</a></span>
+<span class="normal"><a href="#__codelineno-0-233">233</a></span>
+<span class="normal"><a href="#__codelineno-0-234">234</a></span>
+<span class="normal"><a href="#__codelineno-0-235">235</a></span>
+<span class="normal"><a href="#__codelineno-0-236">236</a></span>
+<span class="normal"><a href="#__codelineno-0-237">237</a></span>
+<span class="normal"><a href="#__codelineno-0-238">238</a></span>
+<span class="normal"><a href="#__codelineno-0-239">239</a></span>
+<span class="normal"><a href="#__codelineno-0-240">240</a></span>
+<span class="normal"><a href="#__codelineno-0-241">241</a></span>
+<span class="normal"><a href="#__codelineno-0-242">242</a></span>
+<span class="normal"><a href="#__codelineno-0-243">243</a></span>
+<span class="normal"><a href="#__codelineno-0-244">244</a></span>
+<span class="normal"><a href="#__codelineno-0-245">245</a></span>
+<span class="normal"><a href="#__codelineno-0-246">246</a></span>
+<span class="normal"><a href="#__codelineno-0-247">247</a></span>
+<span class="normal"><a href="#__codelineno-0-248">248</a></span>
+<span class="normal"><a href="#__codelineno-0-249">249</a></span>
+<span class="normal"><a href="#__codelineno-0-250">250</a></span>
+<span class="normal"><a href="#__codelineno-0-251">251</a></span>
+<span class="normal"><a href="#__codelineno-0-252">252</a></span>
+<span class="normal"><a href="#__codelineno-0-253">253</a></span>
+<span class="normal"><a href="#__codelineno-0-254">254</a></span>
+<span class="normal"><a href="#__codelineno-0-255">255</a></span>
+<span class="normal"><a href="#__codelineno-0-256">256</a></span>
+<span class="normal"><a href="#__codelineno-0-257">257</a></span>
+<span class="normal"><a href="#__codelineno-0-258">258</a></span>
+<span class="normal"><a href="#__codelineno-0-259">259</a></span>
+<span class="normal"><a href="#__codelineno-0-260">260</a></span>
+<span class="normal"><a href="#__codelineno-0-261">261</a></span>
+<span class="normal"><a href="#__codelineno-0-262">262</a></span>
+<span class="normal"><a href="#__codelineno-0-263">263</a></span>
+<span class="normal"><a href="#__codelineno-0-264">264</a></span>
+<span class="normal"><a href="#__codelineno-0-265">265</a></span>
+<span class="normal"><a href="#__codelineno-0-266">266</a></span>
+<span class="normal"><a href="#__codelineno-0-267">267</a></span>
+<span class="normal"><a href="#__codelineno-0-268">268</a></span>
+<span class="normal"><a href="#__codelineno-0-269">269</a></span>
+<span class="normal"><a href="#__codelineno-0-270">270</a></span>
+<span class="normal"><a href="#__codelineno-0-271">271</a></span>
+<span class="normal"><a href="#__codelineno-0-272">272</a></span>
+<span class="normal"><a href="#__codelineno-0-273">273</a></span>
+<span class="normal"><a href="#__codelineno-0-274">274</a></span>
+<span class="normal"><a href="#__codelineno-0-275">275</a></span>
+<span class="normal"><a href="#__codelineno-0-276">276</a></span>
+<span class="normal"><a href="#__codelineno-0-277">277</a></span>
+<span class="normal"><a href="#__codelineno-0-278">278</a></span>
+<span class="normal"><a href="#__codelineno-0-279">279</a></span>
+<span class="normal"><a href="#__codelineno-0-280">280</a></span>
+<span class="normal"><a href="#__codelineno-0-281">281</a></span>
+<span class="normal"><a href="#__codelineno-0-282">282</a></span>
+<span class="normal"><a href="#__codelineno-0-283">283</a></span>
+<span class="normal"><a href="#__codelineno-0-284">284</a></span>
+<span class="normal"><a href="#__codelineno-0-285">285</a></span>
+<span class="normal"><a href="#__codelineno-0-286">286</a></span>
+<span class="normal"><a href="#__codelineno-0-287">287</a></span>
+<span class="normal"><a href="#__codelineno-0-288">288</a></span>
+<span class="normal"><a href="#__codelineno-0-289">289</a></span>
+<span class="normal"><a href="#__codelineno-0-290">290</a></span>
+<span class="normal"><a href="#__codelineno-0-291">291</a></span>
+<span class="normal"><a href="#__codelineno-0-292">292</a></span>
+<span class="normal"><a href="#__codelineno-0-293">293</a></span>
+<span class="normal"><a href="#__codelineno-0-294">294</a></span>
+<span class="normal"><a href="#__codelineno-0-295">295</a></span>
+<span class="normal"><a href="#__codelineno-0-296">296</a></span>
+<span class="normal"><a href="#__codelineno-0-297">297</a></span>
+<span class="normal"><a href="#__codelineno-0-298">298</a></span>
+<span class="normal"><a href="#__codelineno-0-299">299</a></span>
+<span class="normal"><a href="#__codelineno-0-300">300</a></span>
+<span class="normal"><a href="#__codelineno-0-301">301</a></span>
+<span class="normal"><a href="#__codelineno-0-302">302</a></span>
+<span class="normal"><a href="#__codelineno-0-303">303</a></span>
+<span class="normal"><a href="#__codelineno-0-304">304</a></span>
+<span class="normal"><a href="#__codelineno-0-305">305</a></span>
+<span class="normal"><a href="#__codelineno-0-306">306</a></span>
+<span class="normal"><a href="#__codelineno-0-307">307</a></span>
+<span class="normal"><a href="#__codelineno-0-308">308</a></span>
+<span class="normal"><a href="#__codelineno-0-309">309</a></span>
+<span class="normal"><a href="#__codelineno-0-310">310</a></span>
+<span class="normal"><a href="#__codelineno-0-311">311</a></span>
+<span class="normal"><a href="#__codelineno-0-312">312</a></span>
+<span class="normal"><a href="#__codelineno-0-313">313</a></span>
+<span class="normal"><a href="#__codelineno-0-314">314</a></span>
+<span class="normal"><a href="#__codelineno-0-315">315</a></span>
+<span class="normal"><a href="#__codelineno-0-316">316</a></span>
+<span class="normal"><a href="#__codelineno-0-317">317</a></span>
+<span class="normal"><a href="#__codelineno-0-318">318</a></span>
+<span class="normal"><a href="#__codelineno-0-319">319</a></span>
+<span class="normal"><a href="#__codelineno-0-320">320</a></span>
+<span class="normal"><a href="#__codelineno-0-321">321</a></span>
+<span class="normal"><a href="#__codelineno-0-322">322</a></span>
+<span class="normal"><a href="#__codelineno-0-323">323</a></span>
+<span class="normal"><a href="#__codelineno-0-324">324</a></span>
+<span class="normal"><a href="#__codelineno-0-325">325</a></span>
+<span class="normal"><a href="#__codelineno-0-326">326</a></span>
+<span class="normal"><a href="#__codelineno-0-327">327</a></span>
+<span class="normal"><a href="#__codelineno-0-328">328</a></span>
+<span class="normal"><a href="#__codelineno-0-329">329</a></span>
+<span class="normal"><a href="#__codelineno-0-330">330</a></span>
+<span class="normal"><a href="#__codelineno-0-331">331</a></span>
+<span class="normal"><a href="#__codelineno-0-332">332</a></span>
+<span class="normal"><a href="#__codelineno-0-333">333</a></span>
+<span class="normal"><a href="#__codelineno-0-334">334</a></span>
+<span class="normal"><a href="#__codelineno-0-335">335</a></span>
+<span class="normal"><a href="#__codelineno-0-336">336</a></span>
+<span class="normal"><a href="#__codelineno-0-337">337</a></span>
+<span class="normal"><a href="#__codelineno-0-338">338</a></span>
+<span class="normal"><a href="#__codelineno-0-339">339</a></span>
+<span class="normal"><a href="#__codelineno-0-340">340</a></span>
+<span class="normal"><a href="#__codelineno-0-341">341</a></span>
+<span class="normal"><a href="#__codelineno-0-342">342</a></span>
+<span class="normal"><a href="#__codelineno-0-343">343</a></span>
+<span class="normal"><a href="#__codelineno-0-344">344</a></span>
+<span class="normal"><a href="#__codelineno-0-345">345</a></span>
+<span class="normal"><a href="#__codelineno-0-346">346</a></span>
+<span class="normal"><a href="#__codelineno-0-347">347</a></span>
+<span class="normal"><a href="#__codelineno-0-348">348</a></span>
+<span class="normal"><a href="#__codelineno-0-349">349</a></span>
+<span class="normal"><a href="#__codelineno-0-350">350</a></span>
+<span class="normal"><a href="#__codelineno-0-351">351</a></span>
+<span class="normal"><a href="#__codelineno-0-352">352</a></span>
+<span class="normal"><a href="#__codelineno-0-353">353</a></span>
+<span class="normal"><a href="#__codelineno-0-354">354</a></span>
+<span class="normal"><a href="#__codelineno-0-355">355</a></span>
+<span class="normal"><a href="#__codelineno-0-356">356</a></span>
+<span class="normal"><a href="#__codelineno-0-357">357</a></span>
+<span class="normal"><a href="#__codelineno-0-358">358</a></span>
+<span class="normal"><a href="#__codelineno-0-359">359</a></span>
+<span class="normal"><a href="#__codelineno-0-360">360</a></span>
+<span class="normal"><a href="#__codelineno-0-361">361</a></span>
+<span class="normal"><a href="#__codelineno-0-362">362</a></span>
+<span class="normal"><a href="#__codelineno-0-363">363</a></span>
+<span class="normal"><a href="#__codelineno-0-364">364</a></span>
+<span class="normal"><a href="#__codelineno-0-365">365</a></span>
+<span class="normal"><a href="#__codelineno-0-366">366</a></span>
+<span class="normal"><a href="#__codelineno-0-367">367</a></span>
+<span class="normal"><a href="#__codelineno-0-368">368</a></span>
+<span class="normal"><a href="#__codelineno-0-369">369</a></span>
+<span class="normal"><a href="#__codelineno-0-370">370</a></span>
+<span class="normal"><a href="#__codelineno-0-371">371</a></span>
+<span class="normal"><a href="#__codelineno-0-372">372</a></span>
+<span class="normal"><a href="#__codelineno-0-373">373</a></span>
+<span class="normal"><a href="#__codelineno-0-374">374</a></span>
+<span class="normal"><a href="#__codelineno-0-375">375</a></span>
+<span class="normal"><a href="#__codelineno-0-376">376</a></span>
+<span class="normal"><a href="#__codelineno-0-377">377</a></span>
+<span class="normal"><a href="#__codelineno-0-378">378</a></span>
+<span class="normal"><a href="#__codelineno-0-379">379</a></span>
+<span class="normal"><a href="#__codelineno-0-380">380</a></span>
+<span class="normal"><a href="#__codelineno-0-381">381</a></span>
+<span class="normal"><a href="#__codelineno-0-382">382</a></span>
+<span class="normal"><a href="#__codelineno-0-383">383</a></span>
+<span class="normal"><a href="#__codelineno-0-384">384</a></span>
+<span class="normal"><a href="#__codelineno-0-385">385</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-162" name="__codelineno-0-162"></a><span class="k">def</span><span class="w"> </span><span class="nf">read_out</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-163" name="__codelineno-0-163"></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Read force constant and eigenvector data from a frequency calculation.</span>
+<a id="__codelineno-0-164" name="__codelineno-0-164"></a>
+<a id="__codelineno-0-165" name="__codelineno-0-165"></a><span class="sd">    Populates ``_evals``, ``_evecs``, ``_frequencies_cm``, ``_structures``,</span>
+<a id="__codelineno-0-166" name="__codelineno-0-166"></a><span class="sd">    and ``_esp_rms`` from the Gaussian log file body.</span>
+<a id="__codelineno-0-167" name="__codelineno-0-167"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-168" name="__codelineno-0-168"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;READING: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-169" name="__codelineno-0-169"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_evals</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-170" name="__codelineno-0-170"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-171" name="__codelineno-0-171"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_frequencies_cm</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-172" name="__codelineno-0-172"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_structures</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-173" name="__codelineno-0-173"></a>    <span class="n">force_constants</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-174" name="__codelineno-0-174"></a>    <span class="n">evecs</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-175" name="__codelineno-0-175"></a>    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-0-176" name="__codelineno-0-176"></a>        <span class="c1"># The keyword &quot;harmonic&quot; shows up before the section we&#39;re</span>
+<a id="__codelineno-0-177" name="__codelineno-0-177"></a>        <span class="c1"># interested in. It can show up multiple times depending on the</span>
+<a id="__codelineno-0-178" name="__codelineno-0-178"></a>        <span class="c1"># options in the Gaussian .com file.</span>
+<a id="__codelineno-0-179" name="__codelineno-0-179"></a>        <span class="n">past_first_harm</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-0-180" name="__codelineno-0-180"></a>        <span class="c1"># High precision mode, turned on by including &quot;freq=hpmodes&quot; in the</span>
+<a id="__codelineno-0-181" name="__codelineno-0-181"></a>        <span class="c1"># Gaussian .com file.</span>
+<a id="__codelineno-0-182" name="__codelineno-0-182"></a>        <span class="n">hpmodes</span> <span class="o">=</span> <span class="kc">False</span>
+<a id="__codelineno-0-183" name="__codelineno-0-183"></a>        <span class="n">file_iterator</span> <span class="o">=</span> <span class="nb">iter</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+<a id="__codelineno-0-184" name="__codelineno-0-184"></a>        <span class="c1"># This while loop breaks when the end of the file is reached, or</span>
+<a id="__codelineno-0-185" name="__codelineno-0-185"></a>        <span class="c1"># if the high quality modes have been read already.</span>
+<a id="__codelineno-0-186" name="__codelineno-0-186"></a>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<a id="__codelineno-0-187" name="__codelineno-0-187"></a>            <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-188" name="__codelineno-0-188"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-189" name="__codelineno-0-189"></a>            <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+<a id="__codelineno-0-190" name="__codelineno-0-190"></a>                <span class="k">break</span>
+<a id="__codelineno-0-191" name="__codelineno-0-191"></a>            <span class="k">if</span> <span class="s2">&quot;Charges from ESP fit&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-192" name="__codelineno-0-192"></a>                <span class="n">pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">rf</span><span class="s2">&quot;RMS=\s+(</span><span class="si">{</span><span class="n">co</span><span class="o">.</span><span class="n">RE_FLOAT</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-193" name="__codelineno-0-193"></a>                <span class="n">match</span> <span class="o">=</span> <span class="n">pattern</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+<a id="__codelineno-0-194" name="__codelineno-0-194"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_esp_rms</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>
+<a id="__codelineno-0-195" name="__codelineno-0-195"></a>            <span class="c1"># Gathering some geometric information.</span>
+<a id="__codelineno-0-196" name="__codelineno-0-196"></a>            <span class="k">elif</span> <span class="s2">&quot;Standard orientation:&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-197" name="__codelineno-0-197"></a>                <span class="bp">self</span><span class="o">.</span><span class="n">_structures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Structure</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">))</span>
+<a id="__codelineno-0-198" name="__codelineno-0-198"></a>                <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-199" name="__codelineno-0-199"></a>                <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-200" name="__codelineno-0-200"></a>                <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-201" name="__codelineno-0-201"></a>                <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-202" name="__codelineno-0-202"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-203" name="__codelineno-0-203"></a>                <span class="k">while</span> <span class="s2">&quot;---&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-204" name="__codelineno-0-204"></a>                    <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-205" name="__codelineno-0-205"></a>                    <span class="bp">self</span><span class="o">.</span><span class="n">_structures</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">atoms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="__codelineno-0-206" name="__codelineno-0-206"></a>                        <span class="n">Atom</span><span class="p">(</span>
+<a id="__codelineno-0-207" name="__codelineno-0-207"></a>                            <span class="n">index</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span>
+<a id="__codelineno-0-208" name="__codelineno-0-208"></a>                            <span class="n">atomic_num</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+<a id="__codelineno-0-209" name="__codelineno-0-209"></a>                            <span class="n">x</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">3</span><span class="p">]),</span>
+<a id="__codelineno-0-210" name="__codelineno-0-210"></a>                            <span class="n">y</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">4</span><span class="p">]),</span>
+<a id="__codelineno-0-211" name="__codelineno-0-211"></a>                            <span class="n">z</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">5</span><span class="p">]),</span>
+<a id="__codelineno-0-212" name="__codelineno-0-212"></a>                        <span class="p">)</span>
+<a id="__codelineno-0-213" name="__codelineno-0-213"></a>                    <span class="p">)</span>
+<a id="__codelineno-0-214" name="__codelineno-0-214"></a>                    <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-215" name="__codelineno-0-215"></a>                <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+<a id="__codelineno-0-216" name="__codelineno-0-216"></a>                    <span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-0-217" name="__codelineno-0-217"></a>                    <span class="sa">f</span><span class="s2">&quot;  -- Found </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_structures</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">atoms</span><span class="p">)</span><span class="si">}</span><span class="s2"> atoms.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-218" name="__codelineno-0-218"></a>                <span class="p">)</span>
+<a id="__codelineno-0-219" name="__codelineno-0-219"></a>            <span class="k">elif</span> <span class="s2">&quot;Harmonic&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-220" name="__codelineno-0-220"></a>                <span class="c1"># The high quality eigenvectors come before the low quality</span>
+<a id="__codelineno-0-221" name="__codelineno-0-221"></a>                <span class="c1"># ones. If you see &quot;Harmonic&quot; again, it means you&#39;re at the</span>
+<a id="__codelineno-0-222" name="__codelineno-0-222"></a>                <span class="c1"># low quality ones now, so break.</span>
+<a id="__codelineno-0-223" name="__codelineno-0-223"></a>                <span class="k">if</span> <span class="n">past_first_harm</span><span class="p">:</span>
+<a id="__codelineno-0-224" name="__codelineno-0-224"></a>                    <span class="k">break</span>
+<a id="__codelineno-0-225" name="__codelineno-0-225"></a>                <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-226" name="__codelineno-0-226"></a>                    <span class="n">past_first_harm</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-227" name="__codelineno-0-227"></a>            <span class="k">elif</span> <span class="s2">&quot;Frequencies&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-228" name="__codelineno-0-228"></a>                <span class="c1"># We&#39;re going to keep reusing these.</span>
+<a id="__codelineno-0-229" name="__codelineno-0-229"></a>                <span class="c1"># We accumulate sets of eigevectors and eigenvalues, add</span>
+<a id="__codelineno-0-230" name="__codelineno-0-230"></a>                <span class="c1"># them to self._evecs and self._evals, and then reuse this</span>
+<a id="__codelineno-0-231" name="__codelineno-0-231"></a>                <span class="c1"># for the next set.</span>
+<a id="__codelineno-0-232" name="__codelineno-0-232"></a>                <span class="k">del</span> <span class="n">force_constants</span><span class="p">[:]</span>
+<a id="__codelineno-0-233" name="__codelineno-0-233"></a>                <span class="k">del</span> <span class="n">evecs</span><span class="p">[:]</span>
+<a id="__codelineno-0-234" name="__codelineno-0-234"></a>                <span class="c1"># Values inside line look like:</span>
+<a id="__codelineno-0-235" name="__codelineno-0-235"></a>                <span class="c1">#     &quot;Frequencies --- xxxx.xxxx xxxx.xxxx&quot;</span>
+<a id="__codelineno-0-236" name="__codelineno-0-236"></a>                <span class="c1"># That&#39;s why we remove the 1st two columns. This is</span>
+<a id="__codelineno-0-237" name="__codelineno-0-237"></a>                <span class="c1"># consistent with and without &quot;hpmodes&quot;.</span>
+<a id="__codelineno-0-238" name="__codelineno-0-238"></a>                <span class="c1"># For &quot;hpmodes&quot; option, there are 5 of these frequencies.</span>
+<a id="__codelineno-0-239" name="__codelineno-0-239"></a>                <span class="c1"># Without &quot;hpmodes&quot;, there are 3.</span>
+<a id="__codelineno-0-240" name="__codelineno-0-240"></a>                <span class="c1"># Thus the eigenvectors and eigenvalues will come in sets of</span>
+<a id="__codelineno-0-241" name="__codelineno-0-241"></a>                <span class="c1"># either 5 or 3.</span>
+<a id="__codelineno-0-242" name="__codelineno-0-242"></a>                <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-243" name="__codelineno-0-243"></a>                <span class="k">for</span> <span class="n">frequency</span> <span class="ow">in</span> <span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">cols</span><span class="p">[</span><span class="mi">2</span><span class="p">:]):</span>
+<a id="__codelineno-0-244" name="__codelineno-0-244"></a>                    <span class="c1"># Store actual frequency in cm⁻¹</span>
+<a id="__codelineno-0-245" name="__codelineno-0-245"></a>                    <span class="bp">self</span><span class="o">.</span><span class="n">_frequencies_cm</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">frequency</span><span class="p">)</span>
+<a id="__codelineno-0-246" name="__codelineno-0-246"></a>                    <span class="c1"># Has 1. or -1. depending on the sign of the frequency.</span>
+<a id="__codelineno-0-247" name="__codelineno-0-247"></a>                    <span class="k">if</span> <span class="n">frequency</span> <span class="o">&lt;</span> <span class="mf">0.0</span><span class="p">:</span>
+<a id="__codelineno-0-248" name="__codelineno-0-248"></a>                        <span class="n">force_constants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="o">-</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-0-249" name="__codelineno-0-249"></a>                    <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-250" name="__codelineno-0-250"></a>                        <span class="n">force_constants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-0-251" name="__codelineno-0-251"></a>                    <span class="c1"># For now this is empty, but we will add to it soon.</span>
+<a id="__codelineno-0-252" name="__codelineno-0-252"></a>                    <span class="n">evecs</span><span class="o">.</span><span class="n">append</span><span class="p">([])</span>
+<a id="__codelineno-0-253" name="__codelineno-0-253"></a>
+<a id="__codelineno-0-254" name="__codelineno-0-254"></a>                <span class="c1"># Moving on to the reduced masses.</span>
+<a id="__codelineno-0-255" name="__codelineno-0-255"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-256" name="__codelineno-0-256"></a>                <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-257" name="__codelineno-0-257"></a>                <span class="c1"># Again, trim the &quot;Reduced masses ---&quot;.</span>
+<a id="__codelineno-0-258" name="__codelineno-0-258"></a>                <span class="c1"># It&#39;s &quot;Red. masses --&quot; for without &quot;hpmodes&quot;.</span>
+<a id="__codelineno-0-259" name="__codelineno-0-259"></a>                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">mass</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">cols</span><span class="p">[</span><span class="mi">3</span><span class="p">:])):</span>
+<a id="__codelineno-0-260" name="__codelineno-0-260"></a>                    <span class="c1"># +/- 1 / reduced mass</span>
+<a id="__codelineno-0-261" name="__codelineno-0-261"></a>                    <span class="n">force_constants</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">force_constants</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">/</span> <span class="n">mass</span>
+<a id="__codelineno-0-262" name="__codelineno-0-262"></a>
+<a id="__codelineno-0-263" name="__codelineno-0-263"></a>                <span class="c1"># Now we are on the line with the force constants.</span>
+<a id="__codelineno-0-264" name="__codelineno-0-264"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-265" name="__codelineno-0-265"></a>                <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-266" name="__codelineno-0-266"></a>                <span class="c1"># Trim &quot;Force constants ---&quot;. It&#39;s &quot;Frc consts --&quot; without</span>
+<a id="__codelineno-0-267" name="__codelineno-0-267"></a>                <span class="c1"># &quot;hpmodes&quot;.</span>
+<a id="__codelineno-0-268" name="__codelineno-0-268"></a>                <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">force_constant</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="nb">map</span><span class="p">(</span><span class="nb">float</span><span class="p">,</span> <span class="n">cols</span><span class="p">[</span><span class="mi">3</span><span class="p">:])):</span>
+<a id="__codelineno-0-269" name="__codelineno-0-269"></a>                    <span class="c1"># AU_TO_MDYNA conversion (15.569141)</span>
+<a id="__codelineno-0-270" name="__codelineno-0-270"></a>                    <span class="n">force_constants</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*=</span> <span class="n">force_constant</span> <span class="o">/</span> <span class="n">co</span><span class="o">.</span><span class="n">AU_TO_MDYNA</span>
+<a id="__codelineno-0-271" name="__codelineno-0-271"></a>
+<a id="__codelineno-0-272" name="__codelineno-0-272"></a>                <span class="c1"># Force constants were calculated above as follows:</span>
+<a id="__codelineno-0-273" name="__codelineno-0-273"></a>                <span class="c1">#    a = +/- 1 depending on the sign of the frequency</span>
+<a id="__codelineno-0-274" name="__codelineno-0-274"></a>                <span class="c1">#    b = a / reduced mass (obtained from the Gaussian log)</span>
+<a id="__codelineno-0-275" name="__codelineno-0-275"></a>                <span class="c1">#    c = b * force constant / conversion factor (force</span>
+<a id="__codelineno-0-276" name="__codelineno-0-276"></a>                <span class="c1">#         (constant obtained from Gaussian log) (conversion</span>
+<a id="__codelineno-0-277" name="__codelineno-0-277"></a>                <span class="c1">#         factor is inside constants module)</span>
+<a id="__codelineno-0-278" name="__codelineno-0-278"></a>
+<a id="__codelineno-0-279" name="__codelineno-0-279"></a>                <span class="c1"># Skip the IR intensities.</span>
+<a id="__codelineno-0-280" name="__codelineno-0-280"></a>                <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-281" name="__codelineno-0-281"></a>                <span class="c1"># This is different depending on whether you use &quot;hpmodes&quot;.</span>
+<a id="__codelineno-0-282" name="__codelineno-0-282"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-283" name="__codelineno-0-283"></a>                <span class="c1"># &quot;Coord&quot; seems to only appear when the &quot;hpmodes&quot; is used.</span>
+<a id="__codelineno-0-284" name="__codelineno-0-284"></a>                <span class="k">if</span> <span class="s2">&quot;Coord&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-285" name="__codelineno-0-285"></a>                    <span class="n">hpmodes</span> <span class="o">=</span> <span class="kc">True</span>
+<a id="__codelineno-0-286" name="__codelineno-0-286"></a>                <span class="c1"># This is different depending on whether you use</span>
+<a id="__codelineno-0-287" name="__codelineno-0-287"></a>                <span class="c1"># &quot;freq=projected&quot;.</span>
+<a id="__codelineno-0-288" name="__codelineno-0-288"></a>                <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-289" name="__codelineno-0-289"></a>                <span class="c1"># The &quot;projected&quot; keyword seems to add &quot;IRC Coupling&quot;.</span>
+<a id="__codelineno-0-290" name="__codelineno-0-290"></a>                <span class="k">if</span> <span class="s2">&quot;IRC Coupling&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-291" name="__codelineno-0-291"></a>                    <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-292" name="__codelineno-0-292"></a>                <span class="c1"># We&#39;re on to the eigenvectors.</span>
+<a id="__codelineno-0-293" name="__codelineno-0-293"></a>                <span class="c1"># Until the end of this section containing the eigenvectors,</span>
+<a id="__codelineno-0-294" name="__codelineno-0-294"></a>                <span class="c1"># the number of columns remains constant. When that changes,</span>
+<a id="__codelineno-0-295" name="__codelineno-0-295"></a>                <span class="c1"># we know we&#39;re to the next set of frequencies, force</span>
+<a id="__codelineno-0-296" name="__codelineno-0-296"></a>                <span class="c1"># constants and eigenvectors.</span>
+<a id="__codelineno-0-297" name="__codelineno-0-297"></a>                <span class="c1"># Actually check that we&#39;ve moved on, sometimes a &quot;Depolar&quot; entry is</span>
+<a id="__codelineno-0-298" name="__codelineno-0-298"></a>                <span class="k">if</span> <span class="s2">&quot;Depolar&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-299" name="__codelineno-0-299"></a>                    <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-300" name="__codelineno-0-300"></a>                <span class="k">if</span> <span class="s2">&quot;Atom&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-301" name="__codelineno-0-301"></a>                    <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-302" name="__codelineno-0-302"></a>                <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-303" name="__codelineno-0-303"></a>                <span class="n">cols_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span>
+<a id="__codelineno-0-304" name="__codelineno-0-304"></a>
+<a id="__codelineno-0-305" name="__codelineno-0-305"></a>                <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">cols</span><span class="p">)</span> <span class="o">==</span> <span class="n">cols_len</span><span class="p">:</span>
+<a id="__codelineno-0-306" name="__codelineno-0-306"></a>                    <span class="c1"># This will come after all the eigenvectors have been</span>
+<a id="__codelineno-0-307" name="__codelineno-0-307"></a>                    <span class="c1"># read. We can break out then.</span>
+<a id="__codelineno-0-308" name="__codelineno-0-308"></a>                    <span class="k">if</span> <span class="s2">&quot;Harmonic&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-309" name="__codelineno-0-309"></a>                        <span class="k">break</span>
+<a id="__codelineno-0-310" name="__codelineno-0-310"></a>                    <span class="c1"># If &quot;hpmodes&quot; is used, you have an extra column here</span>
+<a id="__codelineno-0-311" name="__codelineno-0-311"></a>                    <span class="c1"># that is simply an index.</span>
+<a id="__codelineno-0-312" name="__codelineno-0-312"></a>                    <span class="k">if</span> <span class="n">hpmodes</span><span class="p">:</span>
+<a id="__codelineno-0-313" name="__codelineno-0-313"></a>                        <span class="n">cols</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
+<a id="__codelineno-0-314" name="__codelineno-0-314"></a>                    <span class="c1"># cols corresponds to line(s) (maybe only 1st line)</span>
+<a id="__codelineno-0-315" name="__codelineno-0-315"></a>                    <span class="c1"># under section &quot;Coord Atom Element:&quot; (at least for</span>
+<a id="__codelineno-0-316" name="__codelineno-0-316"></a>                    <span class="c1"># &quot;hpmodes&quot;).</span>
+<a id="__codelineno-0-317" name="__codelineno-0-317"></a>
+<a id="__codelineno-0-318" name="__codelineno-0-318"></a>                    <span class="c1"># Just the square root of the mass from co.MASSES.</span>
+<a id="__codelineno-0-319" name="__codelineno-0-319"></a>                    <span class="c1"># co.MASSES currently has the average mass.</span>
+<a id="__codelineno-0-320" name="__codelineno-0-320"></a>                    <span class="c1"># Gaussian may use the mass of the most abundant</span>
+<a id="__codelineno-0-321" name="__codelineno-0-321"></a>                    <span class="c1"># isotope. This may be a problem.</span>
+<a id="__codelineno-0-322" name="__codelineno-0-322"></a>                    <span class="n">mass_sqrt</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="nb">list</span><span class="p">(</span><span class="n">co</span><span class="o">.</span><span class="n">MASSES</span><span class="o">.</span><span class="n">items</span><span class="p">())[</span><span class="nb">int</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span> <span class="o">-</span> <span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">])</span>
+<a id="__codelineno-0-323" name="__codelineno-0-323"></a>
+<a id="__codelineno-0-324" name="__codelineno-0-324"></a>                    <span class="n">cols</span> <span class="o">=</span> <span class="n">cols</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+<a id="__codelineno-0-325" name="__codelineno-0-325"></a>                    <span class="c1"># This corresponds to the same line still, but without</span>
+<a id="__codelineno-0-326" name="__codelineno-0-326"></a>                    <span class="c1"># the atom elements.</span>
+<a id="__codelineno-0-327" name="__codelineno-0-327"></a>
+<a id="__codelineno-0-328" name="__codelineno-0-328"></a>                    <span class="c1"># This loop expands the LoL, evecs, as so.</span>
+<a id="__codelineno-0-329" name="__codelineno-0-329"></a>                    <span class="c1"># Iteration 1: each sub-list has 1 element</span>
+<a id="__codelineno-0-330" name="__codelineno-0-330"></a>                    <span class="c1"># Iteration 2: each sub-list has 2 elements</span>
+<a id="__codelineno-0-331" name="__codelineno-0-331"></a>                    <span class="c1"># ... etc. until the length of the sublist is equal to</span>
+<a id="__codelineno-0-332" name="__codelineno-0-332"></a>                    <span class="c1"># the number of atoms. Remember, for low precision</span>
+<a id="__codelineno-0-333" name="__codelineno-0-333"></a>                    <span class="c1"># eigenvectors it only adds in sets of 3, not 5.</span>
+<a id="__codelineno-0-334" name="__codelineno-0-334"></a>
+<a id="__codelineno-0-335" name="__codelineno-0-335"></a>                    <span class="c1"># Elements of evecs are simply the data under</span>
+<a id="__codelineno-0-336" name="__codelineno-0-336"></a>                    <span class="c1"># &quot;Coord Atom Element&quot; multiplied by the square root</span>
+<a id="__codelineno-0-337" name="__codelineno-0-337"></a>                    <span class="c1"># of the weight.</span>
+<a id="__codelineno-0-338" name="__codelineno-0-338"></a>                    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">evecs</span><span class="p">)):</span>
+<a id="__codelineno-0-339" name="__codelineno-0-339"></a>                        <span class="k">if</span> <span class="n">hpmodes</span><span class="p">:</span>
+<a id="__codelineno-0-340" name="__codelineno-0-340"></a>                            <span class="c1"># evecs is a LoL. Length of sublist is</span>
+<a id="__codelineno-0-341" name="__codelineno-0-341"></a>                            <span class="c1"># equal to # of columns in section &quot;Coord Atom</span>
+<a id="__codelineno-0-342" name="__codelineno-0-342"></a>                            <span class="c1"># Element&quot; minus 3, for the 1st 3 columns</span>
+<a id="__codelineno-0-343" name="__codelineno-0-343"></a>                            <span class="c1"># (index, atom index, atomic number).</span>
+<a id="__codelineno-0-344" name="__codelineno-0-344"></a>                            <span class="n">evecs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">cols</span><span class="p">[</span><span class="n">i</span><span class="p">])</span> <span class="o">*</span> <span class="n">mass_sqrt</span><span class="p">)</span>
+<a id="__codelineno-0-345" name="__codelineno-0-345"></a>                        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-346" name="__codelineno-0-346"></a>                            <span class="c1"># This is fow low precision eigenvectors. It&#39;s a</span>
+<a id="__codelineno-0-347" name="__codelineno-0-347"></a>                            <span class="c1"># funny way to go in sets of 3. Take a look at</span>
+<a id="__codelineno-0-348" name="__codelineno-0-348"></a>                            <span class="c1"># your low precision Gaussian log and it will</span>
+<a id="__codelineno-0-349" name="__codelineno-0-349"></a>                            <span class="c1"># make more sense.</span>
+<a id="__codelineno-0-350" name="__codelineno-0-350"></a>                            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+<a id="__codelineno-0-351" name="__codelineno-0-351"></a>                                <span class="n">x</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">cols</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="mi">0</span><span class="p">))</span>
+<a id="__codelineno-0-352" name="__codelineno-0-352"></a>                                <span class="n">evecs</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x</span> <span class="o">*</span> <span class="n">mass_sqrt</span><span class="p">)</span>
+<a id="__codelineno-0-353" name="__codelineno-0-353"></a>                    <span class="n">line</span> <span class="o">=</span> <span class="nb">next</span><span class="p">(</span><span class="n">file_iterator</span><span class="p">)</span>
+<a id="__codelineno-0-354" name="__codelineno-0-354"></a>                    <span class="n">cols</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+<a id="__codelineno-0-355" name="__codelineno-0-355"></a>
+<a id="__codelineno-0-356" name="__codelineno-0-356"></a>                <span class="c1"># Here the overall number of eigenvalues and eigenvectors is</span>
+<a id="__codelineno-0-357" name="__codelineno-0-357"></a>                <span class="c1"># increased by 5 (high precision) or 3 (low precision). The</span>
+<a id="__codelineno-0-358" name="__codelineno-0-358"></a>                <span class="c1"># total number goes to 3N - 6 for non-linear and 3N - 5 for</span>
+<a id="__codelineno-0-359" name="__codelineno-0-359"></a>                <span class="c1"># linear. Same goes for self._evecs.</span>
+<a id="__codelineno-0-360" name="__codelineno-0-360"></a>                <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">evecs</span><span class="p">)):</span>
+<a id="__codelineno-0-361" name="__codelineno-0-361"></a>                    <span class="bp">self</span><span class="o">.</span><span class="n">_evals</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">force_constants</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+<a id="__codelineno-0-362" name="__codelineno-0-362"></a>                    <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">evecs</span><span class="p">[</span><span class="n">i</span><span class="p">])</span>
+<a id="__codelineno-0-363" name="__codelineno-0-363"></a>                <span class="c1"># We know we&#39;re done if this is in the line.</span>
+<a id="__codelineno-0-364" name="__codelineno-0-364"></a>                <span class="k">if</span> <span class="s2">&quot;Harmonic&quot;</span> <span class="ow">in</span> <span class="n">line</span><span class="p">:</span>
+<a id="__codelineno-0-365" name="__codelineno-0-365"></a>                    <span class="k">break</span>
+<a id="__codelineno-0-366" name="__codelineno-0-366"></a>    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evals</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span><span class="p">:</span>
+<a id="__codelineno-0-367" name="__codelineno-0-367"></a>        <span class="k">for</span> <span class="n">evec</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span><span class="p">:</span>
+<a id="__codelineno-0-368" name="__codelineno-0-368"></a>            <span class="c1"># Each evec is a single eigenvector.</span>
+<a id="__codelineno-0-369" name="__codelineno-0-369"></a>            <span class="c1"># Add up the sum of squares over an eigenvector.</span>
+<a id="__codelineno-0-370" name="__codelineno-0-370"></a>            <span class="n">sum_of_squares</span> <span class="o">=</span> <span class="mf">0.0</span>
+<a id="__codelineno-0-371" name="__codelineno-0-371"></a>            <span class="c1"># Appropriately named, element is an element of that single</span>
+<a id="__codelineno-0-372" name="__codelineno-0-372"></a>            <span class="c1"># eigenvector.</span>
+<a id="__codelineno-0-373" name="__codelineno-0-373"></a>            <span class="k">for</span> <span class="n">element</span> <span class="ow">in</span> <span class="n">evec</span><span class="p">:</span>
+<a id="__codelineno-0-374" name="__codelineno-0-374"></a>                <span class="n">sum_of_squares</span> <span class="o">+=</span> <span class="n">element</span> <span class="o">*</span> <span class="n">element</span>
+<a id="__codelineno-0-375" name="__codelineno-0-375"></a>            <span class="c1"># Now x is the inverse of the square root of the sum of squares</span>
+<a id="__codelineno-0-376" name="__codelineno-0-376"></a>            <span class="c1"># for an individual eigenvector.</span>
+<a id="__codelineno-0-377" name="__codelineno-0-377"></a>            <span class="n">element</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">sum_of_squares</span><span class="p">)</span>
+<a id="__codelineno-0-378" name="__codelineno-0-378"></a>            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">evec</span><span class="p">)):</span>
+<a id="__codelineno-0-379" name="__codelineno-0-379"></a>                <span class="n">evec</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">*=</span> <span class="n">element</span>
+<a id="__codelineno-0-380" name="__codelineno-0-380"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_evals</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_evals</span><span class="p">)</span>
+<a id="__codelineno-0-381" name="__codelineno-0-381"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span><span class="p">)</span>
+<a id="__codelineno-0-382" name="__codelineno-0-382"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">_frequencies_cm</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_frequencies_cm</span><span class="p">)</span>
+<a id="__codelineno-0-383" name="__codelineno-0-383"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;&gt;&gt;&gt; self._evals: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_evals</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-384" name="__codelineno-0-384"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;&gt;&gt;&gt; self._evecs: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_evecs</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-385" name="__codelineno-0-385"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;  -- </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">structures</span><span class="p">)</span><span class="si">}</span><span class="s2"> structures found.&quot;</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="q2mm.parsers.gaussian.GaussLog.read_archive" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">read_archive</span>
+
+
+<a href="#q2mm.parsers.gaussian.GaussLog.read_archive" class="headerlink" title="Permanent link">&para;</a></h4>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">read_archive</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Read the last archive section from the Gaussian log file.</p>
+<p>Extracts atoms, coordinates, properties, and the Hessian (converted
+to kJ/(mol·Å²) unless <code>au_hessian</code> is True) from the archive block.</p>
+<p>The Gaussian archive format uses <code>\\\\</code> as section separators and
+<code>\\</code> within sections.  The fields always present are: user, date,
+route/command, title, charge/multiplicity, and atom coordinates
+(<code>element,x,y,z</code> entries separated by <code>\\</code>).  Optional fields
+that may follow include <code>HF</code>, <code>ZeroPoint</code>, <code>Thermal</code>,
+<code>NImag</code>, the Hessian (lower-triangular, comma-separated), and
+eigenvalues.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="IndexError">IndexError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If no archive section is found in the log file.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>q2mm/parsers/gaussian.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-389">389</a></span>
+<span class="normal"><a href="#__codelineno-0-390">390</a></span>
+<span class="normal"><a href="#__codelineno-0-391">391</a></span>
+<span class="normal"><a href="#__codelineno-0-392">392</a></span>
+<span class="normal"><a href="#__codelineno-0-393">393</a></span>
+<span class="normal"><a href="#__codelineno-0-394">394</a></span>
+<span class="normal"><a href="#__codelineno-0-395">395</a></span>
+<span class="normal"><a href="#__codelineno-0-396">396</a></span>
+<span class="normal"><a href="#__codelineno-0-397">397</a></span>
+<span class="normal"><a href="#__codelineno-0-398">398</a></span>
+<span class="normal"><a href="#__codelineno-0-399">399</a></span>
+<span class="normal"><a href="#__codelineno-0-400">400</a></span>
+<span class="normal"><a href="#__codelineno-0-401">401</a></span>
+<span class="normal"><a href="#__codelineno-0-402">402</a></span>
+<span class="normal"><a href="#__codelineno-0-403">403</a></span>
+<span class="normal"><a href="#__codelineno-0-404">404</a></span>
+<span class="normal"><a href="#__codelineno-0-405">405</a></span>
+<span class="normal"><a href="#__codelineno-0-406">406</a></span>
+<span class="normal"><a href="#__codelineno-0-407">407</a></span>
+<span class="normal"><a href="#__codelineno-0-408">408</a></span>
+<span class="normal"><a href="#__codelineno-0-409">409</a></span>
+<span class="normal"><a href="#__codelineno-0-410">410</a></span>
+<span class="normal"><a href="#__codelineno-0-411">411</a></span>
+<span class="normal"><a href="#__codelineno-0-412">412</a></span>
+<span class="normal"><a href="#__codelineno-0-413">413</a></span>
+<span class="normal"><a href="#__codelineno-0-414">414</a></span>
+<span class="normal"><a href="#__codelineno-0-415">415</a></span>
+<span class="normal"><a href="#__codelineno-0-416">416</a></span>
+<span class="normal"><a href="#__codelineno-0-417">417</a></span>
+<span class="normal"><a href="#__codelineno-0-418">418</a></span>
+<span class="normal"><a href="#__codelineno-0-419">419</a></span>
+<span class="normal"><a href="#__codelineno-0-420">420</a></span>
+<span class="normal"><a href="#__codelineno-0-421">421</a></span>
+<span class="normal"><a href="#__codelineno-0-422">422</a></span>
+<span class="normal"><a href="#__codelineno-0-423">423</a></span>
+<span class="normal"><a href="#__codelineno-0-424">424</a></span>
+<span class="normal"><a href="#__codelineno-0-425">425</a></span>
+<span class="normal"><a href="#__codelineno-0-426">426</a></span>
+<span class="normal"><a href="#__codelineno-0-427">427</a></span>
+<span class="normal"><a href="#__codelineno-0-428">428</a></span>
+<span class="normal"><a href="#__codelineno-0-429">429</a></span>
+<span class="normal"><a href="#__codelineno-0-430">430</a></span>
+<span class="normal"><a href="#__codelineno-0-431">431</a></span>
+<span class="normal"><a href="#__codelineno-0-432">432</a></span>
+<span class="normal"><a href="#__codelineno-0-433">433</a></span>
+<span class="normal"><a href="#__codelineno-0-434">434</a></span>
+<span class="normal"><a href="#__codelineno-0-435">435</a></span>
+<span class="normal"><a href="#__codelineno-0-436">436</a></span>
+<span class="normal"><a href="#__codelineno-0-437">437</a></span>
+<span class="normal"><a href="#__codelineno-0-438">438</a></span>
+<span class="normal"><a href="#__codelineno-0-439">439</a></span>
+<span class="normal"><a href="#__codelineno-0-440">440</a></span>
+<span class="normal"><a href="#__codelineno-0-441">441</a></span>
+<span class="normal"><a href="#__codelineno-0-442">442</a></span>
+<span class="normal"><a href="#__codelineno-0-443">443</a></span>
+<span class="normal"><a href="#__codelineno-0-444">444</a></span>
+<span class="normal"><a href="#__codelineno-0-445">445</a></span>
+<span class="normal"><a href="#__codelineno-0-446">446</a></span>
+<span class="normal"><a href="#__codelineno-0-447">447</a></span>
+<span class="normal"><a href="#__codelineno-0-448">448</a></span>
+<span class="normal"><a href="#__codelineno-0-449">449</a></span>
+<span class="normal"><a href="#__codelineno-0-450">450</a></span>
+<span class="normal"><a href="#__codelineno-0-451">451</a></span>
+<span class="normal"><a href="#__codelineno-0-452">452</a></span>
+<span class="normal"><a href="#__codelineno-0-453">453</a></span>
+<span class="normal"><a href="#__codelineno-0-454">454</a></span>
+<span class="normal"><a href="#__codelineno-0-455">455</a></span>
+<span class="normal"><a href="#__codelineno-0-456">456</a></span>
+<span class="normal"><a href="#__codelineno-0-457">457</a></span>
+<span class="normal"><a href="#__codelineno-0-458">458</a></span>
+<span class="normal"><a href="#__codelineno-0-459">459</a></span>
+<span class="normal"><a href="#__codelineno-0-460">460</a></span>
+<span class="normal"><a href="#__codelineno-0-461">461</a></span>
+<span class="normal"><a href="#__codelineno-0-462">462</a></span>
+<span class="normal"><a href="#__codelineno-0-463">463</a></span>
+<span class="normal"><a href="#__codelineno-0-464">464</a></span>
+<span class="normal"><a href="#__codelineno-0-465">465</a></span>
+<span class="normal"><a href="#__codelineno-0-466">466</a></span>
+<span class="normal"><a href="#__codelineno-0-467">467</a></span>
+<span class="normal"><a href="#__codelineno-0-468">468</a></span>
+<span class="normal"><a href="#__codelineno-0-469">469</a></span>
+<span class="normal"><a href="#__codelineno-0-470">470</a></span>
+<span class="normal"><a href="#__codelineno-0-471">471</a></span>
+<span class="normal"><a href="#__codelineno-0-472">472</a></span>
+<span class="normal"><a href="#__codelineno-0-473">473</a></span>
+<span class="normal"><a href="#__codelineno-0-474">474</a></span>
+<span class="normal"><a href="#__codelineno-0-475">475</a></span>
+<span class="normal"><a href="#__codelineno-0-476">476</a></span>
+<span class="normal"><a href="#__codelineno-0-477">477</a></span>
+<span class="normal"><a href="#__codelineno-0-478">478</a></span>
+<span class="normal"><a href="#__codelineno-0-479">479</a></span>
+<span class="normal"><a href="#__codelineno-0-480">480</a></span>
+<span class="normal"><a href="#__codelineno-0-481">481</a></span>
+<span class="normal"><a href="#__codelineno-0-482">482</a></span>
+<span class="normal"><a href="#__codelineno-0-483">483</a></span>
+<span class="normal"><a href="#__codelineno-0-484">484</a></span>
+<span class="normal"><a href="#__codelineno-0-485">485</a></span>
+<span class="normal"><a href="#__codelineno-0-486">486</a></span>
+<span class="normal"><a href="#__codelineno-0-487">487</a></span>
+<span class="normal"><a href="#__codelineno-0-488">488</a></span>
+<span class="normal"><a href="#__codelineno-0-489">489</a></span>
+<span class="normal"><a href="#__codelineno-0-490">490</a></span>
+<span class="normal"><a href="#__codelineno-0-491">491</a></span>
+<span class="normal"><a href="#__codelineno-0-492">492</a></span>
+<span class="normal"><a href="#__codelineno-0-493">493</a></span>
+<span class="normal"><a href="#__codelineno-0-494">494</a></span>
+<span class="normal"><a href="#__codelineno-0-495">495</a></span>
+<span class="normal"><a href="#__codelineno-0-496">496</a></span>
+<span class="normal"><a href="#__codelineno-0-497">497</a></span>
+<span class="normal"><a href="#__codelineno-0-498">498</a></span>
+<span class="normal"><a href="#__codelineno-0-499">499</a></span>
+<span class="normal"><a href="#__codelineno-0-500">500</a></span>
+<span class="normal"><a href="#__codelineno-0-501">501</a></span>
+<span class="normal"><a href="#__codelineno-0-502">502</a></span>
+<span class="normal"><a href="#__codelineno-0-503">503</a></span>
+<span class="normal"><a href="#__codelineno-0-504">504</a></span>
+<span class="normal"><a href="#__codelineno-0-505">505</a></span>
+<span class="normal"><a href="#__codelineno-0-506">506</a></span>
+<span class="normal"><a href="#__codelineno-0-507">507</a></span>
+<span class="normal"><a href="#__codelineno-0-508">508</a></span>
+<span class="normal"><a href="#__codelineno-0-509">509</a></span>
+<span class="normal"><a href="#__codelineno-0-510">510</a></span>
+<span class="normal"><a href="#__codelineno-0-511">511</a></span>
+<span class="normal"><a href="#__codelineno-0-512">512</a></span>
+<span class="normal"><a href="#__codelineno-0-513">513</a></span>
+<span class="normal"><a href="#__codelineno-0-514">514</a></span>
+<span class="normal"><a href="#__codelineno-0-515">515</a></span>
+<span class="normal"><a href="#__codelineno-0-516">516</a></span>
+<span class="normal"><a href="#__codelineno-0-517">517</a></span>
+<span class="normal"><a href="#__codelineno-0-518">518</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-389" name="__codelineno-0-389"></a><span class="k">def</span><span class="w"> </span><span class="nf">read_archive</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-390" name="__codelineno-0-390"></a><span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;Read the last archive section from the Gaussian log file.</span>
+<a id="__codelineno-0-391" name="__codelineno-0-391"></a>
+<a id="__codelineno-0-392" name="__codelineno-0-392"></a><span class="sd">    Extracts atoms, coordinates, properties, and the Hessian (converted</span>
+<a id="__codelineno-0-393" name="__codelineno-0-393"></a><span class="sd">    to kJ/(mol·Å²) unless ``au_hessian`` is True) from the archive block.</span>
+<a id="__codelineno-0-394" name="__codelineno-0-394"></a>
+<a id="__codelineno-0-395" name="__codelineno-0-395"></a><span class="sd">    The Gaussian archive format uses ``\\\\`` as section separators and</span>
+<a id="__codelineno-0-396" name="__codelineno-0-396"></a><span class="sd">    ``\\`` within sections.  The fields always present are: user, date,</span>
+<a id="__codelineno-0-397" name="__codelineno-0-397"></a><span class="sd">    route/command, title, charge/multiplicity, and atom coordinates</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a><span class="sd">    (``element,x,y,z`` entries separated by ``\\``).  Optional fields</span>
+<a id="__codelineno-0-399" name="__codelineno-0-399"></a><span class="sd">    that may follow include ``HF``, ``ZeroPoint``, ``Thermal``,</span>
+<a id="__codelineno-0-400" name="__codelineno-0-400"></a><span class="sd">    ``NImag``, the Hessian (lower-triangular, comma-separated), and</span>
+<a id="__codelineno-0-401" name="__codelineno-0-401"></a><span class="sd">    eigenvalues.</span>
+<a id="__codelineno-0-402" name="__codelineno-0-402"></a>
+<a id="__codelineno-0-403" name="__codelineno-0-403"></a><span class="sd">    Raises:</span>
+<a id="__codelineno-0-404" name="__codelineno-0-404"></a><span class="sd">        IndexError: If no archive section is found in the log file.</span>
+<a id="__codelineno-0-405" name="__codelineno-0-405"></a>
+<a id="__codelineno-0-406" name="__codelineno-0-406"></a><span class="sd">    &quot;&quot;&quot;</span>
+<a id="__codelineno-0-407" name="__codelineno-0-407"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;READING: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-408" name="__codelineno-0-408"></a>    <span class="n">struct</span> <span class="o">=</span> <span class="n">Structure</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filename</span><span class="p">)</span>
+<a id="__codelineno-0-409" name="__codelineno-0-409"></a>    <span class="bp">self</span><span class="o">.</span><span class="n">_structures</span> <span class="o">=</span> <span class="p">[</span><span class="n">struct</span><span class="p">]</span>
+<a id="__codelineno-0-410" name="__codelineno-0-410"></a>    <span class="c1"># Matches everything in between the start and end.</span>
+<a id="__codelineno-0-411" name="__codelineno-0-411"></a>    <span class="c1"># (?s)  - Flag for re.compile which says that . matches all.</span>
+<a id="__codelineno-0-412" name="__codelineno-0-412"></a>    <span class="c1"># \\\\  - One single \</span>
+<a id="__codelineno-0-413" name="__codelineno-0-413"></a>    <span class="c1"># Start - &quot; 1\1\&quot;.</span>
+<a id="__codelineno-0-414" name="__codelineno-0-414"></a>    <span class="c1"># End   - Some number of \ followed by @. Not sure how many \ there</span>
+<a id="__codelineno-0-415" name="__codelineno-0-415"></a>    <span class="c1">#         are, so this matches as many as possible. Also, this could</span>
+<a id="__codelineno-0-416" name="__codelineno-0-416"></a>    <span class="c1">#         get separated by a line break (which would also include</span>
+<a id="__codelineno-0-417" name="__codelineno-0-417"></a>    <span class="c1">#         adding in a space since that&#39;s how Gaussian starts new lines</span>
+<a id="__codelineno-0-418" name="__codelineno-0-418"></a>    <span class="c1">#         in the archive).</span>
+<a id="__codelineno-0-419" name="__codelineno-0-419"></a>    <span class="c1"># We pull out the last one [-1] in case there are multiple archives</span>
+<a id="__codelineno-0-420" name="__codelineno-0-420"></a>    <span class="c1"># in a file.</span>
+<a id="__codelineno-0-421" name="__codelineno-0-421"></a>    <span class="k">try</span><span class="p">:</span>
+<a id="__codelineno-0-422" name="__codelineno-0-422"></a>        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">fh</span><span class="p">:</span>
+<a id="__codelineno-0-423" name="__codelineno-0-423"></a>            <span class="n">arch</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="s2">&quot;(?s)(</span><span class="se">\\</span><span class="s2">s1</span><span class="se">\\\\</span><span class="s2">1</span><span class="se">\\\\</span><span class="s2">.*?[</span><span class="se">\\\\\n\\</span><span class="s2">s]+@)&quot;</span><span class="p">,</span> <span class="n">fh</span><span class="o">.</span><span class="n">read</span><span class="p">())[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+<a id="__codelineno-0-424" name="__codelineno-0-424"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="s2">&quot;  -- Located last archive.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-425" name="__codelineno-0-425"></a>    <span class="k">except</span> <span class="ne">IndexError</span><span class="p">:</span>
+<a id="__codelineno-0-426" name="__codelineno-0-426"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;  -- Couldn&#39;t locate archive.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-427" name="__codelineno-0-427"></a>        <span class="k">raise</span>
+<a id="__codelineno-0-428" name="__codelineno-0-428"></a>    <span class="c1"># Make it into one string.</span>
+<a id="__codelineno-0-429" name="__codelineno-0-429"></a>    <span class="n">arch</span> <span class="o">=</span> <span class="n">arch</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2"> &quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-430" name="__codelineno-0-430"></a>    <span class="c1"># Separate it by Gaussian&#39;s section divider.</span>
+<a id="__codelineno-0-431" name="__codelineno-0-431"></a>    <span class="n">arch</span> <span class="o">=</span> <span class="n">arch</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\\\</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-432" name="__codelineno-0-432"></a>    <span class="c1"># Helps us iterate over sections of the archive.</span>
+<a id="__codelineno-0-433" name="__codelineno-0-433"></a>    <span class="n">section_counter</span> <span class="o">=</span> <span class="mi">0</span>
+<a id="__codelineno-0-434" name="__codelineno-0-434"></a>    <span class="c1"># SECTION 0</span>
+<a id="__codelineno-0-435" name="__codelineno-0-435"></a>    <span class="c1"># General job information.</span>
+<a id="__codelineno-0-436" name="__codelineno-0-436"></a>    <span class="n">arch_general</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-437" name="__codelineno-0-437"></a>    <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-438" name="__codelineno-0-438"></a>    <span class="n">stuff</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
+<a id="__codelineno-0-439" name="__codelineno-0-439"></a>        <span class="s2">&quot;</span><span class="se">\\</span><span class="s2">s1</span><span class="se">\\\\</span><span class="s2">1</span><span class="se">\\\\</span><span class="s2">.*?</span><span class="se">\\\\</span><span class="s2">.*?</span><span class="se">\\\\</span><span class="s2">.*?</span><span class="se">\\\\</span><span class="s2">.*?</span><span class="se">\\\\</span><span class="s2">.*?</span><span class="se">\\\\</span><span class="s2">(?P&lt;user&gt;.*?)</span><span class="se">\\\\</span><span class="s2">(?P&lt;date&gt;.*?)</span><span class="se">\\\\</span><span class="s2">.*?&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-440" name="__codelineno-0-440"></a>        <span class="n">arch_general</span><span class="p">,</span>
+<a id="__codelineno-0-441" name="__codelineno-0-441"></a>    <span class="p">)</span>
+<a id="__codelineno-0-442" name="__codelineno-0-442"></a>    <span class="n">struct</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stuff</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;user&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-443" name="__codelineno-0-443"></a>    <span class="n">struct</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="s2">&quot;date&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stuff</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;date&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-444" name="__codelineno-0-444"></a>    <span class="c1"># SECTION 1</span>
+<a id="__codelineno-0-445" name="__codelineno-0-445"></a>    <span class="c1"># The commands you wrote.</span>
+<a id="__codelineno-0-446" name="__codelineno-0-446"></a>    <span class="n">_arch_commands</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-447" name="__codelineno-0-447"></a>    <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-448" name="__codelineno-0-448"></a>    <span class="c1"># SECTION 2</span>
+<a id="__codelineno-0-449" name="__codelineno-0-449"></a>    <span class="c1"># The comment line.</span>
+<a id="__codelineno-0-450" name="__codelineno-0-450"></a>    <span class="n">_arch_comment</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-451" name="__codelineno-0-451"></a>    <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-452" name="__codelineno-0-452"></a>    <span class="c1"># SECTION 3</span>
+<a id="__codelineno-0-453" name="__codelineno-0-453"></a>    <span class="c1"># Actually has charge, multiplicity and coords.</span>
+<a id="__codelineno-0-454" name="__codelineno-0-454"></a>    <span class="n">arch_coords</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-455" name="__codelineno-0-455"></a>    <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-456" name="__codelineno-0-456"></a>    <span class="n">stuff</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;(?P&lt;charge&gt;.*?),(?P&lt;multiplicity&gt;.*?)</span><span class="se">\\\\</span><span class="s2">(?P&lt;atoms&gt;.*)&quot;</span><span class="p">,</span> <span class="n">arch_coords</span><span class="p">)</span>
+<a id="__codelineno-0-457" name="__codelineno-0-457"></a>    <span class="n">struct</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="s2">&quot;charge&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stuff</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;charge&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-458" name="__codelineno-0-458"></a>    <span class="n">struct</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="s2">&quot;multiplicity&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">stuff</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;multiplicity&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-459" name="__codelineno-0-459"></a>    <span class="c1"># We want to do more fancy stuff with the atoms than simply add to</span>
+<a id="__codelineno-0-460" name="__codelineno-0-460"></a>    <span class="c1"># the properties dictionary.</span>
+<a id="__codelineno-0-461" name="__codelineno-0-461"></a>    <span class="n">atoms</span> <span class="o">=</span> <span class="n">stuff</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="s2">&quot;atoms&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-462" name="__codelineno-0-462"></a>    <span class="n">atoms</span> <span class="o">=</span> <span class="n">atoms</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-463" name="__codelineno-0-463"></a>    <span class="c1"># Z-matrix coordinates adds another section. We need to be aware of</span>
+<a id="__codelineno-0-464" name="__codelineno-0-464"></a>    <span class="c1"># this.</span>
+<a id="__codelineno-0-465" name="__codelineno-0-465"></a>    <span class="n">struct</span><span class="o">.</span><span class="n">_atoms</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-466" name="__codelineno-0-466"></a>    <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">atoms</span><span class="p">:</span>
+<a id="__codelineno-0-467" name="__codelineno-0-467"></a>        <span class="n">stuff</span> <span class="o">=</span> <span class="n">atom</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-468" name="__codelineno-0-468"></a>        <span class="c1"># An atom typically looks like this:</span>
+<a id="__codelineno-0-469" name="__codelineno-0-469"></a>        <span class="c1">#    C,0.1135,0.13135,0.63463</span>
+<a id="__codelineno-0-470" name="__codelineno-0-470"></a>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">stuff</span><span class="p">)</span> <span class="o">==</span> <span class="mi">4</span><span class="p">:</span>
+<a id="__codelineno-0-471" name="__codelineno-0-471"></a>            <span class="n">ele</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">stuff</span>
+<a id="__codelineno-0-472" name="__codelineno-0-472"></a>        <span class="c1"># But sometimes they look like this (notice the extra zero):</span>
+<a id="__codelineno-0-473" name="__codelineno-0-473"></a>        <span class="c1">#    C,0,0.1135,0.13135,0.63463</span>
+<a id="__codelineno-0-474" name="__codelineno-0-474"></a>        <span class="c1"># I&#39;m not sure what that extra zero is for. Anyway, ignore</span>
+<a id="__codelineno-0-475" name="__codelineno-0-475"></a>        <span class="c1"># that extra whatever if it&#39;s there.</span>
+<a id="__codelineno-0-476" name="__codelineno-0-476"></a>        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">stuff</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
+<a id="__codelineno-0-477" name="__codelineno-0-477"></a>            <span class="n">ele</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">,</span> <span class="n">z</span> <span class="o">=</span> <span class="n">stuff</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">stuff</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">stuff</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">stuff</span><span class="p">[</span><span class="mi">4</span><span class="p">]</span>
+<a id="__codelineno-0-478" name="__codelineno-0-478"></a>        <span class="c1"># And this would be really bad. Haven&#39;t seen anything else like</span>
+<a id="__codelineno-0-479" name="__codelineno-0-479"></a>        <span class="c1"># this yet.</span>
+<a id="__codelineno-0-480" name="__codelineno-0-480"></a>        <span class="c1"># 160613 - So, not sure when I wrote that comment, but something</span>
+<a id="__codelineno-0-481" name="__codelineno-0-481"></a>        <span class="c1"># like this definitely happens when using scans and z-matrices.</span>
+<a id="__codelineno-0-482" name="__codelineno-0-482"></a>        <span class="c1"># I&#39;m going to ignore grabbing any atoms in this case.</span>
+<a id="__codelineno-0-483" name="__codelineno-0-483"></a>        <span class="k">else</span><span class="p">:</span>
+<a id="__codelineno-0-484" name="__codelineno-0-484"></a>            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Not sure how to read coordinates from Gaussian acrhive!&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-485" name="__codelineno-0-485"></a>            <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-486" name="__codelineno-0-486"></a>            <span class="c1"># Let&#39;s have it stop looping over atoms, but not fail anymore.</span>
+<a id="__codelineno-0-487" name="__codelineno-0-487"></a>            <span class="k">break</span>
+<a id="__codelineno-0-488" name="__codelineno-0-488"></a>            <span class="c1"># raise Exception(</span>
+<a id="__codelineno-0-489" name="__codelineno-0-489"></a>            <span class="c1">#     &#39;Not sure how to read coordinates from Gaussian archive!&#39;)</span>
+<a id="__codelineno-0-490" name="__codelineno-0-490"></a>        <span class="n">struct</span><span class="o">.</span><span class="n">_atoms</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">Atom</span><span class="p">(</span><span class="n">element</span><span class="o">=</span><span class="n">ele</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">),</span> <span class="n">y</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">y</span><span class="p">),</span> <span class="n">z</span><span class="o">=</span><span class="nb">float</span><span class="p">(</span><span class="n">z</span><span class="p">)))</span>
+<a id="__codelineno-0-491" name="__codelineno-0-491"></a>    <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;  -- Read </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">struct</span><span class="o">.</span><span class="n">_atoms</span><span class="p">)</span><span class="si">}</span><span class="s2"> atoms.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-492" name="__codelineno-0-492"></a>    <span class="c1"># SECTION 4</span>
+<a id="__codelineno-0-493" name="__codelineno-0-493"></a>    <span class="c1"># All sorts of information here. This area looks like:</span>
+<a id="__codelineno-0-494" name="__codelineno-0-494"></a>    <span class="c1">#     prop1=value1\prop2=value2\prop3=value3</span>
+<a id="__codelineno-0-495" name="__codelineno-0-495"></a>    <span class="n">arch_info</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-496" name="__codelineno-0-496"></a>    <span class="n">section_counter</span> <span class="o">+=</span> <span class="mi">1</span>
+<a id="__codelineno-0-497" name="__codelineno-0-497"></a>    <span class="n">arch_info</span> <span class="o">=</span> <span class="n">arch_info</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-498" name="__codelineno-0-498"></a>    <span class="k">for</span> <span class="n">thing</span> <span class="ow">in</span> <span class="n">arch_info</span><span class="p">:</span>
+<a id="__codelineno-0-499" name="__codelineno-0-499"></a>        <span class="n">prop_name</span><span class="p">,</span> <span class="n">prop_value</span> <span class="o">=</span> <span class="n">thing</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-500" name="__codelineno-0-500"></a>        <span class="n">struct</span><span class="o">.</span><span class="n">props</span><span class="p">[</span><span class="n">prop_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">prop_value</span>
+<a id="__codelineno-0-501" name="__codelineno-0-501"></a>    <span class="c1"># SECTION 5</span>
+<a id="__codelineno-0-502" name="__codelineno-0-502"></a>    <span class="c1"># The Hessian. Only exists if you did a frequency calculation.</span>
+<a id="__codelineno-0-503" name="__codelineno-0-503"></a>    <span class="c1"># Appears in lower triangular form, not mass-weighted.</span>
+<a id="__codelineno-0-504" name="__codelineno-0-504"></a>    <span class="k">if</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span> <span class="o">!=</span> <span class="s2">&quot;@&quot;</span><span class="p">:</span>
+<a id="__codelineno-0-505" name="__codelineno-0-505"></a>        <span class="n">hess_tri</span> <span class="o">=</span> <span class="n">arch</span><span class="p">[</span><span class="n">section_counter</span><span class="p">]</span>
+<a id="__codelineno-0-506" name="__codelineno-0-506"></a>        <span class="n">hess_tri</span> <span class="o">=</span> <span class="n">hess_tri</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-507" name="__codelineno-0-507"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+<a id="__codelineno-0-508" name="__codelineno-0-508"></a>            <span class="mi">5</span><span class="p">,</span>
+<a id="__codelineno-0-509" name="__codelineno-0-509"></a>            <span class="sa">f</span><span class="s2">&quot;  -- Read </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">hess_tri</span><span class="p">)</span><span class="si">}</span><span class="s2"> Hessian elements in lower triangular form.&quot;</span><span class="p">,</span>
+<a id="__codelineno-0-510" name="__codelineno-0-510"></a>        <span class="p">)</span>
+<a id="__codelineno-0-511" name="__codelineno-0-511"></a>        <span class="n">hess</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">([</span><span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">atoms</span><span class="p">)</span> <span class="o">*</span> <span class="mi">3</span><span class="p">],</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+<a id="__codelineno-0-512" name="__codelineno-0-512"></a>        <span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;  -- Created </span><span class="si">{</span><span class="n">hess</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> Hessian matrix.&quot;</span><span class="p">)</span>
+<a id="__codelineno-0-513" name="__codelineno-0-513"></a>        <span class="c1"># Hessian is stored as lower triangle in the archive.</span>
+<a id="__codelineno-0-514" name="__codelineno-0-514"></a>        <span class="n">hess</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">tril_indices_from</span><span class="p">(</span><span class="n">hess</span><span class="p">)]</span> <span class="o">=</span> <span class="n">hess_tri</span>
+<a id="__codelineno-0-515" name="__codelineno-0-515"></a>        <span class="n">hess</span> <span class="o">+=</span> <span class="n">np</span><span class="o">.</span><span class="n">tril</span><span class="p">(</span><span class="n">hess</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">.</span><span class="n">T</span>
+<a id="__codelineno-0-516" name="__codelineno-0-516"></a>        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_au_hessian</span><span class="p">:</span>
+<a id="__codelineno-0-517" name="__codelineno-0-517"></a>            <span class="n">hess</span> <span class="o">*=</span> <span class="n">co</span><span class="o">.</span><span class="n">HESSIAN_CONVERSION</span>
+<a id="__codelineno-0-518" name="__codelineno-0-518"></a>        <span class="n">struct</span><span class="o">.</span><span class="n">hess</span> <span class="o">=</span> <span class="n">hess</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
