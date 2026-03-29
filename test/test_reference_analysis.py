@@ -30,19 +30,6 @@ def symmetric_3x3() -> np.ndarray:
 
 
 @pytest.fixture()
-def ts_hessian_6x6() -> np.ndarray:
-    """Return a 6×6 H₂ TS Hessian with one negative eigenvalue."""
-    k = 0.5  # Hartree/Bohr²
-    hess = np.zeros((6, 6))
-    # Attractive z-z coupling → one negative eigenvalue
-    hess[2, 2] = -k
-    hess[5, 5] = -k
-    hess[2, 5] = k
-    hess[5, 2] = k
-    return hess
-
-
-@pytest.fixture()
 def minimum_hessian_6x6() -> np.ndarray:
     """Return a 6×6 H₂ minimum Hessian with no negative eigenvalues."""
     k = 0.5
