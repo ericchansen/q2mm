@@ -59,6 +59,7 @@ class ReferenceValue:
         "torsion_angle",
         "eig_diagonal",
         "eig_offdiagonal",
+        "hessian_element",
     ]
     value: float
     weight: float = 1.0
@@ -400,6 +401,85 @@ class ReferenceData:
                     label=f"eig[{row},{col}]",
                 )
             added += 1
+        return added
+
+    def add_hessian_element(
+        self,
+        value: float,
+        *,
+        row: int,
+        col: int,
+        weight: float = 0.1,
+        molecule_idx: int = 0,
+        label: str = "",
+    ) -> None:
+        """Add a single raw Hessian matrix element as reference data.
+
+        Args:
+            value: QM Hessian element in Hartree/Bohr².
+            row: 0-based row index.
+            col: 0-based column index.
+            weight: Weight for this entry.
+            molecule_idx: Index into the molecules list.
+            label: Human-readable label.
+
+        """
+        self.values.append(
+            ReferenceValue(
+                kind="hessian_element",
+                value=value,
+                weight=weight,
+                molecule_idx=molecule_idx,
+                atom_indices=(row, col),
+                label=label or f"hess[{row},{col}]",
+            )
+        )
+
+    def add_hessian_from_matrix(
+        self,
+        hessian: np.ndarray,
+        *,
+        diagonal_only: bool = False,
+        molecule_idx: int = 0,
+        diagonal_weight: float = 0.1,
+        offdiagonal_weight: float = 0.05,
+        skip_translational: int = 0,
+    ) -> int:
+        """Bulk-load raw Hessian elements as reference data.
+
+        Unlike :meth:`add_eigenmatrix_from_hessian`, this uses the raw
+        Cartesian Hessian directly without eigendecomposition.
+
+        Args:
+            hessian: QM Hessian (3N, 3N) in Hartree/Bohr².
+            diagonal_only: If ``True``, only add diagonal elements.
+            molecule_idx: Index into molecules list.
+            diagonal_weight: Weight for diagonal elements.
+            offdiagonal_weight: Weight for off-diagonal elements.
+            skip_translational: Number of leading rows/cols to skip
+                (e.g. 6 for trans+rot modes in Cartesian basis).
+
+        Returns:
+            Number of entries added.
+
+        """
+        n = hessian.shape[0]
+        if hessian.shape != (n, n):
+            raise ValueError(f"Hessian must be square, got shape {hessian.shape}")
+
+        added = 0
+        start = skip_translational
+        for i in range(start, n):
+            for j in range(start, i + 1) if not diagonal_only else [i]:
+                weight = diagonal_weight if i == j else offdiagonal_weight
+                self.add_hessian_element(
+                    float(hessian[i, j]),
+                    row=i,
+                    col=j,
+                    weight=weight,
+                    molecule_idx=molecule_idx,
+                )
+                added += 1
         return added
 
     @property
@@ -834,8 +914,15 @@ class ObjectiveFunction:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+        from q2mm.optimizers.evaluators.hessian_element import HessianElementEvaluator
 
-        self._evaluators = [EnergyEvaluator(), FrequencyEvaluator(), GeometryEvaluator(), EigenmatrixEvaluator()]
+        self._evaluators = [
+            EnergyEvaluator(),
+            FrequencyEvaluator(),
+            GeometryEvaluator(),
+            EigenmatrixEvaluator(),
+            HessianElementEvaluator(),
+        ]
         # Build kind → evaluator lookup from HANDLED_KINDS
         self._kind_to_evaluator: dict[str, Any] = {}
         for ev in self._evaluators:
@@ -1473,6 +1560,11 @@ class ObjectiveFunction:
                 )
                 result["eigenmatrix"] = emr.eigenmatrix
 
+        hess_ev = self._kind_to_evaluator.get("hessian_element")
+        if "hessian_element" in needed and hess_ev is not None:
+            hr = hess_ev.compute(self.engine, mol, forcefield, structure=structure)
+            result["raw_hessian"] = hr.hessian
+
         return result
 
     @staticmethod
@@ -1500,8 +1592,15 @@ class ObjectiveFunction:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
+        from q2mm.optimizers.evaluators.hessian_element import HessianElementEvaluator
 
-        _EVALUATOR_CLASSES = [EnergyEvaluator, FrequencyEvaluator, GeometryEvaluator, EigenmatrixEvaluator]
+        _EVALUATOR_CLASSES = [
+            EnergyEvaluator,
+            FrequencyEvaluator,
+            GeometryEvaluator,
+            EigenmatrixEvaluator,
+            HessianElementEvaluator,
+        ]
         for cls in _EVALUATOR_CLASSES:
             if ref.kind in cls.HANDLED_KINDS:
                 return cls.extract_value(calc, ref)

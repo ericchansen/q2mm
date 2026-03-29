@@ -54,6 +54,7 @@ _VALID_KINDS: frozenset[str] = frozenset(
         "torsion_angle",
         "eig_diagonal",
         "eig_offdiagonal",
+        "hessian_element",
     }
 )
 
@@ -268,6 +269,23 @@ def _parse_datum(
             )
         ]
 
+    if kind == "hessian_element":
+        value = _as_float(_require_key(datum, "value", context), "value", context)
+        row = _as_int(_require_key(datum, "row", context), "row", context)
+        col = _as_int(_require_key(datum, "col", context), "col", context)
+        if row < 0 or col < 0:
+            raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
+        return [
+            ReferenceValue(
+                kind="hessian_element",
+                value=value,
+                weight=weight,
+                label=label or f"hess[{row},{col}]",
+                molecule_idx=molecule_idx,
+                atom_indices=(row, col),
+            )
+        ]
+
     if kind == "frequency":
         # Single frequency entry (no bulk 'values')
         value = _as_float(_require_key(datum, "value", context), "value", context)
@@ -422,6 +440,26 @@ def _load_molecule(
             ref_values.extend(temp_ref.values)
             continue
 
+        # Handle bulk raw Hessian loading
+        if datum.get("kind") == "hessian":
+            if mol.hessian is None:
+                raise ReferenceYAMLError(f"'hessian' data requires a molecule with a hessian in {datum_ctx}.")
+            diag_weight = _as_float(datum.get("diagonal_weight", 0.1), "diagonal_weight", datum_ctx)
+            offdiag_weight = _as_float(datum.get("offdiagonal_weight", 0.05), "offdiagonal_weight", datum_ctx)
+            diagonal_only = datum.get("diagonal_only", False)
+            skip_translational = _as_int(datum.get("skip_translational", 0), "skip_translational", datum_ctx)
+            temp_ref = ReferenceData()
+            temp_ref.add_hessian_from_matrix(
+                mol.hessian,
+                diagonal_only=diagonal_only,
+                molecule_idx=molecule_idx,
+                diagonal_weight=diag_weight,
+                offdiagonal_weight=offdiag_weight,
+                skip_translational=skip_translational,
+            )
+            ref_values.extend(temp_ref.values)
+            continue
+
         ref_values.extend(_parse_datum(datum, molecule_idx, datum_ctx))
 
     return mol, ref_values
@@ -513,6 +551,12 @@ def _reference_value_to_dict(rv: ReferenceValue) -> dict[str, Any]:
             d["col"] = rv.atom_indices[1]
         else:
             raise ReferenceYAMLError("eig_offdiagonal requires row/col (atom_indices)")
+    elif rv.kind == "hessian_element":
+        if rv.atom_indices is not None:
+            d["row"] = rv.atom_indices[0]
+            d["col"] = rv.atom_indices[1]
+        else:
+            raise ReferenceYAMLError("hessian_element requires row/col (atom_indices)")
 
     return d
 
