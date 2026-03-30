@@ -830,8 +830,19 @@ class OpenMMEngine(MMEngine):
         ub_terms: list[_UBTerm] = []
         for angle_term in angle_terms:
             param = _match_angle(forcefield, angle_term.elements, env_id=angle_term.env_id, ff_row=angle_term.ff_row)
-            if param is None or param.ub_force_constant is None:
+            if param is None:
                 continue
+            # Require both UB parameters to be provided together. If neither is
+            # set, there is simply no UB term for this angle; if only one is set,
+            # this is a configuration error that should fail fast.
+            if param.ub_force_constant is None and param.ub_equilibrium is None:
+                continue
+            if param.ub_force_constant is None or param.ub_equilibrium is None:
+                raise ValueError(
+                    "Inconsistent Urey-Bradley parameters for angle "
+                    f"{angle_term.elements} (env_id={angle_term.env_id}, ff_row={angle_term.ff_row}): "
+                    "both 'ub_force_constant' and 'ub_equilibrium' must be set or both must be None."
+                )
             if ub_force is None:
                 ub_force = mm.HarmonicBondForce()
             # UB uses atom_i and atom_k (the two outer atoms of the angle)
@@ -1174,8 +1185,16 @@ class OpenMMEngine(MMEngine):
         if handle.ub_force is not None:
             for term in handle.ub_terms:
                 param = _match_angle(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
-                if param is None or param.ub_force_constant is None:
+                if param is None:
                     raise ValueError(f"Updated force field is missing UB parameter for angle {term.elements}.")
+                if param.ub_force_constant is None and param.ub_equilibrium is None:
+                    raise ValueError(f"Updated force field is missing UB parameter for angle {term.elements}.")
+                if param.ub_force_constant is None or param.ub_equilibrium is None:
+                    raise ValueError(
+                        "Inconsistent Urey-Bradley parameters for angle "
+                        f"{term.elements} (env_id={term.env_id}, ff_row={term.ff_row}): "
+                        "both 'ub_force_constant' and 'ub_equilibrium' must be set or both must be None."
+                    )
                 handle.ub_force.setBondParameters(
                     term.force_index,
                     term.atom_i,
