@@ -1019,6 +1019,13 @@ class ObjectiveFunction:
 
         hess_map: dict[int, np.ndarray] = {}
         for group in groups:
+            # Cache handles created during grouping to avoid duplicate
+            # compilation in subsequent _evaluate_molecule calls.
+            for mol_local_idx in group.mol_indices:
+                original_idx = idx_list[mol_local_idx]
+                if original_idx not in self._handles:
+                    self._handles[original_idx] = group.handle
+
             hessians = batched_hessians(group, forcefield)
             for local_i, hess in enumerate(hessians):
                 original_idx = idx_list[group.mol_indices[local_i]]
@@ -1049,7 +1056,7 @@ class ObjectiveFunction:
             try:
                 precomputed_hessians = self._precompute_batched_hessians(forcefield)
             except Exception:
-                logger.debug(
+                logger.warning(
                     "Batched Hessian pre-computation failed; falling back to sequential evaluation.",
                     exc_info=True,
                 )
