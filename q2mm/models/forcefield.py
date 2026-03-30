@@ -267,6 +267,48 @@ class VdwParam:
 
 
 @dataclass
+class CmapGrid:
+    """A CMAP (correction map) energy grid for backbone φ/ψ dihedrals.
+
+    CMAP is a 2D spline correction used in CHARMM force fields to improve
+    backbone conformational energetics.  The grid stores tabulated energy
+    corrections as a function of two dihedral angles (typically φ and ψ).
+
+    CMAP grids are **read-only** — they are not included in the optimizable
+    parameter vector.  During force field fitting, the CMAP correction is
+    applied as a fixed energy contribution.
+
+    Attributes:
+        atom_types_phi: Atom types defining the φ dihedral (4 types).
+        atom_types_psi: Atom types defining the ψ dihedral (4 types).
+        resolution: Number of grid points along each axis (e.g., 24 for
+            15° spacing over 360°).
+        energy: Flat list of energy corrections in kcal/mol, length
+            ``resolution * resolution``.  Entry ``energy[i * resolution + j]``
+            corresponds to φ = -180 + i * 360/resolution and
+            ψ = -180 + j * 360/resolution.
+        label: Optional human-readable label for this CMAP grid.
+
+    """
+
+    atom_types_phi: tuple[str, str, str, str]
+    atom_types_psi: tuple[str, str, str, str]
+    resolution: int
+    energy: list[float]
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        expected = self.resolution * self.resolution
+        if len(self.energy) != expected:
+            raise ValueError(
+                f"CMAP grid energy has {len(self.energy)} values, "
+                f"expected {expected} ({self.resolution}×{self.resolution})."
+            )
+        if self.resolution < 2:
+            raise ValueError(f"CMAP resolution must be ≥ 2, got {self.resolution}.")
+
+
+@dataclass
 class ForceField:
     """Format-agnostic force field representation.
 
@@ -285,8 +327,9 @@ class ForceField:
     angles: list[AngleParam] = field(default_factory=list)
     torsions: list[TorsionParam] = field(default_factory=list)
     vdws: list[VdwParam] = field(default_factory=list)
+    cmaps: list[CmapGrid] = field(default_factory=list)
     source_path: Path | None = field(default=None, repr=False)
-    source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml", "amber_frcmod"] | None = field(
+    source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml", "amber_frcmod", "charmm_prm"] | None = field(
         default=None, repr=False
     )
     functional_form: FunctionalForm | None = field(default=None, repr=True)
@@ -311,6 +354,11 @@ class ForceField:
     def has_urey_bradley(self) -> bool:
         """Whether any angle has Urey-Bradley parameters."""
         return len(self._ub_angles) > 0
+
+    @property
+    def has_cmap(self) -> bool:
+        """Whether the force field includes CMAP correction grids."""
+        return len(self.cmaps) > 0
 
     @property
     def n_params(self) -> int:

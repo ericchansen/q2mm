@@ -29,6 +29,7 @@ from q2mm.constants import (
     MASSES,
 )
 from q2mm.models.units import (
+    KCAL_TO_KJ,
     RAD_TO_DEG,
     ang_to_nm,
     canonical_to_openmm_angle_k,
@@ -189,6 +190,28 @@ class _UBTerm:
 
 
 @dataclass
+class _CmapTerm:
+    """Internal record mapping a CMAP correction to its OpenMM force index.
+
+    Attributes:
+        torsion_index: Index of this CMAP torsion in the CMAPTorsionForce.
+        map_index: Index of the CMAP grid in the CMAPTorsionForce.
+        phi_atoms: Atom indices for the φ dihedral (4 atoms).
+        psi_atoms: Atom indices for the ψ dihedral (4 atoms).
+        phi_types: Atom types for the φ dihedral.
+        psi_types: Atom types for the ψ dihedral.
+
+    """
+
+    torsion_index: int
+    map_index: int
+    phi_atoms: tuple[int, int, int, int]
+    psi_atoms: tuple[int, int, int, int]
+    phi_types: tuple[str, str, str, str]
+    psi_types: tuple[str, str, str, str]
+
+
+@dataclass
 class OpenMMHandle:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
@@ -202,11 +225,13 @@ class OpenMMHandle:
         torsion_force: The OpenMM torsion force object, or ``None`` if no torsions.
         vdw_force: The OpenMM vdW force object, or ``None`` if no vdW terms.
         ub_force: The OpenMM HarmonicBondForce for Urey-Bradley terms, or ``None``.
+        cmap_force: The OpenMM CMAPTorsionForce, or ``None`` if no CMAP terms.
         bond_terms: Mapping of molecule bonds to force indices.
         angle_terms: Mapping of molecule angles to force indices.
         torsion_terms: Mapping of molecule torsions to force indices.
         vdw_terms: Mapping of atoms to vdW particle indices.
         ub_terms: Mapping of Urey-Bradley 1-3 pairs to force indices.
+        cmap_terms: Mapping of CMAP corrections to force indices.
         exceptions_14: 1-4 nonbonded exceptions (harmonic form only).
         functional_form: The functional form used when the handle was created.
 
@@ -221,11 +246,13 @@ class OpenMMHandle:
     torsion_force: object | None
     vdw_force: object | None
     ub_force: object | None
+    cmap_force: object | None
     bond_terms: list[_BondTerm]
     angle_terms: list[_AngleTerm]
     torsion_terms: list[_TorsionTerm]
     vdw_terms: list[_VdwTerm]
     ub_terms: list[_UBTerm] = field(default_factory=list)
+    cmap_terms: list[_CmapTerm] = field(default_factory=list)
     exceptions_14: list[_Exception14] = field(default_factory=list)
     functional_form: FunctionalForm = FunctionalForm.MM3
 
@@ -517,6 +544,67 @@ def _match_torsions(
 
     """
     return forcefield.match_torsion(elements, env_id=env_id, ff_row=ff_row, is_improper=is_improper)
+
+
+def _build_atom_type_index(molecule: Q2MMMolecule) -> dict[str, list[int]]:
+    """Build a mapping from atom type to atom indices in the molecule.
+
+    Args:
+        molecule: Molecule to index.
+
+    Returns:
+        dict mapping atom type strings to lists of 0-based atom indices.
+
+    """
+    index: dict[str, list[int]] = {}
+    for i, atype in enumerate(molecule.atom_types):
+        index.setdefault(atype, []).append(i)
+    return index
+
+
+def _find_dihedral_atoms(
+    type_to_indices: dict[str, list[int]],
+    atom_types: tuple[str, str, str, str],
+    molecule: Q2MMMolecule,
+) -> list[tuple[int, int, int, int]]:
+    """Find all atom-index quadruples matching a dihedral type pattern.
+
+    Only returns quadruples where consecutive atoms are bonded.
+
+    Args:
+        type_to_indices: Atom type to index mapping.
+        atom_types: Four atom types defining the dihedral.
+        molecule: Molecule for bond connectivity.
+
+    Returns:
+        List of (i, j, k, l) atom index tuples.
+
+    """
+    # Build adjacency set for quick bond lookup
+    bonded: set[tuple[int, int]] = set()
+    for bond in molecule.bonds:
+        bonded.add((bond.atom_i, bond.atom_j))
+        bonded.add((bond.atom_j, bond.atom_i))
+
+    def _are_bonded(a: int, b: int) -> bool:
+        return (a, b) in bonded
+
+    results: list[tuple[int, int, int, int]] = []
+    t1, t2, t3, t4 = atom_types
+
+    for a in type_to_indices.get(t1, []):
+        for b in type_to_indices.get(t2, []):
+            if b == a or not _are_bonded(a, b):
+                continue
+            for c in type_to_indices.get(t3, []):
+                if c in (a, b) or not _are_bonded(b, c):
+                    continue
+                for d in type_to_indices.get(t4, []):
+                    if d in (a, b, c) or not _are_bonded(c, d):
+                        continue
+                    results.append((a, b, c, d))
+
+    return results
 
 
 @register_mm("openmm")
@@ -1006,6 +1094,56 @@ class OpenMMEngine(MMEngine):
                 "No OpenMM terms were created. Force field did not match any detected bonds, angles, torsions, or vdW types."
             )
 
+        # --- Assign CMAP correction terms (CHARMM backbone corrections) ---
+        cmap_force = None
+        cmap_terms: list[_CmapTerm] = []
+        if forcefield.has_cmap:
+            cmap_force = mm.CMAPTorsionForce()
+            # Build atom-type-to-index mapping for the molecule
+            type_to_indices = _build_atom_type_index(molecule)
+
+            for grid in forcefield.cmaps:
+                # Add the 2D energy grid (convert kcal/mol → kJ/mol for OpenMM)
+                energy_kj = [e * KCAL_TO_KJ for e in grid.energy]
+                map_index = cmap_force.addMap(grid.resolution, energy_kj)
+
+                # Find atom index quadruples matching the phi/psi types
+                phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
+                psi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_psi, molecule)
+
+                # Pair phi/psi dihedrals that share the middle two atoms
+                for phi_atoms in phi_matches:
+                    for psi_atoms in psi_matches:
+                        # CMAP pairs: psi starts where phi's last 3 atoms overlap
+                        if phi_atoms[1:] == psi_atoms[:3]:
+                            torsion_index = cmap_force.addTorsion(
+                                map_index,
+                                phi_atoms[0],
+                                phi_atoms[1],
+                                phi_atoms[2],
+                                phi_atoms[3],
+                                psi_atoms[0],
+                                psi_atoms[1],
+                                psi_atoms[2],
+                                psi_atoms[3],
+                            )
+                            cmap_terms.append(
+                                _CmapTerm(
+                                    torsion_index=torsion_index,
+                                    map_index=map_index,
+                                    phi_atoms=phi_atoms,
+                                    psi_atoms=psi_atoms,
+                                    phi_types=grid.atom_types_phi,
+                                    psi_types=grid.atom_types_psi,
+                                )
+                            )
+
+            if cmap_terms:
+                logger.info("Created %d CMAP correction term(s).", len(cmap_terms))
+            else:
+                logger.warning("CMAP grids present but no matching atom pairs found.")
+                cmap_force = None
+
         if bond_terms:
             system.addForce(bond_force)
         else:
@@ -1031,6 +1169,11 @@ class OpenMMEngine(MMEngine):
         else:
             ub_force = None
 
+        if cmap_terms:
+            system.addForce(cmap_force)
+        else:
+            cmap_force = None
+
         integrator, context = self._create_context(system)
         context.setPositions(self._positions(molecule))
 
@@ -1044,11 +1187,13 @@ class OpenMMEngine(MMEngine):
             torsion_force=torsion_force,
             vdw_force=vdw_force,
             ub_force=ub_force,
+            cmap_force=cmap_force,
             bond_terms=bond_terms,
             angle_terms=angle_terms,
             torsion_terms=torsion_terms,
             vdw_terms=vdw_terms,
             ub_terms=ub_terms,
+            cmap_terms=cmap_terms,
             exceptions_14=exceptions_14 if use_harmonic and vdw_terms else [],
             functional_form=ff_form,
         )
