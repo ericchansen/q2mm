@@ -448,6 +448,10 @@ def _load_molecule(
             offdiag_weight = _as_float(datum.get("offdiagonal_weight", 0.05), "offdiagonal_weight", datum_ctx)
             diagonal_only = datum.get("diagonal_only", False)
             skip_translational = _as_int(datum.get("skip_translational", 0), "skip_translational", datum_ctx)
+            if skip_translational < 0:
+                raise ReferenceYAMLError(
+                    f"'skip_translational' must be non-negative in {datum_ctx}, got {skip_translational}."
+                )
             temp_ref = ReferenceData()
             temp_ref.add_hessian_from_matrix(
                 mol.hessian,

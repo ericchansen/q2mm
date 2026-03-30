@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -332,7 +334,7 @@ class TestYAMLRoundTrip:
 
 
 class TestYAMLBulkHessian:
-    def test_bulk_hessian_directive(self) -> None:
+    def test_bulk_hessian_directive(self, tmp_path: Path) -> None:
         """kind: hessian bulk directive creates hessian_element entries."""
         from q2mm.parsers.reference_yaml import _load_molecule
 
@@ -346,94 +348,66 @@ class TestYAMLBulkHessian:
             "data": [{"kind": "hessian", "diagonal_only": True}],
         }
 
-        from pathlib import Path
-        from unittest.mock import patch
-
-        # Mock hessian loading - attach hessian to molecule after creation
-        from q2mm.models.molecule import Q2MMMolecule
-
-        with patch.object(Q2MMMolecule, "with_hessian", return_value=None):
-            # We need a mol with a hessian. Directly parse then check.
-            pass
-
-        # Simpler approach: build mol_dict with hessian path, mock np.load
-        # Actually, let's just test _load_molecule with hessian already set
-        # by injecting it via the 'hessian' key path mechanism
-        hess_path = Path("test_hessian.npy")
+        hess_path = tmp_path / "test_hessian.npy"
         np.save(str(hess_path), hess)
-        try:
-            mol_dict["hessian"] = str(hess_path)
-            mol, ref_values = _load_molecule(mol_dict, Path("."), 0)
+        mol_dict["hessian"] = str(hess_path)
+        mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
-            assert mol.hessian is not None
-            assert len(ref_values) == 2  # diagonal_only, 2×2 → 2
-            assert all(rv.kind == "hessian_element" for rv in ref_values)
-            assert all(rv.atom_indices[0] == rv.atom_indices[1] for rv in ref_values)
-        finally:
-            hess_path.unlink(missing_ok=True)
+        assert mol.hessian is not None
+        assert len(ref_values) == 2  # diagonal_only, 2×2 → 2
+        assert all(rv.kind == "hessian_element" for rv in ref_values)
+        assert all(rv.atom_indices[0] == rv.atom_indices[1] for rv in ref_values)
 
-    def test_bulk_hessian_full(self) -> None:
+    def test_bulk_hessian_full(self, tmp_path: Path) -> None:
         """kind: hessian without diagonal_only creates full lower triangle."""
-        from pathlib import Path
-
         from q2mm.parsers.reference_yaml import _load_molecule
 
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
-        hess_path = Path("test_hessian_full.npy")
+        hess_path = tmp_path / "test_hessian_full.npy"
         np.save(str(hess_path), hess)
-        try:
-            mol_dict = {
-                "name": "test_mol",
-                "geometry": {
-                    "symbols": ["H", "H"],
-                    "coordinates": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
-                },
-                "hessian": str(hess_path),
-                "data": [{"kind": "hessian"}],
-            }
-            mol, ref_values = _load_molecule(mol_dict, Path("."), 0)
+        mol_dict = {
+            "name": "test_mol",
+            "geometry": {
+                "symbols": ["H", "H"],
+                "coordinates": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            },
+            "hessian": str(hess_path),
+            "data": [{"kind": "hessian"}],
+        }
+        mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
-            # 2×2 lower triangle: 3 elements
-            assert len(ref_values) == 3
-            diag = [rv for rv in ref_values if rv.atom_indices[0] == rv.atom_indices[1]]
-            offdiag = [rv for rv in ref_values if rv.atom_indices[0] != rv.atom_indices[1]]
-            assert len(diag) == 2
-            assert len(offdiag) == 1
-        finally:
-            hess_path.unlink(missing_ok=True)
+        # 2×2 lower triangle: 3 elements
+        assert len(ref_values) == 3
+        diag = [rv for rv in ref_values if rv.atom_indices[0] == rv.atom_indices[1]]
+        offdiag = [rv for rv in ref_values if rv.atom_indices[0] != rv.atom_indices[1]]
+        assert len(diag) == 2
+        assert len(offdiag) == 1
 
-    def test_bulk_hessian_skip_translational(self) -> None:
+    def test_bulk_hessian_skip_translational(self, tmp_path: Path) -> None:
         """skip_translational parameter works in bulk directive."""
-        from pathlib import Path
-
         from q2mm.parsers.reference_yaml import _load_molecule
 
         hess = np.eye(4)
-        hess_path = Path("test_hessian_skip.npy")
+        hess_path = tmp_path / "test_hessian_skip.npy"
         np.save(str(hess_path), hess)
-        try:
-            mol_dict = {
-                "name": "test_mol",
-                "geometry": {
-                    "symbols": ["H", "H"],
-                    "coordinates": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
-                },
-                "hessian": str(hess_path),
-                "data": [{"kind": "hessian", "skip_translational": 2, "diagonal_only": True}],
-            }
-            mol, ref_values = _load_molecule(mol_dict, Path("."), 0)
+        mol_dict = {
+            "name": "test_mol",
+            "geometry": {
+                "symbols": ["H", "H"],
+                "coordinates": [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            },
+            "hessian": str(hess_path),
+            "data": [{"kind": "hessian", "skip_translational": 2, "diagonal_only": True}],
+        }
+        mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
-            # skip 2, diagonal only → indices 2, 3
-            assert len(ref_values) == 2
-            rows = [rv.atom_indices[0] for rv in ref_values]
-            assert rows == [2, 3]
-        finally:
-            hess_path.unlink(missing_ok=True)
+        # skip 2, diagonal only → indices 2, 3
+        assert len(ref_values) == 2
+        rows = [rv.atom_indices[0] for rv in ref_values]
+        assert rows == [2, 3]
 
-    def test_bulk_hessian_no_hessian_raises(self) -> None:
+    def test_bulk_hessian_no_hessian_raises(self, tmp_path: Path) -> None:
         """kind: hessian raises when molecule has no hessian."""
-        from pathlib import Path
-
         from q2mm.parsers.reference_yaml import ReferenceYAMLError, _load_molecule
 
         mol_dict = {
@@ -446,7 +420,7 @@ class TestYAMLBulkHessian:
         }
 
         with pytest.raises(ReferenceYAMLError, match="requires a molecule with a hessian"):
-            _load_molecule(mol_dict, Path("."), 0)
+            _load_molecule(mol_dict, tmp_path, 0)
 
 
 # ---- ObjectiveFunction integration ----
