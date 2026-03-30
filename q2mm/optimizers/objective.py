@@ -423,7 +423,12 @@ class ReferenceData:
             molecule_idx: Index into the molecules list.
             label: Human-readable label.
 
+        Raises:
+            ValueError: If *row* or *col* is negative.
+
         """
+        if row < 0 or col < 0:
+            raise ValueError(f"row and col must be non-negative, got row={row}, col={col}")
         self.values.append(
             ReferenceValue(
                 kind="hessian_element",
@@ -466,6 +471,10 @@ class ReferenceData:
         n = hessian.shape[0]
         if hessian.shape != (n, n):
             raise ValueError(f"Hessian must be square, got shape {hessian.shape}")
+        if skip_translational < 0:
+            raise ValueError(f"skip_translational must be non-negative, got {skip_translational}")
+        if skip_translational >= n:
+            raise ValueError(f"skip_translational ({skip_translational}) must be less than matrix size ({n})")
 
         added = 0
         start = skip_translational
