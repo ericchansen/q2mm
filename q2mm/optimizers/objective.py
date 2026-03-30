@@ -552,14 +552,16 @@ class ReferenceData:
         molecule_idx: int = 0,
         frequencies: np.ndarray | list[float] | None = None,
         skip_imaginary: bool = False,
-        include_eigenmatrix: bool = False,
+        include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
     ) -> ReferenceData:
         """Auto-populate reference data from a molecule's detected geometry.
 
         Extracts all auto-detected bond lengths and bond angles from the
-        molecule. Optionally adds vibrational frequencies and/or Hessian
-        eigenmatrix training data.
+        molecule. By default, also adds Hessian eigenmatrix training data
+        when a Hessian is available (this matches the standard Q2MM
+        workflow from the literature). Vibrational frequencies and raw
+        Hessian elements are **not** included by default.
 
         Args:
             mol (Q2MMMolecule): Molecule with geometry (bonds/angles
@@ -575,15 +577,15 @@ class ReferenceData:
                 frequencies (cm⁻¹) to include.
             skip_imaginary (bool): If ``True``, negative frequencies are
                 skipped.
-            include_eigenmatrix (bool): If ``True`` and the molecule has
-                a Hessian, add eigenmatrix training data (diagonal and
-                optionally off-diagonal elements).
+            include_eigenmatrix (bool): If ``True`` (the default) and the
+                molecule has a Hessian, add eigenmatrix training data
+                (diagonal and optionally off-diagonal elements).
             eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
                 eigenmatrix elements are added.
 
         Returns:
             ReferenceData: Populated with bond lengths, angles, and
-                (optionally) frequencies and eigenmatrix data.
+                (by default) eigenmatrix data when a Hessian is present.
 
         """
         w = {"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}
@@ -637,7 +639,7 @@ class ReferenceData:
         weights: dict[str, float] | None = None,
         frequencies_list: list[np.ndarray | list[float]] | None = None,
         skip_imaginary: bool = False,
-        include_eigenmatrix: bool = False,
+        include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
     ) -> ReferenceData:
         """Auto-populate reference data from multiple molecules.
@@ -654,8 +656,8 @@ class ReferenceData:
                 *molecules* if provided.
             skip_imaginary (bool): If ``True``, negative frequencies are
                 skipped.
-            include_eigenmatrix (bool): If ``True`` and a molecule has a
-                Hessian, add eigenmatrix data.
+            include_eigenmatrix (bool): If ``True`` (the default) and a
+                molecule has a Hessian, add eigenmatrix data.
             eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
                 eigenmatrix elements are added.
 
@@ -696,15 +698,21 @@ class ReferenceData:
         bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
         charge: int = 0,
         multiplicity: int = 1,
-        include_frequencies: bool = True,
+        include_frequencies: bool = False,
         skip_imaginary: bool = False,
         au_hessian: bool = True,
+        include_eigenmatrix: bool = True,
     ) -> tuple[ReferenceData, Q2MMMolecule]:
         """Build reference data from a Gaussian log file.
 
         Parses the log file for the optimised geometry and vibrational
         frequencies, then auto-populates bond lengths, angles, and
-        (optionally) frequencies.
+        (when a Hessian is available) eigenmatrix data.
+
+        By default, **frequencies are not included** — eigenmatrix
+        training from the Hessian is the standard Q2MM approach per
+        Norrby & Liljefors (1998). Set ``include_frequencies=True``
+        to add them.
 
         Args:
             path (str | Path): Path to the Gaussian ``.log`` file
@@ -716,11 +724,13 @@ class ReferenceData:
             charge (int): Molecular charge.
             multiplicity (int): Spin multiplicity.
             include_frequencies (bool): Whether to add frequency data
-                from the log file.
+                from the log file. Default is ``False``.
             skip_imaginary (bool): If ``True``, negative frequencies are
                 skipped.
             au_hessian (bool): Keep Hessian in atomic units
                 (Hartree/Bohr²).
+            include_eigenmatrix (bool): If ``True`` (the default) and a
+                Hessian is available, add eigenmatrix training data.
 
         Returns:
             tuple[ReferenceData, Q2MMMolecule]: Populated reference data
@@ -755,6 +765,7 @@ class ReferenceData:
             weights=weights,
             frequencies=frequencies,
             skip_imaginary=skip_imaginary,
+            include_eigenmatrix=include_eigenmatrix,
         )
 
         return ref, mol
