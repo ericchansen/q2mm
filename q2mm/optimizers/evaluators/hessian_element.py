@@ -45,7 +45,6 @@ class HessianElementEvaluator:
         ff: ForceField,
         *,
         structure: Any | None = None,
-        **kwargs: Any,
     ) -> HessianResult:
         """Compute the raw MM Hessian.
 
@@ -54,7 +53,6 @@ class HessianElementEvaluator:
             mol: The molecule being evaluated.
             ff: The current force field.
             structure: Optional pre-built engine context/handle.
-            **kwargs: Additional keyword arguments (ignored).
 
         Returns:
             HessianResult with the computed Hessian in Hartree/Bohr².

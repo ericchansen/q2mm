@@ -452,6 +452,12 @@ def _load_molecule(
                 raise ReferenceYAMLError(
                     f"'skip_translational' must be non-negative in {datum_ctx}, got {skip_translational}."
                 )
+            n = mol.hessian.shape[0]
+            if skip_translational >= n:
+                raise ReferenceYAMLError(
+                    f"'skip_translational' ({skip_translational}) must be less than "
+                    f"Hessian dimension ({n}) in {datum_ctx}."
+                )
             temp_ref = ReferenceData()
             temp_ref.add_hessian_from_matrix(
                 mol.hessian,
