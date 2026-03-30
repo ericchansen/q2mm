@@ -6,6 +6,7 @@ compute Hessians for multiple geometries in a single vectorized call.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from dataclasses import dataclass, field
 
@@ -48,29 +49,37 @@ class TopologyGroup:
 
 
 def _topology_signature(handle: JaxHandle) -> str:
-    """Create a hashable signature for a handle's topology.
+    """Create a hashable signature for a handle's topology using SHA-256.
 
     Two handles with the same signature are guaranteed to share identical
     connectivity and parameter mapping, so their energy functions are
     interchangeable up to coordinate differences.
     """
-    parts: list[str] = [
-        str(handle.n_bond_types),
-        str(handle.n_angle_types),
-        str(handle.n_torsion_types),
-        str(handle.n_vdw_types),
-        str(len(handle.bond_indices)),
-        str(len(handle.angle_indices)),
-        str(len(handle.torsion_indices)),
-        str(len(handle.vdw_pair_indices)),
-        str(handle.bond_param_map.tobytes()),
-        str(handle.angle_param_map.tobytes()),
-        str(handle.torsion_param_map.tobytes()),
-        str(handle.atom_vdw_map.tobytes()),
-        str(handle.bond_indices.tobytes()),
-        str(handle.angle_indices.tobytes()),
-    ]
-    return "|".join(parts)
+    h = hashlib.sha256()
+    # Atom count and type counts
+    n_atoms = handle.molecule.geometry.shape[0] if handle.molecule is not None else 0
+    h.update(f"n_atoms={n_atoms}".encode())
+    h.update(f"n_bt={handle.n_bond_types}".encode())
+    h.update(f"n_at={handle.n_angle_types}".encode())
+    h.update(f"n_tt={handle.n_torsion_types}".encode())
+    h.update(f"n_vt={handle.n_vdw_types}".encode())
+    h.update(f"form={handle.functional_form}".encode())
+    # Full connectivity arrays (sorted for determinism)
+    for name, arr in [
+        ("bonds", handle.bond_indices),
+        ("angles", handle.angle_indices),
+        ("torsions", handle.torsion_indices),
+        ("vdw", handle.vdw_pair_indices),
+    ]:
+        h.update(f"{name}={sorted(map(tuple, arr))}".encode() if len(arr) > 0 else f"{name}=[]".encode())
+    # Parameter maps
+    for name, arr in [
+        ("bmap", handle.bond_param_map),
+        ("amap", handle.angle_param_map),
+        ("tmap", handle.torsion_param_map),
+    ]:
+        h.update(f"{name}={list(arr)}".encode() if len(arr) > 0 else f"{name}=[]".encode())
+    return h.hexdigest()
 
 
 def group_by_topology(
