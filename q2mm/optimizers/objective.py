@@ -1204,7 +1204,7 @@ class ObjectiveFunction:
 
         Returns:
             Evaluator category: ``"energy"``, ``"frequency"``,
-            ``"geometry"``, or ``"eigenmatrix"``.
+            ``"geometry"``, ``"eigenmatrix"``, or ``"hessian"``.
 
         Raises:
             ValueError: If the kind is unknown.
@@ -1218,6 +1218,7 @@ class ObjectiveFunction:
             "torsion_angle": "geometry",
             "eig_diagonal": "eigenmatrix",
             "eig_offdiagonal": "eigenmatrix",
+            "hessian_element": "hessian",
         }
         if kind not in _KIND_CATEGORIES:
             raise ValueError(f"Unknown reference kind: {kind}")
