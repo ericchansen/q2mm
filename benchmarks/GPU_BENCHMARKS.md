@@ -57,9 +57,16 @@ GPU-accelerated Q2MM parameter optimization on NVIDIA RTX 5090
 
 ### OpenMM
 
-OpenMM's CUDA platform does **not** support RTX 5090 (Blackwell / sm_120).
-Attempting to use it produces `CUDA_ERROR_UNSUPPORTED_PTX_VERSION (error 222)`.
+OpenMM's CUDA platform works on RTX 5090 (Blackwell / sm_120) via the
+`OpenMM-CUDA-12` pip package, which provides CUDA plugin binaries that
+JIT-compile kernels at runtime using NVRTC.
+
+```bash
+pip install OpenMM-CUDA-12
+```
+
 OpenMM benchmarks were run on CPU only (existing results in `rh-enamide/results/`).
+GPU benchmarks with `OpenMM-CUDA-12` are planned (see issue #194).
 
 ## Key Findings
 

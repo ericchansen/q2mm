@@ -20,6 +20,15 @@ Or with pip (Linux/macOS):
 pip install openmm
 ```
 
+For **GPU (CUDA) support**, also install the CUDA plugin package:
+
+```bash
+pip install OpenMM-CUDA-12
+```
+
+This provides CUDA plugin binaries that JIT-compile kernels via NVRTC,
+supporting all NVIDIA architectures including Blackwell (RTX 5090).
+
 !!! tip "Verify installation"
     ```python
     import openmm
