@@ -425,7 +425,7 @@ compiled kernel.
 | Component | Status |
 |-----------|--------|
 | JAX CUDA (Blackwell / sm_120) | ✅ Works |
-| OpenMM CUDA (Blackwell / sm_120) | ✅ Works — install `OpenMM-CUDA-12` (`pip install OpenMM-CUDA-12`). Uses NVRTC to JIT-compile kernels for sm_120. |
+| OpenMM CUDA (Blackwell / sm_120) | ✅ Works — `pip install OpenMM-CUDA-12` (Linux only). Uses NVRTC to JIT-compile kernels for sm_120. |
 | JAX force fields | Harmonic only (no MM3) |
 
 ---
