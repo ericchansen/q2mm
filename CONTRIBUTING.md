@@ -92,6 +92,32 @@ ruff check q2mm/ test/ scripts/
 ruff format q2mm/ test/ scripts/
 ```
 
+## Benchmarks
+
+When running benchmarks with `q2mm-benchmark`, **always save the output force
+fields**.  Benchmark runs can take hours (the JAX-MD CPU Rh-enamide run takes
+~6.5 hours) and are not reproducible bit-for-bit due to floating-point
+reduction-order differences between devices.
+
+```bash
+# CORRECT — saves output FFs and results to benchmarks/
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B
+
+# WRONG — discards optimized force fields forever
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+```
+
+**Rules:**
+
+1. **Never use `--no-save`** unless you are debugging or testing the benchmark
+   harness itself.
+2. **Commit output force fields** to `benchmarks/<system>/forcefields/` so they
+   are tracked in version control.
+3. **Commit result JSON files** to `benchmarks/<system>/results/` for
+   reproducibility and future analysis.
+4. If running GPU vs CPU comparisons, run them **sequentially** on an idle
+   system — parallel benchmark runs produce invalid timing data.
+
 ## Submitting Changes
 
 1. Fork and create a feature branch from `master`
