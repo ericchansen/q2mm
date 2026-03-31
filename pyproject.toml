@@ -50,6 +50,10 @@ amber = [
 openmm = [
     "openmm",
 ]
+openmm-cuda = [
+    "openmm",
+    "OpenMM-CUDA-12",
+]
 optimize = [
     "scipy",
 ]
