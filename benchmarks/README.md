@@ -8,25 +8,44 @@ reproducibility.
 ```
 benchmarks/
 ├── ch3f/                        # CH₃F (fluoromethane) — 1 molecule, 8 params
-│   ├── results/                 # JSON result files (BenchmarkResult format)
-│   │   ├── OpenMM_L-BFGS-B.json
+│   ├── results/                 # JSON result files
+│   │   ├── ch3f_jax-harmonic_cpu_lbfgsb.json
+│   │   ├── ch3f_openmm-mm3_gpu_powell.json
 │   │   └── ...
 │   └── forcefields/             # Optimized force fields in native formats
-│       ├── OpenMM_L-BFGS-B.fld  # MM3 .fld format
-│       ├── OpenMM_L-BFGS-B.prm  # Tinker .prm format
-│       ├── OpenMM_L-BFGS-B.xml  # OpenMM XML format
+│       ├── ch3f_jax-harmonic_cpu_lbfgsb.fld
+│       ├── ch3f_jax-harmonic_cpu_lbfgsb.prm
 │       └── ...
 ├── rh-enamide/                  # Rh-enamide — 9 molecules, 182 params
-│   ├── results/                 # JSON result files (BenchmarkResult format)
-│   │   ├── JAX_(harmonic,_cpu)_L-BFGS-B.json
-│   │   ├── JAX-MD_(OPLSAA,_cpu)_L-BFGS-B.json
-│   │   ├── OpenMM_(CUDA)_Nelder-Mead.json
+│   ├── results/
+│   │   ├── rh-enamide_jax-md-oplsaa_cpu_lbfgsb.json
 │   │   └── ...
-│   └── forcefields/             # Optimized force fields
-│       ├── JAX_(harmonic,_cpu)_L-BFGS-B.frcmod
-│       ├── OpenMM_(CUDA)_Nelder-Mead.fld
+│   └── forcefields/
 │       └── ...
 └── README.md
+```
+
+## File Naming Convention
+
+Pattern: `{system}_{engine}-{ff}_{device}_{optimizer}.{ext}`
+
+All segments are **lowercase**.  Underscores separate segments; hyphens
+separate words within a segment.  No parentheses, commas, or spaces.
+
+| Segment | Values | Description |
+|---------|--------|-------------|
+| `system` | `ch3f`, `rh-enamide` | Molecular system |
+| `engine-ff` | `jax-harmonic`, `jax-md-oplsaa`, `openmm-mm3`, `tinker-mm3` | Engine and force field type |
+| `device` | `cpu`, `gpu` | Execution device |
+| `optimizer` | `lbfgsb`, `nelder-mead`, `powell`, `cycling` | Optimization strategy |
+
+Glob examples:
+
+```bash
+ls *_gpu_*.json          # all GPU results
+ls *_lbfgsb.*            # all L-BFGS-B results + FFs
+ls rh-enamide_*.json     # all Rh-enamide results
+ls *_jax-md-*_*.json     # all JAX-MD results
 ```
 
 ## Systems
@@ -35,14 +54,6 @@ benchmarks/
 |--------|----------:|------:|-----------:|----------|
 | **CH₃F** | 1 | 5 | 8 | B3LYP/6-31+G(d) (Psi4) |
 | **Rh-enamide** | 9 | 36–62 | 182 | B3LYP/LACVP** (Jaguar) |
-
-## File Naming
-
-Files follow the pattern `{Backend}_{Optimizer}.{ext}`:
-
-- **Backend**: `JAX_(harmonic,_cpu)`, `JAX-MD_(OPLSAA,_cpu)`,
-  `OpenMM_(CUDA)`, `OpenMM`, `Tinker`
-- **Optimizer**: `L-BFGS-B`, `Nelder-Mead`, `Powell`
 
 ## Force Field Formats
 

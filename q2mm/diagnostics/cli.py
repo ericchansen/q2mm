@@ -268,6 +268,8 @@ def _run_matrix(
 
     # Save results if output directory specified
     if output_dir is not None:
+        from q2mm.diagnostics.benchmark import benchmark_stem
+
         # Use system-specific subdirectory
         system_output = output_dir
         results_dir = system_output / "results"
@@ -276,9 +278,7 @@ def _run_matrix(
         ff_dir.mkdir(parents=True, exist_ok=True)
 
         for r in results:
-            meta = r.metadata
-            stem = f"{meta.get('backend', 'unk')}_{meta.get('optimizer', 'unk')}"
-            stem = stem.replace("+", "_").replace(" ", "_")
+            stem = benchmark_stem(r.metadata)
             r.to_json(results_dir / f"{stem}.json")
             # For multi-molecule systems, save with first molecule
             mol_for_save = sys_data.molecules[0] if sys_data else None

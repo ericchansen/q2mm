@@ -24,6 +24,90 @@ if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
 
 
+# ── Engine display name → (engine_key, ff_label) mapping ────────────
+# Engine.name returns human-readable strings like "JAX (gpu)",
+# "JAX-MD (OPLSAA, cpu)", "OpenMM (CUDA)", "Tinker".  We need to
+# decompose those into shell-safe filename segments.
+_ENGINE_MAP: dict[str, tuple[str, str]] = {
+    "jax": ("jax", "harmonic"),
+    "jax-md": ("jax-md", "oplsaa"),
+    "openmm": ("openmm", "mm3"),
+    "tinker": ("tinker", "mm3"),
+}
+
+
+def _parse_engine_name(display_name: str) -> tuple[str, str, str]:
+    """Parse an engine display name into (engine, ff, device).
+
+    Examples::
+
+        >>> _parse_engine_name("JAX (gpu)")
+        ('jax', 'harmonic', 'gpu')
+        >>> _parse_engine_name("JAX-MD (OPLSAA, cpu)")
+        ('jax-md', 'oplsaa', 'cpu')
+        >>> _parse_engine_name("OpenMM (CUDA)")
+        ('openmm', 'mm3', 'gpu')
+        >>> _parse_engine_name("Tinker")
+        ('tinker', 'mm3', 'cpu')
+
+    """
+    import re
+
+    name = display_name.strip()
+    # Extract parenthesised suffix if present
+    m = re.match(r"^([^(]+?)(?:\s*\(([^)]*)\))?$", name)
+    if not m:
+        return name.lower(), "unk", "cpu"
+
+    base = m.group(1).strip().lower()
+    paren = m.group(2) or ""
+    parts = [p.strip().lower() for p in paren.split(",") if p.strip()]
+
+    # Look up engine/ff from the base key
+    engine_key, ff_label = _ENGINE_MAP.get(base, (base, "unk"))
+
+    # Determine device from parenthesised parts
+    device = "cpu"
+    for p in parts:
+        if p in ("gpu", "cpu"):
+            device = p
+        elif p == "cuda":
+            device = "gpu"
+        # Skip FF labels already handled by _ENGINE_MAP (e.g. "oplsaa")
+
+    return engine_key, ff_label, device
+
+
+def benchmark_stem(metadata: dict) -> str:
+    """Build a shell-safe, self-describing filename stem from metadata.
+
+    Pattern: ``{system}_{engine}-{ff}_{device}_{optimizer}``
+
+    All segments are lowercase.  Underscores separate segments; hyphens
+    separate words within a segment.  No parentheses, commas, or spaces.
+
+    Examples::
+
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B"})
+        'ch3f_jax-harmonic_gpu_lbfgsb'
+        >>> benchmark_stem({"molecule": "Rh-enamide", "backend": "JAX-MD (OPLSAA, cpu)", "optimizer": "Powell"})
+        'rh-enamide_jax-md-oplsaa_cpu_powell'
+
+    """
+    system = metadata.get("molecule", "unk").lower().replace(" ", "-")
+    backend = metadata.get("backend", "unk")
+    engine, ff, device = _parse_engine_name(backend)
+    # Allow explicit device override from metadata
+    device = metadata.get("device", device).lower()
+
+    optimizer = metadata.get("optimizer", "unk").lower()
+    if optimizer == "l-bfgs-b":
+        optimizer = "lbfgsb"
+    optimizer = optimizer.replace(" ", "-")
+
+    return f"{system}_{engine}-{ff}_{device}_{optimizer}"
+
+
 @dataclass
 class BenchmarkResult:
     """Serializable result from a single benchmark run.
@@ -143,9 +227,7 @@ class BenchmarkResult:
         directory.mkdir(parents=True, exist_ok=True)
 
         if stem is None:
-            backend = self.metadata.get("backend", "unk")
-            optimizer = self.metadata.get("optimizer", "unk")
-            stem = f"{backend}_{optimizer}".replace(" ", "_").replace("+", "_")
+            stem = benchmark_stem(self.metadata)
 
         ff = self.optimized_ff
         form = getattr(ff, "functional_form", None)
