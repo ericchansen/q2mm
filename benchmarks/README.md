@@ -9,16 +9,16 @@ reproducibility.
 benchmarks/
 ├── ch3f/                        # CH₃F (fluoromethane) — 1 molecule, 8 params
 │   ├── results/                 # JSON result files
-│   │   ├── ch3f_jax-harmonic_cpu_lbfgsb.json
-│   │   ├── ch3f_openmm-mm3_gpu_powell.json
+│   │   ├── ch3f_jax_harmonic_cpu_lbfgsb.json
+│   │   ├── ch3f_openmm_mm3_gpu_powell.json
 │   │   └── ...
 │   └── forcefields/             # Optimized force fields in native formats
-│       ├── ch3f_jax-harmonic_cpu_lbfgsb.fld
-│       ├── ch3f_jax-harmonic_cpu_lbfgsb.prm
+│       ├── ch3f_jax_harmonic_cpu_lbfgsb.fld
+│       ├── ch3f_jax_harmonic_cpu_lbfgsb.prm
 │       └── ...
 ├── rh-enamide/                  # Rh-enamide — 9 molecules, 182 params
 │   ├── results/
-│   │   ├── rh-enamide_jax-md-oplsaa_cpu_lbfgsb.json
+│   │   ├── rh-enamide_jax-md_oplsaa_cpu_lbfgsb.json
 │   │   └── ...
 │   └── forcefields/
 │       └── ...
@@ -27,15 +27,17 @@ benchmarks/
 
 ## File Naming Convention
 
-Pattern: `{system}_{engine}-{ff}_{device}_{optimizer}.{ext}`
+Pattern: `{system}_{engine}_{ff}_{device}_{optimizer}.{ext}`
 
-All segments are **lowercase**.  Underscores separate segments; hyphens
-separate words within a segment.  No parentheses, commas, or spaces.
+All segments are **lowercase**, separated by underscores.  Hyphens only
+appear within naturally hyphenated names (e.g. `jax-md`, `rh-enamide`,
+`nelder-mead`).
 
 | Segment | Values | Description |
 |---------|--------|-------------|
 | `system` | `ch3f`, `rh-enamide` | Molecular system |
-| `engine-ff` | `jax-harmonic`, `jax-md-oplsaa`, `openmm-mm3`, `tinker-mm3` | Engine and force field type |
+| `engine` | `jax`, `jax-md`, `openmm`, `tinker` | Compute engine |
+| `ff` | `harmonic`, `oplsaa`, `mm3` | Force field type |
 | `device` | `cpu`, `gpu` | Execution device |
 | `optimizer` | `lbfgsb`, `nelder-mead`, `powell`, `cycling` | Optimization strategy |
 
@@ -45,7 +47,7 @@ Glob examples:
 ls *_gpu_*.json          # all GPU results
 ls *_lbfgsb.*            # all L-BFGS-B results + FFs
 ls rh-enamide_*.json     # all Rh-enamide results
-ls *_jax-md-*_*.json     # all JAX-MD results
+ls *_jax-md_*.json       # all JAX-MD results
 ```
 
 ## Systems

@@ -81,17 +81,18 @@ def _parse_engine_name(display_name: str) -> tuple[str, str, str]:
 def benchmark_stem(metadata: dict) -> str:
     """Build a shell-safe, self-describing filename stem from metadata.
 
-    Pattern: ``{system}_{engine}-{ff}_{device}_{optimizer}``
+    Pattern: ``{system}_{engine}_{ff}_{device}_{optimizer}``
 
     All segments are lowercase.  Underscores separate segments; hyphens
-    separate words within a segment.  No parentheses, commas, or spaces.
+    only appear within naturally hyphenated names (e.g. ``jax-md``,
+    ``rh-enamide``, ``nelder-mead``).
 
     Examples::
 
         >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B"})
-        'ch3f_jax-harmonic_gpu_lbfgsb'
+        'ch3f_jax_harmonic_gpu_lbfgsb'
         >>> benchmark_stem({"molecule": "Rh-enamide", "backend": "JAX-MD (OPLSAA, cpu)", "optimizer": "Powell"})
-        'rh-enamide_jax-md-oplsaa_cpu_powell'
+        'rh-enamide_jax-md_oplsaa_cpu_powell'
 
     """
     system = metadata.get("molecule", "unk").lower().replace(" ", "-")
@@ -105,7 +106,7 @@ def benchmark_stem(metadata: dict) -> str:
         optimizer = "lbfgsb"
     optimizer = optimizer.replace(" ", "-")
 
-    return f"{system}_{engine}-{ff}_{device}_{optimizer}"
+    return f"{system}_{engine}_{ff}_{device}_{optimizer}"
 
 
 @dataclass
