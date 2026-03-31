@@ -68,16 +68,26 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
         ):
             if upper != "CMAP":
                 # Finalize any in-progress grid
-                if current_header is not None and len(current_values) == expected_count:
-                    phi_types, psi_types, res = current_header
-                    grids.append(
-                        CmapGrid(
-                            atom_types_phi=phi_types,
-                            atom_types_psi=psi_types,
-                            resolution=res,
-                            energy=current_values,
+                if current_header is not None:
+                    if len(current_values) == expected_count:
+                        phi_types, psi_types, res = current_header
+                        try:
+                            grids.append(
+                                CmapGrid(
+                                    atom_types_phi=phi_types,
+                                    atom_types_psi=psi_types,
+                                    resolution=res,
+                                    energy=current_values,
+                                )
+                            )
+                        except ValueError as exc:
+                            logger.warning("Skipping malformed CMAP grid: %s", exc)
+                    else:
+                        logger.warning(
+                            "Incomplete CMAP grid at section boundary: expected %d values, got %d. Skipping.",
+                            expected_count,
+                            len(current_values),
                         )
-                    )
                 in_cmap_section = False
                 current_header = None
                 current_values = []
@@ -93,14 +103,17 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
             if current_header is not None:
                 if len(current_values) == expected_count:
                     phi_types, psi_types, res = current_header
-                    grids.append(
-                        CmapGrid(
-                            atom_types_phi=phi_types,
-                            atom_types_psi=psi_types,
-                            resolution=res,
-                            energy=current_values,
+                    try:
+                        grids.append(
+                            CmapGrid(
+                                atom_types_phi=phi_types,
+                                atom_types_psi=psi_types,
+                                resolution=res,
+                                energy=current_values,
+                            )
                         )
-                    )
+                    except ValueError as exc:
+                        logger.warning("Skipping malformed CMAP grid: %s", exc)
                 else:
                     logger.warning(
                         "Incomplete CMAP grid: expected %d values, got %d. Skipping.",
@@ -129,14 +142,17 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
     # Finalize last grid
     if current_header is not None and len(current_values) == expected_count:
         phi_types, psi_types, res = current_header
-        grids.append(
-            CmapGrid(
-                atom_types_phi=phi_types,
-                atom_types_psi=psi_types,
-                resolution=res,
-                energy=current_values,
+        try:
+            grids.append(
+                CmapGrid(
+                    atom_types_phi=phi_types,
+                    atom_types_psi=psi_types,
+                    resolution=res,
+                    energy=current_values,
+                )
             )
-        )
+        except ValueError as exc:
+            logger.warning("Skipping malformed CMAP grid: %s", exc)
     elif current_header is not None:
         logger.warning(
             "Incomplete CMAP grid at end of file: expected %d values, got %d.",
