@@ -756,7 +756,11 @@ class OpenMMEngine(MMEngine):
         return integrator, context
 
     def create_context(
-        self, structure: Q2MMMolecule | str | Path, forcefield: ForceField | None = None
+        self,
+        structure: Q2MMMolecule | str | Path,
+        forcefield: ForceField | None = None,
+        *,
+        precision: str | None = None,
     ) -> OpenMMHandle:
         """Build an OpenMM system and context for a molecule.
 
@@ -769,6 +773,9 @@ class OpenMMEngine(MMEngine):
                 XYZ file.
             forcefield: Force field to apply. Auto-generated from the
                 molecule if ``None``.
+            precision: Override GPU precision (``"single"``, ``"mixed"``,
+                ``"double"``).  When ``None`` (default) uses the
+                engine-level setting.
 
         Returns:
             OpenMMHandle: Reusable handle for energy evaluation and parameter
@@ -1176,7 +1183,7 @@ class OpenMMEngine(MMEngine):
         else:
             cmap_force = None
 
-        integrator, context = self._create_context(system)
+        integrator, context = self._create_context(system, precision=precision)
         context.setPositions(self._positions(molecule))
 
         return OpenMMHandle(
@@ -1771,12 +1778,7 @@ class OpenMMEngine(MMEngine):
             vdw_start = 2 * len(forcefield.bonds) + 2 * len(forcefield.angles) + len(forcefield.torsions)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
-            saved_precision = self._precision
-            try:
-                self._precision = "double"
-                handle = self.create_context(molecule, forcefield)
-            finally:
-                self._precision = saved_precision
+            handle = self.create_context(molecule, forcefield, precision="double")
             for i in range(vdw_start, vdw_end):
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step
