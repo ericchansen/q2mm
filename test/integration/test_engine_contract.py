@@ -258,7 +258,7 @@ class TestAnalyticalGradients:
         try:
             from q2mm.backends.mm.openmm import OpenMMEngine
 
-            if isinstance(engine, OpenMMEngine) and engine._platform_name in {"CUDA", "OpenCL"}:
+            if isinstance(engine, OpenMMEngine) and ("CUDA" in engine.name or "OpenCL" in engine.name):
                 return OpenMMEngine(platform_name="CPU")
         except ImportError:
             pass
