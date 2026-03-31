@@ -9,6 +9,7 @@ Tests the full CMAP pipeline:
 from __future__ import annotations
 
 import textwrap
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -28,7 +29,11 @@ from q2mm.models.forcefield import (
     TorsionParam,
     VdwParam,
 )
-from q2mm.parsers.charmm_cmap import parse_cmap_section
+from q2mm.parsers.charmm_cmap import load_cmap_from_prm, parse_cmap_section
+
+# Path to the real CHARMM36 CMAP excerpt fixture
+_FIXTURES = Path(__file__).parent / "fixtures"
+_CHARMM36_CMAP = _FIXTURES / "cmap_charmm36_excerpt.prm"
 
 # ---------------------------------------------------------------------------
 # CmapGrid dataclass tests
@@ -494,3 +499,81 @@ class TestCmapEdgeCases:
         assert grids[0].energy[0] == pytest.approx(0.0015)
         assert grids[0].energy[1] == pytest.approx(-20.0)
         assert grids[0].energy[3] == pytest.approx(123.4)
+
+
+# ---------------------------------------------------------------------------
+# CHARMM36 reference file validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestCmapCharmm36Reference:
+    """Validate the parser against real CHARMM36 CMAP data.
+
+    Reference: ``par_all36_prot.prm`` (CHARMM36 protein parameters).
+    Source: https://github.com/ParmEd/ParmEd/blob/master/examples/charmm/toppar/par_all36_prot.prm
+
+    The fixture ``test/fixtures/cmap_charmm36_excerpt.prm`` contains the
+    first two 24×24 CMAP grids (alanine and alanine-before-proline maps)
+    extracted from that file.
+    """
+
+    @pytest.fixture
+    def grids(self) -> list[CmapGrid]:
+        """Parse grids from the real CHARMM36 fixture file."""
+        assert _CHARMM36_CMAP.exists(), f"Fixture not found: {_CHARMM36_CMAP}"
+        return load_cmap_from_prm(_CHARMM36_CMAP)
+
+    def test_grid_count(self, grids: list[CmapGrid]) -> None:
+        """Fixture contains two CMAP grids."""
+        assert len(grids) == 2
+
+    def test_grid_resolution(self, grids: list[CmapGrid]) -> None:
+        """Both grids must be 24×24 (standard CHARMM protein CMAP)."""
+        for g in grids:
+            assert g.resolution == 24
+            assert len(g.energy) == 576
+
+    def test_alanine_atom_types(self, grids: list[CmapGrid]) -> None:
+        """First grid: alanine backbone (C-NH1-CT1-C / NH1-CT1-C-NH1)."""
+        ala = grids[0]
+        assert ala.atom_types_phi == ("C", "NH1", "CT1", "C")
+        assert ala.atom_types_psi == ("NH1", "CT1", "C", "NH1")
+
+    def test_alanine_before_proline_atom_types(self, grids: list[CmapGrid]) -> None:
+        """Second grid: alanine before proline (C-NH1-CT1-C / NH1-CT1-C-N)."""
+        ala_pro = grids[1]
+        assert ala_pro.atom_types_phi == ("C", "NH1", "CT1", "C")
+        assert ala_pro.atom_types_psi == ("NH1", "CT1", "C", "N")
+
+    def test_alanine_known_values(self, grids: list[CmapGrid]) -> None:
+        """Spot-check alanine grid values against the .prm file.
+
+        First row (phi = -180°) starts: 0.126790, 0.768700, 0.971260, ...
+        """
+        ala = grids[0]
+        assert ala.energy[0] == pytest.approx(0.126790)
+        assert ala.energy[1] == pytest.approx(0.768700)
+        assert ala.energy[2] == pytest.approx(0.971260)
+        assert ala.energy[3] == pytest.approx(1.250970)
+        # Last value in the grid (phi = 165°, psi = 165°)
+        assert ala.energy[-1] == pytest.approx(-1.814368)
+
+    def test_values_in_physical_range(self, grids: list[CmapGrid]) -> None:
+        """CMAP energy corrections should be in a physically reasonable range.
+
+        CHARMM36 backbone corrections are typically -8 to +8 kcal/mol.
+        """
+        for g in grids:
+            assert all(-15.0 < v < 15.0 for v in g.energy), (
+                f"CMAP values outside expected range: min={min(g.energy):.2f}, max={max(g.energy):.2f}"
+            )
+
+    def test_load_cmap_from_prm_api(self) -> None:
+        """The file-based API should produce the same results."""
+        grids_text = parse_cmap_section(_CHARMM36_CMAP.read_text())
+        grids_file = load_cmap_from_prm(_CHARMM36_CMAP)
+        assert len(grids_text) == len(grids_file)
+        for gt, gf in zip(grids_text, grids_file):
+            assert gt.atom_types_phi == gf.atom_types_phi
+            assert gt.atom_types_psi == gf.atom_types_psi
+            assert gt.energy == gf.energy
