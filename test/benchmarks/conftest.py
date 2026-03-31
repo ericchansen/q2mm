@@ -197,7 +197,7 @@ def golden_results() -> dict[str, dict[str, object]]:
     for path in sorted(_BENCHMARK_DIR.glob("*.json")):
         with open(path) as fh:
             data = json.load(fh)
-        if "metadata" not in data or "default_ff" not in data:
+        if "metadata" not in data or not data.get("default_ff"):
             continue
         results[path.stem] = data
     return results
