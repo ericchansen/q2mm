@@ -52,7 +52,7 @@ openmm = [
 ]
 openmm-cuda = [
     "openmm",
-    "OpenMM-CUDA-12",
+    "OpenMM-CUDA-12; sys_platform == 'linux'",
 ]
 optimize = [
     "scipy",
