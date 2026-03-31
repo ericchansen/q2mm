@@ -34,7 +34,8 @@ GPU-accelerated Q2MM parameter optimization on NVIDIA RTX 5090
 - L-BFGS-B optimizer used for all runs (gradient-based; benefits from
   GPU-accelerated gradient and objective function evaluations, which
   include Hessian/frequency computations internally)
-- Benchmarks use `q2mm-benchmark` CLI with `--no-save` flag
+- Benchmarks use the `q2mm-benchmark` CLI with results saved to
+  `benchmarks/<system>/` (per `CONTRIBUTING.md` policy)
 
 ## Results
 
@@ -93,20 +94,20 @@ OpenMM benchmarks were run on CPU only (existing results in `rh-enamide/results/
 source .venv/bin/activate
 
 # Rh-enamide GPU
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # Rh-enamide CPU
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # Rh-enamide JAX-MD GPU (warning: ~100 min)
-q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
+q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # Rh-enamide JAX-MD CPU (warning: ~6.6 hours)
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # CH3F GPU vs CPU
-q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
-JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
+q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
 ```
 
 ## Date

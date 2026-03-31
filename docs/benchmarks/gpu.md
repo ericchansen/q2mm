@@ -440,16 +440,16 @@ CPU baselines use `JAX_PLATFORMS=cpu` to force CPU-only execution.
 source .venv/bin/activate
 
 # Rh-enamide: JAX GPU vs CPU
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # Rh-enamide: JAX-MD GPU vs CPU (warning: GPU ~100 min, CPU ~6.6 hours)
-q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
+q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
 # CH₃F: JAX GPU vs CPU
-q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
-JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
+q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
 ```
 
 Raw data: `benchmarks/GPU_BENCHMARKS.md`.

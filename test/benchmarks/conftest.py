@@ -183,6 +183,10 @@ _BENCHMARK_DIR = REPO_ROOT / "benchmarks" / "ch3f" / "results"
 def golden_results() -> dict[str, dict[str, object]]:
     """Load archived benchmark JSON results keyed by filename stem.
 
+    Only loads BenchmarkResult-shaped JSONs (must contain ``metadata``
+    and ``default_ff`` keys).  Cycling logs and error-only results are
+    skipped.
+
     Returns a dict like ``{"ch3f_openmm_mm3_cpu_lbfgsb": {...}, ...}``.
     """
     import json
@@ -192,5 +196,8 @@ def golden_results() -> dict[str, dict[str, object]]:
         pytest.skip("Archived benchmark results not found")
     for path in sorted(_BENCHMARK_DIR.glob("*.json")):
         with open(path) as fh:
-            results[path.stem] = json.load(fh)
+            data = json.load(fh)
+        if "metadata" not in data or "default_ff" not in data:
+            continue
+        results[path.stem] = data
     return results
