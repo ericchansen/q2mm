@@ -570,39 +570,32 @@ def _find_dihedral_atoms(
     """Find all atom-index quadruples matching a dihedral type pattern.
 
     Only returns quadruples where consecutive atoms are bonded.
+    Uses pre-enumerated torsions from the molecule when available
+    (O(n_torsions) instead of O(n^4) Cartesian product).
 
     Args:
         type_to_indices: Atom type to index mapping.
         atom_types: Four atom types defining the dihedral.
-        molecule: Molecule for bond connectivity.
+        molecule: Molecule for bond connectivity and torsion enumeration.
 
     Returns:
         List of (i, j, k, l) atom index tuples.
 
     """
-    # Build adjacency set for quick bond lookup
-    bonded: set[tuple[int, int]] = set()
-    for bond in molecule.bonds:
-        bonded.add((bond.atom_i, bond.atom_j))
-        bonded.add((bond.atom_j, bond.atom_i))
-
-    def _are_bonded(a: int, b: int) -> bool:
-        return (a, b) in bonded
-
     results: list[tuple[int, int, int, int]] = []
     t1, t2, t3, t4 = atom_types
+    atom_types_array = molecule.atom_types
 
-    for a in type_to_indices.get(t1, []):
-        for b in type_to_indices.get(t2, []):
-            if b == a or not _are_bonded(a, b):
-                continue
-            for c in type_to_indices.get(t3, []):
-                if c in (a, b) or not _are_bonded(b, c):
-                    continue
-                for d in type_to_indices.get(t4, []):
-                    if d in (a, b, c) or not _are_bonded(c, d):
-                        continue
-                    results.append((a, b, c, d))
+    # Use pre-enumerated torsions (bonded 1-4 paths) when available
+    for torsion in molecule.torsions:
+        a, b, c, d = torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l
+        if (
+            atom_types_array[a] == t1
+            and atom_types_array[b] == t2
+            and atom_types_array[c] == t3
+            and atom_types_array[d] == t4
+        ):
+            results.append((a, b, c, d))
 
     return results
 
@@ -1089,11 +1082,6 @@ class OpenMMEngine(MMEngine):
             else:
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
-        if not bond_terms and not angle_terms and not torsion_terms and not vdw_terms:
-            raise ValueError(
-                "No OpenMM terms were created. Force field did not match any detected bonds, angles, torsions, or vdW types."
-            )
-
         # --- Assign CMAP correction terms (CHARMM backbone corrections) ---
         cmap_force = None
         cmap_terms: list[_CmapTerm] = []
@@ -1111,38 +1099,49 @@ class OpenMMEngine(MMEngine):
                 phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
                 psi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_psi, molecule)
 
-                # Pair phi/psi dihedrals that share the middle two atoms
+                # Pair phi/psi dihedrals sharing 3 overlapping atoms.
+                # Index psi by first 3 atoms for O(n_phi + n_psi) lookup.
+                psi_index: dict[tuple[int, ...], list[tuple[int, int, int, int]]] = {}
+                for psi_atoms in psi_matches:
+                    key = tuple(psi_atoms[:3])
+                    psi_index.setdefault(key, []).append(psi_atoms)
+
                 for phi_atoms in phi_matches:
-                    for psi_atoms in psi_matches:
-                        # CMAP pairs: psi starts where phi's last 3 atoms overlap
-                        if phi_atoms[1:] == psi_atoms[:3]:
-                            torsion_index = cmap_force.addTorsion(
-                                map_index,
-                                phi_atoms[0],
-                                phi_atoms[1],
-                                phi_atoms[2],
-                                phi_atoms[3],
-                                psi_atoms[0],
-                                psi_atoms[1],
-                                psi_atoms[2],
-                                psi_atoms[3],
+                    key = tuple(phi_atoms[1:])
+                    for psi_atoms in psi_index.get(key, ()):
+                        torsion_index = cmap_force.addTorsion(
+                            map_index,
+                            phi_atoms[0],
+                            phi_atoms[1],
+                            phi_atoms[2],
+                            phi_atoms[3],
+                            psi_atoms[0],
+                            psi_atoms[1],
+                            psi_atoms[2],
+                            psi_atoms[3],
+                        )
+                        cmap_terms.append(
+                            _CmapTerm(
+                                torsion_index=torsion_index,
+                                map_index=map_index,
+                                phi_atoms=phi_atoms,
+                                psi_atoms=psi_atoms,
+                                phi_types=grid.atom_types_phi,
+                                psi_types=grid.atom_types_psi,
                             )
-                            cmap_terms.append(
-                                _CmapTerm(
-                                    torsion_index=torsion_index,
-                                    map_index=map_index,
-                                    phi_atoms=phi_atoms,
-                                    psi_atoms=psi_atoms,
-                                    phi_types=grid.atom_types_phi,
-                                    psi_types=grid.atom_types_psi,
-                                )
-                            )
+                        )
 
             if cmap_terms:
                 logger.info("Created %d CMAP correction term(s).", len(cmap_terms))
             else:
                 logger.warning("CMAP grids present but no matching atom pairs found.")
                 cmap_force = None
+
+        if not bond_terms and not angle_terms and not torsion_terms and not vdw_terms and not cmap_terms:
+            raise ValueError(
+                "No OpenMM terms were created. Force field did not match any "
+                "detected bonds, angles, torsions, vdW types, or CMAP pairs."
+            )
 
         if bond_terms:
             system.addForce(bond_force)
