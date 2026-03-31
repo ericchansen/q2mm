@@ -734,6 +734,11 @@ class OpenMMEngine(MMEngine):
         gpu_platforms = {"CUDA", "OpenCL"}
         if self._platform_name in gpu_platforms:
             precision = precision or self._precision or "mixed"
+            _VALID_PRECISIONS = {"single", "mixed", "double"}
+            if precision not in _VALID_PRECISIONS:
+                raise ValueError(
+                    f"Invalid precision {precision!r}. Expected one of: {', '.join(sorted(_VALID_PRECISIONS))}."
+                )
             prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
             try:
                 context = mm.Context(system, integrator, platform, {prop_key: precision})
