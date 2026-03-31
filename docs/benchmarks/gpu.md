@@ -1,114 +1,61 @@
 # GPU Acceleration
 
-GPU vs CPU benchmarks using the JAX backend on an NVIDIA RTX 5090
-(32 GB VRAM, Blackwell sm_120) with an AMD Ryzen 7 7800X3D CPU.
-All runs use float64 precision.
+GPU vs CPU benchmarks using JAX-based backends on an NVIDIA RTX 5090
+(32 GB VRAM, Blackwell sm_120).  All runs use float64 precision.
 
-**The headline result is counter-intuitive: CPU is faster than GPU for
-every workload tested.**  This page explains why, what would need to
-change, and the planned path to making GPU acceleration viable.
+**GPU acceleration delivers real speedups for medium-to-large molecular
+systems:** JAX-MD OPLSAA achieves **5.6× per-evaluation speedup** and
+JAX harmonic achieves **2.1×** on the 9-molecule Rh-enamide system.
+Small molecules (CH₃F, 5 atoms) remain faster on CPU due to kernel
+launch overhead.
 
 ---
 
 ## Results
 
-### Per-evaluation throughput
+### Full optimization (L-BFGS-B)
 
-| System | Atoms | Modes | Params | GPU (ms/eval) | CPU (ms/eval) | Speedup |
-|--------|------:|------:|-------:|--------------:|--------------:|--------:|
-| CH₃F | 5 | 9 | 8 | 2.20 | 0.40 | 0.18× |
-| rh-enamide | 36–62 | 1,273 | 94 | 36.2 | 21.9 | 0.60× |
+End-to-end L-BFGS-B optimization using `q2mm-benchmark`.  All
+benchmarks run **sequentially** on an otherwise idle system to ensure
+valid timing.  Per-evaluation time is the fair comparison metric — eval
+counts may differ between CPU and GPU due to float64 reduction-order
+differences.
 
-Per-eval times measured as the mean of 50 (CH₃F) or 10 (rh-enamide)
-isolated calls after JIT warmup.
+**Rh-enamide** (9 molecules, 36–62 atoms each, 182 parameters):
 
-Each "eval" computes the full objective: for every molecule in the
-training set, run the energy function, compute the Hessian
-(`jax.hessian`), diagonalise it to get vibrational frequencies, and sum
-the weighted squared deviations from QM reference values.
+| Backend | Device | s/eval | Evals | Wall Time | GPU Speedup |
+|---------|--------|-------:|------:|----------:|:-----------:|
+| JAX-MD (OPLSAA) | GPU | 13.44 | 447 | 6,009 s | **5.61×** |
+| JAX-MD (OPLSAA) | CPU | 75.38 | 316 | 23,819 s | — |
+| JAX (harmonic) | GPU | 12.60 | 31 | 391 s | **2.08×** |
+| JAX (harmonic) | CPU | 26.17 | 21 | 550 s | — |
 
-### GRAD→SIMP cycling
+**CH₃F** (1 molecule, 5 atoms, 8 parameters):
 
-Full [`OptimizationLoop`][q2mm.optimizers.cycling.OptimizationLoop]
-with L-BFGS-B (GRAD, `maxiter=200`) and Nelder-Mead (SIMP,
-`maxiter=200`, `max_params=5`, `convergence=0.01`).
-
-**CH₃F** (1 molecule, 8 parameters, synthetic reference):
-
-| Device | Cycles | Evals | Wall time | Final score |
-|--------|-------:|------:|----------:|------------:|
-| GPU | 2 | 664 | 2.3 s | 1.9 × 10⁻⁵ |
-| CPU | 2 | 682 | 0.8 s | 1.9 × 10⁻⁵ |
-
-**rh-enamide** (9 molecules, 94 parameters, QM frequency reference):
-
-| Device | Cycles | Evals | Wall time | Final score |
-|--------|-------:|------:|----------:|------------:|
-| GPU | 3 | 30,637 | 1,117 s | 34.56 |
-| CPU | 4 | 30,936 | 686 s | 32.78 |
-
-Score is the weighted sum of squared frequency deviations (QM − MM)
-across all modes.  Lower is better; initial score is 2,161 for both
-runs.
-
-Both devices converge to similar scores and use nearly identical eval
-counts (~30 k).  The 1.6× wall-time difference comes entirely from
-the per-eval throughput gap, not from algorithmic differences.
-
-!!! warning "Force field caveat"
-    rh-enamide uses an auto-generated **harmonic** force field (94
-    params) because JaxEngine does not support MM3.  These scores are
-    not comparable to the 182-parameter MM3 results on the
-    [rh-enamide page](rh-enamide.md).
-
-### Single-shot optimizer comparison (CH₃F, GPU)
-
-Single-shot results for each optimizer on JAX and JAX-MD using the
-RTX 5090.  All start from Seminario estimates (RMSD = 156.9 cm⁻¹).
-
-**Data:**
-[Results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results-gpu-post-182/results)
-
-| Backend | Optimizer | Final RMSD | Evals | Time | ms/eval |
-|---------|-----------|----------:|------:|-----:|--------:|
-| **JAX (gpu)** | Powell | **0.02** | 2,544 | 8.3 s | 3.3 |
-| **JAX (gpu)** | Nelder-Mead | 1,037.9 | 1,193 | 4.2 s | 3.5 |
-| **JAX (gpu)** | L-BFGS-B | 813.4 | 361 | 1.7 s | 4.8 |
-| **JAX-MD (gpu)** | Powell | **0.02** | 2,655 | 9.6 s | 3.6 |
-| **JAX-MD (gpu)** | Nelder-Mead | 1,037.9 | 1,216 | 5.0 s | 4.1 |
-| **JAX-MD (gpu)** | L-BFGS-B | 813.4 | 523 | 3.0 s | 5.7 |
-
-!!! note "Comparison with CPU"
-    On CPU, Powell and Nelder-Mead reach RMSD 0.0 and 4.0 respectively
-    in 1.3 s and 0.8 s — **faster than GPU** due to the small Hessian
-    sizes (15 × 15).  GPU per-eval throughput (3.3–5.7 ms) is ~8× slower
-    than CPU (~0.4 ms) for this 5-atom system.  The GPU advantage only
-    emerges at larger system sizes; see [Why CPU Wins](#why-cpu-wins).
-
-!!! tip "Powell is the best single-shot GPU optimizer for CH₃F"
-    Powell reaches a **near-perfect fit** (RMSD 0.02 cm⁻¹) in 8.3 s on GPU.
-    Nelder-Mead and L-BFGS-B both converge to poor RMSD values (1038,
-    813).  L-BFGS-B's poor performance is due to noisy finite-difference
-    gradients.  Note that ``jac="auto"`` would not help here because this
-    benchmark uses a frequency objective, and analytical frequency
-    gradients are not yet implemented — ``jac="auto"`` currently only
-    benefits energy-based objectives.
+| Backend | Device | s/eval | Evals | Wall Time | GPU Speedup |
+|---------|--------|-------:|------:|----------:|:-----------:|
+| JAX (harmonic) | GPU | 0.054 | 132 | 7.1 s | 0.20× |
+| JAX (harmonic) | CPU | 0.011 | 95 | 1.0 s | — |
 
 ### Takeaway
 
-**CPU is faster than GPU for these workloads.**  The rh-enamide system
-(the larger of the two) shows a 1.6× CPU advantage, and CH₃F is
-5.5× faster on CPU.  The smaller the molecule, the worse the GPU
-performs — exactly what you would expect given the factors described
-below.
+GPU speedup **scales with computational complexity**:
+
+- **0.20×** — CH₃F (5 atoms, trivial): GPU kernel launch overhead dominates
+- **2.08×** — Rh-enamide JAX harmonic (bonds + angles): moderate benefit from batched Hessian via `jax.vmap`
+- **5.61×** — Rh-enamide JAX-MD OPLSAA (full force field with LJ, Coulomb, torsions): GPU parallelism fully utilised across the 9-molecule batch
+
+The crossover point is somewhere between 5 and 36 atoms.  Systems with
+more molecules, more atoms per molecule, or more complex force field
+terms benefit most from GPU acceleration.
 
 ---
 
-## Why CPU Wins
+## When CPU is Faster
 
-Three factors combine to make GPUs slower for q2mm's current workloads.
-Understanding each one is important because they point to different
-solutions.
+Three factors can make GPUs slower for small or simple workloads.
+Understanding each explains the CH₃F results and predicts when GPU
+acceleration will and won't help.
 
 ### 1. Float64 on a consumer GPU
 
@@ -278,12 +225,11 @@ Source: [JAX-ReaxFF paper (ChemRxiv)][jaxreaxff-paper],
 
 ## Future Directions
 
-Several independent improvements could make GPU acceleration viable
-for q2mm.  Each also benefits CPU performance.  Some are experiments
-to validate assumptions; others are architectural changes.  They are
-listed roughly in order of effort, but they are not strictly
-sequential — results from earlier items may change the priority of
-later ones.
+GPU acceleration already delivers meaningful speedups for larger
+systems, but several improvements could push the gains further.
+Each also benefits CPU performance.  They are listed roughly in order
+of effort, but are not strictly sequential — results from earlier
+items may change the priority of later ones.
 
 Tracked in [issue #176](https://github.com/ericchansen/q2mm/issues/176)
 and linked issues.
@@ -479,44 +425,46 @@ compiled kernel.
 | Component | Status |
 |-----------|--------|
 | JAX CUDA (Blackwell / sm_120) | ✅ Works |
-| OpenMM CUDA (Blackwell / sm_120) | ✅ Works (install `OpenMM-CUDA-12`) |
+| OpenMM CUDA (Blackwell / sm_120) | ⚠️ Requires compiling from source with CUDA 12.8+ targeting sm_100 ([details](https://github.com/openmm/openmm/issues/3585)) |
 | JAX force fields | Harmonic only (no MM3) |
 
 ---
 
 ## Reproducing
 
-Each benchmark was run **alone** on an otherwise idle system.
+Each benchmark was run **sequentially** on an otherwise idle system.
+CPU baselines use `JAX_PLATFORMS=cpu` to force CPU-only execution.
 
 ```bash
-# GPU — rh-enamide
-docker run --rm --gpus all -v "$PWD:/work" -w /work q2mm-gpu:latest bash -c \
-  "pip install -e . --no-deps -q && \
-   python scripts/run_cycling_benchmark.py \
-     --molecule rh-enamide --engine jax \
-     --max-cycles 10 --max-params 5 --convergence 0.01 \
-     --output benchmarks/rh-enamide/results-cycling-gpu"
+# Activate the virtual environment with jax[cuda12] installed
+source .venv/bin/activate
 
-# CPU — rh-enamide (same container, JAX forced to CPU)
-docker run --rm -v "$PWD:/work" -w /work q2mm-gpu:latest bash -c \
-  "pip install -e . --no-deps -q && \
-   JAX_PLATFORMS=cpu python scripts/run_cycling_benchmark.py \
-     --molecule rh-enamide --engine jax \
-     --max-cycles 10 --max-params 5 --convergence 0.01 \
-     --output benchmarks/rh-enamide/results-cycling-cpu"
+# Rh-enamide: JAX GPU vs CPU
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+
+# Rh-enamide: JAX-MD GPU vs CPU (warning: GPU ~100 min, CPU ~6.6 hours)
+q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --no-save
+
+# CH₃F: JAX GPU vs CPU
+q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
+JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --no-save
 ```
 
-Raw JSON results: `benchmarks/{molecule}/results-cycling-{gpu,cpu}/`.
+Raw data: `benchmarks/GPU_BENCHMARKS.md`.
 
 ## Hardware & Software
 
 | Component | Version |
 |-----------|---------|
-| GPU | NVIDIA RTX 5090 (32 GB, Blackwell sm_120) |
+| GPU | NVIDIA RTX 5090 (32 GB GDDR7, Blackwell sm_120) |
 | CPU | AMD Ryzen 7 7800X3D (8 cores, 16 threads) |
-| CUDA | 12.8 |
-| Container | `q2mm-gpu:latest` (nvidia/cuda:12.8.0 + micromamba) |
-| JAX | 0.5.x with CUDA 12 |
+| Driver | NVIDIA 591.74 |
+| CUDA runtime | 13.1 (driver-reported; JAX uses `jax[cuda12]` wheels targeting CUDA 12.x) |
+| JAX | 0.9.2 |
+| jax-md | 0.2.8 |
+| Python | 3.12 |
 | Precision | float64 |
 
 ## Further Reading

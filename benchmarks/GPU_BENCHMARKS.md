@@ -12,7 +12,7 @@ GPU-accelerated Q2MM parameter optimization on NVIDIA RTX 5090
 | **VRAM** | 32 GB GDDR7 |
 | **CPU** | AMD (multi-core, used for CPU baseline) |
 | **Driver** | NVIDIA 591.74 |
-| **CUDA** | 13.1 |
+| **CUDA runtime** | 13.1 (driver-reported; JAX uses `jax[cuda12]` wheels targeting CUDA 12.x) |
 | **OS** | Ubuntu (WSL2) |
 
 ## Software
@@ -31,8 +31,9 @@ GPU-accelerated Q2MM parameter optimization on NVIDIA RTX 5090
 - CPU baselines use `JAX_PLATFORMS=cpu` to force CPU-only execution
 - Per-evaluation time is the fair comparison metric — different devices
   may take different optimization paths (different eval counts)
-- L-BFGS-B optimizer used for all runs (gradient-based, benefits most
-  from GPU-accelerated Hessian computation)
+- L-BFGS-B optimizer used for all runs (gradient-based; benefits from
+  GPU-accelerated gradient and objective function evaluations, which
+  include Hessian/frequency computations internally)
 - Benchmarks use `q2mm-benchmark` CLI with `--no-save` flag
 
 ## Results
