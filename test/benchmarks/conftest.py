@@ -183,7 +183,7 @@ _BENCHMARK_DIR = REPO_ROOT / "benchmarks" / "ch3f" / "results"
 def golden_results() -> dict[str, dict[str, object]]:
     """Load archived benchmark JSON results keyed by filename stem.
 
-    Returns a dict like ``{"ch3f_openmm-mm3_cpu_lbfgsb": {...}, ...}``.
+    Returns a dict like ``{"ch3f_openmm_mm3_cpu_lbfgsb": {...}, ...}``.
     """
     import json
 

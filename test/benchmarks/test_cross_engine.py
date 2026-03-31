@@ -140,7 +140,7 @@ class TestGoldenValues:
         golden_results: dict[str, dict[str, object]],
     ) -> None:
         """Current OpenMM frequencies should match archived values."""
-        key = "ch3f_openmm-mm3_cpu_lbfgsb"
+        key = "ch3f_openmm_mm3_cpu_lbfgsb"
         if key not in golden_results:
             pytest.skip(f"No golden result for {key}")
 
@@ -165,7 +165,7 @@ class TestGoldenValues:
         golden_results: dict[str, dict[str, object]],
     ) -> None:
         """QM reference frequencies should match what the benchmarks used."""
-        key = "ch3f_openmm-mm3_cpu_lbfgsb"
+        key = "ch3f_openmm_mm3_cpu_lbfgsb"
         if key not in golden_results:
             pytest.skip(f"No golden result for {key}")
 
