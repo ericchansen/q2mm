@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# ci-local.sh — Run the same checks locally that CI runs remotely.
+# ci_local.sh — Run the same checks locally that CI runs remotely.
 #
 # Usage:
-#   scripts/ci-local.sh              # lint + core tests (fast, ~30s)
-#   scripts/ci-local.sh --backend    # also run backend tests via Docker
-#   scripts/ci-local.sh --all        # lint + core + all Docker backends
+#   scripts/ci_local.sh              # lint + core tests (fast, ~30s)
+#   scripts/ci_local.sh --backend    # also run backend tests via Docker
+#   scripts/ci_local.sh --all        # lint + core + all Docker backends
 #
 # Requires: python3, pip (for lint/core). Docker (for --backend/--all).
 
@@ -30,7 +30,7 @@ for arg in "$@"; do
         --backend) RUN_BACKEND=true ;;
         --all)     RUN_ALL=true ;;
         -h|--help)
-            echo "Usage: scripts/ci-local.sh [--backend] [--all]"
+            echo "Usage: scripts/ci_local.sh [--backend] [--all]"
             echo "  (no args)   lint + core tests"
             echo "  --backend   also run Docker backend tests"
             echo "  --all       run everything including all backends"
