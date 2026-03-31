@@ -64,6 +64,13 @@ Rh-enamide force fields from JAX/JAX-MD use `.frcmod` (AMBER harmonic
 format) because those engines operate on a harmonic copy of the force
 field.  OpenMM uses the native MM3 formats (`.fld`, `.prm`, `.xml`).
 
+## GPU Acceleration
+
+See [GPU_BENCHMARKS.md](GPU_BENCHMARKS.md) for detailed GPU vs CPU
+benchmarks on NVIDIA RTX 5090.  Summary: JAX-MD OPLSAA achieves
+**5.61× per-evaluation speedup** on the Rh-enamide system; JAX harmonic
+achieves **2.08×**.  Small molecules (CH₃F) are faster on CPU.
+
 ## Reproducing
 
 ```bash
