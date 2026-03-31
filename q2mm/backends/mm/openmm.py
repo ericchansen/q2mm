@@ -712,7 +712,7 @@ class OpenMMEngine(MMEngine):
         """
         return np.asarray(molecule.geometry, dtype=float) * unit.angstrom
 
-    def _create_context(self, system: Any) -> tuple[Any, Any]:
+    def _create_context(self, system: Any, *, precision: str | None = None) -> tuple[Any, Any]:
         """Create an OpenMM integrator and context for *system*.
 
         If the selected GPU platform (CUDA/OpenCL) fails (e.g., PTX version
@@ -720,6 +720,9 @@ class OpenMMEngine(MMEngine):
 
         Args:
             system: An ``openmm.System`` object.
+            precision: Override GPU precision (``"single"``, ``"mixed"``,
+                ``"double"``).  When ``None`` (default) uses the
+                engine-level setting or ``"mixed"``.
 
         Returns:
             tuple: ``(integrator, context)`` pair.
@@ -730,7 +733,7 @@ class OpenMMEngine(MMEngine):
         # Set precision for GPU platforms (CUDA/OpenCL).
         gpu_platforms = {"CUDA", "OpenCL"}
         if self._platform_name in gpu_platforms:
-            precision = self._precision or "mixed"
+            precision = precision or self._precision or "mixed"
             prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
             try:
                 context = mm.Context(system, integrator, platform, {prop_key: precision})
@@ -1710,7 +1713,9 @@ class OpenMMEngine(MMEngine):
 
             system.addForce(vdw_force)
 
-        integrator, context = self._create_context(system)
+        # Use double precision on GPU so that analytical derivatives
+        # (getParameterDerivatives) are computed in float64.
+        integrator, context = self._create_context(system, precision="double")
         context.setPositions(self._positions(molecule))
 
         return _DiffHandle(
@@ -1760,12 +1765,18 @@ class OpenMMEngine(MMEngine):
         # vdW parameters use per-particle values without global-parameter
         # derivatives.  Supplement with central finite differences.
         # Reuse a single OpenMMHandle to avoid rebuilding the OpenMM
-        # context for each perturbation.
+        # context for each perturbation.  Use double precision on GPU
+        # so the finite differences are not lost to float32 rounding.
         if forcefield.vdws:
             vdw_start = 2 * len(forcefield.bonds) + 2 * len(forcefield.angles) + len(forcefield.torsions)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
-            handle = self.create_context(molecule, forcefield)
+            saved_precision = self._precision
+            try:
+                self._precision = "double"
+                handle = self.create_context(molecule, forcefield)
+            finally:
+                self._precision = saved_precision
             for i in range(vdw_start, vdw_end):
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step

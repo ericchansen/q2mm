@@ -247,6 +247,23 @@ class TestAnalyticalGradients:
         if not engine.supports_analytical_gradients():
             pytest.skip("engine does not support analytical gradients")
 
+    @staticmethod
+    def _fd_engine(engine: MMEngine) -> MMEngine:
+        """Return an engine suitable for double-precision FD reference.
+
+        CUDA/OpenCL mixed precision loses too many digits for small FD
+        perturbations.  When the engine is OpenMM on a GPU, return a
+        CPU OpenMM engine so the FD baseline is computed in float64.
+        """
+        try:
+            from q2mm.backends.mm.openmm import OpenMMEngine
+
+            if isinstance(engine, OpenMMEngine) and engine._platform_name in {"CUDA", "OpenCL"}:
+                return OpenMMEngine(platform_name="CPU")
+        except ImportError:
+            pass
+        return engine
+
     def test_gradient_has_correct_length(self, engine: MMEngine, h2_displaced: tuple[Q2MMMolecule, ForceField]) -> None:
         self._skip_if_unsupported(engine)
         mol, ff = h2_displaced
@@ -275,6 +292,7 @@ class TestAnalyticalGradients:
         ff = _h2_ff(engine)
         _energy, grad_anal = engine.energy_and_param_grad(mol, ff)
 
+        fd_engine = self._fd_engine(engine)
         params = ff.get_param_vector().copy()
         grad_fd = np.zeros_like(params)
         h = 1e-5
@@ -283,9 +301,9 @@ class TestAnalyticalGradients:
             p_plus[i] += h
             p_minus[i] -= h
             ff.set_param_vector(p_plus)
-            e_plus = engine.energy(mol, ff)
+            e_plus = fd_engine.energy(mol, ff)
             ff.set_param_vector(p_minus)
-            e_minus = engine.energy(mol, ff)
+            e_minus = fd_engine.energy(mol, ff)
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
         ff.set_param_vector(params)
 
@@ -298,6 +316,7 @@ class TestAnalyticalGradients:
         ff = _water_ff(engine)
         _energy, grad_anal = engine.energy_and_param_grad(mol, ff)
 
+        fd_engine = self._fd_engine(engine)
         params = ff.get_param_vector().copy()
         grad_fd = np.zeros_like(params)
         h = 1e-5
@@ -306,9 +325,9 @@ class TestAnalyticalGradients:
             p_plus[i] += h
             p_minus[i] -= h
             ff.set_param_vector(p_plus)
-            e_plus = engine.energy(mol, ff)
+            e_plus = fd_engine.energy(mol, ff)
             ff.set_param_vector(p_minus)
-            e_minus = engine.energy(mol, ff)
+            e_minus = fd_engine.energy(mol, ff)
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
         ff.set_param_vector(params)
 
