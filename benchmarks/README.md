@@ -89,16 +89,16 @@ achieves **2.08×**.  Small molecules (CH₃F) are faster on CPU.
 q2mm-benchmark --output benchmarks/ch3f
 
 # Run Rh-enamide benchmarks (slow — ~3 min per optimizer on OpenMM)
-q2mm-benchmark --system rh-enamide --output benchmarks/rh-enamide/
+q2mm-benchmark --system rh-enamide --output benchmarks/rh-enamide
 
 # Quick run with limited iterations
-q2mm-benchmark --system rh-enamide --max-iter 2 --output benchmarks/rh-enamide/
+q2mm-benchmark --system rh-enamide --max-iter 2 --output benchmarks/rh-enamide
 
 # Run only specific backends/optimizers
-q2mm-benchmark --system rh-enamide --backend jax --optimizer Nelder-Mead
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B
 
 # Load and display saved results without re-running
-q2mm-benchmark --load benchmarks/rh-enamide/
+q2mm-benchmark --load benchmarks/rh-enamide/results
 ```
 
 ## QM Reference
