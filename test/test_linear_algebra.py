@@ -36,8 +36,9 @@ class TestLinearAlgebra(unittest.TestCase):
 
         Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
         Method C forces the reaction coordinate eigenvalue to 1 Hartree/Bohr².
-        The default units=co.GAUSSIAN uses this value directly (AU).  Pass
-        units=co.KJMOLA to convert via constants.HESSIAN_CONVERSION (~9376).
+        The default units=constants.GAUSSIAN uses this value directly (AU).
+        Pass units=constants.KJMOLA to convert via constants.HESSIAN_CONVERSION
+        (~9376).
         """
         repl_evals = hessian.replace_neg_eigenvalue(evals_sq3)
         expected_replacement = 1.0  # 1.0 Hartree/Bohr² (AU, no conversion)
