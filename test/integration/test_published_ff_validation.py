@@ -20,6 +20,7 @@ References
   DOI: 10.1021/ct800132a
 - Old repo: https://github.com/Q2MM/q2mm (commit b26404b8)
 - Training set: 9 Rh-diphosphine TS structures, B3LYP/LACVP** (Jaguar)
+
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import json
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -88,14 +90,14 @@ def _qm_frequencies_from_hessian(
 
 
 def _build_frequency_reference(
-    qm_freqs,
-    mm_all_freqs,
+    qm_freqs: np.ndarray,
+    mm_all_freqs: np.ndarray,
     *,
     threshold: float = 50.0,
     weight: float = 0.001,
     molecule_idx: int = 0,
-    ref=None,
-):
+    ref: Any = None,
+) -> tuple[Any, list[float]]:
     """Build (or extend) a ReferenceData with frequency observations."""
     from q2mm.optimizers.objective import ReferenceData
 
@@ -115,7 +117,7 @@ def _build_frequency_reference(
     return ref, qm_real[:n]
 
 
-def _load_rh_enamide_molecules():
+def _load_rh_enamide_molecules() -> list[Any]:
     """Load 9 rh-enamide structures with Jaguar Hessians."""
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.parsers import JaguarIn, MacroModel
@@ -140,7 +142,7 @@ def _load_rh_enamide_molecules():
     return molecules
 
 
-def _evaluate_ff_on_training_set(ff, molecules, engine):
+def _evaluate_ff_on_training_set(ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
     """Evaluate a force field against QM reference frequencies.
 
     Returns a dict with per-molecule and overall statistics.
@@ -257,14 +259,14 @@ class TestPublishedFFEvaluation:
     """
 
     @pytest.fixture(scope="class")
-    def molecules(self):
+    def molecules(self) -> list[Any]:
         """Load all 9 rh-enamide structures + Jaguar Hessians."""
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.fixture(scope="class")
-    def published_ff(self):
+    def published_ff(self) -> Any:
         """Load the published FF directly from mm3.fld substructure."""
         from q2mm.models.forcefield import ForceField
 
@@ -273,7 +275,7 @@ class TestPublishedFFEvaluation:
         return ForceField.from_mm3_fld(str(MM3_FLD_PATH))
 
     @pytest.fixture(scope="class")
-    def seminario_ff(self, molecules):
+    def seminario_ff(self, molecules: list[Any]) -> Any:
         """Build a Seminario-estimated FF as the unoptimized baseline."""
         from q2mm.models.forcefield import ForceField
         from q2mm.models.seminario import estimate_force_constants
@@ -284,13 +286,13 @@ class TestPublishedFFEvaluation:
         return estimate_force_constants(molecules, forcefield=ff_template)
 
     @pytest.fixture(scope="class")
-    def engine(self):
+    def engine(self) -> Any:
         from q2mm.backends.mm import OpenMMEngine
 
         return OpenMMEngine()
 
     @pytest.fixture(scope="class")
-    def published_results(self, published_ff, molecules, engine):
+    def published_results(self, published_ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
         """Evaluate the published FF on the full training set."""
         t0 = time.perf_counter()
         results = _evaluate_ff_on_training_set(published_ff, molecules, engine)
@@ -298,37 +300,39 @@ class TestPublishedFFEvaluation:
         return results
 
     @pytest.fixture(scope="class")
-    def seminario_results(self, seminario_ff, molecules, engine):
+    def seminario_results(self, seminario_ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
         """Evaluate the Seminario-estimated FF for comparison."""
         return _evaluate_ff_on_training_set(seminario_ff, molecules, engine)
 
     # --- Structural assertions ---
 
-    def test_loads_9_molecules(self, published_results):
+    def test_loads_9_molecules(self, published_results: dict[str, Any]) -> None:
         """All 9 rh-enamide TS structures are loaded."""
         assert published_results["n_molecules"] == 9
 
-    def test_182_parameters(self, published_results):
+    def test_182_parameters(self, published_results: dict[str, Any]) -> None:
         """Published FF has the expected 182 parameters."""
         assert published_results["n_params"] == 182
 
-    def test_all_molecules_have_frequencies(self, published_results):
+    def test_all_molecules_have_frequencies(self, published_results: dict[str, Any]) -> None:
         """Every molecule contributes QM/MM frequency comparisons."""
         for m in published_results["per_molecule"]:
             assert m["n_freq_refs"] > 0, f"{m['name']} has 0 frequency refs"
 
-    def test_over_700_frequency_refs(self, published_results):
+    def test_over_700_frequency_refs(self, published_results: dict[str, Any]) -> None:
         """Sufficient frequency reference points across all molecules."""
         assert published_results["total_freq_refs"] >= 700
 
     # --- Score assertions ---
 
-    def test_published_score_is_finite(self, published_results):
+    def test_published_score_is_finite(self, published_results: dict[str, Any]) -> None:
         """Published FF produces a finite objective score."""
         score = published_results["objective_score"]
         assert np.isfinite(score), f"Published FF score is not finite: {score}"
 
-    def test_published_ff_beats_seminario(self, published_results, seminario_results):
+    def test_published_ff_beats_seminario(
+        self, published_results: dict[str, Any], seminario_results: dict[str, Any]
+    ) -> None:
         """Published (optimized) FF has a lower score than Seminario estimates.
 
         This is the core Check 1 assertion: the published FF, when evaluated
@@ -346,12 +350,12 @@ class TestPublishedFFEvaluation:
 
     # --- Quality assertions ---
 
-    def test_per_molecule_r_squared_positive(self, published_results):
+    def test_per_molecule_r_squared_positive(self, published_results: dict[str, Any]) -> None:
         """Each molecule should have a positive R² (positive correlation)."""
         for m in published_results["per_molecule"]:
             assert m["r_squared"] > 0.0, f"{m['name']}: R² = {m['r_squared']:.3f} (should be positive)"
 
-    def test_overall_r_squared_above_threshold(self, published_results):
+    def test_overall_r_squared_above_threshold(self, published_results: dict[str, Any]) -> None:
         """Average R² across molecules should indicate good correlation."""
         r2_values = [m["r_squared"] for m in published_results["per_molecule"]]
         avg_r2 = np.mean(r2_values)
@@ -359,19 +363,22 @@ class TestPublishedFFEvaluation:
 
     # --- Golden fixture pinning ---
 
-    def test_pin_golden_fixture(self, published_results, capsys):
-        """Generate golden fixture if absent, or validate reproducibility.
+    def test_pin_golden_fixture(
+        self,
+        published_results: dict[str, Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Validate reproducibility against the committed golden fixture.
 
-        First run: generates the golden fixture file.
-        Subsequent runs: validates the score matches the pinned value.
+        If the golden fixture is missing, skip with instructions to generate it
+        and commit it to the repository.
         """
         if not GOLDEN_PATH.exists():
-            _save_golden_fixture(published_results, GOLDEN_PATH)
-            with capsys.disabled():
-                print(f"\n  *** Generated golden fixture: {GOLDEN_PATH}")
-                print(f"      Score: {published_results['objective_score']:.2f}")
-                print(f"      Freq refs: {published_results['total_freq_refs']}")
-            return
+            pytest.skip(
+                f"Golden fixture not found at {GOLDEN_PATH}. "
+                "Run the Check 1 test with OpenMM, save the output as the golden "
+                "fixture JSON, and commit it to the repository."
+            )
 
         golden = json.loads(GOLDEN_PATH.read_text())
         golden_score = golden["summary"]["objective_score"]
@@ -385,7 +392,12 @@ class TestPublishedFFEvaluation:
 
     # --- Reporting ---
 
-    def test_summary_report(self, published_results, seminario_results, capsys):
+    def test_summary_report(
+        self,
+        published_results: dict[str, Any],
+        seminario_results: dict[str, Any],
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         """Print a summary report (informational, never fails)."""
         pub = published_results
         sem = seminario_results
