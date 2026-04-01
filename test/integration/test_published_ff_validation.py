@@ -408,13 +408,13 @@ class TestPublishedFFEvaluation:
         golden = json.loads(GOLDEN_PATH.read_text())
         golden_score = golden["summary"]["objective_score"]
         actual_score = published_results["objective_score"]
-        # rtol=2e-3 accommodates cross-platform floating-point differences
-        # (Windows vs Linux OpenMM builds yield ~0.01% variation)
+        # Windows vs Linux OpenMM yields ~0.012% relative difference;
+        # rtol=5e-4 (0.05%) gives ~4x headroom while still catching regressions.
         np.testing.assert_allclose(
             actual_score,
             golden_score,
-            rtol=2e-3,
-            err_msg=(f"Published FF score {actual_score:.4f} doesn't match golden {golden_score:.4f} (rtol=2e-3)"),
+            rtol=5e-4,
+            err_msg=(f"Published FF score {actual_score:.4f} doesn't match golden {golden_score:.4f} (rtol=5e-4)"),
         )
 
     # --- Reporting ---
