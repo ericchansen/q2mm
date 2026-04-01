@@ -27,8 +27,12 @@ logger = logging.getLogger(__name__)
 class JaguarIn(File):
     """Retrieve data from Jaguar ``.in`` files.
 
-    The Hessian is not mass-weighted. Hessian units are assumed to be
-    kJ/(mol·Å²).
+    The Hessian is **not** mass-weighted and is returned in atomic units
+    (Hartree/Bohr²), matching the convention used by Gaussian .fchk and
+    Psi4 outputs.  Jaguar stores the Hessian in the ``&hess`` section of
+    its ``.in`` file in Hartree/Bohr² (confirmed empirically: raw diagonal
+    elements give frequencies that match the Jaguar ``.out`` exactly when
+    treated as atomic units).
     """
 
     def __init__(self, path: str) -> None:
@@ -85,7 +89,11 @@ class JaguarIn(File):
 
             logger.log(1, f">>> hessian:\n{hessian}")
             logger.log(5, f"  -- Created {hessian.shape} Hessian matrix (w/o dummy atoms).")
-            self._hessian = hessian * co.HESSIAN_CONVERSION  # Hartree/Bohr² → kJ/(mol·Å²); see constants.py
+            # Jaguar stores the Hessian in atomic units (Hartree/Bohr²).
+            # We return it as-is to match the convention of other QM parsers
+            # (Gaussian .fchk, Psi4).  Downstream code (Seminario, frequency
+            # computation) expects AU when au_hessian=True / au_units=True.
+            self._hessian = hessian
             logger.log(1, f">>> hessian.shape: {hessian.shape}")
         return self._hessian
 
