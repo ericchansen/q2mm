@@ -20,7 +20,7 @@
   },
   "per_molecule": [
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_1",
       "n_atoms": 36,
       "n_freq_refs": 54,
       "qm_frequencies": [
@@ -140,7 +140,7 @@
       "r_squared": -2033.141371398035
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_2",
       "n_atoms": 38,
       "n_freq_refs": 59,
       "qm_frequencies": [
@@ -270,7 +270,7 @@
       "r_squared": -1753.1307662576542
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_3",
       "n_atoms": 38,
       "n_freq_refs": 59,
       "qm_frequencies": [
@@ -400,7 +400,7 @@
       "r_squared": -1749.097076118092
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_4",
       "n_atoms": 62,
       "n_freq_refs": 101,
       "qm_frequencies": [
@@ -614,7 +614,7 @@
       "r_squared": -1297.3734806962734
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_5",
       "n_atoms": 62,
       "n_freq_refs": 100,
       "qm_frequencies": [
@@ -826,7 +826,7 @@
       "r_squared": -1335.9875894939903
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_6",
       "n_atoms": 58,
       "n_freq_refs": 97,
       "qm_frequencies": [
@@ -1032,7 +1032,7 @@
       "r_squared": -1204.441271915975
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_7",
       "n_atoms": 58,
       "n_freq_refs": 98,
       "qm_frequencies": [
@@ -1240,7 +1240,7 @@
       "r_squared": -1175.2687460508585
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_8",
       "n_atoms": 58,
       "n_freq_refs": 97,
       "qm_frequencies": [
@@ -1446,7 +1446,7 @@
       "r_squared": -1206.3264368065395
     },
     {
-      "name": "rh_enamide_training_set.mmo",
+      "name": "rh_enamide_training_set.mmo_9",
       "n_atoms": 58,
       "n_freq_refs": 97,
       "qm_frequencies": [
