@@ -82,7 +82,7 @@ class TestLinearAlgebra(unittest.TestCase):
         )
 
     def test_replace_neg_eigenvalue_kjmola(self) -> None:
-        """Explicit units=co.KJMOLA converts the replacement to kJ/(mol·Å²)."""
+        """Explicit units=constants.KJMOLA converts the replacement to kJ/(mol·Å²)."""
         repl_evals = hessian.replace_neg_eigenvalue(evals_sq3, units=constants.KJMOLA)
         expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
         np.testing.assert_allclose(

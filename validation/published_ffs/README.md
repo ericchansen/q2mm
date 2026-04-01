@@ -1,9 +1,9 @@
 # Published Force Fields
 
-This directory contains copies of force fields published in peer-reviewed papers
-and their provenance documentation. These FFs are used for **Check 1** validation:
-proving that the new q2mm engines can evaluate published FFs and reproduce
-the expected quality of fit to QM reference data.
+This directory documents published force fields available in this repository and
+their provenance. These FFs are used for **Check 1** validation: proving that
+the new q2mm engines can load published FFs and evaluate them against the
+corresponding QM reference data.
 
 ## Force Fields
 

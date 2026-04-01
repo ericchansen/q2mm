@@ -61,7 +61,8 @@ class JaguarIn(File):
 
         Returns:
             (numpy.ndarray): 2-D Hessian matrix of shape
-                ``(num_atoms * 3, num_atoms * 3)`` after unit conversion.
+                ``(num_atoms * 3, num_atoms * 3)`` in Hartree/Bohr²
+                (atomic units, no additional conversion applied).
 
         """
         if self._hessian is None:
