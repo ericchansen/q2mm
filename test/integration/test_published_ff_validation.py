@@ -180,7 +180,7 @@ def _evaluate_ff_on_training_set(ff: Any, molecules: list[Any], engine: Any) -> 
 
         per_molecule.append(
             {
-                "name": mol.name or f"mol_{mol_idx}",
+                "name": f"{mol.name or 'mol'}_{mol_idx + 1}",
                 "n_atoms": len(mol.symbols),
                 "n_freq_refs": n,
                 "qm_frequencies": qm_matched.tolist(),
