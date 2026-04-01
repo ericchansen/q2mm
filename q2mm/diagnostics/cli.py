@@ -415,6 +415,12 @@ def main(argv: list[str] | None = None) -> int:
         int: Exit code — ``0`` on success, ``1`` on error.
 
     """
+    # Ensure UTF-8 output on Windows (cp1252 can't encode →, ⁻¹, etc.)
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(
         prog="q2mm-benchmark",
         description="Run Q2MM benchmark matrix across backends and optimizers.",
