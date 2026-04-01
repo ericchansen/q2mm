@@ -425,7 +425,7 @@ compiled kernel.
 | Component | Status |
 |-----------|--------|
 | JAX CUDA (Blackwell / sm_120) | ✅ Works |
-| OpenMM CUDA (Blackwell / sm_120) | ✅ Works — `pip install OpenMM-CUDA-12` (Linux only). Uses NVRTC to JIT-compile kernels for sm_120. |
+| OpenMM CUDA (Blackwell / sm_120) | ✅ Works — `pip install OpenMM-CUDA-12` (Linux / WSL2 / Windows). Uses NVRTC to JIT-compile kernels for sm_120. |
 | JAX force fields | Harmonic only (no MM3) |
 
 ---
@@ -437,7 +437,10 @@ CPU baselines use `JAX_PLATFORMS=cpu` to force CPU-only execution.
 
 ```bash
 # Activate the virtual environment with jax[cuda12] installed
+# Linux / WSL2:
 source .venv/bin/activate
+# Windows (native, JAX CUDA not available — OpenMM CUDA only):
+# .venv\Scripts\activate
 
 # Rh-enamide: JAX GPU vs CPU
 q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide

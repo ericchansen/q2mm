@@ -28,6 +28,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Platform Support: platform-support.md
   - Architecture: architecture.md
   - Tutorial: tutorial.md
   - Data Types: data-types.md
