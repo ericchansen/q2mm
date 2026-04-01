@@ -32,19 +32,19 @@ evec_normd_sq3 = np.array([evec / np.linalg.norm(evec) for evec in evec_sq3])
 
 class TestLinearAlgebra(unittest.TestCase):
     def test_replace_neg_eigenvalue(self) -> None:
-        """Replacement uses 1.0 a.u. converted to kJ/(mol·Å²·amu).
+        """Default replacement uses 1.0 Hartree/Bohr² (atomic units).
 
         Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
-        Method C forces the reaction coordinate eigenvalue to 1 Hartree·bohr⁻²·amu⁻¹
-        = 9376 kJ·mol⁻¹·Å⁻²·amu⁻¹.  The default units=co.KJMOLA triggers this
-        conversion via constants.HESSIAN_CONVERSION.
+        Method C forces the reaction coordinate eigenvalue to 1 Hartree/Bohr².
+        The default units=co.GAUSSIAN uses this value directly (AU).  Pass
+        units=co.KJMOLA to convert via constants.HESSIAN_CONVERSION (~9376).
         """
         repl_evals = hessian.replace_neg_eigenvalue(evals_sq3)
-        expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
+        expected_replacement = 1.0  # 1.0 Hartree/Bohr² (AU, no conversion)
         np.testing.assert_allclose(
             [expected_replacement, evals_sq3[1], evals_sq3[2]],
             repl_evals,
-            err_msg="Most negative eigenvalue should be replaced with 1.0 a.u. in kJ/(mol·Å²·amu) units.",
+            err_msg="Most negative eigenvalue should be replaced with 1.0 Hartree/Bohr².",
         )
         multi_neg_evals = [
             -5,
@@ -61,7 +61,7 @@ class TestLinearAlgebra(unittest.TestCase):
             9.87456,
         ]
         multi_neg_evals_repl = [
-            expected_replacement,  # most negative replaced with 1.0 a.u. converted
+            expected_replacement,  # most negative replaced with 1.0 Hartree/Bohr²
             0.0,
             0.0,
             0.0,
@@ -78,6 +78,16 @@ class TestLinearAlgebra(unittest.TestCase):
             multi_neg_evals_repl,
             hessian.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
             err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
+        )
+
+    def test_replace_neg_eigenvalue_kjmola(self) -> None:
+        """Explicit units=co.KJMOLA converts the replacement to kJ/(mol·Å²)."""
+        repl_evals = hessian.replace_neg_eigenvalue(evals_sq3, units=constants.KJMOLA)
+        expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
+        np.testing.assert_allclose(
+            [expected_replacement, evals_sq3[1], evals_sq3[2]],
+            repl_evals,
+            err_msg="Most negative eigenvalue should be replaced with 1.0 a.u. converted to kJ/(mol·Å²).",
         )
 
     def test_multi_neg_eigenvalue_strict_raises(self) -> None:

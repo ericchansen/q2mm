@@ -130,8 +130,11 @@ class TestInvertTSCurvature:
         H, _, _ = synthetic_ts_hessian
         result = invert_ts_curvature(H, method="C")
         evals = np.sort(np.linalg.eigvalsh(result))
-        # The replaced eigenvalue should be the largest by far
-        assert evals[-1] > 1000  # 1 a.u. → ~9376 kJ/mol/A²/amu
+        # The negative eigenvalue (-3.0) should be replaced with 1.0 Hartree/Bohr²
+        # All other eigenvalues [0.2, 0.8, 1.5, 2.5, 4.0] remain unchanged
+        assert np.all(evals >= -1e-10), "All eigenvalues should be non-negative"
+        expected = np.sort(np.array([1.0, 0.2, 0.8, 1.5, 2.5, 4.0]))
+        np.testing.assert_allclose(evals, expected, atol=1e-10)
 
 
 # ---------------------------------------------------------------------------

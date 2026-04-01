@@ -254,7 +254,7 @@ def replace_neg_eigenvalue(
     eigenvalues: np.ndarray,
     replace_with: float = 1.0,
     zer_out_neg: bool = False,
-    units: int = co.KJMOLA,
+    units: str = co.GAUSSIAN,
     strict: bool = True,
 ) -> np.ndarray:
     """Replace the most negative eigenvalue to invert TS curvature (Method C).
@@ -264,9 +264,10 @@ def replace_neg_eigenvalue(
     large positive value so that the TS is treated as an energy minimum by
     the MM force field.
 
-    The default replacement is 1.0 Hartree/Bohr², converted to
-    kJ/(mol·Å²) via :func:`~q2mm.models.units.hessian_au_to_kjmola2`
-    (≈ 9376).  This operates on **Cartesian** Hessian eigenvalues —
+    The default replacement is 1.0 Hartree/Bohr² (atomic units).  When
+    *units* is ``co.KJMOLA``, the replacement is converted via
+    :func:`~q2mm.models.units.hessian_au_to_kjmola2` (≈ 9376) to
+    kJ/mol/Å².  This operates on **Cartesian** Hessian eigenvalues —
     not mass-weighted ones.
 
     Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
@@ -280,8 +281,9 @@ def replace_neg_eigenvalue(
         replace_with (float): Replacement value in Hartree/Bohr². Defaults to 1.0.
         zer_out_neg (bool): If True, zero out remaining negative eigenvalues after
             replacing the most negative. Defaults to False.
-        units (int): Target units for the replacement. If ``co.KJMOLA``
-            (default), *replace_with* is converted via
+        units (str): Unit system of the eigenvalues.  If ``co.GAUSSIAN``
+            (default), *replace_with* is used as-is (Hartree/Bohr²).
+            If ``co.KJMOLA``, *replace_with* is converted via
             :func:`~q2mm.models.units.hessian_au_to_kjmola2`.
         strict (bool): If True, raise ValueError when more than one negative
             eigenvalue is found (indicates a higher-order saddle point or
