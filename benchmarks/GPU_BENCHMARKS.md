@@ -60,10 +60,11 @@ GPU-accelerated Q2MM parameter optimization on NVIDIA RTX 5090
 OpenMM's CUDA platform works on RTX 5090 (Blackwell / sm_120) via the
 `OpenMM-CUDA-12` pip package, which provides CUDA plugin binaries that
 JIT-compile kernels at runtime using NVRTC.
-Requires Linux with an NVIDIA GPU and compatible driver.
+Works on Linux, WSL2, and native Windows — requires an NVIDIA GPU and
+compatible driver (≥ 535).
 
 ```bash
-pip install OpenMM-CUDA-12  # Linux only
+pip install OpenMM-CUDA-12  # Linux / WSL2 / Windows
 ```
 
 OpenMM benchmarks were run on CPU only (existing results in `rh-enamide/results/`).
@@ -99,7 +100,10 @@ GPU benchmarks with `OpenMM-CUDA-12` are planned (see issue #194).
 
 ```bash
 # Activate the virtual environment with jax[cuda12] installed
+# Linux / WSL2:
 source .venv/bin/activate
+# Windows (native, JAX CUDA not available — OpenMM CUDA only):
+# .venv\Scripts\activate
 
 # Rh-enamide GPU
 q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide

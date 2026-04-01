@@ -121,7 +121,7 @@ python -c "import jax; print(jax.devices())"
 
 | Benchmark                         | Approximate Time |
 |-----------------------------------|------------------|
-| JAX CPU — Rh-enamide L-BFGS-B    | ~30 min          |
+| JAX CPU — Rh-enamide L-BFGS-B    | ~9 min           |
 | JAX GPU — Rh-enamide L-BFGS-B    | ~6 min           |
 | OpenMM CUDA — Rh-enamide         | Varies by optimizer |
 | OpenMM OpenCL                     | **DO NOT USE** — 14% GPU utilization, hours of wasted compute |

@@ -106,6 +106,7 @@ The recent refactoring modernized Q2MM around three goals:
 | Page | Description |
 |------|-------------|
 | [Getting Started](getting-started.md) | Installation, prerequisites, and first run |
+| [Platform Support](platform-support.md) | OS compatibility matrix and GPU setup guide |
 | [Tutorial](tutorial.md) | End-to-end walkthrough: QM data → optimized force field |
 | [Data Types](data-types.md) | Reference data types: what to train on and when |
 | [Optimization Guide](optimization-guide.md) | Single-shot, GRAD→SIMP cycling, and manual strategies |

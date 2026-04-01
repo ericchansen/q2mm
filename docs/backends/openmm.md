@@ -14,13 +14,13 @@ OpenMM is available via conda-forge:
 conda install -c conda-forge openmm
 ```
 
-Or with pip (Linux/macOS):
+Or with pip:
 
 ```bash
 pip install openmm
 ```
 
-For **GPU (CUDA) support** on Linux, also install the CUDA plugin package:
+For **GPU (CUDA) support**, install the CUDA plugin package:
 
 ```bash
 pip install OpenMM-CUDA-12
@@ -28,7 +28,19 @@ pip install OpenMM-CUDA-12
 
 This provides CUDA plugin binaries that JIT-compile kernels via NVRTC,
 supporting all NVIDIA architectures including Blackwell (RTX 5090).
-Requires Linux with an NVIDIA GPU and a compatible driver.
+Works on **Linux, WSL2, and native Windows** — requires an NVIDIA GPU
+and a compatible driver (≥ 535).
+
+!!! tip "WSL2 recommended for GPU benchmarks"
+    For GPU benchmarks and the full CUDA stack (JAX CUDA + JAX-MD +
+    OpenMM CUDA), WSL2 is the recommended environment on Windows.
+    Native Windows supports OpenMM CUDA but not JAX CUDA or JAX-MD.
+
+!!! warning "Avoid OpenCL for GPU acceleration"
+    OpenCL on modern NVIDIA GPUs (e.g. RTX 5090) gives very poor GPU
+    utilisation (~14%). **Always prefer CUDA** over OpenCL when an NVIDIA
+    GPU is available. The auto-detection order (CUDA > OpenCL > CPU)
+    ensures CUDA is selected first when both plugins are installed.
 
 !!! tip "Verify installation"
     ```python

@@ -303,6 +303,11 @@ def detect_best_platform() -> str:
 
     Platform preference order: CUDA > OpenCL > CPU > Reference.
 
+    Logs a warning when CUDA is unavailable and the function falls back
+    to OpenCL on a system with an NVIDIA GPU — OpenCL on modern NVIDIA
+    GPUs gives very poor utilisation (~14%).  The warning is suppressed
+    on non-NVIDIA systems where OpenCL may be the intended backend.
+
     Returns:
         str: Name of the best available platform.
 
@@ -314,6 +319,27 @@ def detect_best_platform() -> str:
     available = {mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())}
     for name in _PLATFORM_PRIORITY:
         if name in available:
+            if name == "OpenCL" and "CUDA" not in available:
+                # Only warn on NVIDIA GPUs where CUDA should be available
+                _nvidia_present = False
+                try:
+                    import subprocess
+
+                    result = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    _nvidia_present = result.returncode == 0 and bool(result.stdout.strip())
+                except Exception:
+                    pass
+                if _nvidia_present:
+                    logger.warning(
+                        "CUDA platform not available, falling back to OpenCL. "
+                        "GPU utilization will be poor (~14%%). "
+                        "Consider installing OpenMM-CUDA-12 or using WSL2."
+                    )
             return name
     # Fallback — shouldn't happen since OpenMM always has Reference
     return mm.Platform.getPlatform(0).getName()  # pragma: no cover
@@ -619,8 +645,11 @@ class OpenMMEngine(MMEngine):
         Args:
             platform_name: OpenMM platform to use (e.g. ``"CPU"``,
                 ``"CUDA"``, ``"OpenCL"``).  When ``None``, the fastest
-                available platform is auto-detected
-                (CUDA > OpenCL > CPU > Reference).
+                available platform is auto-detected via
+                :func:`detect_best_platform` (CUDA > OpenCL > CPU >
+                Reference).  WSL2 is recommended for CUDA on modern
+                GPUs (e.g. RTX 5090 Blackwell) when running on Windows
+                hardware.
             precision: Floating-point precision for GPU platforms
                 (``"single"``, ``"mixed"``, or ``"double"``).  Ignored
                 for CPU/Reference platforms.  Defaults to ``"mixed"``
@@ -715,8 +744,20 @@ class OpenMMEngine(MMEngine):
     def _create_context(self, system: Any, *, precision: str | None = None) -> tuple[Any, Any]:
         """Create an OpenMM integrator and context for *system*.
 
-        If the selected GPU platform (CUDA/OpenCL) fails (e.g., PTX version
-        mismatch on newer GPUs), logs a warning and falls back to CPU.
+        Attempts to create a context on the engine's selected platform.
+        If the platform is a GPU platform (CUDA or OpenCL) and context
+        creation fails (e.g. PTX version mismatch, missing CUDA plugin,
+        or unsupported GPU architecture), the method logs a warning and
+        **silently falls back to CPU**. The fallback chain is:
+
+        1. Try the selected platform (e.g. CUDA) with the configured
+           precision.
+        2. On failure, mutate ``self._platform_name`` to ``"CPU"`` and
+           create a new context on the CPU platform.
+
+        No exception is raised on GPU failure — callers should check
+        ``self._platform_name`` after context creation if they need to
+        know which platform is in use.
 
         Args:
             system: An ``openmm.System`` object.

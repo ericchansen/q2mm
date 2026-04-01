@@ -21,6 +21,29 @@ pip install "q2mm[all]"            # all optional dependencies
 > `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
 > published yet.
 
+### GPU Setup
+
+For GPU-accelerated workflows, install with CUDA extras:
+
+```bash
+pip install -e ".[all,openmm-cuda]"
+```
+
+!!! tip "WSL2 recommended for full GPU stack"
+    **WSL2** (Windows Subsystem for Linux) is the recommended environment for
+    the full GPU stack: JAX CUDA + JAX-MD + OpenMM CUDA all work under WSL2.
+    JAX CUDA and JAX-MD are **not available on native Windows** — only Linux
+    and WSL2 are supported. OpenMM CUDA works on Linux, WSL2, and native
+    Windows.
+
+Verify your CUDA installation:
+
+```bash
+python -c "import openmm; print([openmm.Platform.getPlatform(i).getName() for i in range(openmm.Platform.getNumPlatforms())])"
+nvidia-smi   # confirm driver is visible
+python -c "import jax; print(jax.devices())"  # should show a CudaDevice
+```
+
 ### From source (for development)
 
 ```bash

@@ -11,6 +11,7 @@ Usage::
     q2mm-benchmark --load results/              # Load saved results and print report
     q2mm-benchmark --list                       # Show available backends, optimizers, systems
     q2mm-benchmark --platform CUDA              # Force OpenMM CUDA platform
+    q2mm-benchmark --preflight                  # Check GPU/platform environment
 
 By default, results (JSON + force field files) are saved to
 ``./benchmark_results/``.  Use ``--no-save`` to disable.
@@ -19,6 +20,8 @@ By default, results (JSON + force field files) are saved to
 from __future__ import annotations
 
 import argparse
+import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -404,6 +407,111 @@ def _load_results(directory: Path) -> list:
     return results
 
 
+def _run_preflight() -> None:
+    """Print GPU/platform environment diagnostics and return."""
+    from q2mm import __version__
+
+    print("=== Q2MM Benchmark Pre-flight Check ===\n")
+
+    # --- System info ---
+    print(f"Python:   {sys.version.split()[0]}")
+    print(f"OS:       {platform.platform()}")
+    print(f"q2mm:     {__version__}\n")
+
+    # --- OpenMM platforms ---
+    has_openmm_cuda = False
+    has_opencl = False
+    has_openmm = False
+    try:
+        import openmm as mm
+
+        has_openmm = True
+        names = [mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())]
+        print(f"OpenMM platforms: {', '.join(names)}")
+        has_openmm_cuda = "CUDA" in names
+        has_opencl = "OpenCL" in names
+
+        if has_openmm_cuda:
+            print("\u2705 OpenMM CUDA: available")
+        elif has_opencl:
+            print("\u26a0\ufe0f  OpenMM CUDA: NOT available (only OpenCL \u2014 very slow, ~14% GPU utilization)")
+        else:
+            print("\u274c OpenMM GPU: NOT available")
+    except ImportError:
+        print("\u2139\ufe0f  OpenMM: not installed")
+    except Exception as exc:
+        has_openmm = True
+        print(f"\u26a0\ufe0f  OpenMM: installed but platform probe failed: {exc}")
+    print()
+
+    # --- JAX devices ---
+    has_jax_cuda = False
+    jax_installed = False
+    try:
+        import jax
+
+        jax_installed = True
+        devices = jax.devices()
+        device_strs = [str(d) for d in devices]
+        print(f"JAX devices: {', '.join(device_strs)}")
+        has_jax_cuda = any("cuda" in s.lower() for s in device_strs)
+        if has_jax_cuda:
+            print("\u2705 JAX CUDA: available")
+        else:
+            print("\u26a0\ufe0f  JAX CUDA: NOT available (CPU only)")
+    except ImportError:
+        print("\u2139\ufe0f  JAX: not installed")
+    except Exception as exc:
+        jax_installed = True
+        print(f"\u26a0\ufe0f  JAX: installed but device probe failed: {exc}")
+    print()
+
+    # --- GPU info via nvidia-smi ---
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,driver_version,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 3:
+                    print(f"GPU:      {parts[0]}")
+                    print(f"Driver:   {parts[1]}")
+                    print(f"GPU util: {parts[2]}%")
+                else:
+                    print(f"GPU:      {line.strip()}")
+        else:
+            print("GPU: not detected")
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        print("GPU: not detected (nvidia-smi not found)")
+    print()
+
+    # --- Recommendation ---
+    if has_openmm_cuda and has_jax_cuda:
+        print("\u2705 Ready for GPU benchmarks")
+    elif not has_openmm_cuda or not has_jax_cuda:
+        missing: list[str] = []
+        if not has_openmm_cuda and has_openmm:
+            missing.append("OpenMM CUDA")
+        if not has_jax_cuda and jax_installed:
+            missing.append("JAX CUDA")
+        if missing:
+            print(f"\u26a0\ufe0f  GPU benchmarks will be slow or unavailable ({', '.join(missing)} missing).")
+            print("  Consider using WSL2.")
+        else:
+            print("\u26a0\ufe0f  GPU benchmarks will be slow or unavailable. Consider using WSL2.")
+        if sys.platform == "win32" and not has_jax_cuda and jax_installed:
+            print("\u2139\ufe0f  JAX CUDA is not available on Windows. Use WSL2 for full GPU stack.")
+    print()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``q2mm-benchmark`` CLI.
 
@@ -497,8 +605,18 @@ def main(argv: list[str] | None = None) -> int:
         default=10_000,
         help="Maximum optimizer iterations (default: 10000). Use a small value for quick benchmarks.",
     )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Check GPU/platform environment and exit without running benchmarks.",
+    )
 
     args = parser.parse_args(argv)
+
+    # --preflight: run environment check and exit
+    if args.preflight:
+        _run_preflight()
+        return 0
 
     # --no-save suppresses all output saving
     output_dir: Path | None = None if args.no_save else args.output

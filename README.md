@@ -38,6 +38,11 @@ pip install "q2mm[openmm,optimize]"   # OpenMM backend + scipy optimizer
 > install command (e.g. `pip install --pre "q2mm[openmm,optimize]"`) if a
 > stable release hasn't been published yet.
 
+> **GPU acceleration:** OpenMM CUDA works on Linux, WSL2, and native
+> Windows. For the full GPU stack (JAX CUDA + JAX-MD), use Linux or WSL2.
+> See the [Platform Support](https://ericchansen.github.io/q2mm/platform-support/)
+> guide for details.
+
 For development, clone the repo and install in editable mode:
 
 ```bash
