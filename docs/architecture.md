@@ -144,7 +144,7 @@ q2mm/
 ├── optimizers/           # Parameter fitting machinery
 │   ├── objective.py      # ObjectiveFunction, ReferenceData
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
-│   ├── cycling.py        # GRAD→SIMP parameter cycling
+│   ├── cycling.py        # grad-simp parameter cycling
 │   ├── scoring.py        # Legacy scoring functions
 │   └── defaults.py       # Default step sizes and bounds
 │

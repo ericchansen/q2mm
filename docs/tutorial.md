@@ -691,7 +691,7 @@ plt.savefig("convergence.png")
 
 ---
 
-## Step 6b: GRAD→SIMP Cycling (Recommended for Large Systems)
+## Step 6b: Grad-Simp Cycling (Recommended for Large Systems)
 
 For systems with more than ~10 parameters, a single optimizer often leaves
 residual error.  The `OptimizationLoop` alternates between a gradient-based
@@ -704,7 +704,7 @@ from q2mm.optimizers.cycling import OptimizationLoop
 loop = OptimizationLoop(
     objective,
     max_params=3,         # simplex on top 3 most sensitive params per cycle
-    max_cycles=10,        # up to 10 GRAD→SIMP cycles
+    max_cycles=10,        # up to 10 grad-simp cycles
     convergence=0.01,     # stop when <1% improvement per cycle
     full_method="L-BFGS-B",
     simp_method="Nelder-Mead",

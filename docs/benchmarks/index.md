@@ -36,7 +36,7 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 [QM inputs](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide) ·
 [Results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/results)
 
-### GRAD→SIMP Cycling (converged)
+### Grad-Simp Cycling (converged)
 
 | Backend | FF Form | Device | Cycles | Score Δ | Time |
 |---------|---------|--------|-------:|---------|-----:|
@@ -54,7 +54,7 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 !!! note "Single-shot vs cycling"
     Single-shot results are 2-iteration runs to assess scaling and
     convergence behavior.  RMSD increases because 2 iterations is not
-    enough for 182-parameter systems.  GRAD→SIMP cycling results use full
+    enough for 182-parameter systems.  grad-simp cycling results use full
     L-BFGS-B + Nelder-Mead alternation until convergence.
     See the [GPU page](gpu.md) for device comparison.
 

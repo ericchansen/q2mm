@@ -104,12 +104,12 @@ All results use the new `BenchmarkResult` JSON format.
 !!! warning "RMSD increases with only 2 iterations"
     With `maxiter=2`, Nelder-Mead does not have enough iterations to
     converge for 182-parameter systems.  The RMSD *increases* because
-    the simplex has barely started exploring.  Use GRAD→SIMP cycling
+    the simplex has barely started exploring.  Use grad-simp cycling
     (below) for converged results.
 
 ---
 
-## GRAD→SIMP Cycling (converged)
+## Grad-Simp Cycling (converged)
 
 Full optimization using L-BFGS-B (GRAD) → Nelder-Mead (SIMP) alternation
 with up to 5 parameters per cycle.  Uses auto-generated harmonic FF from
@@ -128,7 +128,7 @@ to float64 overhead on consumer GPUs.  See the
 throughput, why CPU wins, and the path to making GPU viable.
 
 !!! success "Key result"
-    GRAD→SIMP cycling reduces the score from **2,161 → ~33** (98.5%
+    grad-simp cycling reduces the score from **2,161 → ~33** (98.5%
     improvement) in 3–4 cycles.  This confirms that the cycling optimizer
     and JAX backend can handle real organometallic systems end-to-end.
 
