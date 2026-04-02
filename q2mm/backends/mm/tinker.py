@@ -19,7 +19,16 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.registry import register_mm
-from q2mm.constants import DEFAULT_BOND_TOLERANCE
+from q2mm.constants import (
+    DEFAULT_BOND_TOLERANCE,
+    MM3_BOND_C3,
+    MM3_BOND_C4,
+    MM3_ANGLE_C3,
+    MM3_ANGLE_C4,
+    MM3_ANGLE_C5,
+    TINKER_BONDUNIT,
+    TINKER_ANGLEUNIT,
+)
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
@@ -373,13 +382,13 @@ class TinkerEngine(MMEngine):
         with open(prm_path, "w") as f:
             # MM3 functional form header (matches mm3.prm conventions)
             f.write("forcefield          Q2MM-Custom\n\n")
-            f.write("bondunit                71.94\n")
-            f.write("bond-cubic              -2.55\n")
-            f.write("bond-quartic            3.793125\n")
-            f.write("angleunit               0.02191418\n")
-            f.write("angle-cubic             -0.014\n")
-            f.write("angle-quartic           0.000056\n")
-            f.write("angle-pentic            -0.0000007\n")
+            f.write(f"bondunit                {TINKER_BONDUNIT}\n")
+            f.write(f"bond-cubic              {-MM3_BOND_C3}\n")
+            f.write(f"bond-quartic            {MM3_BOND_C4}\n")
+            f.write(f"angleunit               {TINKER_ANGLEUNIT}\n")
+            f.write(f"angle-cubic             {MM3_ANGLE_C3}\n")
+            f.write(f"angle-quartic           {MM3_ANGLE_C4:.6f}\n")
+            f.write(f"angle-pentic            {MM3_ANGLE_C5:.7f}\n")
             f.write("angle-sextic            0.000000022\n\n")
 
             # Atom definitions (MM3 format: type, symbol, "description", anum, mass, valence)

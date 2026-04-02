@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 from q2mm.backends.base import MMEngine, coerce_molecule
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
+from q2mm.constants import (
+    MM3_BOND_C3,
+    MM3_BOND_C4,
+    MM3_ANGLE_C3,
+    MM3_ANGLE_C4,
+    MM3_ANGLE_C5,
+    MM3_ANGLE_C6,
+    MM3_VDW_A,
+    MM3_VDW_B,
+    MM3_VDW_C,
+)
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
@@ -237,12 +248,6 @@ def _lj_12_6_energy(
 # ---------------------------------------------------------------------------
 # Allinger et al., JACS 1989, 111, 8551.
 
-_MM3_BOND_C3 = 2.55
-_MM3_BOND_C4 = (7.0 / 12.0) * 2.55**2
-_MM3_ANGLE_C3 = -0.014
-_MM3_ANGLE_C4 = 5.6e-5
-_MM3_ANGLE_C5 = -7.0e-7
-_MM3_ANGLE_C6 = 9.0e-10
 _RAD_TO_DEG = 180.0 / jnp.pi if jnp is not None else 57.29577951308232
 
 
@@ -262,7 +267,7 @@ def _mm3_bond_energy(k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_
     dr_vec = coords[bond_indices[:, 0]] - coords[bond_indices[:, 1]]
     r = _safe_norm(dr_vec, axis=-1)
     dr = r - r0
-    return jnp.sum(k * dr**2 * (1.0 - _MM3_BOND_C3 * dr + _MM3_BOND_C4 * dr**2))
+    return jnp.sum(k * dr**2 * (1.0 - MM3_BOND_C3 * dr + MM3_BOND_C4 * dr**2))
 
 
 def _mm3_angle_energy(
@@ -296,10 +301,10 @@ def _mm3_angle_energy(
     dtheta_deg = dtheta * _RAD_TO_DEG
     anharmonic = (
         1.0
-        + _MM3_ANGLE_C3 * dtheta_deg
-        + _MM3_ANGLE_C4 * dtheta_deg**2
-        + _MM3_ANGLE_C5 * dtheta_deg**3
-        + _MM3_ANGLE_C6 * dtheta_deg**4
+        + MM3_ANGLE_C3 * dtheta_deg
+        + MM3_ANGLE_C4 * dtheta_deg**2
+        + MM3_ANGLE_C5 * dtheta_deg**3
+        + MM3_ANGLE_C6 * dtheta_deg**4
     )
     return jnp.sum(k * dtheta**2 * anharmonic)
 
@@ -348,10 +353,10 @@ def _mm3_vdw_energy(
 
     # Normal Buckingham exp-6 region (r >= rc)
     ratio = rv / r
-    e_buckingham = eps_ij * (184000.0 * jnp.exp(-12.0 * r / rv) - 2.25 * ratio**6)
+    e_buckingham = eps_ij * (MM3_VDW_A * jnp.exp(-MM3_VDW_B * r / rv) - MM3_VDW_C * ratio**6)
 
     # Short-range repulsive wall (r < rc)
-    e_wall = eps_ij * 184000.0 * jnp.exp(-12.0 * rc / rv) * (rc / r) ** 12
+    e_wall = eps_ij * MM3_VDW_A * jnp.exp(-MM3_VDW_B * rc / rv) * (rc / r) ** 12
 
     return jnp.sum(jnp.where(r >= rc, e_buckingham, e_wall))
 
@@ -781,6 +786,7 @@ class JaxEngine(MMEngine):
         return float(val), np.asarray(grad)
 
     def supports_batched_energy(self) -> bool:  # noqa: D102
+        """Return True; JaxEngine supports batched energy evaluation via jax.vmap."""
         return True
 
     def batched_energy(
@@ -865,9 +871,11 @@ class JaxEngine(MMEngine):
         x0 = np.asarray(coords.flatten())
 
         def objective(x: np.ndarray) -> float:
+            """Evaluate energy at flat coordinate vector *x*."""
             return float(energy_fn(params, jnp.array(x).reshape(-1, 3)))
 
         def gradient(x: np.ndarray) -> np.ndarray:
+            """Return energy gradient w.r.t. flat coordinate vector *x*."""
             return np.asarray(coord_grad_fn(jnp.array(x), params))
 
         result = scipy_minimize(
@@ -975,6 +983,7 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
 
         @jax.jit
         def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
+            """Compute total MM3 energy from parameter and coordinate arrays."""
             E = jnp.float64(0.0)
 
             if has_bonds:
@@ -1013,6 +1022,7 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
 
         @jax.jit
         def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
+            """Compute total harmonic energy from parameter and coordinate arrays."""
             E = jnp.float64(0.0)
 
             if has_bonds:

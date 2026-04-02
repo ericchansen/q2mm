@@ -211,7 +211,8 @@ system = OpenMMEngine.load_system_xml("system.xml")
 
 [source](https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_engine.py)
 
-Differentiable MM backend using JAX with OPLSAA-style energy functions
+Differentiable MM backend using JAX with both harmonic (OPLSAA-style) and
+MM3 functional forms.
 (harmonic bond/angle, 12-6 Lennard-Jones). Provides analytical gradients of
 the energy with respect to force field parameters via `jax.grad`,
 eliminating finite differences in parameter optimisation. Torsion energy
@@ -242,11 +243,10 @@ optimizer = ScipyOptimizer(method="L-BFGS-B", jac="analytical")
 result = optimizer.optimize(objective)
 ```
 
-!!! warning "Functional form differences"
-    JaxEngine uses standard OPLSAA forms (harmonic bonds/angles, 12-6 LJ),
-    not MM3 forms (cubic stretch, sextic bend, buffered 14-7). Near
-    equilibrium geometries the results are very similar, but for exact
-    MM3 parity use `OpenMMEngine`. See issue #91 for planned MM3 JAX forms.
+!!! info "Functional form support"
+    JaxEngine supports both harmonic (OPLSAA) and MM3 functional forms,
+    including cubic bond stretch, sextic angle bend, and Buckingham exp-6 vdW.
+    Near equilibrium geometries, harmonic and MM3 results are very similar.
 
 ---
 
@@ -757,7 +757,7 @@ Feature support across force field formats and compute backends.
 | Torsions | ✅ | ✅ | ❌ (#91) | ⚠️ engine ready, awaiting #127 |
 | Electrostatics | ❌ (charges zeroed) | ✅ | — | ⚠️ infra only; charges zeroed |
 | Periodic boundary conditions | ✅ | ✅ | — | ✅ |
-| Functional forms | MM3 (cubic/sextic/14-7) | MM3 | OPLSAA (harmonic/LJ) | OPLSAA (harmonic/LJ) |
+| Functional forms | MM3 (cubic/sextic/14-7) | MM3 | Harmonic, MM3 | OPLSAA (harmonic/LJ) |
 | Install | `pip install openmm` | System binary | `pip install "q2mm[jax]"` | `pip install "q2mm[jax-md]"` |
 
 ### QM Backends

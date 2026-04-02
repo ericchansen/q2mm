@@ -343,6 +343,9 @@ class Q2MMMolecule:
                            Use 1.3 for ground states, 1.4-1.5 for transition states
                            with partially formed/broken bonds.
 
+        Returns:
+            A new :class:`Q2MMMolecule` built from the XYZ geometry.
+
         """
         path = Path(path)
         with open(path) as f:
@@ -375,7 +378,22 @@ class Q2MMMolecule:
         bond_tolerance: float = 1.3,
         hessian: np.ndarray | None = None,
     ) -> Q2MMMolecule:
-        """Create from a legacy Structure while preserving bond/angle metadata."""
+        """Create from a legacy Structure while preserving bond/angle metadata.
+
+        Args:
+            structure: Source :class:`~q2mm.models.structure.Structure` instance.
+            charge: Molecular charge.
+            multiplicity: Spin multiplicity.
+            name: Display name; defaults to ``structure.origin_name``.
+            bond_tolerance: Multiplier on sum of covalent radii for bond
+                detection.
+            hessian: Optional Cartesian Hessian matrix to attach.
+
+        Returns:
+            A new :class:`Q2MMMolecule` with bonds and angles copied from
+            *structure*.
+
+        """
         symbols = []
         atom_types = []
         coords = []
@@ -442,7 +460,16 @@ class Q2MMMolecule:
 
     @classmethod
     def from_qcel(cls, mol: qcel.models.Molecule, name: str = "") -> Q2MMMolecule:
-        """Create from a QCElemental Molecule object."""
+        """Create from a QCElemental Molecule object.
+
+        Args:
+            mol: QCElemental ``Molecule`` with geometry in Bohr.
+            name: Display name for the molecule.
+
+        Returns:
+            A new :class:`Q2MMMolecule` with geometry converted to Ångströms.
+
+        """
         if not _HAS_QCEL:
             raise ImportError("qcelemental required: pip install qcelemental")
         coords_bohr = np.array(mol.geometry).reshape(-1, 3)
@@ -457,7 +484,13 @@ class Q2MMMolecule:
         )
 
     def to_qcel(self) -> qcel.models.Molecule:
-        """Convert to QCElemental Molecule."""
+        """Convert to QCElemental Molecule.
+
+        Returns:
+            A ``qcelemental.models.Molecule`` with geometry in Bohr and
+            connectivity derived from detected bonds.
+
+        """
         if not _HAS_QCEL:
             raise ImportError("qcelemental required: pip install qcelemental")
         coords_bohr = self.geometry / qcel.constants.bohr2angstroms
@@ -473,7 +506,16 @@ class Q2MMMolecule:
         return qcel.models.Molecule(**kwargs)
 
     def with_hessian(self, hessian: np.ndarray) -> Q2MMMolecule:
-        """Return a copy with Hessian attached."""
+        """Return a copy with Hessian attached.
+
+        Args:
+            hessian: Cartesian Hessian matrix of shape ``(3N, 3N)``.
+
+        Returns:
+            A new :class:`Q2MMMolecule` identical to this one but with the
+            given *hessian* attached.
+
+        """
         return Q2MMMolecule(
             symbols=self.symbols,
             atom_types=list(self.atom_types),

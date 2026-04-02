@@ -50,6 +50,7 @@ class _TinkerBase(FF):
 
     @lines.setter
     def lines(self, x: list[str]) -> None:
+        """Set the cached file lines, bypassing disk I/O."""
         self._lines = x
 
     def import_ff(self, path: str | None = None, sub_search: str = "OPT") -> None:

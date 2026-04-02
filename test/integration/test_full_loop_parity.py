@@ -526,7 +526,9 @@ class TestEthaneFullLoop:
                 f"{pipeline_result['optimized_score']:.6f} "
                 f"({pipeline_result['improvement'] * 100:.1f}% improvement)"
             )
-        assert True  # informational only
+        assert "t_sem" in pipeline_result
+        assert "t_opt" in pipeline_result
+        assert pipeline_result["improvement"] >= 0  # optimization should not make things worse
 
 
 # ===========================================================================

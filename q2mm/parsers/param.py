@@ -173,6 +173,7 @@ class Param:
 
     @step.setter
     def step(self, x: float | str) -> None:
+        """Set the finite-difference step (absolute float or percentage string)."""
         self._step = x
 
     @property

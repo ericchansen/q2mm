@@ -1,6 +1,6 @@
 """Canonical location for Hessian and eigenvalue operations.
 
-Consolidated from the former ``q2mm.linear_algebra`` module.
+Canonical location: :mod:`q2mm.models.hessian` (formerly ``q2mm.linear_algebra``).
 
 Implements eigenvalue manipulation methods from Limé & Norrby
 (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797):

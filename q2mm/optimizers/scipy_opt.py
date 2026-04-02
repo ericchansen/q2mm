@@ -430,6 +430,7 @@ class ScipyOptimizer:
         state = {"abandoned": False}
 
         def callback(_xk: Any, *args: Any, **kwargs: Any) -> bool:
+            """Log progress and trigger early stopping on sustained divergence."""
             nonlocal diverge_count
             score = objective.history[-1] if objective.history else float("nan")
 

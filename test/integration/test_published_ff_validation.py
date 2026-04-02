@@ -459,3 +459,6 @@ class TestPublishedFFEvaluation:
             print("-" * 72)
             print(f"  {'AVERAGE':<50} {avg_rmsd:8.1f} {avg_mae:8.1f} {avg_r2:8.3f} {pub['total_freq_refs']:5d}")
             print("=" * 72)
+
+        assert len(pub["per_molecule"]) > 0, "Summary report should contain at least one molecule"
+        assert improvement >= 0, "Published FF should improve over Seminario baseline"

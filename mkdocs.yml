@@ -45,6 +45,7 @@ nav:
     - Small Molecules: benchmarks/small-molecules.md
     - Rh-Enamide: benchmarks/rh-enamide.md
     - GPU Acceleration: benchmarks/gpu.md
+    - Published FF Validation: benchmarks/published-ff-validation.md
   - API Reference: reference/
   - References: references.md
 

@@ -392,6 +392,9 @@ class TestCH3FGroundState:
         with capsys.disabled():
             t.flush()
 
+        # Verify the pipeline produced results for all stages
+        assert len(stages) > 1, "Pipeline should produce at least one MM stage"
+
     # ---- PES distortion: MM vs QM harmonic along normal modes ----
 
     @pytest.fixture(scope="class")
