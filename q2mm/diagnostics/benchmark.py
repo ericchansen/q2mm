@@ -488,16 +488,21 @@ def run_combo(
     if optimizer_method == "cycling":
         from q2mm.optimizers.cycling import OptimizationLoop
 
-        cycle_maxiter = 200 if maxiter is None else maxiter
-        loop = OptimizationLoop(
-            objective=obj,
-            max_params=optimizer_kwargs.get("max_params", 3),
-            convergence=optimizer_kwargs.get("convergence", 0.01),
-            max_cycles=optimizer_kwargs.get("max_cycles", 10),
-            full_maxiter=optimizer_kwargs.get("full_maxiter", cycle_maxiter),
-            simp_maxiter=optimizer_kwargs.get("simp_maxiter", cycle_maxiter),
-            verbose=False,
-        )
+        loop_kwargs: dict[str, Any] = {
+            "objective": obj,
+            "max_params": optimizer_kwargs.get("max_params", 3),
+            "convergence": optimizer_kwargs.get("convergence", 0.01),
+            "max_cycles": optimizer_kwargs.get("max_cycles", 10),
+            "verbose": False,
+        }
+        # Only override per-pass maxiter if caller explicitly provides them;
+        # otherwise let OptimizationLoop use its own defaults (200).
+        if "full_maxiter" in optimizer_kwargs:
+            loop_kwargs["full_maxiter"] = optimizer_kwargs["full_maxiter"]
+        if "simp_maxiter" in optimizer_kwargs:
+            loop_kwargs["simp_maxiter"] = optimizer_kwargs["simp_maxiter"]
+
+        loop = OptimizationLoop(**loop_kwargs)
         t0 = time.perf_counter()
         loop_result = loop.run()
         opt_elapsed = time.perf_counter() - t0
