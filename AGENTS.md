@@ -83,13 +83,14 @@ git -c commit.gpgsign=false commit
 
 **Always** run these checks before any benchmark or GPU-dependent work:
 
-```python
+```bash
 # Must show "CUDA" in the platform list
 python -c "import openmm; [print(openmm.Platform.getPlatform(i).getName()) for i in range(openmm.Platform.getNumPlatforms())]"
 
 # Must show CudaDevice (not CpuDevice)
 python -c "import jax; print(jax.devices())"
 ```
+
 
 > ⛔ **If OpenMM shows OpenCL instead of CUDA, STOP.** Do not run benchmarks on
 > OpenCL. Install `openmm-cuda-12` or switch to WSL2.
