@@ -44,8 +44,6 @@ class TestAvailableEngines:
     def test_available_engines_returns_list(self) -> None:
         result = available_engines()
         assert isinstance(result, list)
-        # Should contain at least one engine if any backend is installed
-        assert len(result) >= 0  # structural check; contents depend on environment
 
     def test_available_mm_engines_subset_of_available(self) -> None:
         mm = set(available_mm_engines())

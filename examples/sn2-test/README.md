@@ -23,13 +23,13 @@ only needed if you want to regenerate from scratch.
 |--------|-------------|
 | `generate_qm_data.py` | Generate QM reference data with Psi4 (B3LYP/6-31+G(d)) |
 | `generate_mm_data.py` | Run Tinker MM3 energy/frequency calculations on the TS geometry |
-| `test_pipeline.py` | Test Q2MM's model layer: molecule → Seminario → force field |
-| `test_backends.py` | Quick smoke test of TinkerEngine and Psi4Engine backends |
 | `run_tsff_pipeline.py` | Full TSFF optimisation pipeline (Seminario init → scipy optimize) |
 | `compare_implementations.py` | Compare SN2 Seminario bond projections against pinned fixtures |
 | `compare_direct.py` | Wrapper that runs `compare_implementations.py` |
 | `compare_rh_enamide.py` | Compare Rh-enamide bond projections against pinned fixtures |
 | `compute_barrier.py` | Compute SN2 reaction barrier height for literature comparison |
+| `demo_pipeline.py` | Demonstrate the Q2MM pipeline on the SN2 system |
+| `demo_backends.py` | Demonstrate backend engine usage |
 
 ### Reference data
 

@@ -17,7 +17,7 @@ For detailed information on each backend, see the individual pages:
 
 | Feature | OpenMM | Tinker | JAX | JAX-MD |
 |---------|--------|--------|-----|--------|
-| **Functional forms** | Harmonic, MM3 | MM3 | Harmonic | Harmonic |
+| **Functional forms** | Harmonic, MM3 | MM3 | Harmonic, MM3 | Harmonic |
 | **Bond/angle terms** | ✅ | ✅ | ✅ | ✅ |
 | **Torsions** | ✅ | ❌ | ✅ | ✅ |
 | **Improper torsions** | ❌ | ❌ | ❌ | ❌ |
@@ -47,7 +47,7 @@ Standard AMBER/OPLSAA-style potential:
 - **Angles:** `E = k·(θ − θ₀)²`
 - **vdW:** `E = 4ε·[(σ/r)¹² − (σ/r)⁶]`
 
-Supported by: **OpenMM**, **JAX**, **JAX-MD**
+Supported by: **OpenMM** (Harmonic mode), **JAX** (Harmonic mode), **JAX-MD**
 
 ### MM3
 
@@ -57,13 +57,11 @@ Allinger's MM3 potential with higher-order anharmonic corrections:
 - **Angles:** `E = k·Δθ²·(1 − 0.014·Δθ° + 5.6×10⁻⁵·Δθ°² − …)`
 - **vdW:** Buckingham exp-6: `E = ε·[184000·exp(−12r/rᵥ) − 2.25·(rᵥ/r)⁶]`
 
-Supported by: **OpenMM**, **Tinker**
+Supported by: **OpenMM**, **JAX**, **Tinker**
 
-!!! info "Adding MM3 to JAX engines"
-    Issue [#91](https://github.com/ericchansen/q2mm/issues/91) tracks adding
-    MM3 support to the JAX engine.  The harmonic form is a subset of MM3
-    (set anharmonic coefficients to zero), so MM3 parameters cannot be used
-    on a harmonic-only engine without losing the higher-order terms.
+!!! info "JAX MM3 support"
+    The JAX engine supports both harmonic and MM3 functional forms, including
+    cubic bond stretch, sextic angle bend, and Buckingham exp-6 vdW terms.
 
 ---
 
@@ -127,9 +125,9 @@ on whether the engines compute the same energy for the same force field.
 | From ↓ / To → | OpenMM (Harmonic) | OpenMM (MM3) | Tinker | JAX | JAX-MD |
 |----------------|:-:|:-:|:-:|:-:|:-:|
 | **OpenMM (Harmonic)** | ✅ | ❌ | ❌ | ⚠️ | ✅ |
-| **OpenMM (MM3)** | ❌ | ✅ | ✅ | ❌ | ❌ |
-| **Tinker** | ❌ | ✅ | ✅ | ❌ | ❌ |
-| **JAX** | ⚠️ | ❌ | ❌ | ✅ | ⚠️ |
+| **OpenMM (MM3)** | ❌ | ✅ | ✅ | ✅ | ❌ |
+| **Tinker** | ❌ | ✅ | ✅ | ✅ | ❌ |
+| **JAX** | ⚠️ | ✅ | ✅ | ✅ | ⚠️ |
 | **JAX-MD** | ✅ | ❌ | ❌ | ⚠️ | ✅ |
 
 **Legend:**

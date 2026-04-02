@@ -80,8 +80,10 @@ workflow including frequencies, eigenmatrix data, and multi-molecule fits.
 | Backend | Type | License |
 |---------|------|---------|
 | **OpenMM** | MM | MIT |
-| **Psi4** | QM | BSD-3 |
+| **JAX** | MM | Apache 2.0 |
+| **JAX-MD** | MM | Apache 2.0 |
 | **Tinker** | MM | Free (academic) |
+| **Psi4** | QM | BSD-3 |
 | **Gaussian** | QM | Commercial |
 | **Schrödinger** | QM/MM | Commercial |
 

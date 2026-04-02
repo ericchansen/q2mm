@@ -210,6 +210,16 @@ def _build_jaxmd_params_fn(
         tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
         tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
     ]:
+        """Unpack a flat parameter vector into per-term JAX-MD arrays.
+
+        Args:
+            param_vector: Flat 1-D array of all force-field parameters.
+
+        Returns:
+            A ``(bond_tuple, angle_tuple)`` pair of per-interaction arrays
+            ready for the energy function.
+
+        """
         # Bonds: extract k and r0 per topology bond
         if n_bt > 0 and n_bonds > 0:
             bond_params = param_vector[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
@@ -422,6 +432,7 @@ def _compile_energy_fn(
             idx = _torsion_indices
 
             def compute_dihedral(p0: jnp.ndarray, p1: jnp.ndarray, p2: jnp.ndarray, p3: jnp.ndarray) -> jnp.ndarray:
+                """Compute signed dihedral angle (radians) for four points."""
                 b0 = displacement_fn(p1, p0)
                 b1 = displacement_fn(p2, p1)
                 b2 = displacement_fn(p3, p2)
@@ -747,6 +758,7 @@ class JaxMDEngine(MMEngine):
         return float(val), np.asarray(grad)
 
     def supports_batched_energy(self) -> bool:  # noqa: D102
+        """Return True; JaxMDEngine supports batched energy evaluation via jax.vmap."""
         return True
 
     def batched_energy(
@@ -832,6 +844,7 @@ class JaxMDEngine(MMEngine):
             nlist_ref[0] = neighbor_fn.allocate(new_coords)
 
         def objective(x: np.ndarray) -> float:
+            """Evaluate energy at flat coordinate vector *x*."""
             c = jnp.array(x).reshape(-1, 3)
             _update_nlist(c)
             return float(scalar_fn(params, c, nlist_ref[0]))
@@ -839,6 +852,7 @@ class JaxMDEngine(MMEngine):
         coord_grad_fn = jax.jit(jax.grad(lambda c, p, nl: scalar_fn(p, c.reshape(-1, 3), nl), argnums=0))
 
         def gradient(x: np.ndarray) -> np.ndarray:
+            """Return energy gradient w.r.t. flat coordinate vector *x*."""
             c = jnp.array(x)
             _update_nlist(c.reshape(-1, 3))
             return np.asarray(coord_grad_fn(c, params, nlist_ref[0]))

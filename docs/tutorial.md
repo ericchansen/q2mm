@@ -366,8 +366,8 @@ preserving atom types and row numbers:
 from q2mm.models.forcefield import ForceField
 from q2mm.models.seminario import estimate_force_constants
 
-# Load template with initial guesses
-initial_ff = ForceField.from_mm3_fld("sn2-ts-initial.fld")
+# Load template with initial guesses (replace with your .fld path)
+initial_ff = ForceField.from_mm3_fld("my-system.fld")
 
 # Seminario updates force constants, keeps equilibrium values and metadata
 estimated_ff = estimate_force_constants(
@@ -749,7 +749,7 @@ from q2mm.models.ff_io import save_mm3_fld
 output_path = save_mm3_fld(
     optimised_ff,
     "optimized_mm3.fld",
-    template_path="sn2-ts-initial.fld",   # preserves header / metadata
+    template_path="my-system.fld",         # preserves header / metadata
     substructure_name="SN2 TS Optimized",
 )
 print(f"Saved: {output_path}")

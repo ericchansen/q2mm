@@ -149,12 +149,6 @@ _ELEMENTS: tuple[Element, ...] = (
 # Derived lookup dicts — use these instead of duplicating element data.
 # ---------------------------------------------------------------------------
 
-ELEMENTS_BY_Z: dict[int, Element] = {e.z: e for e in _ELEMENTS}
-"""Lookup by atomic number → Element."""
-
-ELEMENTS_BY_SYMBOL: dict[str, Element] = {e.symbol: e for e in _ELEMENTS}
-"""Lookup by symbol → Element."""
-
 ATOMIC_SYMBOLS: dict[int, str] = {e.z: e.symbol for e in _ELEMENTS}
 """Atomic number → element symbol (e.g., 1 → 'H')."""
 

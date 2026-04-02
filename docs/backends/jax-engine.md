@@ -1,8 +1,10 @@
 # JaxEngine
 
-A lightweight, pure-JAX implementation of harmonic bond, angle, torsion,
-and Lennard-Jones energy terms.  Best for small-to-medium molecules where
-periodic boundaries and neighbor lists are not needed.
+A pure-JAX implementation supporting both harmonic (OPLSAA-style) and MM3
+functional forms, including bond, angle, torsion, and vdW energy terms.
+Best for small-to-medium molecules where periodic boundaries and neighbor
+lists are not needed.  All energy functions are differentiable via
+`jax.grad`, enabling analytical gradient computation.
 
 ---
 
@@ -94,9 +96,8 @@ or `JAX (harmonic, cpu)`).
 
 - **No 1-4 pair scaling** — non-bonded energies differ from OpenMM/JAX-MD
   for molecules with 1-4 interactions.  See the
-  [compatibility notes](index.md#when-becomes).
+  [compatibility notes](index.md#when-%EF%B8%8F-becomes-).
 - **No periodic boundaries** — gas-phase only.
-- **Harmonic only** — cannot evaluate MM3 force fields.
 
 ---
 

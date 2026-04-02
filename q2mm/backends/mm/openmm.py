@@ -26,6 +26,9 @@ from q2mm.constants import (
     MM3_ANGLE_C4,
     MM3_ANGLE_C5,
     MM3_ANGLE_C6,
+    MM3_VDW_A,
+    MM3_VDW_B,
+    MM3_VDW_C,
     MASSES,
 )
 from q2mm.models.units import (
@@ -889,8 +892,8 @@ class OpenMMEngine(MMEngine):
             # causing divergence to -∞.  Switch to a hard repulsive form
             # at that boundary using step() to prevent collapse.
             vdw_force = mm.CustomNonbondedForce(
-                "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
-                " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
+                f"step(r - rc) * epsilon*(-{MM3_VDW_C}*(rv/r)^6 + {MM3_VDW_A}*exp(-{MM3_VDW_B}*r/rv))"
+                f" + step(rc - r) * epsilon*{MM3_VDW_A}*exp(-{MM3_VDW_B}*rc/rv) * (rc/r)^12;"
                 "rc=0.34*rv;"
                 "rv=radius1+radius2;"
                 "epsilon=sqrt(epsilon1*epsilon2)"
@@ -1748,8 +1751,8 @@ class OpenMMEngine(MMEngine):
             else:
                 # MM3: Buckingham exp-6 with per-particle params
                 vdw_force = mm.CustomNonbondedForce(
-                    "step(r - rc) * epsilon*(-2.25*(rv/r)^6 + 184000*exp(-12*r/rv))"
-                    " + step(rc - r) * epsilon*184000*exp(-12*rc/rv) * (rc/r)^12;"
+                    f"step(r - rc) * epsilon*(-{MM3_VDW_C}*(rv/r)^6 + {MM3_VDW_A}*exp(-{MM3_VDW_B}*r/rv))"
+                    f" + step(rc - r) * epsilon*{MM3_VDW_A}*exp(-{MM3_VDW_B}*rc/rv) * (rc/r)^12;"
                     "rc=0.34*rv;"
                     "rv=radius1+radius2;"
                     "epsilon=sqrt(epsilon1*epsilon2)"

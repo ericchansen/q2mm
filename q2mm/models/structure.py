@@ -172,6 +172,7 @@ class Atom:
 
     @element.setter
     def element(self, value: str) -> None:
+        """Set the element symbol, overriding automatic lookup."""
         self._element = value
 
     @property
@@ -188,6 +189,7 @@ class Atom:
 
     @exact_mass.setter
     def exact_mass(self, value: float) -> None:
+        """Set the exact isotopic mass, overriding automatic lookup."""
         self._exact_mass = value
 
     @property
@@ -533,13 +535,14 @@ class Structure:
         with measured values.
 
         Note:
-            May need to add same logic of 0 vs 180 as in filetypes.py.
+            May need to add same logic of 0 vs 180 as in
+            :mod:`q2mm.models.structure`.
 
         Returns:
             (list[Angle]): Angles found in this structure.
 
         """
-        from q2mm.parsers._utils import measure_angle
+        from q2mm.geometry import bond_angle
 
         angles: list[Angle] = []
         for i, a in enumerate(self.bonds):
@@ -548,7 +551,7 @@ class Structure:
                 b1_index, b2_index = b.atom_nums
                 if a1_index == b1_index:
                     if a2_index != b2_index:
-                        angle = measure_angle(
+                        angle = bond_angle(
                             self.atoms[a2_index - 1].coords,
                             self.atoms[a1_index - 1].coords,
                             self.atoms[b2_index - 1].coords,
@@ -556,7 +559,7 @@ class Structure:
                         angles.append(Angle(atom_nums=[a2_index, a1_index, b2_index], value=angle))
                 if a1_index == b2_index:
                     if a2_index != b1_index:
-                        angle = measure_angle(
+                        angle = bond_angle(
                             self.atoms[a2_index - 1].coords,
                             self.atoms[a1_index - 1].coords,
                             self.atoms[b1_index - 1].coords,
@@ -564,7 +567,7 @@ class Structure:
                         angles.append(Angle(atom_nums=[a2_index, a1_index, b1_index], value=angle))
                 if a2_index == b2_index:
                     if a1_index != b1_index:
-                        angle = measure_angle(
+                        angle = bond_angle(
                             self.atoms[a1_index - 1].coords,
                             self.atoms[a2_index - 1].coords,
                             self.atoms[b1_index - 1].coords,
@@ -572,7 +575,7 @@ class Structure:
                         angles.append(Angle(atom_nums=[a1_index, a2_index, b1_index], value=angle))
                 if a2_index == b1_index:
                     if a1_index != b2_index:
-                        angle = measure_angle(
+                        angle = bond_angle(
                             self.atoms[a1_index - 1].coords,
                             self.atoms[a2_index - 1].coords,
                             self.atoms[b2_index - 1].coords,

@@ -108,6 +108,7 @@ class MM3(FF):
 
     @lines.setter
     def lines(self, x: list[str]) -> None:
+        """Set the cached file lines, bypassing disk I/O."""
         self._lines = x
 
     def split_smiles(self, smiles: str) -> list[str]:

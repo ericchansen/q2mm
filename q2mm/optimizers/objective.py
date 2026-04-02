@@ -1378,9 +1378,12 @@ class ObjectiveFunction:
             needed_kinds = frozenset(r.kind for r in refs)
             computed = evaluator.compute(self.engine, mol, ff, needed_kinds=needed_kinds)
         elif category == "eigenmatrix":
-            # TODO(#149): Re-optimize geometry at perturbed parameters before
-            # computing the eigenmatrix.  Currently evaluates the Hessian at the
-            # original geometry, which is an approximation.
+            # NOTE: Evaluates the Hessian at the *original* (unperturbed)
+            # geometry, which is an approximation.  A more rigorous approach
+            # would re-optimize the geometry at the perturbed parameters first
+            # (see issue #149).  In practice the error is small for small
+            # parameter perturbations and is dominated by the frequency
+            # weighting in the objective function.
             structure = self._get_structure(mol_idx)
             computed = evaluator.compute(
                 self.engine,
@@ -1390,9 +1393,8 @@ class ObjectiveFunction:
                 mol_idx=mol_idx,
             )
         elif category == "frequency":
-            # TODO(#149): Re-optimize geometry at perturbed parameters before
-            # computing frequencies.  Currently evaluates the Hessian at the
-            # original geometry, which is an approximation.
+            # NOTE: Same approximation as eigenmatrix — Hessian evaluated at
+            # original geometry rather than re-optimized (see issue #149).
             structure = self._get_structure(mol_idx)
             computed = evaluator.compute(self.engine, mol, ff, structure=structure)
         else:

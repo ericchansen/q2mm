@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from q2mm.parsers import _utils as utilities
+from q2mm.geometry import bond_length
 from q2mm.parsers.base import File
 from q2mm.models.structure import Atom, Bond, Structure
 
@@ -160,7 +160,7 @@ class Mol2(File):
                 Bond(
                     atom_nums=[a_index, b_index],
                     order=bond_split[3],
-                    value=utilities.measure_bond(
+                    value=bond_length(
                         structure.atoms[a_index - 1].coords,
                         structure.atoms[b_index - 1].coords,
                     ),

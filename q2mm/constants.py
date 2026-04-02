@@ -9,7 +9,6 @@ defined inline below, and this module is now their canonical location
 following the removal of ``q2mm.parsers._patterns``.
 
 Module-level Constants:
-    LOG_SETTINGS: Logging configuration dict (kept for backward compat).
     HARTREE_TO_KJMOL: Hartree to kJ/mol conversion factor.
     HARTREE_TO_J: Hartree to Joule conversion factor.
     HARTREE_TO_KCALMOL: Hartree to kcal/mol conversion factor.
@@ -27,46 +26,7 @@ Module-level Constants:
     WEIGHTS: Optimization weights (re-exported from optimizers.defaults).
 """
 
-import logging
 import math
-
-# LOGGING SETTINGS
-# Kept for backwards compatibility. Do not call logging.config.dictConfig()
-# with this dict at import time — configure logging once in the application
-# entry point instead.
-LOG_SETTINGS = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "bare": {"format": "%(message)s"},
-        "basic": {"format": "%(name)s %(message)s"},
-        "simple": {"format": "%(asctime)s:%(name)s:%(levelname)s %(message)s"},
-    },
-    "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "bare", "level": logging.INFO},
-        "root_file_handler": {
-            "class": "logging.FileHandler",
-            "filename": "root.log",
-            "formatter": "basic",
-            "level": 20,
-        },
-    },
-    "loggers": {
-        "__main__": {"level": 5, "propagate": True},
-        "calculate": {"level": 20, "propagate": True},
-        "compare": {"level": 10, "propagate": True},
-        "constants": {"level": 20, "propagate": True},
-        "datatypes": {"level": 20, "propagate": True},
-        "filetypes": {"level": 20, "propagate": True},
-        "gradient": {"level": 20, "propagate": True},
-        "loop": {"level": 5, "propagate": True},
-        "opt": {"level": 5, "propagate": True},
-        "parameters": {"level": 20, "propagate": True},
-        "simplex": {"level": 5, "propagate": True},
-        "seminario": {"level": 20, "propagate": True},
-    },
-    "root": {"level": "NOTSET", "propagate": True, "handlers": ["console", "root_file_handler"]},
-}
 
 # --- Energy conversions ---
 HARTREE_TO_KJMOL = 2625.5
@@ -125,10 +85,19 @@ MM3_ANGLE_C4 = 5.6e-5
 MM3_ANGLE_C5 = -7.0e-7
 MM3_ANGLE_C6 = 9.0e-10
 
+# MM3 Buckingham exp-6 van der Waals coefficients
+# Allinger et al., JACS 1989, 111, 8551.
+MM3_VDW_A = 184000.0
+MM3_VDW_B = 12.0
+MM3_VDW_C = 2.25
+
+# Tinker MM3 unit-system header values
+TINKER_BONDUNIT = 71.94
+TINKER_ANGLEUNIT = 0.02191418
+
 # UNIT SYSTEM LABELS
 AMBERFF = "KCALMOLA"
 MM3FF = "MDYNA"
-TINKERFF = "NOT IMPLEMENTED"
 GAUSSIAN = "AU"
 KJMOLA = "KJMOLA"
 
@@ -175,4 +144,3 @@ RE_TORSION = re.compile(
     rf"\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+{RE_FLOAT}\s+{RE_FLOAT}\s+{RE_FLOAT}\s+"
     rf"({RE_FLOAT})\s+{RE_FLOAT}\s+\w+\s+\d+({RE_SUB})\s+(\d+)"
 )
-RE_T_LBL = re.compile(r"\At_(\S+)_\d+_(\d+-\d+-\d+-\d+)")
