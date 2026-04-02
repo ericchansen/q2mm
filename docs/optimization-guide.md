@@ -20,7 +20,7 @@ nearest minimum). No single optimizer excels at both:
 | Derivative-free | ❌ Requires finite-difference gradients | ✅ No gradients needed |
 
 Q2MM solves this by combining both in a **grad-simp cycling
-loop**:gradient methods handle the bulk of convergence, then simplex polishes
+loop**: gradient methods handle the bulk of convergence, then simplex polishes
 the parameters that gradients struggle with.
 
 ---

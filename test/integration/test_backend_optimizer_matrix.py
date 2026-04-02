@@ -212,13 +212,11 @@ class TestBenchmarkPipeline:
             "frequency-fitting problems. The objective landscape is noisy — "
             "each evaluation requires a Hessian eigenvalue solve, creating "
             "discontinuities that frustrate gradient-based convergence criteria "
-            "(gtol). This is a known limitation of applying a single global "
-            "optimizer to the full parameter space. The upstream Q2MM repo "
-            "addressed this by cycling subsets of parameters through a simplex "
-            "optimizer (see #104). Until parameter cycling or sensitivity-based "
-            "selection is implemented, non-convergence on some platforms is "
-            "expected. The separate test_optimization_improved check ensures "
-            "the optimizer still makes meaningful progress."
+            "(gtol). Even with the grad-simp cycling optimizer available, "
+            "this single-shot L-BFGS-B test uses a fixed iteration budget "
+            "that may not suffice on all platforms. Non-convergence is "
+            "expected; the structural checks (test_optimizer_executed, "
+            "test_rmsd_values_finite) verify the pipeline ran correctly."
         ),
     )
     def test_optimization_converged(self, result: BenchmarkResult) -> None:
