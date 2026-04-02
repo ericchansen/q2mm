@@ -32,7 +32,7 @@ systems and GPU configurations.
 
 ```bash
 # Install Q2MM with all backends + CUDA
-pip install -e ".[all,openmm-cuda]"
+pip install "q2mm[all,openmm-cuda]"
 
 # JAX CUDA (for JAX and JAX-MD GPU acceleration)
 pip install "jax[cuda12]"
@@ -42,7 +42,7 @@ pip install "jax[cuda12]"
 
 ```bash
 # OpenMM CUDA works on native Windows
-pip install -e ".[openmm,openmm-cuda,optimize]"
+pip install "q2mm[openmm,openmm-cuda,optimize]"
 
 # JAX CUDA and JAX-MD are NOT available on native Windows.
 # Use WSL2 for the full GPU stack.
@@ -52,7 +52,7 @@ pip install -e ".[openmm,openmm-cuda,optimize]"
 
 ```bash
 # CPU-only (no NVIDIA GPUs on macOS)
-pip install -e ".[all]"
+pip install "q2mm[all]"
 ```
 
 ---

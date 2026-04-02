@@ -26,7 +26,7 @@ pip install "q2mm[all]"            # all optional dependencies
 For GPU-accelerated workflows, install with CUDA extras:
 
 ```bash
-pip install -e ".[all,openmm-cuda]"
+pip install "q2mm[all,openmm-cuda]"
 ```
 
 !!! tip "WSL2 recommended for full GPU stack"
