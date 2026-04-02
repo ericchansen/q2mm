@@ -558,7 +558,7 @@ print(result.history)            # score at each evaluation
 
 [source](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py)
 
-GRAD→SIMP cycling loop: alternates full-space gradient optimization with
+grad-simp cycling loop: alternates full-space gradient optimization with
 sensitivity-based subspace simplex passes. See the
 [Optimization Guide](optimization-guide.md) for detailed usage and examples.
 
@@ -580,7 +580,7 @@ print(result.summary())
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `max_params` | `int` | `3` | Parameters per simplex pass |
-| `max_cycles` | `int` | `10` | Maximum GRAD→SIMP iterations |
+| `max_cycles` | `int` | `10` | Maximum grad-simp iterations |
 | `convergence` | `float` | `0.01` | Stop when fractional improvement < this value |
 | `full_method` | `str` | `"L-BFGS-B"` | Scipy method for full-space pass |
 | `simp_method` | `str` | `"Nelder-Mead"` | Scipy method for subspace pass |
@@ -598,7 +598,7 @@ Returned by `OptimizationLoop.run()`.
 | `success` | `bool` | Whether the loop converged |
 | `initial_score` | `float` | Objective before optimization |
 | `final_score` | `float` | Objective after optimization |
-| `n_cycles` | `int` | Number of GRAD→SIMP cycles completed |
+| `n_cycles` | `int` | Number of grad-simp cycles completed |
 | `message` | `str` | Convergence status message |
 | `cycle_scores` | `list[float]` | Score after each cycle (length = n_cycles + 1) |
 | `selected_indices` | `list[list[int]]` | Parameter indices selected per cycle |

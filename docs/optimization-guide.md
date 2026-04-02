@@ -19,8 +19,8 @@ nearest minimum). No single optimizer excels at both:
 | Scaling | ✅ Cost per step scales as O(N) | ❌ Cost per step scales as O(N²) |
 | Derivative-free | ❌ Requires finite-difference gradients | ✅ No gradients needed |
 
-Q2MM solves this by combining both in a **GRAD→SIMP cycling
-loop**: gradient methods handle the bulk of convergence, then simplex polishes
+Q2MM solves this by combining both in a **grad-simp cycling
+loop**:gradient methods handle the bulk of convergence, then simplex polishes
 the parameters that gradients struggle with.
 
 ---
@@ -61,7 +61,7 @@ print(result.summary())
 
 ---
 
-## Strategy 2: GRAD→SIMP Cycling (Recommended for Large Systems)
+## Strategy 2: Grad-Simp Cycling (Recommended for Large Systems)
 
 The flagship optimization strategy, based on the approach described in
 Norrby & Liljefors ([*J. Comput. Chem.* **1998**, 19, 1146](https://doi.org/10.1002/(SICI)1096-987X(19980730)19:10%3C1146::AID-JCC4%3E3.0.CO;2-M)). Each cycle:
@@ -79,7 +79,7 @@ from q2mm.optimizers.cycling import OptimizationLoop
 loop = OptimizationLoop(
     objective,
     max_params=3,         # simplex on top 3 params per cycle
-    max_cycles=10,        # up to 10 GRAD→SIMP cycles
+    max_cycles=10,        # up to 10 grad-simp cycles
     convergence=0.01,     # stop when <1% improvement per cycle
     full_method="L-BFGS-B",
     simp_method="Nelder-Mead",
@@ -163,7 +163,7 @@ for sens in result.sensitivity_results:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `max_params` | `3` | Parameters per simplex pass. Increase to 4–5 for larger systems. |
-| `max_cycles` | `10` | Maximum GRAD→SIMP iterations. Most problems converge in 3–5 cycles. |
+| `max_cycles` | `10` | Maximum grad-simp iterations. Most problems converge in 3–5 cycles. |
 | `convergence` | `0.01` | Stop when fractional improvement < this value (1% default). |
 | `full_method` | `"L-BFGS-B"` | Scipy method for the full-space pass. |
 | `simp_method` | `"Nelder-Mead"` | Scipy method for the subspace pass. |
@@ -229,7 +229,7 @@ steps = ff.get_step_sizes()
 ## Standalone Sensitivity Analysis
 
 You can run sensitivity analysis independently, without the full
-GRAD→SIMP loop. This is useful for diagnosing which parameters matter most
+grad-simp loop. This is useful for diagnosing which parameters matter most
 in your problem.
 
 ```python
@@ -267,7 +267,7 @@ flowchart TD
     A[How many parameters?] --> B{≤ 10?}
     B -->|Yes| C[Single-shot]
     B -->|No| D{Best result needed?}
-    D -->|Yes| E[GRAD→SIMP Cycling]
+    D -->|Yes| E[Grad-Simp Cycling]
     D -->|No| F[L-BFGS-B estimate]
     C --> G{Converged?}
     G -->|Yes| H[Done ✅]
@@ -297,7 +297,7 @@ flowchart TD
     With finite-difference gradients (`eps=1e-3`), L-BFGS-B can miss
     shallow features in the objective landscape. On the water test case (4
     params), L-BFGS-B converges to a score of 0.93 while Nelder-Mead
-    reaches 0.000. This is exactly why the GRAD→SIMP loop exists — the
+    reaches 0.000. This is exactly why the grad-simp loop exists — the
     simplex pass cleans up what the gradient pass leaves behind.
 
     For engines that support analytical gradients (JAX, JAX-MD, OpenMM),
