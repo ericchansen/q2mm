@@ -213,8 +213,9 @@ def _run_matrix(
                         maxiter=max_iter,
                         backend_name=backend_name,
                     )
-                    # Tag the result with functional form
+                    # Tag the result with display-facing labels
                     r.metadata["functional_form"] = form_value
+                    r.metadata["optimizer"] = opt_label
 
                     elapsed = time.perf_counter() - t0
                     results.append(r)
@@ -242,7 +243,7 @@ def _run_matrix(
                         BenchmarkResult(
                             metadata={
                                 "backend": backend_name,
-                                "optimizer": method,
+                                "optimizer": opt_label,
                                 "functional_form": form_value,
                                 "molecule": molecule_name,
                                 "source": "q2mm",
