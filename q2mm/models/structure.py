@@ -535,8 +535,7 @@ class Structure:
         with measured values.
 
         Note:
-            May need to add same logic of 0 vs 180 as in
-            :mod:`q2mm.models.structure`.
+            Does not yet special-case linear angles (0° / 180°).
 
         Returns:
             (list[Angle]): Angles found in this structure.

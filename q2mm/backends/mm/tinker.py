@@ -389,6 +389,8 @@ class TinkerEngine(MMEngine):
             f.write(f"angle-cubic             {MM3_ANGLE_C3}\n")
             f.write(f"angle-quartic           {MM3_ANGLE_C4:.6f}\n")
             f.write(f"angle-pentic            {MM3_ANGLE_C5:.7f}\n")
+            # Tinker's angle-sextic (2.2e-8) differs from the MM3 polynomial
+            # coefficient C6 (9.0e-10) — this is the Tinker-specific value.
             f.write("angle-sextic            0.000000022\n\n")
 
             # Atom definitions (MM3 format: type, symbol, "description", anum, mass, valence)

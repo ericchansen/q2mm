@@ -1,6 +1,6 @@
 """Constants and variables used throughout Q2MM.
 
-This module contains unit conversions, logging configuration, and other
+This module contains unit conversions, MM3 force field coefficients, and other
 physical constants.  Element data (masses, radii, symbols) is centralized
 in ``q2mm.elements``; ``MASSES`` is re-exported here for backward
 compatibility.  Optimization defaults (``WEIGHTS``, ``STEPS``) live in

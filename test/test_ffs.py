@@ -1,11 +1,9 @@
 import copy
 import logging
-import logging.config
 import tempfile
 import unittest
 from pathlib import Path
 
-from q2mm import constants as co
 from q2mm.parsers.mm3 import MM3
 
 logger = logging.getLogger(__name__)
@@ -60,5 +58,5 @@ class TestMM3Export(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    logging.config.dictConfig(co.LOG_SETTINGS)
+    logging.basicConfig(level=logging.DEBUG)
     unittest.main()

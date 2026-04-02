@@ -46,16 +46,15 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 
 | Term | Supported |
 |------|:---------:|
-| Bonds (harmonic) | ✅ |
-| Angles (harmonic) | ✅ |
+| Bonds (harmonic + MM3) | ✅ |
+| Angles (harmonic + MM3) | ✅ |
 | Torsions (cosine) | ✅ |
 | Improper torsions | ❌ |
-| vdW (LJ 12-6) | ✅ |
+| vdW (LJ 12-6 + Buckingham exp-6) | ✅ |
 | Electrostatics | ❌ |
 | 1-4 scaling | ❌ Not implemented |
 
-**Functional forms:** Harmonic only.  MM3 support is tracked in
-[#91](https://github.com/ericchansen/q2mm/issues/91).
+**Functional forms:** Harmonic and MM3.
 
 ---
 
@@ -96,7 +95,7 @@ or `JAX (harmonic, cpu)`).
 
 - **No 1-4 pair scaling** — non-bonded energies differ from OpenMM/JAX-MD
   for molecules with 1-4 interactions.  See the
-  [compatibility notes](index.md#when-%EF%B8%8F-becomes-).
+  [compatibility notes](index.md#when-becomes).
 - **No periodic boundaries** — gas-phase only.
 
 ---
