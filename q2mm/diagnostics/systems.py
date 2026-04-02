@@ -38,6 +38,8 @@ class SystemData:
         freq_ref: Frequency-based reference data for the objective function.
         qm_freqs_per_mol: QM real frequencies per molecule (for reporting).
         metadata: Extra info (level of theory, molecule name, etc.).
+        normal_modes: Pre-computed normal modes for PES distortion analysis.
+            ``None`` when not available.
 
     """
 
@@ -46,6 +48,7 @@ class SystemData:
     freq_ref: ReferenceData
     qm_freqs_per_mol: list[np.ndarray]
     metadata: dict[str, Any] = field(default_factory=dict)
+    normal_modes: dict[str, np.ndarray] | None = None
 
 
 def _qm_frequencies_from_hessian(
@@ -110,12 +113,20 @@ def _find_ch3f_data_dir() -> Path:
     )
 
 
-def load_ch3f(engine: Any, *, data_dir: Path | None = None) -> SystemData:
+def load_ch3f(
+    engine: Any,
+    *,
+    data_dir: Path | None = None,
+    functional_form: str | None = None,
+) -> SystemData:
     """Load the CH3F benchmark system.
 
     Args:
         engine: MM engine instance (used for frequency computation).
         data_dir: Override for the QM reference data directory.
+        functional_form: Override functional form (e.g. ``"harmonic"``,
+            ``"mm3"``).  When ``None``, the form is left unset and the
+            engine uses its native default.
 
     Returns:
         SystemData with a single CH3F molecule.
@@ -128,6 +139,7 @@ def load_ch3f(engine: Any, *, data_dir: Path | None = None) -> SystemData:
     xyz = qm_dir / "ch3f-optimized.xyz"
     hess_path = qm_dir / "ch3f-hessian.npy"
     freqs_path = qm_dir / "ch3f-frequencies.txt"
+    modes_path = qm_dir / "ch3f-normal-modes.npz"
 
     molecule = Q2MMMolecule.from_xyz(xyz, bond_tolerance=1.5)
     qm_freqs_all = np.loadtxt(freqs_path)
@@ -136,8 +148,25 @@ def load_ch3f(engine: Any, *, data_dir: Path | None = None) -> SystemData:
     mol_h = molecule.with_hessian(qm_hessian)
     ff = estimate_force_constants(mol_h)
 
+    if functional_form is not None:
+        from q2mm.models.forcefield import FunctionalForm
+
+        ff.functional_form = FunctionalForm(functional_form)
+
     mm_all = engine.frequencies(molecule, ff)
     freq_ref, qm_real = _build_frequency_reference(qm_freqs_all, mm_all)
+
+    # Load normal modes for PES distortion analysis (optional)
+    normal_modes = None
+    if modes_path.exists():
+        from q2mm.diagnostics.pes_distortion import load_normal_modes
+
+        normal_modes = load_normal_modes(modes_path)
+
+    # Resolve functional form for metadata: explicit override > ff value
+    resolved_form = functional_form
+    if resolved_form is None and ff.functional_form is not None:
+        resolved_form = ff.functional_form.value
 
     return SystemData(
         molecules=[molecule],
@@ -148,7 +177,9 @@ def load_ch3f(engine: Any, *, data_dir: Path | None = None) -> SystemData:
             "molecule_name": "CH3F",
             "level_of_theory": "B3LYP/6-31+G(d)",
             "n_atoms": len(molecule.symbols),
+            **({"functional_form": resolved_form} if resolved_form else {}),
         },
+        normal_modes=normal_modes,
     )
 
 
@@ -204,11 +235,17 @@ def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
     return molecules
 
 
-def load_rh_enamide(engine: Any) -> SystemData:
+def load_rh_enamide(
+    engine: Any,
+    *,
+    functional_form: str | None = None,
+) -> SystemData:
     """Load the Rh-enamide benchmark system (9 molecules).
 
     Args:
         engine: MM engine instance (used for frequency computation).
+        functional_form: Override functional form (e.g. ``"harmonic"``,
+            ``"mm3"``).  Defaults to ``"mm3"`` since the template is MM3.
 
     Returns:
         SystemData with 9 Rh-enamide molecules and frequency references.
@@ -225,13 +262,11 @@ def load_rh_enamide(engine: Any) -> SystemData:
     ff_template = ForceField.from_mm3_fld(str(mm3_path))
     ff = estimate_force_constants(molecules, forcefield=ff_template)
 
-    # Seminario produces harmonic force constants regardless of the template's
-    # functional form.  Switch to HARMONIC so JAX/JAX-MD engines (which only
-    # support harmonic) can use the result.  OpenMM handles both forms and
-    # defaults to MM3 when functional_form is None, so HARMONIC is safe there too.
-    supported = getattr(engine, "supported_functional_forms", lambda: frozenset())()
-    if supported and FunctionalForm.MM3.value not in supported:
-        ff.functional_form = FunctionalForm.HARMONIC
+    # Set functional form: explicit override > default (mm3)
+    if functional_form is not None:
+        ff.functional_form = FunctionalForm(functional_form)
+    else:
+        ff.functional_form = FunctionalForm.MM3
 
     # Build multi-molecule frequency reference
     freq_ref = None
@@ -257,6 +292,7 @@ def load_rh_enamide(engine: Any) -> SystemData:
             "level_of_theory": "B3LYP/LACVP**",
             "n_molecules": len(molecules),
             "n_atoms_per_mol": [len(m.symbols) for m in molecules],
+            "functional_form": functional_form or "mm3",
         },
     )
 
@@ -275,6 +311,7 @@ class BenchmarkSystem:
         key: CLI key (e.g. ``"ch3f"``, ``"rh-enamide"``).
         loader: Callable that takes an engine and returns :class:`SystemData`.
         description: One-line description for ``--list`` output.
+        default_forms: Functional forms to benchmark by default.
 
     """
 
@@ -282,6 +319,7 @@ class BenchmarkSystem:
     key: str
     loader: Callable
     description: str = ""
+    default_forms: tuple[str, ...] = ("harmonic", "mm3")
 
 
 SYSTEMS: dict[str, BenchmarkSystem] = {
@@ -290,11 +328,13 @@ SYSTEMS: dict[str, BenchmarkSystem] = {
         key="ch3f",
         loader=load_ch3f,
         description="Single CH3F molecule (SN2 test, B3LYP/6-31+G(d))",
+        default_forms=("harmonic", "mm3"),
     ),
     "rh-enamide": BenchmarkSystem(
         name="Rh-enamide",
         key="rh-enamide",
         loader=load_rh_enamide,
         description="9 Rh-diphosphine structures (Jaguar B3LYP/LACVP**)",
+        default_forms=("mm3",),
     ),
 }

@@ -25,14 +25,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from q2mm.backends.base import MMEngine
     from q2mm.diagnostics.benchmark import BenchmarkResult
-    from q2mm.diagnostics.systems import BenchmarkSystem, SystemData
-
-import numpy as np
+    from q2mm.diagnostics.systems import BenchmarkSystem
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
@@ -71,12 +68,25 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("L-BFGS-B", {"method": "L-BFGS-B"}),
         ("Nelder-Mead", {"method": "Nelder-Mead"}),
         ("Powell", {"method": "Powell"}),
+        ("grad-simp", {"method": "cycling"}),
     ]
-    # Note: L-BFGS-B+analytical is omitted because the benchmark uses
-    # frequency reference data and ObjectiveFunction.gradient() only
-    # supports energy-type references. Once frequency gradients are
-    # implemented, this can be re-enabled.
     return configs
+
+
+def _functional_form_configs() -> list[tuple[str, str]]:
+    """Build the list of functional forms to benchmark.
+
+    Returns:
+        list[tuple[str, str]]: ``(display_label, form_value)`` tuples.
+            ``form_value`` matches :class:`FunctionalForm` enum values.
+
+    """
+    from q2mm.models.forcefield import FunctionalForm
+
+    return [
+        ("Harmonic", FunctionalForm.HARMONIC.value),
+        ("MM3", FunctionalForm.MM3.value),
+    ]
 
 
 def _resolve_system(system_key: str) -> BenchmarkSystem:
@@ -103,6 +113,7 @@ def _resolve_system(system_key: str) -> BenchmarkSystem:
 def _run_matrix(
     backends: list[tuple[str, type, str]],
     optimizers: list[tuple[str, dict]],
+    forms: list[tuple[str, str]],
     output_dir: Path | None = None,
     *,
     leaderboard_only: bool = False,
@@ -111,13 +122,15 @@ def _run_matrix(
     system_key: str = "ch3f",
     max_iter: int = 10_000,
 ) -> list:
-    """Run the full backend × optimizer matrix.
+    """Run the full backend × form × optimizer matrix.
 
     Args:
         backends (list[tuple[str, type, str]]): Backend entries from
             ``_discover_backends()``.
         optimizers (list[tuple[str, dict]]): Optimizer entries from
             ``_optimizer_configs()``.
+        forms (list[tuple[str, str]]): Form entries from
+            ``_functional_form_configs()``, filtered by ``--form``.
         output_dir (Path | None): Directory to save JSON result files.
             Created if it does not exist.
         leaderboard_only (bool): If ``True``, skip streaming detailed
@@ -132,159 +145,127 @@ def _run_matrix(
         max_iter (int): Maximum optimizer iterations.
 
     Returns:
-        list[BenchmarkResult]: One result per (backend, optimizer) combination.
+        list[BenchmarkResult]: One result per (backend, form, optimizer)
+            combination.
 
     """
-    from q2mm.diagnostics.benchmark import BenchmarkResult, run_benchmark
-    from q2mm.diagnostics.pes_distortion import load_normal_modes
+    from q2mm.diagnostics.benchmark import BenchmarkResult, run_combo
     from q2mm.diagnostics.report import detailed_report
 
     system_cfg = _resolve_system(system_key)
 
     results: list[BenchmarkResult] = []
-    total = len(backends) * len(optimizers)
+    result_molecules: list = []
     idx = 0
 
     for backend_name, engine_cls, registry_key in backends:
         try:
-            # Pass platform to OpenMM when specified
             if registry_key == "openmm" and platform is not None:
                 engine = engine_cls(platform_name=platform)
             else:
                 engine = engine_cls()
-            # Update display name to reflect actual engine config
             backend_name = engine.name
         except Exception as e:
             print(f"  Skipping {backend_name}: {e}", file=sys.stderr)
             continue
 
-        # Load system data with this engine (engine computes MM frequencies)
-        try:
-            if system_key == "ch3f" and data_dir is not None:
-                # CH3F supports data_dir override
-                from q2mm.diagnostics.systems import load_ch3f
+        # Determine which forms this engine supports
+        supported = getattr(engine, "supported_functional_forms", lambda: frozenset())()
 
-                sys_data = load_ch3f(engine, data_dir=data_dir)
-            else:
-                sys_data = system_cfg.loader(engine)
-        except Exception as e:
-            print(f"  Skipping {backend_name}: cannot load {system_key} data: {e}", file=sys.stderr)
-            continue
+        for form_label, form_value in forms:
+            if supported and form_value not in supported:
+                continue
 
-        molecule_name = sys_data.metadata.get("molecule_name", system_key)
-        level_of_theory = sys_data.metadata.get("level_of_theory", "unknown")
-
-        # For single-molecule systems, use run_benchmark directly
-        # For multi-molecule systems, use the system's freq_ref + objective
-        is_multi = len(sys_data.molecules) > 1
-
-        for opt_label, opt_config in optimizers:
-            idx += 1
-            combo = f"{backend_name} + {opt_label}"
-            print(f"  [{idx}/{total}] {combo} ...", end=" ", flush=True)
-
+            # Reload system data per-form (freq_ref depends on form)
             try:
-                method = opt_config["method"]
-                extra_kwargs = {k: v for k, v in opt_config.items() if k != "method"}
+                loader_kwargs: dict[str, Any] = {"functional_form": form_value}
+                if system_key == "ch3f" and data_dir is not None:
+                    from q2mm.diagnostics.systems import load_ch3f
 
-                t0 = time.perf_counter()
-
-                if is_multi:
-                    r = _run_multi_molecule_benchmark(
-                        engine=engine,
-                        sys_data=sys_data,
-                        optimizer_method=method,
-                        optimizer_kwargs=extra_kwargs,
-                        maxiter=max_iter,
-                        backend_name=backend_name,
-                        molecule_name=molecule_name,
-                        level_of_theory=level_of_theory,
-                    )
+                    sys_data = load_ch3f(engine, data_dir=data_dir, **loader_kwargs)
                 else:
-                    # Load CH3F-specific data for PES distortion support
-                    normal_modes = None
-                    qm_hessian = None
-                    if system_key == "ch3f":
-                        try:
-                            qm_dir = data_dir or (
-                                Path(__file__).resolve().parent.parent.parent / "examples" / "sn2-test" / "qm-reference"
-                            )
-                            hess_path = qm_dir / "ch3f-hessian.npy"
-                            modes_path = qm_dir / "ch3f-normal-modes.npz"
-                            if hess_path.exists():
-                                qm_hessian = np.load(hess_path)
-                            if modes_path.exists():
-                                normal_modes = load_normal_modes(modes_path)
-                        except Exception:
-                            pass
-
-                    r = run_benchmark(
-                        engine,
-                        sys_data.molecules[0],
-                        sys_data.qm_freqs_per_mol[0],
-                        qm_hessian=qm_hessian,
-                        normal_modes=normal_modes,
-                        optimizer_method=method,
-                        optimizer_kwargs=extra_kwargs,
-                        maxiter=max_iter,
-                        backend_name=backend_name,
-                        molecule_name=molecule_name,
-                        level_of_theory=level_of_theory,
-                    )
-
-                elapsed = time.perf_counter() - t0
-                results.append(r)
-
-                opt = r.optimized or {}
-                rmsd = opt.get("rmsd", float("nan"))
-
-                # Show starting RMSD → final RMSD on progress line
-                start_rmsd = None
-                if r.seminario and r.seminario.get("rmsd") is not None:
-                    start_rmsd = r.seminario["rmsd"]
-                elif r.default_ff and r.default_ff.get("rmsd") is not None:
-                    start_rmsd = r.default_ff["rmsd"]
-
-                if start_rmsd is not None:
-                    print(f"RMSD {start_rmsd:.0f}→{rmsd:.0f}  ({elapsed:.1f}s)")
-                else:
-                    print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)")
-
-                # Stream detailed tables immediately
-                if not leaderboard_only:
-                    for table in detailed_report(r, combo_label=combo):
-                        table.flush()
-
+                    sys_data = system_cfg.loader(engine, **loader_kwargs)
             except Exception as e:
-                print(f"FAILED: {e}", file=sys.stderr)
-                results.append(
-                    BenchmarkResult(
-                        metadata={
-                            "backend": backend_name,
-                            "optimizer": opt_label,
-                            "molecule": molecule_name,
-                            "source": "q2mm",
-                            "error": str(e),
-                        },
-                    )
+                print(
+                    f"  Skipping {backend_name}/{form_label}: cannot load {system_key} data: {e}",
+                    file=sys.stderr,
                 )
+                continue
+
+            molecule_name = sys_data.metadata.get("molecule_name", system_key)
+
+            for opt_label, opt_config in optimizers:
+                idx += 1
+                combo = f"{backend_name} + {form_label} + {opt_label}"
+                print(f"  [{idx}] {combo} ...", end=" ", flush=True)
+
+                try:
+                    method = opt_config["method"]
+                    extra_kwargs = {k: v for k, v in opt_config.items() if k != "method"}
+
+                    t0 = time.perf_counter()
+
+                    r = run_combo(
+                        engine,
+                        sys_data,
+                        optimizer_method=method,
+                        optimizer_kwargs=extra_kwargs,
+                        maxiter=max_iter,
+                        backend_name=backend_name,
+                    )
+                    # Tag the result with functional form
+                    r.metadata["functional_form"] = form_value
+
+                    elapsed = time.perf_counter() - t0
+                    results.append(r)
+                    result_molecules.append(sys_data.molecules[0])
+
+                    opt = r.optimized or {}
+                    rmsd = opt.get("rmsd", float("nan"))
+
+                    start_rmsd = None
+                    if r.seminario and r.seminario.get("rmsd") is not None:
+                        start_rmsd = r.seminario["rmsd"]
+
+                    if start_rmsd is not None:
+                        print(f"RMSD {start_rmsd:.0f}→{rmsd:.0f}  ({elapsed:.1f}s)")
+                    else:
+                        print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)")
+
+                    if not leaderboard_only:
+                        for table in detailed_report(r, combo_label=combo):
+                            table.flush()
+
+                except Exception as e:
+                    print(f"FAILED: {e}", file=sys.stderr)
+                    results.append(
+                        BenchmarkResult(
+                            metadata={
+                                "backend": backend_name,
+                                "optimizer": method,
+                                "functional_form": form_value,
+                                "molecule": molecule_name,
+                                "source": "q2mm",
+                                "error": str(e),
+                            },
+                        )
+                    )
+                    result_molecules.append(None)
 
     # Save results if output directory specified
     if output_dir is not None:
         from q2mm.diagnostics.benchmark import benchmark_stem
 
-        # Use system-specific subdirectory
         system_output = output_dir
         results_dir = system_output / "results"
         ff_dir = system_output / "forcefields"
         results_dir.mkdir(parents=True, exist_ok=True)
         ff_dir.mkdir(parents=True, exist_ok=True)
 
-        for r in results:
+        for i, r in enumerate(results):
             stem = benchmark_stem(r.metadata)
             r.to_json(results_dir / f"{stem}.json")
-            # For multi-molecule systems, save with first molecule
-            mol_for_save = sys_data.molecules[0] if sys_data else None
+            mol_for_save = result_molecules[i] if i < len(result_molecules) else None
             if mol_for_save is not None:
                 saved_ffs = r.save_forcefields(ff_dir, stem=stem, molecule=mol_for_save)
                 if saved_ffs:
@@ -294,95 +275,6 @@ def _run_matrix(
         print(f"\n  Results saved to: {system_output}/")
 
     return results
-
-
-def _run_multi_molecule_benchmark(
-    engine: MMEngine,
-    sys_data: SystemData,
-    optimizer_method: str,
-    optimizer_kwargs: dict,
-    maxiter: int,
-    backend_name: str,
-    molecule_name: str,
-    level_of_theory: str,
-) -> BenchmarkResult:
-    """Run a benchmark on a multi-molecule system (e.g. Rh-enamide).
-
-    Uses the pre-built frequency reference from SystemData.
-    """
-    from q2mm.diagnostics.benchmark import BenchmarkResult, frequency_rmsd, real_frequencies
-    from q2mm.optimizers.objective import ObjectiveFunction
-    from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-    ff = sys_data.forcefield.copy()
-    seminario_params = ff.get_param_vector().copy()
-
-    # Compute aggregate QM frequencies for RMSD reporting
-    all_qm_real = np.concatenate(sys_data.qm_freqs_per_mol)
-
-    # Compute aggregate MM frequencies for initial RMSD
-    all_mm_real = []
-    for mol in sys_data.molecules:
-        mm_freqs = engine.frequencies(mol, ff)
-        mm_real = real_frequencies(mm_freqs)
-        all_mm_real.extend(mm_real.tolist())
-    all_mm_real = np.array(sorted(all_mm_real))
-
-    n = min(len(all_qm_real), len(all_mm_real))
-    initial_rmsd = frequency_rmsd(np.sort(all_qm_real)[:n], all_mm_real[:n])
-
-    result = BenchmarkResult(
-        metadata={
-            "backend": backend_name,
-            "optimizer": optimizer_method,
-            "molecule": molecule_name,
-            "n_molecules": len(sys_data.molecules),
-            "source": "q2mm",
-            "level_of_theory": level_of_theory,
-        },
-    )
-
-    # Optimize
-    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
-    initial_score = obj(seminario_params)
-
-    result.seminario = {
-        "rmsd": initial_rmsd,
-        "param_values": seminario_params.tolist(),
-        "score": initial_score,
-    }
-
-    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
-    opt_kwargs.update(optimizer_kwargs)
-    opt = ScipyOptimizer(**opt_kwargs)
-
-    t0 = time.perf_counter()
-    opt_result = opt.optimize(obj)
-    opt_elapsed = time.perf_counter() - t0
-
-    # Final aggregate RMSD
-    all_mm_real_final = []
-    for mol in sys_data.molecules:
-        mm_freqs = engine.frequencies(mol, ff)
-        mm_real = real_frequencies(mm_freqs)
-        all_mm_real_final.extend(mm_real.tolist())
-    all_mm_real_final = np.array(sorted(all_mm_real_final))
-    n_final = min(len(all_qm_real), len(all_mm_real_final))
-    final_rmsd = frequency_rmsd(np.sort(all_qm_real)[:n_final], all_mm_real_final[:n_final])
-
-    result.optimized = {
-        "rmsd": final_rmsd,
-        "elapsed_s": opt_elapsed,
-        "n_eval": opt_result.n_evaluations,
-        "converged": opt_result.success,
-        "initial_score": opt_result.initial_score,
-        "final_score": opt_result.final_score,
-        "message": opt_result.message,
-        "param_final": ff.get_param_vector().tolist(),
-    }
-    result.optimized_ff = ff.copy()
-
-    return result
 
 
 def _load_results(directory: Path) -> list:
@@ -610,6 +502,33 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Check GPU/platform environment and exit without running benchmarks.",
     )
+    parser.add_argument(
+        "--form",
+        nargs="*",
+        metavar="NAME",
+        help="Run only these functional forms (e.g. harmonic mm3). Default: system-specific.",
+    )
+    parser.add_argument(
+        "--max-params",
+        type=int,
+        metavar="N",
+        default=3,
+        help="Cycling optimizer: parameters per simplex pass (default: 3).",
+    )
+    parser.add_argument(
+        "--max-cycles",
+        type=int,
+        metavar="N",
+        default=10,
+        help="Cycling optimizer: maximum grad-simp cycles (default: 10).",
+    )
+    parser.add_argument(
+        "--convergence",
+        type=float,
+        metavar="FLOAT",
+        default=0.01,
+        help="Cycling optimizer: fractional improvement threshold (default: 0.01).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -623,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
 
     all_backends = _discover_backends()
     all_optimizers = _optimizer_configs()
+    all_forms = _functional_form_configs()
 
     # --list: show what's available
     if args.list:
@@ -630,14 +550,25 @@ def main(argv: list[str] | None = None) -> int:
 
         print("\nAvailable systems:")
         for key, sys_cfg in SYSTEMS.items():
-            print(f"  {key:<14} {sys_cfg.description}")
+            forms_str = ", ".join(sys_cfg.default_forms)
+            print(f"  {key:<14} {sys_cfg.description}  [forms: {forms_str}]")
 
         print("\nAvailable backends:")
         if all_backends:
-            for name, _, marker in all_backends:
-                print(f"  {name:<12} (marker: {marker})")
+            for name, engine_cls, marker in all_backends:
+                try:
+                    eng = engine_cls()
+                    supported = eng.supported_functional_forms()
+                    forms_str = ", ".join(sorted(supported))
+                except Exception:
+                    forms_str = "unknown"
+                print(f"  {name:<12} (marker: {marker}, forms: {forms_str})")
         else:
             print("  (none detected)")
+
+        print("\nAvailable functional forms:")
+        for label, value in all_forms:
+            print(f"  {label:<12} ({value})")
 
         print("\nAvailable optimizers:")
         for label, config in all_optimizers:
@@ -659,6 +590,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"Loaded {len(results)} results from {load_dir}\n")
     else:
+        # Resolve system config for default_forms
+        system_cfg = _resolve_system(args.system)
+
         # Filter backends
         backends = all_backends
         if args.backend:
@@ -679,15 +613,38 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Available: {[l for l, _ in all_optimizers]}", file=sys.stderr)
                 return 1
 
+        # Inject cycling-specific CLI args into the cycling optimizer config
+        cycling_kwargs = {
+            "max_params": args.max_params,
+            "max_cycles": args.max_cycles,
+            "convergence": args.convergence,
+        }
+        optimizers = [(l, {**c, **cycling_kwargs}) if c.get("method") == "cycling" else (l, c) for l, c in optimizers]
+
+        # Filter forms: --form overrides system defaults
+        if args.form:
+            filter_names = {f.lower() for f in args.form}
+            forms = [(l, v) for l, v in all_forms if v.lower() in filter_names]
+            if not forms:
+                print(f"Error: no matching forms for {args.form}", file=sys.stderr)
+                print(f"Available: {[v for _, v in all_forms]}", file=sys.stderr)
+                return 1
+        else:
+            # Use system's default forms
+            forms = [(l, v) for l, v in all_forms if v in system_cfg.default_forms]
+
         print("\nQ2MM Benchmark Matrix")
         print(f"  System:     {args.system}")
         print(f"  Backends:   {', '.join(n for n, _, _ in backends)}")
+        print(f"  Forms:      {', '.join(l for l, _ in forms)}")
         print(f"  Optimizers: {', '.join(l for l, _ in optimizers)}")
-        print(f"  Combos:     {len(backends) * len(optimizers)}\n")
+        print(f"  Max combos: {len(backends) * len(forms) * len(optimizers)}")
+        print("  (combos filtered by engine support)\n")
 
         results = _run_matrix(
             backends,
             optimizers,
+            forms,
             output_dir=output_dir,
             leaderboard_only=args.leaderboard_only,
             data_dir=args.data_dir,

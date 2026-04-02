@@ -20,6 +20,7 @@ from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
+    from q2mm.diagnostics.systems import SystemData
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
 
@@ -81,7 +82,11 @@ def _parse_engine_name(display_name: str) -> tuple[str, str, str]:
 def benchmark_stem(metadata: dict) -> str:
     """Build a shell-safe, self-describing filename stem from metadata.
 
-    Pattern: ``{system}_{engine}_{ff}_{device}_{optimizer}``
+    Pattern: ``{system}_{engine}_{form}_{device}_{optimizer}``
+
+    The ``form`` segment is taken from the explicit ``functional_form``
+    metadata key when present, falling back to the form inferred from
+    the backend name string.
 
     All segments are lowercase.  Underscores separate segments; hyphens
     only appear within naturally hyphenated names (e.g. ``jax-md``,
@@ -89,24 +94,30 @@ def benchmark_stem(metadata: dict) -> str:
 
     Examples::
 
-        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B"})
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "harmonic"})
         'ch3f_jax_harmonic_gpu_lbfgsb'
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "mm3"})
+        'ch3f_jax_mm3_gpu_lbfgsb'
         >>> benchmark_stem({"molecule": "Rh-enamide", "backend": "JAX-MD (OPLSAA, cpu)", "optimizer": "Powell"})
         'rh-enamide_jax-md_oplsaa_cpu_powell'
 
     """
     system = metadata.get("molecule", "unk").lower().replace(" ", "-")
     backend = metadata.get("backend", "unk")
-    engine, ff, device = _parse_engine_name(backend)
+    engine, ff_from_backend, device = _parse_engine_name(backend)
     # Allow explicit device override from metadata
     device = metadata.get("device", device).lower()
+
+    # Prefer explicit functional_form over the one parsed from backend name.
+    # Guard against None values (e.g. from JSON null) before lowercasing.
+    form = (metadata.get("functional_form") or ff_from_backend).lower()
 
     optimizer = metadata.get("optimizer", "unk").lower()
     if optimizer == "l-bfgs-b":
         optimizer = "lbfgsb"
     optimizer = optimizer.replace(" ", "-")
 
-    return f"{system}_{engine}_{ff}_{device}_{optimizer}"
+    return f"{system}_{engine}_{form}_{device}_{optimizer}"
 
 
 @dataclass
@@ -393,157 +404,173 @@ def _param_names(ff: ForceField) -> list[str]:
     return names
 
 
-def run_benchmark(
+def run_combo(
     engine: MMEngine,
-    molecule: Q2MMMolecule,
-    qm_freqs: np.ndarray,
-    qm_hessian: np.ndarray | None = None,
-    normal_modes: dict | None = None,
+    sys_data: SystemData,
     *,
     optimizer_method: str = "L-BFGS-B",
     optimizer_kwargs: dict[str, Any] | None = None,
     maxiter: int = 10_000,
     backend_name: str = "unknown",
-    molecule_name: str = "unknown",
-    level_of_theory: str = "unknown",
 ) -> BenchmarkResult:
-    """Run a complete benchmark for one (backend, optimizer) combination.
+    """Run one benchmark combination on *any* system (N ≥ 1 molecules).
+
+    This is the single execution path for all benchmark runs — there is no
+    separate single-molecule vs multi-molecule code.
 
     Args:
-        engine (MMEngine): The MM backend engine to use.
-        molecule (Q2MMMolecule): The molecule (at QM equilibrium geometry).
-        qm_freqs (np.ndarray): QM reference frequencies (all real modes, cm⁻¹).
-        qm_hessian (np.ndarray | None): QM Hessian matrix for Seminario
-            estimation. If ``None``, Seminario step is skipped.
-        normal_modes (dict | None): Pre-computed normal modes from
-            ``load_normal_modes()``. If ``None``, PES distortion is skipped.
-        optimizer_method (str): Scipy optimizer method (e.g.,
-            ``'L-BFGS-B'``, ``'Nelder-Mead'``).
-        optimizer_kwargs (dict[str, Any] | None): Extra keyword arguments
-            for ``ScipyOptimizer`` (e.g., ``{'jac': 'analytical'}``).
-        maxiter (int): Maximum optimizer iterations.
-        backend_name (str): Human-readable backend name for result metadata.
-        molecule_name (str): Human-readable molecule name.
-        level_of_theory (str): QM level of theory string.
+        engine: The MM backend engine to use.
+        sys_data: Fully-loaded system data (molecules, forcefield, freq_ref).
+        optimizer_method: Scipy optimizer method (e.g. ``'L-BFGS-B'``).
+        optimizer_kwargs: Extra keyword arguments for ``ScipyOptimizer``.
+        maxiter: Maximum optimizer iterations.
+        backend_name: Human-readable backend name for result metadata.
 
     Returns:
-        BenchmarkResult: Complete result with all metrics.
+        BenchmarkResult with all available metrics.
 
     """
-    from q2mm.models.forcefield import ForceField
-    from q2mm.models.seminario import estimate_force_constants
-    from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
-    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.optimizers.objective import ObjectiveFunction
 
     if optimizer_kwargs is None:
         optimizer_kwargs = {}
 
-    qm_real = np.sort(np.asarray(qm_freqs)[np.asarray(qm_freqs) > REAL_FREQUENCY_THRESHOLD])
+    ff = sys_data.forcefield.copy()
+    molecule_name = sys_data.metadata.get("molecule_name", "unknown")
+    level_of_theory = sys_data.metadata.get("level_of_theory", "unknown")
+
+    # Aggregate QM real frequencies (sorted) across all molecules
+    all_qm_real = np.sort(np.concatenate(sys_data.qm_freqs_per_mol))
+
+    # Aggregate MM frequencies across all molecules for initial RMSD
+    all_mm_real_init: list[float] = []
+    for mol in sys_data.molecules:
+        mm_freqs = engine.frequencies(mol, ff)
+        all_mm_real_init.extend(real_frequencies(mm_freqs).tolist())
+    all_mm_real_init_arr = np.array(sorted(all_mm_real_init))
+
+    n_init = min(len(all_qm_real), len(all_mm_real_init_arr))
+    initial_rmsd = frequency_rmsd(all_qm_real[:n_init], all_mm_real_init_arr[:n_init])
+
+    seminario_params = ff.get_param_vector().copy()
+    param_names = _param_names(ff)
 
     result = BenchmarkResult(
         metadata={
             "backend": backend_name,
             "optimizer": optimizer_method,
             "molecule": molecule_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "functional_form": ff.functional_form.value if ff.functional_form else "unknown",
+            "n_molecules": len(sys_data.molecules),
             "source": "q2mm",
-            "optimizer_kwargs": {k: str(v) for k, v in optimizer_kwargs.items()},
+            "level_of_theory": level_of_theory,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
         qm_reference={
-            "frequencies_cm1": qm_real.tolist(),
+            "frequencies_cm1": all_qm_real.tolist(),
             "level_of_theory": level_of_theory,
         },
     )
 
-    # --- Default FF baseline ---
-    default_ff = ForceField.create_for_molecule(molecule, name=f"{molecule_name} default")
-    default_freqs_all = engine.frequencies(molecule, default_ff)
-    default_real = real_frequencies(default_freqs_all)
-    default_params = default_ff.get_param_vector().tolist()
-    result.default_ff = {
-        "frequencies_cm1": default_real.tolist(),
-        "rmsd": frequency_rmsd(qm_real, default_real),
-        "mae": frequency_mae(qm_real, default_real),
-        "param_values": default_params,
+    # Initial (Seminario) state
+    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
+    initial_score = obj(seminario_params)
+
+    result.seminario = {
+        "rmsd": initial_rmsd,
+        "frequencies_cm1": all_mm_real_init_arr.tolist(),
+        "param_values": seminario_params.tolist(),
+        "param_names": param_names,
+        "score": initial_score,
     }
 
-    # --- Seminario estimation ---
-    seminario_ff = None
-    if qm_hessian is not None:
-        mol_h = molecule.with_hessian(qm_hessian)
-        t0 = time.perf_counter()
-        seminario_ff = estimate_force_constants(mol_h)
-        sem_elapsed = time.perf_counter() - t0
+    # Optimize — dispatch to cycling or scipy
+    if optimizer_method == "cycling":
+        from q2mm.optimizers.cycling import OptimizationLoop
 
-        sem_freqs_all = engine.frequencies(molecule, seminario_ff)
-        sem_real = real_frequencies(sem_freqs_all)
-        result.seminario = {
-            "frequencies_cm1": sem_real.tolist(),
-            "rmsd": frequency_rmsd(qm_real, sem_real),
-            "mae": frequency_mae(qm_real, sem_real),
-            "elapsed_s": sem_elapsed,
-            "param_values": seminario_ff.get_param_vector().tolist(),
+        cycle_maxiter = 200 if maxiter is None else maxiter
+        loop = OptimizationLoop(
+            objective=obj,
+            max_params=optimizer_kwargs.get("max_params", 3),
+            convergence=optimizer_kwargs.get("convergence", 0.01),
+            max_cycles=optimizer_kwargs.get("max_cycles", 10),
+            full_maxiter=optimizer_kwargs.get("full_maxiter", cycle_maxiter),
+            simp_maxiter=optimizer_kwargs.get("simp_maxiter", cycle_maxiter),
+            verbose=False,
+        )
+        t0 = time.perf_counter()
+        loop_result = loop.run()
+        opt_elapsed = time.perf_counter() - t0
+
+        n_eval = loop_result.n_eval
+        converged = loop_result.success
+        opt_initial_score = loop_result.initial_score
+        opt_final_score = loop_result.final_score
+        opt_message = loop_result.message
+        extra_opt_data = {
+            "n_cycles": loop_result.n_cycles,
+            "cycle_scores": loop_result.cycle_scores,
         }
     else:
-        # No Hessian — create a default-based starting point
-        seminario_ff = default_ff.copy()
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-    # --- Optimization ---
-    ff_to_optimize = seminario_ff.copy()
+        opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
+        opt_kwargs.update(optimizer_kwargs)
+        opt = ScipyOptimizer(**opt_kwargs)
 
-    # Build reference data with correct data_idx mapping
-    mm_all = engine.frequencies(molecule, ff_to_optimize)
-    mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > REAL_FREQUENCY_THRESHOLD])
+        t0 = time.perf_counter()
+        opt_result = opt.optimize(obj)
+        opt_elapsed = time.perf_counter() - t0
 
-    ref = ReferenceData()
-    n = min(len(qm_real), len(mm_real_indices))
-    for k in range(n):
-        ref.add_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, molecule_idx=0)
+        n_eval = opt_result.n_evaluations
+        converged = opt_result.success
+        opt_initial_score = opt_result.initial_score
+        opt_final_score = opt_result.final_score
+        opt_message = opt_result.message
+        extra_opt_data = {}
 
-    obj = ObjectiveFunction(ff_to_optimize, engine, [molecule], ref)
+    # Final aggregate frequencies and RMSD
+    all_mm_real_final: list[float] = []
+    for mol in sys_data.molecules:
+        mm_freqs = engine.frequencies(mol, ff)
+        all_mm_real_final.extend(real_frequencies(mm_freqs).tolist())
+    all_mm_real_final_arr = np.array(sorted(all_mm_real_final))
 
-    opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
-    opt_kwargs.update(optimizer_kwargs)
-    opt = ScipyOptimizer(**opt_kwargs)
+    n_final = min(len(all_qm_real), len(all_mm_real_final_arr))
+    final_rmsd = frequency_rmsd(all_qm_real[:n_final], all_mm_real_final_arr[:n_final])
 
-    t0 = time.perf_counter()
-    opt_result = opt.optimize(obj)
-    opt_elapsed = time.perf_counter() - t0
-
-    opt_freqs_all = engine.frequencies(molecule, ff_to_optimize)
-    opt_real = real_frequencies(opt_freqs_all)
-
-    # Collect parameter info
-    param_names = _param_names(ff_to_optimize)
-    param_final = ff_to_optimize.get_param_vector().tolist()
-    param_initial = list(opt_result.initial_params) if opt_result.initial_params is not None else []
+    param_final = ff.get_param_vector().tolist()
 
     result.optimized = {
-        "frequencies_cm1": opt_real.tolist(),
-        "rmsd": frequency_rmsd(qm_real, opt_real),
-        "mae": frequency_mae(qm_real, opt_real),
+        "frequencies_cm1": all_mm_real_final_arr.tolist(),
+        "rmsd": final_rmsd,
+        "mae": frequency_mae(all_qm_real[:n_final], all_mm_real_final_arr[:n_final]),
         "elapsed_s": opt_elapsed,
-        "n_eval": opt_result.n_evaluations,
-        "converged": opt_result.success,
-        "initial_score": opt_result.initial_score,
-        "final_score": opt_result.final_score,
-        "message": opt_result.message,
+        "n_eval": n_eval,
+        "converged": converged,
+        "initial_score": opt_initial_score,
+        "final_score": opt_final_score,
+        "message": opt_message,
         "param_names": param_names,
-        "param_initial": list(param_initial),
+        "param_initial": seminario_params.tolist(),
         "param_final": param_final,
+        **extra_opt_data,
     }
 
-    # --- PES distortion (if normal modes available and engine supports it) ---
-    if normal_modes is not None:
+    # PES distortion (if the system provides normal modes)
+    if sys_data.normal_modes is not None:
         from q2mm.diagnostics.pes_distortion import compute_distortions
 
-        distortion_results, _, dist_elapsed = compute_distortions(molecule, ff_to_optimize, engine, normal_modes)
-
-        all_errs = []
+        distortion_results, _, dist_elapsed = compute_distortions(
+            sys_data.molecules[0],
+            ff,
+            engine,
+            sys_data.normal_modes,
+        )
+        all_errs: list[float] = []
         for m in distortion_results:
             for d in m["displacements"]:
                 all_errs.append(abs(d["pct_err"]))
-
         result.pes_distortion = {
             "modes": distortion_results,
             "median_error_pct": float(np.median(all_errs)) if all_errs else 0.0,
@@ -551,6 +578,5 @@ def run_benchmark(
             "elapsed_s": dist_elapsed,
         }
 
-    result.optimized_ff = ff_to_optimize.copy()
-
+    result.optimized_ff = ff.copy()
     return result
