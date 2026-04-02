@@ -10,7 +10,7 @@ from q2mm.diagnostics.benchmark import (
     frequency_mae,
     frequency_rmsd,
     real_frequencies,
-    run_benchmark,
+    run_combo,
 )
 from q2mm.diagnostics.pes_distortion import compute_distortions, load_normal_modes
 from q2mm.diagnostics.reference_analysis import (
@@ -50,5 +50,5 @@ __all__ = [
     "full_report",
     "load_normal_modes",
     "real_frequencies",
-    "run_benchmark",
+    "run_combo",
 ]

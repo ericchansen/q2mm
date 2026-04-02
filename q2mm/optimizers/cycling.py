@@ -1,6 +1,6 @@
 """Parameter cycling and sensitivity-based selection for Q2MM optimization.
 
-Implements the upstream Q2MM GRAD→SIMP optimization loop, adapted for our
+Implements the upstream Q2MM grad-simp optimization loop, adapted for our
 scipy-based optimizer architecture.  The key insight from Norrby & Liljefors
 (1998) and Quinn et al. (2022) is that the Nelder-Mead simplex converges
 well on ≤40 parameters but fails on larger sets; the upstream code therefore
@@ -77,9 +77,9 @@ class LoopResult:
         success (bool): ``True`` if converged before hitting *max_cycles*.
         initial_score (float): Objective value before any optimisation.
         final_score (float): Objective value after the last cycle.
-        n_cycles (int): Number of GRAD→SIMP cycles completed.
+        n_cycles (int): Number of grad-simp cycles completed.
         n_eval (int): Total objective function evaluations across all
-            cycles (GRAD + sensitivity + SIMP).
+            cycles (grad + sensitivity + simp).
         cycle_scores (list[float]): Objective value at the end of each
             cycle.
         selected_indices (list[list[int]]): Parameter indices selected
@@ -357,12 +357,12 @@ def compute_sensitivity(
 
 
 # ---------------------------------------------------------------------------
-# OptimizationLoop — GRAD→SIMP cycling
+# OptimizationLoop — grad-simp cycling
 # ---------------------------------------------------------------------------
 
 
 class OptimizationLoop:
-    """GRAD→SIMP cycling loop inspired by the upstream Q2MM workflow.
+    """grad-simp cycling loop inspired by the upstream Q2MM workflow.
 
     Each cycle:
       1. **Full-space pass** — run ``full_method`` (default L-BFGS-B) on
@@ -379,7 +379,7 @@ class OptimizationLoop:
             default: 3).
         convergence (float): Stop when ``(score_before - score_after) /
             score_before < convergence``.
-        max_cycles (int): Maximum number of GRAD→SIMP cycles.
+        max_cycles (int): Maximum number of grad-simp cycles.
         full_method (str): Scipy method for the full-space pass.
         simp_method (str): Scipy method for the subspace pass.
         full_maxiter (int): Max iterations for the full-space pass.
@@ -419,7 +419,7 @@ class OptimizationLoop:
                 minimise.
             max_params (int): Number of parameters per simplex pass.
             convergence (float): Fractional improvement threshold.
-            max_cycles (int): Maximum number of GRAD→SIMP cycles.
+            max_cycles (int): Maximum number of grad-simp cycles.
             full_method (str): Scipy method for the full-space pass.
             simp_method (str): Scipy method for the subspace pass.
             full_maxiter (int): Max iterations for the full-space pass.
@@ -446,7 +446,7 @@ class OptimizationLoop:
         self.verbose = verbose
 
     def run(self) -> LoopResult:
-        """Execute the GRAD→SIMP cycling loop.
+        """Execute the grad-simp cycling loop.
 
         Returns:
             LoopResult: Contains convergence status, per-cycle scores,
