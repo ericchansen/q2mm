@@ -29,7 +29,10 @@ optimizer.
     **RMSD** = root-mean-square deviation of optimized MM frequencies from QM
     reference (lower is better).  **Score** = normalized objective function
     (lower is better; 0.000 = perfect match).  **Evals/s** = energy
-    evaluations per second (higher is better).
+    evaluations per second (higher is better).  Saved benchmark JSONs keep the
+    full sorted MM real-mode list above the 50 cm⁻¹ cutoff, while RMSD and MAE
+    compare the first ``min(len(qm), len(mm))`` sorted modes.  Failed runs can
+    therefore store more optimized MM modes than the 3N-6 QM reference set.
 
 ### Nelder-Mead
 
@@ -46,10 +49,10 @@ optimizer.
 
 | Backend | Form | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
 |---------|------|-------------------:|----------:|------:|------:|-----:|--------:|
-| **JAX-MD** | harmonic | **0.0** | **0.0** | 0.0000 | 2514 | 6.3 s | 398.2 |
-| **JAX** | harmonic | **0.0** | **0.0** | 0.0000 | 2541 | 6.3 s | 401.1 |
+| **JAX-MD** | harmonic | **< 0.1** | **< 0.1** | 0.0000 | 2514 | 6.3 s | 398.2 |
+| **JAX** | harmonic | **< 0.1** | **< 0.1** | 0.0000 | 2541 | 6.3 s | 401.1 |
 | **JAX** | MM3 | 4.0 | 1.9 | 0.0001 | 12034 | 30.6 s | 393.6 |
-| **OpenMM** | harmonic | **0.0** | **0.0** | 0.0000 | 4321 | 43.9 s | 98.4 |
+| **OpenMM** | harmonic | **< 0.1** | **< 0.1** | 0.0000 | 4321 | 43.9 s | 98.4 |
 | **OpenMM** | MM3 | 575.7 | 311.9 | 0.0003 | 13585 | 137.6 s | 98.7 |
 | **Tinker** | MM3 | 555.7 | 291.2 | 0.0002 | 4843 | 1172.5 s | 4.1 |
 
@@ -78,7 +81,7 @@ optimizer.
 ### Key Observations
 
 - **Harmonic + Powell is the best overall combination** — JAX, JAX-MD, and
-  OpenMM all reach RMSD = 0.0 on the harmonic form. JAX and JAX-MD do it in
+  OpenMM all land below 0.1 cm⁻¹ RMSD on the harmonic form. JAX and JAX-MD do it in
   6.3 s; OpenMM needs 43.9 s.
 - **MM3 is harder to optimize than harmonic** — the best MM3 run is JAX +
   Powell (RMSD 4.0), followed by OpenMM + L-BFGS-B (30.4) and Tinker +
@@ -146,16 +149,16 @@ All three engines agree to machine precision.
 How well do the optimized MM frequencies match the QM reference?  This is
 the primary accuracy metric — the whole point of Q2MM.
 
-### Best Harmonic Result: Powell on JAX, JAX-MD, and OpenMM (RMSD = 0.0)
+### Best Harmonic Result: Powell on JAX, JAX-MD, and OpenMM (RMSD < 0.1)
 
-Powell on the harmonic form reaches an exact frequency match on all three
-in-process backends: JAX, JAX-MD, and OpenMM. This is expected for a fully
-determined system (8 free parameters, 9 frequency targets) once the
-optimizer finds the right basin.
+Powell on the harmonic form reaches a near-exact frequency match on all three
+in-process backends: JAX, JAX-MD, and OpenMM all finish below 0.1 cm⁻¹ RMSD.
+This is expected for a fully determined system (8 free parameters, 9 frequency
+targets) once the optimizer finds the right basin.
 
 Starting from Seminario estimates (RMSD = 156.9 cm⁻¹), the optimizer
 corrects all force constants to reproduce B3LYP/6-31+G(d) harmonic
-frequencies within floating-point precision.
+frequencies to within a few hundredths of a wavenumber.
 
 ### Best MM3 Result: JAX + Powell (RMSD = 4.0)
 
@@ -222,7 +225,7 @@ Tinker MM3 Powell        ██████████████████�
    land around 390–400 eval/s on the GPU backends.
 2. **Use OpenMM over Tinker for MM3** — OpenMM is ~98 eval/s on the
    derivative-free MM3 runs, versus ~4 eval/s for Tinker.
-3. **Use Powell for harmonic CH₃F** — it reaches RMSD = 0.0 on JAX, JAX-MD,
+3. **Use Powell for harmonic CH₃F** — it reaches RMSD < 0.1 on JAX, JAX-MD,
    and OpenMM.
 4. **Use JAX + Powell or OpenMM + L-BFGS-B for MM3** — those are the
    strongest MM3 results in the 24-combo matrix.
