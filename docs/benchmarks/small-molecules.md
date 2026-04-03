@@ -1,8 +1,9 @@
 # Small Molecules
 
 Benchmarks on CH₃F (5 atoms, 8 parameters) optimized against B3LYP/6-31+G(d)
-QM frequencies.  All methods start from identical Seminario-estimated
-parameters.  Results cover speed, accuracy, and cross-engine agreement.
+QM frequencies. The latest full supported matrix covers **24 combos**:
+JAX and OpenMM on harmonic + MM3, JAX-MD on harmonic only, and Tinker on
+MM3 only. Results cover speed, accuracy, and cross-engine agreement.
 
 !!! info "Data"
     **Inputs:**
@@ -10,15 +11,19 @@ parameters.  Results cover speed, accuracy, and cross-engine agreement.
     (optimized geometry, Hessian, frequencies, normal modes)
 
     **Outputs:**
-    [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results) ·
-    [Optimized force fields (.fld, .prm, .xml)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
+    [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/results) ·
+    [Optimized force fields](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/forcefields) ·
+    [Leaderboard](https://github.com/ericchansen/q2mm/blob/master/benchmark_results/ch3f/leaderboard.txt)
 
 ---
 
-## Backend Leaderboard by Optimizer
+## Full Supported Matrix by Optimizer
 
-All runs start from RMSD = 156.9 cm⁻¹ (score = 0.221).  Tables sorted by
-wall-clock time (fastest first).
+JAX, JAX-MD, and OpenMM all start from Seminario RMSD = 156.9 cm⁻¹
+(score ≈ 0.221). Tinker starts from 157.2 cm⁻¹ because its MM3 baseline is
+evaluated through a separate backend. Tables include every supported
+``(backend, form)`` combo and are sorted by wall-clock time within each
+optimizer.
 
 !!! tip "Reading the tables"
     **RMSD** = root-mean-square deviation of optimized MM frequencies from QM
@@ -28,49 +33,64 @@ wall-clock time (fastest first).
 
 ### Nelder-Mead
 
-| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
-|---------|-------------------:|----------:|------:|------:|-----:|--------:|
-| **JAX** | 1037.9 | 888.8 | 0.000 | 1193 | 0.8 s | 1491 |
-| **JAX-MD** | 1037.9 | 888.8 | 0.000 | 1205 | 1.2 s | 1004 |
-| **OpenMM** | 4.0 | 1.9 | 0.000 | 3111 | 85.1 s | 37 |
-| **Tinker** | 556.5 | 292.5 | 0.000 | 680 | 167.7 s | 4.1 |
+| Backend | Form | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | harmonic | 1037.9 | 888.8 | 0.0000 | 1202 | 3.0 s | 394.9 |
+| **JAX-MD** | harmonic | 1037.9 | 888.8 | 0.0000 | 1204 | 3.1 s | 385.7 |
+| **OpenMM** | MM3 | 564.2 | 299.9 | 0.0001 | 903 | 9.5 s | 95.5 |
+| **OpenMM** | harmonic | 1040.5 | 892.1 | 0.0000 | 988 | 9.8 s | 100.4 |
+| **JAX** | MM3 | 540.1 | 271.3 | 0.0001 | 14417 | 36.5 s | 394.7 |
+| **Tinker** | MM3 | 563.3 | 299.5 | 0.0000 | 685 | 168.6 s | 4.1 |
 
 ### Powell
 
-| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
-|---------|-------------------:|----------:|------:|------:|-----:|--------:|
-| **JAX** | **0.0** | **0.0** | 0.000 | 2565 | 1.3 s | 1973 |
-| **JAX-MD** | **0.0** | **0.0** | 0.000 | 2612 | 1.8 s | 1451 |
-| **OpenMM** | 4.0 | 1.9 | 0.000 | 13301 | 362.7 s | 37 |
-| **Tinker** | 553.8 | 289.4 | 0.000 | 11314 | 2972.7 s | 3.8 |
+| Backend | Form | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX-MD** | harmonic | **0.0** | **0.0** | 0.0000 | 2514 | 6.3 s | 398.2 |
+| **JAX** | harmonic | **0.0** | **0.0** | 0.0000 | 2541 | 6.3 s | 401.1 |
+| **JAX** | MM3 | 4.0 | 1.9 | 0.0001 | 12034 | 30.6 s | 393.6 |
+| **OpenMM** | harmonic | **0.0** | **0.0** | 0.0000 | 4321 | 43.9 s | 98.4 |
+| **OpenMM** | MM3 | 575.7 | 311.9 | 0.0003 | 13585 | 137.6 s | 98.7 |
+| **Tinker** | MM3 | 555.7 | 291.2 | 0.0002 | 4843 | 1172.5 s | 4.1 |
 
 ### L-BFGS-B
 
-| Backend | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
-|---------|-------------------:|----------:|------:|------:|-----:|--------:|
-| **JAX** | 813.4 | 610.1 | 0.077 | 406 | 0.6 s | 677 |
-| **JAX-MD** | 813.4 | 610.1 | 0.077 | 370 | 1.0 s | 370 |
-| **OpenMM** | 114.1 | 93.6 | 0.117 | 424 | 11.6 s | 37 |
-| **Tinker** | 114.0 | 93.4 | 0.117 | 478 | 122.7 s | 3.9 |
+| Backend | Form | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | MM3 | 586.7 | 321.7 | 0.0007 | 77 | 3.3 s | 23.2 |
+| **JAX-MD** | harmonic | 538.9 | 269.3 | 0.0001 | 126 | 5.4 s | 23.1 |
+| **JAX** | harmonic | 540.2 | 271.4 | 0.0000 | 151 | 6.4 s | 23.6 |
+| **OpenMM** | harmonic | 816.8 | 616.7 | 0.0873 | 80 | 13.7 s | 5.8 |
+| **OpenMM** | MM3 | 30.4 | 25.7 | 0.0083 | 126 | 21.9 s | 5.7 |
+| **Tinker** | MM3 | 114.1 | 93.4 | 0.1172 | 424 | 104.7 s | 4.1 |
+
+### grad-simp
+
+| Backend | Form | Final RMSD (cm⁻¹) | Final MAE | Score | Evals | Time | Evals/s |
+|---------|------|-------------------:|----------:|------:|------:|-----:|--------:|
+| **JAX** | harmonic | 811.8 | 579.1 | 0.0008 | 3948 | 9.9 s | 397.6 |
+| **JAX-MD** | harmonic | 811.8 | 579.1 | 0.0008 | 4080 | 10.5 s | 390.2 |
+| **JAX** | MM3 | 834.5 | 613.2 | 0.0024 | 4335 | 11.0 s | 393.4 |
+| **OpenMM** | harmonic | 812.4 | 582.0 | 0.0014 | 2245 | 22.6 s | 99.3 |
+| **OpenMM** | MM3 | 580.8 | 317.3 | 0.0004 | 2692 | 27.5 s | 97.9 |
+| **Tinker** | MM3 | 833.4 | 612.3 | 0.0025 | 3271 | 779.6 s | 4.2 |
 
 ### Key Observations
 
-- **Powell and Nelder-Mead reach perfect convergence** (RMSD → 0) on JAX
-  and JAX-MD.  These derivative-free methods are robust for small parameter
-  spaces.
-- **L-BFGS-B underperforms** with finite-difference gradients — it converges
-  to a suboptimal point on all backends.  Setting ``jac="auto"`` on the
-  optimizer enables analytical gradients via ``energy_and_param_grad()`` on
-  engines that support them (JAX, JAX-MD, OpenMM), which should improve
-  L-BFGS-B convergence for energy-based objectives.  For the QM frequency
-  benchmark on this page, however, ``jac="auto"`` currently has no effect
-  because frequency analytical gradients are not yet implemented.
-- **JAX backends are 5–10× faster** than OpenMM per evaluation.  JIT-compiled
-  pure JAX eliminates Python ↔ C++ marshalling overhead.
-- **JAX-MD is ~30% slower than JAX** due to neighbor list management and
-  periodic boundary bookkeeping, but both are far faster than OpenMM/Tinker.
-- **Tinker is 100–500× slower** than JAX per evaluation.  Powell on Tinker
-  takes ~50 min (11k evals) vs 1.3 s on JAX for the same molecule.
+- **Harmonic + Powell is the best overall combination** — JAX, JAX-MD, and
+  OpenMM all reach RMSD = 0.0 on the harmonic form. JAX and JAX-MD do it in
+  6.3 s; OpenMM needs 43.9 s.
+- **MM3 is harder to optimize than harmonic** — the best MM3 run is JAX +
+  Powell (RMSD 4.0), followed by OpenMM + L-BFGS-B (30.4) and Tinker +
+  L-BFGS-B (114.1).
+- **grad-simp is not a win on CH₃F** — JAX/JAX-MD hit the 10-cycle cap, and
+  OpenMM/Tinker do not beat the best single-shot optimizers on this small
+  8-parameter problem.
+- **JAX backends remain the fastest in-process engines** — derivative-free
+  runs stay near 390–400 eval/s on JAX/JAX-MD, versus ~98 eval/s on OpenMM
+  and ~4 eval/s on Tinker.
+- **Tinker still provides a useful independent MM3 reference**, but its cost
+  is much higher: 104.7 s for the best L-BFGS-B run and 1172.5 s for Powell.
 
 ---
 
@@ -126,27 +146,24 @@ All three engines agree to machine precision.
 How well do the optimized MM frequencies match the QM reference?  This is
 the primary accuracy metric — the whole point of Q2MM.
 
-### Best Result: JAX + Powell (Score = 0.000)
+### Best Harmonic Result: Powell on JAX, JAX-MD, and OpenMM (RMSD = 0.0)
 
-Powell on both JAX backends converges to a perfect score (0.000), meaning
-all optimized MM frequencies exactly match the QM reference.  This is
-expected for a fully determined system (8 free parameters, 9 frequency
-targets).
+Powell on the harmonic form reaches an exact frequency match on all three
+in-process backends: JAX, JAX-MD, and OpenMM. This is expected for a fully
+determined system (8 free parameters, 9 frequency targets) once the
+optimizer finds the right basin.
 
 Starting from Seminario estimates (RMSD = 156.9 cm⁻¹), the optimizer
 corrects all force constants to reproduce B3LYP/6-31+G(d) harmonic
 frequencies within floating-point precision.
 
-### Worst Result: L-BFGS-B with Finite Differences (Score = 0.077)
+### Best MM3 Result: JAX + Powell (RMSD = 4.0)
 
-L-BFGS-B converges to a suboptimal local minimum on all backends.  With
-finite-difference gradients (eps=1e-3), it cannot navigate the shallow
-objective landscape — particularly for coupled bending/stretching modes.
-Setting ``jac="auto"`` on ``ScipyOptimizer`` enables analytical gradients
-via ``energy_and_param_grad()`` on engines that support them (JAX, JAX-MD,
-OpenMM), which should improve convergence for energy-based evaluators.
-Frequency-based objectives still require finite differences while
-differentiation through the Hessian eigendecomposition is in progress.
+The MM3 landscape is noticeably rougher than the harmonic one. JAX + Powell
+is the closest MM3 fit in this matrix (RMSD 4.0), OpenMM + L-BFGS-B is the
+strongest OpenMM MM3 run (30.4), and Tinker + L-BFGS-B is the strongest
+Tinker MM3 run (114.1). On this system, optimizer choice matters more than
+backend choice once the force field is constrained to MM3.
 
 ---
 
@@ -190,25 +207,27 @@ optimization loop.
 
 ## Bottleneck Analysis
 
-For a typical small-molecule optimization workflow:
+For the latest full supported CH₃F matrix:
 
 ```
 QM Hessian (one-time)    ████████████████  7.8 s
 Seminario (one-time)     ▏                 0.001 s
-Optimization loop        ████████████████████████████████████  0.8–2 s (JAX)
-  └─ per evaluation      ▏                 0.0005 s (JAX energy call)
+Optimization loop        ██████████        3.0–43.9 s (JAX/OpenMM harmonic Powell)
+Tinker MM3 Powell        ████████████████████████████████████  1172.5 s
 ```
 
-**The energy evaluation is the bottleneck.**  Strategies to speed up:
+**The optimization loop is still the bottleneck.** Strategies to speed up:
 
-1. **Use JAX or JAX-MD** — ~1000–2000 eval/s, 5–10× faster than OpenMM
-2. **Use OpenMM over Tinker** — ~190 eval/s vs ~1.3 eval/s
-3. **Reduce evaluations** — Nelder-Mead converges in ~400 evaluations
-4. **Fewer molecules/geometries** — each adds one energy call per evaluation
-5. **Analytical gradients** — JAX and JAX-MD support ``energy_and_param_grad()``
-   via ``jax.grad``.  Use ``ScipyOptimizer(jac="auto")`` to auto-enable
-   analytical gradients when the engine supports them, eliminating the 2N+1
-   finite-difference overhead for energy-based evaluators
+1. **Use JAX or JAX-MD for fastest turnaround** — derivative-free CH₃F runs
+   land around 390–400 eval/s on the GPU backends.
+2. **Use OpenMM over Tinker for MM3** — OpenMM is ~98 eval/s on the
+   derivative-free MM3 runs, versus ~4 eval/s for Tinker.
+3. **Use Powell for harmonic CH₃F** — it reaches RMSD = 0.0 on JAX, JAX-MD,
+   and OpenMM.
+4. **Use JAX + Powell or OpenMM + L-BFGS-B for MM3** — those are the
+   strongest MM3 results in the 24-combo matrix.
+5. **Reserve grad-simp for larger systems** — it does not beat the best
+   single-shot optimizers on CH₃F.
 
 ---
 

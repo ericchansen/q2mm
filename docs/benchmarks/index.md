@@ -8,22 +8,26 @@ RAM, Python 3.12.
 
 ## CH₃F (5 atoms, 8 parameters)
 
-Best result per MM backend, sorted by wall-clock time.
+Best result per MM backend from the latest full supported matrix.
 QM reference: B3LYP/6-31+G(d).
 See the [small-molecules](small-molecules.md) page for the full
-backend × optimizer matrix.
+backend × form × optimizer matrix.
 
 **Data:**
 [QM inputs](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference) ·
-[Results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results) ·
-[Force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
+[Results](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/results) ·
+[Force fields](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/forcefields) ·
+[Leaderboard](https://github.com/ericchansen/q2mm/blob/master/benchmark_results/ch3f/leaderboard.txt)
 
-| Backend | Optimizer | Score Δ | Time |
-|---------|-----------|---------|-----:|
-| **JAX** | Nelder-Mead | 0.221 → 0.000 (100%) | 0.8 s |
-| **JAX-MD** | Nelder-Mead | 0.221 → 0.000 (100%) | 1.2 s |
-| **OpenMM** | Nelder-Mead | 0.221 → 0.000 (100%) | 85.1 s |
-| **Tinker** | Nelder-Mead | 0.223 → 0.000 (100%) | 167.7 s |
+| Backend | Best form | Optimizer | RMSD₀ → RMSD | Time |
+|---------|-----------|-----------|--------------|-----:|
+| **JAX** | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
+| **JAX-MD** | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
+| **OpenMM** | harmonic | Powell | 156.9 → 0.0 | 43.9 s |
+| **Tinker** | mm3 | L-BFGS-B | 157.2 → 114.1 | 104.7 s |
+
+Supported combos: **24** total — JAX and OpenMM each run harmonic + MM3,
+JAX-MD runs harmonic only, and Tinker runs MM3 only.
 
 ---
 
