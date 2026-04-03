@@ -167,7 +167,7 @@ CH₃F has no 1-4 pairs, so all three harmonic engines agree exactly.
 
 | Use Case | Recommended Engine | Why |
 |----------|-------------------|-----|
-| **Fast optimization** | JAX or JAX-MD | 5–10× faster than OpenMM, analytical gradients |
+| **Fast optimization** | JAX or JAX-MD | Fastest harmonic / analytical-gradient options in the current benchmark set; see [benchmarks](../benchmarks/index.md) for workload-specific comparisons |
 | **MM3 force fields** | OpenMM or Tinker | Only engines supporting MM3 |
 | **Periodic systems** | JAX-MD | Only engine with periodic boundary support |
 | **Torsion optimization** | OpenMM, JAX, or JAX-MD | Tinker lacks torsion support |
