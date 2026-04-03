@@ -1,0 +1,5302 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/api/">
+      
+      
+        <link rel="prev" href="../optimization-guide/">
+      
+      
+        <link rel="next" href="../benchmarks/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>API Overview - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#api-overview" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              API Overview
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../platform-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Overview
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#models-q2mmmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models (q2mm.models)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Models (q2mm.models)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#forcefield" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ForceField
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mmmolecule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Q2MMMolecule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#estimate_force_constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        estimate_force_constants()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-field-io-q2mmmodelsff_io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force Field I/O (q2mm.models.ff_io)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Force Field I/O (q2mm.models.ff_io)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openmm-xml-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenMM XML Export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxengine-differentiable-mm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JaxEngine — Differentiable MM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxmdengine-full-featured-differentiable-mm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JaxMDEngine — Full-featured Differentiable MM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optimizers-q2mmoptimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimizers (q2mm.optimizers)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optimizers (q2mm.optimizers)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#referencedata-referencevalue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReferenceData / ReferenceValue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#objectivefunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ObjectiveFunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scipyoptimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ScipyOptimizer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimizationresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OptimizationResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimizationloop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OptimizationLoop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loopresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LoopResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subspaceobjective" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SubspaceObjective
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compute_sensitivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_sensitivity()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backends-q2mmbackends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backends (q2mm.backends)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backends (q2mm.backends)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mmengine-abstract-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MMEngine (abstract base)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qmengine-abstract-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QMEngine (abstract base)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsers-q2mmparsers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parsers (q2mm.parsers)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#software-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Software Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Software Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#force-field-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force Field Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MM Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QM Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seminario-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seminario Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/published-ff-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Published FF Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11" >
+        
+          
+          <label class="md-nav__link" for="__nav_11" id="__nav_11_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1" id="__nav_11_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_11_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_1" id="__nav_11_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_11_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_1_2" id="__nav_11_1_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_11_1_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/mm/batched/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    batched
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/backends/qm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_1_3" id="__nav_11_1_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_11_1_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    qm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/qm/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/diagnostics/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    diagnostics
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_3" id="__nav_11_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_11_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    diagnostics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/benchmark/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmark
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/pes_distortion/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pes_distortion
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/reference_analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/diagnostics/tables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_6" id="__nav_11_1_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_11_1_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/ff_io/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ff_io
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_7" id="__nav_11_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_11_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/defaults/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    defaults
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_7_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/optimizers/evaluators/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluators
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_7_3" id="__nav_11_1_7_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_11_1_7_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_7_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    evaluators
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/evaluators/eigenmatrix/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    eigenmatrix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/evaluators/energy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    energy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/evaluators/frequency/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    frequency
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/evaluators/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/evaluators/hessian_element/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian_element
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/objective/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objective
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/optimizers/scoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_11_1_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../reference/q2mm/parsers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parsers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_11_1_8" id="__nav_11_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_11_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_11_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    parsers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/amber_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/charmm_cmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    charmm_cmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/datum/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    datum
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/param/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    param
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/reference_yaml/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference_yaml
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/q2mm/parsers/tinker_ff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker_ff
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#models-q2mmmodels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models (q2mm.models)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Models (q2mm.models)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#forcefield" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ForceField
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mmmolecule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Q2MMMolecule
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#estimate_force_constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        estimate_force_constants()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#force-field-io-q2mmmodelsff_io" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force Field I/O (q2mm.models.ff_io)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Force Field I/O (q2mm.models.ff_io)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#openmm-xml-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenMM XML Export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxengine-differentiable-mm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JaxEngine — Differentiable MM
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#jaxmdengine-full-featured-differentiable-mm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JaxMDEngine — Full-featured Differentiable MM
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optimizers-q2mmoptimizers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimizers (q2mm.optimizers)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Optimizers (q2mm.optimizers)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#referencedata-referencevalue" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReferenceData / ReferenceValue
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#objectivefunction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ObjectiveFunction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scipyoptimizer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ScipyOptimizer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-methods" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optimization Methods
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimizationresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OptimizationResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimizationloop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OptimizationLoop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#loopresult" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LoopResult
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subspaceobjective" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SubspaceObjective
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compute_sensitivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_sensitivity()
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backends-q2mmbackends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backends (q2mm.backends)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backends (q2mm.backends)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mmengine-abstract-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MMEngine (abstract base)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qmengine-abstract-base" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QMEngine (abstract base)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsers-q2mmparsers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parsers (q2mm.parsers)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#software-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Software Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Software Compatibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#force-field-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force Field Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MM Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#qm-backends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QM Backends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#seminario-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Seminario Method
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="api-overview">API Overview<a class="headerlink" href="#api-overview" title="Permanent link">&para;</a></h1>
+<p>This page documents the public API of Q2MM — the key classes, functions, and
+modules you'll use to build force field optimization workflows.</p>
+<hr />
+<h2 id="models-q2mmmodels">Models (<code>q2mm.models</code>)<a class="headerlink" href="#models-q2mmmodels" title="Permanent link">&para;</a></h2>
+<p>Core data structures for force fields and molecules.</p>
+<h3 id="forcefield"><code>ForceField</code><a class="headerlink" href="#forcefield" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/models/forcefield.py">source</a></p>
+<p>Central data structure holding all force field parameters.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.models.forcefield</span><span class="w"> </span><span class="kn">import</span> <span class="n">ForceField</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="n">ff</span> <span class="o">=</span> <span class="n">ForceField</span><span class="p">(</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">bonds</span><span class="o">=</span><span class="p">[</span><span class="n">BondParam</span><span class="p">(</span><span class="o">...</span><span class="p">)],</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">angles</span><span class="o">=</span><span class="p">[</span><span class="n">AngleParam</span><span class="p">(</span><span class="o">...</span><span class="p">)],</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">torsions</span><span class="o">=</span><span class="p">[</span><span class="n">TorsionParam</span><span class="p">(</span><span class="o">...</span><span class="p">)],</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">vdws</span><span class="o">=</span><span class="p">[</span><span class="n">VdwParam</span><span class="p">(</span><span class="o">...</span><span class="p">)],</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
+</code></pre></div>
+<p><strong>Attributes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bonds</code></td>
+<td><code>list[BondParam]</code></td>
+<td>Bond stretch parameters</td>
+</tr>
+<tr>
+<td><code>angles</code></td>
+<td><code>list[AngleParam]</code></td>
+<td>Angle bend parameters</td>
+</tr>
+<tr>
+<td><code>torsions</code></td>
+<td><code>list[TorsionParam]</code></td>
+<td>Torsion (dihedral) parameters</td>
+</tr>
+<tr>
+<td><code>vdws</code></td>
+<td><code>list[VdwParam]</code></td>
+<td>Van der Waals parameters</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Key methods:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">vec</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">get_param_vector</span><span class="p">()</span>      <span class="c1"># flat array of all tunable parameters</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">ff</span><span class="o">.</span><span class="n">set_param_vector</span><span class="p">(</span><span class="n">new_vec</span><span class="p">)</span>     <span class="c1"># update parameters from flat array</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">bounds</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">get_bounds</span><span class="p">()</span>         <span class="c1"># (lower, upper) bounds for each parameter</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">n</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">n_params</span>                  <span class="c1"># total number of tunable parameters</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">ff2</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>                  <span class="c1"># deep copy</span>
+</code></pre></div>
+<p><strong>Factory methods:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">ff</span> <span class="o">=</span> <span class="n">ForceField</span><span class="o">.</span><span class="n">from_mm3_fld</span><span class="p">(</span><span class="s2">&quot;mol.fld&quot;</span><span class="p">)</span>      <span class="c1"># load from MM3 .fld file</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">ff</span> <span class="o">=</span> <span class="n">ForceField</span><span class="o">.</span><span class="n">from_tinker_prm</span><span class="p">(</span><span class="s2">&quot;mol.prm&quot;</span><span class="p">)</span>   <span class="c1"># load from Tinker .prm file</span>
+</code></pre></div>
+<p><strong>Export methods:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">ff</span><span class="o">.</span><span class="n">to_mm3_fld</span><span class="p">(</span><span class="s2">&quot;optimized.fld&quot;</span><span class="p">)</span>               <span class="c1"># export to MM3 .fld</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">ff</span><span class="o">.</span><span class="n">to_tinker_prm</span><span class="p">(</span><span class="s2">&quot;optimized.prm&quot;</span><span class="p">)</span>            <span class="c1"># export to Tinker .prm</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">ff</span><span class="o">.</span><span class="n">to_openmm_xml</span><span class="p">(</span><span class="s2">&quot;forcefield.xml&quot;</span><span class="p">)</span>            <span class="c1"># export to OpenMM XML</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">ff</span><span class="o">.</span><span class="n">to_openmm_xml</span><span class="p">(</span><span class="s2">&quot;forcefield.xml&quot;</span><span class="p">,</span> <span class="n">mol</span><span class="p">)</span>       <span class="c1"># with AtomTypes/Residues</span>
+</code></pre></div>
+<hr />
+<h3 id="q2mmmolecule"><code>Q2MMMolecule</code><a class="headerlink" href="#q2mmmolecule" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/models/molecule.py">source</a></p>
+<p>Molecular structure with coordinates, optional Hessian, and auto-detected
+bonds/angles. Bonds are inferred from covalent radii — see the
+<a href="../tutorial/#step-2-build-a-q2mmmolecule">tutorial</a> for details on
+<code>bond_tolerance</code> and when to increase it for transition states.</p>
+<p><strong>Constructors:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Input</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Q2MMMolecule(...)</code></td>
+<td>Raw symbols, geometry arrays</td>
+<td>Full control, any data source</td>
+</tr>
+<tr>
+<td><code>Q2MMMolecule.from_xyz(path)</code></td>
+<td>XYZ file</td>
+<td>Simplest option</td>
+</tr>
+<tr>
+<td><code>Q2MMMolecule.from_structure(s)</code></td>
+<td>Legacy <code>Structure</code> (from Gaussian, MacroModel)</td>
+<td>Preserves atom types and bond tables</td>
+</tr>
+<tr>
+<td><code>Q2MMMolecule.from_qcel(mol)</code></td>
+<td>QCElemental <code>Molecule</code></td>
+<td>For MolSSI ecosystem workflows</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.models.molecule</span><span class="w"> </span><span class="kn">import</span> <span class="n">Q2MMMolecule</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># From XYZ file (most common)</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">mol</span> <span class="o">=</span> <span class="n">Q2MMMolecule</span><span class="o">.</span><span class="n">from_xyz</span><span class="p">(</span><span class="s2">&quot;ts.xyz&quot;</span><span class="p">,</span> <span class="n">charge</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span> <span class="n">bond_tolerance</span><span class="o">=</span><span class="mf">1.4</span><span class="p">)</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="c1"># From raw arrays</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="n">mol</span> <span class="o">=</span> <span class="n">Q2MMMolecule</span><span class="p">(</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">symbols</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;O&quot;</span><span class="p">,</span> <span class="s2">&quot;H&quot;</span><span class="p">,</span> <span class="s2">&quot;H&quot;</span><span class="p">],</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>    <span class="n">geometry</span><span class="o">=</span><span class="p">[[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span> <span class="o">...</span><span class="p">],</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>    <span class="n">hessian</span><span class="o">=</span><span class="n">hessian_matrix</span><span class="p">,</span>       <span class="c1"># optional, ndarray</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>    <span class="n">atom_types</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;1&quot;</span><span class="p">,</span> <span class="s2">&quot;5&quot;</span><span class="p">,</span> <span class="s2">&quot;5&quot;</span><span class="p">],</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>    <span class="n">bond_tolerance</span><span class="o">=</span><span class="mf">1.3</span><span class="p">,</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="p">)</span>
+<a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>
+<a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="c1"># From a Gaussian log (via parser)</span>
+<a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.parsers.gaussian</span><span class="w"> </span><span class="kn">import</span> <span class="n">GaussLog</span>
+<a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="n">log</span> <span class="o">=</span> <span class="n">GaussLog</span><span class="p">(</span><span class="s2">&quot;opt-freq.log&quot;</span><span class="p">,</span> <span class="n">au_hessian</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="n">mol</span> <span class="o">=</span> <span class="n">Q2MMMolecule</span><span class="o">.</span><span class="n">from_structure</span><span class="p">(</span><span class="n">log</span><span class="o">.</span><span class="n">structures</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">charge</span><span class="o">=-</span><span class="mi">1</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Parameters (raw constructor):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>symbols</code></td>
+<td><code>list[str]</code></td>
+<td>Element symbols (e.g. <code>["O", "H", "H"]</code>)</td>
+</tr>
+<tr>
+<td><code>geometry</code></td>
+<td><code>array-like</code></td>
+<td>Cartesian coordinates (Å), shape <code>(N, 3)</code></td>
+</tr>
+<tr>
+<td><code>hessian</code></td>
+<td><code>ndarray</code>, optional</td>
+<td>Hessian matrix, shape <code>(3N, 3N)</code></td>
+</tr>
+<tr>
+<td><code>atom_types</code></td>
+<td><code>list[str]</code></td>
+<td>MM atom type labels (default: element symbols)</td>
+</tr>
+<tr>
+<td><code>bond_tolerance</code></td>
+<td><code>float</code></td>
+<td>Multiplier on covalent radii sum for bond detection (default: 1.3; use 1.4+ for TS)</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Bonds and angles are auto-detected from atomic coordinates using covalent
+radii — you don't need to specify them manually. Formats with explicit
+bond tables (MOL2, MacroModel <code>.mmo</code>) preserve connectivity via
+<code>from_structure()</code>.</p>
+</div>
+<hr />
+<h3 id="estimate_force_constants"><code>estimate_force_constants()</code><a class="headerlink" href="#estimate_force_constants" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/models/seminario.py">source</a></p>
+<p>Extract bond and angle force constants from a QM Hessian using the
+<a href="https://doi.org/10.1002/(SICI)1096-987X(199604)17:5/6&lt;616::AID-JCC5&gt;3.0.CO;2-X">Seminario method</a>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.models.seminario</span><span class="w"> </span><span class="kn">import</span> <span class="n">estimate_force_constants</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="n">ff</span> <span class="o">=</span> <span class="n">estimate_force_constants</span><span class="p">(</span><span class="n">molecules</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Input:</strong> <code>Q2MMMolecule</code> or <code>list[Q2MMMolecule]</code> — each molecule must have a Hessian.</p>
+<p><strong>Output:</strong> <code>ForceField</code> with estimated bond/angle force constants and
+equilibrium values.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The Seminario method is pure linear algebra (eigenvalue decomposition of
+3×3 Hessian sub-blocks). It runs in &lt; 1 ms for small molecules.</p>
+</div>
+<hr />
+<h2 id="force-field-io-q2mmmodelsff_io">Force Field I/O (<code>q2mm.models.ff_io</code>)<a class="headerlink" href="#force-field-io-q2mmmodelsff_io" title="Permanent link">&para;</a></h2>
+<p>Read and write force field files in different formats.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.models.ff_io</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="n">load_mm3_fld</span><span class="p">,</span> <span class="n">save_mm3_fld</span><span class="p">,</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">load_tinker_prm</span><span class="p">,</span> <span class="n">save_tinker_prm</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    <span class="n">save_openmm_xml</span><span class="p">,</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="p">)</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load_mm3_fld(path)</code></td>
+<td>Load a ForceField from an MM3 <code>.fld</code> file</td>
+</tr>
+<tr>
+<td><code>save_mm3_fld(ff, path)</code></td>
+<td>Write a ForceField to an MM3 <code>.fld</code> file</td>
+</tr>
+<tr>
+<td><code>load_tinker_prm(path)</code></td>
+<td>Load a ForceField from a Tinker <code>.prm</code> file</td>
+</tr>
+<tr>
+<td><code>save_tinker_prm(ff, path)</code></td>
+<td>Write a ForceField to a Tinker <code>.prm</code> file</td>
+</tr>
+<tr>
+<td><code>save_openmm_xml(ff, path, molecule=None)</code></td>
+<td>Write a ForceField to an OpenMM ForceField XML file</td>
+</tr>
+</tbody>
+</table>
+<h3 id="openmm-xml-export">OpenMM XML Export<a class="headerlink" href="#openmm-xml-export" title="Permanent link">&para;</a></h3>
+<p>Two export modes are available for OpenMM:</p>
+<p><strong>ForceField XML</strong> — standalone format loadable by <code>openmm.app.ForceField()</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.models.ff_io</span><span class="w"> </span><span class="kn">import</span> <span class="n">save_openmm_xml</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="c1"># Without topology (force definitions only)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="n">save_openmm_xml</span><span class="p">(</span><span class="n">ff</span><span class="p">,</span> <span class="s2">&quot;forcefield.xml&quot;</span><span class="p">)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="c1"># With topology (includes AtomTypes and Residues)</span>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="n">save_openmm_xml</span><span class="p">(</span><span class="n">ff</span><span class="p">,</span> <span class="s2">&quot;forcefield.xml&quot;</span><span class="p">,</span> <span class="n">molecule</span><span class="o">=</span><span class="n">mol</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>System XML</strong> — serialize an exact OpenMM System (topology-specific):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.backends.mm.openmm</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenMMEngine</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">OpenMMEngine</span><span class="p">()</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="n">engine</span><span class="o">.</span><span class="n">export_system_xml</span><span class="p">(</span><span class="s2">&quot;system.xml&quot;</span><span class="p">,</span> <span class="n">molecule</span><span class="p">,</span> <span class="n">ff</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="c1"># Load back</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">system</span> <span class="o">=</span> <span class="n">OpenMMEngine</span><span class="o">.</span><span class="n">load_system_xml</span><span class="p">(</span><span class="s2">&quot;system.xml&quot;</span><span class="p">)</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ff</code></td>
+<td><code>ForceField</code></td>
+<td><em>(required)</em></td>
+<td>Force field to export</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td><code>str</code> or <code>Path</code></td>
+<td><em>(required)</em></td>
+<td>Output file path</td>
+</tr>
+<tr>
+<td><code>molecule</code></td>
+<td><code>Q2MMMolecule</code>, optional</td>
+<td><code>None</code></td>
+<td>Molecule(s) for <code>&lt;AtomTypes&gt;</code> and <code>&lt;Residues&gt;</code> sections</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition note">
+<p class="admonition-title">Custom MM3 force definitions</p>
+<p>The exported XML uses <code>CustomBondForce</code>, <code>CustomAngleForce</code>, and
+<code>CustomNonbondedForce</code> with MM3 functional forms (cubic bond stretch,
+sextic angle bend, buffered 14-7 vdW). This preserves the exact
+physics of the Q2MM force field — standard harmonic approximations
+are <strong>not</strong> used.</p>
+</div>
+<hr />
+<h3 id="jaxengine-differentiable-mm"><code>JaxEngine</code> — Differentiable MM<a class="headerlink" href="#jaxengine-differentiable-mm" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_engine.py">source</a></p>
+<p>Differentiable MM backend using JAX with both harmonic (OPLSAA-style) and
+MM3 functional forms.
+(harmonic bond/angle, 12-6 Lennard-Jones). Provides analytical gradients of
+the energy with respect to force field parameters via <code>jax.grad</code>,
+eliminating finite differences in parameter optimisation. Torsion energy
+functions are implemented but not yet active for <code>Q2MMMolecule</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.backends.mm.jax_engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">JaxEngine</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">JaxEngine</span><span class="p">()</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="c1"># Standard MMEngine methods work as expected</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="n">energy</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">energy</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="n">hessian</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">hessian</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>  <span class="c1"># analytical via jax.hessian</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="n">freqs</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">frequencies</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="c1"># NEW: analytical parameter gradients (not available in OpenMM/Tinker)</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="n">energy</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">energy_and_param_grad</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="c1"># grad is dE/d(param_vector) — same shape as forcefield.get_param_vector()</span>
+</code></pre></div>
+<p><strong>Using analytical gradients with the optimizer:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.scipy_opt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScipyOptimizer</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Pass jac=&#39;analytical&#39; to use JAX gradients instead of finite differences</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">ScipyOptimizer</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span> <span class="n">jac</span><span class="o">=</span><span class="s2">&quot;analytical&quot;</span><span class="p">)</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">objective</span><span class="p">)</span>
+</code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Functional form support</p>
+<p>JaxEngine supports both harmonic (OPLSAA) and MM3 functional forms,
+including cubic bond stretch, sextic angle bend, and Buckingham exp-6 vdW.
+Near equilibrium geometries, harmonic and MM3 results are very similar.</p>
+</div>
+<hr />
+<h3 id="jaxmdengine-full-featured-differentiable-mm"><code>JaxMDEngine</code> — Full-featured Differentiable MM<a class="headerlink" href="#jaxmdengine-full-featured-differentiable-mm" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/mm/jax_md_engine.py">source</a></p>
+<p>Wraps <a href="https://github.com/jax-md/jax-md">jax-md</a>'s OPLSAA module for
+production-quality molecular mechanics with analytical gradients. Supports
+periodic boundary conditions, electrostatics (Cutoff/Ewald/PME), and
+neighbor lists. Proper torsion math is implemented but currently inactive
+until molecule-level torsion detection lands (<a href="https://github.com/ericchansen/q2mm/issues/127">#127</a>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.backends.mm.jax_md_engine</span><span class="w"> </span><span class="kn">import</span> <span class="n">JaxMDEngine</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">JaxMDEngine</span><span class="p">(</span><span class="n">box</span><span class="o">=</span><span class="p">(</span><span class="mf">50.0</span><span class="p">,</span> <span class="mf">50.0</span><span class="p">,</span> <span class="mf">50.0</span><span class="p">))</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="c1"># Standard MMEngine methods</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="n">energy</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">energy</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="n">energy</span><span class="p">,</span> <span class="n">grad</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">energy_and_param_grad</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="c1"># Per-term energy breakdown</span>
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="n">breakdown</span> <span class="o">=</span> <span class="n">engine</span><span class="o">.</span><span class="n">energy_breakdown</span><span class="p">(</span><span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="c1"># → {&#39;bond&#39;: 1.2, &#39;angle&#39;: 0.5, &#39;torsion&#39;: 0.0, &#39;lj&#39;: -0.3, &#39;coulomb&#39;: 0.1, &#39;total&#39;: 1.5}</span>
+</code></pre></div>
+<p><strong>Electrostatics options:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">jax_md.mm_forcefields.nonbonded.electrostatics</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">CutoffCoulomb</span><span class="p">,</span> <span class="n">EwaldCoulomb</span><span class="p">,</span> <span class="n">PMECoulomb</span><span class="p">,</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="p">)</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="c1"># Simple cutoff (default)</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">JaxMDEngine</span><span class="p">(</span><span class="n">coulomb</span><span class="o">=</span><span class="n">CutoffCoulomb</span><span class="p">(</span><span class="n">r_cut</span><span class="o">=</span><span class="mf">12.0</span><span class="p">))</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="c1"># Ewald summation</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">JaxMDEngine</span><span class="p">(</span><span class="n">coulomb</span><span class="o">=</span><span class="n">EwaldCoulomb</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.23</span><span class="p">,</span> <span class="n">kmax</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a><span class="c1"># Particle Mesh Ewald</span>
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a><span class="n">engine</span> <span class="o">=</span> <span class="n">JaxMDEngine</span><span class="p">(</span><span class="n">coulomb</span><span class="o">=</span><span class="n">PMECoulomb</span><span class="p">(</span><span class="n">grid_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">))</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Electrostatic charges</p>
+<p>Partial charges are not yet optimizable through Q2MM's parameter vector.
+Coulomb energy is computed with zero charges by default. The Coulomb
+handler is still invoked so the API is forward-compatible when charge
+support is added.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Improper torsions</p>
+<p>Improper torsions are not yet supported. The topology arrays are allocated
+empty. Support will be added when the Q2MM data model includes improper
+parameters.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">When to use JaxMDEngine vs JaxEngine</p>
+<p><strong>JaxEngine</strong> is a lightweight gas-phase backend with hand-rolled energy
+functions — ideal for simple small-molecule TS force field work.</p>
+<p><strong>JaxMDEngine</strong> wraps jax-md's full OPLSAA implementation including
+torsions, electrostatics, and PBC. Use it when you need these features
+or want to leverage jax-md's ecosystem.</p>
+</div>
+<hr />
+<h2 id="optimizers-q2mmoptimizers">Optimizers (<code>q2mm.optimizers</code>)<a class="headerlink" href="#optimizers-q2mmoptimizers" title="Permanent link">&para;</a></h2>
+<p>Classes for defining objectives and running parameter optimization.</p>
+<h3 id="referencedata-referencevalue"><code>ReferenceData</code> / <code>ReferenceValue</code><a class="headerlink" href="#referencedata-referencevalue" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py">source</a></p>
+<p>Container for QM or experimental reference observations used as optimization
+targets.</p>
+<p><strong>Factory methods</strong> — auto-populate from QM outputs:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.objective</span><span class="w"> </span><span class="kn">import</span> <span class="n">ReferenceData</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="c1"># From a Gaussian formatted checkpoint (returns ref data + molecule)</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="n">ref</span><span class="p">,</span> <span class="n">mol</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="o">.</span><span class="n">from_fchk</span><span class="p">(</span><span class="s2">&quot;opt-freq.fchk&quot;</span><span class="p">,</span> <span class="n">bond_tolerance</span><span class="o">=</span><span class="mf">1.4</span><span class="p">)</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="c1"># From a Gaussian log file (with optional frequencies)</span>
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="n">ref</span><span class="p">,</span> <span class="n">mol</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="o">.</span><span class="n">from_gaussian</span><span class="p">(</span><span class="s2">&quot;opt-freq.log&quot;</span><span class="p">,</span> <span class="n">include_frequencies</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="c1"># From an already-constructed molecule</span>
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="o">.</span><span class="n">from_molecule</span><span class="p">(</span><span class="n">mol</span><span class="p">,</span> <span class="n">frequencies</span><span class="o">=</span><span class="n">freqs</span><span class="p">)</span>
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>
+<a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="c1"># Multi-molecule training set</span>
+<a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="o">.</span><span class="n">from_molecules</span><span class="p">([</span><span class="n">mol1</span><span class="p">,</span> <span class="n">mol2</span><span class="p">],</span> <span class="n">frequencies_list</span><span class="o">=</span><span class="p">[</span><span class="n">f1</span><span class="p">,</span> <span class="n">f2</span><span class="p">])</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Factory</th>
+<th>Input</th>
+<th>Returns</th>
+<th>What it extracts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>from_fchk(path)</code></td>
+<td><code>.fchk</code> file</td>
+<td><code>(ReferenceData, Q2MMMolecule)</code></td>
+<td>Bond lengths, angles, Hessian</td>
+</tr>
+<tr>
+<td><code>from_gaussian(path)</code></td>
+<td><code>.log</code> file</td>
+<td><code>(ReferenceData, Q2MMMolecule)</code></td>
+<td>Bond lengths, angles, frequencies, Hessian</td>
+</tr>
+<tr>
+<td><code>from_molecule(mol)</code></td>
+<td><code>Q2MMMolecule</code></td>
+<td><code>ReferenceData</code></td>
+<td>Bond lengths, angles; optionally frequencies and eigenmatrix</td>
+</tr>
+<tr>
+<td><code>from_molecules(mols)</code></td>
+<td><code>list[Q2MMMolecule]</code></td>
+<td><code>ReferenceData</code></td>
+<td>Same as <code>from_molecule</code> for each, with sequential <code>molecule_idx</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>from_molecule()</code> parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mol</code></td>
+<td><code>Q2MMMolecule</code></td>
+<td><em>(required)</em></td>
+<td>Molecule with geometry</td>
+</tr>
+<tr>
+<td><code>weights</code></td>
+<td><code>dict</code>, optional</td>
+<td><code>{"bond_length": 10.0, "bond_angle": 5.0, "frequency": 1.0}</code></td>
+<td>Weight overrides by data type</td>
+</tr>
+<tr>
+<td><code>molecule_idx</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Index for multi-molecule fits</td>
+</tr>
+<tr>
+<td><code>frequencies</code></td>
+<td><code>array-like</code>, optional</td>
+<td><code>None</code></td>
+<td>Vibrational frequencies (cm⁻¹)</td>
+</tr>
+<tr>
+<td><code>skip_imaginary</code></td>
+<td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Skip negative frequencies</td>
+</tr>
+<tr>
+<td><code>include_eigenmatrix</code></td>
+<td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Add Hessian eigenmatrix training data</td>
+</tr>
+<tr>
+<td><code>eigenmatrix_diagonal_only</code></td>
+<td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Only diagonal eigenmatrix elements</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>from_gaussian()</code> parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>str</code> or <code>Path</code></td>
+<td><em>(required)</em></td>
+<td>Path to Gaussian <code>.log</code> file</td>
+</tr>
+<tr>
+<td><code>weights</code></td>
+<td><code>dict</code>, optional</td>
+<td>see above</td>
+<td>Weight overrides</td>
+</tr>
+<tr>
+<td><code>bond_tolerance</code></td>
+<td><code>float</code></td>
+<td><code>1.3</code></td>
+<td>Covalent-radii multiplier for bond detection (use 1.4+ for TS)</td>
+</tr>
+<tr>
+<td><code>charge</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Molecular charge</td>
+</tr>
+<tr>
+<td><code>multiplicity</code></td>
+<td><code>int</code></td>
+<td><code>1</code></td>
+<td>Spin multiplicity</td>
+</tr>
+<tr>
+<td><code>include_frequencies</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Add frequency data from the log</td>
+</tr>
+<tr>
+<td><code>skip_imaginary</code></td>
+<td><code>bool</code></td>
+<td><code>False</code></td>
+<td>Skip imaginary frequencies</td>
+</tr>
+<tr>
+<td><code>au_hessian</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Keep Hessian in atomic units (Hartree/Bohr²)</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>from_fchk()</code> parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>str</code> or <code>Path</code></td>
+<td><em>(required)</em></td>
+<td>Path to the Gaussian <code>.fchk</code> file</td>
+</tr>
+<tr>
+<td><code>weights</code></td>
+<td><code>dict</code>, optional</td>
+<td>see above</td>
+<td>Weight overrides</td>
+</tr>
+<tr>
+<td><code>bond_tolerance</code></td>
+<td><code>float</code></td>
+<td><code>1.3</code></td>
+<td>Covalent-radii multiplier for bond detection</td>
+</tr>
+<tr>
+<td><code>charge</code></td>
+<td><code>int</code></td>
+<td><code>0</code></td>
+<td>Molecular charge (overridden by file value if present)</td>
+</tr>
+<tr>
+<td><code>multiplicity</code></td>
+<td><code>int</code></td>
+<td><code>1</code></td>
+<td>Spin multiplicity (overridden by file value if present)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bulk loaders</strong> — add data in batch to an existing <code>ReferenceData</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="p">()</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="c1"># Add all frequencies from an array</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="n">n</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">add_frequencies_from_array</span><span class="p">(</span><span class="n">freqs</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">skip_imaginary</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="c1"># Add eigenmatrix elements from a QM Hessian</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="n">n</span> <span class="o">=</span> <span class="n">ref</span><span class="o">.</span><span class="n">add_eigenmatrix_from_hessian</span><span class="p">(</span><span class="n">mol</span><span class="o">.</span><span class="n">hessian</span><span class="p">,</span> <span class="n">diagonal_only</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>add_frequencies_from_array(freqs)</code></td>
+<td><code>int</code> (count added)</td>
+<td>Bulk-add all vibrational frequencies from a 1-D array</td>
+</tr>
+<tr>
+<td><code>add_eigenmatrix_from_hessian(hessian)</code></td>
+<td><code>int</code> (count added)</td>
+<td>Decompose Hessian, extract eigenmatrix, add diagonal + off-diagonal elements with default weight scheme</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Manual entry</strong> — add individual observations:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">ref</span> <span class="o">=</span> <span class="n">ReferenceData</span><span class="p">()</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">ref</span><span class="o">.</span><span class="n">add_energy</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="n">ref</span><span class="o">.</span><span class="n">add_frequency</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">1648.5</span><span class="p">,</span> <span class="n">data_idx</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">weight</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="n">ref</span><span class="o">.</span><span class="n">add_bond_length</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">0.9572</span><span class="p">,</span> <span class="n">atom_indices</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">weight</span><span class="o">=</span><span class="mf">10.0</span><span class="p">)</span>
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="n">ref</span><span class="o">.</span><span class="n">add_bond_angle</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">104.52</span><span class="p">,</span> <span class="n">atom_indices</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">),</span> <span class="n">weight</span><span class="o">=</span><span class="mf">5.0</span><span class="p">)</span>
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="n">ref</span><span class="o">.</span><span class="n">add_torsion_angle</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">180.0</span><span class="p">,</span> <span class="n">atom_indices</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">weight</span><span class="o">=</span><span class="mf">2.0</span><span class="p">)</span>
+</code></pre></div>
+<p>Each <code>ReferenceValue</code> has:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td><code>str</code></td>
+<td>Type of observation (energy, frequency, bond_length, bond_angle, torsion_angle, eig_diagonal, eig_offdiagonal)</td>
+</tr>
+<tr>
+<td><code>value</code></td>
+<td><code>float</code></td>
+<td>Target value</td>
+</tr>
+<tr>
+<td><code>weight</code></td>
+<td><code>float</code></td>
+<td>Relative importance in the objective</td>
+</tr>
+<tr>
+<td><code>atom_indices</code></td>
+<td><code>tuple[int, ...]</code>, optional</td>
+<td>Atoms involved (for geometric properties)</td>
+</tr>
+<tr>
+<td><code>data_idx</code></td>
+<td><code>int</code></td>
+<td>Index into the raw data array (for matching frequencies/eigenvalues when <code>atom_indices</code> is not applicable)</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td><code>str</code></td>
+<td>Human-readable label (used in error messages and debugging)</td>
+</tr>
+<tr>
+<td><code>molecule_idx</code></td>
+<td><code>int</code></td>
+<td>Index into the molecules list (default: 0)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Properties:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>n_observations</code></td>
+<td><code>int</code></td>
+<td>Total number of reference entries</td>
+</tr>
+<tr>
+<td><code>values</code></td>
+<td><code>list[ReferenceValue]</code></td>
+<td>All reference observations</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="objectivefunction"><code>ObjectiveFunction</code><a class="headerlink" href="#objectivefunction" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py">source</a></p>
+<p>Callable objective for <code>scipy.optimize</code>: maps a parameter vector to a scalar
+score.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.objective</span><span class="w"> </span><span class="kn">import</span> <span class="n">ObjectiveFunction</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="n">obj</span> <span class="o">=</span> <span class="n">ObjectiveFunction</span><span class="p">(</span>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>    <span class="n">forcefield</span><span class="o">=</span><span class="n">ff</span><span class="p">,</span>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    <span class="n">engine</span><span class="o">=</span><span class="n">engine</span><span class="p">,</span>
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>    <span class="n">molecules</span><span class="o">=</span><span class="p">[</span><span class="n">mol</span><span class="p">],</span>
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>    <span class="n">reference</span><span class="o">=</span><span class="n">ref</span><span class="p">,</span>
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="p">)</span>
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>
+<a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="n">score</span> <span class="o">=</span> <span class="n">obj</span><span class="p">(</span><span class="n">param_vector</span><span class="p">)</span>  <span class="c1"># f(param_vector) -&gt; float</span>
+</code></pre></div>
+<ul>
+<li>Connects <strong>ForceField</strong> ↔ <strong>MM engine</strong> ↔ <strong>reference data</strong></li>
+<li>Computes weighted sum-of-squares of residuals</li>
+<li>Caches MM engine handles for performance</li>
+</ul>
+<p><strong>Methods:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Signature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>__call__(param_vector)</code></td>
+<td><code>ndarray → float</code></td>
+<td>Evaluate objective (sum of squared residuals). This is what <code>scipy.optimize.minimize</code> calls.</td>
+</tr>
+<tr>
+<td><code>residuals(param_vector)</code></td>
+<td><code>ndarray → ndarray</code></td>
+<td>Compute weighted residual vector. Used by <code>least_squares</code> method.</td>
+</tr>
+<tr>
+<td><code>reset()</code></td>
+<td><code>→ None</code></td>
+<td>Reset evaluation counter, history, and cached engine handles. Called automatically by <code>ScipyOptimizer.optimize()</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Attributes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>forcefield</code></td>
+<td><code>ForceField</code></td>
+<td>The force field being optimized</td>
+</tr>
+<tr>
+<td><code>engine</code></td>
+<td><code>MMEngine</code></td>
+<td>MM backend (OpenMM, Tinker, etc.)</td>
+</tr>
+<tr>
+<td><code>molecules</code></td>
+<td><code>list[Q2MMMolecule]</code></td>
+<td>Training set structures</td>
+</tr>
+<tr>
+<td><code>reference</code></td>
+<td><code>ReferenceData</code></td>
+<td>QM/experimental reference observations</td>
+</tr>
+<tr>
+<td><code>n_eval</code></td>
+<td><code>int</code></td>
+<td>Number of objective evaluations so far</td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td><code>list[float]</code></td>
+<td>Score at each evaluation (for convergence tracking)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="scipyoptimizer"><code>ScipyOptimizer</code><a class="headerlink" href="#scipyoptimizer" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/scipy_opt.py">source</a></p>
+<p>Wraps <code>scipy.optimize</code> with sensible defaults for force field optimization.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.scipy_opt</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScipyOptimizer</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="n">optimizer</span> <span class="o">=</span> <span class="n">ScipyOptimizer</span><span class="p">(</span><span class="n">method</span><span class="o">=</span><span class="s2">&quot;L-BFGS-B&quot;</span><span class="p">,</span> <span class="n">eps</span><span class="o">=</span><span class="mf">1e-3</span><span class="p">)</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">objective</span><span class="p">)</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Improvement: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">improvement</span><span class="si">:</span><span class="s2">.1%</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Constructor parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>method</code></td>
+<td><code>str</code></td>
+<td><code>"L-BFGS-B"</code></td>
+<td>Optimization algorithm (see table below)</td>
+</tr>
+<tr>
+<td><code>maxiter</code></td>
+<td><code>int</code></td>
+<td><code>500</code></td>
+<td>Maximum iterations</td>
+</tr>
+<tr>
+<td><code>ftol</code></td>
+<td><code>float</code></td>
+<td><code>1e-8</code></td>
+<td>Function tolerance for convergence</td>
+</tr>
+<tr>
+<td><code>eps</code></td>
+<td><code>float</code></td>
+<td><code>1e-3</code></td>
+<td>Finite-difference step size (scipy default ~1e-8 is too small for FF parameters)</td>
+</tr>
+<tr>
+<td><code>use_bounds</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Use parameter bounds from <code>ForceField.get_bounds()</code></td>
+</tr>
+<tr>
+<td><code>verbose</code></td>
+<td><code>bool</code></td>
+<td><code>True</code></td>
+<td>Log progress during optimization</td>
+</tr>
+</tbody>
+</table>
+<h3 id="optimization-methods">Optimization Methods<a class="headerlink" href="#optimization-methods" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Type</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>L-BFGS-B</code></td>
+<td>Quasi-Newton</td>
+<td>Smooth problems (default)</td>
+</tr>
+<tr>
+<td><code>Nelder-Mead</code></td>
+<td>Simplex</td>
+<td>Derivative-free, robust</td>
+</tr>
+<tr>
+<td><code>trust-constr</code></td>
+<td>Trust-region</td>
+<td>Constrained optimization</td>
+</tr>
+<tr>
+<td><code>Powell</code></td>
+<td>Direction-set</td>
+<td>Derivative-free</td>
+</tr>
+<tr>
+<td><code>least_squares</code></td>
+<td>Levenberg-Marquardt</td>
+<td>Residual-based fitting</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition info">
+<p class="admonition-title">Choosing a method</p>
+<p><strong>L-BFGS-B</strong> is the best starting point for most problems. Switch to
+<strong>Nelder-Mead</strong> if the objective is noisy or non-smooth. Use
+<strong>least_squares</strong> when you have many residuals and few parameters.</p>
+</div>
+<h3 id="optimizationresult"><code>OptimizationResult</code><a class="headerlink" href="#optimizationresult" title="Permanent link">&para;</a></h3>
+<p>Returned by <code>ScipyOptimizer.optimize()</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">result</span> <span class="o">=</span> <span class="n">optimizer</span><span class="o">.</span><span class="n">optimize</span><span class="p">(</span><span class="n">objective</span><span class="p">)</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>          <span class="c1"># human-readable summary</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">improvement</span><span class="p">)</span>        <span class="c1"># fractional improvement (0–1)</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">history</span><span class="p">)</span>            <span class="c1"># score at each evaluation</span>
+</code></pre></div>
+<p><strong>Attributes:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>success</code></td>
+<td><code>bool</code></td>
+<td>Whether the optimizer converged</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td><code>str</code></td>
+<td>Convergence status message from scipy</td>
+</tr>
+<tr>
+<td><code>initial_score</code></td>
+<td><code>float</code></td>
+<td>Objective value before optimization</td>
+</tr>
+<tr>
+<td><code>final_score</code></td>
+<td><code>float</code></td>
+<td>Objective value after optimization</td>
+</tr>
+<tr>
+<td><code>n_iterations</code></td>
+<td><code>int</code></td>
+<td>Number of optimizer iterations</td>
+</tr>
+<tr>
+<td><code>n_evaluations</code></td>
+<td><code>int</code></td>
+<td>Total objective function evaluations</td>
+</tr>
+<tr>
+<td><code>initial_params</code></td>
+<td><code>ndarray</code></td>
+<td>Starting parameter vector</td>
+</tr>
+<tr>
+<td><code>final_params</code></td>
+<td><code>ndarray</code></td>
+<td>Optimized parameter vector</td>
+</tr>
+<tr>
+<td><code>history</code></td>
+<td><code>list[float]</code></td>
+<td>Score at each evaluation</td>
+</tr>
+<tr>
+<td><code>method</code></td>
+<td><code>str</code></td>
+<td>Optimization method used</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Properties and methods:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Member</th>
+<th>Returns</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>improvement</code></td>
+<td><code>float</code></td>
+<td>Fractional improvement: <code>(initial - final) / initial</code>. 0 = no change, 1 = perfect.</td>
+</tr>
+<tr>
+<td><code>summary()</code></td>
+<td><code>str</code></td>
+<td>Human-readable summary (method, scores, improvement, eval count)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="optimizationloop"><code>OptimizationLoop</code><a class="headerlink" href="#optimizationloop" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py">source</a></p>
+<p>grad-simp cycling loop: alternates full-space gradient optimization with
+sensitivity-based subspace simplex passes. See the
+<a href="../optimization-guide/">Optimization Guide</a> for detailed usage and examples.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.cycling</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizationLoop</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="n">loop</span> <span class="o">=</span> <span class="n">OptimizationLoop</span><span class="p">(</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    <span class="n">objective</span><span class="p">,</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    <span class="n">max_params</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    <span class="n">max_cycles</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>    <span class="n">convergence</span><span class="o">=</span><span class="mf">0.01</span><span class="p">,</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="p">)</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="n">result</span> <span class="o">=</span> <span class="n">loop</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">summary</span><span class="p">())</span>
+</code></pre></div>
+<p><strong>Constructor parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_params</code></td>
+<td><code>int</code></td>
+<td><code>3</code></td>
+<td>Parameters per simplex pass</td>
+</tr>
+<tr>
+<td><code>max_cycles</code></td>
+<td><code>int</code></td>
+<td><code>10</code></td>
+<td>Maximum grad-simp iterations</td>
+</tr>
+<tr>
+<td><code>convergence</code></td>
+<td><code>float</code></td>
+<td><code>0.01</code></td>
+<td>Stop when fractional improvement &lt; this value</td>
+</tr>
+<tr>
+<td><code>full_method</code></td>
+<td><code>str</code></td>
+<td><code>"L-BFGS-B"</code></td>
+<td>Scipy method for full-space pass</td>
+</tr>
+<tr>
+<td><code>simp_method</code></td>
+<td><code>str</code></td>
+<td><code>"Nelder-Mead"</code></td>
+<td>Scipy method for subspace pass</td>
+</tr>
+<tr>
+<td><code>full_maxiter</code></td>
+<td><code>int</code></td>
+<td><code>200</code></td>
+<td>Max iterations for gradient pass</td>
+</tr>
+<tr>
+<td><code>simp_maxiter</code></td>
+<td><code>int</code></td>
+<td><code>200</code></td>
+<td>Max iterations for simplex pass</td>
+</tr>
+<tr>
+<td><code>sensitivity_metric</code></td>
+<td><code>str</code></td>
+<td><code>"simp_var"</code></td>
+<td><code>"simp_var"</code> or <code>"abs_d1"</code></td>
+</tr>
+<tr>
+<td><code>eps</code></td>
+<td><code>float</code></td>
+<td><code>1e-3</code></td>
+<td>Finite-difference step size</td>
+</tr>
+</tbody>
+</table>
+<h3 id="loopresult"><code>LoopResult</code><a class="headerlink" href="#loopresult" title="Permanent link">&para;</a></h3>
+<p>Returned by <code>OptimizationLoop.run()</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>success</code></td>
+<td><code>bool</code></td>
+<td>Whether the loop converged</td>
+</tr>
+<tr>
+<td><code>initial_score</code></td>
+<td><code>float</code></td>
+<td>Objective before optimization</td>
+</tr>
+<tr>
+<td><code>final_score</code></td>
+<td><code>float</code></td>
+<td>Objective after optimization</td>
+</tr>
+<tr>
+<td><code>n_cycles</code></td>
+<td><code>int</code></td>
+<td>Number of grad-simp cycles completed</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td><code>str</code></td>
+<td>Convergence status message</td>
+</tr>
+<tr>
+<td><code>cycle_scores</code></td>
+<td><code>list[float]</code></td>
+<td>Score after each cycle (length = n_cycles + 1)</td>
+</tr>
+<tr>
+<td><code>selected_indices</code></td>
+<td><code>list[list[int]]</code></td>
+<td>Parameter indices selected per cycle</td>
+</tr>
+<tr>
+<td><code>sensitivity_results</code></td>
+<td><code>list[SensitivityResult]</code></td>
+<td>Sensitivity data per cycle</td>
+</tr>
+<tr>
+<td><code>improvement</code></td>
+<td><code>float</code></td>
+<td>Fractional improvement (property)</td>
+</tr>
+<tr>
+<td><code>summary()</code></td>
+<td><code>str</code></td>
+<td>Human-readable summary (method)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="subspaceobjective"><code>SubspaceObjective</code><a class="headerlink" href="#subspaceobjective" title="Permanent link">&para;</a></h3>
+<p>Wraps an <code>ObjectiveFunction</code> to expose only a subset of parameters.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.cycling</span><span class="w"> </span><span class="kn">import</span> <span class="n">SubspaceObjective</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="n">sub</span> <span class="o">=</span> <span class="n">SubspaceObjective</span><span class="p">(</span><span class="n">objective</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span> <span class="n">ff</span><span class="o">.</span><span class="n">get_param_vector</span><span class="p">())</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="n">score</span> <span class="o">=</span> <span class="n">sub</span><span class="p">(</span><span class="n">sub_vector</span><span class="p">)</span>  <span class="c1"># len(sub_vector) == 3</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Signature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>__call__(sub_vector)</code></td>
+<td><code>ndarray → float</code></td>
+<td>Evaluate objective on the subspace</td>
+</tr>
+<tr>
+<td><code>residuals(sub_vector)</code></td>
+<td><code>ndarray → ndarray</code></td>
+<td>Residuals on the subspace</td>
+</tr>
+<tr>
+<td><code>get_initial_vector()</code></td>
+<td><code>→ ndarray</code></td>
+<td>Initial values for active indices</td>
+</tr>
+<tr>
+<td><code>get_bounds()</code></td>
+<td><code>→ list[tuple]</code></td>
+<td>Bounds for active indices</td>
+</tr>
+</tbody>
+</table>
+<h3 id="compute_sensitivity"><code>compute_sensitivity()</code><a class="headerlink" href="#compute_sensitivity" title="Permanent link">&para;</a></h3>
+<p>Standalone sensitivity analysis via central differentiation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.optimizers.cycling</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_sensitivity</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="n">sens</span> <span class="o">=</span> <span class="n">compute_sensitivity</span><span class="p">(</span><span class="n">objective</span><span class="p">,</span> <span class="n">metric</span><span class="o">=</span><span class="s2">&quot;simp_var&quot;</span><span class="p">)</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">sens</span><span class="o">.</span><span class="n">ranking</span><span class="p">)</span>   <span class="c1"># param indices sorted by sensitivity</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">sens</span><span class="o">.</span><span class="n">d1</span><span class="p">)</span>        <span class="c1"># first derivatives</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">sens</span><span class="o">.</span><span class="n">simp_var</span><span class="p">)</span>  <span class="c1"># d2/d1² metric</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>objective</code></td>
+<td><code>ObjectiveFunction</code></td>
+<td>required</td>
+<td>The objective to analyse</td>
+</tr>
+<tr>
+<td><code>metric</code></td>
+<td><code>str</code></td>
+<td><code>"simp_var"</code></td>
+<td>Ranking metric (<code>"simp_var"</code> or <code>"abs_d1"</code>)</td>
+</tr>
+<tr>
+<td><code>step_sizes</code></td>
+<td><code>ndarray</code>, optional</td>
+<td>from <code>ForceField.get_step_sizes()</code></td>
+<td>Per-parameter perturbation sizes</td>
+</tr>
+</tbody>
+</table>
+<p>Returns a <code>SensitivityResult</code> with fields <code>d1</code>, <code>d2</code>, <code>simp_var</code>, <code>ranking</code>, <code>metric</code>, <code>n_evals</code>.</p>
+<hr />
+<h2 id="backends-q2mmbackends">Backends (<code>q2mm.backends</code>)<a class="headerlink" href="#backends-q2mmbackends" title="Permanent link">&para;</a></h2>
+<p>Abstract interfaces and concrete implementations for MM and QM engines.</p>
+<h3 id="mmengine-abstract-base"><code>MMEngine</code> (abstract base)<a class="headerlink" href="#mmengine-abstract-base" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/base.py">source</a></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.backends.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">MMEngine</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">MMEngine</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">energy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">structure</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">minimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">molecule</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="nb">list</span><span class="p">,</span> <span class="n">ndarray</span><span class="p">]:</span> <span class="o">...</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">frequencies</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">structure</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span> <span class="o">...</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">hessian</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">structure</span><span class="p">,</span> <span class="n">forcefield</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<p><strong>Implementations:</strong> <code>OpenMMEngine</code>, <code>TinkerEngine</code>, <code>JaxEngine</code>, <code>JaxMDEngine</code></p>
+<hr />
+<h3 id="qmengine-abstract-base"><code>QMEngine</code> (abstract base)<a class="headerlink" href="#qmengine-abstract-base" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/backends/base.py">source</a></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.backends.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">QMEngine</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">QMEngine</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">energy</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">molecule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">hessian</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">molecule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ndarray</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">optimize</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">molecule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Q2MMMolecule</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">frequencies</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">molecule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]:</span> <span class="o">...</span>
+</code></pre></div>
+<p><strong>Implementations:</strong> <code>Psi4Engine</code></p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>QM engines are used for <strong>reference data generation</strong>, not during the
+optimization loop. A single Hessian calculation can take minutes to hours
+depending on molecule size and level of theory.</p>
+</div>
+<hr />
+<h2 id="parsers-q2mmparsers">Parsers (<code>q2mm.parsers</code>)<a class="headerlink" href="#parsers-q2mmparsers" title="Permanent link">&para;</a></h2>
+<p>File format parsers for reading computational chemistry output.</p>
+<table>
+<thead>
+<tr>
+<th>Parser</th>
+<th>Module</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GaussLog</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>Gaussian <code>.log</code> output files</td>
+</tr>
+<tr>
+<td><code>Mol2</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>MOL2 structure files</td>
+</tr>
+<tr>
+<td><code>JaguarIn</code> / <code>JaguarOut</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>Jaguar input/output</td>
+</tr>
+<tr>
+<td><code>MacroModel</code> / <code>MacroModelLog</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>MacroModel files</td>
+</tr>
+<tr>
+<td><code>MM3</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>MM3 force field files</td>
+</tr>
+<tr>
+<td><code>TinkerFF</code></td>
+<td><code>q2mm.parsers</code></td>
+<td>Tinker parameter files</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">q2mm.parsers</span><span class="w"> </span><span class="kn">import</span> <span class="n">GaussLog</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="n">log</span> <span class="o">=</span> <span class="n">GaussLog</span><span class="p">(</span><span class="s2">&quot;optimization.log&quot;</span><span class="p">)</span>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="n">structures</span> <span class="o">=</span> <span class="n">log</span><span class="o">.</span><span class="n">structures</span>  <span class="c1"># list[Structure] — coordinates, atoms</span>
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a><span class="n">eigenvalues</span> <span class="o">=</span> <span class="n">log</span><span class="o">.</span><span class="n">evals</span>      <span class="c1"># frequency eigenvalues</span>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a><span class="n">eigenvectors</span> <span class="o">=</span> <span class="n">log</span><span class="o">.</span><span class="n">evecs</span>     <span class="c1"># frequency eigenvectors</span>
+</code></pre></div>
+<hr />
+<h2 id="software-compatibility">Software Compatibility<a class="headerlink" href="#software-compatibility" title="Permanent link">&para;</a></h2>
+<p>Feature support across force field formats and compute backends.</p>
+<h3 id="force-field-formats">Force Field Formats<a class="headerlink" href="#force-field-formats" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th style="text-align: center;">MM3 <code>.fld</code></th>
+<th style="text-align: center;">Tinker <code>.prm</code></th>
+<th style="text-align: center;">OpenMM XML</th>
+<th style="text-align: center;">AMBER <code>.frcmod</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Read</strong> (load parameters)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><strong>Write</strong> (standalone)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td><strong>Write</strong> (template-based)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Bond stretch</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Angle bend</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Torsion (dihedral)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>van der Waals</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>MM3 functional forms</td>
+<td style="text-align: center;">✅ native</td>
+<td style="text-align: center;">✅ native</td>
+<td style="text-align: center;">✅ custom forces</td>
+<td style="text-align: center;">—</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition info">
+<p class="admonition-title">Template-based vs standalone export</p>
+<p><strong>Template-based</strong> export updates parameters in an existing file, preserving
+headers, comments, and parameters that weren't optimised. Use this for
+round-trip compatibility with the original software.</p>
+<p><strong>Standalone</strong> export writes a minimal file from scratch — useful when no
+template exists (e.g., Seminario-estimated parameters).</p>
+</div>
+<h3 id="mm-backends">MM Backends<a class="headerlink" href="#mm-backends" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th style="text-align: center;">OpenMM</th>
+<th style="text-align: center;">Tinker</th>
+<th style="text-align: center;">JAX</th>
+<th style="text-align: center;">JAX-MD</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single-point energy</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Energy minimisation</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Numerical Hessian</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Analytical Hessian</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅ <code>jax.hessian</code></td>
+<td style="text-align: center;">✅ <code>jax.hessian</code></td>
+</tr>
+<tr>
+<td>Vibrational frequencies</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Runtime parameter update</td>
+<td style="text-align: center;">✅ <code>update_forcefield()</code></td>
+<td style="text-align: center;">❌ (re-writes files)</td>
+<td style="text-align: center;">✅ (all JIT-compiled)</td>
+<td style="text-align: center;">✅ (all JIT-compiled)</td>
+</tr>
+<tr>
+<td>Analytical param gradients</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅ <code>energy_and_param_grad()</code></td>
+<td style="text-align: center;">✅ <code>energy_and_param_grad()</code></td>
+</tr>
+<tr>
+<td>Per-term energy breakdown</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅ <code>energy_breakdown()</code></td>
+</tr>
+<tr>
+<td>System XML export</td>
+<td style="text-align: center;">✅ <code>export_system_xml()</code></td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">—</td>
+</tr>
+<tr>
+<td>Torsions</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌ (#91)</td>
+<td style="text-align: center;">⚠️ engine ready, awaiting #127</td>
+</tr>
+<tr>
+<td>Electrostatics</td>
+<td style="text-align: center;">❌ (charges zeroed)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">⚠️ infra only; charges zeroed</td>
+</tr>
+<tr>
+<td>Periodic boundary conditions</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Functional forms</td>
+<td style="text-align: center;">MM3 (cubic/sextic/14-7)</td>
+<td style="text-align: center;">MM3</td>
+<td style="text-align: center;">Harmonic, MM3</td>
+<td style="text-align: center;">OPLSAA (harmonic/LJ)</td>
+</tr>
+<tr>
+<td>Install</td>
+<td style="text-align: center;"><code>pip install openmm</code></td>
+<td style="text-align: center;">System binary</td>
+<td style="text-align: center;"><code>pip install "q2mm[jax]"</code></td>
+<td style="text-align: center;"><code>pip install "q2mm[jax-md]"</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="qm-backends">QM Backends<a class="headerlink" href="#qm-backends" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th style="text-align: center;">Gaussian</th>
+<th style="text-align: center;">Jaguar</th>
+<th style="text-align: center;">Psi4</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Parse optimised geometry</td>
+<td style="text-align: center;">✅ <code>.log</code> / <code>.fchk</code></td>
+<td style="text-align: center;">✅ <code>.out</code></td>
+<td style="text-align: center;">✅ via QCElemental</td>
+</tr>
+<tr>
+<td>Parse Hessian</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ <code>.in</code></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Parse frequencies</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ <code>.out</code></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Parse eigenvalues / eigenvectors</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ <code>.out</code></td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Live QM engine</td>
+<td style="text-align: center;">❌ (file-based)</td>
+<td style="text-align: center;">❌ (file-based)</td>
+<td style="text-align: center;">✅ <code>Psi4Engine</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="seminario-method">Seminario Method<a class="headerlink" href="#seminario-method" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th style="text-align: center;">Supported</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bond force constants</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Angle force constants</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Transition states (imaginary mode handling)</td>
+<td style="text-align: center;">✅ Methods C, D, E (<a href="https://doi.org/10.1002/jcc.23797">Limé &amp; Norrby, <em>J. Comput. Chem.</em> <strong>2015</strong></a>)</td>
+</tr>
+<tr>
+<td>Multiple molecules (ensemble averaging)</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Eigenmatrix training data</td>
+<td style="text-align: center;">✅</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition info">
+<p class="admonition-title">Transition State Methods C, D, E</p>
+<p>At a transition state, one Hessian eigenvalue is negative (the reaction
+coordinate). Methods C, D, and E are different strategies for handling
+this during Seminario estimation:</p>
+<ul>
+<li><strong>Method C</strong> (<code>replace_neg_eigenvalue</code>): Replace the negative eigenvalue
+  with a large positive value. Simple but distorts the eigenspectrum.</li>
+<li><strong>Method D</strong> (<code>keep_natural_eigenvalue</code>): Keep the natural (negative)
+  eigenvalue unchanged — gives lower RMS error but may produce
+  force fields with negative force constants.</li>
+<li><strong>Method E</strong> (<code>estimate_force_constants_method_e</code>): Run Method D first,
+  detect problematic parameters (zero or negative force constants),
+  and replace only those parameters with the corresponding Method C values.</li>
+</ul>
+<p>See <code>q2mm.models.seminario</code> for the implementation.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Quick reference</p>
+<p>For the best out-of-the-box experience, use <strong>OpenMM</strong> as your MM backend
+and <strong>Gaussian <code>.fchk</code></strong> or <strong>Psi4</strong> for QM reference data. This combination
+gives you fast runtime parameter updates, full Hessian access, and
+export to both System XML and ForceField XML.</p>
+<p>For <strong>fastest optimisation</strong>, use the <strong>JAX</strong> backend with
+<code>ScipyOptimizer(jac='analytical')</code> to get exact analytical gradients —
+no finite differences needed. Install with <code>pip install "q2mm[jax]"</code>.</p>
+</div>
+<hr />
+<p><em>See <a href="../benchmarks/">Benchmarks</a> for benchmarks across backends and
+optimization methods.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
