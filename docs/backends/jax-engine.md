@@ -84,10 +84,12 @@ The engine name includes the backend string (e.g., `JAX (harmonic, gpu)`
 or `JAX (harmonic, cpu)`).
 
 !!! info "Performance"
-    JaxEngine is 5–10× faster than OpenMM and ~1000× faster than Tinker
-    per energy evaluation on CPU.  On GPU, the per-eval speedup scales with
-    molecule size — see the [GPU benchmarks](../benchmarks/gpu.md) for
-    detailed results.
+    In the current benchmark set, JaxEngine is one of the fastest in-process
+    backends for harmonic CH₃F optimization and offers analytical gradients
+    for energy-based evaluators.  Exact speedups depend on system size,
+    objective, and device, so use the
+    [benchmark overview](../benchmarks/index.md) and
+    [GPU benchmarks](../benchmarks/gpu.md) for workload-specific numbers.
 
 ---
 

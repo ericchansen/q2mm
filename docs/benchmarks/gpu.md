@@ -9,6 +9,10 @@ JAX harmonic achieves **2.1×** on the 9-molecule Rh-enamide system.
 Small molecules (CH₃F, 5 atoms) remain faster on CPU due to kernel
 launch overhead.
 
+This page summarizes dedicated GPU-vs-CPU comparison runs.  For the latest
+full backend × form × optimizer CH₃F matrix, see
+[Small Molecules](small-molecules.md).
+
 ---
 
 ## Results
@@ -36,6 +40,9 @@ differences.
 |---------|--------|-------:|------:|----------:|:-----------:|
 | JAX (harmonic) | GPU | 0.054 | 132 | 7.1 s | 0.20× |
 | JAX (harmonic) | CPU | 0.011 | 95 | 1.0 s | — |
+
+These CH₃F numbers come from the dedicated JAX harmonic L-BFGS-B GPU-vs-CPU
+comparison, not the later 24-combo full matrix.
 
 ### Takeaway
 
@@ -450,12 +457,13 @@ JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L
 q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
-# CH₃F: JAX GPU vs CPU
-q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
-JAX_PLATFORMS=cpu q2mm-benchmark --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
+# CH₃F: JAX GPU vs CPU (dedicated GPU study)
+q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmark_results/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmark_results/ch3f
 ```
 
-Raw data: `benchmarks/GPU_BENCHMARKS.md`.
+Raw data: `benchmarks/GPU_BENCHMARKS.md` for the dedicated GPU study.  The
+latest full CH₃F matrix artifacts live under `benchmark_results/ch3f/`.
 
 ## Hardware & Software
 
