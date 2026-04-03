@@ -8,7 +8,9 @@ RAM, Python 3.12.
 
 ## CH₃F (5 atoms, 8 parameters)
 
-Best result per MM backend from the latest full supported matrix.
+Best result per MM backend from the latest full supported matrix. The device is
+shown because the fastest saved JAX, JAX-MD, and OpenMM runs are GPU/CUDA
+results, while Tinker is CPU-only in this matrix.
 QM reference: B3LYP/6-31+G(d).
 See the [small-molecules](small-molecules.md) page for the full
 backend × form × optimizer matrix.
@@ -19,12 +21,12 @@ backend × form × optimizer matrix.
 [Force fields](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/forcefields) ·
 [Leaderboard](https://github.com/ericchansen/q2mm/blob/master/benchmark_results/ch3f/leaderboard.txt)
 
-| Backend | Best form | Optimizer | RMSD₀ → RMSD | Time |
-|---------|-----------|-----------|--------------|-----:|
-| **JAX** | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
-| **JAX-MD** | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
-| **OpenMM** | harmonic | Powell | 156.9 → 0.0 | 43.9 s |
-| **Tinker** | mm3 | L-BFGS-B | 157.2 → 114.1 | 104.7 s |
+| Backend | Device | Best form | Optimizer | RMSD₀ → RMSD | Time |
+|---------|--------|-----------|-----------|--------------|-----:|
+| **JAX** | GPU | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
+| **JAX-MD** | GPU | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
+| **OpenMM** | GPU (CUDA) | harmonic | Powell | 156.9 → 0.0 | 43.9 s |
+| **Tinker** | CPU | mm3 | L-BFGS-B | 157.2 → 114.1 | 104.7 s |
 
 Supported combos: **24** total — JAX and OpenMM each run harmonic + MM3,
 JAX-MD runs harmonic only, and Tinker runs MM3 only.
