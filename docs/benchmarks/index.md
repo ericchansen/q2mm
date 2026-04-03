@@ -23,9 +23,9 @@ backend × form × optimizer matrix.
 
 | Backend | Device | Best form | Optimizer | RMSD₀ → RMSD | Time |
 |---------|--------|-----------|-----------|--------------|-----:|
-| **JAX** | GPU | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
-| **JAX-MD** | GPU | harmonic | Powell | 156.9 → 0.0 | 6.3 s |
-| **OpenMM** | GPU (CUDA) | harmonic | Powell | 156.9 → 0.0 | 43.9 s |
+| **JAX** | GPU | harmonic | Powell | 156.9 → < 0.1 | 6.3 s |
+| **JAX-MD** | GPU | harmonic | Powell | 156.9 → < 0.1 | 6.3 s |
+| **OpenMM** | GPU (CUDA) | harmonic | Powell | 156.9 → < 0.1 | 43.9 s |
 | **Tinker** | CPU | mm3 | L-BFGS-B | 157.2 → 114.1 | 104.7 s |
 
 Supported combos: **24** total — JAX and OpenMM each run harmonic + MM3,
@@ -69,7 +69,7 @@ See the [Rh-enamide](rh-enamide.md) page for the full matrix and analysis.
 ## Key Takeaways
 
 1. **Harmonic + Powell is the current CH₃F winner** — JAX, JAX-MD, and OpenMM
-   all reach RMSD = 0.0 on the harmonic form.  JAX and JAX-MD do it in
+   all land below 0.1 cm⁻¹ RMSD on the harmonic form.  JAX and JAX-MD do it in
    6.3 s; OpenMM does it in 43.9 s.
 
 2. **MM3 remains optimizer-sensitive** — the best MM3 CH₃F fit is JAX +
