@@ -1,0 +1,6 @@
+# Q2MM
+# OPT Generated
+bond     C1   F1     7.7031     1.3716
+bond     C1   H1     5.6176     1.0855
+angle    F1   C1   H1     0.6059   127.0405
+angle    H1   C1   H2     0.8600    94.4099
