@@ -1,0 +1,525 @@
+
+== Preflight ==
+E0402 22:20:51.765170  176537 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:20:51.779297  176477 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+=== Q2MM Benchmark Pre-flight Check ===
+
+Python:   3.12.3
+OS:       Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39
+q2mm:     5.0.0a3.dev168
+
+OpenMM platforms: Reference, CPU, CUDA
+✅ OpenMM CUDA: available
+
+JAX devices: cuda:0
+✅ JAX CUDA: available
+
+GPU:      NVIDIA GeForce RTX 5090
+Driver:   591.74
+GPU util: 6%
+
+✅ Ready for GPU benchmarks
+
+
+== Combo 3 - JAX GPU harmonic Powell ==
+Started: 2026-04-02T22:20:51-05:00
+E0402 22:20:54.643392  176637 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:20:54.657734  176563 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      Harmonic
+  Optimizers: Powell
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + Harmonic + Powell ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  Powell       —     err     err     0.0s      —       err
+========================================================================
+
+Finished: 2026-04-02T22:23:44-05:00
+
+== Combo 7 - JAX GPU mm3 Powell ==
+Started: 2026-04-02T22:23:44-05:00
+E0402 22:23:45.995475  177267 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:23:46.009440  177193 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      MM3
+  Optimizers: Powell
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + MM3 + Powell ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  Powell       —     err     err     0.0s      —       err
+========================================================================
+
+Finished: 2026-04-02T22:26:41-05:00
+
+== Combo 11 - JAX-MD GPU harmonic Powell ==
+Started: 2026-04-02T22:26:41-05:00
+E0402 22:26:43.506828  177942 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:26:43.520718  177868 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX-MD (OPLSAA, gpu)
+  Forms:      Harmonic
+  Optimizers: Powell
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX-MD (OPLSAA, gpu) + Harmonic + Powell ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+===================================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+===================================================================================
+  Backend               Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ---------------------------------------------------------------------------------
+  JAX-MD (OPLSAA, gpu)  Powell       —     err     err     0.0s      —       err
+===================================================================================
+
+Finished: 2026-04-02T22:30:12-05:00
+
+== Combo 2 - JAX GPU harmonic Nelder-Mead ==
+Started: 2026-04-02T22:30:12-05:00
+E0402 22:30:14.472070  179290 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:30:14.485353  179216 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      Harmonic
+  Optimizers: Nelder-Mead
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + Harmonic + Nelder-Mead ... RMSD 174→81  (559.9s)
+    FF saved: rh-enamide_jax_harmonic_gpu_nelder-mead (.frcmod)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+==========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+==========================================================================
+  Backend    Optimizer     RMSD₀    RMSD     MAE     Time  Evals     Score
+  ------------------------------------------------------------------------
+  JAX (gpu)  Nelder-Mead   173.5    81.2    50.7   511.0s  10353   10.5328
+==========================================================================
+
+Finished: 2026-04-02T22:39:58-05:00
+
+== Combo 6 - JAX GPU mm3 Nelder-Mead ==
+Started: 2026-04-02T22:39:58-05:00
+E0402 22:40:00.090516  180000 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:40:00.104731  179926 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      MM3
+  Optimizers: Nelder-Mead
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + MM3 + Nelder-Mead ... RMSD 173→67  (591.4s)
+    FF saved: rh-enamide_jax_mm3_gpu_nelder-mead (.fld, .prm, .xml)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+==========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+==========================================================================
+  Backend    Optimizer     RMSD₀    RMSD     MAE     Time  Evals     Score
+  ------------------------------------------------------------------------
+  JAX (gpu)  Nelder-Mead   173.1    66.6    54.9   538.6s  10668    5.1114
+==========================================================================
+
+Finished: 2026-04-02T22:50:16-05:00
+
+== Combo 1 - JAX GPU harmonic L-BFGS-B ==
+Started: 2026-04-02T22:50:16-05:00
+E0402 22:50:18.427203  180724 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 22:50:18.440758  180650 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      Harmonic
+  Optimizers: L-BFGS-B
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + Harmonic + L-BFGS-B ... RMSD 174→57  (2278.0s)
+    FF saved: rh-enamide_jax_harmonic_gpu_lbfgsb (.frcmod)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  L-BFGS-B   173.5    57.4    35.0  2229.9s    165    7.4850
+========================================================================
+
+Finished: 2026-04-02T23:28:39-05:00
+
+== Combo 5 - JAX GPU mm3 L-BFGS-B ==
+Started: 2026-04-02T23:28:39-05:00
+E0402 23:28:41.589568  181464 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0402 23:28:41.603438  181390 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      MM3
+  Optimizers: L-BFGS-B
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + MM3 + L-BFGS-B ... RMSD 173→61  (1975.2s)
+    FF saved: rh-enamide_jax_mm3_gpu_lbfgsb (.fld, .prm, .xml)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  L-BFGS-B   173.1    61.5    48.5  1921.8s    142    5.8057
+========================================================================
+
+Finished: 2026-04-03T00:02:02-05:00
+
+== Combo 4 - JAX GPU harmonic grad-simp ==
+Started: 2026-04-03T00:02:02-05:00
+E0403 00:02:04.447686  182218 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 00:02:04.461616  182144 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      Harmonic
+  Optimizers: grad-simp
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + Harmonic + grad-simp ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  grad-simp       —     err     err     0.0s      —       err
+========================================================================
+
+Finished: 2026-04-03T00:16:23-05:00
+
+== Combo 8 - JAX GPU mm3 grad-simp ==
+Started: 2026-04-03T00:16:23-05:00
+E0403 00:16:25.134259  182840 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 00:16:25.147523  182766 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX (gpu)
+  Forms:      MM3
+  Optimizers: grad-simp
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX (gpu) + MM3 + grad-simp ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+========================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+========================================================================
+  Backend    Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ----------------------------------------------------------------------
+  JAX (gpu)  grad-simp       —     err     err     0.0s      —       err
+========================================================================
+
+Finished: 2026-04-03T00:30:19-05:00
+
+== Combo 10 - JAX-MD GPU harmonic Nelder-Mead ==
+Started: 2026-04-03T00:30:19-05:00
+E0403 00:30:20.931078  183473 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 00:30:20.945176  183399 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX-MD (OPLSAA, gpu)
+  Forms:      Harmonic
+  Optimizers: Nelder-Mead
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX-MD (OPLSAA, gpu) + Harmonic + Nelder-Mead ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+=====================================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+=====================================================================================
+  Backend               Optimizer     RMSD₀    RMSD     MAE     Time  Evals     Score
+  -----------------------------------------------------------------------------------
+  JAX-MD (OPLSAA, gpu)  Nelder-Mead       —     err     err     0.0s      —       err
+=====================================================================================
+
+Finished: 2026-04-03T00:36:10-05:00
+
+== Combo 9 - JAX-MD GPU harmonic L-BFGS-B ==
+Started: 2026-04-03T00:36:10-05:00
+E0403 00:36:12.125047  184821 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 00:36:12.138576  184747 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX-MD (OPLSAA, gpu)
+  Forms:      Harmonic
+  Optimizers: L-BFGS-B
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX-MD (OPLSAA, gpu) + Harmonic + L-BFGS-B ... RMSD 41410→87  (3261.1s)
+    FF saved: rh-enamide_jax-md_harmonic_gpu_lbfgsb (.frcmod)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+===================================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+===================================================================================
+  Backend               Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ---------------------------------------------------------------------------------
+  JAX-MD (OPLSAA, gpu)  L-BFGS-B  41409.7    86.7    48.2  3181.6s    236   10.8628
+===================================================================================
+
+Finished: 2026-04-03T01:31:13-05:00
+
+== Combo 12 - JAX-MD GPU harmonic grad-simp ==
+Started: 2026-04-03T01:31:13-05:00
+E0403 01:31:14.930460  186411 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 01:31:14.944409  186337 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   JAX-MD (OPLSAA, gpu)
+  Forms:      Harmonic
+  Optimizers: grad-simp
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] JAX-MD (OPLSAA, gpu) + Harmonic + grad-simp ... FAILED: Eigenvalues did not converge
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+===================================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+===================================================================================
+  Backend               Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ---------------------------------------------------------------------------------
+  JAX-MD (OPLSAA, gpu)  grad-simp       —     err     err     0.0s      —       err
+===================================================================================
+
+Finished: 2026-04-03T01:42:12-05:00
+
+== Combo 20 - OpenMM GPU mm3 grad-simp ==
+Started: 2026-04-03T01:42:12-05:00
+E0403 01:42:14.407024  187758 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+E0403 01:42:14.421195  187684 cuda_executor.cc:1743] Could not get kernel mode driver version: ( INVALID_ARGUMENT: Version does not match the format X.Y.Z )
+  Bond ('C', 'H') (5-17): negative FC = -18.0106 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.3181 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.5408 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.5536 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.5256 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -13.7959 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -14.1801 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -17.4227 (TS reaction coordinate?)
+  Bond ('C', 'H') (5-17): negative FC = -16.6594 (TS reaction coordinate?)
+No angles match ('C', 'C', 'Rh') in molecule
+
+Q2MM Benchmark Matrix
+  System:     rh-enamide
+  Backends:   OpenMM (CUDA)
+  Forms:      MM3
+  Optimizers: grad-simp
+  Max combos: 1
+  (combos filtered by engine support)
+
+  [1] OpenMM (CUDA) + MM3 + grad-simp ... RMSD 173→43  (112959.0s)
+    FF saved: rh-enamide_openmm_mm3_gpu_grad-simp (.fld, .prm, .xml)
+
+  Results saved to: benchmark_results/rh_enamide_selected_2026-04-03_0320/
+
+
+=============================================================================
+  BACKEND x OPTIMIZER LEADERBOARD
+=============================================================================
+  Backend        Optimizer   RMSD₀    RMSD     MAE     Time  Evals     Score
+  ---------------------------------------------------------------------------
+  OpenMM (CUDA)  grad-simp   173.1    42.7    31.8  33223.1s  35343    3.2948
+=============================================================================
+
+Finished: 2026-04-04T09:05:15-05:00
+
+== Done ==
+Saved outputs under benchmark_results/rh_enamide_selected_2026-04-03_0320
