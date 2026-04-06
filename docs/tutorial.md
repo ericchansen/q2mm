@@ -175,8 +175,8 @@ hessian = jag_in.get_hessian(num_atoms)   # (3N, 3N), Hartree/Bohr²
 !!! tip "Jaguar in production workflows"
     Jaguar is commonly used for organometallic transition states where
     pseudopotentials like LACVP** are needed.  See the
-    [Rh-enamide benchmark](benchmarks/rh-enamide.md) for a full
-    example with 9 transition-state structures.
+    [Rh-enamide benchmark](benchmarks/rh-enamide.md) for a worked
+    organometallic case study with 9 transition-state structures.
 
 ---
 

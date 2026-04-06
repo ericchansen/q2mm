@@ -808,5 +808,5 @@ Feature support across force field formats and compute backends.
 
 ---
 
-*See [Benchmarks](benchmarks/index.md) for benchmarks across backends and
-optimization methods.*
+*See [Benchmarks](benchmarks/index.md) for benchmark and validation coverage
+across systems, backends, and optimization methods.*
