@@ -20,8 +20,8 @@ benchmarks/
 │   ├── results/
 │   │   ├── rh-enamide_jax-md_oplsaa_cpu_lbfgsb.json
 │   │   └── ...
-│   └── forcefields/
-│       └── ...
+│   ├── forcefields/
+│   │   └── ...
 └── README.md
 ```
 
