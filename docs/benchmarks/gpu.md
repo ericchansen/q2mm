@@ -56,6 +56,28 @@ The crossover point is somewhere between 5 and 36 atoms.  Systems with
 more molecules, more atoms per molecule, or more complex force field
 terms benefit most from GPU acceleration.
 
+### Overnight GPU-only feasibility run
+
+A later overnight rh-enamide sweep ran combos **1-12 and 20** in one
+fast-first batch on the RTX 5090. It complements the CPU-vs-GPU timings above
+with three practical observations:
+
+- **OpenMM CUDA MM3 + grad-simp does complete on Blackwell** and produced the
+  best selected-matrix fit (`173.1 → 42.7` RMSD, MAE `31.8`), but the archived
+  CLI log shows **112,959.0 s** end-to-end wall clock for the full run
+- **JAX/JAX-MD single-shot GPU runs are same-day jobs** — the successful
+  L-BFGS-B and Nelder-Mead cases finished in **559.9–3,261.1 s**
+- **The unstable configurations are now well characterised** — Powell on JAX
+  and JAX-MD, plus harmonic grad-simp on JAX/JAX-MD, all failed with
+  `Eigenvalues did not converge`
+
+The archived result JSONs, saved force fields, and raw timing evidence for this
+sweep live under
+[benchmarks/rh-enamide](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide).
+For end-to-end runtime comparisons, use the raw log bundle rather than
+`optimized.elapsed_s` from the individual JSON files. See the
+[Rh-enamide](rh-enamide.md) page for the per-combo breakdown.
+
 ---
 
 ## When CPU is Faster
