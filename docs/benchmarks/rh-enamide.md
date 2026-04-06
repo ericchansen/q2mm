@@ -8,9 +8,14 @@ B3LYP/LACVP** QM reference data.
     [Rh-enamide training set](https://github.com/ericchansen/q2mm/tree/master/examples/rh-enamide)
     (structures, Jaguar QM data, MM3 FF template)
 
-    **Outputs:**
-    [Benchmark results](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide)
-    (JSON results for all backend × optimizer combinations)
+    **Archived outputs:**
+    [Result JSONs](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/results)
+    ·
+    [Saved force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/forcefields)
+    ·
+    [Raw timing evidence](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide/logs)
+    ·
+    [Runner script](https://github.com/ericchansen/q2mm/blob/master/scripts/run_rh_enamide_selected_matrix.sh)
 
 ---
 
@@ -62,54 +67,72 @@ flowchart LR
 
 ---
 
-## Results (2 iterations)
+## Overnight selected GPU matrix (2026-04-03)
 
-Results generated with `q2mm-benchmark --system rh-enamide --max-iter 2`.
-All results use the new `BenchmarkResult` JSON format.
+This overnight run executed combos **1-12 and 20** from the 24 supported
+rh-enamide combinations, in fast-first order, on the RTX 5090. The run used
+[`scripts/run_rh_enamide_selected_matrix.sh`](https://github.com/ericchansen/q2mm/blob/master/scripts/run_rh_enamide_selected_matrix.sh)
+to issue explicit per-combo commands because
+`q2mm-benchmark --system rh-enamide` defaults to **MM3-only** forms and would
+otherwise skip the harmonic/JAX-MD cases.
 
-### JAX Engines (harmonic FF)
+### Successful runs
 
-| Backend | Optimizer | RMSD₀ | RMSD | Evals | Time |
-|---------|-----------|------:|-----:|------:|-----:|
-| JAX (harmonic) | L-BFGS-B | 18,177 | 36,105 | 1,648 | 50 s |
-| JAX (harmonic) | **Nelder-Mead** | 18,177 | 82,597 | 186 | 8 s |
-| JAX (harmonic) | Powell | — | LinAlgError | — | — |
-| JAX-MD (OPLSAA) | L-BFGS-B | 24,727 | 67,391 | 1,099 | 229 s |
-| JAX-MD (OPLSAA) | **Nelder-Mead** | 24,727 | 68,857 | 187 | 39 s |
-| JAX-MD (OPLSAA) | Powell | — | LinAlgError | — | — |
+| Combo | Backend | FF form | Optimizer | RMSD₀ → RMSD | MAE | Wall clock |
+|-------|---------|---------|-----------|-------------:|----:|-----------:|
+| 20 | OpenMM (CUDA) | MM3 | **grad-simp** | **173.1 → 42.7** | **31.8** | **112,959.0 s** |
+| 1 | JAX | harmonic | L-BFGS-B | 173.5 → 57.4 | 35.0 | 2,278.0 s |
+| 5 | JAX | MM3 | L-BFGS-B | 173.1 → 61.5 | 48.5 | 1,975.2 s |
+| 6 | JAX | MM3 | Nelder-Mead | 173.1 → 66.6 | 54.9 | 591.4 s |
+| 2 | JAX | harmonic | Nelder-Mead | 173.5 → 81.2 | 50.7 | 559.9 s |
+| 9 | JAX-MD (OPLSAA) | harmonic | L-BFGS-B | 41,409.7 → 86.7 | 48.2 | 3,261.1 s |
 
-### MM3 Engines (MM3 FF)
+### Expected failures
 
-| Backend | Optimizer | RMSD₀ | RMSD | Evals | Time |
-|---------|-----------|------:|-----:|------:|-----:|
-| OpenMM (CUDA) | **Nelder-Mead** | 19,342 | 78,134 | 187 | 172 s |
-| OpenMM (CUDA) | L-BFGS-B | — | too slow | — | >30 min |
-| OpenMM (CUDA) | Powell | — | too slow | — | >10 min |
+| Combo | Backend | FF form | Optimizer | Wall clock | Outcome |
+|-------|---------|---------|-----------|-----------:|---------|
+| 3 | JAX | harmonic | Powell | 173.0 s | `Eigenvalues did not converge` |
+| 7 | JAX | MM3 | Powell | 177.0 s | `Eigenvalues did not converge` |
+| 11 | JAX-MD (OPLSAA) | harmonic | Powell | 211.0 s | `Eigenvalues did not converge` |
+| 4 | JAX | harmonic | grad-simp | 861.0 s | `Eigenvalues did not converge` |
+| 8 | JAX | MM3 | grad-simp | 836.0 s | `Eigenvalues did not converge` |
+| 10 | JAX-MD (OPLSAA) | harmonic | Nelder-Mead | 351.0 s | `Eigenvalues did not converge` |
+| 12 | JAX-MD (OPLSAA) | harmonic | grad-simp | 659.0 s | `Eigenvalues did not converge` |
+
+!!! note "Timing provenance"
+    Wall-clock values on this page come from the archived
+    [raw CLI log](https://github.com/ericchansen/q2mm/blob/master/benchmarks/rh-enamide/logs/rh-enamide_selected_2026-04-03_0320.run.log)
+    and derived
+    [timings table](https://github.com/ericchansen/q2mm/blob/master/benchmarks/rh-enamide/logs/rh-enamide_selected_2026-04-03_0320.timings.tsv).
+    The same log bundle also preserves the exact combo-order manifest and
+    `SHA256SUMS` file for provenance.
+    Successful JSON result files also store `optimized.elapsed_s`, but that is
+    optimizer-local time rather than end-to-end wall clock. For example, the
+    OpenMM CUDA MM3 grad-simp JSON records `33,223.1 s`, while the raw CLI log
+    records `112,959.0 s` for the full overnight job.
 
 !!! success "Key findings"
-    - **OpenMM CUDA now works on Blackwell (RTX 5090)** — install
-      `OpenMM-CUDA-12` pip package; the engine falls back gracefully
-      to CPU if CUDA context creation fails
-    - **Nelder-Mead completes on all backends** including OpenMM CUDA
-      (172 s for 9 molecules × 182 params)
-    - **L-BFGS-B is impractical for OpenMM** — frequency gradients use
-      finite differences (183 evals per gradient step), making each
-      L-BFGS-B iteration extremely slow
-    - **Powell crashes** with `LinAlgError` on JAX/JAX-MD — line-search
-      drives parameters to physically unreasonable values
-    - All results use `jac="auto"` which auto-enables analytical
-      gradients for engines that support them (currently energy-only;
-      frequency gradients still use finite differences)
-
-!!! warning "RMSD increases with only 2 iterations"
-    With `maxiter=2`, Nelder-Mead does not have enough iterations to
-    converge for 182-parameter systems.  The RMSD *increases* because
-    the simplex has barely started exploring.  Use grad-simp cycling
-    (below) for converged results.
+    - **OpenMM CUDA MM3 + grad-simp is the best fit in the selected GPU matrix**
+      — it reduces RMSD from `173.1` to `42.7`, saves `.fld` / `.prm` / `.xml`
+      force fields, and is now fully archived under `benchmarks/rh-enamide/`
+    - **JAX single-shot runs are useful screening jobs** — both harmonic and
+      MM3 L-BFGS-B/Nelder-Mead runs finish in `559.9–2,278.0 s`, making them
+      realistic same-day checks before committing to an overnight OpenMM job
+    - **JAX-MD harmonic L-BFGS-B can recover from a very poor starting point**
+      — `41,409.7 → 86.7` RMSD is a large improvement, even though it still
+      trails the best JAX and OpenMM results
+    - **The unstable configurations are now well characterised** — Powell on
+      JAX/JAX-MD and harmonic grad-simp on JAX/JAX-MD all terminated with the
+      same `Eigenvalues did not converge` failure signature
 
 ---
 
-## Grad-Simp Cycling (converged)
+## Earlier focused harmonic cycling study
+
+This is a separate dedicated harmonic-only benchmark with an auto-generated
+topology-driven force field (94 parameters across 9 molecules). It remains
+useful context for GPU-vs-CPU scaling, but it is **not directly comparable**
+to the 182-parameter overnight selected matrix above.
 
 Full optimization using L-BFGS-B (GRAD) → Nelder-Mead (SIMP) alternation
 with up to 5 parameters per cycle.  Uses auto-generated harmonic FF from
@@ -135,4 +158,5 @@ throughput, why CPU wins, and the path to making GPU viable.
 ---
 
 *Data generated from Jaguar B3LYP/LACVP** reference data in
-`examples/rh-enamide/`.  Full results archived in `benchmarks/rh-enamide/`.*
+`examples/rh-enamide/`. Archived overnight results, saved force fields, and raw
+timing evidence now live in `benchmarks/rh-enamide/`.*
