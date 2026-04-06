@@ -330,5 +330,5 @@ flowchart TD
 
 - [Tutorial: Step 6 — Optimize](tutorial.md#step-6-optimise-the-force-field) — full walkthrough of a single-shot optimization
 - [API: ScipyOptimizer](api.md#scipyoptimizer) — constructor parameters and method table
-- [Benchmarks](benchmarks/index.md) — benchmark data for all backends and methods
+- [Benchmarks](benchmarks/index.md) — benchmark and validation coverage across systems, backends, and methods
 - [References](references.md) — academic papers describing the Q2MM methodology

@@ -22,6 +22,11 @@ benchmarks/
 │   │   └── ...
 │   ├── forcefields/
 │   │   └── ...
+│   └── logs/                    # Raw timing/provenance bundle for archived runs
+│       ├── rh-enamide_selected_2026-04-03_0320.run.log
+│       ├── rh-enamide_selected_2026-04-03_0320.selected_combo_order.txt
+│       ├── rh-enamide_selected_2026-04-03_0320.timings.tsv
+│       └── SHA256SUMS
 └── README.md
 ```
 

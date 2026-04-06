@@ -111,5 +111,5 @@ The recent refactoring modernized Q2MM around three goals:
 | [Data Types](data-types.md) | Reference data types: what to train on and when |
 | [Optimization Guide](optimization-guide.md) | Single-shot, grad-simp cycling, and manual strategies |
 | [API Overview](api.md) | Module reference for parsers, models, optimizers, and backends |
-| [Benchmarks](benchmarks/index.md) | Benchmarks for backends, optimizers, and the Seminario method |
+| [Benchmarks](benchmarks/index.md) | Benchmark and validation evidence across systems, backends, and optimizers |
 | [References](references.md) | Literature citations and further reading |
