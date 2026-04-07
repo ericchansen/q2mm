@@ -9,9 +9,9 @@ the benchmark program is complete today.
 
 | Page | Primary question | Current scope | Status |
 |------|------------------|---------------|--------|
-| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH3F matrix: 24 supported combos across JAX, JAX-MD, OpenMM, and Tinker | **Complete** |
+| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 24 supported combos across JAX, JAX-MD, OpenMM, and Tinker | **Complete** |
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
-| [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH3F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
+| [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap unresolved** |
 
 ## How to use this section
@@ -27,7 +27,7 @@ the benchmark program is complete today.
 
 ## What the section demonstrates today
 
-- q2mm has one complete small-system comparison set: the CH3F full matrix.
+- q2mm has one complete small-system comparison set: the CH₃F full matrix.
 - q2mm has a realistic large-system Rh-enamide case study, but not yet a full
   24-combo Rh-enamide matrix.
 - GPU benefit is workload-dependent: it helps on larger JAX/JAX-MD workloads,
@@ -48,7 +48,7 @@ the benchmark program is complete today.
 The docs describe one benchmark program, but the repo currently stores its
 artifacts in more than one historical location:
 
-- Current CH3F full-matrix artifacts: `benchmark_results/ch3f/`
+- Current CH₃F full-matrix artifacts: `benchmark_results/ch3f/`
 - Archived Rh-enamide benchmark artifacts: `benchmarks/rh-enamide/`
 - Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
 - Published-force-field validation artifacts: `test/fixtures/published_ff/` and

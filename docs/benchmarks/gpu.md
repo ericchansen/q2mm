@@ -7,11 +7,11 @@ comparison runs rather than on the full benchmark matrices.
 ## Scope
 
 - Hardware: NVIDIA RTX 5090 (Blackwell), float64 throughout
-- Workloads: dedicated JAX and JAX-MD CPU/GPU comparisons on CH3F and
+- Workloads: dedicated JAX and JAX-MD CPU/GPU comparisons on CH₃F and
   Rh-enamide
 - Comparison metric: seconds per evaluation (`s/eval`); total evaluation count
   can differ between devices
-- Related pages: [Small Molecules](small-molecules.md) for the full CH3F matrix
+- Related pages: [Small Molecules](small-molecules.md) for the full CH₃F matrix
   and [Rh-Enamide](rh-enamide.md) for the selected overnight large-system run
 
 ## CPU-vs-GPU comparisons completed so far
@@ -30,15 +30,15 @@ is worthwhile.
 | Rh-enamide | JAX-MD (OPLSAA) | CPU | 75.38 | 316 | 23,819 s | baseline |
 | Rh-enamide | JAX (harmonic) | GPU | 12.60 | 31 | 391 s | 2.08x |
 | Rh-enamide | JAX (harmonic) | CPU | 26.17 | 21 | 550 s | baseline |
-| CH3F | JAX (harmonic) | GPU | 0.054 | 132 | 7.1 s | 0.20x |
-| CH3F | JAX (harmonic) | CPU | 0.011 | 95 | 1.0 s | baseline |
+| CH₃F | JAX (harmonic) | GPU | 0.054 | 132 | 7.1 s | 0.20x |
+| CH₃F | JAX (harmonic) | CPU | 0.011 | 95 | 1.0 s | baseline |
 
 ## Interpretation
 
 - GPU speedup appears once the workload is large enough and the force field is
   complex enough to keep the device busy. The strongest current example is
   JAX-MD on Rh-enamide at 5.61x faster than CPU on a per-evaluation basis.
-- Small systems still favor CPU. CH3F is faster on CPU because kernel-launch
+- Small systems still favor CPU. CH₃F is faster on CPU because kernel-launch
   overhead dominates the actual arithmetic.
 - Compare `s/eval`, not raw evaluation counts. CPU and GPU can take slightly
   different optimization paths because of floating-point reduction-order
@@ -62,11 +62,11 @@ is worthwhile.
     | Consumer GPU | [RTX 5090](https://www.techpowerup.com/gpu-specs/geforce-rtx-5090.c4216) | 1 : 64 |
     | Datacenter GPU | [NVIDIA A100](https://www.nvidia.com/en-us/data-center/a100/) | 1 : 2 |
 
-    That gap is one reason CH3F can still be faster on CPU even when a consumer
+    That gap is one reason CH₃F can still be faster on CPU even when a consumer
     GPU is present: q2mm's Hessian/frequency workflow does not get to use the
     much larger FP32 throughput numbers that GeForce-class cards advertise.
 
-    The current float32 story is also still mixed. CH3F passes comfortably in
+    The current float32 story is also still mixed. CH₃F passes comfortably in
     float32, but the larger Rh-enamide tests do not yet make float32 or mixed
     precision a drop-in replacement for the current default workflow. In the
     archived viability study, full float32 produced about 0.78 cm⁻¹ maximum
@@ -78,7 +78,7 @@ is worthwhile.
 ## Artifacts and provenance
 
 - Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
-- Related CH3F full-matrix artifacts: `benchmark_results/ch3f/`
+- Related CH₃F full-matrix artifacts: `benchmark_results/ch3f/`
 - Related Rh-enamide archive: `benchmarks/rh-enamide/`
 
 ## Reproducing

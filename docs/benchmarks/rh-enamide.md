@@ -32,7 +32,7 @@ log; failed rows keep their wall-clock failure times for completeness.
 
 | Backend | Form | Optimizer | Status | Result | MAE | Wall clock |
 |---------|------|-----------|--------|--------|----:|-----------:|
-| OpenMM (CUDA) | mm3 | grad-simp | success | 173.1 -> 42.7 RMSD | 31.8 | 112,959.0 s |
+| OpenMM | mm3 | grad-simp | success | 173.1 -> 42.7 RMSD | 31.8 | 112,959.0 s |
 | JAX | harmonic | L-BFGS-B | success | 173.5 -> 57.4 RMSD | 35.0 | 2,278.0 s |
 | JAX | mm3 | L-BFGS-B | success | 173.1 -> 61.5 RMSD | 48.5 | 1,975.2 s |
 | JAX | mm3 | Nelder-Mead | success | 173.1 -> 66.6 RMSD | 54.9 | 591.4 s |
