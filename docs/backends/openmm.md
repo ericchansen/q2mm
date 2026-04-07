@@ -20,7 +20,7 @@ Or with pip:
 pip install openmm
 ```
 
-For **GPU (CUDA) support**, install the CUDA plugin package:
+For **GPU support** (via CUDA), install the CUDA plugin package:
 
 ```bash
 pip install OpenMM-CUDA-12
