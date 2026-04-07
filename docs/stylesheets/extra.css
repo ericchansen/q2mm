@@ -17,11 +17,19 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: 0.75rem 1rem;
+  position: relative;
   width: 100%;
+  z-index: 2;
+}
+
+/* Push back-to-top behind the toolbar */
+.md-top {
+  z-index: 1;
 }
 
 .benchmark-filter {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
   gap: 0.35rem;
   min-width: 10rem;
@@ -52,6 +60,39 @@
 
 .benchmark-table-scroll table {
   margin-inline: auto;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Table header */
+.benchmark-table-scroll thead th {
+  border-bottom: 2px solid var(--md-default-fg-color--lightest);
+  padding: 0.65rem 1rem;
+  white-space: nowrap;
+}
+
+/* Table body cells */
+.benchmark-table-scroll tbody td {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  padding: 0.55rem 1rem;
+  white-space: nowrap;
+}
+
+/* Zebra striping */
+.benchmark-table-scroll tbody tr:nth-child(even) {
+  background-color: color-mix(in srgb, var(--md-default-fg-color) 4%, transparent);
+}
+
+/* Hover effect */
+.benchmark-table-scroll tbody tr:hover {
+  background-color: color-mix(in srgb, var(--md-accent-fg-color) 8%, transparent);
+}
+
+/* Right-align numeric columns (MAE = col 6, Wall clock = col 7) */
+.benchmark-table-scroll td:nth-child(n+6),
+.benchmark-table-scroll th:nth-child(n+6) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .benchmark-sort-button {
