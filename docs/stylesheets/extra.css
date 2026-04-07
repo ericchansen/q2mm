@@ -19,12 +19,7 @@
   gap: 0.75rem 1rem;
   position: relative;
   width: 100%;
-  z-index: 2;
-}
-
-/* Push back-to-top behind the toolbar */
-.md-top {
-  z-index: 1;
+  z-index: 3;
 }
 
 .benchmark-filter {
@@ -88,7 +83,7 @@
   background-color: color-mix(in srgb, var(--md-accent-fg-color) 8%, transparent);
 }
 
-/* Right-align numeric columns (MAE = col 6, Wall clock = col 7) */
+/* Right-align columns 6+ (numeric: MAE, Wall clock, and any future additions) */
 .benchmark-table-scroll td:nth-child(n+6),
 .benchmark-table-scroll th:nth-child(n+6) {
   text-align: right;
