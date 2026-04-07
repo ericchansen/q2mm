@@ -276,6 +276,11 @@ function findNextTable(anchor) {
     if (current.tagName === "TABLE") {
       return current;
     }
+    // Material wraps tables: scrollwrap > md-typeset__table > table
+    const nested = current.querySelector("table");
+    if (nested) {
+      return nested;
+    }
     current = current.nextElementSibling;
   }
   return null;
