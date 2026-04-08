@@ -726,14 +726,9 @@ def load_mm3_fld(path: str | Path) -> ForceField:
                 )
             )
 
-        elif param.ptype == "af" and len(atom_types) >= 2:
-            # Angle: extract center and outer elements
-            if len(atom_types) >= 3:
-                elems = tuple(_extract_element(t) for t in atom_types[:3])
-                env_id = canonicalize_angle_env_id(atom_types[:3])
-            else:
-                elems = (_extract_element(atom_types[0]), _extract_element(atom_types[1]), "?")
-                env_id = canonicalize_angle_env_id(atom_types[:2])
+        elif param.ptype == "af" and len(atom_types) >= 3:
+            elems = tuple(_extract_element(t) for t in atom_types[:3])
+            env_id = canonicalize_angle_env_id(atom_types[:3])
             eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
             angles.append(
                 AngleParam(
@@ -838,7 +833,7 @@ def save_mm3_fld(
             _update_mm3_vdw_lines(output_path, ff.vdws)
         return output_path
 
-    lines = [f" C  {substructure_name}\n", f" 9  {smiles}\n"]
+    lines = [f" C  OPT {substructure_name}\n", f" 9  {smiles}\n"]
     for bond in ff.bonds:
         lines.append(
             _format_mm3_bond_line(
