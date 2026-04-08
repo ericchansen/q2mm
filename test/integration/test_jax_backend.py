@@ -44,7 +44,7 @@ def _init_jax() -> None:
 class TestJaxEnableX64EnvVar:
     """Verify _jax_common respects JAX_ENABLE_X64 env var."""
 
-    _CHECK_SCRIPT = "import jax; from q2mm.backends.mm._jax_common import _HAS_JAX; print(jax.config.jax_enable_x64)"
+    _CHECK_SCRIPT = "from q2mm.backends.mm._jax_common import ensure_jax; ensure_jax(); import jax; print(jax.config.jax_enable_x64)"
 
     def test_default_enables_x64(self) -> None:
         """Without JAX_ENABLE_X64, importing _jax_common enables float64."""
