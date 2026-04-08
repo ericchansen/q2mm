@@ -310,8 +310,12 @@ def compute_sensitivity(
     # Compute effective step sizes: shrink to stay within bounds
     eff_steps = step_sizes.copy()
     if bounds is not None:
+        if len(bounds) != n:
+            raise ValueError(f"bounds length {len(bounds)} != param vector length {n}")
         lower = np.array([b[0] for b in bounds])
         upper = np.array([b[1] for b in bounds])
+        if np.any(lower > upper):
+            raise ValueError("bounds must satisfy lower <= upper for every parameter")
         # Largest symmetric step that keeps x0 ± h within [lower, upper]
         max_up = upper - x0
         max_down = x0 - lower
@@ -505,151 +509,152 @@ class OptimizationLoop:
         sensitivity_results: list[SensitivityResult] = []
         converged = False
 
-        if self.verbose:
-            logger.info(
-                "OptimizationLoop: initial score = %.6f, max_params = %d",
-                initial_score,
-                self.max_params,
-            )
-
-        for cycle in range(1, self.max_cycles + 1):
-            score_before = cycle_scores[-1]
-
-            # --- Step 1: Full-space optimisation ---
-            full_opt = ScipyOptimizer(
-                method=self.full_method,
-                maxiter=self.full_maxiter,
-                eps=self.eps,
-                jac=self.full_jac,
-                verbose=False,
-            )
-            full_result = full_opt.optimize(self.objective)
-            score_after_grad = full_result.final_score
-
+        try:
             if self.verbose:
                 logger.info(
-                    "  Cycle %d GRAD (%s): %.6f → %.6f",
-                    cycle,
-                    self.full_method,
-                    score_before,
-                    score_after_grad,
+                    "OptimizationLoop: initial score = %.6f, max_params = %d",
+                    initial_score,
+                    self.max_params,
                 )
 
-            # --- Step 2: Sensitivity analysis ---
-            step_sizes = ff.get_step_sizes()
-            bounds = ff.get_bounds()
-            sens = compute_sensitivity(
-                self.objective,
-                step_sizes=step_sizes,
-                metric=self.sensitivity_metric,
-                bounds=bounds,
-            )
-            sensitivity_results.append(sens)
+            for cycle in range(1, self.max_cycles + 1):
+                score_before = cycle_scores[-1]
 
-            # Select top max_params; ensure we have at least one active parameter
-            n_active = min(self.max_params, ff.n_params)
-            if n_active < 1:
-                raise ValueError(
-                    f"OptimizationLoop requires at least one active parameter, "
-                    f"but max_params={self.max_params} and ff.n_params={ff.n_params}."
+                # --- Step 1: Full-space optimisation ---
+                full_opt = ScipyOptimizer(
+                    method=self.full_method,
+                    maxiter=self.full_maxiter,
+                    eps=self.eps,
+                    jac=self.full_jac,
+                    verbose=False,
                 )
-            active = sens.ranking[:n_active].tolist()
-            selected_indices.append(active)
+                full_result = full_opt.optimize(self.objective)
+                score_after_grad = full_result.final_score
 
-            if self.verbose:
-                labels = ff.get_param_type_labels()
-                selected_labels = [f"{labels[i]}[{i}]" for i in active]
-                logger.info(
-                    "  Cycle %d sensitivity (%s): selected %s",
-                    cycle,
-                    self.sensitivity_metric,
-                    ", ".join(selected_labels),
-                )
-
-            # --- Step 3: Subspace simplex ---
-            current_full = ff.get_param_vector().copy()
-            sub_obj = SubspaceObjective(self.objective, active, current_full)
-
-            from scipy import optimize as sp_opt
-
-            sub_x0 = sub_obj.get_initial_vector()
-            sub_bounds = sub_obj.get_bounds()
-
-            scipy_options: dict = {"maxiter": self.simp_maxiter}
-            if self.simp_method == "Nelder-Mead":
-                scipy_options["xatol"] = 1e-6
-                scipy_options["fatol"] = 1e-8
-
-            # Pass bounds when the method supports them
-            bounded_methods = {"L-BFGS-B", "trust-constr", "SLSQP"}
-            use_bounds = self.simp_method in bounded_methods
-
-            scipy_result = sp_opt.minimize(
-                sub_obj,
-                sub_x0,
-                method=self.simp_method,
-                bounds=sub_bounds if use_bounds else None,
-                options=scipy_options,
-            )
-
-            # Only accept the simplex result if it actually improved the score
-            best_sub = scipy_result.x
-            best_full = sub_obj.build_full_vector(best_sub)
-            score_after_simp = float(self.objective(best_full))
-
-            if score_after_simp < score_after_grad:
-                ff.set_param_vector(best_full)
-            else:
-                # Simplex didn't improve — FF already has post-gradient
-                # parameters (set by ScipyOptimizer.optimize), no restore
-                # needed since objective evaluations are non-mutating.
-                score_after_simp = score_after_grad
                 if self.verbose:
                     logger.info(
-                        "  Cycle %d SIMP: no improvement (%.6f ≥ %.6f), keeping GRAD result",
+                        "  Cycle %d GRAD (%s): %.6f → %.6f",
                         cycle,
-                        score_after_simp,
+                        self.full_method,
+                        score_before,
                         score_after_grad,
                     )
 
-            if self.verbose:
-                logger.info(
-                    "  Cycle %d SIMP (%s, %d params): %.6f → %.6f",
-                    cycle,
-                    self.simp_method,
-                    n_active,
-                    score_after_grad,
-                    score_after_simp,
+                # --- Step 2: Sensitivity analysis ---
+                step_sizes = ff.get_step_sizes()
+                bounds = ff.get_bounds()
+                sens = compute_sensitivity(
+                    self.objective,
+                    step_sizes=step_sizes,
+                    metric=self.sensitivity_metric,
+                    bounds=bounds,
                 )
+                sensitivity_results.append(sens)
 
-            cycle_scores.append(score_after_simp)
+                # Select top max_params; ensure we have at least one active parameter
+                n_active = min(self.max_params, ff.n_params)
+                if n_active < 1:
+                    raise ValueError(
+                        f"OptimizationLoop requires at least one active parameter, "
+                        f"but max_params={self.max_params} and ff.n_params={ff.n_params}."
+                    )
+                active = sens.ranking[:n_active].tolist()
+                selected_indices.append(active)
 
-            # --- Step 4: Convergence check ---
-            if score_before > 0:
-                change = (score_before - score_after_simp) / score_before
-            else:
-                change = 0.0
-
-            if self.verbose:
-                logger.info(
-                    "  Cycle %d: %.2f%% improvement (threshold: %.2f%%)",
-                    cycle,
-                    change * 100,
-                    self.convergence * 100,
-                )
-
-            if 0 <= change < self.convergence:
-                converged = True
                 if self.verbose:
-                    logger.info("  Converged after %d cycles.", cycle)
-                break
+                    labels = ff.get_param_type_labels()
+                    selected_labels = [f"{labels[i]}[{i}]" for i in active]
+                    logger.info(
+                        "  Cycle %d sensitivity (%s): selected %s",
+                        cycle,
+                        self.sensitivity_metric,
+                        ", ".join(selected_labels),
+                    )
+
+                # --- Step 3: Subspace simplex ---
+                current_full = ff.get_param_vector().copy()
+                sub_obj = SubspaceObjective(self.objective, active, current_full)
+
+                from scipy import optimize as sp_opt
+
+                sub_x0 = sub_obj.get_initial_vector()
+                sub_bounds = sub_obj.get_bounds()
+
+                scipy_options: dict = {"maxiter": self.simp_maxiter}
+                if self.simp_method == "Nelder-Mead":
+                    scipy_options["xatol"] = 1e-6
+                    scipy_options["fatol"] = 1e-8
+
+                # Pass bounds when the method supports them
+                bounded_methods = {"L-BFGS-B", "trust-constr", "SLSQP"}
+                use_bounds = self.simp_method in bounded_methods
+
+                scipy_result = sp_opt.minimize(
+                    sub_obj,
+                    sub_x0,
+                    method=self.simp_method,
+                    bounds=sub_bounds if use_bounds else None,
+                    options=scipy_options,
+                )
+
+                # Only accept the simplex result if it actually improved the score
+                best_sub = scipy_result.x
+                best_full = sub_obj.build_full_vector(best_sub)
+                score_after_simp = float(self.objective(best_full))
+
+                if score_after_simp < score_after_grad:
+                    ff.set_param_vector(best_full)
+                else:
+                    # Simplex didn't improve — FF already has post-gradient
+                    # parameters (set by ScipyOptimizer.optimize), no restore
+                    # needed since objective evaluations are non-mutating.
+                    score_after_simp = score_after_grad
+                    if self.verbose:
+                        logger.info(
+                            "  Cycle %d SIMP: no improvement (%.6f ≥ %.6f), keeping GRAD result",
+                            cycle,
+                            score_after_simp,
+                            score_after_grad,
+                        )
+
+                if self.verbose:
+                    logger.info(
+                        "  Cycle %d SIMP (%s, %d params): %.6f → %.6f",
+                        cycle,
+                        self.simp_method,
+                        n_active,
+                        score_after_grad,
+                        score_after_simp,
+                    )
+
+                cycle_scores.append(score_after_simp)
+
+                # --- Step 4: Convergence check ---
+                if score_before > 0:
+                    change = (score_before - score_after_simp) / score_before
+                else:
+                    change = 0.0
+
+                if self.verbose:
+                    logger.info(
+                        "  Cycle %d: %.2f%% improvement (threshold: %.2f%%)",
+                        cycle,
+                        change * 100,
+                        self.convergence * 100,
+                    )
+
+                if 0 <= change < self.convergence:
+                    converged = True
+                    if self.verbose:
+                        logger.info("  Converged after %d cycles.", cycle)
+                    break
+
+        finally:
+            self.objective.on_error = prev_on_error
 
         final_score = cycle_scores[-1]
         n_cycles = len(cycle_scores) - 1  # exclude initial
         total_evals = self.objective.n_eval - n_eval_start
-
-        # Restore previous error handling mode
-        self.objective.on_error = prev_on_error
 
         return LoopResult(
             success=converged,

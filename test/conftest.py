@@ -109,9 +109,11 @@ def pytest_configure(config: pytest.Config) -> None:
     # when no JAX tests will run.  Setting JAX_PLATFORMS=cpu before import
     # keeps the GPU free for other work.
     import os
+    import re
 
     markexpr = getattr(config.option, "markexpr", "") or ""
-    jax_excluded = "not" in markexpr and ("jax" in markexpr)
+    # Match "not jax" or "not (...jax...)" but not "not slow and jax"
+    jax_excluded = bool(re.search(r"\bnot\s+jax\b", markexpr) or re.search(r"\bnot\s*\(.*\bjax\b", markexpr))
     if jax_excluded and "JAX_PLATFORMS" not in os.environ:
         os.environ["JAX_PLATFORMS"] = "cpu"
 
