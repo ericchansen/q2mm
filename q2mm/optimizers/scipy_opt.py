@@ -61,7 +61,8 @@ class OptimizationResult:
         jac_resolved (str): Actual Jacobian strategy used:
             ``"analytical"``, ``"finite-difference"``, or
             ``"derivative-free"``.
-        eps (float): Finite-difference step size used.
+        eps (float | None): Finite-difference step size used, or ``None``
+            when the method is derivative-free or uses analytical gradients.
 
     """
 
@@ -77,7 +78,7 @@ class OptimizationResult:
     method: str
     jac_mode: str | None = None
     jac_resolved: str = "finite-difference"
-    eps: float = 1e-3
+    eps: float | None = 1e-3
 
     @property
     def improvement(self) -> float:
@@ -361,7 +362,7 @@ class ScipyOptimizer:
             method=self.method,
             jac_mode=self.jac,
             jac_resolved=jac_resolved,
-            eps=self.eps,
+            eps=self.eps if jac_resolved == "finite-difference" else None,
         )
 
     def _run_least_squares(

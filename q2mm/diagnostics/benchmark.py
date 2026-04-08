@@ -30,16 +30,23 @@ if TYPE_CHECKING:
 
 @functools.lru_cache(maxsize=1)
 def _git_info() -> dict[str, Any]:
-    """Collect git commit SHA and dirty status."""
+    """Collect git commit SHA and dirty status.
+
+    Runs git commands from the q2mm package directory so the result
+    describes the q2mm source tree regardless of the caller's CWD.
+    """
+    repo_dir = str(Path(__file__).resolve().parent.parent)
     info: dict[str, Any] = {}
     try:
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
+            cwd=repo_dir,
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
         dirty = subprocess.check_output(
             ["git", "status", "--porcelain"],
+            cwd=repo_dir,
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
@@ -604,7 +611,7 @@ def run_combo(
         elif loop.full_jac == "auto":
             if obj.engine.supports_analytical_gradients():
                 jac_resolved = "analytical"
-        eps = loop.eps
+        eps = loop.eps if jac_resolved == "finite-difference" else None
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
