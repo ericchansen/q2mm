@@ -66,9 +66,11 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
     """
     configs: list[tuple[str, dict]] = [
         ("L-BFGS-B", {"method": "L-BFGS-B"}),
+        ("L-BFGS-B (FD)", {"method": "L-BFGS-B", "jac": None}),
         ("Nelder-Mead", {"method": "Nelder-Mead"}),
         ("Powell", {"method": "Powell"}),
         ("grad-simp", {"method": "cycling"}),
+        ("grad-simp (auto)", {"method": "cycling", "full_jac": "auto"}),
     ]
     return configs
 

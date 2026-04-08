@@ -29,11 +29,9 @@ if TYPE_CHECKING:
 
 
 @functools.lru_cache(maxsize=1)
-def _collect_environment() -> dict[str, Any]:
-    """Collect reproducibility metadata: git SHA, Python, package versions, hardware."""
-    env: dict[str, Any] = {}
-
-    # Git commit
+def _git_info() -> dict[str, Any]:
+    """Collect git commit SHA and dirty status."""
+    info: dict[str, Any] = {}
     try:
         sha = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -45,22 +43,47 @@ def _collect_environment() -> dict[str, Any]:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        env["git_sha"] = sha
-        env["git_dirty"] = bool(dirty)
+        info["git_sha"] = sha
+        info["git_dirty"] = bool(dirty)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        env["git_sha"] = None
-        env["git_dirty"] = None
+        info["git_sha"] = None
+        info["git_dirty"] = None
+    return info
 
-    # Python + key packages
-    env["python"] = platform.python_version()
+
+@functools.lru_cache(maxsize=1)
+def _collect_environment() -> dict[str, Any]:
+    """Collect reproducibility metadata: Python, platform, GPU, package versions."""
+    env: dict[str, Any] = {}
+
+    env["python_version"] = platform.python_version()
     env["platform"] = platform.platform()
+
+    # GPU detection via nvidia-smi
+    try:
+        gpu_out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        if gpu_out:
+            parts = [line.strip() for line in gpu_out.split("\n")]
+            env["gpu"] = parts[0] if len(parts) == 1 else parts
+        else:
+            env["gpu"] = None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        env["gpu"] = None
+
+    # Package versions
+    packages: dict[str, str] = {}
     for pkg in ("q2mm", "numpy", "scipy", "jax", "jaxlib", "openmm"):
         try:
             from importlib.metadata import version
 
-            env[f"{pkg}_version"] = version(pkg)
+            packages[pkg] = version(pkg)
         except Exception:
             pass
+    env["packages"] = packages
 
     return env
 
@@ -136,6 +159,8 @@ def benchmark_stem(metadata: dict) -> str:
 
         >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "harmonic"})
         'ch3f_jax_harmonic_gpu_lbfgsb'
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B (FD)", "functional_form": "harmonic"})
+        'ch3f_jax_harmonic_gpu_lbfgsb-fd'
         >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "mm3"})
         'ch3f_jax_mm3_gpu_lbfgsb'
         >>> benchmark_stem({"molecule": "Rh-enamide", "backend": "JAX-MD (OPLSAA, cpu)", "optimizer": "Powell"})
@@ -153,9 +178,9 @@ def benchmark_stem(metadata: dict) -> str:
     form = (metadata.get("functional_form") or ff_from_backend).lower()
 
     optimizer = metadata.get("optimizer", "unk").lower()
-    if optimizer == "l-bfgs-b":
-        optimizer = "lbfgsb"
-    optimizer = optimizer.replace(" ", "-")
+    if optimizer.startswith("l-bfgs-b"):
+        optimizer = "lbfgsb" + optimizer[len("l-bfgs-b") :]
+    optimizer = optimizer.replace(" ", "-").replace("(", "").replace(")", "")
 
     return f"{system}_{engine}_{form}_{device}_{optimizer}"
 
@@ -166,7 +191,9 @@ class BenchmarkResult:
 
     Attributes:
         metadata (dict): Backend, optimizer, molecule, timestamp, source,
-            and level_of_theory metadata.
+            level_of_theory, gradient settings, and git info.
+        environment (dict): Reproducibility info including Python version,
+            platform, GPU info, and package versions.
         qm_reference (dict): QM reference data including frequencies_cm1
             and level_of_theory.
         default_ff (dict | None): Default force field results including
@@ -185,6 +212,7 @@ class BenchmarkResult:
     """
 
     metadata: dict = field(default_factory=dict)
+    environment: dict = field(default_factory=dict)
     qm_reference: dict = field(default_factory=dict)
     default_ff: dict | None = None
     seminario: dict | None = None
@@ -495,6 +523,8 @@ def run_combo(
     seminario_params = ff.get_param_vector().copy()
     param_names = _param_names(ff)
 
+    git = _git_info()
+
     result = BenchmarkResult(
         metadata={
             "backend": backend_name,
@@ -505,8 +535,10 @@ def run_combo(
             "source": "q2mm",
             "level_of_theory": level_of_theory,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "environment": _collect_environment(),
+            "git_sha": git.get("git_sha"),
+            "git_dirty": git.get("git_dirty"),
         },
+        environment=_collect_environment(),
         qm_reference={
             "frequencies_cm1": all_qm_real.tolist(),
             "level_of_theory": level_of_theory,
@@ -542,6 +574,10 @@ def run_combo(
             loop_kwargs["full_maxiter"] = optimizer_kwargs["full_maxiter"]
         if "simp_maxiter" in optimizer_kwargs:
             loop_kwargs["simp_maxiter"] = optimizer_kwargs["simp_maxiter"]
+        # Forward gradient settings to the full-space pass
+        loop_kwargs["full_jac"] = optimizer_kwargs.get("full_jac")
+        if "eps" in optimizer_kwargs:
+            loop_kwargs["eps"] = optimizer_kwargs["eps"]
 
         loop = OptimizationLoop(**loop_kwargs)
         t0 = time.perf_counter()
@@ -557,6 +593,18 @@ def run_combo(
             "n_cycles": loop_result.n_cycles,
             "cycle_scores": loop_result.cycle_scores,
         }
+
+        # Cycling jac metadata: full-space pass uses full_jac, simplex is
+        # always derivative-free.  The resolved mode depends on the engine;
+        # capture what the loop was configured with.
+        jac_mode = loop.full_jac
+        jac_resolved = "finite-difference"
+        if loop.full_jac == "analytical":
+            jac_resolved = "analytical"
+        elif loop.full_jac == "auto":
+            if obj.engine.supports_analytical_gradients():
+                jac_resolved = "analytical"
+        eps = loop.eps
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -574,6 +622,15 @@ def run_combo(
         opt_final_score = opt_result.final_score
         opt_message = opt_result.message
         extra_opt_data = {}
+
+        jac_mode = opt_result.jac_mode
+        jac_resolved = opt_result.jac_resolved
+        eps = opt_result.eps
+
+    # Record optimizer settings in metadata
+    result.metadata["jac_mode"] = jac_mode
+    result.metadata["jac_resolved"] = jac_resolved
+    result.metadata["eps"] = eps
 
     # Final aggregate frequencies and RMSD
     all_mm_real_final: list[float] = []
