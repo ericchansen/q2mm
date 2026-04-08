@@ -493,7 +493,7 @@ def save_tinker_prm(
             _update_tinker_vdw_lines(output_path, ff.vdws)
         return output_path
 
-    lines = ["# Q2MM\n", f"# {section_name}\n"]
+    lines = ["# Q2MM\n", f"# OPT {section_name}\n"]
     for bond in ff.bonds:
         lines.append(
             _format_tinker_bond_line(
