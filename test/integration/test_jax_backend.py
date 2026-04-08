@@ -12,25 +12,33 @@ file covers only behaviour unique to the JAX backend:
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 
 import numpy as np
 import pytest
 
-try:
-    import jax  # noqa: F401
-
-    _HAS_JAX = True
-except ImportError:
-    _HAS_JAX = False
+_HAS_JAX = importlib.util.find_spec("jax") is not None
 
 pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pytest.mark.jax]
 
 from test._shared import make_diatomic
 
-from q2mm.backends.mm.jax_engine import JaxEngine, _build_vdw_pairs
 from q2mm.models.forcefield import BondParam, ForceField
+
+
+@pytest.fixture(autouse=True)
+def _init_jax() -> None:
+    """Lazily import JAX before each test so module collection is CUDA-free."""
+    from q2mm.backends.mm._jax_common import ensure_jax
+
+    ensure_jax()
+    global JaxEngine, _build_vdw_pairs  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxEngine as _JE, _build_vdw_pairs as _bvp
+
+    JaxEngine = _JE
+    _build_vdw_pairs = _bvp
 
 
 class TestJaxEnableX64EnvVar:

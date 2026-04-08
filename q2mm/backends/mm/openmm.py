@@ -1947,7 +1947,7 @@ class OpenMMEngine(MMEngine):
         return hessian_symmetric * hessian_kjmolnm2_to_au(1.0)
 
     def frequencies(
-        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
+        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None, **kwargs: Any
     ) -> list[float]:
         """Approximate harmonic frequencies in cm⁻¹ from the numerical Hessian.
 
@@ -1955,6 +1955,9 @@ class OpenMMEngine(MMEngine):
             structure (Q2MMMolecule | str | Path | OpenMMHandle): Molecule,
                 XYZ path, or :class:`OpenMMHandle`.
             forcefield: Force field to apply. Auto-generated if ``None``.
+            **kwargs: Forwarded to
+                :func:`~q2mm.models.hessian.hessian_to_frequencies`
+                (e.g. ``on_error="penalty"``).
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
@@ -1964,4 +1967,4 @@ class OpenMMEngine(MMEngine):
 
         handle = self._prepare_handle(structure, forcefield)
         hessian_au = self.hessian(handle)  # Hartree/Bohr²
-        return hessian_to_frequencies(hessian_au, list(handle.molecule.symbols))
+        return hessian_to_frequencies(hessian_au, list(handle.molecule.symbols), **kwargs)

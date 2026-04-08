@@ -71,17 +71,17 @@ force-field model.
 - Inputs:
   [QM reference data](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference)
 - Outputs:
-  [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/results),
-  [optimized force fields](https://github.com/ericchansen/q2mm/tree/master/benchmark_results/ch3f/forcefields),
+  [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results),
+  [optimized force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields),
   and the
-  [leaderboard](https://github.com/ericchansen/q2mm/blob/master/benchmark_results/ch3f/leaderboard.txt)
+  [leaderboard](https://github.com/ericchansen/q2mm/blob/master/benchmarks/ch3f/leaderboard.txt)
 
-This page uses the current full-matrix artifact set in `benchmark_results/ch3f/`.
+This page uses the current full-matrix artifact set in `benchmarks/ch3f/`.
 
 ## Reproducing
 
 ```bash
-q2mm-benchmark --system ch3f --output benchmark_results/ch3f
-q2mm-benchmark --load benchmark_results/ch3f/results
+q2mm-benchmark --system ch3f --output benchmarks/ch3f
+q2mm-benchmark --load benchmarks/ch3f/results
 q2mm-benchmark --list
 ```

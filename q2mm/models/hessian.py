@@ -3,7 +3,7 @@
 Canonical location: :mod:`q2mm.models.hessian` (formerly ``q2mm.linear_algebra``).
 
 Implements eigenvalue manipulation methods from Limé & Norrby
-(J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797):
+(J. Comput. Chem. 2015, 36, 244–250, DOI:10.1002/jcc.23797):
 
 - **Method C** (``replace_neg_eigenvalue``): Force reaction coordinate
   eigenvalue to a large positive value. Simple but distorts the eigenspectrum.
@@ -172,19 +172,27 @@ def mass_weight_eigenvectors(
 # ---- Frequency pipeline ----
 
 
+#: Penalty frequency (cm⁻¹) returned when eigendecomposition fails and
+#: ``on_error="penalty"`` is set.  Large enough to dominate any residual
+#: so the optimizer retreats from the pathological parameter region.
+PENALTY_FREQUENCY: float = 1e5
+
+
 def hessian_to_frequencies(
     hessian_au: np.ndarray,
     symbols: list[str] | Sequence[str],
     *,
     sort: bool = True,
+    on_error: Literal["raise", "penalty"] = "raise",
 ) -> list[float]:
     """Convert a Hessian matrix (Hartree/Bohr²) to vibrational frequencies (cm⁻¹).
 
     Pipeline:
     1. Mass-weight the Hessian using atomic masses
-    2. Diagonalize (eigenvalues only)
-    3. Convert eigenvalues to frequencies in cm⁻¹
-    4. Handle imaginary frequencies (negative eigenvalues → negative cm⁻¹)
+    2. Symmetrise (guards against slight asymmetry from autodiff Hessians)
+    3. Diagonalize (eigenvalues only)
+    4. Convert eigenvalues to frequencies in cm⁻¹
+    5. Handle imaginary frequencies (negative eigenvalues → negative cm⁻¹)
 
     The conversion factor from mass-weighted atomic-unit eigenvalues
     (Hartree / (amu · Bohr²)) to angular-frequency² (s⁻²) is::
@@ -198,28 +206,56 @@ def hessian_to_frequencies(
         hessian_au: ``(3N, 3N)`` Hessian in Hartree/Bohr².
         symbols: Element symbols for mass lookup (length *N*).
         sort: If ``True`` (default), return frequencies sorted ascending.
+        on_error: Error handling strategy for eigendecomposition failures.
+            ``"raise"`` (default) re-raises the exception.
+            ``"penalty"`` returns ``3N`` copies of :data:`PENALTY_FREQUENCY`,
+            signalling to the optimizer that this parameter region is bad.
 
     Returns:
         List of ``3N`` frequencies in cm⁻¹.  Negative values represent
         imaginary frequencies (from negative eigenvalues, e.g. at
         transition states).
 
+    Raises:
+        np.linalg.LinAlgError: If eigendecomposition fails and
+            ``on_error="raise"``.
+
     """
     symbols_list = _resolve_symbols(symbols)
+    n_freqs = 3 * len(symbols_list)
 
     # 1. Mass-weight (copy to avoid mutating the caller's array)
     hess = hessian_au.copy()
     mass_weight_hessian(hess, symbols_list)
 
-    # 2. Diagonalize — eigenvalues only (sorted ascending by numpy)
-    eigenvalues = np.linalg.eigvalsh(hess)
+    # 2. Symmetrise — autodiff Hessians (e.g. from jax.hessian) can have
+    #    slight asymmetry due to floating-point accumulation.  OpenMM's FD
+    #    Hessian does this explicitly; we do it unconditionally since the
+    #    cost is negligible and it makes eigvalsh more robust.
+    hess = 0.5 * (hess + hess.T)
 
-    # 3. Convert eigenvalues [Hartree / (amu · Bohr²)] → s⁻²
+    # 3. Check for non-finite entries before attempting eigendecomposition
+    if not np.isfinite(hess).all():
+        if on_error == "penalty":
+            logger.warning("Hessian contains non-finite entries; returning penalty frequencies.")
+            return [PENALTY_FREQUENCY] * n_freqs
+        raise np.linalg.LinAlgError("Hessian contains non-finite entries (NaN or Inf)")
+
+    # 4. Diagonalize — eigenvalues only (sorted ascending by numpy)
+    try:
+        eigenvalues = np.linalg.eigvalsh(hess)
+    except np.linalg.LinAlgError:
+        if on_error == "penalty":
+            logger.warning("Eigenvalue decomposition failed; returning penalty frequencies.")
+            return [PENALTY_FREQUENCY] * n_freqs
+        raise
+
+    # 5. Convert eigenvalues [Hartree / (amu · Bohr²)] → s⁻²
     bohr_to_m = co.BOHR_TO_ANG * 1e-10
     factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
     vals_si = eigenvalues * factor
 
-    # 4. eigenvalue → angular frequency → cm⁻¹
+    # 6. eigenvalue → angular frequency → cm⁻¹
     #    Negative eigenvalue → imaginary frequency (negative cm⁻¹)
     freqs = np.sign(vals_si) * np.sqrt(np.abs(vals_si))
     freqs /= 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
@@ -259,7 +295,7 @@ def replace_neg_eigenvalue(
 ) -> np.ndarray:
     """Replace the most negative eigenvalue to invert TS curvature (Method C).
 
-    Implements "Method C" from Limé & Norrby (J. Comput. Chem. 2015, 36, 1130,
+    Implements "Method C" from Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250,
     DOI:10.1002/jcc.23797): the reaction coordinate eigenvalue is forced to a
     large positive value so that the TS is treated as an energy minimum by
     the MM force field.
@@ -456,7 +492,7 @@ def invert_ts_curvature(
 def keep_natural_eigenvalue(eigenvalues: np.ndarray) -> np.ndarray:
     """Return eigenvalues unchanged (Method D).
 
-    Method D from Limé & Norrby (J. Comput. Chem. 2015, 36, 1130): keeps
+    Method D from Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250): keeps
     the natural (negative) reaction coordinate eigenvalue during fitting.
     This avoids the large distortion introduced by Method C and produces
     ~13× lower RMS error, but the resulting force field may have zero or

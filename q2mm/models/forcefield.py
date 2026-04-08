@@ -36,7 +36,7 @@ class FunctionalForm(str, Enum):
     - ``HARMONIC``: Standard harmonic bonds/angles, periodic torsions,
       Lennard-Jones 12-6 vdW.  Used by AMBER, OPLS, GAFF, etc.
     - ``MM3``: Allinger's MM3 cubic bond stretch, sextic angle bend,
-      buffered 14-7 vdW.
+      Buckingham exp-6 vdW.
 
     The enum is orthogonal to ``source_format`` (file format) — an MM3
     force field can be loaded from ``.fld`` or ``.prm`` files, while a

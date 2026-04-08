@@ -51,6 +51,12 @@ is worthwhile.
   OpenMM CUDA and large-system screening, but its outcome-by-outcome details
   belong on [Rh-Enamide](rh-enamide.md) rather than on this device-comparison
   page.
+- **Grad-simp cycling now works on JAX GPU** (see [Rh-Enamide](rh-enamide.md)).
+  JAX MM3 grad-simp reached the same 42.7 RMSD as the OpenMM overnight run
+  in ~25 minutes on the RTX 5090 — a ~23× optimizer-time improvement. This was
+  unblocked by Hessian symmetrisation and bound-aware sensitivity analysis
+  that prevent the eigenvalue failures that previously killed every JAX/JAX-MD
+  grad-simp attempt.
 
 ??? note "Why float64 still matters on RTX 5090-class GPUs"
     q2mm keeps these benchmark runs in float64 because the frequency path is
@@ -78,7 +84,7 @@ is worthwhile.
 ## Artifacts and provenance
 
 - Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
-- Related CH₃F full-matrix artifacts: `benchmark_results/ch3f/`
+- Related CH₃F full-matrix artifacts: `benchmarks/ch3f/`
 - Related Rh-enamide archive: `benchmarks/rh-enamide/`
 
 ## Reproducing
@@ -90,6 +96,6 @@ JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L
 q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
 
-q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmark_results/ch3f
-JAX_PLATFORMS=cpu q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmark_results/ch3f
+q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
 ```

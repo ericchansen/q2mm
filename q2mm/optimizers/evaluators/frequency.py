@@ -41,6 +41,7 @@ class FrequencyEvaluator:
         ff: ForceField,
         *,
         structure: Any | None = None,
+        on_error: str = "raise",
     ) -> FrequencyResult:
         """Compute MM vibrational frequencies.
 
@@ -49,13 +50,17 @@ class FrequencyEvaluator:
             mol: The molecule being evaluated.
             ff: The current force field.
             structure: Optional pre-built engine context/handle.
+            on_error: Error handling for eigendecomposition failures.
+                ``"raise"`` (default) propagates exceptions.
+                ``"penalty"`` returns large penalty frequencies so the
+                optimizer can retreat from pathological parameter regions.
 
         Returns:
             FrequencyResult with computed frequencies.
 
         """
         target = structure if structure is not None else mol
-        freqs = engine.frequencies(target, ff)
+        freqs = engine.frequencies(target, ff, on_error=on_error)
         return FrequencyResult(frequencies=list(freqs))
 
     def residuals(

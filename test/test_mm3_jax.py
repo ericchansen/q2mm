@@ -9,16 +9,12 @@ Verifies:
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
-try:
-    import jax
-    import jax.numpy as jnp
-
-    _HAS_JAX = True
-except ImportError:
-    _HAS_JAX = False
+_HAS_JAX = importlib.util.find_spec("jax") is not None
 
 try:
     import openmm  # noqa: F401
@@ -31,13 +27,33 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 
 from test._shared import make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.backends.mm.jax_engine import (
-    JaxEngine,
-    _mm3_angle_energy,
-    _mm3_bond_energy,
-    _mm3_vdw_energy,
-)
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam
+
+
+@pytest.fixture(autouse=True)
+def _init_jax() -> None:
+    """Lazily import JAX before each test so module collection is CUDA-free."""
+    from q2mm.backends.mm._jax_common import ensure_jax
+
+    ensure_jax()
+    # Make jax/jnp and engine symbols available as module globals for tests.
+    global jax, jnp, JaxEngine, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy  # noqa: PLW0603
+    import jax as _jax
+    import jax.numpy as _jnp
+
+    from q2mm.backends.mm.jax_engine import (
+        JaxEngine as _JaxEngine,
+        _mm3_angle_energy as _angle,
+        _mm3_bond_energy as _bond,
+        _mm3_vdw_energy as _vdw,
+    )
+
+    jax = _jax
+    jnp = _jnp
+    JaxEngine = _JaxEngine
+    _mm3_bond_energy = _bond
+    _mm3_angle_energy = _angle
+    _mm3_vdw_energy = _vdw
 
 
 # ---------------------------------------------------------------------------

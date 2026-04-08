@@ -10,15 +10,12 @@ Covers:
 
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
-try:
-    import jax  # noqa: F401
-
-    _HAS_JAX = True
-except ImportError:
-    _HAS_JAX = False
+_HAS_JAX = importlib.util.find_spec("jax") is not None
 
 pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pytest.mark.jax]
 

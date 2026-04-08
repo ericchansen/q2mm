@@ -41,7 +41,7 @@ engine = JaxMDEngine(
 
 ---
 
-## Supported Energy Terms
+## Supported energy terms
 
 | Term | Supported |
 |------|:---------:|
@@ -75,7 +75,7 @@ engine = JaxMDEngine(
 
 ---
 
-## GPU Support
+## GPU support
 
 JaxMDEngine runs on whichever device JAX selects.  To use a GPU:
 
@@ -119,7 +119,7 @@ print(f"Energy: {e:.4f}, grad shape: {grad.shape}")
 
 ---
 
-## See Also
+## See also
 
 - [JaxEngine](jax-engine.md) — simpler, no periodic boundaries
 - [Engine comparison table](index.md#engine-overview)

@@ -48,7 +48,7 @@ the benchmark program is complete today.
 The docs describe one benchmark program, but the repo currently stores its
 artifacts in more than one historical location:
 
-- Current CH₃F full-matrix artifacts: `benchmark_results/ch3f/`
+- Current CH₃F full-matrix artifacts: `benchmarks/ch3f/`
 - Archived Rh-enamide benchmark artifacts: `benchmarks/rh-enamide/`
 - Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
 - Published-force-field validation artifacts: `test/fixtures/published_ff/` and

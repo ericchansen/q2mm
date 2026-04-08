@@ -12,15 +12,13 @@ file covers only behaviour unique to the JAX-MD backend:
 
 from __future__ import annotations
 
+import importlib.util
 from typing import Any
 
 import numpy as np
 import pytest
 
-try:
-    from q2mm.backends.mm.jax_md_engine import JaxMDEngine, _HAS_JAX_MD
-except ImportError:
-    _HAS_JAX_MD = False
+_HAS_JAX_MD = importlib.util.find_spec("jax_md") is not None
 
 pytestmark = [
     pytest.mark.skipif(not _HAS_JAX_MD, reason="jax-md not installed"),
@@ -30,6 +28,17 @@ pytestmark = [
 from test._shared import make_diatomic, make_noble_gas_pair, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
+
+
+@pytest.fixture(autouse=True)
+def _init_jax_md() -> None:
+    """Lazily import JAX-MD before each test so module collection is CUDA-free."""
+    from q2mm.backends.mm.jax_md_engine import JaxMDEngine as _JME, _HAS_JAX_MD as _avail
+
+    if not _avail:
+        pytest.skip("jax-md not available")
+    global JaxMDEngine  # noqa: PLW0603
+    JaxMDEngine = _JME
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:

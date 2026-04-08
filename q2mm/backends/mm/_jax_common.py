@@ -3,40 +3,35 @@
 Contains the JAX import guard, float64 configuration, parameter-vector
 offset calculations, and ForceField matching helpers used by both
 :mod:`jax_engine` and :mod:`jax_md_engine`.
+
+JAX is imported lazily — :func:`ensure_jax` performs the actual import
+and CUDA initialization on first use, so merely importing this module
+does not allocate GPU memory.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from collections.abc import Sequence
+from types import ModuleType
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 
-try:
-    import jax
-    import jax.numpy as jnp
+# Cheap availability check — does NOT import JAX or initialize CUDA.
+_HAS_JAX: bool = importlib.util.find_spec("jax") is not None
 
-    # JAX defaults to float32.  For MM parameter optimization float64 is the
-    # safe default (energy differences ~1e-6 kcal/mol matter).  However, for
-    # harmonic-only force fields, float32 may be viable and unlocks 64×
-    # throughput on consumer GPUs (see issue #178).
-    #
-    # Honour the standard JAX_ENABLE_X64 env-var: when the user has set it
-    # explicitly, we do NOT override JAX's own interpretation.  Otherwise we
-    # enable float64 as before (standard practice in JAX-based chemistry
-    # packages).
-    _user_set_jax_enable_x64 = "JAX_ENABLE_X64" in os.environ
-    if not jax.config.jax_enable_x64 and not _user_set_jax_enable_x64:
-        jax.config.update("jax_enable_x64", True)
-    _HAS_JAX = True
-except ImportError:  # pragma: no cover
-    jax = None  # type: ignore[assignment]
-    jnp = None  # type: ignore[assignment]
-    _HAS_JAX = False
+# These are populated lazily by ensure_jax().
+jax: ModuleType | None = None
+jnp: ModuleType | None = None
+_jax_initialized: bool = False
 
 
 def ensure_jax(engine_name: str = "JaxEngine") -> None:
-    """Raise ``ImportError`` if JAX is not installed.
+    """Import JAX and configure float64 on first call.
+
+    Subsequent calls are no-ops.  This is the single entry point that
+    triggers ``import jax`` and any associated XLA/CUDA initialization.
 
     Args:
         engine_name: Name of the engine requesting JAX, used in the
@@ -46,8 +41,29 @@ def ensure_jax(engine_name: str = "JaxEngine") -> None:
         ImportError: If the ``jax`` package cannot be imported.
 
     """
+    global jax, jnp, _jax_initialized  # noqa: PLW0603
+
+    if _jax_initialized:
+        return
     if not _HAS_JAX:
         raise ImportError(f"JAX is required for {engine_name}. Install with: pip install jax jaxlib")
+
+    import jax as _jax
+    import jax.numpy as _jnp
+
+    # JAX defaults to float32.  For MM parameter optimization float64 is the
+    # safe default (energy differences ~1e-6 kcal/mol matter).
+    #
+    # Honour the standard JAX_ENABLE_X64 env-var: when the user has set it
+    # explicitly, we do NOT override JAX's own interpretation.  Otherwise we
+    # enable float64 (standard practice in JAX-based chemistry packages).
+    _user_set_jax_enable_x64 = "JAX_ENABLE_X64" in os.environ
+    if not _jax.config.jax_enable_x64 and not _user_set_jax_enable_x64:
+        _jax.config.update("jax_enable_x64", True)
+
+    jax = _jax
+    jnp = _jnp
+    _jax_initialized = True
 
 
 def compute_param_offsets(
@@ -190,6 +206,6 @@ def params_and_coords(
             float64 arrays.
 
     """
-    params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
-    coords = jnp.array(molecule_geometry, dtype=jnp.float64)
+    params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)  # type: ignore[union-attr]
+    coords = jnp.array(molecule_geometry, dtype=jnp.float64)  # type: ignore[union-attr]
     return params, coords

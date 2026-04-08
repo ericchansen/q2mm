@@ -210,7 +210,7 @@ class MMEngine(ABC):
         """
         ...
 
-    def frequencies(self, structure: Q2MMMolecule, forcefield: ForceField) -> list[float]:
+    def frequencies(self, structure: Q2MMMolecule, forcefield: ForceField, **kwargs: Any) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Default implementation: compute Hessian via :meth:`hessian` then
@@ -220,6 +220,9 @@ class MMEngine(ABC):
         Args:
             structure: Molecular structure (or engine-specific handle).
             forcefield: Force field parameters.
+            **kwargs: Forwarded to
+                :func:`~q2mm.models.hessian.hessian_to_frequencies`
+                (e.g. ``on_error="penalty"``).
 
         Returns:
             Vibrational frequencies in cm⁻¹.
@@ -229,7 +232,7 @@ class MMEngine(ABC):
 
         hess_au = self.hessian(structure, forcefield)
         mol = coerce_molecule(structure, engine_name=self.__class__.__name__)
-        return hessian_to_frequencies(hess_au, list(mol.symbols))
+        return hessian_to_frequencies(hess_au, list(mol.symbols), **kwargs)
 
     def is_available(self) -> bool:
         """Check if this engine is installed and accessible.

@@ -15,8 +15,8 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 - **Hessian-informed starting points** — The Seminario method extracts bond and angle
   force constants from the QM Hessian, giving the optimizer a physically motivated
   initial guess.
-- **Open-source backends** — First-class support for OpenMM and Psi4 alongside
-  commercial packages (Tinker, Gaussian, Schrödinger).
+- **Open-source backends** — First-class support for OpenMM, JAX, JAX-MD,
+  Tinker, and Psi4.
 - **Robust optimization** — Leverages `scipy.optimize` methods (L-BFGS-B, Nelder-Mead,
   trust-constr, Powell, least-squares) instead of custom gradient code.
 - **Clean model layer** — `ForceField`, `Q2MMMolecule`, and `ReferenceData` objects
@@ -78,38 +78,3 @@ flowchart LR
    parameter updates.
 5. **MM backends** (OpenMM, Tinker, or JAX) evaluate energies and gradients at each
    optimization step.
-
----
-
-## What's New
-
-The recent refactoring modernized Q2MM around three goals:
-
-!!! success "Open-source first"
-    OpenMM and Psi4 are now first-class backends, so a fully open-source
-    QM → FF optimization pipeline is possible without any commercial licenses.
-
-!!! success "Clean model layer"
-    A dedicated `q2mm/models/` package (`ForceField`, `Q2MMMolecule`, `ReferenceData`,
-    `Hessian`) decouples scientific algorithms from file-format details. Adding a new
-    parser or backend no longer requires touching optimizer code.
-
-!!! success "Modern optimization"
-    Custom gradient-descent routines have been replaced by `scipy.optimize`, providing
-    access to L-BFGS-B, Nelder-Mead, trust-constr, Powell, and least-squares solvers
-    with well-tested convergence properties.
-
----
-
-## Quick Links
-
-| Page | Description |
-|------|-------------|
-| [Getting Started](getting-started.md) | Installation, prerequisites, and first run |
-| [Platform Support](platform-support.md) | OS compatibility matrix and GPU setup guide |
-| [Tutorial](tutorial.md) | End-to-end walkthrough: QM data → optimized force field |
-| [Data Types](data-types.md) | Reference data types: what to train on and when |
-| [Optimization Guide](optimization-guide.md) | Single-shot, grad-simp cycling, and manual strategies |
-| [API Overview](api.md) | Module reference for parsers, models, optimizers, and backends |
-| [Benchmarks](benchmarks/index.md) | Benchmark and validation evidence across systems, backends, and optimizers |
-| [References](references.md) | Literature citations and further reading |

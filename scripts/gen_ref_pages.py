@@ -6,7 +6,7 @@ Called by mkdocs-gen-files at build time.  Walks every ``.py`` file under
 the sidebar stays in sync with the source tree.
 
 New modules are picked up automatically — no manual ``.md`` files or
-``mkdocs.yml`` edits required.
+``properdocs.yml`` edits required.
 """
 
 from pathlib import Path
