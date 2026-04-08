@@ -7,6 +7,7 @@ Run a single (backend, optimizer, molecule) combination and produce a
 from __future__ import annotations
 
 
+import functools
 import json
 import platform
 import subprocess
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
 
 
+@functools.lru_cache(maxsize=1)
 def _collect_environment() -> dict[str, Any]:
     """Collect reproducibility metadata: git SHA, Python, package versions, hardware."""
     env: dict[str, Any] = {}

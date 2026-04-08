@@ -35,7 +35,10 @@ def _init_jax() -> None:
     """Lazily import JAX before each test so module collection is CUDA-free."""
     from q2mm.backends.mm._jax_common import ensure_jax
 
-    ensure_jax()
+    try:
+        ensure_jax()
+    except ImportError as exc:
+        pytest.skip(f"JAX not usable: {exc}")
     # Make jax/jnp and engine symbols available as module globals for tests.
     global jax, jnp, JaxEngine, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy  # noqa: PLW0603
     import jax as _jax
