@@ -54,9 +54,10 @@ def _collect_environment() -> dict[str, Any]:
     env["platform"] = platform.platform()
     for pkg in ("q2mm", "numpy", "scipy", "jax", "jaxlib", "openmm"):
         try:
-            mod = __import__(pkg)
-            env[f"{pkg}_version"] = getattr(mod, "__version__", "unknown")
-        except ImportError:
+            from importlib.metadata import version
+
+            env[f"{pkg}_version"] = version(pkg)
+        except Exception:
             pass
 
     return env
