@@ -85,11 +85,26 @@ docker build -f .github/docker/Dockerfile --build-arg ENV_FILE=openmm.yml -t q2m
 ## Code Style
 
 We use [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
-Pre-commit hooks run automatically if you have them installed:
+Install pre-commit hooks so formatting and lint errors are caught before they
+reach CI:
+
+```bash
+# Option A: prek (fast, Rust-based — https://github.com/j178/prek)
+prek install
+
+# Option B: Python pre-commit framework
+pip install pre-commit
+pre-commit install
+```
+
+Either tool reads the same `.pre-commit-config.yaml` in the repo root. Once
+installed, hooks run automatically on every `git commit`.
+
+To check the entire codebase manually:
 
 ```bash
 ruff check q2mm/ test/ scripts/
-ruff format q2mm/ test/ scripts/
+ruff format --check q2mm test scripts examples
 ```
 
 ## Benchmarks
