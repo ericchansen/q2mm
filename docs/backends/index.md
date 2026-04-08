@@ -10,19 +10,20 @@ For detailed information on each backend, see the individual pages:
 - [Tinker](tinker.md) — subprocess-based MM3 engine
 - [JAX](jax-engine.md) — pure-JAX differentiable engine with analytical gradients
 - [JAX-MD](jax-md.md) — JAX-MD engine with periodic boundaries and neighbor lists
+- [Psi4](psi4.md) — quantum mechanics engine for generating reference data
 
 ---
 
-## Engine Overview
+## Engine overview
 
 | Feature | OpenMM | Tinker | JAX | JAX-MD |
 |---------|--------|--------|-----|--------|
 | **Functional forms** | Harmonic, MM3 | MM3 | Harmonic, MM3 | Harmonic |
 | **Bond/angle terms** | ✅ | ✅ | ✅ | ✅ |
-| **Torsions** | ✅ | ❌ | ✅ | ✅ |
+| **Torsions** | ✅ | ✅ | ✅ | ✅ |
 | **Improper torsions** | ❌ | ❌ | ❌ | ❌ |
-| **vdW (LJ 12-6)** | ✅ Harmonic mode | ✅ via MM3 | ✅ | ✅ |
-| **vdW (Buckingham exp-6)** | ✅ MM3 mode | ✅ | ❌ | ❌ |
+| **vdW (LJ 12-6)** | ✅ Harmonic mode | ❌ | ✅ | ✅ |
+| **vdW (Buckingham exp-6)** | ✅ MM3 mode | ✅ | ✅ MM3 mode | ❌ |
 | **Electrostatics** | ❌ | Tinker default | ❌ | Infrastructure only (charges zeroed) |
 | **1-4 scaling** | ✅ AMBER (ε/2) in Harmonic | MM3 default | ❌ Not implemented | ✅ Configurable (default AMBER) |
 | **Periodic boundaries** | ❌ | ❌ | ❌ | ✅ |
@@ -34,7 +35,7 @@ For detailed information on each backend, see the individual pages:
 
 ---
 
-## Functional Forms
+## Functional forms
 
 Each engine only accepts force fields whose `functional_form` is in its
 supported set.  Attempting to use an unsupported form raises an error.
@@ -65,7 +66,7 @@ Supported by: **OpenMM**, **JAX**, **Tinker**
 
 ---
 
-## Non-Bonded Treatment
+## Non-bonded treatment
 
 Non-bonded interactions (van der Waals, electrostatics) are computed
 between all atom pairs not excluded by bonding topology.  The details
@@ -96,7 +97,7 @@ non-bonded interactions.  **This is a key compatibility difference:**
     JAX-MD.  For small molecules where the bonded energy dominates (bonds +
     angles only), this difference is negligible.
 
-### Combining Rules
+### Combining rules
 
 All engines use **geometric** combining rules for cross-term vdW
 parameters:
@@ -115,12 +116,12 @@ parameters:
 
 ---
 
-## Parameter Transferability
+## Parameter transferability
 
 Can parameters optimized on one engine be used on another?  This depends
 on whether the engines compute the same energy for the same force field.
 
-### Compatibility Matrix
+### Compatibility matrix
 
 | From ↓ / To → | OpenMM (Harmonic) | OpenMM (MM3) | Tinker | JAX | JAX-MD |
 |----------------|:-:|:-:|:-:|:-:|:-:|
@@ -150,10 +151,10 @@ For molecules with significant 1-4 interactions (longer chains, rings),
 the JAX engine will give different non-bonded energies than OpenMM or
 JAX-MD.
 
-### Verified Parity
+### Verified parity
 
 Cross-engine energy and frequency agreement has been measured on CH₃F
-(see [benchmarks](../benchmarks/small-molecules.md#cross-engine-parity)):
+(see [benchmarks](../benchmarks/small-molecules.md#interpretation)):
 
 - **JAX ↔ JAX-MD:** < 10⁻²⁰ kcal/mol energy difference (machine precision)
 - **JAX ↔ OpenMM:** < 10⁻¹⁸ kcal/mol energy difference
@@ -163,20 +164,20 @@ CH₃F has no 1-4 pairs, so all three harmonic engines agree exactly.
 
 ---
 
-## Choosing an Engine
+## Choosing an engine
 
 | Use Case | Recommended Engine | Why |
 |----------|-------------------|-----|
 | **Fast optimization** | JAX or JAX-MD | Fastest harmonic / analytical-gradient options in the current benchmark set; see [benchmarks](../benchmarks/index.md) for workload-specific comparisons |
-| **MM3 force fields** | OpenMM or Tinker | Only engines supporting MM3 |
+| **MM3 force fields** | OpenMM, Tinker, or JAX | Engines supporting MM3 functional forms |
 | **Periodic systems** | JAX-MD | Only engine with periodic boundary support |
-| **Torsion optimization** | OpenMM, JAX, or JAX-MD | Tinker lacks torsion support |
+| **Torsion optimization** | OpenMM, Tinker, JAX, or JAX-MD | All engines support torsions |
 | **Widest compatibility** | OpenMM | Supports both Harmonic and MM3, mature ecosystem |
 | **Gradient-based optimizers** | JAX or JAX-MD | Analytical `jax.grad` eliminates finite-difference overhead |
 
 ---
 
-## Unit Conventions
+## Unit conventions
 
 All engines accept parameters in **canonical units** (defined in
 `q2mm.models.units`).  Each engine converts internally as needed:

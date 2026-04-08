@@ -62,12 +62,8 @@ from test._shared import (  # noqa: F401
 )
 
 # ---------------------------------------------------------------------------
-# Backend availability detection (runs once at collection time)
+# Backend availability detection
 # ---------------------------------------------------------------------------
-
-from q2mm.backends.registry import available_engines as _available_engines
-
-_AVAILABLE_BACKENDS = set(_available_engines())
 
 # Mapping from pytest marker names to registry keys.
 # Marker names use underscores (Python identifiers); registry keys use hyphens.
@@ -108,6 +104,17 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "jax_md: requires JAX-MD backend")
     config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
 
+    # Prevent JAX from allocating GPU memory when JAX tests are excluded.
+    # JAX initialises CUDA at import time, consuming ~25 GiB of VRAM even
+    # when no JAX tests will run.  Setting JAX_PLATFORMS=cpu before import
+    # keeps the GPU free for other work.
+    import os
+
+    markexpr = getattr(config.option, "markexpr", "") or ""
+    jax_excluded = "not" in markexpr and ("jax" in markexpr)
+    if jax_excluded and "JAX_PLATFORMS" not in os.environ:
+        os.environ["JAX_PLATFORMS"] = "cpu"
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     run_slow = config.getoption("--run-slow")
@@ -125,9 +132,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             if "medium" in item.keywords:
                 item.add_marker(skip_medium)
 
-    # Auto-skip tests that require a missing backend
+    # Auto-skip tests that require a missing backend.
+    # Import lazily so that the JAX_PLATFORMS guard above takes effect first.
+    from q2mm.backends.registry import available_engines
+
+    available = set(available_engines())
     for marker_name, registry_key in _MARKER_TO_REGISTRY.items():
-        if registry_key not in _AVAILABLE_BACKENDS:
+        if registry_key not in available:
             skip_marker = pytest.mark.skip(reason=f"{registry_key} not available")
             for item in items:
                 if marker_name in item.keywords:

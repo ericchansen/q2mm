@@ -50,14 +50,26 @@ from q2mm.models.molecule import Q2MMMolecule
 from q2mm.backends.mm._jax_common import (
     _HAS_JAX,
     compute_param_offsets,
-    ensure_jax as _ensure_jax,
-    jax,
-    jnp,
+    ensure_jax as _ensure_jax_common,
     match_angle as _match_angle,
     match_bond as _match_bond,
     match_vdw as _match_vdw,
     params_and_coords as _params_and_coords_impl,
 )
+
+# Lazy placeholders — populated by _ensure_jax().
+jax = None
+jnp = None
+
+
+def _ensure_jax() -> None:
+    """Call the shared ensure_jax and rebind module-level jax/jnp."""
+    global jax, jnp  # noqa: PLW0603
+    _ensure_jax_common()
+    import q2mm.backends.mm._jax_common as _jc
+
+    jax = _jc.jax
+    jnp = _jc.jnp
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +260,7 @@ def _lj_12_6_energy(
 # ---------------------------------------------------------------------------
 # Allinger et al., JACS 1989, 111, 8551.
 
-_RAD_TO_DEG = 180.0 / jnp.pi if jnp is not None else 57.29577951308232
+_RAD_TO_DEG = 180.0 / 3.141592653589793
 
 
 def _mm3_bond_energy(k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_indices: jnp.ndarray) -> jnp.ndarray:
@@ -540,8 +552,6 @@ class JaxEngine(MMEngine):
 
         """
         _ensure_jax()
-        devices = jax.devices()
-        logger.info("JAX devices: %s", [str(d) for d in devices])
 
     @property
     def name(self) -> str:

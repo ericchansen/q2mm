@@ -39,7 +39,7 @@ class StubEngine:
     def energy(self, structure: object, forcefield: object = None) -> float:
         return self._energy
 
-    def frequencies(self, structure: object, forcefield: object = None) -> list[float]:
+    def frequencies(self, structure: object, forcefield: object = None, **kwargs: object) -> list[float]:
         return list(self._frequencies)
 
     def hessian(self, structure: object, forcefield: object = None) -> np.ndarray:

@@ -134,3 +134,31 @@ Pull requests trigger two CI tiers automatically:
 - **Backend tier** — OpenMM, Tinker, JAX, and Psi4 tests in Docker containers
 
 Both tiers must pass before merging.
+
+## Extending Q2MM
+
+### Adding a New Backend
+
+To support a new MM engine:
+
+1. **Subclass `MMEngine`** in `q2mm/backends/mm/`.
+2. **Implement** `energy()`, `frequencies()`, and optionally `gradient()`.
+3. **Handle unit conversion** between canonical (kcal/mol/Å²) and whatever your
+   engine expects internally.
+4. **Declare supported forms** via `supported_functional_forms()`.
+5. **Add tests** with the appropriate backend marker (e.g., `@pytest.mark.myengine`).
+
+The optimizer, objective function, and all other pipeline components work
+unchanged.
+
+### Adding a New Force Field Format
+
+To support a new file format:
+
+1. **Add a loader** in `ff_io.py` (e.g., `load_charmm_rtf()`) that reads the
+   file and returns a `ForceField` with parameters in canonical units.
+2. **Add a saver** (e.g., `save_charmm_rtf()`) that converts canonical → format
+   units on write.
+3. **Register compatible forms** in `_FORMAT_COMPATIBLE_FORMS`.
+4. **Add convenience methods** on `ForceField` (e.g., `from_charmm_rtf()`,
+   `to_charmm_rtf()`).

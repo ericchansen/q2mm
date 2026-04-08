@@ -42,7 +42,7 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 
 ---
 
-## Supported Energy Terms
+## Supported energy terms
 
 | Term | Supported |
 |------|:---------:|
@@ -73,7 +73,7 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 
 ---
 
-## GPU Support
+## GPU support
 
 JaxEngine runs on whichever device JAX selects.  To use a GPU:
 
@@ -123,7 +123,7 @@ print(f"Energy: {e:.4f}, grad shape: {grad.shape}")
 
 ---
 
-## See Also
+## See also
 
 - [JaxMDEngine](jax-md.md) — periodic boundaries, neighbor lists, 1-4 scaling
 - [Engine comparison table](index.md#engine-overview)

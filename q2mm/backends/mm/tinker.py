@@ -15,6 +15,8 @@ import re
 import subprocess
 import tempfile
 import shutil
+from typing import Any
+
 import numpy as np
 
 from q2mm.backends.base import MMEngine
@@ -631,7 +633,7 @@ class TinkerEngine(MMEngine):
             return hessian * KCALMOLA2_TO_HESSIAN_AU
 
     def frequencies(
-        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
+        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None, **kwargs: Any
     ) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
@@ -639,6 +641,9 @@ class TinkerEngine(MMEngine):
             structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
                 types if ``None``.
+            **kwargs: Forwarded to
+                :func:`~q2mm.models.hessian.hessian_to_frequencies`
+                (e.g. ``on_error="penalty"``).
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
@@ -656,4 +661,4 @@ class TinkerEngine(MMEngine):
             n_atoms = int(lines[0].strip())
             symbols = [lines[2 + i].split()[0] for i in range(n_atoms)]
 
-        return hessian_to_frequencies(hessian_au, symbols)
+        return hessian_to_frequencies(hessian_au, symbols, **kwargs)

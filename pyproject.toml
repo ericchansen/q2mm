@@ -86,6 +86,7 @@ dev = [
     "build",
 ]
 docs = [
+    "properdocs",
     "mkdocs-material",
     "mkdocstrings[python]",
     "mkdocs-gen-files",

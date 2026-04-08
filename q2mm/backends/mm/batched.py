@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -194,6 +195,7 @@ def batched_frequencies(
     group: TopologyGroup,
     forcefield: ForceField,
     symbols_per_mol: list[list[str]],
+    **kwargs: Any,
 ) -> list[list[float]]:
     """Compute frequencies for all molecules in a group.
 
@@ -205,6 +207,9 @@ def batched_frequencies(
         forcefield: The force field.
         symbols_per_mol: Atomic symbols for each molecule (same order
             as ``group.mol_indices``).
+        **kwargs: Forwarded to
+            :func:`~q2mm.models.hessian.hessian_to_frequencies`
+            (e.g. ``on_error="penalty"``).
 
     Returns:
         List of frequency lists (cm⁻¹), one per molecule.
@@ -213,4 +218,4 @@ def batched_frequencies(
     from q2mm.models.hessian import hessian_to_frequencies
 
     hessians = batched_hessians(group, forcefield)
-    return [hessian_to_frequencies(hess, symbols_per_mol[i]) for i, hess in enumerate(hessians)]
+    return [hessian_to_frequencies(hess, symbols_per_mol[i], **kwargs) for i, hess in enumerate(hessians)]

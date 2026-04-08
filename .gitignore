@@ -1,7 +1,6 @@
 # ── Q2MM runtime artifacts ──────────────────────────────────
 timer.dat
 root.log
-benchmark_results/
 psi4_generation.log
 psi*.clean
 
@@ -62,3 +61,10 @@ $RECYCLE.BIN/
 
 # ── Jupyter ───────────────────────────────────────────────
 .ipynb_checkpoints/
+
+# ── Lock files (dev-local) ────────────────────────────────
+uv.lock
+
+# ── Agent session artifacts ───────────────────────────────
+*-handoff.md
+copilot-session-*.md

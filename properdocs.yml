@@ -1,0 +1,106 @@
+site_name: Q2MM
+site_url: https://ericchansen.github.io/q2mm/
+site_description: Quantum-guided molecular mechanics force field optimization
+repo_url: https://github.com/ericchansen/q2mm
+repo_name: ericchansen/q2mm
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Tutorial: tutorial.md
+  - Platform Support: platform-support.md
+  - Q2MM v5 Improvements: comparison.md
+  - How It Works:
+    - Theory & Methods: how-it-works/theory.md
+    - Architecture: how-it-works/architecture.md
+    - Data Types: how-it-works/data-types.md
+    - Optimization Guide: how-it-works/optimization-guide.md
+  - Backend Engines:
+    - Overview: backends/index.md
+    - OpenMM: backends/openmm.md
+    - Tinker: backends/tinker.md
+    - JAX: backends/jax-engine.md
+    - JAX-MD: backends/jax-md.md
+    - Psi4 (QM): backends/psi4.md
+  - Benchmarks:
+    - Overview: benchmarks/index.md
+    - Small Molecules: benchmarks/small-molecules.md
+    - Rh-Enamide: benchmarks/rh-enamide.md
+    - GPU Acceleration: benchmarks/gpu.md
+    - Published FF Validation: benchmarks/published-ff-validation.md
+  - API Reference: reference/
+  - References: references.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/benchmarks.js
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - scripts/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            merge_init_into_class: true
+            show_signature_annotations: true
+            separate_signature: true
+            signature_crossrefs: true

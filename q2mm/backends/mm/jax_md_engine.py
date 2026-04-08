@@ -45,6 +45,7 @@ full feature set of jax-md.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -61,39 +62,62 @@ from q2mm.models.molecule import Q2MMMolecule
 
 from q2mm.backends.mm._jax_common import (
     compute_param_offsets,
-    ensure_jax,
-    jax,
-    jnp,
+    ensure_jax as _ensure_jax_common,
     match_angle as _match_angle,
     match_bond as _match_bond,
     match_vdw as _match_vdw,
     params_and_coords as _params_and_coords_impl,
 )
 
-try:
-    from jax_md.mm_forcefields.base import (
-        NonbondedOptions,
-    )
-    from jax_md.mm_forcefields.nonbonded.electrostatics import (
-        CoulombHandler,
-        CutoffCoulomb,
-    )
-    from jax_md.mm_forcefields.oplsaa import energy as oplsaa_energy
-    from jax_md.mm_forcefields.oplsaa.params import create_parameters
-    from jax_md.mm_forcefields.oplsaa.topology import create_topology
+# Lazy placeholders — populated by _ensure_jax_md().
+jax = None
+jnp = None
 
-    _HAS_JAX_MD = True
-except ImportError:  # pragma: no cover
-    _HAS_JAX_MD = False
+# Cheap availability check — does NOT import jax-md or initialize CUDA.
+_HAS_JAX_MD: bool = importlib.util.find_spec("jax_md") is not None
+
+# Lazy-loaded jax-md symbols (populated by _ensure_jax_md).
+NonbondedOptions = None
+CoulombHandler = None
+CutoffCoulomb = None
+oplsaa_energy = None
+create_parameters = None
+create_topology = None
 
 # Hessian unit conversion imported from q2mm.models.units
 
 
 def _ensure_jax_md() -> None:
-    """Raise ``ImportError`` if jax-md is not installed."""
-    ensure_jax("JaxMDEngine")
+    """Import JAX and jax-md lazily, raising ``ImportError`` if missing."""
+    global jax, jnp  # noqa: PLW0603
+    _ensure_jax_common("JaxMDEngine")
+    import q2mm.backends.mm._jax_common as _jc
+
+    jax = _jc.jax
+    jnp = _jc.jnp
+
     if not _HAS_JAX_MD:
         raise ImportError("jax-md is required for JaxMDEngine. Install with: pip install jax-md")
+
+    global NonbondedOptions, CoulombHandler, CutoffCoulomb  # noqa: PLW0603
+    global oplsaa_energy, create_parameters, create_topology  # noqa: PLW0603
+
+    if NonbondedOptions is None:
+        from jax_md.mm_forcefields.base import NonbondedOptions as _NBO
+        from jax_md.mm_forcefields.nonbonded.electrostatics import (
+            CoulombHandler as _CH,
+            CutoffCoulomb as _CC,
+        )
+        from jax_md.mm_forcefields.oplsaa import energy as _energy
+        from jax_md.mm_forcefields.oplsaa.params import create_parameters as _cp
+        from jax_md.mm_forcefields.oplsaa.topology import create_topology as _ct
+
+        NonbondedOptions = _NBO
+        CoulombHandler = _CH
+        CutoffCoulomb = _CC
+        oplsaa_energy = _energy
+        create_parameters = _cp
+        create_topology = _ct
 
 
 # ---------------------------------------------------------------------------
@@ -560,8 +584,6 @@ class JaxMDEngine(MMEngine):
         self._box = np.array(box, dtype=np.float64)
         self._coulomb = coulomb if coulomb is not None else CutoffCoulomb(r_cut=12.0)
         self._nb_options = nb_options if nb_options is not None else NonbondedOptions(r_cut=12.0)
-        devices = jax.devices()
-        logger.info("JAX-MD devices: %s", [str(d) for d in devices])
 
     @property
     def name(self) -> str:

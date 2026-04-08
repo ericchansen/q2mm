@@ -49,7 +49,7 @@ and a compatible driver (≥ 535).
     print(openmm.Platform.getNumPlatforms(), "platforms available")
     ```
 
-### Platform Detection
+### Platform detection
 
 OpenMMEngine auto-detects the fastest available compute platform:
 
@@ -64,7 +64,7 @@ Override with the `platform_name` constructor parameter if needed.
 
 ---
 
-## Supported Energy Terms
+## Supported energy terms
 
 | Term | Harmonic Mode | MM3 Mode |
 |------|:---:|:---:|
@@ -95,7 +95,7 @@ engine = OpenMMEngine(
 | `platform_name` | `str \| None` | `None` | Force a specific OpenMM platform |
 | `precision` | `str \| None` | `None` | GPU precision mode; ignored on CPU |
 
-### Runtime Parameter Updates
+### Runtime parameter updates
 
 OpenMMEngine supports in-place parameter updates via `update_forcefield()`,
 which mutates force parameters in the existing OpenMM `Context` without
@@ -111,9 +111,9 @@ rebuilding the system. This makes iterative optimization fast.
 | `minimize()` | ✅ | OpenMM L-BFGS minimizer |
 | `hessian()` | ✅ | **Numerical** (finite-difference) |
 | `frequencies()` | ✅ | From numerical Hessian |
-| `energy_and_param_grad()` | ✅ | Exact for bond/angle params; torsion/vdW gradients returned as zero |
+| `energy_and_param_grad()` | ✅ | Exact for bond/angle/torsion; vdW via finite differences |
 | `supports_runtime_params()` | ✅ | — |
-| `supports_analytical_gradients()` | ✅ | Bond/angle only |
+| `supports_analytical_gradients()` | ✅ | Bond/angle/torsion exact, vdW via FD |
 
 ### Serialization
 
@@ -131,8 +131,9 @@ engine.export_system_xml(handle, "system.xml")
 - **Numerical Hessians** — `hessian()` uses finite differences, not analytical
   second derivatives. Accurate but slower than JAX's analytical Hessian.
 - **Partial analytical gradients** — `energy_and_param_grad()` provides exact
-  gradients for bond and angle parameters via OpenMM global-parameter
-  derivatives. Torsion and vdW parameter gradients are returned as zero.
+  gradients for bond, angle, and torsion parameters via OpenMM global-parameter
+  derivatives. vdW parameter gradients are supplemented via central finite
+  differences.
 - **No improper torsions** — not yet implemented.
 - **No electrostatics** — charge optimization is not supported.
 
@@ -162,7 +163,7 @@ print(f"Frequencies: {freqs}")
 
 ---
 
-## See Also
+## See also
 
 - [Engine comparison table](index.md#engine-overview)
 - [Parameter transferability](index.md#parameter-transferability)

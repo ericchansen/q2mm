@@ -8,6 +8,8 @@ from __future__ import annotations
 
 
 import json
+import platform
+import subprocess
 import time
 from dataclasses import dataclass, field, fields as field_list, asdict
 from datetime import datetime, timezone
@@ -23,6 +25,41 @@ if TYPE_CHECKING:
     from q2mm.diagnostics.systems import SystemData
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
+
+
+def _collect_environment() -> dict[str, Any]:
+    """Collect reproducibility metadata: git SHA, Python, package versions, hardware."""
+    env: dict[str, Any] = {}
+
+    # Git commit
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        env["git_sha"] = sha
+        env["git_dirty"] = bool(dirty)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        env["git_sha"] = None
+        env["git_dirty"] = None
+
+    # Python + key packages
+    env["python"] = platform.python_version()
+    env["platform"] = platform.platform()
+    for pkg in ("q2mm", "numpy", "scipy", "jax", "jaxlib", "openmm"):
+        try:
+            mod = __import__(pkg)
+            env[f"{pkg}_version"] = getattr(mod, "__version__", "unknown")
+        except ImportError:
+            pass
+
+    return env
 
 
 # ── Engine display name → (engine_key, ff_label) mapping ────────────
@@ -465,6 +502,7 @@ def run_combo(
             "source": "q2mm",
             "level_of_theory": level_of_theory,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "environment": _collect_environment(),
         },
         qm_reference={
             "frequencies_cm1": all_qm_real.tolist(),

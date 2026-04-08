@@ -21,7 +21,7 @@ pip install "q2mm[all]"            # all optional dependencies
 > `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
 > published yet.
 
-### GPU Setup
+### GPU setup
 
 For GPU-accelerated workflows, install with CUDA extras:
 
@@ -54,7 +54,7 @@ pip install -e ".[dev]"            # editable install with dev tools
 
 ---
 
-## QM/MM Backends
+## QM/MM backends
 
 Q2MM can interface with several quantum-mechanical and molecular-mechanics
 engines. Install the ones your workflow requires:
@@ -74,7 +74,7 @@ engines. Install the ones your workflow requires:
 
 ---
 
-## Quick Example
+## Quick example
 
 A minimal script that reads QM reference data, loads a structure, and inspects
 an MM3 force field:
@@ -98,7 +98,7 @@ print(f"Parameters: {len(ff.params)}")
 
 ---
 
-## Package Structure
+## Package structure
 
 ```
 q2mm/

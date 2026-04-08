@@ -248,6 +248,7 @@ def compute_sensitivity(
     objective: ObjectiveFunction,
     step_sizes: np.ndarray | None = None,
     metric: Literal["simp_var", "abs_d1"] = "simp_var",
+    bounds: list[tuple[float, float]] | None = None,
 ) -> SensitivityResult:
     """Central differentiation to rank parameter sensitivity.
 
@@ -261,6 +262,11 @@ def compute_sensitivity(
     The ranking is by *ascending* ``simp_var`` (lowest = most suitable
     for simplex) or *descending* ``|d1|`` (largest gradient = most
     sensitive), depending on *metric*.
+
+    When *bounds* are provided, step sizes are shrunk so that
+    ``x0 ± h_eff`` stays within ``[lower, upper]`` for each parameter.
+    Parameters where no symmetric step is possible (i.e. ``x0`` is at a
+    bound) are skipped and assigned ``inf`` simp_var / zero d1.
 
     When the engine supports :meth:`~MMEngine.batched_energy` and all
     references are energy-only, all required ``2K + 1`` evaluations
@@ -279,6 +285,9 @@ def compute_sensitivity(
             provided.
         metric (str): Ranking criterion — ``"simp_var"`` or
             ``"abs_d1"``.
+        bounds (list[tuple[float, float]] | None): Per-parameter
+            ``(lower, upper)`` bounds.  When provided, step sizes are
+            shrunk to the largest symmetric step that stays in bounds.
 
     Returns:
         SensitivityResult: Derivatives, rankings, and evaluation count.
@@ -294,20 +303,44 @@ def compute_sensitivity(
 
     if step_sizes is None:
         step_sizes = ff.get_step_sizes()
-    step_sizes = np.asarray(step_sizes)
+    step_sizes = np.asarray(step_sizes, dtype=float)
     if len(step_sizes) != n:
         raise ValueError(f"step_sizes length {len(step_sizes)} != param vector length {n}")
 
-    # Build the full (2N+1) parameter matrix: [x0, x0+h0, x0-h0, x0+h1, x0-h1, ...]
+    # Compute effective step sizes: shrink to stay within bounds
+    eff_steps = step_sizes.copy()
+    if bounds is not None:
+        lower = np.array([b[0] for b in bounds])
+        upper = np.array([b[1] for b in bounds])
+        # Largest symmetric step that keeps x0 ± h within [lower, upper]
+        max_up = upper - x0
+        max_down = x0 - lower
+        max_symmetric = np.minimum(max_up, max_down)
+        # Shrink step to fit; zero out if no room
+        eff_steps = np.where(
+            max_symmetric > 0,
+            np.minimum(np.abs(eff_steps), max_symmetric),
+            0.0,
+        )
+        n_shrunk = int(np.sum((eff_steps < np.abs(step_sizes)) & (eff_steps > 0)))
+        n_skipped = int(np.sum((step_sizes != 0) & (eff_steps == 0)))
+        if n_shrunk > 0 or n_skipped > 0:
+            logger.info(
+                "compute_sensitivity: %d params shrunk to bounds, %d skipped (at bounds)",
+                n_shrunk,
+                n_skipped,
+            )
+
+    # Build the full (2K+1) parameter matrix: [x0, x0+h0, x0-h0, x0+h1, x0-h1, ...]
     param_rows = [x0]
-    active_mask = step_sizes != 0
+    active_mask = eff_steps != 0
     for i in range(n):
         if not active_mask[i]:
             continue
         x_fwd = x0.copy()
         x_bwd = x0.copy()
-        x_fwd[i] += step_sizes[i]
-        x_bwd[i] -= step_sizes[i]
+        x_fwd[i] += eff_steps[i]
+        x_bwd[i] -= eff_steps[i]
         param_rows.append(x_fwd)
         param_rows.append(x_bwd)
 
@@ -339,9 +372,9 @@ def compute_sensitivity(
     if metric == "simp_var":
         ranking = np.argsort(simp_var)  # ascending: lowest = most suitable
     elif metric == "abs_d1":
-        # Normalise by step size so ranking reflects true gradient magnitude
-        # rather than being biased by per-type step size differences.
-        normalised_d1 = np.where(step_sizes != 0, d1 / step_sizes, 0.0)
+        # Normalise by effective step size so ranking reflects true gradient
+        # magnitude rather than being biased by per-type step size differences.
+        normalised_d1 = np.where(eff_steps != 0, d1 / eff_steps, 0.0)
         ranking = np.argsort(-np.abs(normalised_d1))  # descending: largest = most sensitive
     else:
         raise ValueError(f"Unknown metric: {metric!r}")
@@ -457,6 +490,13 @@ class OptimizationLoop:
 
         ff = self.objective.forcefield
         x0 = ff.get_param_vector().copy()
+
+        # Enable penalty fallback for eigendecomposition failures during
+        # optimisation.  This lets the optimizer retreat from pathological
+        # parameter regions instead of crashing the entire run.
+        prev_on_error = self.objective.on_error
+        self.objective.on_error = "penalty"
+
         initial_score = float(self.objective(x0))
 
         n_eval_start = self.objective.n_eval  # track cumulative evals
@@ -497,10 +537,12 @@ class OptimizationLoop:
 
             # --- Step 2: Sensitivity analysis ---
             step_sizes = ff.get_step_sizes()
+            bounds = ff.get_bounds()
             sens = compute_sensitivity(
                 self.objective,
                 step_sizes=step_sizes,
                 metric=self.sensitivity_metric,
+                bounds=bounds,
             )
             sensitivity_results.append(sens)
 
@@ -605,6 +647,9 @@ class OptimizationLoop:
         final_score = cycle_scores[-1]
         n_cycles = len(cycle_scores) - 1  # exclude initial
         total_evals = self.objective.n_eval - n_eval_start
+
+        # Restore previous error handling mode
+        self.objective.on_error = prev_on_error
 
         return LoopResult(
             success=converged,

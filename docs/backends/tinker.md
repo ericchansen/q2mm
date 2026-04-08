@@ -1,8 +1,8 @@
 # Tinker Backend
 
 The `TinkerEngine` wraps external Tinker executables (`analyze`, `minimize`,
-`vibrate`, `testhess`) via subprocess calls. It is the only backend that
-supports MM3 functional forms without OpenMM.
+`vibrate`, `testhess`) via subprocess calls. It is the original subprocess-based
+MM3 backend and remains useful when an external Tinker installation is available.
 
 ---
 
@@ -22,7 +22,7 @@ The engine searches for Tinker executables in this order:
     which analyze && analyze --version
     ```
 
-### Required Executables
+### Required executables
 
 | Executable | Used By |
 |------------|---------|
@@ -33,13 +33,13 @@ The engine searches for Tinker executables in this order:
 
 ---
 
-## Supported Energy Terms
+## Supported energy terms
 
 | Term | Supported |
 |------|:---------:|
 | Bonds (MM3 cubic/quartic) | ✅ |
 | Angles (MM3 sextic) | ✅ |
-| Torsions | ❌ |
+| Torsions | ✅ |
 | Improper torsions | ❌ |
 | vdW (Buckingham exp-6) | ✅ |
 | Electrostatics | ✅ (Tinker default) |
@@ -81,7 +81,7 @@ engine = TinkerEngine(
 | `supports_runtime_params()` | ❌ | Subprocess per call |
 | `supports_analytical_gradients()` | ❌ | — |
 
-### Performance Note
+### Performance note
 
 Each energy/frequency evaluation spawns a new Tinker subprocess, writes
 temporary parameter and coordinate files, and parses text output. This
@@ -96,9 +96,9 @@ makes Tinker significantly slower per evaluation than in-process engines
 - **No runtime parameter updates** — each call writes a new parameter file
   and spawns a subprocess.
 - **No analytical gradients** — `energy_and_param_grad()` is not implemented.
-- **Standalone PRM limitations** — `_write_standalone_prm()` only writes
-  bond, angle, and vdW terms. Template-based export is preferred for full
-  `.prm` fidelity.
+- **Standalone PRM limitations** — `_write_standalone_prm()` writes
+  bond, angle, torsion, and vdW terms but lacks improper torsions and
+  cross-terms. Template-based export is preferred for full `.prm` fidelity.
 - **No GPU support** — runs entirely on CPU.
 - **External dependency** — requires Tinker executables to be installed
   and discoverable.
@@ -126,7 +126,7 @@ print(f"Frequencies: {freqs}")
 
 ---
 
-## See Also
+## See also
 
 - [Engine comparison table](index.md#engine-overview)
 - [Parameter transferability](index.md#parameter-transferability)

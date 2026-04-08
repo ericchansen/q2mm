@@ -46,23 +46,16 @@ TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
 MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
 JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
 
+import importlib.util
+
 _HAS_OPENMM = True
 try:
     import openmm  # noqa: F401
 except ImportError:
     _HAS_OPENMM = False
 
-_HAS_JAX = True
-try:
-    from q2mm.backends.mm.jax_engine import JaxEngine  # noqa: F401
-except (ImportError, ModuleNotFoundError):
-    _HAS_JAX = False
-
-_HAS_JAX_MD = True
-try:
-    from q2mm.backends.mm.jax_md_engine import JaxMDEngine  # noqa: F401
-except (ImportError, ModuleNotFoundError):
-    _HAS_JAX_MD = False
+_HAS_JAX = importlib.util.find_spec("jax") is not None
+_HAS_JAX_MD = importlib.util.find_spec("jax_md") is not None
 
 requires_openmm = pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed")
 requires_jax = pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed")

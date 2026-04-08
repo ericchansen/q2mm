@@ -923,6 +923,10 @@ class ObjectiveFunction:
         self.n_eval = 0
         self.fd_step = 1e-4
         self.history: list[float] = []
+        #: Error handling for eigendecomposition in frequency evaluation.
+        #: ``"raise"`` (default) propagates exceptions; ``"penalty"``
+        #: returns large penalty frequencies so the optimizer retreats.
+        self.on_error: str = "raise"
         # Reusable engine handles for backends that support runtime parameter
         # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
         # evaluation — critical for optimization performance.
@@ -1396,7 +1400,7 @@ class ObjectiveFunction:
             # NOTE: Same approximation as eigenmatrix — Hessian evaluated at
             # original geometry rather than re-optimized (see issue #149).
             structure = self._get_structure(mol_idx)
-            computed = evaluator.compute(self.engine, mol, ff, structure=structure)
+            computed = evaluator.compute(self.engine, mol, ff, structure=structure, on_error=self.on_error)
         else:
             structure = self._get_structure(mol_idx)
             computed = evaluator.compute(self.engine, mol, ff, structure=structure)
@@ -1528,9 +1532,10 @@ class ObjectiveFunction:
                 result["frequencies"] = hessian_to_frequencies(
                     precomputed_hessian,
                     list(mol.symbols),
+                    on_error=self.on_error,
                 )
             else:
-                fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure)
+                fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure, on_error=self.on_error)
                 result["frequencies"] = fr.frequencies
 
         if geom_ev is not None and needed & geom_ev.HANDLED_KINDS:

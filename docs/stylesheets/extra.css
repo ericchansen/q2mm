@@ -138,3 +138,17 @@
     align-items: stretch;
   }
 }
+
+/* Mermaid diagrams: improve readability in dark mode.
+   Override pastel fill colors with more saturated versions,
+   and ensure text is dark against the colored fills. */
+[data-md-color-scheme="slate"] .mermaid .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid .label,
+[data-md-color-scheme="slate"] pre.mermaid .nodeLabel,
+[data-md-color-scheme="slate"] svg[id^="mermaid-"] .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid .nodeLabel div {
+  color: #1a1a1a !important;
+}
+[data-md-color-scheme="slate"] svg[id^="mermaid-"] text {
+  fill: #1a1a1a !important;
+}

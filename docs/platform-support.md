@@ -5,7 +5,7 @@ systems and GPU configurations.
 
 ---
 
-## Compatibility Matrix
+## Compatibility matrix
 
 | Component | Linux | WSL2 | Windows (native) | macOS |
 |-----------|:-----:|:----:|:-----------------:|:-----:|
@@ -19,22 +19,33 @@ systems and GPU configurations.
 | Psi4 | ✅ | ✅ | ❌ | ✅ (conda) |
 | Tinker | ✅ | ✅ | ✅ | ✅ |
 
-!!! tip "WSL2 is the recommended Windows environment"
-    WSL2 gives you the full Linux-native GPU stack (JAX CUDA + JAX-MD +
-    OpenMM CUDA) on Windows hardware. Native Windows supports OpenMM CUDA
-    but not JAX CUDA or JAX-MD.
+!!! tip "Linux is the recommended GPU environment"
+    Linux provides the full GPU stack: JAX CUDA + JAX-MD + OpenMM CUDA.
+    WSL2 counts as Linux for this purpose. Native Windows supports OpenMM
+    CUDA but not JAX CUDA or JAX-MD.
 
 ---
 
-## GPU Setup
+## GPU setup
 
-### Linux / WSL2
+For GPU-accelerated workflows, install the CUDA extras you need:
+
+### Linux (including WSL2)
 
 ```bash
-# Install Q2MM with all backends + CUDA
+# Full stack: all backends + OpenMM CUDA + JAX CUDA + JAX-MD
 pip install "q2mm[all,openmm-cuda]"
+pip install "jax[cuda12]"
 
-# JAX CUDA (for JAX and JAX-MD GPU acceleration)
+# OpenMM CUDA only (no JAX GPU)
+pip install "q2mm[openmm,openmm-cuda,optimize]"
+
+# JAX CUDA only (no JAX-MD, no OpenMM)
+pip install "q2mm[jax,optimize]"
+pip install "jax[cuda12]"
+
+# JAX CUDA + JAX-MD (no OpenMM)
+pip install "q2mm[jax,jax-md,optimize]"
 pip install "jax[cuda12]"
 ```
 
@@ -45,7 +56,7 @@ pip install "jax[cuda12]"
 pip install "q2mm[openmm,openmm-cuda,optimize]"
 
 # JAX CUDA and JAX-MD are NOT available on native Windows.
-# Use WSL2 for the full GPU stack.
+# Use Linux or WSL2 for these backends.
 ```
 
 ### macOS
@@ -57,7 +68,7 @@ pip install "q2mm[all]"
 
 ---
 
-## Verification Commands
+## Verification commands
 
 ### NVIDIA driver
 
@@ -85,7 +96,7 @@ print(jax.devices())
 
 ---
 
-## Common Issues
+## Common issues
 
 ### OpenMM CUDA fails with "unsupported GPU architecture"
 
@@ -131,16 +142,15 @@ paravirtualisation. See the
 
 ### JAX-MD not available on Windows
 
-JAX-MD does not publish Windows wheels. Use WSL2 or Linux:
+JAX-MD does not publish Windows wheels. Use Linux (or WSL2):
 
 ```bash
-# Inside WSL2
 pip install "q2mm[jax-md]"
 ```
 
 ---
 
-## See Also
+## See also
 
 - [Getting Started](getting-started.md) — installation instructions
 - [OpenMM Backend](backends/openmm.md) — OpenMM-specific configuration
