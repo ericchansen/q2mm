@@ -3,13 +3,6 @@
 Q2MM provides three optimization strategies with increasing sophistication.
 This page explains each one and when to use it.
 
-!!! warning "Benchmark coverage is limited"
-    The benchmark data referenced on this page comes from two systems:
-    **CH₃F** (8 parameters) and **Rh-enamide** (182 parameters). Current
-    benchmarks do not track all relevant settings (gradient mode, commit
-    hash, environment). [Issue #211](https://github.com/ericchansen/q2mm/issues/211)
-    tracks improvements to the benchmark infrastructure.
-
 ---
 
 ## Choosing a strategy
@@ -20,14 +13,11 @@ so far:
 
 | Strategy | What it does | What we've observed |
 |----------|-------------|---------------------|
-| `ScipyOptimizer("Nelder-Mead")` | Derivative-free simplex on all params | Best single-shot scores on both CH₃F (8 params) and Rh-enamide (182 params), but needs many evaluations |
-| `ScipyOptimizer("L-BFGS-B")` | Gradient-based on all params | Fewest evaluations, but converges to worse scores than Nelder-Mead in most cases |
+| `ScipyOptimizer("Nelder-Mead")` | Derivative-free simplex on all params | Low optimization scores on both CH₃F and Rh-enamide, but final RMSD can be poor (1038 cm⁻¹ on CH₃F harmonic). Needs many evaluations. |
+| `ScipyOptimizer("L-BFGS-B")` | Gradient-based on all params | Fewest evaluations; with analytical gradients, reaches much better RMSD than Nelder-Mead on CH₃F (30.4 vs 564 on MM3). FD gradients are weaker. |
 | `OptimizationLoop(max_params=3)` | Grad-simp cycling | Best overall scores on Rh-enamide: JAX MM3 scored 3.54 in 25 min, OpenMM MM3 scored 3.29 in 9 hrs. JAX-MD harmonic scored 11.66 (different functional form). JAX harmonic not yet re-run post-fix. |
 | `SubspaceObjective` + manual | Optimise specific params | For expert users; not benchmarked |
 | `compute_sensitivity()` | Rank parameter sensitivity | Diagnostic tool, not an optimizer |
-
-Better strategy guidance will come from the benchmark improvements in
-[#211](https://github.com/ericchansen/q2mm/issues/211).
 
 ---
 
@@ -106,12 +96,11 @@ vs 0.000 for Nelder-Mead on CH₃F harmonic.
       them, with FD fallback for evaluators that lack analytical support
     - `jac="analytical"` — forces analytical gradients
 
-    The benchmark runner uses `jac="auto"` for single-shot methods. JAX,
-    JAX-MD, and OpenMM all support analytical gradients, so L-BFGS-B
-    benchmarks on these backends use a hybrid of analytical and FD
-    gradients. However, current benchmarks don't record the resolved
-    gradient mode in their output — see
-    [#211](https://github.com/ericchansen/q2mm/issues/211).
+    The benchmark runner uses `jac="auto"` for single-shot gradient methods.
+    JAX, JAX-MD, and OpenMM all support analytical gradients, so L-BFGS-B
+    benchmarks on these backends use a hybrid of analytical and FD gradients.
+    Each benchmark JSON records the resolved gradient mode in
+    `metadata.jac_resolved`.
 
 ---
 
@@ -185,11 +174,11 @@ flowchart LR
     addressing the most problematic parameters each cycle.
 
 !!! note "Cycling gradient mode"
-    The cycling loop currently defaults to `full_jac=None` (SciPy
-    finite-difference gradients for the L-BFGS-B pass). The `full_jac`
-    parameter can be set to `"auto"` to enable analytical gradients,
-    but this combination has not been benchmarked.
-    See [#211](https://github.com/ericchansen/q2mm/issues/211).
+    The cycling loop defaults to `full_jac=None` (SciPy finite-difference
+    gradients for the L-BFGS-B pass). Setting `full_jac="auto"` enables
+    analytical gradients where the engine supports them. Both modes are
+    included in the CH₃F benchmark matrix as "grad-simp (FD)" and
+    "grad-simp (auto)" — see [Small Molecules](../benchmarks/small-molecules.md).
 
 ### What the benchmarks show
 
@@ -286,10 +275,11 @@ Expected output:
 !!! warning "L-BFGS-B may not fully converge"
     On CH₃F (8 parameters), L-BFGS-B final scores range from 0.0000 (JAX,
     harmonic) to 0.087 (OpenMM, harmonic), while Nelder-Mead consistently
-    reaches 0.0000–0.0001. On Rh-enamide (182 parameters, MM3), JAX
-    L-BFGS-B converges to 5.81 vs 5.11 for Nelder-Mead. This is why the
-    grad-simp loop exists — the simplex pass cleans up what the gradient
-    pass leaves behind.
+    reaches 0.0000–0.0001. However, low scores don't always mean low RMSD:
+    Nelder-Mead reaches score ≈ 0 on harmonic but RMSD 1038 cm⁻¹, while
+    L-BFGS-B with analytical gradients reaches RMSD 553 cm⁻¹. On Rh-enamide
+    (182 parameters, MM3), JAX L-BFGS-B converges to 5.81 vs 5.11 for
+    Nelder-Mead. The grad-simp loop exists to combine the strengths of both.
 
 !!! tip "Seminario initialization matters"
     Starting from Seminario-estimated parameters (extracted from the QM
@@ -316,9 +306,8 @@ Expected output:
 
     L-BFGS-B per-eval cost is higher (~43 ms on JAX, ~172 ms on OpenMM)
     because each evaluation includes gradient computation. These numbers
-    are from a single benchmark run — see
-    [#211](https://github.com/ericchansen/q2mm/issues/211) for planned
-    improvements to benchmark reproducibility.
+    are from the CH₃F full-matrix rerun — see
+    [Small Molecules](../benchmarks/small-molecules.md).
 
 ---
 
