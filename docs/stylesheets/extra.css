@@ -140,8 +140,7 @@
 }
 
 /* Mermaid diagrams: improve readability in dark mode.
-   Override pastel fill colors with more saturated versions,
-   and ensure text is dark against the colored fills. */
+   Ensure text is dark against the default pastel node fills. */
 [data-md-color-scheme="slate"] .mermaid .nodeLabel,
 [data-md-color-scheme="slate"] .mermaid .label,
 [data-md-color-scheme="slate"] pre.mermaid .nodeLabel,

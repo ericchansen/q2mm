@@ -33,7 +33,10 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 @pytest.fixture(autouse=True)
 def _init_jax_md() -> None:
     """Lazily import JAX-MD before each test so module collection is CUDA-free."""
-    from q2mm.backends.mm.jax_md_engine import JaxMDEngine as _JME, _HAS_JAX_MD as _avail
+    try:
+        from q2mm.backends.mm.jax_md_engine import JaxMDEngine as _JME, _HAS_JAX_MD as _avail
+    except ImportError as exc:
+        pytest.skip(f"jax-md not usable: {exc}")
 
     if not _avail:
         pytest.skip("jax-md not available")
