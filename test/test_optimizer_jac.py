@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.diagnostics.benchmark import _resolve_gradients
 
 
 class _MockObjective:
@@ -113,3 +114,79 @@ class TestJacAutoDetection:
         assert "Nelder-Mead" in ScipyOptimizer.DERIVATIVE_FREE_METHODS
         assert "Powell" in ScipyOptimizer.DERIVATIVE_FREE_METHODS
         assert "L-BFGS-B" not in ScipyOptimizer.DERIVATIVE_FREE_METHODS
+
+
+class TestOptimizationResultFields:
+    """Verify jac_mode and eps are set correctly on OptimizationResult."""
+
+    def test_lbfgsb_auto_with_support_sets_eps_none(self) -> None:
+        """When analytical gradients are used, eps should be None."""
+        obj = _MockObjective(engine_supports_grad=True)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac="auto")
+        result = opt.optimize(obj)
+        assert result.jac_mode == "auto"
+        assert result.eps is None
+
+    def test_lbfgsb_fd_sets_eps(self) -> None:
+        """When using FD gradients, eps should be set to the configured value."""
+        obj = _MockObjective(engine_supports_grad=False)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac=None)
+        result = opt.optimize(obj)
+        assert result.jac_mode is None
+        assert result.eps == 1e-3
+
+    def test_derivative_free_sets_eps_none(self) -> None:
+        """Derivative-free methods should have eps=None."""
+        obj = _MockObjective(engine_supports_grad=True)
+        opt = ScipyOptimizer(method="Powell", maxiter=1, jac="auto")
+        result = opt.optimize(obj)
+        assert result.jac_mode == "auto"
+        assert result.eps is None
+
+    def test_custom_eps_value(self) -> None:
+        """Custom eps value should be recorded when FD is used."""
+        obj = _MockObjective(engine_supports_grad=False)
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac=None, eps=5e-4)
+        result = opt.optimize(obj)
+        assert result.eps == 5e-4
+
+
+class TestResolveGradients:
+    """Verify _resolve_gradients produces correct per-evaluator gradient maps."""
+
+    def test_auto_with_analytical_support(self) -> None:
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = True
+        result = _resolve_gradients("auto", engine)
+        assert result == {"energy": "analytical", "frequency": "finite-diff"}
+
+    def test_auto_without_analytical_support(self) -> None:
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = False
+        result = _resolve_gradients("auto", engine)
+        assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
+
+    def test_jac_none_is_fd(self) -> None:
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = True
+        result = _resolve_gradients(None, engine)
+        assert result == {"energy": "n/a", "frequency": "n/a"}
+
+    def test_analytical_with_support(self) -> None:
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = True
+        result = _resolve_gradients("analytical", engine)
+        assert result == {"energy": "analytical", "frequency": "finite-diff"}
+
+    def test_derivative_free_method_overrides_jac(self) -> None:
+        """Even if jac_mode='auto', a derivative-free method gets n/a."""
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = True
+        result = _resolve_gradients("auto", engine, method="Powell")
+        assert result == {"energy": "n/a", "frequency": "n/a"}
+
+    def test_nelder_mead_is_derivative_free(self) -> None:
+        engine = MagicMock()
+        engine.supports_analytical_gradients.return_value = True
+        result = _resolve_gradients("auto", engine, method="Nelder-Mead")
+        assert result == {"energy": "n/a", "frequency": "n/a"}
