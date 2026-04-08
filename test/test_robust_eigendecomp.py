@@ -163,7 +163,7 @@ class TestBoundAwareSensitivity:
         def mock_call(pvec: np.ndarray) -> float:
             return float(np.sum((np.asarray(pvec) - x0) ** 2))
 
-        obj.__call__ = mock_call
+        obj.side_effect = mock_call
         obj.batched_scores = MagicMock(side_effect=lambda pm: np.array([mock_call(row) for row in pm]))
         return obj
 
