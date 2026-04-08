@@ -57,7 +57,7 @@ class TestSymmetrisation:
         """Slightly asymmetric Hessian (from autodiff) should produce valid frequencies."""
         hess, symbols = _slightly_asymmetric_hessian_au()
         # Confirm it is NOT perfectly symmetric
-        assert not np.allclose(hess, hess.T, atol=0)
+        assert not np.array_equal(hess, hess.T)
         freqs = hessian_to_frequencies(hess, symbols)
         assert len(freqs) == 3 * len(symbols)
         assert all(np.isfinite(f) for f in freqs)

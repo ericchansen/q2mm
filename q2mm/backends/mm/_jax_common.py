@@ -206,6 +206,7 @@ def params_and_coords(
             float64 arrays.
 
     """
+    ensure_jax()
     params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)  # type: ignore[union-attr]
     coords = jnp.array(molecule_geometry, dtype=jnp.float64)  # type: ignore[union-attr]
     return params, coords
