@@ -72,13 +72,14 @@ def _collect_environment() -> dict[str, Any]:
             ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
             stderr=subprocess.DEVNULL,
             text=True,
+            timeout=5,
         ).strip()
         if gpu_out:
             parts = [line.strip() for line in gpu_out.split("\n")]
             env["gpu"] = parts[0] if len(parts) == 1 else parts
         else:
             env["gpu"] = None
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         env["gpu"] = None
 
     # Package versions
@@ -98,6 +99,7 @@ def _collect_environment() -> dict[str, Any]:
 def _resolve_gradients(
     jac_mode: str | None,
     engine: MMEngine,
+    method: str = "L-BFGS-B",
 ) -> dict[str, str]:
     """Determine per-evaluator gradient mode from jac config and engine.
 
@@ -109,8 +111,9 @@ def _resolve_gradients(
     Frequency evaluators always use finite-diff (issue #216).
     Derivative-free optimizers get ``"n/a"`` for all evaluators.
     """
-    # Derivative-free methods have jac_mode=None and don't compute gradients
-    if jac_mode is None:
+    _DERIVATIVE_FREE = {"Nelder-Mead", "Powell"}
+
+    if method in _DERIVATIVE_FREE or jac_mode is None:
         return {"energy": "n/a", "frequency": "n/a"}
 
     energy_grad = "finite-diff"
@@ -653,7 +656,7 @@ def run_combo(
         eps = loop.eps if uses_scipy_fd else None
 
         # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj.engine)
+        gradients = _resolve_gradients(jac_mode, obj.engine, method=loop.full_method)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -676,7 +679,7 @@ def run_combo(
         eps = opt_result.eps
 
         # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj.engine)
+        gradients = _resolve_gradients(jac_mode, obj.engine, method=optimizer_method)
 
     # Record optimizer settings in metadata
     result.metadata["jac_mode"] = jac_mode
