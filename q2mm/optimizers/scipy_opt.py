@@ -56,6 +56,12 @@ class OptimizationResult:
         final_params (np.ndarray): Parameter vector after optimization.
         history (list[float]): Objective value at each evaluation.
         method (str): Scipy method used for optimization.
+        jac_mode (str | None): Requested Jacobian strategy (``"auto"``,
+            ``"analytical"``, or ``None``).
+        jac_resolved (str): Actual Jacobian strategy used:
+            ``"analytical"``, ``"finite-difference"``, or
+            ``"derivative-free"``.
+        eps (float): Finite-difference step size used.
 
     """
 
@@ -69,6 +75,9 @@ class OptimizationResult:
     final_params: np.ndarray
     history: list[float]
     method: str
+    jac_mode: str | None = None
+    jac_resolved: str = "finite-difference"
+    eps: float = 1e-3
 
     @property
     def improvement(self) -> float:
@@ -286,13 +295,18 @@ class ScipyOptimizer:
         #   - jac="auto" + gradient-based method + engine supports it → auto-enable
         #   - jac=None → scipy's own finite differences (default, safest)
         jac = None
-        if self.jac == "analytical":
+        jac_resolved = "finite-difference"
+        if self.method in self.DERIVATIVE_FREE_METHODS:
+            jac_resolved = "derivative-free"
+        elif self.jac == "analytical":
             jac = objective.gradient
+            jac_resolved = "analytical"
             if self.verbose:
                 logger.info("  Using analytical gradients (jac='analytical')")
         elif self.jac == "auto" and self.method not in self.DERIVATIVE_FREE_METHODS:
             if objective.engine.supports_analytical_gradients():
                 jac = objective.gradient
+                jac_resolved = "analytical"
                 if self.verbose:
                     logger.info(
                         "  Auto-detected analytical gradient support from %s — using analytical+FD hybrid Jacobian",
@@ -345,6 +359,9 @@ class ScipyOptimizer:
             final_params=final_x,
             history=list(objective.history),
             method=self.method,
+            jac_mode=self.jac,
+            jac_resolved=jac_resolved,
+            eps=self.eps,
         )
 
     def _run_least_squares(
@@ -401,6 +418,9 @@ class ScipyOptimizer:
             final_params=scipy_result.x.copy(),
             history=list(objective.history),
             method=f"least_squares({ls_method})",
+            jac_mode=self.jac,
+            jac_resolved="finite-difference",
+            eps=self.eps,
         )
 
     def _make_callback(self, objective: ObjectiveFunction, initial_score: float) -> Callable:
