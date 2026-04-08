@@ -20,7 +20,7 @@ import numpy as np
 from q2mm import constants as co
 
 if TYPE_CHECKING:
-    from q2mm.parsers.datum import Datum
+    from q2mm.models.datum import Datum
 
 logger = logging.getLogger(__name__)
 
@@ -249,13 +249,13 @@ class DOF:
 
         Args:
             **kwargs: Additional attributes to set on the returned
-                :class:`~q2mm.parsers.datum.Datum` object.
+                :class:`~q2mm.models.datum.Datum` object.
 
         Returns:
             (Datum): A Datum representation of this DOF.
 
         """
-        from q2mm.parsers.datum import Datum
+        from q2mm.models.datum import Datum
 
         _typ_map = {"bond": "b", "angle": "a", "torsion": "t"}
         cls_name = self.__class__.__name__.lower()

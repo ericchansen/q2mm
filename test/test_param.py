@@ -1,8 +1,8 @@
-"""Tests for q2mm.parsers.param.Param."""
+"""Tests for q2mm.io._helpers.Param."""
 
 import pytest
 
-from q2mm.parsers.param import Param, ParamError
+from q2mm.io import Param, ParamError
 
 
 class TestParamEquality:

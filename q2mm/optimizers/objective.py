@@ -738,7 +738,7 @@ class ReferenceData:
                 available).
 
         """
-        from q2mm.parsers.gaussian import GaussLog
+        from q2mm.io.gaussian import GaussLog
         from q2mm.models.hessian import reform_hessian
 
         log = GaussLog(str(path), au_hessian=au_hessian)
@@ -802,7 +802,7 @@ class ReferenceData:
 
         """
         path = Path(path)
-        from q2mm.parsers.fchk import parse_fchk as _parse_fchk  # noqa: E402
+        from q2mm.io.fchk import parse_fchk as _parse_fchk  # noqa: E402
 
         symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
 
@@ -827,7 +827,7 @@ class ReferenceData:
     ) -> tuple[ReferenceData, list[Q2MMMolecule]]:
         """Load reference data and molecules from a YAML file.
 
-        Delegates to :func:`q2mm.parsers.reference_yaml.load_reference_yaml`.
+        Delegates to :func:`q2mm.io.reference.load_reference_yaml`.
 
         Args:
             path (str | Path): Path to the YAML reference file.
@@ -837,7 +837,7 @@ class ReferenceData:
                 data and parsed molecules.
 
         """
-        from q2mm.parsers.reference_yaml import load_reference_yaml
+        from q2mm.io.reference import load_reference_yaml
 
         return load_reference_yaml(path)
 
@@ -848,7 +848,7 @@ class ReferenceData:
     ) -> None:
         """Save this reference data and molecules to a YAML file.
 
-        Delegates to :func:`q2mm.parsers.reference_yaml.save_reference_yaml`.
+        Delegates to :func:`q2mm.io.reference.save_reference_yaml`.
 
         Args:
             path (str | Path): Output file path.
@@ -856,7 +856,7 @@ class ReferenceData:
                 the reference values.
 
         """
-        from q2mm.parsers.reference_yaml import save_reference_yaml
+        from q2mm.io.reference import save_reference_yaml
 
         save_reference_yaml(path, self, molecules)
 
@@ -867,7 +867,7 @@ class ReferenceData:
 def __getattr__(name: str) -> Any:
     """Lazy re-exports to preserve backward-compatible import paths."""
     if name == "_parse_fchk":
-        from q2mm.parsers.fchk import parse_fchk
+        from q2mm.io.fchk import parse_fchk
 
         return parse_fchk
     if name == "_dihedral_angle":

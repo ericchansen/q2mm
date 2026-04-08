@@ -2,7 +2,9 @@ import unittest
 from pathlib import Path
 import numpy as np
 
-from q2mm.parsers import MM3, GaussLog, Mol2, mass_weight_hessian
+from q2mm.io.mm3 import _mm3_import_ff
+from q2mm.io import GaussLog, Mol2
+from q2mm.models.hessian import mass_weight_hessian
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ETHANE_DIR = REPO_ROOT / "examples" / "ethane"
@@ -58,21 +60,20 @@ class TestMol2Parsing(unittest.TestCase):
 
 @unittest.skipUnless((RH_SEMINARIO_DIR / "mm3.fld").exists(), "rh-enamide fixture not found")
 class TestMM3FFParsing(unittest.TestCase):
-    """Test MM3 force field parsing from q2mm.parsers."""
+    """Test MM3 force field parsing via q2mm.io.mm3."""
 
     def setUp(self) -> None:
-        self.ff = MM3(str(RH_SEMINARIO_DIR / "mm3.fld"))
-        self.ff.import_ff()
+        self.params, _ = _mm3_import_ff(str(RH_SEMINARIO_DIR / "mm3.fld"))
 
     def test_parse_mm3(self) -> None:
-        self.assertGreater(len(self.ff.params), 0, "No parameters parsed")
+        self.assertGreater(len(self.params), 0, "No parameters parsed")
 
     def test_mm3_has_bonds(self) -> None:
-        bond_params = [p for p in self.ff.params if p.ptype in ("bf", "be")]
+        bond_params = [p for p in self.params if p.ptype in ("bf", "be")]
         self.assertGreater(len(bond_params), 0, "No bond parameters found")
 
     def test_mm3_has_angles(self) -> None:
-        angle_params = [p for p in self.ff.params if p.ptype in ("af", "ae")]
+        angle_params = [p for p in self.params if p.ptype in ("af", "ae")]
         self.assertGreater(len(angle_params), 0, "No angle parameters found")
 
 

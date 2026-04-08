@@ -128,7 +128,7 @@ molecule), expand the section for your QM engine:
     `GaussLog` parser:
 
     ```python
-    from q2mm.parsers.gaussian import GaussLog
+    from q2mm.io.gaussian import GaussLog
     from q2mm.models.hessian import reform_hessian
 
     log = GaussLog("sn2-ts.log", au_hessian=True)
@@ -151,7 +151,7 @@ molecule), expand the section for your QM engine:
     Parse the `.in` file (Hessian) and `.out` file (frequencies, eigenvectors):
 
     ```python
-    from q2mm.parsers.jaguar import JaguarIn, JaguarOut
+    from q2mm.io.jaguar import JaguarIn, JaguarOut
 
     jag_out = JaguarOut("sn2-ts.out")
     eigenvalues = jag_out.eigenvalues
@@ -254,7 +254,7 @@ geometry.
     molecule directly from the parsed structures — no separate XYZ file needed:
 
     ```python
-    from q2mm.parsers.gaussian import GaussLog
+    from q2mm.io.gaussian import GaussLog
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.models.hessian import reform_hessian
 
@@ -717,7 +717,7 @@ Expand each format below for details and template-based export options:
 ??? example "MM3 `.fld` (Schrödinger MacroModel)"
 
     ```python
-    from q2mm.models.ff_io import save_mm3_fld
+    from q2mm.io import save_mm3_fld
 
     output_path = save_mm3_fld(
         optimised_ff,
@@ -736,7 +736,7 @@ Expand each format below for details and template-based export options:
 ??? example "Tinker `.prm`"
 
     ```python
-    from q2mm.models.ff_io import save_tinker_prm
+    from q2mm.io import save_tinker_prm
 
     save_tinker_prm(
         optimised_ff,
@@ -748,7 +748,7 @@ Expand each format below for details and template-based export options:
 ??? example "AMBER `.frcmod`"
 
     ```python
-    from q2mm.models.ff_io import save_amber_frcmod
+    from q2mm.io import save_amber_frcmod
 
     save_amber_frcmod(
         optimised_ff,
@@ -760,7 +760,7 @@ Expand each format below for details and template-based export options:
 ??? example "OpenMM `.xml`"
 
     ```python
-    from q2mm.models.ff_io import save_openmm_xml
+    from q2mm.io import save_openmm_xml
 
     # Standalone ForceField XML (with AtomTypes and Residues)
     save_openmm_xml(optimised_ff, "forcefield.xml", molecule=mol)

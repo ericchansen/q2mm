@@ -18,7 +18,7 @@ from openmm import openmm as mm
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.ff_io import save_openmm_xml
+from q2mm.io.openmm import save_openmm_xml
 
 
 # ---------------------------------------------------------------------------

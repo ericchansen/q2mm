@@ -273,7 +273,7 @@ class TestReferenceDataAddHessianFromMatrix:
 class TestYAMLRoundTrip:
     def test_hessian_element_parse_and_serialize(self) -> None:
         """hessian_element kind parses from YAML dict and serializes back."""
-        from q2mm.parsers.reference_yaml import _parse_datum, _reference_value_to_dict
+        from q2mm.io.reference import _parse_datum, _reference_value_to_dict
 
         datum = {
             "kind": "hessian_element",
@@ -302,7 +302,7 @@ class TestYAMLRoundTrip:
 
     def test_hessian_element_with_label(self) -> None:
         """Custom label is preserved."""
-        from q2mm.parsers.reference_yaml import _parse_datum
+        from q2mm.io.reference import _parse_datum
 
         datum = {
             "kind": "hessian_element",
@@ -317,7 +317,7 @@ class TestYAMLRoundTrip:
 
     def test_hessian_element_negative_indices_rejected(self) -> None:
         """Negative row/col indices are rejected."""
-        from q2mm.parsers.reference_yaml import ReferenceYAMLError, _parse_datum
+        from q2mm.io.reference import ReferenceYAMLError, _parse_datum
 
         datum = {
             "kind": "hessian_element",
@@ -336,7 +336,7 @@ class TestYAMLRoundTrip:
 class TestYAMLBulkHessian:
     def test_bulk_hessian_directive(self, tmp_path: Path) -> None:
         """kind: hessian bulk directive creates hessian_element entries."""
-        from q2mm.parsers.reference_yaml import _load_molecule
+        from q2mm.io.reference import _load_molecule
 
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
         mol_dict = {
@@ -360,7 +360,7 @@ class TestYAMLBulkHessian:
 
     def test_bulk_hessian_full(self, tmp_path: Path) -> None:
         """kind: hessian without diagonal_only creates full lower triangle."""
-        from q2mm.parsers.reference_yaml import _load_molecule
+        from q2mm.io.reference import _load_molecule
 
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
         hess_path = tmp_path / "test_hessian_full.npy"
@@ -385,7 +385,7 @@ class TestYAMLBulkHessian:
 
     def test_bulk_hessian_skip_translational(self, tmp_path: Path) -> None:
         """skip_translational parameter works in bulk directive."""
-        from q2mm.parsers.reference_yaml import _load_molecule
+        from q2mm.io.reference import _load_molecule
 
         hess = np.eye(4)
         hess_path = tmp_path / "test_hessian_skip.npy"
@@ -408,7 +408,7 @@ class TestYAMLBulkHessian:
 
     def test_bulk_hessian_no_hessian_raises(self, tmp_path: Path) -> None:
         """kind: hessian raises when molecule has no hessian."""
-        from q2mm.parsers.reference_yaml import ReferenceYAMLError, _load_molecule
+        from q2mm.io.reference import ReferenceYAMLError, _load_molecule
 
         mol_dict = {
             "name": "test_mol",

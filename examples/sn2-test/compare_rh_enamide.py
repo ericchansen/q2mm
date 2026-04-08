@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.models.seminario import seminario_bond_fc
-from q2mm.parsers.jaguar import JaguarIn
-from q2mm.parsers.mol2 import Mol2
+from q2mm.io.jaguar import JaguarIn
+from q2mm.io.mol2 import Mol2
 
 FIXTURE_PATH = REPO_ROOT / "test" / "fixtures" / "seminario_parity" / "rh_enamide_reference.json"
 

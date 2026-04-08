@@ -212,7 +212,7 @@ def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
 
     """
     from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.parsers import JaguarIn, MacroModel
+    from q2mm.io import JaguarIn, MacroModel
 
     if not _MMO_PATH.exists():
         raise FileNotFoundError(f"Rh-enamide dataset not found: {_MMO_PATH}")

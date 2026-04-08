@@ -122,7 +122,7 @@ def _build_frequency_reference(
 def _load_rh_enamide_molecules() -> list[Any]:
     """Load 9 rh-enamide structures with Jaguar Hessians."""
     from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.parsers import JaguarIn, MacroModel
+    from q2mm.io import JaguarIn, MacroModel
 
     mm = MacroModel(str(MMO_PATH))
     jag_files = sorted(

@@ -80,7 +80,7 @@ A minimal script that reads QM reference data, loads a structure, and inspects
 an MM3 force field:
 
 ```python
-from q2mm.parsers import GaussLog, Mol2, MM3
+from q2mm.io import GaussLog, Mol2, load_mm3_fld
 
 # Parse a Gaussian log for the Hessian
 log = GaussLog("ethane.log")
@@ -91,9 +91,8 @@ mol2 = Mol2("ethane.mol2")
 print(f"Atoms: {len(mol2.structures[0].atoms)}")
 
 # Load an MM3 force field
-ff = MM3("mm3.fld")
-ff.import_ff()
-print(f"Parameters: {len(ff.params)}")
+ff = load_mm3_fld("mm3.fld")
+print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
 ```
 
 ---
@@ -102,11 +101,11 @@ print(f"Parameters: {len(ff.params)}")
 
 ```
 q2mm/
+├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
 ├── backends/      # QM/MM engine integrations (OpenMM, Tinker, JAX, Psi4)
 ├── diagnostics/   # Benchmarking and convergence analysis
 ├── models/        # Clean molecule/force-field models + Seminario estimation
-├── optimizers/    # Objective functions, scoring, and scipy-based optimization
-└── parsers/       # File format parsers (Gaussian, Jaguar, MM3, MOL2, etc.)
+└── optimizers/    # Objective functions, scoring, and scipy-based optimization
 ```
 
 ---
