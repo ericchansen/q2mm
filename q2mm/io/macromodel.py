@@ -8,13 +8,13 @@ mass-weighted Hessian matrices from MacroModel log files.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.parsers.base import File
 from q2mm.models.structure import Angle, Atom, Bond, Structure, Torsion
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class MacroModel(File):
+class MacroModel:
     """Extract structural data from MacroModel ``.mmo`` files.
 
     Reads bond lengths, angles, and torsions for each structure entry
@@ -37,8 +37,39 @@ class MacroModel(File):
             path (str): Path to the MacroModel ``.mmo`` file.
 
         """
-        super().__init__(path)
+        self._lines = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
         self._structures = None
+
+    @property
+    def lines(self) -> list[str]:
+        """Return the lines of the file.
+
+        Returns:
+            (list[str]): Lines of the file.
+
+        """
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at path.
+
+        Args:
+            path (str): Location of file to write.
+            lines (list[str] | None): Lines to write. Defaults to
+                ``self.lines``.
+
+        """
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line)
 
     @property
     def structures(self) -> list[Structure]:
@@ -239,7 +270,7 @@ class MacroModel(File):
             return None
 
 
-class MacroModelLog(File):
+class MacroModelLog:
     """Retrieve data from MacroModel log files.
 
     The Hessian matrix read from these files is mass-weighted.
@@ -252,9 +283,40 @@ class MacroModelLog(File):
             path (str): Path to the MacroModel log file.
 
         """
-        super().__init__(path)
+        self._lines = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
         self._hessian = None
         self._structures = None
+
+    @property
+    def lines(self) -> list[str]:
+        """Return the lines of the file.
+
+        Returns:
+            (list[str]): Lines of the file.
+
+        """
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at path.
+
+        Args:
+            path (str): Location of file to write.
+            lines (list[str] | None): Lines to write. Defaults to
+                ``self.lines``.
+
+        """
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line)
 
     @property
     def hessian(self) -> np.ndarray:

@@ -1,4 +1,4 @@
-"""Tests for the YAML reference data parser (``q2mm.parsers.reference_yaml``)."""
+"""Tests for the YAML reference data parser (``q2mm.io.reference``)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ yaml = pytest.importorskip("yaml", reason="pyyaml not installed")
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData, ReferenceValue
-from q2mm.parsers.reference_yaml import (
+from q2mm.io.reference import (
     ReferenceYAMLError,
     _reference_value_to_dict,
     load_reference_yaml,

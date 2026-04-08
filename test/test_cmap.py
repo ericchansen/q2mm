@@ -29,7 +29,7 @@ from q2mm.models.forcefield import (
     TorsionParam,
     VdwParam,
 )
-from q2mm.parsers.charmm_cmap import load_cmap_from_prm, parse_cmap_section
+from q2mm.io.cmap import load_cmap_from_prm, parse_cmap_section
 
 # Path to the real CHARMM36 CMAP excerpt fixture
 _FIXTURES = Path(__file__).parent / "fixtures"

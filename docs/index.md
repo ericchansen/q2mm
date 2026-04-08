@@ -20,8 +20,8 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 - **Robust optimization** — Leverages `scipy.optimize` methods (L-BFGS-B, Nelder-Mead,
   trust-constr, Powell, least-squares) instead of custom gradient code.
 - **Clean model layer** — `ForceField`, `Q2MMMolecule`, and `ReferenceData` objects
-  decouple algorithms from file formats, making it straightforward to add new parsers
-  or backends.
+  decouple algorithms from file formats, making it straightforward to add new
+  I/O modules or backends.
 
 ---
 

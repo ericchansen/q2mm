@@ -12,7 +12,7 @@ from test._shared import (
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData
-from q2mm.parsers.fchk import parse_fchk as _parse_fchk
+from q2mm.io.fchk import parse_fchk as _parse_fchk
 
 
 # ---- from_molecule ----

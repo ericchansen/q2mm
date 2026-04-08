@@ -6,7 +6,7 @@ in ``q2mm.elements``; ``MASSES`` is re-exported here for backward
 compatibility.  Optimization defaults (``WEIGHTS``, ``STEPS``) live in
 ``q2mm.optimizers.defaults``; regex patterns used by the parsers are
 defined inline below, and this module is now their canonical location
-following the removal of ``q2mm.parsers._patterns``.
+following the removal of the legacy ``_patterns`` module.
 
 Module-level Constants:
     HARTREE_TO_KJMOL: Hartree to kJ/mol conversion factor.
@@ -110,16 +110,16 @@ from q2mm.elements import MASSES  # noqa: E402, F401
 # STEPS and WEIGHTS are now in q2mm.optimizers.defaults.
 # Regex patterns are defined inline below (the standalone _patterns
 # module was removed).
-# MacroModel constants are now in q2mm.parsers.macromodel.
+# MacroModel constants are now in q2mm.io.macromodel.
 #
-# These cannot be re-exported here because the parsers package imports
+# These cannot be re-exported here because the io package imports
 # constants, creating circular dependencies.  Import from the canonical
 # locations instead:
 #   q2mm.optimizers.defaults  ->  STEPS, WEIGHTS
-#   q2mm.parsers.macromodel   ->  COM_FORM, ...
+#   q2mm.io.macromodel        ->  COM_FORM, ...
 #
 # For the most common case (co.STEPS / co.WEIGHTS), we re-export only
-# optimizers.defaults since it has no dependency on parsers.
+# optimizers.defaults since it has no dependency on io.
 from q2mm.optimizers.defaults import STEPS, WEIGHTS  # noqa: E402, F401
 
 # ---------------------------------------------------------------------------

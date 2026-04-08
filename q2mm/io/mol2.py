@@ -7,10 +7,10 @@ connectivity, and other structural data from ``.mol2`` files.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from q2mm.geometry import bond_length
-from q2mm.parsers.base import File
 from q2mm.models.structure import Atom, Bond, Structure
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class Mol2(File):
+class Mol2:
     """Retrieve structural data from Tripos Mol2 files.
 
     Please ensure that mol2 atom types match the atom types specified
@@ -45,8 +45,39 @@ class Mol2(File):
             path (str): Absolute path of the mol2 file.
 
         """
-        super().__init__(path)
+        self._lines = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
         self._structures: list[Structure] = None
+
+    @property
+    def lines(self) -> list[str]:
+        """Return the lines of the file.
+
+        Returns:
+            (list[str]): Lines of the file.
+
+        """
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at path.
+
+        Args:
+            path (str): Location of file to write.
+            lines (list[str] | None): Lines to write. Defaults to
+                ``self.lines``.
+
+        """
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line)
 
     @property
     def structures(self) -> list[Structure]:

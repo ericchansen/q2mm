@@ -174,10 +174,11 @@ unchanged.
 
 To support a new file format:
 
-1. **Add a loader** in `ff_io.py` (e.g., `load_charmm_rtf()`) that reads the
-   file and returns a `ForceField` with parameters in canonical units.
-2. **Add a saver** (e.g., `save_charmm_rtf()`) that converts canonical → format
-   units on write.
-3. **Register compatible forms** in `_FORMAT_COMPATIBLE_FORMS`.
+1. **Add a module** in `q2mm/io/` (e.g., `q2mm/io/charmm.py`) with a loader
+   (e.g., `load_charmm_rtf()`) that reads the file and returns a `ForceField`
+   with parameters in canonical units.
+2. **Add a saver** in the same module (e.g., `save_charmm_rtf()`) that converts
+   canonical → format units on write.
+3. **Re-export** the public functions from `q2mm/io/__init__.py`.
 4. **Add convenience methods** on `ForceField` (e.g., `from_charmm_rtf()`,
    `to_charmm_rtf()`).

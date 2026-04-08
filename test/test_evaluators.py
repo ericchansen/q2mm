@@ -744,7 +744,7 @@ class TestFchkParser:
 
     @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_parse_fchk_from_new_location(self) -> None:
-        from q2mm.parsers.fchk import parse_fchk
+        from q2mm.io.fchk import parse_fchk
 
         symbols, coords, hessian, charge, mult = parse_fchk(GS_FCHK)
         assert len(symbols) == 8

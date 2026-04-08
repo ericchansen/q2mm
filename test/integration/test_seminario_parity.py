@@ -29,7 +29,7 @@ from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
 from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
-from q2mm.parsers import JaguarIn, MacroModel
+from q2mm.io import JaguarIn, MacroModel
 
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
 

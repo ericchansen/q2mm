@@ -20,7 +20,7 @@ from q2mm.models.forcefield import (
     _extract_element,
 )
 from q2mm.models.seminario import estimate_force_constants
-from q2mm.parsers.tinker_ff import TinkerFF
+from q2mm.io.tinker import _tinker_import_ff
 
 # Fixture paths (test-specific, not shared)
 RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "mm3.fld"
@@ -541,13 +541,12 @@ class TestForceField:
 
     def test_mm3_imp_conversion(self) -> None:
         """ff_io converts imp1/imp2 MM3 params to TorsionParam(is_improper=True)."""
-        from q2mm.parsers.mm3 import Param
-        from q2mm.models.ff_io import load_mm3_fld
-        from unittest.mock import patch, MagicMock
+        from q2mm.io import Param
+        from q2mm.io.mm3 import load_mm3_fld
+        from unittest.mock import patch
 
-        # Create mock MM3 parser output with imp1 and imp2 params
-        mock_mm3 = MagicMock()
-        mock_mm3.params = [
+        # Create mock _mm3_import_ff output with imp1 and imp2 params
+        mock_params = [
             Param(
                 atom_labels=["C2", "O2", "H1", "H1"],
                 atom_types=["C2", "O2", "H1", "H1"],
@@ -568,8 +567,8 @@ class TestForceField:
             ),
         ]
         with (
-            patch("q2mm.parsers.mm3.MM3", return_value=mock_mm3),
-            patch("q2mm.models.ff_io._parse_mm3_vdw_params", return_value=[]),
+            patch("q2mm.io.mm3._mm3_import_ff", return_value=(mock_params, [])),
+            patch("q2mm.io.mm3._parse_mm3_vdw_params", return_value=[]),
         ):
             ff = load_mm3_fld("/fake/path.fld")
 
@@ -811,11 +810,10 @@ class TestForceField:
         out_path = tmp_path / "updated.prm"
         ff.to_tinker_prm(out_path)
 
-        legacy = TinkerFF(str(out_path))
-        legacy.import_ff()
+        legacy_params, _ = _tinker_import_ff(str(out_path))
         angle_row = ff.angles[0].ff_row
-        angle_fcs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "af"]
-        angle_eqs = [param.value for param in legacy.params if param.ff_row == angle_row and param.ptype == "ae"]
+        angle_fcs = [param.value for param in legacy_params if param.ff_row == angle_row and param.ptype == "af"]
+        angle_eqs = [param.value for param in legacy_params if param.ff_row == angle_row and param.ptype == "ae"]
         assert angle_fcs == [pytest.approx(54.0 / 71.94, abs=1e-3)]
         assert angle_eqs[0] == pytest.approx(108.25)
         assert angle_eqs[1:] == [pytest.approx(111.0), pytest.approx(112.0)]
@@ -1124,32 +1122,32 @@ class TestSaverFormValidation:
         )
 
     def test_save_mm3_rejects_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
-        from q2mm.models.ff_io import save_mm3_fld
+        from q2mm.io.mm3 import save_mm3_fld
 
         with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*mm3_fld"):
             save_mm3_fld(harmonic_ff, tmp_path / "out.fld")
 
     def test_save_tinker_rejects_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
-        from q2mm.models.ff_io import save_tinker_prm
+        from q2mm.io.tinker import save_tinker_prm
 
         with pytest.raises(ValueError, match="Cannot save.*HARMONIC.*tinker_prm"):
             save_tinker_prm(harmonic_ff, tmp_path / "out.prm")
 
     def test_save_amber_rejects_mm3(self, tmp_path: Path, mm3_ff: ForceField) -> None:
-        from q2mm.models.ff_io import save_amber_frcmod
+        from q2mm.io.amber import save_amber_frcmod
 
         with pytest.raises(ValueError, match="Cannot save.*MM3.*amber_frcmod"):
             save_amber_frcmod(mm3_ff, tmp_path / "out.frcmod")
 
     def test_save_amber_accepts_harmonic(self, tmp_path: Path, harmonic_ff: ForceField) -> None:
-        from q2mm.models.ff_io import save_amber_frcmod
+        from q2mm.io.amber import save_amber_frcmod
 
         result = save_amber_frcmod(harmonic_ff, tmp_path / "out.frcmod")
         assert result.exists()
 
     def test_save_with_none_form_always_allowed(self, tmp_path: Path) -> None:
         """ForceField with functional_form=None is allowed everywhere (backward compat)."""
-        from q2mm.models.ff_io import save_amber_frcmod
+        from q2mm.io.amber import save_amber_frcmod
 
         ff = ForceField(
             bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],

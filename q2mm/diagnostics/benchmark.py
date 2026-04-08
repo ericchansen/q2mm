@@ -350,7 +350,7 @@ class BenchmarkResult:
         if self.optimized_ff is None:
             return []
 
-        from q2mm.models.ff_io import (
+        from q2mm.io import (
             save_amber_frcmod,
             save_mm3_fld,
             save_openmm_xml,

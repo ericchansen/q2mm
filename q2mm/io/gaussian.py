@@ -7,13 +7,13 @@ and ESP data from Gaussian output files.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.parsers.base import File
 from q2mm.models.structure import Atom, Structure
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class GaussLog(File):
+class GaussLog:
     """Retrieves data from Gaussian log files.
 
     If you are extracting frequencies/Hessian data from this file, use
@@ -54,13 +54,44 @@ class GaussLog(File):
                 (Hartree/Bohr²). Defaults to False.
 
         """
-        super().__init__(path)
+        self._lines = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
         self._evals = None
         self._evecs = None
         self._frequencies_cm = None
         self._structures = None
         self._esp_rms = None
         self._au_hessian = au_hessian
+
+    @property
+    def lines(self) -> list[str]:
+        """Return the lines of the file.
+
+        Returns:
+            (list[str]): Lines of the file.
+
+        """
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at path.
+
+        Args:
+            path (str): Location of file to write.
+            lines (list[str] | None): Lines to write. Defaults to
+                ``self.lines``.
+
+        """
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            for line in lines:
+                f.write(line)
 
     @property
     def evecs(self) -> np.ndarray | None:

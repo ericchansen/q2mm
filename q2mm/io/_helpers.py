@@ -1,8 +1,156 @@
-"""Force field parameter container for Q2MM optimization."""
+"""Shared I/O helper utilities used by multiple format modules.
+
+Private module — import from ``q2mm.io`` sub-modules, not directly.
+"""
+
+from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from q2mm import constants as co
+
+if TYPE_CHECKING:
+    from q2mm.models.forcefield import (
+        AngleParam,
+        BondParam,
+        ForceField,
+        VdwParam,
+    )
+
+from q2mm.models.identifiers import (
+    canonicalize_angle_env_id,
+    canonicalize_bond_env_id,
+)
+
+# ---------------------------------------------------------------------------
+# Format compatibility
+# ---------------------------------------------------------------------------
+
+_FORMAT_COMPATIBLE_FORMS: dict[str, set[str]] = {
+    "mm3_fld": {"mm3"},
+    "tinker_prm": {"mm3"},
+    "openmm_xml": {"mm3"},
+    "amber_frcmod": {"harmonic"},
+}
+
+
+def _validate_form_for_format(ff: ForceField, target_format: str) -> None:
+    """Raise ``ValueError`` if the force field's functional form is incompatible with *target_format*."""
+    form = getattr(ff, "functional_form", None)
+    if form is None:
+        return
+    form_value = form.value if hasattr(form, "value") else str(form)
+    allowed = _FORMAT_COMPATIBLE_FORMS.get(target_format)
+    if allowed is not None and form_value not in allowed:
+        raise ValueError(
+            f"Cannot save a {form!r} force field to {target_format!r} format. Compatible forms: {sorted(allowed)}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Env-id splitting
+# ---------------------------------------------------------------------------
+
+
+def _split_env_id(env_id: str, expected_len: int) -> list[str]:
+    parts = [part.strip() for part in env_id.split("-") if part.strip()]
+    if len(parts) == expected_len:
+        return parts
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Atom-type cleaning
+# ---------------------------------------------------------------------------
+
+
+def _clean_atom_types(atom_types: list[str] | tuple[str, ...] | None, expected_len: int) -> list[str]:
+    if atom_types is None:
+        return []
+    if isinstance(atom_types, str):
+        atom_types = [atom_types]
+    cleaned = [
+        str(atom_type).strip() for atom_type in atom_types if str(atom_type).strip() and str(atom_type).strip() != "-"
+    ]
+    return cleaned[:expected_len]
+
+
+# ---------------------------------------------------------------------------
+# Parameter map builders
+# ---------------------------------------------------------------------------
+
+
+def _build_param_maps(params: list, secondary_key: str) -> tuple[dict, dict]:
+    """Build ff_row and secondary-key lookup dicts for a list of parameters."""
+    by_row = {p.ff_row: p for p in params if p.ff_row is not None}
+    by_key = {getattr(p, secondary_key): p for p in params if getattr(p, secondary_key, None)}
+    return by_row, by_key
+
+
+def _build_bond_maps(bonds: list[BondParam]) -> tuple[dict[int, BondParam], dict[str, BondParam]]:
+    return _build_param_maps(bonds, "env_id")
+
+
+def _build_angle_maps(angles: list[AngleParam]) -> tuple[dict[int, AngleParam], dict[str, AngleParam]]:
+    return _build_param_maps(angles, "env_id")
+
+
+def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
+    return _build_param_maps(vdws, "atom_type")
+
+
+# ---------------------------------------------------------------------------
+# Export matching
+# ---------------------------------------------------------------------------
+
+
+def _match_for_export(param: Any, by_row: dict, by_env: dict, expected_len: int, canonicalize_fn: Callable) -> Any:
+    """Match a parsed parameter to an internal param by ff_row or env_id."""
+    if param.ff_row is not None and param.ff_row in by_row:
+        return by_row[param.ff_row]
+    atom_types = _clean_atom_types(getattr(param, "atom_types", None), expected_len)
+    if len(atom_types) == expected_len:
+        return by_env.get(canonicalize_fn(atom_types))
+    return None
+
+
+def _match_bond_for_export(
+    param: Any, bond_by_row: dict[int, BondParam], bond_by_env: dict[str, BondParam]
+) -> BondParam | None:
+    return _match_for_export(param, bond_by_row, bond_by_env, 2, canonicalize_bond_env_id)
+
+
+def _match_angle_for_export(
+    param: Any,
+    angle_by_row: dict[int, AngleParam],
+    angle_by_env: dict[str, AngleParam],
+) -> AngleParam | None:
+    return _match_for_export(param, angle_by_row, angle_by_env, 3, canonicalize_angle_env_id)
+
+
+# ---------------------------------------------------------------------------
+# Torsion update helper (used by both MM3 and Tinker save)
+# ---------------------------------------------------------------------------
+
+
+def _update_torsion_param(param: Any, torsions: list) -> None:
+    """Update a legacy ``df`` param from the ForceField's torsion list.
+
+    Matches by ``ff_row`` + ``ff_col`` (periodicity).
+    """
+    periodicity = getattr(param, "ff_col", 1)
+    ff_row = getattr(param, "ff_row", None)
+    for t in torsions:
+        if t.ff_row == ff_row and t.periodicity == periodicity:
+            param.value = t.force_constant
+            return
+
+
+# ---------------------------------------------------------------------------
+# Legacy parameter container (moved from q2mm.parsers.param)
+# ---------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
 

@@ -41,7 +41,7 @@ from q2mm.constants import (
     SPEED_OF_LIGHT_MS,
 )
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.parsers import JaguarIn, MacroModel
+from q2mm.io import JaguarIn, MacroModel
 
 RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
 TRAINING = RH_DIR / "rh_enamide_training_set"

@@ -30,7 +30,7 @@ from test._shared import CH3F_HESS, CH3F_XYZ, make_water
 from q2mm.backends.base import MMEngine
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.optimizers.scoring import compare_data
-from q2mm.parsers import Datum
+from q2mm.models.datum import Datum
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants

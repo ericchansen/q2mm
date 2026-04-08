@@ -102,7 +102,7 @@ q2mm/
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
 │   ├── molecule.py       # Q2MMMolecule, DetectedBond, DetectedTorsion
-│   ├── ff_io.py          # Loaders/savers (MM3, AMBER, Tinker, OpenMM XML)
+│   ├── datum.py          # Datum data container
 │   ├── seminario.py      # Hessian → initial force constants
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
 │   ├── units.py          # Conversion constants and helpers
@@ -125,15 +125,20 @@ q2mm/
 │   ├── scoring.py        # Legacy scoring functions
 │   └── defaults.py       # Default step sizes and bounds
 │
-├── parsers/              # File format I/O
-│   ├── gaussian.py       # Gaussian log/fchk parsing
-│   ├── jaguar.py         # Jaguar input/output parsing
-│   ├── macromodel.py     # MacroModel log parsing
-│   ├── mm3.py            # MM3 .fld file parsing
-│   ├── tinker_ff.py      # Tinker parameter file parsing
-│   ├── amber_ff.py       # AMBER frcmod parsing
-│   ├── mol2.py           # MOL2 structure parsing
-│   └── ...               # Supporting utilities
+├── io/                   # File format I/O
+│   ├── __init__.py       # Re-exports public functions
+│   ├── _helpers.py       # Shared utilities
+│   ├── mm3.py            # load_mm3_fld, save_mm3_fld
+│   ├── tinker.py         # load_tinker_prm, save_tinker_prm
+│   ├── amber.py          # load_amber_frcmod, save_amber_frcmod
+│   ├── openmm.py         # save_openmm_xml
+│   ├── gaussian.py       # GaussLog
+│   ├── fchk.py           # parse_fchk
+│   ├── jaguar.py         # JaguarIn, JaguarOut
+│   ├── macromodel.py     # MacroModel, MacroModelLog
+│   ├── mol2.py           # Mol2
+│   ├── cmap.py           # parse_cmap_section, load_cmap_from_prm
+│   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
 ├── diagnostics/          # Analysis and reporting
 │   ├── benchmark.py      # Timing and accuracy benchmarks
@@ -159,7 +164,6 @@ flowchart TD
         ff[ForceField]
         mol[Q2MMMolecule]
         hess[Hessian]
-        ffio[ff_io]
         sem[Seminario]
     end
 
@@ -177,15 +181,15 @@ flowchart TD
         psi4[Psi4]
     end
 
-    subgraph IO["I/O"]
-        parsers[Parsers]
+    subgraph IO["q2mm.io"]
+        loaders[Loaders]
         savers[Savers]
     end
 
     constants --> units
-    units --> ffio
+    units --> IO
     units --> sem
-    ff --> ffio
+    ff --> IO
     ff --> sem
     mol --> sem
     hess --> sem
@@ -200,9 +204,9 @@ flowchart TD
     obj --> tk
     obj --> jax
 
-    parsers --> mol
-    parsers --> ref
-    savers --> ff
+    IO --> mol
+    IO --> ref
+    IO --> ff
 ```
 
 ---
