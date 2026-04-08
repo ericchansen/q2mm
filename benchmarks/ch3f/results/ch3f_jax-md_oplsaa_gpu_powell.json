@@ -5,7 +5,14 @@
     "molecule": "CH3F",
     "timestamp": "2026-03-27T04:50:41.462284+00:00",
     "source": "q2mm",
-    "optimizer_kwargs": {}
+    "optimizer_kwargs": {},
+    "jac_mode": "auto",
+    "gradients": {
+      "energy": "n/a",
+      "frequency": "n/a"
+    },
+    "eps": null,
+    "metadata_version": 2
   },
   "qm_reference": {
     "frequencies_cm1": [

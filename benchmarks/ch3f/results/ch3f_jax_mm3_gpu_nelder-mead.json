@@ -11,8 +11,12 @@
     "git_sha": "720c7622b8de4cf9c36d1a5eb20dbe2bd8d0b1f2",
     "git_dirty": true,
     "jac_mode": "auto",
-    "jac_resolved": "derivative-free",
-    "eps": 0.001
+    "eps": null,
+    "gradients": {
+      "energy": "n/a",
+      "frequency": "n/a"
+    },
+    "metadata_version": 2
   },
   "environment": {
     "python_version": "3.12.3",

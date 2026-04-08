@@ -95,6 +95,32 @@ def _collect_environment() -> dict[str, Any]:
     return env
 
 
+def _resolve_gradients(
+    jac_mode: str | None,
+    engine: MMEngine,
+) -> dict[str, str]:
+    """Determine per-evaluator gradient mode from jac config and engine.
+
+    Returns a dict mapping evaluator category to its gradient source:
+    ``"analytical"``, ``"finite-diff"``, or ``"n/a"`` (derivative-free).
+
+    Energy evaluators can use analytical gradients when the engine
+    supports them and jac_mode is ``"auto"`` or ``"analytical"``.
+    Frequency evaluators always use finite-diff (issue #216).
+    Derivative-free optimizers get ``"n/a"`` for all evaluators.
+    """
+    # Derivative-free methods have jac_mode=None and don't compute gradients
+    if jac_mode is None:
+        return {"energy": "n/a", "frequency": "n/a"}
+
+    energy_grad = "finite-diff"
+    if jac_mode in ("auto", "analytical"):
+        if engine.supports_analytical_gradients():
+            energy_grad = "analytical"
+
+    return {"energy": energy_grad, "frequency": "finite-diff"}
+
+
 # ── Engine display name → (engine_key, ff_label) mapping ────────────
 # Engine.name returns human-readable strings like "JAX (gpu)",
 # "JAX-MD (OPLSAA, cpu)", "OpenMM (CUDA)", "Tinker".  We need to
@@ -152,11 +178,15 @@ def _parse_engine_name(display_name: str) -> tuple[str, str, str]:
 def benchmark_stem(metadata: dict) -> str:
     """Build a shell-safe, self-describing filename stem from metadata.
 
-    Pattern: ``{system}_{engine}_{form}_{device}_{optimizer}``
+    Pattern: ``{system}_{engine}_{form}_{device}_{optimizer}[_{jac}]``
 
     The ``form`` segment is taken from the explicit ``functional_form``
     metadata key when present, falling back to the form inferred from
     the backend name string.
+
+    Gradient-using optimizers get a ``_auto`` or ``_fd`` suffix from
+    ``jac_mode``.  Derivative-free optimizers (Powell, Nelder-Mead) have
+    no suffix.
 
     All segments are lowercase.  Underscores separate segments; hyphens
     only appear within naturally hyphenated names (e.g. ``jax-md``,
@@ -164,12 +194,14 @@ def benchmark_stem(metadata: dict) -> str:
 
     Examples::
 
-        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "harmonic"})
-        'ch3f_jax_harmonic_gpu_lbfgsb'
-        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B (FD)", "functional_form": "harmonic"})
-        'ch3f_jax_harmonic_gpu_lbfgsb-fd'
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "jac_mode": "auto", "functional_form": "harmonic"})
+        'ch3f_jax_harmonic_gpu_lbfgsb_auto'
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "jac_mode": None, "functional_form": "harmonic"})
+        'ch3f_jax_harmonic_gpu_lbfgsb_fd'
         >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "L-BFGS-B", "functional_form": "mm3"})
-        'ch3f_jax_mm3_gpu_lbfgsb'
+        'ch3f_jax_mm3_gpu_lbfgsb_fd'
+        >>> benchmark_stem({"molecule": "CH3F", "backend": "JAX (gpu)", "optimizer": "Powell", "functional_form": "harmonic"})
+        'ch3f_jax_harmonic_gpu_powell'
         >>> benchmark_stem({"molecule": "Rh-enamide", "backend": "JAX-MD (OPLSAA, cpu)", "optimizer": "Powell"})
         'rh-enamide_jax-md_oplsaa_cpu_powell'
 
@@ -189,7 +221,15 @@ def benchmark_stem(metadata: dict) -> str:
         optimizer = "lbfgsb" + optimizer[len("l-bfgs-b") :]
     optimizer = optimizer.replace(" ", "-").replace("(", "").replace(")", "")
 
-    return f"{system}_{engine}_{form}_{device}_{optimizer}"
+    # Derivative-free methods need no gradient suffix
+    deriv_free = {"powell", "nelder-mead"}
+    if optimizer in deriv_free:
+        return f"{system}_{engine}_{form}_{device}_{optimizer}"
+
+    # Gradient-using: jac_mode "auto" or "analytical" → _auto, else → _fd
+    jac_mode = metadata.get("jac_mode")
+    jac_suffix = "auto" if jac_mode in ("auto", "analytical") else "fd"
+    return f"{system}_{engine}_{form}_{device}_{optimizer}_{jac_suffix}"
 
 
 @dataclass
@@ -602,16 +642,18 @@ def run_combo(
         }
 
         # Cycling jac metadata: full-space pass uses full_jac, simplex is
-        # always derivative-free.  The resolved mode depends on the engine;
-        # capture what the loop was configured with.
+        # always derivative-free.
         jac_mode = loop.full_jac
-        jac_resolved = "finite-difference"
+        uses_scipy_fd = True
         if loop.full_jac == "analytical":
-            jac_resolved = "analytical"
+            uses_scipy_fd = False
         elif loop.full_jac == "auto":
             if obj.engine.supports_analytical_gradients():
-                jac_resolved = "analytical"
-        eps = loop.eps if jac_resolved == "finite-difference" else None
+                uses_scipy_fd = False
+        eps = loop.eps if uses_scipy_fd else None
+
+        # Per-evaluator gradient resolution
+        gradients = _resolve_gradients(jac_mode, obj.engine)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -631,13 +673,16 @@ def run_combo(
         extra_opt_data = {}
 
         jac_mode = opt_result.jac_mode
-        jac_resolved = opt_result.jac_resolved
         eps = opt_result.eps
+
+        # Per-evaluator gradient resolution
+        gradients = _resolve_gradients(jac_mode, obj.engine)
 
     # Record optimizer settings in metadata
     result.metadata["jac_mode"] = jac_mode
-    result.metadata["jac_resolved"] = jac_resolved
+    result.metadata["gradients"] = gradients
     result.metadata["eps"] = eps
+    result.metadata["metadata_version"] = 2
 
     # Final aggregate frequencies and RMSD
     all_mm_real_final: list[float] = []
