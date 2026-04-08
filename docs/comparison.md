@@ -51,14 +51,14 @@ area are linked in the table below.
 | Gradient solvers | 5 hand-rolled ([least-squares](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L485), [Lagrange](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L448), [LM](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L467), [NR](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L498), [SVD](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L533)) | [SciPy wrapper](#optimizers) (L-BFGS-B, Nelder-Mead, Powell, trust-constr, least_squares) |
 | Simplex | Custom Nelder-Mead (3 params) | [SciPy Nelder-Mead via subspace projection](#optimizers) |
 | Cycling loop | Text command file | Dataclass-configured [`OptimizationLoop`](how-it-works/optimization-guide.md) |
-| Sensitivity | Exception-based, one-sided FD fallback | [Symmetric step shrinking, bound-aware](#sensitivity--bounds) |
+| Sensitivity | Exception-based, one-sided FD fallback | [Symmetric step shrinking, bound-aware](#sensitivity-bounds) |
 | Eigendecomposition | `np.linalg.eigh` | [Symmetrize + NaN/Inf check + penalty fallback](#eigendecomposition) |
 | Backends | Subprocess (MacroModel, Tinker, Amber, Gaussian, Jaguar) | [API + differentiable](#backend-engines) (OpenMM, Tinker, JAX, JAX-MD, Psi4) |
 | Analytical ∂E/∂θ | Not evident | Yes ([`jax.grad`](backends/jax-engine.md), OpenMM) |
 | Batched evaluation | Not evident | Yes ([`jax.vmap`](backends/jax-engine.md)) |
 | GPU | Subprocess; depends on backend | [In-process CUDA](benchmarks/gpu.md) (OpenMM, JAX, JAX-MD) |
 | Functional forms | MM3 only (implicit) | [MM3 + Harmonic](how-it-works/architecture.md) (explicit enum) |
-| Force field model | Format-coupled (`ParamMM3`) | [Format-agnostic `ForceField` dataclass](#evaluators--force-field-model) |
+| Force field model | Format-coupled (`ParamMM3`) | [Format-agnostic `ForceField` dataclass](#evaluators-force-field-model) |
 | Diagnostics | [Utility scripts](https://github.com/Q2MM/q2mm/tree/b26404b/tools) | [Full CLI benchmark suite](#diagnostics) |
 | Test suite | [9 test files](https://github.com/Q2MM/q2mm/tree/b26404b/test) | 742+ unit tests |
 

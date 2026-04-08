@@ -94,11 +94,11 @@ Q2MM_UPDATE_GOLDEN=1 python3 -m pytest test/integration/test_published_ff_valida
 - The published force field came from the
   [Q2MM/q2mm](https://github.com/Q2MM/q2mm/blob/b26404b/forcefields/rh-hydrogenation-enamide.fld)
   repository and is stored at
-  [`examples/rh-enamide/ff/rh_hyd_enamide_final.fld`](../../examples/rh-enamide/ff/rh_hyd_enamide_final.fld).
+  [`examples/rh-enamide/ff/rh_hyd_enamide_final.fld`](https://github.com/ericchansen/q2mm/blob/master/examples/rh-enamide/ff/rh_hyd_enamide_final.fld).
 - The saved snapshot is at
-  [`test/fixtures/published_ff/rh_enamide_donoghue2008.json`](../../test/fixtures/published_ff/rh_enamide_donoghue2008.json).
+  [`test/fixtures/published_ff/rh_enamide_donoghue2008.json`](https://github.com/ericchansen/q2mm/blob/master/test/fixtures/published_ff/rh_enamide_donoghue2008.json).
 - The test itself is
-  [`test/integration/test_published_ff_validation.py`](../../test/integration/test_published_ff_validation.py).
+  [`test/integration/test_published_ff_validation.py`](https://github.com/ericchansen/q2mm/blob/master/test/integration/test_published_ff_validation.py).
 - Provenance notes (where the force field came from and how it was
   extracted) are in
-  [`validation/published_ffs/README.md`](../../validation/published_ffs/README.md).
+  [`validation/published_ffs/README.md`](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md).
