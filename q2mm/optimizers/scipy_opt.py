@@ -58,11 +58,9 @@ class OptimizationResult:
         method (str): Scipy method used for optimization.
         jac_mode (str | None): Requested Jacobian strategy (``"auto"``,
             ``"analytical"``, or ``None``).
-        jac_resolved (str): Actual Jacobian strategy used:
-            ``"analytical"``, ``"finite-difference"``, or
-            ``"derivative-free"``.
-        eps (float | None): Finite-difference step size used, or ``None``
-            when the method is derivative-free or uses analytical gradients.
+        eps (float | None): Finite-difference step size used by SciPy,
+            or ``None`` when the method is derivative-free or uses
+            analytical gradients.
 
     """
 
@@ -77,7 +75,6 @@ class OptimizationResult:
     history: list[float]
     method: str
     jac_mode: str | None = None
-    jac_resolved: str = "finite-difference"
     eps: float | None = 1e-3
 
     @property
@@ -296,26 +293,26 @@ class ScipyOptimizer:
         #   - jac="auto" + gradient-based method + engine supports it → auto-enable
         #   - jac=None → scipy's own finite differences (default, safest)
         jac = None
-        jac_resolved = "finite-difference"
+        uses_scipy_fd = False
         if self.method in self.DERIVATIVE_FREE_METHODS:
-            jac_resolved = "derivative-free"
+            pass  # no gradients needed
         elif self.jac == "analytical":
             jac = objective.gradient
-            jac_resolved = "analytical"
             if self.verbose:
                 logger.info("  Using analytical gradients (jac='analytical')")
         elif self.jac == "auto" and self.method not in self.DERIVATIVE_FREE_METHODS:
             if objective.engine.supports_analytical_gradients():
                 jac = objective.gradient
-                jac_resolved = "analytical"
                 if self.verbose:
                     logger.info(
                         "  Auto-detected analytical gradient support from %s — using analytical+FD hybrid Jacobian",
                         type(objective.engine).__name__,
                     )
+        if jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+            uses_scipy_fd = True
 
         # Finite-difference step: only needed when scipy computes its own FD gradient
-        if jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+        if uses_scipy_fd:
             options["eps"] = self.eps
 
         scipy_result = optimize.minimize(
@@ -361,8 +358,7 @@ class ScipyOptimizer:
             history=list(objective.history),
             method=self.method,
             jac_mode=self.jac,
-            jac_resolved=jac_resolved,
-            eps=self.eps if jac_resolved == "finite-difference" else None,
+            eps=self.eps if uses_scipy_fd else None,
         )
 
     def _run_least_squares(
@@ -420,7 +416,6 @@ class ScipyOptimizer:
             history=list(objective.history),
             method=f"least_squares({ls_method})",
             jac_mode=self.jac,
-            jac_resolved="finite-difference",
             eps=self.eps,
         )
 

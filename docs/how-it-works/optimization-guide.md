@@ -99,8 +99,9 @@ vs 0.000 for Nelder-Mead on CH₃F harmonic.
     The benchmark runner uses `jac="auto"` for single-shot gradient methods.
     JAX, JAX-MD, and OpenMM all support analytical gradients, so L-BFGS-B
     benchmarks on these backends use a hybrid of analytical and FD gradients.
-    Each benchmark JSON records the resolved gradient mode in
-    `metadata.jac_resolved`.
+    Each benchmark JSON records the per-evaluator gradient mode in
+    `metadata.gradients` (e.g., ``{"energy": "analytical", "frequency":
+    "finite-diff"}``).
 
 ---
 

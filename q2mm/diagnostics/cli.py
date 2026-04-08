@@ -62,15 +62,17 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
     Returns:
         list[tuple[str, dict]]: List of ``(label, config_dict)`` tuples.
             Each ``config_dict`` contains at minimum a ``'method'`` key.
+            Gradient-using optimizers carry ``jac`` or ``full_jac`` to
+            control gradient mode; derivative-free methods do not.
 
     """
     configs: list[tuple[str, dict]] = [
         ("L-BFGS-B", {"method": "L-BFGS-B"}),
-        ("L-BFGS-B (FD)", {"method": "L-BFGS-B", "jac": None}),
+        ("L-BFGS-B", {"method": "L-BFGS-B", "jac": None}),
         ("Nelder-Mead", {"method": "Nelder-Mead"}),
         ("Powell", {"method": "Powell"}),
         ("grad-simp", {"method": "cycling"}),
-        ("grad-simp (auto)", {"method": "cycling", "full_jac": "auto"}),
+        ("grad-simp", {"method": "cycling", "full_jac": "auto"}),
     ]
     return configs
 

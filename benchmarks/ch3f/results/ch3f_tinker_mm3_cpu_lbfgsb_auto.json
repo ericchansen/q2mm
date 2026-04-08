@@ -1,18 +1,22 @@
 {
   "metadata": {
     "backend": "Tinker",
-    "optimizer": "L-BFGS-B (FD)",
+    "optimizer": "L-BFGS-B",
     "molecule": "CH3F",
     "functional_form": "mm3",
     "n_molecules": 1,
     "source": "q2mm",
     "level_of_theory": "B3LYP/6-31+G(d)",
-    "timestamp": "2026-04-08T04:26:31.850943+00:00",
+    "timestamp": "2026-04-08T04:24:46.144859+00:00",
     "git_sha": "720c7622b8de4cf9c36d1a5eb20dbe2bd8d0b1f2",
     "git_dirty": true,
-    "jac_mode": null,
-    "jac_resolved": "finite-difference",
-    "eps": 0.001
+    "jac_mode": "auto",
+    "eps": null,
+    "gradients": {
+      "energy": "finite-diff",
+      "frequency": "finite-diff"
+    },
+    "metadata_version": 2
   },
   "environment": {
     "python_version": "3.12.3",
@@ -91,7 +95,7 @@
     ],
     "rmsd": 114.09694218740705,
     "mae": 93.4422212220906,
-    "elapsed_s": 98.23459343399736,
+    "elapsed_s": 98.49558175299899,
     "n_eval": 424,
     "converged": false,
     "initial_score": 0.22241341162917191,
@@ -349,6 +353,6 @@
     ],
     "median_error_pct": 19.99537931670246,
     "max_error_pct": 194.2699925968996,
-    "elapsed_s": 6.249005487014074
+    "elapsed_s": 6.291115633997833
   }
 }
