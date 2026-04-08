@@ -170,7 +170,7 @@ class TestResolveGradients:
         engine = MagicMock()
         engine.supports_analytical_gradients.return_value = True
         result = _resolve_gradients(None, engine)
-        assert result == {"energy": "n/a", "frequency": "n/a"}
+        assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
 
     def test_analytical_with_support(self) -> None:
         engine = MagicMock()

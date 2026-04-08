@@ -113,8 +113,12 @@ def _resolve_gradients(
     """
     _DERIVATIVE_FREE = {"Nelder-Mead", "Powell"}
 
-    if method in _DERIVATIVE_FREE or jac_mode is None:
+    if method in _DERIVATIVE_FREE:
         return {"energy": "n/a", "frequency": "n/a"}
+
+    # jac_mode=None means scipy computes FD gradients internally
+    if jac_mode is None:
+        return {"energy": "finite-diff", "frequency": "finite-diff"}
 
     energy_grad = "finite-diff"
     if jac_mode in ("auto", "analytical"):
