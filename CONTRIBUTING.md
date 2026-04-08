@@ -100,6 +100,10 @@ pre-commit install
 Either tool reads the same `.pre-commit-config.yaml` in the repo root. Once
 installed, hooks run automatically on every `git commit`.
 
+The ruff hook auto-fixes simple lint issues during commit. When fixes are
+applied, the hook exits with an error so you can review the changes. Stage the
+updated files with `git add` and commit again.
+
 To check the entire codebase manually:
 
 ```bash
