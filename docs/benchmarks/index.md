@@ -9,7 +9,7 @@ the benchmark program is complete today.
 
 | Page | Primary question | Current scope | Status |
 |------|------------------|---------------|--------|
-| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 24 supported combos across JAX, JAX-MD, OpenMM, and Tinker | **Complete** |
+| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 36 supported combos across JAX, JAX-MD, OpenMM, and Tinker | **Complete** |
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap unresolved** |
@@ -37,7 +37,7 @@ the benchmark program is complete today.
 
 ## What is not covered yet
 
-- A full Rh-enamide 24-combo matrix across all supported combinations.
+- A full Rh-enamide 36-combo matrix across all supported combinations.
 - Check 2: re-deriving the published force field and comparing it against the
   literature result.
 - A broader multi-system published-force-field validation set beyond the current
