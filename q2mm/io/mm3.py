@@ -625,9 +625,10 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
             # VdW inside substructure
             elif match_mm3_vdw(line):
                 logger.log(5, "[L{}] Found vdw:\n{}".format(i + 1, line.strip("\n")))
-                if section_sub:
-                    atm_lbls = [line[4:6], line[8:10]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                if not section_sub:
+                    continue
+                atm_lbls = [line[4:6], line[8:10]]
+                atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
                 parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 params.extend(
                     (
