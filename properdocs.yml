@@ -49,7 +49,7 @@ nav:
     - Rh-Enamide: benchmarks/rh-enamide.md
     - GPU Acceleration: benchmarks/gpu.md
     - Published FF Validation: benchmarks/published-ff-validation.md
-    - History: benchmarks/history.md
+    - Benchmark History: benchmarks/history.md
   - API Reference: reference/
   - References: references.md
 
