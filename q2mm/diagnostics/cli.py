@@ -289,8 +289,8 @@ def _run_matrix(
 
         print(f"\n  Results saved to: {system_output}/")
 
-    # Save run summary to history (always use canonical repo-relative path)
-    if run_id is not None:
+    # Save run summary to history
+    if run_id is not None and output_dir is not None:
         from q2mm.diagnostics.history import build_run_summary
 
         config = {
@@ -301,8 +301,7 @@ def _run_matrix(
             "n_combos": len(results),
         }
         summary = build_run_summary(results, system=system_key, run_id=run_id, config=config)
-        repo_root = Path(__file__).resolve().parent.parent.parent
-        history_dir = repo_root / "benchmarks" / "history"
+        history_dir = output_dir.parent / "history"
         history_path = history_dir / f"{run_id}.json"
         summary.to_json(history_path)
         print(f"  History saved to: {history_path}")
@@ -684,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
             platform=args.platform,
             system_key=args.system,
             max_iter=args.max_iter,
-            run_id=_generate_run_id(args.system),
+            run_id=_generate_run_id(args.system) if output_dir else None,
         )
 
     if not results:

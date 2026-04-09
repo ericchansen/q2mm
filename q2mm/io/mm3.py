@@ -790,7 +790,7 @@ def save_mm3_fld(
     path: str | Path,
     template_path: str | Path | None = None,
     *,
-    substructure_name: str = "OPT Generated",
+    substructure_name: str = "Generated",
     smiles: str = "AUTO",
 ) -> Path:
     """Write the force field to MM3 .fld format.

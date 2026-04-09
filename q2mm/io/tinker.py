@@ -449,7 +449,7 @@ def save_tinker_prm(
     path: str | Path,
     template_path: str | Path | None = None,
     *,
-    section_name: str = "OPT Generated",
+    section_name: str = "Generated",
 ) -> Path:
     """Write the force field to Tinker .prm format.
 
