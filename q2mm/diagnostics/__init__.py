@@ -12,6 +12,7 @@ from q2mm.diagnostics.benchmark import (
     real_frequencies,
     run_combo,
 )
+from q2mm.diagnostics.history import RunSummary, build_run_summary, load_history
 from q2mm.diagnostics.pes_distortion import compute_distortions, load_normal_modes
 from q2mm.diagnostics.reference_analysis import (
     EigenvalueAnalysis,
@@ -34,12 +35,14 @@ __all__ = [
     "EigenvalueAnalysis",
     "FrequencyComparison",
     "ModeCouplingAnalysis",
+    "RunSummary",
     "SYSTEMS",
     "SymmetryCheck",
     "SystemData",
     "TablePrinter",
     "analyze_eigenvalues",
     "analyze_mode_coupling",
+    "build_run_summary",
     "check_symmetry",
     "compare_frequencies",
     "compute_distortions",
@@ -48,6 +51,7 @@ __all__ = [
     "frequency_mae",
     "frequency_rmsd",
     "full_report",
+    "load_history",
     "load_normal_modes",
     "real_frequencies",
     "run_combo",

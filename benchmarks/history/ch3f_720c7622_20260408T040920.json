@@ -1,0 +1,651 @@
+{
+  "run_id": "ch3f_720c7622_20260408T040920",
+  "system": "ch3f",
+  "git_sha": "720c7622b8de4cf9c36d1a5eb20dbe2bd8d0b1f2",
+  "git_dirty": true,
+  "timestamp": "2026-04-08T04:08:19.396146+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev206",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "JAX (gpu)",
+      "JAX-MD (OPLSAA, gpu)",
+      "OpenMM (CUDA)",
+      "Tinker"
+    ],
+    "forms": [
+      "harmonic",
+      "mm3"
+    ],
+    "optimizers": [
+      "L-BFGS-B",
+      "Nelder-Mead",
+      "Powell",
+      "grad-simp"
+    ],
+    "n_combos": 36
+  },
+  "combos": {
+    "ch3f_jax-md_harmonic_gpu_grad-simp_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_grad-simp_auto",
+      "status": "converged",
+      "rmsd": 537.8417267263545,
+      "mae": 267.3846128309736,
+      "time_s": 14.199613337026676,
+      "n_eval": 1887,
+      "seminario_rmsd": 156.85998264124012,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_grad-simp_fd": {
+      "stem": "ch3f_jax-md_harmonic_gpu_grad-simp_fd",
+      "status": "not_converged",
+      "rmsd": 811.8380205620141,
+      "mae": 579.1296463219036,
+      "time_s": 12.14068593099364,
+      "n_eval": 3892,
+      "seminario_rmsd": 156.85998264123913,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_lbfgsb_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_lbfgsb_auto",
+      "status": "converged",
+      "rmsd": 533.4303169290106,
+      "mae": 259.1056368917568,
+      "time_s": 7.20809412698145,
+      "n_eval": 147,
+      "seminario_rmsd": 156.85998264123958,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_lbfgsb_fd": {
+      "stem": "ch3f_jax-md_harmonic_gpu_lbfgsb_fd",
+      "status": "converged",
+      "rmsd": 813.4409916065123,
+      "mae": 610.0592440738253,
+      "time_s": 1.1447688130137976,
+      "n_eval": 370,
+      "seminario_rmsd": 156.85998264123947,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_nelder-mead": {
+      "stem": "ch3f_jax-md_harmonic_gpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 1037.9349428141709,
+      "mae": 888.7533253037558,
+      "time_s": 3.693178457993781,
+      "n_eval": 1201,
+      "seminario_rmsd": 156.8599826412393,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "Nelder-Mead",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_powell": {
+      "stem": "ch3f_jax-md_harmonic_gpu_powell",
+      "status": "converged",
+      "rmsd": 0.021326735832246393,
+      "mae": 0.013108628311531194,
+      "time_s": 8.046035837003728,
+      "n_eval": 2605,
+      "seminario_rmsd": 156.8599826412393,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "Powell",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_grad-simp_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_grad-simp_auto",
+      "status": "converged",
+      "rmsd": 992.5276589731064,
+      "mae": 815.0655161062264,
+      "time_s": 15.24703937099548,
+      "n_eval": 2105,
+      "seminario_rmsd": 156.85998264123936,
+      "backend": "JAX (gpu)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_grad-simp_fd": {
+      "stem": "ch3f_jax_harmonic_gpu_grad-simp_fd",
+      "status": "not_converged",
+      "rmsd": 811.8380156641497,
+      "mae": 579.1296403013907,
+      "time_s": 12.012865521013737,
+      "n_eval": 3979,
+      "seminario_rmsd": 156.85998264123904,
+      "backend": "JAX (gpu)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_lbfgsb_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_lbfgsb_auto",
+      "status": "converged",
+      "rmsd": 552.5963801527245,
+      "mae": 287.8591559592943,
+      "time_s": 7.503836073010461,
+      "n_eval": 156,
+      "seminario_rmsd": 156.8599826412394,
+      "backend": "JAX (gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_lbfgsb_fd": {
+      "stem": "ch3f_jax_harmonic_gpu_lbfgsb_fd",
+      "status": "converged",
+      "rmsd": 813.4409916478897,
+      "mae": 610.0592441073435,
+      "time_s": 1.103905436990317,
+      "n_eval": 379,
+      "seminario_rmsd": 156.85998264123955,
+      "backend": "JAX (gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_nelder-mead": {
+      "stem": "ch3f_jax_harmonic_gpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 1037.934942744126,
+      "mae": 888.7533251544139,
+      "time_s": 3.6647695649880916,
+      "n_eval": 1194,
+      "seminario_rmsd": 156.85998264123975,
+      "backend": "JAX (gpu)",
+      "optimizer": "Nelder-Mead",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_powell": {
+      "stem": "ch3f_jax_harmonic_gpu_powell",
+      "status": "converged",
+      "rmsd": 0.02132673577587169,
+      "mae": 0.013108618764388465,
+      "time_s": 7.696769864007365,
+      "n_eval": 2548,
+      "seminario_rmsd": 156.8599826412392,
+      "backend": "JAX (gpu)",
+      "optimizer": "Powell",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_jax_mm3_gpu_grad-simp_auto": {
+      "stem": "ch3f_jax_mm3_gpu_grad-simp_auto",
+      "status": "converged",
+      "rmsd": 586.367701045425,
+      "mae": 322.22946998166094,
+      "time_s": 5.730395450023934,
+      "n_eval": 687,
+      "seminario_rmsd": 156.8599824845783,
+      "backend": "JAX (gpu)",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_mm3_gpu_grad-simp_fd": {
+      "stem": "ch3f_jax_mm3_gpu_grad-simp_fd",
+      "status": "not_converged",
+      "rmsd": 834.479234002234,
+      "mae": 613.1758512421849,
+      "time_s": 13.623586241010344,
+      "n_eval": 4488,
+      "seminario_rmsd": 156.8599824845784,
+      "backend": "JAX (gpu)",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_mm3_gpu_lbfgsb_auto": {
+      "stem": "ch3f_jax_mm3_gpu_lbfgsb_auto",
+      "status": "converged",
+      "rmsd": 586.7139159447337,
+      "mae": 321.700161153972,
+      "time_s": 3.7867638600000646,
+      "n_eval": 76,
+      "seminario_rmsd": 156.8599824845783,
+      "backend": "JAX (gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_mm3_gpu_lbfgsb_fd": {
+      "stem": "ch3f_jax_mm3_gpu_lbfgsb_fd",
+      "status": "converged",
+      "rmsd": 114.1179863676476,
+      "mae": 93.55402037777073,
+      "time_s": 0.986562022997532,
+      "n_eval": 325,
+      "seminario_rmsd": 156.85998248457852,
+      "backend": "JAX (gpu)",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_mm3_gpu_nelder-mead": {
+      "stem": "ch3f_jax_mm3_gpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 547.540176324657,
+      "mae": 281.83343274133426,
+      "time_s": 25.00223863698193,
+      "n_eval": 8228,
+      "seminario_rmsd": 156.85998248457804,
+      "backend": "JAX (gpu)",
+      "optimizer": "Nelder-Mead",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_jax_mm3_gpu_powell": {
+      "stem": "ch3f_jax_mm3_gpu_powell",
+      "status": "converged",
+      "rmsd": 4.017562169298261,
+      "mae": 1.8969218572651698,
+      "time_s": 37.12402434798423,
+      "n_eval": 11997,
+      "seminario_rmsd": 156.85998248457864,
+      "backend": "JAX (gpu)",
+      "optimizer": "Powell",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_grad-simp_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_grad-simp_auto",
+      "status": "not_converged",
+      "rmsd": 812.12779628775,
+      "mae": 580.7818050946772,
+      "time_s": 62.92393836801057,
+      "n_eval": 2176,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_grad-simp_fd": {
+      "stem": "ch3f_openmm_harmonic_gpu_grad-simp_fd",
+      "status": "not_converged",
+      "rmsd": 829.1570828324346,
+      "mae": 600.7431044060776,
+      "time_s": 51.79621616899385,
+      "n_eval": 5329,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "grad-simp",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_lbfgsb_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_lbfgsb_auto",
+      "status": "converged",
+      "rmsd": 816.7844072324916,
+      "mae": 616.7015879895787,
+      "time_s": 12.989583804999711,
+      "n_eval": 80,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_lbfgsb_fd": {
+      "stem": "ch3f_openmm_harmonic_gpu_lbfgsb_fd",
+      "status": "converged",
+      "rmsd": 804.5034253475022,
+      "mae": 633.8114522808443,
+      "time_s": 2.9138851220195647,
+      "n_eval": 316,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B",
+      "form": "harmonic",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_nelder-mead": {
+      "stem": "ch3f_openmm_harmonic_gpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 1040.5228377870928,
+      "mae": 892.1142517276858,
+      "time_s": 9.038522666989593,
+      "n_eval": 988,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "Nelder-Mead",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_powell": {
+      "stem": "ch3f_openmm_harmonic_gpu_powell",
+      "status": "converged",
+      "rmsd": 0.014241522558151498,
+      "mae": 0.010616916373490111,
+      "time_s": 41.09126538399141,
+      "n_eval": 4321,
+      "seminario_rmsd": 156.85365271815618,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "Powell",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_grad-simp_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_grad-simp_auto",
+      "status": "converged",
+      "rmsd": 579.2034469106972,
+      "mae": 315.45448789515484,
+      "time_s": 34.71965935299522,
+      "n_eval": 799,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_grad-simp_fd": {
+      "stem": "ch3f_openmm_mm3_gpu_grad-simp_fd",
+      "status": "converged",
+      "rmsd": 580.7734223590762,
+      "mae": 317.34401628527456,
+      "time_s": 25.36245792399859,
+      "n_eval": 2692,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_lbfgsb_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_lbfgsb_auto",
+      "status": "converged",
+      "rmsd": 30.43628230654112,
+      "mae": 25.737726736391412,
+      "time_s": 20.00885555901914,
+      "n_eval": 126,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "analytical",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_lbfgsb_fd": {
+      "stem": "ch3f_openmm_mm3_gpu_lbfgsb_fd",
+      "status": "converged",
+      "rmsd": 56.143909124665484,
+      "mae": 39.02565881656819,
+      "time_s": 3.6020273919857573,
+      "n_eval": 388,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_nelder-mead": {
+      "stem": "ch3f_openmm_mm3_gpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 564.2333060829244,
+      "mae": 299.879786734862,
+      "time_s": 8.28000214099302,
+      "n_eval": 903,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "Nelder-Mead",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_powell": {
+      "stem": "ch3f_openmm_mm3_gpu_powell",
+      "status": "converged",
+      "rmsd": 575.7012819994342,
+      "mae": 311.90731935424833,
+      "time_s": 131.18644957602373,
+      "n_eval": 13585,
+      "seminario_rmsd": 156.85133069838565,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "Powell",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_grad-simp_auto": {
+      "stem": "ch3f_tinker_mm3_cpu_grad-simp_auto",
+      "status": "converged",
+      "rmsd": 833.4405251345158,
+      "mae": 612.3405000499491,
+      "time_s": 749.8011025739834,
+      "n_eval": 3271,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_grad-simp_fd": {
+      "stem": "ch3f_tinker_mm3_cpu_grad-simp_fd",
+      "status": "converged",
+      "rmsd": 833.4405251345158,
+      "mae": 612.3405000499491,
+      "time_s": 745.3329821949883,
+      "n_eval": 3271,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "grad-simp",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_lbfgsb_auto": {
+      "stem": "ch3f_tinker_mm3_cpu_lbfgsb_auto",
+      "status": "not_converged",
+      "rmsd": 114.09694218740705,
+      "mae": 93.4422212220906,
+      "time_s": 98.49558175299899,
+      "n_eval": 424,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_lbfgsb_fd": {
+      "stem": "ch3f_tinker_mm3_cpu_lbfgsb_fd",
+      "status": "not_converged",
+      "rmsd": 114.09694218740705,
+      "mae": 93.4422212220906,
+      "time_s": 98.23459343399736,
+      "n_eval": 424,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "L-BFGS-B",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "energy": "finite-diff",
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_nelder-mead": {
+      "stem": "ch3f_tinker_mm3_cpu_nelder-mead",
+      "status": "converged",
+      "rmsd": 563.2578727025497,
+      "mae": 299.50436445433104,
+      "time_s": 157.30485374300042,
+      "n_eval": 685,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "Nelder-Mead",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    },
+    "ch3f_tinker_mm3_cpu_powell": {
+      "stem": "ch3f_tinker_mm3_cpu_powell",
+      "status": "converged",
+      "rmsd": 555.6974636502797,
+      "mae": 291.24805403046116,
+      "time_s": 1106.3454339499876,
+      "n_eval": 4843,
+      "seminario_rmsd": 157.2024213939792,
+      "backend": "Tinker",
+      "optimizer": "Powell",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "energy": "n/a",
+        "frequency": "n/a"
+      }
+    }
+  }
+}
