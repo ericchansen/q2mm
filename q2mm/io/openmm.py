@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import _validate_form_for_format
 from q2mm.models.forcefield import ForceField
+
+logger = logging.getLogger(__name__)
+
+# MM3/Tinker wildcard atom type — means "any atom".  OpenMM XML has no
+# wildcard concept, so terms containing this type must be skipped.
+_WILDCARD_TYPES = frozenset({"00"})
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
@@ -143,6 +150,9 @@ def save_openmm_xml(
             env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
             class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
             class2 = env_parts[1] if len(env_parts) >= 2 else bond.elements[1]
+            if _WILDCARD_TYPES & {class1, class2}:
+                logger.warning("Skipping bond %s — wildcard type '00' has no OpenMM equivalent", bond.env_id)
+                continue
             bond_el = ET.SubElement(bond_force_el, "Bond")
             bond_el.set("class1", class1)
             bond_el.set("class2", class2)
@@ -175,6 +185,9 @@ def save_openmm_xml(
             class1 = env_parts[0] if len(env_parts) >= 3 else angle.elements[0]
             class2 = env_parts[1] if len(env_parts) >= 3 else angle.elements[1]
             class3 = env_parts[2] if len(env_parts) >= 3 else angle.elements[2]
+            if _WILDCARD_TYPES & {class1, class2, class3}:
+                logger.warning("Skipping angle %s — wildcard type '00' has no OpenMM equivalent", angle.env_id)
+                continue
             angle_el = ET.SubElement(angle_force_el, "Angle")
             angle_el.set("class1", class1)
             angle_el.set("class2", class2)
@@ -201,6 +214,9 @@ def save_openmm_xml(
             class2 = env_parts[1] if len(env_parts) >= 4 else torsion.elements[1]
             class3 = env_parts[2] if len(env_parts) >= 4 else torsion.elements[2]
             class4 = env_parts[3] if len(env_parts) >= 4 else torsion.elements[3]
+            if _WILDCARD_TYPES & {class1, class2, class3, class4}:
+                logger.warning("Skipping torsion %s — wildcard type '00' has no OpenMM equivalent", torsion.env_id)
+                continue
             tor_el = ET.SubElement(torsion_force_el, "Torsion")
             tor_el.set("class1", class1)
             tor_el.set("class2", class2)
