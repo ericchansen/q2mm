@@ -16,9 +16,9 @@ Run with::
 
     python scripts/bench_pint.py
 
-Pint is an **optional** dependency for this script only — install it with::
+Pint is an **optional** dependency — install it with::
 
-    pip install pint
+    pip install 'q2mm[qm]'
 
 Results are documented in GitHub issue #161 ("Evaluate Pint for unit
 handling: performance impact assessment") and inform the two-tier
@@ -111,7 +111,10 @@ def main() -> None:
     try:
         import pint  # noqa: PLC0415
     except ImportError:
-        print("ERROR: pint is not installed.  Run:  pip install pint", file=sys.stderr)
+        print(
+            "ERROR: pint is not installed.  Run:  pip install 'q2mm[qm]'",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     ureg = pint.UnitRegistry()
