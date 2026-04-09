@@ -1,6 +1,6 @@
 """Microbenchmark: Pint vs bare-multiply unit conversions.
 
-Compares three approaches to converting a bond force constant from
+Compares four approaches to converting a bond force constant from
 kcal/(mol·Å²) to kJ/(mol·nm²):
 
 1. **Bare multiply** — plain ``float * float``, the current approach in

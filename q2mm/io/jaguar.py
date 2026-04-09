@@ -27,12 +27,14 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Optional Pint integration — cold-path unit tagging (once per file load)
 # ---------------------------------------------------------------------------
-# When pint is installed (``pip install q2mm[qm]``), ``JaguarIn.get_hessian``
-# returns a ``pint.Quantity`` tagged as ``hartree/bohr**2``.  Callers that
-# pass the result to ``Q2MMMolecule.from_structure`` get automatic unit
-# validation: an incompatible tag (e.g. ``kJ/(mol·Å²)``) raises
+# When pint is installed (``pip install q2mm[qm]``) and the caller passes
+# ``tag_units=True``, ``JaguarIn.get_hessian`` returns a ``pint.Quantity``
+# tagged as ``hartree/bohr**2``.  Callers that pass the result to
+# ``Q2MMMolecule.from_structure`` get automatic unit validation: an
+# incompatible tag (e.g. ``kJ/(mol·Å²)``) raises
 # ``pint.errors.DimensionalityError`` instead of silently producing wrong
-# force constants.  See ``docs/how-it-works/architecture.md`` §"Unit type
+# force constants.  The default (``tag_units=False``) always returns a bare
+# ``np.ndarray``.  See ``docs/how-it-works/architecture.md`` §"Unit type
 # system: NewType vs Pint" for details.
 _HAS_PINT: bool = find_spec("pint") is not None
 _pint_ureg: Any = None  # lazy — created on first get_hessian() call
