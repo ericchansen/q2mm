@@ -150,7 +150,7 @@ engine = OpenMMEngine()
 
 # Load molecule and force field
 mol = Q2MMMolecule.from_xyz("molecule.xyz")
-ff = ForceField.from_amber_frcmod("params.frcmod", mol)
+ff = ForceField.from_amber_frcmod("params.frcmod")
 
 # Single-point energy
 e = engine.energy(mol, ff)

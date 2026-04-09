@@ -560,13 +560,13 @@ print(f"Parameters:    {len(initial_params)}")
     ```
 
     ```python
-    from q2mm.backends.mm.jax import JAXEngine
-    engine = JAXEngine()
+    from q2mm.backends.mm import JaxEngine
+    engine = JaxEngine()
     ```
 
     ```python
-    from q2mm.backends.mm.jax_md import JAXMDEngine
-    engine = JAXMDEngine()
+    from q2mm.backends.mm import JaxMDEngine
+    engine = JaxMDEngine()
     ```
 
     ```python

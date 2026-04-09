@@ -115,7 +115,7 @@ from q2mm.models.molecule import Q2MMMolecule
 engine = TinkerEngine(tinker_dir="/opt/tinker/bin")
 
 mol = Q2MMMolecule.from_xyz("molecule.xyz")
-ff = ForceField.from_mm3_fld("mm3.fld", mol)
+ff = ForceField.from_mm3_fld("mm3.fld")
 
 e = engine.energy(mol, ff)
 print(f"Energy: {e:.4f} kcal/mol")
