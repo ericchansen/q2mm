@@ -123,9 +123,11 @@ constant by 9,376×.
 
 **Adopted architecture:**
 
-- **I/O boundary (parsers):** return `pint.Quantity` — forces callers to
+- **I/O boundary (parsers):** can return `pint.Quantity` when callers
+  opt in (e.g. `get_hessian(tag_units=True)`) — forces callers to
   name the target unit; raises `DimensionalityError` on incompatible unit
   systems (e.g. molar `kJ/(mol·Å²)` vs molecular `Hartree/Bohr²`).
+  The default (`tag_units=False`) always returns a bare `np.ndarray`.
 - **Internal models and hot loops:** bare `np.ndarray` — zero overhead,
   JAX-traceable; `NewType` for static type safety on scalar conversions.
 
@@ -142,7 +144,7 @@ def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
 # q2mm/models/molecule.py  — strips pint tag at the model boundary
 @classmethod
 def from_structure(cls, structure, *, hessian=None, ...) -> Q2MMMolecule:
-    if hessian is not None and hasattr(hessian, "magnitude"):
+    if hessian is not None and hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
         # pint.Quantity: convert to canonical AU and extract magnitude
         hessian = np.asarray(hessian.to("hartree/bohr**2").magnitude)
     ...

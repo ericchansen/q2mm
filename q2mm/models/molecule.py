@@ -49,7 +49,7 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
     return dihedral_angle(p0, p1, p2, p3)
 
 
-def _strip_pint(hessian: Any) -> np.ndarray | None:
+def _strip_pint(hessian: Any) -> Any:
     """Strip ``pint.Quantity`` wrapper, converting to canonical AU.
 
     When ``pint`` is installed, ``JaguarIn.get_hessian(tag_units=True)``
