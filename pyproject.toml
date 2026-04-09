@@ -57,6 +57,9 @@ openmm-cuda = [
 optimize = [
     "scipy",
 ]
+qm = [
+    "pint",
+]
 jax = [
     "jax",
     "jaxlib",
@@ -96,6 +99,7 @@ docs = [
 all = [
     "openmm",
     "parmed",
+    "pint",
     "scipy",
     "qcelemental",
     "jax",

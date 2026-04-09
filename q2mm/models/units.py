@@ -23,6 +23,17 @@ Engines convert from canonical to engine-native at the boundary.
 NewType wrappers provide zero-runtime-cost type safety: each unit quantity
 is a ``NewType`` alias of ``float``, so mypy/pyright can catch mismatched
 conversions while CPython sees plain floats with no overhead.
+
+Note:
+    **Two-tier unit safety (issue #161).**  Per-call overhead of 217–2,388×
+    makes Pint unsuitable for hot-path scalar conversions; ``NewType``
+    wrappers are retained there (zero runtime cost, static type safety).
+    However, Pint *is* used at cold-path I/O boundaries (e.g.
+    ``q2mm.io.jaguar.JaguarIn.get_hessian``) where each file is loaded
+    once and the overhead is immeasurable.  See
+    ``docs/how-it-works/architecture.md`` (section "Unit type system: NewType vs Pint") and
+    ``scripts/bench_pint.py`` (reproducible microbenchmark).
+
 """
 
 from __future__ import annotations
