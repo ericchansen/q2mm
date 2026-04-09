@@ -304,7 +304,11 @@ _PLATFORM_PRIORITY = ("CUDA", "OpenCL", "CPU", "Reference")
 def detect_best_platform() -> str:
     """Return the name of the fastest available OpenMM platform.
 
-    Platform preference order: CUDA > OpenCL > CPU > Reference.
+    If the ``OPENMM_DEFAULT_PLATFORM`` environment variable is set, its
+    value is returned directly (no validation against installed
+    platforms).  This allows test harnesses to force CPU-only execution.
+
+    Otherwise, platform preference order: CUDA > OpenCL > CPU > Reference.
 
     Logs a warning when CUDA is unavailable and the function falls back
     to OpenCL on a system with an NVIDIA GPU — OpenCL on modern NVIDIA
@@ -319,6 +323,11 @@ def detect_best_platform() -> str:
 
     """
     _ensure_openmm()
+    import os
+
+    env_platform = os.environ.get("OPENMM_DEFAULT_PLATFORM")
+    if env_platform:
+        return env_platform
     available = {mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())}
     for name in _PLATFORM_PRIORITY:
         if name in available:
@@ -703,6 +712,11 @@ class OpenMMEngine(MMEngine):
             bool: ``True`` if the ``openmm`` package is importable.
 
         """
+        return _HAS_OPENMM
+
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if OpenMM is importable without platform detection."""
         return _HAS_OPENMM
 
     def supports_runtime_params(self) -> bool:

@@ -81,6 +81,17 @@ python -m ruff format --check q2mm test scripts examples
 python -m pytest test/ -x -q -m "not (openmm or tinker or jax or jax_md or psi4)"
 ```
 
+By default, all tests run on **CPU only** — no GPU memory is allocated.
+This prevents JAX CUDA initialization (~25 GiB VRAM) and OpenMM CUDA
+platform selection from locking up the developer's machine.
+
+To opt into GPU execution for benchmarks or GPU-specific tests:
+
+```bash
+python -m pytest --gpu                 # CLI flag
+Q2MM_USE_GPU=1 python -m pytest        # environment variable
+```
+
 ### Backend Tests (require Docker)
 
 ```bash

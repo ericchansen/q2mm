@@ -137,6 +137,11 @@ class Psi4Engine(QMEngine):
         """
         return _HAS_PSI4
 
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if Psi4 is importable."""
+        return _HAS_PSI4
+
     def _load_molecule(self, structure: str | tuple[list[str], np.ndarray]) -> object:
         """Load a molecule from an XYZ file path or ``(atoms, coords)`` tuple.
 

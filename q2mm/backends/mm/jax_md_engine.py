@@ -599,6 +599,11 @@ class JaxMDEngine(MMEngine):
         """Return whether JAX-MD dependencies are installed."""
         return _HAS_JAX_MD
 
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if JAX-MD is importable without triggering CUDA init."""
+        return _HAS_JAX_MD
+
     def supports_runtime_params(self) -> bool:
         """Return True — JAX-MD supports runtime parameter updates."""
         return True

@@ -180,6 +180,11 @@ class TinkerEngine(MMEngine):
         except FileNotFoundError:
             return False
 
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if Tinker binaries can be found on this system."""
+        return _find_tinker_dir() is not None
+
     def _write_tinker_xyz(
         self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
     ) -> str:

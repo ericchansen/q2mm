@@ -54,6 +54,23 @@ class QMEngine(ABC):
     All QM backends (Psi4, Gaussian, ORCA, etc.) must implement this interface.
     """
 
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if this engine's dependencies are installed.
+
+        Lightweight class-level check that does **not** instantiate the
+        engine or trigger heavy initialization (e.g. CUDA/XLA).  Used by
+        :func:`~q2mm.backends.registry._check_available` during test
+        collection to avoid GPU memory allocation.
+
+        Subclasses should override this to return a cheap ``_HAS_*`` flag.
+
+        Returns:
+            bool: ``True`` if all required packages are importable.
+
+        """
+        return False
+
     @abstractmethod
     def energy(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> float:
         """Calculate single-point energy in Hartrees.
@@ -165,6 +182,24 @@ class MMEngine(ABC):
     - ``hessian()`` returns Hartree/Bohr² (atomic units)
     - ``frequencies()`` returns cm⁻¹
     """
+
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if this engine's dependencies are installed.
+
+        Lightweight class-level check that does **not** instantiate the
+        engine or trigger heavy initialization (e.g. CUDA/XLA, OpenMM
+        platform detection).  Used by
+        :func:`~q2mm.backends.registry._check_available` during test
+        collection to avoid GPU memory allocation.
+
+        Subclasses should override this to return a cheap ``_HAS_*`` flag.
+
+        Returns:
+            bool: ``True`` if all required packages are importable.
+
+        """
+        return False
 
     @abstractmethod
     def energy(self, structure: Q2MMMolecule, forcefield: ForceField) -> float:
