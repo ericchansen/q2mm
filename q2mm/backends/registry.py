@@ -118,9 +118,17 @@ def _discover() -> None:
 
 
 def _check_available(cls: type) -> bool:
-    """Instantiate an engine and call ``is_available()`` safely."""
+    """Check whether an engine's dependencies are installed.
+
+    Prefers the lightweight :meth:`deps_available` classmethod which
+    avoids ``__init__`` side effects (JAX CUDA initialization, OpenMM
+    platform detection).  Falls back to instantiation for engines that
+    have not been updated.
+    """
     try:
-        return cls().is_available()
+        if hasattr(cls, "deps_available"):
+            return cls.deps_available()
+        return cls().is_available()  # pragma: no cover — legacy fallback
     except Exception:
         return False
 

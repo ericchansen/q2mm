@@ -17,6 +17,15 @@ slower tiers::
     pytest --run-medium        # fast + medium (~49s)
     pytest --run-slow          # everything (~330s)
 
+GPU enforcement
+---------------
+By default, all backends are forced to CPU to prevent GPU memory
+allocation from locking up the local machine.  Use ``--gpu`` or set
+``Q2MM_USE_GPU=1`` to opt into GPU execution::
+
+    pytest --gpu               # allow GPU backends
+    Q2MM_USE_GPU=1 pytest      # same via env var
+
 Backend markers
 ---------------
 Tests can be tagged with ``@pytest.mark.openmm``, ``@pytest.mark.tinker``,
@@ -89,6 +98,13 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Include slow tests (>10s each); implies --run-medium",
     )
+    parser.addoption(
+        "--gpu",
+        action="store_true",
+        default=False,
+        help="Allow GPU backends (JAX CUDA, OpenMM CUDA). Without this flag, "
+        "all tests run on CPU to avoid locking up the local machine.",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -104,18 +120,22 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "jax_md: requires JAX-MD backend")
     config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
 
-    # Prevent JAX from allocating GPU memory when JAX tests are excluded.
-    # JAX initialises CUDA at import time, consuming ~25 GiB of VRAM even
-    # when no JAX tests will run.  Setting JAX_PLATFORMS=cpu before import
-    # keeps the GPU free for other work.
+    # Force CPU-only unless the user explicitly opts into GPU execution.
+    # JAX initializes CUDA at import time, consuming ~25 GiB of VRAM.
+    # OpenMM defaults to the "best" platform (CUDA > OpenCL > CPU).
+    # Both are dangerous when automated tools invoke pytest without
+    # knowing they need CPU-only configuration.
     import os
-    import re
 
-    markexpr = getattr(config.option, "markexpr", "") or ""
-    # Match "not jax" or "not (...jax...)" but not "not slow and jax"
-    jax_excluded = bool(re.search(r"\bnot\s+jax\b", markexpr) or re.search(r"\bnot\s*\(.*\bjax\b", markexpr))
-    if jax_excluded and "JAX_PLATFORMS" not in os.environ:
-        os.environ["JAX_PLATFORMS"] = "cpu"
+    gpu_opt_in = getattr(config.option, "gpu", False) or os.environ.get("Q2MM_USE_GPU", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+    if not gpu_opt_in:
+        os.environ.setdefault("JAX_PLATFORMS", "cpu")
+        os.environ.setdefault("OPENMM_DEFAULT_PLATFORM", "CPU")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

@@ -109,16 +109,53 @@ class TestCheckAvailable:
 
         assert _check_available(OpenMMEngine) is True
 
+    def test_check_available_prefers_deps_available(self) -> None:
+        """_check_available should call deps_available() and never __init__."""
+
+        class LightweightEngine:
+            init_called = False
+
+            def __init__(self) -> None:
+                LightweightEngine.init_called = True
+
+            @classmethod
+            def deps_available(cls) -> bool:
+                return True
+
+            def is_available(self) -> bool:
+                return True
+
+        assert _check_available(LightweightEngine) is True
+        assert not LightweightEngine.init_called
+
+    def test_check_available_deps_available_false(self) -> None:
+        class UnavailableEngine:
+            @classmethod
+            def deps_available(cls) -> bool:
+                return False
+
+        assert _check_available(UnavailableEngine) is False
+
     def test_check_available_with_broken_class(self) -> None:
         class BrokenEngine:
-            def is_available(self) -> bool:
+            @classmethod
+            def deps_available(cls) -> bool:
                 raise RuntimeError("boom")
 
         assert _check_available(BrokenEngine) is False
 
-    def test_check_available_with_unavailable_class(self) -> None:
-        class UnavailableEngine:
+    def test_check_available_legacy_fallback(self) -> None:
+        """Classes without deps_available fall back to instantiation."""
+
+        class LegacyEngine:
+            def is_available(self) -> bool:
+                return True
+
+        assert _check_available(LegacyEngine) is True
+
+    def test_check_available_legacy_unavailable(self) -> None:
+        class LegacyUnavailable:
             def is_available(self) -> bool:
                 return False
 
-        assert _check_available(UnavailableEngine) is False
+        assert _check_available(LegacyUnavailable) is False

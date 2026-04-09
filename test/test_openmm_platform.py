@@ -30,6 +30,12 @@ def _mock_platforms(names: list[str]) -> tuple:
     return len(platforms), lambda i: platforms[i]
 
 
+@pytest.fixture(autouse=True)
+def _clear_platform_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove OPENMM_DEFAULT_PLATFORM so tests exercise real detection logic."""
+    monkeypatch.delenv("OPENMM_DEFAULT_PLATFORM", raising=False)
+
+
 class TestDetectBestPlatform:
     """Tests for detect_best_platform()."""
 
@@ -67,6 +73,16 @@ class TestDetectBestPlatform:
 
     def test_priority_constant_has_expected_order(self) -> None:
         assert _PLATFORM_PRIORITY == ("CUDA", "OpenCL", "CPU", "Reference")
+
+    def test_env_var_overrides_detection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OPENMM_DEFAULT_PLATFORM bypasses platform scanning entirely."""
+        monkeypatch.setenv("OPENMM_DEFAULT_PLATFORM", "CPU")
+        num, get = _mock_platforms(["Reference", "CPU", "CUDA"])
+        with (
+            patch.object(openmm.Platform, "getNumPlatforms", return_value=num),
+            patch.object(openmm.Platform, "getPlatform", side_effect=get),
+        ):
+            assert detect_best_platform() == "CPU"
 
 
 class TestPrecisionValidation:

@@ -582,6 +582,11 @@ class JaxEngine(MMEngine):
         """
         return _HAS_JAX
 
+    @classmethod
+    def deps_available(cls) -> bool:
+        """Check if JAX is importable without triggering CUDA init."""
+        return _HAS_JAX
+
     def supports_runtime_params(self) -> bool:
         """Whether parameters can be updated without rebuilding the system.
 
