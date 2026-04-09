@@ -29,13 +29,13 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 
 ```mermaid
 flowchart LR
-    subgraph Parsers
+    subgraph IO["I/O"]
         direction TB
         G[Gaussian]
         M[MOL2]
         J[Jaguar]
         MM[MacroModel]
-        T[Tinker FF]
+        FFio[MM3 / Tinker / AMBER]
     end
 
     subgraph Models["Model Layer"]
@@ -56,7 +56,7 @@ flowchart LR
         JX[JAX]
     end
 
-    Parsers --> Models
+    IO --> Models
     Models --> SEM --> FF
     FF --> OBJ
     RD --> OBJ
@@ -68,8 +68,9 @@ flowchart LR
 
 **Pipeline overview:**
 
-1. **Parsers** read QM output files (Gaussian, Jaguar) and structure files (MOL2,
-   MacroModel, Tinker) into unified `Q2MMMolecule` and `ReferenceData` objects.
+1. **I/O modules** read QM output files (Gaussian, Jaguar), structure files (MOL2,
+   MacroModel), and force field files (MM3, Tinker, AMBER) into unified
+   `Q2MMMolecule`, `ReferenceData`, and `ForceField` objects.
 2. **Seminario method** projects the QM Hessian onto internal coordinates to extract
    physically motivated initial bond and angle force constants.
 3. **Objective function** computes weighted residuals between QM reference values and
