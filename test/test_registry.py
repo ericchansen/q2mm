@@ -159,3 +159,32 @@ class TestCheckAvailable:
                 return False
 
         assert _check_available(LegacyUnavailable) is False
+
+    def test_subclass_without_override_falls_back(self) -> None:
+        """Engine subclass inheriting base deps_available() uses instantiation."""
+        from q2mm.backends.base import MMEngine
+
+        class CustomEngine(MMEngine):
+            @property
+            def name(self) -> str:
+                return "custom"
+
+            def is_available(self) -> bool:
+                return True
+
+            def energy(self, *a: object, **kw: object) -> None:
+                pass
+
+            def gradient(self, *a: object, **kw: object) -> None:
+                pass
+
+            def hessian(self, *a: object, **kw: object) -> None:
+                pass
+
+            def frequencies(self, *a: object, **kw: object) -> None:
+                pass
+
+            def minimize(self, *a: object, **kw: object) -> None:
+                pass
+
+        assert _check_available(CustomEngine) is True

@@ -30,14 +30,13 @@ def _mock_platforms(names: list[str]) -> tuple:
     return len(platforms), lambda i: platforms[i]
 
 
-@pytest.fixture(autouse=True)
-def _clear_platform_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Remove OPENMM_DEFAULT_PLATFORM so tests exercise real detection logic."""
-    monkeypatch.delenv("OPENMM_DEFAULT_PLATFORM", raising=False)
-
-
 class TestDetectBestPlatform:
     """Tests for detect_best_platform()."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_platform_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Remove OPENMM_DEFAULT_PLATFORM so tests exercise real detection."""
+        monkeypatch.delenv("OPENMM_DEFAULT_PLATFORM", raising=False)
 
     def test_prefers_cuda_over_cpu(self) -> None:
         num, get = _mock_platforms(["Reference", "CPU", "CUDA"])
