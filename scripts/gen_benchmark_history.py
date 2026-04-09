@@ -197,7 +197,7 @@ def _generate_page(runs: list[dict]) -> str:
     if len(runs) >= 2:
         lines.append("## Timing Comparison\n")
         lines.append(
-            "Wall-clock time (seconds) per combo. Timing depends on "
+            "Optimizer time (seconds) per combo. Timing depends on "
             "hardware and system load, so small variations are expected.\n"
         )
 
