@@ -7,15 +7,15 @@
     "n_molecules": 1,
     "source": "q2mm",
     "level_of_theory": "B3LYP/6-31+G(d)",
-    "timestamp": "2026-04-08T04:16:13.051418+00:00",
-    "git_sha": "720c7622b8de4cf9c36d1a5eb20dbe2bd8d0b1f2",
-    "git_dirty": true,
+    "timestamp": "2026-04-09T04:42:58.667092+00:00",
+    "git_sha": "824388b3fed21f2305f466f240445cc29f9ff843",
+    "git_dirty": false,
     "jac_mode": "auto",
-    "eps": null,
     "gradients": {
       "energy": "n/a",
       "frequency": "n/a"
     },
+    "eps": null,
     "metadata_version": 2
   },
   "environment": {
@@ -23,8 +23,8 @@
     "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
     "gpu": "NVIDIA GeForce RTX 5090, 32607",
     "packages": {
-      "q2mm": "5.0.0a3.dev206",
-      "numpy": "2.4.3",
+      "q2mm": "5.0.0a3.dev204",
+      "numpy": "2.4.4",
       "scipy": "1.17.1",
       "jax": "0.9.2",
       "jaxlib": "0.9.2",
@@ -95,7 +95,7 @@
     ],
     "rmsd": 0.014241522558151498,
     "mae": 0.010616916373490111,
-    "elapsed_s": 41.09126538399141,
+    "elapsed_s": 43.169345153000904,
     "n_eval": 4321,
     "converged": true,
     "initial_score": 0.2214276153392515,
@@ -353,6 +353,6 @@
     ],
     "median_error_pct": 2.4220371801009746,
     "max_error_pct": 3052.562535446993,
-    "elapsed_s": 12.872318926005391
+    "elapsed_s": 128.63712943598512
   }
 }
