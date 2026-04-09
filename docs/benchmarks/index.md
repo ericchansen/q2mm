@@ -13,6 +13,7 @@ the benchmark program is complete today.
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap unresolved** |
+| [History](history.md) | How do benchmark results change across commits? | Auto-generated cross-commit comparison of RMSD, timing, and environment | **Live** |
 
 ## How to use this section
 

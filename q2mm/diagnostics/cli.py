@@ -32,6 +32,13 @@ if TYPE_CHECKING:
     from q2mm.diagnostics.systems import BenchmarkSystem
 
 
+def _generate_run_id(system: str) -> str:
+    """Generate a unique run identifier for history tracking."""
+    from q2mm.diagnostics.history import generate_run_id
+
+    return generate_run_id(system)
+
+
 def _discover_backends() -> list[tuple[str, type, str]]:
     """Discover available MM backends at runtime via the engine registry.
 
@@ -125,6 +132,7 @@ def _run_matrix(
     platform: str | None = None,
     system_key: str = "ch3f",
     max_iter: int = 10_000,
+    run_id: str | None = None,
 ) -> list:
     """Run the full backend × form × optimizer matrix.
 
@@ -147,6 +155,8 @@ def _run_matrix(
         system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
             ``"rh-enamide"``).
         max_iter (int): Maximum optimizer iterations.
+        run_id (str | None): Unique identifier for this run, used for
+            history tracking.  If ``None``, history is not saved.
 
     Returns:
         list[BenchmarkResult]: One result per (backend, form, optimizer)
@@ -278,6 +288,23 @@ def _run_matrix(
                     print(f"    FF saved: {stem} ({exts})")
 
         print(f"\n  Results saved to: {system_output}/")
+
+    # Save run summary to history
+    if output_dir is not None and run_id is not None:
+        from q2mm.diagnostics.history import build_run_summary
+
+        config = {
+            "backends": [n for n, _, _ in backends],
+            "forms": [l for l, _ in forms],
+            "optimizers": [l for l, _ in optimizers],
+            "max_iter": max_iter,
+            "n_combos": len(results),
+        }
+        summary = build_run_summary(results, system=system_key, run_id=run_id, config=config)
+        history_dir = output_dir.parent / "history"
+        history_path = history_dir / f"{run_id}.json"
+        summary.to_json(history_path)
+        print(f"  History saved to: {history_path}")
 
     return results
 
@@ -656,6 +683,7 @@ def main(argv: list[str] | None = None) -> int:
             platform=args.platform,
             system_key=args.system,
             max_iter=args.max_iter,
+            run_id=_generate_run_id(args.system) if output_dir else None,
         )
 
     if not results:
