@@ -68,6 +68,95 @@ Each loader (e.g., `load_mm3_fld`) multiplies by the appropriate conversion
 factor on read; each saver divides on write. The optimizer never sees
 format-specific values.
 
+#### Unit type system: NewType vs Pint
+
+The conversion functions in `q2mm/models/units.py` use Python's
+[`NewType`](https://docs.python.org/3/library/typing.html#newtype) to give
+every unit quantity a distinct static type (`KcalPerMolAngSq`,
+`KJPerMolNmSq`, etc.).  At runtime these are plain `float` values — zero
+overhead.  Static type checkers (mypy, pyright) catch mismatched conversions
+at development time.
+
+[Pint](https://pint.readthedocs.io/) was evaluated as an alternative in
+[issue #161](https://github.com/ericchansen/q2mm/issues/161) because it
+provides **runtime** dimensional analysis that catches unit mismatches in
+`numpy` arrays (which `NewType` cannot cover, since `NewType` wraps scalar
+`float` only).  A real double-conversion bug in the Jaguar Hessian parser was
+found during that evaluation that `NewType` did not catch — the parser was
+incorrectly applying a unit conversion before returning a `numpy.ndarray`,
+and downstream code applied the same conversion again, inflating every force
+constant by ~9,376×.  That bug was fixed independently; see the [published FF
+validation work](https://github.com/ericchansen/q2mm/issues/197).
+
+The performance evaluation found Pint's overhead to be unacceptable for
+Q2MM's hot loops:
+
+| Approach | µs / call | vs bare multiply |
+|----------|----------:|:----------------:|
+| Bare multiply (`k * 418.4`) | 0.05 | 1× |
+| Pint full parse (`ureg.Quantity(k, 'kcal/mol/Å²').to('kJ/mol/nm²')`) | ~111 | **~2,400×** |
+| Pint prebuilt units (reuse parsed unit objects) | ~10 | **~220×** |
+| Pint factor-only (precompute once, then bare multiply) | 0.04 | 1× |
+
+The 220–2,400× overhead far exceeds the 5× acceptance threshold from issue
+#161.  Additional constraints:
+
+- Pint quantities are **not JAX-traceable** and cannot enter `jax.jit` or
+  `jax.grad` contexts.  Conversions must remain at the FF↔engine boundary
+  (which is already the case), but wrapping `numpy.ndarray` Hessians with
+  Pint `Quantity` objects would add friction at that boundary.
+- Q2MM's conversion functions are called millions of times during a single
+  Nelder-Mead optimization run across all parameters and molecules.
+
+**Revised position (issue #161): two-tier approach.**
+
+The 5× threshold was designed for hot loops — millions of scalar calls per
+optimization.  Parser/loader boundary code runs *once per file load*.  A
+220× overhead on a 0.05 µs operation called once is ~11 µs — immeasurable.
+
+The Jaguar double-conversion bug was exactly the class of silent error that
+Pint at parser boundaries catches: if the parser had tagged its return value
+as `kJ/(mol·Å²)` and the caller had requested `.to('hartree/bohr**2')`,
+Pint would have raised a `DimensionalityError` (the `/mol` dimension is
+incompatible), surfacing the bug instead of silently inflating every force
+constant by 9,376×.
+
+**Adopted architecture:**
+
+- **I/O boundary (parsers):** return `pint.Quantity` — forces callers to
+  name the target unit; raises `DimensionalityError` on incompatible unit
+  systems (e.g. molar `kJ/(mol·Å²)` vs molecular `Hartree/Bohr²`).
+- **Internal models and hot loops:** bare `np.ndarray` — zero overhead,
+  JAX-traceable; `NewType` for static type safety on scalar conversions.
+
+```python
+# q2mm/io/jaguar.py  — cold path: tags once per file load (opt-in)
+def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
+    ...
+    if tag_units:
+        ureg = _get_pint_ureg()
+        if ureg is not None:
+            return ureg.Quantity(hessian, "hartree/bohr**2")
+    return hessian  # bare ndarray by default
+
+# q2mm/models/molecule.py  — strips pint tag at the model boundary
+@classmethod
+def from_structure(cls, structure, *, hessian=None, ...) -> Q2MMMolecule:
+    if hessian is not None and hasattr(hessian, "magnitude"):
+        # pint.Quantity: convert to canonical AU and extract magnitude
+        hessian = np.asarray(hessian.to("hartree/bohr**2").magnitude)
+    ...
+```
+
+If a future parser accidentally returns `kJ/(mol·Å²)` data tagged as
+`hartree/bohr**2`, the `.to("hartree/bohr**2")` call is a silent no-op —
+but the magnitude will be wrong, and the Seminario force constants will be
+obviously inflated.  If the data is tagged correctly as `kJ/(mol·Å²)`, the
+`.to("hartree/bohr**2")` call raises `DimensionalityError` immediately,
+surfacing the bug before it can silently corrupt any results.
+
+See `scripts/bench_pint.py` for the microbenchmark.
+
 ### 3. Pluggable backends
 
 MM engines implement the `MMEngine` abstract base class:

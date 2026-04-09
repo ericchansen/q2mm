@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 import os
 import re
+from importlib.util import find_spec
 from string import digits
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -22,6 +23,29 @@ if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Optional Pint integration — cold-path unit tagging (once per file load)
+# ---------------------------------------------------------------------------
+# When pint is installed (``pip install q2mm[qm]``), ``JaguarIn.get_hessian``
+# returns a ``pint.Quantity`` tagged as ``hartree/bohr**2``.  Callers that
+# pass the result to ``Q2MMMolecule.from_structure`` get automatic unit
+# validation: an incompatible tag (e.g. ``kJ/(mol·Å²)``) raises
+# ``pint.errors.DimensionalityError`` instead of silently producing wrong
+# force constants.  See ``docs/how-it-works/architecture.md`` §"Unit type
+# system: NewType vs Pint" for details.
+_HAS_PINT: bool = find_spec("pint") is not None
+_pint_ureg: Any = None  # lazy — created on first get_hessian() call
+
+
+def _get_pint_ureg() -> Any:  # returns pint.UnitRegistry or None
+    """Return the module-level pint UnitRegistry, creating it on first call."""
+    global _pint_ureg
+    if _HAS_PINT and _pint_ureg is None:
+        import pint  # noqa: PLC0415
+
+        _pint_ureg = pint.UnitRegistry()
+    return _pint_ureg
 
 
 class JaguarIn:
@@ -78,7 +102,7 @@ class JaguarIn:
             for line in lines:
                 f.write(line)
 
-    def get_hessian(self, num_atoms: int) -> np.ndarray:
+    def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
         """Read the Hessian matrix from a Jaguar ``.in`` file.
 
         Automatically removes Hessian elements corresponding to dummy
@@ -88,6 +112,10 @@ class JaguarIn:
 
         Args:
             num_atoms (int): Number of atoms in the system.
+            tag_units: When *True* and ``pint`` is installed, wrap the
+                returned array in ``pint.Quantity(array, 'hartree/bohr**2')``
+                so callers can validate units with ``.to(...)``.
+                Default is *False* (always returns a bare ``ndarray``).
 
         Returns:
             (numpy.ndarray): 2-D Hessian matrix of shape
@@ -126,6 +154,11 @@ class JaguarIn:
             # computation) expects AU when au_hessian=True / au_units=True.
             self._hessian = hessian
             logger.log(1, f">>> hessian.shape: {hessian.shape}")
+        # Cold-path unit tagging: wrap in pint.Quantity when requested.
+        if tag_units:
+            ureg = _get_pint_ureg()
+            if ureg is not None:
+                return ureg.Quantity(self._hessian, "hartree/bohr**2")
         return self._hessian
 
     def gen_lines(self) -> list[str]:

@@ -49,6 +49,22 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
     return dihedral_angle(p0, p1, p2, p3)
 
 
+def _strip_pint(hessian: np.ndarray | None) -> np.ndarray | None:
+    """Strip ``pint.Quantity`` wrapper, converting to canonical AU.
+
+    When ``pint`` is installed, ``JaguarIn.get_hessian(tag_units=True)``
+    returns a ``pint.Quantity`` tagged with units.  This helper converts to
+    ``hartree/bohr**2`` (if not already) and extracts the bare
+    ``np.ndarray`` so that downstream code (Seminario projection,
+    eigendecomposition) sees plain arrays with zero Pint overhead.
+    """
+    if hessian is None:
+        return None
+    if hasattr(hessian, "magnitude"):
+        return np.asarray(hessian.to("hartree/bohr**2").magnitude)
+    return hessian
+
+
 @dataclass
 class DetectedBond:
     """A bond detected from molecular geometry."""
@@ -453,7 +469,7 @@ class Q2MMMolecule:
             multiplicity=multiplicity,
             name=name or structure.origin_name,
             bond_tolerance=bond_tolerance,
-            hessian=hessian,
+            hessian=_strip_pint(hessian),
             _bonds=bonds,
             _angles=angles,
         )
@@ -524,7 +540,7 @@ class Q2MMMolecule:
             multiplicity=self.multiplicity,
             name=self.name,
             bond_tolerance=self.bond_tolerance,
-            hessian=hessian,
+            hessian=_strip_pint(hessian),
             _bonds=copy.deepcopy(self._bonds) if self._bonds is not None else None,
             _angles=copy.deepcopy(self._angles) if self._angles is not None else None,
         )
