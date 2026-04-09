@@ -126,9 +126,9 @@ def _check_available(cls: type) -> bool:
     have not been updated.
     """
     try:
-        if hasattr(cls, "deps_available"):
+        if "deps_available" in cls.__dict__:
             return cls.deps_available()
-        return cls().is_available()  # pragma: no cover — legacy fallback
+        return cls().is_available()
     except Exception:
         return False
 
