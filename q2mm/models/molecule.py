@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -49,7 +49,7 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
     return dihedral_angle(p0, p1, p2, p3)
 
 
-def _strip_pint(hessian: np.ndarray | None) -> np.ndarray | None:
+def _strip_pint(hessian: Any) -> np.ndarray | None:
     """Strip ``pint.Quantity`` wrapper, converting to canonical AU.
 
     When ``pint`` is installed, ``JaguarIn.get_hessian(tag_units=True)``
@@ -60,7 +60,7 @@ def _strip_pint(hessian: np.ndarray | None) -> np.ndarray | None:
     """
     if hessian is None:
         return None
-    if hasattr(hessian, "magnitude"):
+    if hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
         return np.asarray(hessian.to("hartree/bohr**2").magnitude)
     return hessian
 
