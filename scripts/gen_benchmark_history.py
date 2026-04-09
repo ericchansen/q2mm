@@ -11,9 +11,12 @@ the curated per-system benchmark pages.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import mkdocs_gen_files
+
+log = logging.getLogger("mkdocs.plugins")
 
 HISTORY_DIR = Path(__file__).parent.parent / "benchmarks" / "history"
 OUTPUT_PATH = "benchmarks/history.md"
@@ -21,7 +24,7 @@ OUTPUT_PATH = "benchmarks/history.md"
 # Display labels for backends
 BACKEND_LABELS = {
     "jax": "JAX",
-    "jax_md": "JAX-MD",
+    "jax-md": "JAX-MD",
     "openmm": "OpenMM",
     "tinker": "Tinker",
 }
@@ -36,7 +39,8 @@ def _load_runs() -> list[dict]:
         try:
             with open(path) as fh:
                 runs.append(json.load(fh))
-        except Exception:
+        except Exception as exc:
+            log.warning("Failed to load history file %s: %s", path, exc)
             continue
     runs.sort(key=lambda r: r.get("timestamp", ""))
     return runs
@@ -120,16 +124,16 @@ def _generate_page(runs: list[dict]) -> str:
         by_backend: dict[str, list[str]] = {}
         for stem in all_stems:
             # Extract backend from stem: ch3f_{backend}_{form}_{device}_{opt}[_{jac}]
+            # Stems use hyphens (e.g. "jax-md"), so split carefully
             parts = stem.split("_")
-            if len(parts) >= 3:
+            if len(parts) >= 2:
                 backend = parts[1]
-                if parts[1] == "jax" and len(parts) >= 4 and parts[2] == "md":
-                    backend = "jax_md"
+                # jax-md is a single hyphenated token after splitting on _
             else:
                 backend = "other"
             by_backend.setdefault(backend, []).append(stem)
 
-        for backend_key in ["jax", "jax_md", "openmm", "tinker"]:
+        for backend_key in ["jax", "jax-md", "openmm", "tinker"]:
             stems = by_backend.get(backend_key, [])
             if not stems:
                 continue
