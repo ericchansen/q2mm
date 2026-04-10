@@ -102,12 +102,12 @@ def _resolve_gradients(
     objective: ObjectiveFunction,
     method: str = "L-BFGS-B",
 ) -> dict[str, str]:
-    """Determine per-evaluator gradient mode from jac config and engine.
+    """Determine per-evaluator gradient mode from jac config and objective.
 
     Queries ``objective.per_evaluator_gradient_support()`` to determine
-    which evaluator categories support analytical gradients on the current
-    engine.  Returns a dict mapping each active category to its gradient
-    source: ``"analytical"``, ``"finite-diff"``, or ``"n/a"``.
+    which evaluator categories support analytical gradients on the
+    objective's engine.  Returns a dict mapping each active category to
+    its gradient source: ``"analytical"``, ``"finite-diff"``, or ``"n/a"``.
 
     Args:
         jac_mode: Jacobian strategy (``"auto"``, ``"analytical"``, or
