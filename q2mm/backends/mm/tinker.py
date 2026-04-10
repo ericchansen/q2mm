@@ -182,8 +182,16 @@ class TinkerEngine(MMEngine):
 
     @classmethod
     def deps_available(cls) -> bool:
-        """Check if Tinker binaries can be found on this system."""
-        return _find_tinker_dir() is not None
+        """Check if Tinker binaries and MM3 parameter file can be found."""
+        tinker_dir = _find_tinker_dir()
+        if tinker_dir is None:
+            return False
+        # __init__ also requires mm3.prm — mirror that check here.
+        candidates = [
+            os.path.join(os.path.dirname(tinker_dir), "params", "mm3.prm"),
+            os.path.join(tinker_dir, "mm3.prm"),
+        ]
+        return any(os.path.isfile(c) for c in candidates)
 
     def _write_tinker_xyz(
         self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
