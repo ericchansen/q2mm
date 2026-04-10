@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from q2mm.diagnostics.systems import SystemData
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.optimizers.objective import ObjectiveFunction
 
 
 @functools.lru_cache(maxsize=1)
@@ -98,34 +99,41 @@ def _collect_environment() -> dict[str, Any]:
 
 def _resolve_gradients(
     jac_mode: str | None,
-    engine: MMEngine,
+    objective: ObjectiveFunction,
     method: str = "L-BFGS-B",
 ) -> dict[str, str]:
     """Determine per-evaluator gradient mode from jac config and engine.
 
-    Returns a dict mapping evaluator category to its gradient source:
-    ``"analytical"``, ``"finite-diff"``, or ``"n/a"`` (derivative-free).
+    Queries ``objective.per_evaluator_gradient_support()`` to determine
+    which evaluator categories support analytical gradients on the current
+    engine.  Returns a dict mapping each active category to its gradient
+    source: ``"analytical"``, ``"finite-diff"``, or ``"n/a"``.
 
-    Energy evaluators can use analytical gradients when the engine
-    supports them and jac_mode is ``"auto"`` or ``"analytical"``.
-    Frequency evaluators always use finite-diff (issue #216).
-    Derivative-free optimizers get ``"n/a"`` for all evaluators.
+    Args:
+        jac_mode: Jacobian strategy (``"auto"``, ``"analytical"``, or
+            ``None`` for scipy finite-differences).
+        objective: The objective function whose evaluators are queried.
+        method: Optimizer method name.  Derivative-free methods
+            (``"Nelder-Mead"``, ``"Powell"``) get ``"n/a"`` for all.
+
     """
     _DERIVATIVE_FREE = {"Nelder-Mead", "Powell"}
+    support = objective.per_evaluator_gradient_support()
 
     if method in _DERIVATIVE_FREE:
-        return {"energy": "n/a", "frequency": "n/a"}
+        return {cat: "n/a" for cat in support}
 
     # jac_mode=None means scipy computes FD gradients internally
     if jac_mode is None:
-        return {"energy": "finite-diff", "frequency": "finite-diff"}
+        return {cat: "finite-diff" for cat in support}
 
-    energy_grad = "finite-diff"
-    if jac_mode in ("auto", "analytical"):
-        if engine.supports_analytical_gradients():
-            energy_grad = "analytical"
-
-    return {"energy": energy_grad, "frequency": "finite-diff"}
+    result: dict[str, str] = {}
+    for cat, has_analytical in support.items():
+        if jac_mode in ("auto", "analytical") and has_analytical:
+            result[cat] = "analytical"
+        else:
+            result[cat] = "finite-diff"
+    return result
 
 
 # ── Engine display name → (engine_key, ff_label) mapping ────────────
@@ -660,7 +668,7 @@ def run_combo(
         eps = loop.eps if uses_scipy_fd else None
 
         # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj.engine, method=loop.full_method)
+        gradients = _resolve_gradients(jac_mode, obj, method=loop.full_method)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -683,7 +691,7 @@ def run_combo(
         eps = opt_result.eps
 
         # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj.engine, method=optimizer_method)
+        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
 
     # Record optimizer settings in metadata
     result.metadata["jac_mode"] = jac_mode

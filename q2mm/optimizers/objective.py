@@ -1290,6 +1290,28 @@ class ObjectiveFunction:
 
         return total_grad
 
+    def per_evaluator_gradient_support(self) -> dict[str, bool]:
+        """Return per-category analytical gradient support for the current engine.
+
+        Queries each evaluator's :meth:`supports_analytical_gradient` for
+        the categories that have at least one reference value.  The result
+        reflects the **actual** gradient dispatch path used by
+        :meth:`gradient` — no hardcoded assumptions.
+
+        Returns:
+            Mapping from evaluator category (``"energy"``, ``"frequency"``,
+            etc.) to ``True`` if analytical gradients are available, ``False``
+            if finite-difference fallback will be used.
+
+        """
+        categories: dict[str, bool] = {}
+        for ref in self.reference.values:
+            cat = self._kind_to_category(ref.kind)
+            if cat not in categories:
+                evaluator = self._get_evaluator(cat)
+                categories[cat] = evaluator.supports_analytical_gradient(self.engine)
+        return dict(sorted(categories.items()))
+
     def _finite_difference_gradient(
         self,
         param_vector: np.ndarray,
