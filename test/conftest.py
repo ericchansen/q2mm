@@ -20,8 +20,10 @@ slower tiers::
 GPU enforcement
 ---------------
 By default, all backends are forced to CPU to prevent GPU memory
-allocation from locking up the local machine.  Use ``--gpu`` or set
-``Q2MM_USE_GPU=1`` to opt into GPU execution::
+allocation from locking up the local machine.  This applies only when
+``JAX_PLATFORMS`` and ``OPENMM_DEFAULT_PLATFORM`` are not already set
+in the environment.  Use ``--gpu`` or set ``Q2MM_USE_GPU=1`` to opt
+into GPU execution::
 
     pytest --gpu               # allow GPU backends
     Q2MM_USE_GPU=1 pytest      # same via env var
@@ -103,7 +105,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         action="store_true",
         default=False,
         help="Allow GPU backends (JAX CUDA, OpenMM CUDA). Without this flag, "
-        "all tests run on CPU to avoid locking up the local machine.",
+        "tests default to CPU unless JAX_PLATFORMS or OPENMM_DEFAULT_PLATFORM "
+        "is already set in the environment.",
     )
 
 
