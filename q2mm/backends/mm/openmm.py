@@ -325,7 +325,7 @@ def detect_best_platform() -> str:
     _ensure_openmm()
     import os
 
-    env_platform = os.environ.get("OPENMM_DEFAULT_PLATFORM")
+    env_platform = os.environ.get("OPENMM_DEFAULT_PLATFORM", "").strip()
     if env_platform:
         return env_platform
     available = {mm.Platform.getPlatform(i).getName() for i in range(mm.Platform.getNumPlatforms())}
