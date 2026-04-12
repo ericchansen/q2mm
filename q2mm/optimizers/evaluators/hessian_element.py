@@ -150,6 +150,7 @@ class HessianElementEvaluator:
         target = structure if structure is not None else mol
         hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
 
+        n = hess.shape[0]
         grad = np.zeros(n_params)
         for ref in references:
             if ref.atom_indices is None or len(ref.atom_indices) < 2:
@@ -157,6 +158,10 @@ class HessianElementEvaluator:
                     f"hessian_element requires atom_indices=(row, col), got {ref.atom_indices}. Label: {ref.label!r}"
                 )
             row, col = ref.atom_indices[:2]
+            if row < 0 or row >= n or col < 0 or col >= n:
+                raise IndexError(
+                    f"Hessian indices ({row}, {col}) out of range for {n}×{n} matrix. Label: {ref.label!r}"
+                )
             calc_value = float(hess[row, col])
             diff = ref.value - calc_value
             grad += -2.0 * ref.weight**2 * diff * dH_dp[row, col, :]

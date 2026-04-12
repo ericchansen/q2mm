@@ -301,6 +301,12 @@ def frequency_param_jacobian(
     """
     symbols_list = _resolve_symbols(symbols)
     n3 = 3 * len(symbols_list)
+
+    if dH_dp_au.ndim != 3 or dH_dp_au.shape[:2] != (n3, n3):
+        raise ValueError(f"dH_dp_au must have shape (3N, 3N, n_params) = ({n3}, {n3}, ?), got {dH_dp_au.shape}")
+    if hessian_au.shape != (n3, n3):
+        raise ValueError(f"hessian_au must have shape ({n3}, {n3}), got {hessian_au.shape}")
+
     n_params = dH_dp_au.shape[2]
 
     # Mass-weighting scale: 1/sqrt(m_i * m_j)
