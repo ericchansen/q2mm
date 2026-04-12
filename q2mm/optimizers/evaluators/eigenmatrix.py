@@ -141,16 +141,16 @@ class EigenmatrixEvaluator:
         raise ValueError(f"EigenmatrixEvaluator cannot handle kind: {ref.kind}")
 
     def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Eigenmatrix gradients require eigenvector derivatives.
+        """Check if the engine supports Hessian parameter Jacobians.
 
         Args:
             engine: The MM backend to check.
 
         Returns:
-            Always ``False`` — not yet implemented.
+            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
 
         """
-        return False
+        return engine.supports_analytical_hessian_gradients()
 
     def gradient(
         self,
@@ -161,17 +161,62 @@ class EigenmatrixEvaluator:
         n_params: int,
         *,
         structure: Any | None = None,
-    ) -> np.ndarray | None:
-        """Not yet implemented — eigenmatrix analytical gradients.
+        mol_idx: int = 0,
+    ) -> np.ndarray:
+        """Compute analytical gradient of the eigenmatrix score contribution.
 
-        Differentiating through eigendecomposition (eigenvector
-        derivatives) is planned for a future release.
+        Uses the identity ``d(Q^T H Q)/dp = Q^T · (dH/dp) · Q`` where
+        Q is the (constant) QM eigenvector matrix.
+
+        Args:
+            engine: The MM backend (must support Hessian parameter Jacobians).
+            mol: The molecule being evaluated (must have a QM Hessian).
+            ff: The current force field.
+            references: Reference eigenmatrix values for this molecule.
+            n_params: Length of the gradient vector.
+            structure: Optional pre-built engine context/handle.
+            mol_idx: Molecule index for QM eigenvector caching.
 
         Returns:
-            ``None`` — analytical gradients are not yet supported.
+            Gradient vector of shape ``(n_params,)``.
 
         """
-        return None
+        from q2mm.models.hessian import decompose
+
+        target = structure if structure is not None else mol
+        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
+
+        # Get cached QM eigenvectors (or compute and cache)
+        if mol_idx not in self._qm_eigenvectors:
+            if mol.hessian is None:
+                raise ValueError(
+                    f"Molecule {mol_idx} ({mol.name}) has no QM Hessian. "
+                    "Eigenmatrix training requires a QM Hessian for the "
+                    "eigenvector basis."
+                )
+            _, qm_evecs = decompose(mol.hessian)
+            self._qm_eigenvectors[mol_idx] = qm_evecs
+
+        qm_evecs = self._qm_eigenvectors[mol_idx]
+
+        # d(eigenmatrix)/dp_j = Q^T @ dH_dp[:,:,j] @ Q
+        d_eigmat_dp = np.einsum("ir,ijp,jc->rcp", qm_evecs, dH_dp, qm_evecs)
+
+        grad = np.zeros(n_params)
+        for ref in references:
+            if ref.kind == "eig_diagonal":
+                idx = ref.data_idx
+                calc_value = float((qm_evecs.T @ hess @ qm_evecs)[idx, idx])
+                diff = ref.value - calc_value
+                grad += -2.0 * ref.weight**2 * diff * d_eigmat_dp[idx, idx, :]
+            elif ref.kind == "eig_offdiagonal":
+                row, col = ref.atom_indices[:2]
+                calc_value = float((qm_evecs.T @ hess @ qm_evecs)[row, col])
+                diff = ref.value - calc_value
+                grad += -2.0 * ref.weight**2 * diff * d_eigmat_dp[row, col, :]
+            else:
+                raise ValueError(f"EigenmatrixEvaluator cannot handle kind: {ref.kind}")
+        return grad
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:

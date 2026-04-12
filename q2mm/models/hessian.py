@@ -266,6 +266,89 @@ def hessian_to_frequencies(
     return result
 
 
+def frequency_param_jacobian(
+    hessian_au: np.ndarray,
+    dH_dp_au: np.ndarray,
+    symbols: list[str] | Sequence[str],
+    *,
+    sort: bool = True,
+    epsilon: float = 1e-20,
+) -> tuple[list[float], np.ndarray]:
+    """Compute frequencies and their derivatives w.r.t. FF parameters.
+
+    Uses the eigenvalue sensitivity formula to avoid differentiating
+    through the eigendecomposition:
+
+    ``dλ_k/dp_j = v_k^T · (d(mw_H)/dp_j) · v_k``
+
+    Then chains through the eigenvalue-to-frequency conversion.
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Hessian in Hartree/Bohr².
+        dH_dp_au: ``(3N, 3N, n_params)`` Hessian parameter Jacobian
+            in Hartree/Bohr².
+        symbols: Element symbols for mass lookup (length *N*).
+        sort: If ``True`` (default), return frequencies sorted ascending
+            and reorder the Jacobian rows to match.
+        epsilon: Regularisation floor for near-zero eigenvalues to
+            prevent division-by-zero in the ``1/√|λ|`` chain rule.
+
+    Returns:
+        ``(frequencies, d_freq_d_params)`` where ``frequencies`` is a
+        list of ``3N`` frequencies in cm⁻¹ and ``d_freq_d_params`` has
+        shape ``(3N, n_params)`` — row *k* is ``d(freq_k)/d(params)``.
+
+    """
+    symbols_list = _resolve_symbols(symbols)
+    n3 = 3 * len(symbols_list)
+    n_params = dH_dp_au.shape[2]
+
+    # Mass-weighting scale: 1/sqrt(m_i * m_j)
+    inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols_list for _ in range(3)])
+    scale = np.outer(inv_sqrt, inv_sqrt)
+
+    # Mass-weight the Hessian
+    hess = hessian_au.copy()
+    hess *= scale
+    hess = 0.5 * (hess + hess.T)
+
+    # Mass-weight each dH/dp slice
+    mw_dH_dp = np.empty((n3, n3, n_params))
+    for j in range(n_params):
+        mw_dH_dp[:, :, j] = dH_dp_au[:, :, j] * scale
+
+    # Eigendecompose the mass-weighted Hessian
+    eigenvalues, eigenvectors = np.linalg.eigh(hess)
+
+    # Eigenvalue sensitivity: dλ_k/dp_j = v_k^T @ (mw_dH/dp_j) @ v_k
+    d_eig_dp = np.einsum("ik,ijp,jk->kp", eigenvectors, mw_dH_dp, eigenvectors)
+
+    # Chain through eigenvalue → frequency conversion
+    bohr_to_m = co.BOHR_TO_ANG * 1e-10
+    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
+    vals_si = eigenvalues * factor
+    denom = 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
+
+    # freq = sign(λ) * sqrt(|λ|*factor) / denom
+    # d(freq)/d(λ) = factor / (2 * sqrt(|λ|*factor) * denom)
+    #              = sqrt(factor) / (2 * sqrt(|λ|) * denom)  [regularised]
+    abs_vals_si = np.maximum(np.abs(vals_si), epsilon)
+    d_freq_d_eig = factor / (2.0 * np.sqrt(abs_vals_si) * denom)
+
+    # d(freq_k)/dp_j = d(freq_k)/d(λ_k) * d(λ_k)/dp_j
+    d_freq_dp = d_freq_d_eig[:, np.newaxis] * d_eig_dp
+
+    # Compute frequencies (same as hessian_to_frequencies)
+    freqs_arr = np.sign(vals_si) * np.sqrt(np.abs(vals_si)) / denom
+
+    if sort:
+        order = np.argsort(freqs_arr)
+        freqs_arr = freqs_arr[order]
+        d_freq_dp = d_freq_dp[order, :]
+
+    return freqs_arr.tolist(), d_freq_dp
+
+
 # ---- Linear algebra operations ----
 
 

@@ -100,6 +100,7 @@ class EnergyEvaluator:
         n_params: int,
         *,
         structure: Any | None = None,
+        mol_idx: int = 0,
     ) -> np.ndarray:
         """Compute analytical gradient of the energy score contribution.
 
@@ -115,6 +116,7 @@ class EnergyEvaluator:
             references: Reference energy values for this molecule.
             n_params: Length of the gradient vector.
             structure: Optional pre-built engine context/handle.
+            mol_idx: Molecule index (unused).
 
         Returns:
             Gradient vector of shape ``(n_params,)``.

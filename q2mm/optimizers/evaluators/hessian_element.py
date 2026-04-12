@@ -107,16 +107,16 @@ class HessianElementEvaluator:
         return float(computed.hessian[row, col])
 
     def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Raw Hessian element gradients are not yet implemented.
+        """Check if the engine supports Hessian parameter Jacobians.
 
         Args:
             engine: The MM backend to check.
 
         Returns:
-            Always ``False`` — not yet implemented.
+            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
 
         """
-        return False
+        return engine.supports_analytical_hessian_gradients()
 
     def gradient(
         self,
@@ -127,14 +127,40 @@ class HessianElementEvaluator:
         n_params: int,
         *,
         structure: Any | None = None,
-    ) -> np.ndarray | None:
-        """Not yet implemented — raw Hessian element analytical gradients.
+        mol_idx: int = 0,
+    ) -> np.ndarray:
+        """Compute analytical gradient of the Hessian element score contribution.
+
+        Extracts ``dH[row,col]/dp`` directly from the Hessian parameter
+        Jacobian tensor.
+
+        Args:
+            engine: The MM backend (must support Hessian parameter Jacobians).
+            mol: The molecule being evaluated.
+            ff: The current force field.
+            references: Reference Hessian element values for this molecule.
+            n_params: Length of the gradient vector.
+            structure: Optional pre-built engine context/handle.
+            mol_idx: Molecule index (unused).
 
         Returns:
-            ``None`` — analytical gradients are not yet supported.
+            Gradient vector of shape ``(n_params,)``.
 
         """
-        return None
+        target = structure if structure is not None else mol
+        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
+
+        grad = np.zeros(n_params)
+        for ref in references:
+            if ref.atom_indices is None or len(ref.atom_indices) < 2:
+                raise ValueError(
+                    f"hessian_element requires atom_indices=(row, col), got {ref.atom_indices}. Label: {ref.label!r}"
+                )
+            row, col = ref.atom_indices[:2]
+            calc_value = float(hess[row, col])
+            diff = ref.value - calc_value
+            grad += -2.0 * ref.weight**2 * diff * dH_dp[row, col, :]
+        return grad
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:

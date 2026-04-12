@@ -58,6 +58,9 @@ class StubEngine:
     def supports_analytical_gradients(self) -> bool:
         return False
 
+    def supports_analytical_hessian_gradients(self) -> bool:
+        return False
+
 
 class GradStubEngine(StubEngine):
     """Stub engine that supports analytical parameter gradients."""
@@ -561,7 +564,7 @@ class TestFrequencyEvaluatorGradient:
         engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
         assert evaluator.supports_analytical_gradient(engine) is False
 
-    def test_gradient_returns_none(self) -> None:
+    def test_gradient_raises_on_unsupported_engine(self) -> None:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 
         evaluator = FrequencyEvaluator()
@@ -569,8 +572,8 @@ class TestFrequencyEvaluatorGradient:
         mol = make_water()
         refs = [ReferenceValue(kind="frequency", value=105.0, data_idx=0)]
 
-        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
-        assert result is None
+        with pytest.raises(AttributeError):
+            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
 
 
 class TestGeometryEvaluatorGradient:
@@ -601,7 +604,7 @@ class TestEigenmatrixEvaluatorGradient:
         engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
         assert evaluator.supports_analytical_gradient(engine) is False
 
-    def test_gradient_returns_none(self) -> None:
+    def test_gradient_raises_on_unsupported_engine(self) -> None:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 
         evaluator = EigenmatrixEvaluator()
@@ -609,8 +612,8 @@ class TestEigenmatrixEvaluatorGradient:
         mol = make_water()
         refs = [ReferenceValue(kind="eig_diagonal", value=1.0, data_idx=0)]
 
-        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
-        assert result is None
+        with pytest.raises(AttributeError):
+            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
 
 
 # ---- ObjectiveFunction.gradient() delegation tests ----
