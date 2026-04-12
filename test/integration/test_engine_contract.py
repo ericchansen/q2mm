@@ -334,6 +334,85 @@ class TestAnalyticalGradients:
         np.testing.assert_allclose(grad_anal, grad_fd, atol=1e-4, rtol=1e-4)
 
 
+class TestAnalyticalHessianGradients:
+    """Engines reporting supports_analytical_hessian_gradients() must match FD."""
+
+    def _skip_if_unsupported(self, engine: MMEngine) -> None:
+        if not engine.supports_analytical_hessian_gradients():
+            pytest.skip("engine does not support analytical Hessian gradients")
+
+    def test_hessian_jacobian_shapes(self, engine: MMEngine, h2_displaced: tuple[Q2MMMolecule, ForceField]) -> None:
+        """H is (3N, 3N) and dH_dp is (3N, 3N, n_params)."""
+        self._skip_if_unsupported(engine)
+        mol, ff = h2_displaced
+        hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        n3 = 3 * len(mol.symbols)
+        assert hess.shape == (n3, n3)
+        assert dH_dp.shape == (n3, n3, ff.n_params)
+
+    def test_hessian_jacobian_symmetric(self, engine: MMEngine, h2_displaced: tuple[Q2MMMolecule, ForceField]) -> None:
+        """Hessian and each Jacobian slice must be symmetric."""
+        self._skip_if_unsupported(engine)
+        mol, ff = h2_displaced
+        hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        np.testing.assert_allclose(hess, hess.T, atol=1e-8)
+        for j in range(ff.n_params):
+            np.testing.assert_allclose(
+                dH_dp[:, :, j],
+                dH_dp[:, :, j].T,
+                atol=1e-6,
+                err_msg=f"dH_dp[:,:,{j}] not symmetric",
+            )
+
+    def test_hessian_jacobian_vs_fd_bonds(self, engine: MMEngine) -> None:
+        """dH/dp must match central finite differences of engine.hessian()."""
+        self._skip_if_unsupported(engine)
+        mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
+        ff = _h2_ff(engine)
+        _hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+
+        params = ff.get_param_vector().copy()
+        h = 1e-5
+        n3 = 3 * len(mol.symbols)
+        dH_dp_fd = np.zeros((n3, n3, ff.n_params))
+        for i in range(ff.n_params):
+            p_plus, p_minus = params.copy(), params.copy()
+            p_plus[i] += h
+            p_minus[i] -= h
+            ff.set_param_vector(p_plus)
+            h_plus = engine.hessian(mol, ff)
+            ff.set_param_vector(p_minus)
+            h_minus = engine.hessian(mol, ff)
+            dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
+        ff.set_param_vector(params)
+
+        np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
+
+    def test_hessian_jacobian_vs_fd_water(self, engine: MMEngine) -> None:
+        """Multi-parameter Hessian Jacobian (bonds + angles) vs FD."""
+        self._skip_if_unsupported(engine)
+        mol = make_water(angle_deg=110.0, bond_length=1.0)
+        ff = _water_ff(engine)
+        _hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+
+        params = ff.get_param_vector().copy()
+        h = 1e-5
+        n3 = 3 * len(mol.symbols)
+        dH_dp_fd = np.zeros((n3, n3, ff.n_params))
+        for i in range(ff.n_params):
+            p_plus, p_minus = params.copy(), params.copy()
+            p_plus[i] += h
+            p_minus[i] -= h
+            ff.set_param_vector(p_plus)
+            h_plus = engine.hessian(mol, ff)
+            ff.set_param_vector(p_minus)
+            h_minus = engine.hessian(mol, ff)
+            dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
+        ff.set_param_vector(params)
+
+        np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
+
+
 class TestHessian:
     """Hessian calculations must return a valid matrix."""
 
