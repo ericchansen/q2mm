@@ -572,7 +572,7 @@ class TestFrequencyEvaluatorGradient:
         mol = make_water()
         refs = [ReferenceValue(kind="frequency", value=105.0, data_idx=0)]
 
-        with pytest.raises(AttributeError):
+        with pytest.raises(TypeError):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
 
 
@@ -612,7 +612,7 @@ class TestEigenmatrixEvaluatorGradient:
         mol = make_water()
         refs = [ReferenceValue(kind="eig_diagonal", value=1.0, data_idx=0)]
 
-        with pytest.raises(AttributeError):
+        with pytest.raises(TypeError):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
 
 

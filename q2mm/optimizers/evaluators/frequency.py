@@ -138,6 +138,12 @@ class FrequencyEvaluator:
         """
         from q2mm.models.hessian import frequency_param_jacobian
 
+        if not engine.supports_analytical_hessian_gradients():
+            raise TypeError(
+                f"{engine.name} does not support hessian_and_param_jacobian(). "
+                "Cannot compute analytical frequency gradient."
+            )
+
         target = structure if structure is not None else mol
         hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
         freqs, d_freq_dp = frequency_param_jacobian(hess, dH_dp, mol.symbols)

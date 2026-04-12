@@ -147,6 +147,12 @@ class HessianElementEvaluator:
             Gradient vector of shape ``(n_params,)``.
 
         """
+        if not engine.supports_analytical_hessian_gradients():
+            raise TypeError(
+                f"{engine.name} does not support hessian_and_param_jacobian(). "
+                "Cannot compute analytical Hessian element gradient."
+            )
+
         target = structure if structure is not None else mol
         hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
 
