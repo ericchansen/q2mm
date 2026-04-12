@@ -202,16 +202,32 @@ class EigenmatrixEvaluator:
         # d(eigenmatrix)/dp_j = Q^T @ dH_dp[:,:,j] @ Q
         d_eigmat_dp = np.einsum("ir,ijp,jc->rcp", qm_evecs, dH_dp, qm_evecs)
 
+        eigmat = qm_evecs.T @ hess @ qm_evecs
+        n = eigmat.shape[0]
+
         grad = np.zeros(n_params)
         for ref in references:
             if ref.kind == "eig_diagonal":
                 idx = ref.data_idx
-                calc_value = float((qm_evecs.T @ hess @ qm_evecs)[idx, idx])
+                if idx is None or idx < 0 or idx >= n:
+                    raise IndexError(
+                        f"Eigenmatrix data_idx={idx!r} out of range (matrix has {n} modes). Label: {ref.label!r}"
+                    )
+                calc_value = float(eigmat[idx, idx])
                 diff = ref.value - calc_value
                 grad += -2.0 * ref.weight**2 * diff * d_eigmat_dp[idx, idx, :]
             elif ref.kind == "eig_offdiagonal":
+                if ref.atom_indices is None or len(ref.atom_indices) < 2:
+                    raise ValueError(
+                        f"Off-diagonal eigenmatrix reference requires at least two atom_indices. Label: {ref.label!r}"
+                    )
                 row, col = ref.atom_indices[:2]
-                calc_value = float((qm_evecs.T @ hess @ qm_evecs)[row, col])
+                if row < 0 or col < 0 or row >= n or col >= n:
+                    raise IndexError(
+                        f"Off-diagonal eigenmatrix indices ({row}, {col}) out of "
+                        f"range for {n}×{n} matrix. Label: {ref.label!r}"
+                    )
+                calc_value = float(eigmat[row, col])
                 diff = ref.value - calc_value
                 grad += -2.0 * ref.weight**2 * diff * d_eigmat_dp[row, col, :]
             else:
