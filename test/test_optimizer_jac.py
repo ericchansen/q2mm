@@ -162,6 +162,7 @@ class TestResolveGradients:
         """Build a minimal ObjectiveFunction with real evaluators and mock engine."""
         engine = MagicMock()
         engine.supports_analytical_gradients.return_value = engine_supports_grad
+        engine.supports_analytical_hessian_gradients.return_value = engine_supports_grad
         ff = MagicMock()
         ref = ReferenceData()
         for kind in kinds:
@@ -178,7 +179,7 @@ class TestResolveGradients:
     def test_auto_with_analytical_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True)
         result = _resolve_gradients("auto", obj)
-        assert result == {"energy": "analytical", "frequency": "finite-diff"}
+        assert result == {"energy": "analytical", "frequency": "analytical"}
 
     def test_auto_without_analytical_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=False)
@@ -193,7 +194,7 @@ class TestResolveGradients:
     def test_analytical_with_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True)
         result = _resolve_gradients("analytical", obj)
-        assert result == {"energy": "analytical", "frequency": "finite-diff"}
+        assert result == {"energy": "analytical", "frequency": "analytical"}
 
     def test_derivative_free_method_overrides_jac(self) -> None:
         """Even if jac_mode='auto', a derivative-free method gets n/a."""
@@ -216,7 +217,7 @@ class TestResolveGradients:
         """When objective has only frequency refs, energy is absent from output."""
         obj = self._make_objective(engine_supports_grad=True, kinds=("frequency",))
         result = _resolve_gradients("auto", obj)
-        assert result == {"frequency": "finite-diff"}
+        assert result == {"frequency": "analytical"}
 
     def test_geometry_refs_always_fd(self) -> None:
         """Geometry evaluator doesn't support analytical gradients."""
@@ -224,11 +225,11 @@ class TestResolveGradients:
         result = _resolve_gradients("auto", obj)
         assert result == {"energy": "analytical", "geometry": "finite-diff"}
 
-    def test_hessian_refs_always_fd(self) -> None:
-        """Hessian element evaluator doesn't support analytical gradients."""
+    def test_hessian_refs_with_support(self) -> None:
+        """Hessian element evaluator supports analytical gradients with capable engine."""
         obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "hessian_element"))
         result = _resolve_gradients("auto", obj)
-        assert result == {"energy": "analytical", "hessian": "finite-diff"}
+        assert result == {"energy": "analytical", "hessian": "analytical"}
 
 
 class TestPerEvaluatorGradientSupport:
@@ -238,6 +239,7 @@ class TestPerEvaluatorGradientSupport:
     def _make_objective(*, engine_supports_grad: bool, kinds: tuple[str, ...]) -> ObjectiveFunction:
         engine = MagicMock()
         engine.supports_analytical_gradients.return_value = engine_supports_grad
+        engine.supports_analytical_hessian_gradients.return_value = engine_supports_grad
         ref = ReferenceData()
         for kind in kinds:
             if kind == "energy":
@@ -253,7 +255,7 @@ class TestPerEvaluatorGradientSupport:
     def test_energy_and_frequency_with_analytical_engine(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "frequency"))
         result = obj.per_evaluator_gradient_support()
-        assert result == {"energy": True, "frequency": False}
+        assert result == {"energy": True, "frequency": True}
 
     def test_energy_and_frequency_without_analytical_engine(self) -> None:
         obj = self._make_objective(engine_supports_grad=False, kinds=("energy", "frequency"))
@@ -268,17 +270,17 @@ class TestPerEvaluatorGradientSupport:
     def test_frequency_only(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("frequency",))
         result = obj.per_evaluator_gradient_support()
-        assert result == {"frequency": False}
+        assert result == {"frequency": True}
 
     def test_geometry_always_false(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("bond_length",))
         result = obj.per_evaluator_gradient_support()
         assert result == {"geometry": False}
 
-    def test_hessian_always_false(self) -> None:
+    def test_hessian_with_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("hessian_element",))
         result = obj.per_evaluator_gradient_support()
-        assert result == {"hessian": False}
+        assert result == {"hessian": True}
 
     def test_result_is_sorted_by_category(self) -> None:
         """Categories are returned in sorted order for deterministic metadata."""

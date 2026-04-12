@@ -502,16 +502,33 @@ class TestObjectiveFunctionHessianElement:
         assert isinstance(score, float)
 
     def test_supports_analytical_gradient_false(self) -> None:
-        """HessianElementEvaluator does not support analytical gradients."""
+        """HessianElementEvaluator returns False when engine does not support Hessian Jacobians."""
         ev = HessianElementEvaluator()
         engine = MagicMock()
+        engine.supports_analytical_hessian_gradients.return_value = False
         assert ev.supports_analytical_gradient(engine) is False
 
-    def test_gradient_returns_none(self) -> None:
-        """gradient() returns None."""
+    def test_supports_analytical_gradient_true(self) -> None:
+        """HessianElementEvaluator returns True when engine supports Hessian Jacobians."""
         ev = HessianElementEvaluator()
-        result = ev.gradient(MagicMock(), MagicMock(), MagicMock(), [], 5)
-        assert result is None
+        engine = MagicMock()
+        engine.supports_analytical_hessian_gradients.return_value = True
+        assert ev.supports_analytical_gradient(engine) is True
+
+    def test_gradient_computes(self) -> None:
+        """gradient() computes an actual gradient array."""
+        ev = HessianElementEvaluator()
+        hess = np.eye(3)
+        dH_dp = np.zeros((3, 3, 2))
+        dH_dp[0, 1, 0] = 1.0
+        engine = MagicMock()
+        engine.hessian_and_param_jacobian.return_value = (hess, dH_dp)
+        mol = MagicMock()
+        ff = MagicMock()
+        refs = [ReferenceValue(kind="hessian_element", value=0.5, weight=1.0, data_idx=0, atom_indices=(0, 1))]
+        result = ev.gradient(engine, mol, ff, refs, 2)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2,)
 
     def test_reset_does_nothing(self) -> None:
         """reset() runs without error."""

@@ -518,6 +518,7 @@ class JaxHandle:
     _grad_fn: Callable | None = field(default=None, repr=False)
     _coord_hess_fn: Callable | None = field(default=None, repr=False)
     _batched_coord_hess_fn: Callable | None = field(default=None, repr=False)
+    _hess_param_jac_fn: Callable | None = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -857,6 +858,53 @@ class JaxEngine(MMEngine):
         flat_coords = coords.flatten()
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
+
+    def supports_analytical_hessian_gradients(self) -> bool:  # noqa: D102
+        """Return True; JaxEngine supports Hessian parameter Jacobians via jax.jacrev."""
+        return True
+
+    def hessian_and_param_jacobian(
+        self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute Hessian and its Jacobian w.r.t. FF parameters.
+
+        Uses ``jax.jacrev(jax.hessian(E))`` to compute both the
+        coordinate Hessian and its derivatives with respect to force
+        field parameters in a single JIT-compiled call.
+
+        Args:
+            structure: A :class:`Q2MMMolecule` or :class:`JaxHandle`.
+            forcefield: Force field parameters.
+
+        Returns:
+            ``(hessian, dH_dp)`` where ``hessian`` has shape ``(3N, 3N)``
+            and ``dH_dp`` has shape ``(3N, 3N, n_params)``, both in
+            Hartree/Bohr².
+
+        """
+        handle = self._get_handle(structure, forcefield)
+        params, coords = self._params_and_coords(handle, forcefield)
+        flat_coords = coords.flatten()
+
+        if handle._hess_param_jac_fn is None:
+
+            def _energy_of_flat_coords(flat_coords_: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
+                return handle._energy_fn(params_, flat_coords_.reshape(-1, 3))
+
+            hess_fn = jax.hessian(_energy_of_flat_coords, argnums=0)
+
+            def _hess_and_jac(flat_coords_: jnp.ndarray, params_: jnp.ndarray) -> tuple:
+                h = hess_fn(flat_coords_, params_)
+                dh_dp = jax.jacrev(hess_fn, argnums=1)(flat_coords_, params_)
+                return h, dh_dp
+
+            handle._hess_param_jac_fn = jax.jit(_hess_and_jac)
+
+        hess_kcal_a2, dhess_dp_kcal_a2 = handle._hess_param_jac_fn(flat_coords, params)
+        return (
+            np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU,
+            np.asarray(dhess_dp_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU,
+        )
 
     def minimize(
         self, structure: Q2MMMolecule | JaxHandle, forcefield: ForceField, max_iterations: int = 200

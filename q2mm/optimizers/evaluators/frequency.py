@@ -95,16 +95,16 @@ class FrequencyEvaluator:
         return result
 
     def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Frequency gradients require differentiating through the Hessian eigendecomposition.
+        """Check if the engine supports Hessian parameter Jacobians.
 
         Args:
             engine: The MM backend to check.
 
         Returns:
-            Always ``False`` — not yet implemented.
+            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
 
         """
-        return False
+        return engine.supports_analytical_hessian_gradients()
 
     def gradient(
         self,
@@ -115,17 +115,45 @@ class FrequencyEvaluator:
         n_params: int,
         *,
         structure: Any | None = None,
-    ) -> np.ndarray | None:
-        """Not yet implemented — frequency analytical gradients.
+        mol_idx: int = 0,
+    ) -> np.ndarray:
+        """Compute analytical gradient of the frequency score contribution.
 
-        Differentiating through Hessian → eigendecomposition → frequencies
-        is planned for a future release.
+        Uses eigenvalue sensitivity to differentiate frequencies w.r.t.
+        force field parameters without differentiating through
+        the eigendecomposition backward pass.
+
+        Args:
+            engine: The MM backend (must support Hessian parameter Jacobians).
+            mol: The molecule being evaluated.
+            ff: The current force field.
+            references: Reference frequency values for this molecule.
+            n_params: Length of the gradient vector.
+            structure: Optional pre-built engine context/handle.
+            mol_idx: Molecule index (unused).
 
         Returns:
-            ``None`` — analytical gradients are not yet supported.
+            Gradient vector of shape ``(n_params,)``.
 
         """
-        return None
+        from q2mm.models.hessian import frequency_param_jacobian
+
+        target = structure if structure is not None else mol
+        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
+        freqs, d_freq_dp = frequency_param_jacobian(hess, dH_dp, mol.symbols)
+
+        grad = np.zeros(n_params)
+        for ref in references:
+            if ref.data_idx < 0 or ref.data_idx >= len(freqs):
+                raise IndexError(
+                    f"Frequency data_idx={ref.data_idx} out of range "
+                    f"(molecule has {len(freqs)} modes). "
+                    f"Label: {ref.label!r}"
+                )
+            calc_value = freqs[ref.data_idx]
+            diff = ref.value - calc_value
+            grad += -2.0 * ref.weight**2 * diff * d_freq_dp[ref.data_idx, :]
+        return grad
 
     @staticmethod
     def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:

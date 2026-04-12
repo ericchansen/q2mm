@@ -1266,6 +1266,7 @@ class ObjectiveFunction:
                         refs,
                         n_params,
                         structure=structure,
+                        mol_idx=mol_idx,
                     )
                     total_grad += grad
                 else:

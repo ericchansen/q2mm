@@ -249,6 +249,7 @@ class GeometryEvaluator:
         n_params: int,
         *,
         structure: Any | None = None,
+        mol_idx: int = 0,
     ) -> np.ndarray | None:
         """Not yet implemented — geometry analytical gradients.
 

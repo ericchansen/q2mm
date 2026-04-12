@@ -362,6 +362,46 @@ class MMEngine(ABC):
             "Override this method when supports_analytical_gradients() returns True."
         )
 
+    def supports_analytical_hessian_gradients(self) -> bool:
+        """Whether this engine provides analytical Hessian parameter Jacobians.
+
+        Engines returning ``True`` must implement
+        :meth:`hessian_and_param_jacobian`, which computes both the Hessian
+        and its derivatives w.r.t. force field parameters in a single call.
+
+        Returns:
+            bool: ``True`` if the engine provides Hessian parameter Jacobians.
+
+        """
+        return False
+
+    def hessian_and_param_jacobian(
+        self, structure: Q2MMMolecule, forcefield: ForceField
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute Hessian and its Jacobian w.r.t. FF parameters.
+
+        Must be implemented by engines for which
+        :meth:`supports_analytical_hessian_gradients` returns ``True``.
+
+        Args:
+            structure: Molecular structure or engine-specific context.
+            forcefield: Force field parameters.
+
+        Returns:
+            ``(hessian, dH_dp)`` where ``hessian`` has shape ``(3N, 3N)``
+            in Hartree/Bohr² and ``dH_dp`` has shape ``(3N, 3N, n_params)``
+            in Hartree/Bohr².
+
+        Raises:
+            NotImplementedError: If the engine does not support Hessian
+                parameter Jacobians.
+
+        """
+        raise NotImplementedError(
+            f"{self.name} does not implement hessian_and_param_jacobian(). "
+            "Override this method when supports_analytical_hessian_gradients() returns True."
+        )
+
     def create_context(self, structure: Q2MMMolecule, forcefield: ForceField) -> object:
         """Create a reusable engine context/handle for a molecule.
 

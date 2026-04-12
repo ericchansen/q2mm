@@ -88,6 +88,7 @@ class Evaluator(Protocol):
         n_params: int,
         *,
         structure: Any | None = None,
+        mol_idx: int = 0,
     ) -> np.ndarray | None:
         """Compute analytical gradient of this evaluator's score contribution.
 
@@ -104,6 +105,7 @@ class Evaluator(Protocol):
             n_params: Number of force field parameters (length of
                 the gradient vector).
             structure: Optional pre-built engine context/handle.
+            mol_idx: Molecule index for per-molecule caching.
 
         Returns:
             Gradient vector of shape ``(n_params,)``, or ``None`` if
