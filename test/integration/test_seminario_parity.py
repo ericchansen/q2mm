@@ -5,7 +5,7 @@ upstream Seminario results for both the rh-enamide and SN2 systems,
 plus runtime benchmarks.
 
 Force-constant tolerances use rel=1e-6 (not abs=1e-8) because the
-refactored code derives HESSIAN_CONVERSION from base CODATA 2018
+refactored code derives HESSIAN_AU_TO_KJMOLA2 from base CODATA 2018
 constants instead of the legacy hardcoded value.  The difference is
 ~5e-9 relative in the constant itself, which amplifies to ~1e-7
 relative through Seminario eigenvalue decomposition — well below

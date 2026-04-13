@@ -37,7 +37,7 @@ class TestLinearAlgebra(unittest.TestCase):
         Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
         Method C forces the reaction coordinate eigenvalue to 1 Hartree/Bohr².
         The default units=constants.GAUSSIAN uses this value directly (AU).
-        Pass units=constants.KJMOLA to convert via constants.HESSIAN_CONVERSION
+        Pass units=constants.KJMOLA to convert via constants.HESSIAN_AU_TO_KJMOLA2
         (~9376).
         """
         repl_evals = hessian.replace_neg_eigenvalue(evals_sq3)
@@ -86,7 +86,7 @@ class TestLinearAlgebra(unittest.TestCase):
     def test_replace_neg_eigenvalue_kjmola(self) -> None:
         """Explicit units=constants.KJMOLA converts the replacement to kJ/(mol·Å²)."""
         repl_evals = hessian.replace_neg_eigenvalue(evals_sq3, units=constants.KJMOLA)
-        expected_replacement = 1.0 * constants.HESSIAN_CONVERSION  # ~9375.83
+        expected_replacement = 1.0 * constants.HESSIAN_AU_TO_KJMOLA2  # ~9375.83
         np.testing.assert_allclose(
             [expected_replacement, evals_sq3[1], evals_sq3[2]],
             repl_evals,

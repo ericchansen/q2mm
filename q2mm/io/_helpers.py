@@ -149,7 +149,7 @@ def _update_torsion_param(param: Any, torsions: list) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy parameter container (moved from q2mm.parsers.param)
+# Legacy parameter container
 # ---------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)

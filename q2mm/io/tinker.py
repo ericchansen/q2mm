@@ -209,7 +209,7 @@ def _update_tinker_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Legacy Tinker FF import / export (replaces q2mm.parsers.tinker_ff.TinkerFF)
+# Tinker FF import / export
 # ---------------------------------------------------------------------------
 
 _BONDS = ["bond", "bond3", "bond4", "bond5"]

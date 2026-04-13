@@ -1,6 +1,6 @@
 """Generate the benchmark history comparison page at build time.
 
-Called by mkdocs-gen-files during ``mkdocs build``.  Reads every JSON
+Called by mkdocs-gen-files during ``properdocs build``.  Reads every JSON
 file in ``benchmarks/history/`` and renders a Markdown page that shows
 how RMSD results have changed across commits.
 
