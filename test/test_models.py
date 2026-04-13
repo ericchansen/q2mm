@@ -1153,9 +1153,10 @@ class TestQFUERZA:
     def test_qfuerza_substitutes_h_angles(self, water_mol_with_hess: Q2MMMolecule) -> None:
         """QFUERZA replaces the H-O-H angle force constant with the empirical default."""
         ff = estimate_force_constants(water_mol_with_hess, strategy="qfuerza")
-        for angle in ff.angles:
-            if _is_hydrogen_angle(angle.elements):
-                assert angle.force_constant == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_CANONICAL)
+        h_angles = [a for a in ff.angles if _is_hydrogen_angle(a.elements)]
+        assert len(h_angles) > 0, "Expected at least one H-angle in water"
+        for angle in h_angles:
+            assert angle.force_constant == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_CANONICAL)
 
     def test_qfuerza_keeps_bonds_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """QFUERZA does not alter bond force constants."""
@@ -1165,14 +1166,24 @@ class TestQFUERZA:
         for b_fur, b_qf in zip(ff_fuerza.bonds, ff_qfuerza.bonds):
             assert b_fur.force_constant == pytest.approx(b_qf.force_constant)
 
-    def test_qfuerza_does_not_substitute_non_h_angles(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_qfuerza_does_not_substitute_non_h_angles(self) -> None:
         """Non-hydrogen angles are not substituted by QFUERZA."""
-        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
-        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+        # Use SN2 TS which has F-C-Cl (non-H) angles
+        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
+        hess = np.load(TS_HESS)
+        mol = mol.with_hessian(hess)
 
-        for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles):
-            if not _is_hydrogen_angle(a_fur.elements):
-                assert a_fur.force_constant == pytest.approx(a_qf.force_constant)
+        ff_fuerza = estimate_force_constants(mol, strategy="fuerza")
+        ff_qfuerza = estimate_force_constants(mol, strategy="qfuerza")
+
+        non_h_angles = [
+            (a_fur, a_qf)
+            for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles)
+            if not _is_hydrogen_angle(a_fur.elements)
+        ]
+        assert len(non_h_angles) > 0, "Expected at least one non-H angle in SN2 TS"
+        for a_fur, a_qf in non_h_angles:
+            assert a_fur.force_constant == pytest.approx(a_qf.force_constant)
 
     def test_qfuerza_ch3f_all_h_angles_substituted(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """CH₃F has H-C-F and H-C-H angles — all have H outer atoms."""

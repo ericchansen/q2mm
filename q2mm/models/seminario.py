@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # See: Scott & Radom, J. Phys. Chem. 1996, 100, 16502-16513.
 DEFAULT_DFT_SCALING = 0.963
 
-# QFUERZA empirical default for hydrogen angle bends (mdyn/rad²).
+# QFUERZA empirical default for hydrogen angle bends (mdyn·Å/rad²).
 # Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476, Table 1.
 QFUERZA_H_ANGLE_DEFAULT_MDYNA = 0.5
 QFUERZA_H_ANGLE_DEFAULT_CANONICAL = QFUERZA_H_ANGLE_DEFAULT_MDYNA * MDYNA_RAD2_TO_KCALMOLRAD2
@@ -311,6 +311,9 @@ def estimate_force_constants(
         ForceField with estimated parameters
 
     """
+    if strategy not in ("fuerza", "qfuerza"):
+        raise ValueError(f"Unsupported strategy {strategy!r}; expected 'fuerza' or 'qfuerza'")
+
     molecules = _coerce_molecules(molecule)
     if any(item.hessian is None for item in molecules):
         raise ValueError("Molecule must have a Hessian attached. Use molecule.with_hessian(hess)")
@@ -415,7 +418,7 @@ def estimate_force_constants(
                 angle_param.force_constant = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
                 logger.info(
                     f"  Angle {angle_param.key}: QFUERZA H-angle substitution — "
-                    f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn/rad² "
+                    f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn·Å/rad² "
                     f"(FUERZA was {fuerza_value:.4f} kcal/(mol·rad²))"
                 )
             else:
