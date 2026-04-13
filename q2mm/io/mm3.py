@@ -315,12 +315,23 @@ def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str
 # ---------------------------------------------------------------------------
 
 
-def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Param], list[str]]:
+def _mm3_import_ff(
+    path: str | Path, sub_search: str = "OPT", *, include_standard: bool = False
+) -> tuple[list[Param], list[str]]:
     """Read parameters from an mm3.fld file.
+
+    Args:
+        path: Path to the mm3.fld file.
+        sub_search: Substructure name to look for (default ``"OPT"``).
+        include_standard: When ``True``, also parse standard MM3 bond,
+            angle, torsion and stretch-bend parameters from the main body
+            of the file (outside the substructure section).  These serve
+            as the base layer that substructure parameters override.
 
     Returns a ``(params, lines)`` tuple where *params* is the list of
     :class:`Param` objects and *lines* is the raw file content (as
     returned by ``readlines``).
+
     """
     path = str(path)
     params: list[Param] = []
@@ -389,7 +400,7 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
             )
             continue
 
-        if "OPT" in line or section_sub:
+        if "OPT" in line or section_sub or include_standard:
             # Bonds
             if match_mm3_bond(line):
                 logger.log(5, "[L{}] Found bond:\n{}".format(i + 1, line.strip("\n")))
@@ -401,7 +412,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 2:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -449,7 +465,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 2:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -485,7 +506,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 1:
+                    continue
                 params.append(
                     Param(
                         atom_labels=atm_lbls,
@@ -510,7 +536,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 3:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -552,7 +583,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                 )
                 atm_lbls = params[-1].atom_labels
                 atm_typs = params[-1].atom_types
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 3:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -597,7 +633,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 2:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -629,7 +670,12 @@ def _mm3_import_ff(path: str | Path, sub_search: str = "OPT") -> tuple[list[Para
                     continue
                 atm_lbls = [line[4:6], line[8:10]]
                 atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
-                parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                try:
+                    parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
+                except ValueError:
+                    continue
+                if len(parm_cols) < 2:
+                    continue
                 params.extend(
                     (
                         Param(
@@ -689,13 +735,25 @@ def _mm3_export_ff(path: str | Path, params: list[Param], lines: list[str]) -> N
 # ---------------------------------------------------------------------------
 
 
-def load_mm3_fld(path: str | Path) -> ForceField:
+def load_mm3_fld(path: str | Path, *, include_standard: bool = False) -> ForceField:
     """Load from Schrödinger MM3 .fld file.
 
-    Parses bond and angle parameters from the substructure sections,
-    extracting element letters from MM3 atom type codes.
+    Args:
+        path: Path to the mm3.fld file.
+        include_standard: When ``True``, load standard MM3 parameters from
+            the main body of the file in addition to the substructure
+            section.  Standard parameters serve as the base layer that
+            substructure parameters override.  This is needed when
+            evaluating a force field that relies on standard MM3 parameters
+            for atoms outside the substructure (e.g., published force fields
+            where the substructure only covers metal-center parameters).
+
+    Returns:
+        ForceField: A force field with bond, angle, torsion and vdW
+        parameters.
+
     """
-    parsed_params, _ = _mm3_import_ff(path)
+    parsed_params, _ = _mm3_import_ff(path, include_standard=include_standard)
 
     bonds = []
     angles = []
