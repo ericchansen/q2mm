@@ -513,8 +513,8 @@ class TestCH3FGroundState:
 class TestSN2TransitionState:
     """Validate the pipeline on the SN2 F- + CH3F transition state.
 
-    Transition states require special handling (Seminario Method D/E)
-    and must preserve the imaginary mode through optimization.
+    Transition states require special handling — the reaction-coordinate
+    curvature must be inverted before Seminario projection.
     """
 
     @pytest.fixture(scope="class")
@@ -532,11 +532,11 @@ class TestSN2TransitionState:
 
     @pytest.fixture(scope="class")
     def seminario_result(self, ts_mol: Q2MMMolecule) -> tuple[ForceField, float]:
-        """Seminario FF with Method D for TS eigenvalue treatment."""
+        """Seminario FF for TS (no curvature inversion)."""
         hess = np.load(TS_HESS)
         mol_h = ts_mol.with_hessian(hess)
         t0 = time.perf_counter()
-        ff = estimate_force_constants(mol_h, ts_method="D")
+        ff = estimate_force_constants(mol_h)
         elapsed = time.perf_counter() - t0
         return ff, elapsed
 
@@ -683,7 +683,7 @@ class TestSN2TransitionState:
         t.bar()
         t.title("TIMING")
         t.sep()
-        t.row(f"{'Seminario (Method D):':<40} {t_seminario * 1000:>8.1f} ms")
+        t.row(f"{'Seminario projection:':<40} {t_seminario * 1000:>8.1f} ms")
         t.row(f"{'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
         for d in data[1:]:
             t.row(f"{'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")
@@ -739,7 +739,7 @@ class TestSN2ReactionProfile:
         """Seminario FF for SN2 TS."""
         mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
         hess = np.load(TS_HESS)
-        return estimate_force_constants(mol.with_hessian(hess), ts_method="D")
+        return estimate_force_constants(mol.with_hessian(hess))
 
     def test_qm_barrier_matches_literature(self, qm_energies: dict[str, float], ext_ref: dict[str, object]) -> None:
         """Our QM barrier should be in the ballpark of published values."""

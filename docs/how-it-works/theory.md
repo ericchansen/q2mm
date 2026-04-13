@@ -128,44 +128,31 @@ the available MM functions. Removing them consistently improves the fit.
 
 !!! note
     Methods A and B are about objective function design, not eigenvalue
-    treatment. They're orthogonal to the C/D/E choice below. Q2MM's
+    treatment. They're orthogonal to the TS curvature handling below. Q2MM's
     evaluator system (see [Data Types](data-types.md)) addresses this
     same design space through `HessianElementEvaluator` and
     `EigenmatrixEvaluator`.
 
-### How to treat the TS eigenvalue: Methods C, D, and E
+### How to treat the TS eigenvalue
 
-Methods C, D, and E use **eigenmode projection** — the QM Hessian is
-transformed into the basis of its own eigenvectors, producing a matrix
-where the diagonal elements are eigenvalues (vibrational frequencies) and
-off-diagonal elements measure how well the MM eigenvectors match the QM
-ones. The methods differ in how they handle the reaction-coordinate
-eigenvalue.
+A transition-state Hessian has one negative eigenvalue — the reaction
+coordinate.  This is physically correct (saddle point), but Seminario
+projection needs all-positive eigenvalues to produce valid force constants.
 
-**Method C** ("forced eigenvalue") replaces the negative reaction-coordinate
-eigenvalue with a large positive value before fitting. This forces the MM
-force field to treat the TS as a minimum. It works, but the artificial
-eigenvalue distorts the fit — neighboring modes get dragged to unnatural
-values because they share force constants with the reaction coordinate.
-
-**Method D** ("natural eigenvalue") keeps the natural (negative) eigenvalue
-and fits to it directly. This produces dramatically better fits (~13× lower
-RMS error in Limé & Norrby's test system) because the optimizer isn't
-fighting an artificial constraint. However, some force constants can converge
-to zero or negative values — particularly bending constants for angles
-adjacent to the reaction coordinate. A force field with zero bending
-constants can produce unphysical local minima during conformational
-searching.
+Q2MM handles this by **inverting the curvature**: decompose the Hessian,
+replace the negative eigenvalue with a large positive value
+(1.0 Hartree/Bohr²), and reconstruct.  This is based on Limé & Norrby's
+eigenvalue replacement approach (J. Comput. Chem. 2015, 36, 244–250).
 
 ### What Q2MM implements
 
-| Method | Function | Module |
-|--------|----------|--------|
-| C | `replace_neg_eigenvalue()` | `q2mm.models.hessian` |
-| D | `keep_natural_eigenvalue()` | `q2mm.models.hessian` |
+| Function | Module | Purpose |
+|----------|--------|---------|
+| `invert_ts_curvature()` | `q2mm.models.hessian` | Decompose → replace negative eigenvalue → reconstruct |
+| `replace_neg_eigenvalue()` | `q2mm.models.hessian` | Low-level eigenvalue replacement |
 
-The `ts_method` parameter in `estimate_force_constants()` selects between
-C and D.
+The `invert_ts_curvature` parameter in `estimate_force_constants()` controls
+whether curvature inversion is applied (default: `False`).
 
 ---
 
