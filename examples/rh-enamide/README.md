@@ -4,7 +4,7 @@ Training data for rhodium(I)-catalysed asymmetric hydrogenation of enamides —
 a benchmark system from the
 [Q2MM JCTC paper](https://doi.org/10.1021/acs.jctc.6b00654).  Nine diverse
 Rh-diphosphine intermediates with QM-calculated Hessians are used to train
-MM3 force field parameters via the Seminario method.
+MM3 force field parameters via QFUERZA estimation.
 
 ## Files
 
@@ -12,7 +12,7 @@ MM3 force field parameters via the Seminario method.
 |------|-------------|
 | `mm3.fld` | Base Allinger MM3 force field |
 | `rh_hyd_enamide_start.fld` | Starting (untrained) force field for the Rh system |
-| `rh_hyd_enamide_seminario.fld` | Force field with Seminario-estimated bond/angle constants |
+| `rh_hyd_enamide_seminario.fld` | Force field with QFUERZA-estimated bond/angle constants |
 | `rh-hydrogenation-enamide-template.mae` | Maestro template defining the Rh catalyst scaffold |
 | `atom.typ` | Custom MMFF atom type definitions (Rh, P-ligands, H types) |
 | `freq_runner.sh` | SLURM batch script for parallel Jaguar frequency jobs |
@@ -54,7 +54,7 @@ estimated_ff = estimate_force_constants(mol, forcefield=ff, au_hessian=True)
 
 ## See also
 
-- `examples/sn2-test/compare_rh_enamide.py` — validates Seminario results
+- `examples/sn2-test/compare_rh_enamide.py` — validates QFUERZA results
   against pinned fixtures for this system
 - [References](https://ericchansen.github.io/q2mm/references/) — full list of
   Q2MM publications including the Rh-enamide JCTC paper

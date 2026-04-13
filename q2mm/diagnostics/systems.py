@@ -34,7 +34,7 @@ class SystemData:
 
     Attributes:
         molecules: One or more molecules with geometry (and optionally Hessians).
-        forcefield: Template force field (from Seminario or file).
+        forcefield: Template force field (from QFUERZA estimation or file).
         freq_ref: Frequency-based reference data for the objective function.
         qm_freqs_per_mol: QM real frequencies per molecule (for reporting).
         metadata: Extra info (level of theory, molecule name, etc.).

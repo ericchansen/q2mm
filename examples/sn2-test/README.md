@@ -23,8 +23,8 @@ only needed if you want to regenerate from scratch.
 |--------|-------------|
 | `generate_qm_data.py` | Generate QM reference data with Psi4 (B3LYP/6-31+G(d)) |
 | `generate_mm_data.py` | Run Tinker MM3 energy/frequency calculations on the TS geometry |
-| `run_tsff_pipeline.py` | Full TSFF optimisation pipeline (Seminario init → scipy optimize) |
-| `compare_implementations.py` | Compare SN2 Seminario bond projections against pinned fixtures |
+| `run_tsff_pipeline.py` | Full TSFF optimisation pipeline (QFUERZA init → scipy optimize) |
+| `compare_implementations.py` | Compare SN2 QFUERZA bond projections against pinned fixtures |
 | `compare_direct.py` | Wrapper that runs `compare_implementations.py` |
 | `compare_rh_enamide.py` | Compare Rh-enamide bond projections against pinned fixtures |
 | `compute_barrier.py` | Compute SN2 reaction barrier height for literature comparison |
@@ -58,4 +58,4 @@ python compare_direct.py
 - [Tutorial](https://ericchansen.github.io/q2mm/tutorial/) — full walkthrough
   using this example
 - `test/integration/test_seminario_parity.py` — CI tests that validate
-  Seminario results against these fixtures
+  QFUERZA results against these fixtures

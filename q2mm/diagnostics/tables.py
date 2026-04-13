@@ -310,7 +310,7 @@ def frequency_progression_table(
         qm_freqs (list[float]): QM reference frequencies (cm⁻¹).
         stages (list[tuple[str, list[float]]]): Each entry is
             ``(stage_label, mm_frequencies)``. E.g.,
-            ``[("Default FF", [...]), ("Seminario", [...]), ("Optimized", [...])]``.
+            ``[("Default FF", [...]), ("QFUERZA", [...]), ("Optimized", [...])]``.
         title (str): Table title.
         mode_names (list[str] | None): Names for each mode (e.g.,
             ``'CF str'``, ``'CH3 def'``). If ``None``, uses integer indices.
@@ -527,13 +527,13 @@ def parameter_table(
     *,
     title: str = "OPTIMIZED PARAMETERS",
 ) -> TablePrinter:
-    """Build a parameter comparison table showing Default → Seminario → Optimized.
+    """Build a parameter comparison table showing Default → QFUERZA → Optimized.
 
     Args:
         param_names (list[str]): Human-readable parameter names.
         default_values (list[float] | None): Default FF parameter values,
             or ``None`` to omit the column.
-        seminario_values (list[float] | None): Seminario-estimated parameter
+        seminario_values (list[float] | None): QFUERZA-estimated parameter
             values, or ``None`` to omit the column.
         optimized_values (list[float]): Final optimized parameter values.
         title (str): Table title.
@@ -559,7 +559,7 @@ def parameter_table(
     if has_default:
         hdr += f" {'Default':>{W_VAL}}"
     if has_seminario:
-        hdr += f" {'Seminario':>{W_VAL}}"
+        hdr += f" {'QFUERZA':>{W_VAL}}"
     hdr += f" {'Optimized':>{W_VAL}} {'Change%':>8}"
     t.row(hdr)
     t.sep()

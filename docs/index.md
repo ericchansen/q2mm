@@ -12,7 +12,7 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 
 - **QM accuracy, MM speed** — Parameterize force fields that reproduce QM results
   without the QM runtime cost.
-- **Hessian-informed starting points** — The Seminario method extracts bond and angle
+- **Hessian-informed starting points** — QFUERZA extracts bond and angle
   force constants from the QM Hessian, giving the optimizer a physically motivated
   initial guess.
 - **Open-source backends** — First-class support for OpenMM, JAX, JAX-MD,
@@ -45,7 +45,7 @@ flowchart LR
         RD[ReferenceData]
     end
 
-    SEM[Seminario]
+    Q[QFUERZA]
     OBJ[Objective]
     OPT[Optimizer]
 
@@ -57,7 +57,7 @@ flowchart LR
     end
 
     IO --> Models
-    Models --> SEM --> FF
+    Models --> Q --> FF
     FF --> OBJ
     RD --> OBJ
     OBJ --> OPT
@@ -71,7 +71,7 @@ flowchart LR
 1. **I/O modules** read QM output files (Gaussian, Jaguar), structure files (MOL2,
    MacroModel), and force field files (MM3, Tinker, AMBER) into unified
    `Q2MMMolecule`, `ReferenceData`, and `ForceField` objects.
-2. **Seminario method** projects the QM Hessian onto internal coordinates to extract
+2. **QFUERZA estimation** projects the QM Hessian onto internal coordinates to extract
    physically motivated initial bond and angle force constants.
 3. **Objective function** computes weighted residuals between QM reference values and
    MM-calculated properties for the current parameter set.

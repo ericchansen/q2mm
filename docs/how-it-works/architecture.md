@@ -48,7 +48,7 @@ once in canonical units and works for any force field.
 graph TB
     subgraph canonical ["Canonical Unit Space"]
         direction LR
-        S[Seminario] --> FF[ForceField] --> OBJ[Objective] --> OPT[Optimizer]
+        Q[QFUERZA] --> FF[ForceField] --> OBJ[Objective] --> OPT[Optimizer]
         OBJ <--> ENG[MM Engine]
     end
 
@@ -152,7 +152,7 @@ def from_structure(cls, structure, *, hessian=None, ...) -> Q2MMMolecule:
 
 If a future parser accidentally returns `kJ/(mol·Å²)` data tagged as
 `hartree/bohr**2`, the `.to("hartree/bohr**2")` call is a silent no-op —
-but the magnitude will be wrong, and the Seminario force constants will be
+but the magnitude will be wrong, and the QFUERZA force constants will be
 obviously inflated.  If the data is tagged correctly as `kJ/(mol·Å²)`, the
 `.to("hartree/bohr**2")` call raises `DimensionalityError` immediately,
 surfacing the bug before it can silently corrupt any results.
@@ -255,7 +255,7 @@ flowchart TD
         ff[ForceField]
         mol[Q2MMMolecule]
         hess[Hessian]
-        sem[Seminario]
+        sem[QFUERZA]
     end
 
     subgraph Opt["Optimizers"]

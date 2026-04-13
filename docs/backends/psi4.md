@@ -108,7 +108,7 @@ with Psi4Engine(method="b3lyp", basis="6-31+G(d)") as engine:
     energy, atoms, coords = engine.optimize("ts-guess.xyz", opt_type="ts")
     print(f"TS energy: {energy:.6f} Hartree")
 
-    # Hessian for Seminario method
+    # Hessian for QFUERZA estimation
     hess = engine.hessian("ts-optimized.xyz")
     print(f"Hessian shape: {hess.shape}")
 
@@ -127,7 +127,7 @@ QM reference data before any force field optimization begins:
 1. **Optimize** the transition state geometry (`opt_type="ts"`)
 2. **Compute the Hessian** at the optimized geometry
 3. **Extract frequencies** for validation
-4. Feed the Hessian into the [Seminario method](../how-it-works/theory.md)
+4. Feed the Hessian into [QFUERZA estimation](../how-it-works/theory.md)
    for initial force constant estimation
 
 The MM engines (OpenMM, JAX, Tinker, JAX-MD) then handle the iterative

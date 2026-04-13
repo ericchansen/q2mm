@@ -22,7 +22,7 @@ QM_REF = Path(__file__).parent / "qm-reference"
 def create_sn2_ff(path: str | Path) -> str | Path:
     """Create a minimal MM3 force field for the SN2 F-CH3-F system.
 
-    Parameters are rough initial guesses that Seminario will improve.
+    Parameters are rough initial guesses that QFUERZA will improve.
     """
     # MM3 .fld format for F-CH3-F with substructure marked OPT
     fld_content = """\
@@ -250,7 +250,7 @@ def main() -> None:
     print(f"  Method E: {n_problematic} param(s) from Method C, rest from Method D")
 
     if results:
-        print("\n  Force constant estimates from the clean Seminario pipeline:")
+        print("\n  Force constant estimates from the QFUERZA pipeline:")
         for key, val in results.items():
             if key[0] == "bf":
                 print(f"    Bond row {key[1]}: {val['initial']:.2f} -> {val['estimated']:.2f} mdyn/A")
