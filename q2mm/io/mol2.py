@@ -111,7 +111,6 @@ class Mol2:
         from SYBYL requires consistent data ordering matching the
         standard; otherwise the file is not in valid mol2 format.
         """
-        # TODO this could be amended to use regular expression matching (regex) if slow
         self._structures: list[Structure] = []
         joined_lines = "".join(self.lines)
         structure_chunks = joined_lines.split(self.TRIPOS_FLAG + self.MOLECULE_FLAG)
@@ -197,9 +196,6 @@ class Mol2:
                     ),
                 )
             )
-
-        # TODO: Ideally, the bonds class would measure the bonds and just contain a pointer to an Atom
-        # object, but that would require a decent-sized refactor so hold off for now
 
         return bonds
 

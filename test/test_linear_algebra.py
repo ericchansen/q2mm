@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import warnings
 
 import numpy as np
 
@@ -74,11 +75,13 @@ class TestLinearAlgebra(unittest.TestCase):
             5,
             9.87456,
         ]
-        np.testing.assert_allclose(
-            multi_neg_evals_repl,
-            hessian.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
-            err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            np.testing.assert_allclose(
+                multi_neg_evals_repl,
+                hessian.replace_neg_eigenvalue(multi_neg_evals, zer_out_neg=True, strict=False),
+                err_msg="Replaced eigenvalues do not match. Failed to replace excess negative values with zero.",
+            )
 
     def test_replace_neg_eigenvalue_kjmola(self) -> None:
         """Explicit units=constants.KJMOLA converts the replacement to kJ/(mol·Å²)."""
@@ -98,8 +101,6 @@ class TestLinearAlgebra(unittest.TestCase):
 
     def test_multi_neg_eigenvalue_nonstrict_warns(self) -> None:
         """Multiple negative eigenvalues with strict=False should warn, not raise."""
-        import warnings
-
         multi_neg = np.array([-5.0, -2.0, 1.0, 3.0])
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
