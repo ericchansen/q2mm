@@ -232,8 +232,8 @@ interaction submatrices
 with improved handling of hydrogen angle bends
 ([Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.5c01751)).
 Limé and Norrby later extended this to transition states, introducing
-Methods C and D for handling the negative eigenvalue along the
-reaction coordinate
+methods for handling the negative eigenvalue along the reaction
+coordinate
 ([Limé & Norrby, *J. Comput. Chem.* **2015**, 36, 244](https://doi.org/10.1002/jcc.23797)).
 Q2MM supports two ways to use Hessian information as training data, both
 derived from eigendecomposition of the Hessian.
@@ -348,9 +348,10 @@ and subsequent Q2MM publications.
 !!! note "What about the reaction coordinate?"
     The reaction coordinate (imaginary frequency mode) is included in
     the eigenmatrix as mode 0. By default its weight is zero (`eig_i =
-    0.0`), effectively excluding it from the fit. QFUERZA estimation
-    flips this eigenvalue to make the TS appear as a minimum in the MM
-    energy surface, so the force field *does* encode the reaction
+    0.0`), effectively excluding it from the fit. When
+    `invert_ts_curvature=True`, the negative eigenvalue is replaced with
+    a large positive value, making the TS appear as a minimum in the MM
+    energy surface. The force field *does* encode the reaction
     coordinate — it just isn't trained against the QM value. Setting
     `eig_i` to a non-zero weight would train against the flipped
     eigenvalue; see

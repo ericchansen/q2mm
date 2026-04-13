@@ -23,8 +23,8 @@ flowchart LR
 
 1. **QFUERZA estimation** extracts initial force constants from the QM
    Hessian — a physically informed starting point
-2. **Eigenvalue treatment** (Methods C/D/E) handles the negative eigenvalue
-   present in transition state Hessians
+2. **Eigenvalue treatment** handles the negative eigenvalue present in
+   transition state Hessians by inverting the curvature
 3. **Objective function** measures how well MM-computed observables
    (energies, frequencies, geometries) match QM reference data
 4. **Grad-simp optimization** refines parameters by alternating
