@@ -139,7 +139,7 @@ A transition-state Hessian has one negative eigenvalue — the reaction
 coordinate.  This is physically correct (saddle point), but Seminario
 projection needs all-positive eigenvalues to produce valid force constants.
 
-Q2MM handles this by **inverting the curvature**: decompose the Hessian,
+Q2MM supports **curvature inversion**: decompose the Hessian,
 replace the negative eigenvalue with a large positive value
 (1.0 Hartree/Bohr²), and reconstruct.  This is based on Limé & Norrby's
 eigenvalue replacement approach (J. Comput. Chem. 2015, 36, 244–250).
