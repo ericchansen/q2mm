@@ -70,9 +70,8 @@ put the optimizer in the right region of parameter space from the start.
 Seminario projection works well for bonds but overestimates hydrogen angle
 bend force constants by roughly 2×. QFUERZA fixes this by substituting
 the empirical default (0.5 mdyn·Å/rad²) for any angle where either outer
-atom is hydrogen — the same default Q2MM uses when no Hessian is available.
-For non-hydrogen angles and all bonds, QFUERZA and plain Seminario give
-identical results.
+atom is hydrogen. For non-hydrogen angles and all bonds, QFUERZA and
+plain Seminario give identical results.
 
 QFUERZA is the default. To use plain Seminario projection instead:
 

@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "description": "Ethane Seminario reference values from refactored Q2MM",
+    "description": "Ethane QFUERZA reference values from refactored Q2MM",
     "method": "B3LYP/6-31G(d)",
     "note": "GS=staggered minimum, TS=eclipsed rotation barrier",
     "units": "canonical: kcal/(mol\u00b7\u00c5\u00b2) for bonds, kcal/(mol\u00b7rad\u00b2) for angles",
