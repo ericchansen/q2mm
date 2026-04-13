@@ -1,8 +1,7 @@
 """Diagnostics and benchmarking tools for Q2MM.
 
 Provides reusable table formatting, benchmark result serialization,
-PES distortion analysis, reference data analysis, and cross-backend
-comparison reporting.
+PES distortion analysis, and cross-backend comparison reporting.
 """
 
 from q2mm.diagnostics.benchmark import (
@@ -14,17 +13,6 @@ from q2mm.diagnostics.benchmark import (
 )
 from q2mm.diagnostics.history import RunSummary, build_run_summary, load_history
 from q2mm.diagnostics.pes_distortion import compute_distortions, load_normal_modes
-from q2mm.diagnostics.reference_analysis import (
-    EigenvalueAnalysis,
-    FrequencyComparison,
-    ModeCouplingAnalysis,
-    SymmetryCheck,
-    analyze_eigenvalues,
-    analyze_mode_coupling,
-    check_symmetry,
-    compare_frequencies,
-    format_hessian_report,
-)
 from q2mm.diagnostics.report import detailed_report, full_report
 from q2mm.diagnostics.systems import SYSTEMS, BenchmarkSystem, SystemData
 from q2mm.diagnostics.tables import TablePrinter
@@ -32,22 +20,13 @@ from q2mm.diagnostics.tables import TablePrinter
 __all__ = [
     "BenchmarkResult",
     "BenchmarkSystem",
-    "EigenvalueAnalysis",
-    "FrequencyComparison",
-    "ModeCouplingAnalysis",
     "RunSummary",
     "SYSTEMS",
-    "SymmetryCheck",
     "SystemData",
     "TablePrinter",
-    "analyze_eigenvalues",
-    "analyze_mode_coupling",
     "build_run_summary",
-    "check_symmetry",
-    "compare_frequencies",
     "compute_distortions",
     "detailed_report",
-    "format_hessian_report",
     "frequency_mae",
     "frequency_rmsd",
     "full_report",
