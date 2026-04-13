@@ -11,7 +11,7 @@ The validation program has two checks, run in order:
 
 | Check | Question | Status |
 |-------|----------|--------|
-| **Check 1** | Can q2mm load a published force field and reproduce its fit quality against the original QM data? | ⚠️ Harness works, but parity gap unresolved ([#197](https://github.com/ericchansen/q2mm/issues/197)) |
+| **Check 1** | Can q2mm load a published force field and reproduce its fit quality against the original QM data? | ⚠️ Harness works; parity gap attributed to MM3 functional-form differences ([#197](https://github.com/ericchansen/q2mm/issues/197), closed) |
 | **Check 2** | Can q2mm re-derive the published force field from scratch using its own optimizers? | ⏳ Blocked on Check 1 |
 
 Check 1 must pass before Check 2 makes sense — if we can't even evaluate a
@@ -60,7 +60,7 @@ between the original MacroModel workflow and the OpenMM custom-force path.
 Likely sources include functional-form differences, parameter-interpretation
 differences, and missing or differently handled interaction terms.
 
-This gap is tracked in [issue #197](https://github.com/ericchansen/q2mm/issues/197).
+This gap was investigated in [issue #197](https://github.com/ericchansen/q2mm/issues/197) (now closed) and attributed to MM3 functional-form differences between MacroModel and OpenMM.
 
 ---
 

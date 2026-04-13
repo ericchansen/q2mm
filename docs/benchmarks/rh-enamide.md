@@ -85,9 +85,10 @@ hours end-to-end per the [archived run log](https://github.com/ericchansen/q2mm/
 JAX MM3 grad-simp and OpenMM MM3 grad-simp reach the same final RMSD
 (42.7 cm⁻¹), but the optimised force field parameters differ. A
 systematic comparison of the two parameter sets against Seminario
-initial estimates has not yet been committed to the repository. See
-[#197](https://github.com/ericchansen/q2mm/issues/197) for the
-ongoing parity investigation.
+initial estimates has not yet been committed to the repository.
+[#197](https://github.com/ericchansen/q2mm/issues/197) tracked the
+initial parity investigation (now closed; the gap is attributed to MM3
+functional-form differences between MacroModel and OpenMM).
 
 A secondary factor is Hessian accuracy: JAX uses analytically exact
 second derivatives (`jax.hessian`), while OpenMM uses finite-difference

@@ -60,7 +60,7 @@ area are linked in the table below.
 | Functional forms | MM3 only (implicit) | [MM3 + Harmonic](how-it-works/architecture.md) (explicit enum) |
 | Force field model | Format-coupled (`ParamMM3`) | [Format-agnostic `ForceField` dataclass](#evaluators-force-field-model) |
 | Diagnostics | [Utility scripts](https://github.com/Q2MM/q2mm/tree/b26404b/tools) | [Full CLI benchmark suite](#diagnostics) |
-| Test suite | [9 test files](https://github.com/Q2MM/q2mm/tree/b26404b/test) | 742+ unit tests |
+| Test suite | [9 test files](https://github.com/Q2MM/q2mm/tree/b26404b/test) | 1,100+ unit tests |
 
 ---
 
