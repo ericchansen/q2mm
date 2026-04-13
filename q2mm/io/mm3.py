@@ -316,17 +316,17 @@ def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str
 
 
 def _mm3_import_ff(
-    path: str | Path, sub_search: str = "OPT", *, include_standard: bool = False
+    path: str | Path, sub_search: str = "OPT", *, include_standard: bool = True
 ) -> tuple[list[Param], list[str]]:
     """Read parameters from an mm3.fld file.
 
     Args:
         path: Path to the mm3.fld file.
         sub_search: Substructure name to look for (default ``"OPT"``).
-        include_standard: When ``True``, also parse standard MM3 bond,
-            angle, torsion and stretch-bend parameters from the main body
-            of the file (outside the substructure section).  These serve
-            as the base layer that substructure parameters override.
+        include_standard: When ``True`` (the default), also parse standard
+            MM3 bond, angle, torsion and stretch-bend parameters from the
+            main body of the file (outside the substructure section).  These
+            serve as the base layer that substructure parameters override.
 
     Returns a ``(params, lines)`` tuple where *params* is the list of
     :class:`Param` objects and *lines* is the raw file content (as
@@ -400,7 +400,7 @@ def _mm3_import_ff(
             )
             continue
 
-        if "OPT" in line or section_sub or include_standard:
+        if sub_search in line or section_sub or include_standard:
             # Bonds
             if match_mm3_bond(line):
                 logger.log(5, "[L{}] Found bond:\n{}".format(i + 1, line.strip("\n")))
@@ -577,6 +577,8 @@ def _mm3_import_ff(
 
             # Higher order torsions (4th through 6th)
             elif match_mm3_higher_torsion(line):
+                if not params or params[-1].ptype != "df":
+                    continue
                 logger.log(
                     5,
                     "[L{}] Found higher order torsion:\n{}".format(i + 1, line.strip("\n")),
@@ -735,18 +737,16 @@ def _mm3_export_ff(path: str | Path, params: list[Param], lines: list[str]) -> N
 # ---------------------------------------------------------------------------
 
 
-def load_mm3_fld(path: str | Path, *, include_standard: bool = False) -> ForceField:
+def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceField:
     """Load from Schrödinger MM3 .fld file.
 
     Args:
         path: Path to the mm3.fld file.
-        include_standard: When ``True``, load standard MM3 parameters from
-            the main body of the file in addition to the substructure
-            section.  Standard parameters serve as the base layer that
-            substructure parameters override.  This is needed when
-            evaluating a force field that relies on standard MM3 parameters
-            for atoms outside the substructure (e.g., published force fields
-            where the substructure only covers metal-center parameters).
+        include_standard: When ``True`` (the default), load standard MM3
+            parameters from the main body of the file in addition to the
+            substructure section.  Standard parameters serve as the base
+            layer that substructure parameters override.  Set to ``False``
+            to load only substructure parameters.
 
     Returns:
         ForceField: A force field with bond, angle, torsion and vdW

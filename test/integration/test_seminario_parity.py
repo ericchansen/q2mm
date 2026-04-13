@@ -87,7 +87,7 @@ def rh_enamide_clean_results() -> dict[str, ForceField]:
         )
         for index, (structure, hessian) in enumerate(zip(structures, hessians))
     ]
-    clean_start = ForceField.from_mm3_fld(MM3_PATH)
+    clean_start = ForceField.from_mm3_fld(MM3_PATH, include_standard=False)
     clean_estimated = estimate_force_constants(
         molecules,
         forcefield=clean_start,
