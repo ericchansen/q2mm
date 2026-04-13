@@ -685,7 +685,7 @@ class TestSN2TransitionState:
         t.bar()
         t.title("TIMING")
         t.sep()
-        t.row(f"{'Seminario projection:':<40} {t_seminario * 1000:>8.1f} ms")
+        t.row(f"{'FF estimation (QFUERZA):':<40} {t_seminario * 1000:>8.1f} ms")
         t.row(f"{'L-BFGS-B optimization:':<40} {t_optimize * 1000:>8.1f} ms  ({n_eval} evaluations)")
         for d in data[1:]:
             t.row(f"{'Freq eval (' + d['label'] + '):':<40} {d['t_freq'] * 1000:>8.1f} ms")

@@ -8,7 +8,7 @@ Tests are categorized by purpose and time budget:
 - **integration** (``@pytest.mark.integration``): 1–10 seconds. Backend
   integration: engine contracts, optimizer convergence, parity checks.
 - **validation** (``@pytest.mark.validation``): 1–30 seconds. Correctness
-  validation with *no* optimizer loops — Seminario projection, published
+  validation with *no* optimizer loops — QFUERZA estimation, published
   FF evaluation, ethane TS.
 - **nightly** (``@pytest.mark.nightly``): 1–10 minutes. Heavy tests with
   optimizer loops (L-BFGS-B 200 iterations), Rh-enamide full loops, gradient
