@@ -73,6 +73,18 @@ to starting from generic approximations.
 The implementation lives in
 [`q2mm.models.seminario`](../reference/q2mm/models/seminario.md).
 
+To use QFUERZA initialization:
+
+```python
+from q2mm.models.seminario import estimate_force_constants
+
+# Standard Seminario/FUERZA (default)
+ff = estimate_force_constants(molecule)
+
+# QFUERZA: substitutes 0.5 mdyn/rad² for hydrogen angle bends
+ff = estimate_force_constants(molecule, strategy="qfuerza")
+```
+
 ---
 
 ## Stage 2: transition state eigenvalue treatment

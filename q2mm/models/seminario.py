@@ -21,6 +21,7 @@ from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.units import (
     AU_BOND_K_TO_CANONICAL,
     AU_ANGLE_K_TO_CANONICAL,
+    MDYNA_RAD2_TO_KCALMOLRAD2,
 )
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
@@ -40,6 +41,16 @@ logger = logging.getLogger(__name__)
 # Default DFT Hessian scaling factor (B3LYP/6-31G* level).
 # See: Scott & Radom, J. Phys. Chem. 1996, 100, 16502-16513.
 DEFAULT_DFT_SCALING = 0.963
+
+# QFUERZA empirical default for hydrogen angle bends (mdyn/rad²).
+# Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476, Table 1.
+QFUERZA_H_ANGLE_DEFAULT_MDYNA = 0.5
+QFUERZA_H_ANGLE_DEFAULT_CANONICAL = QFUERZA_H_ANGLE_DEFAULT_MDYNA * MDYNA_RAD2_TO_KCALMOLRAD2
+
+
+def _is_hydrogen_angle(elements: tuple[str, str, str]) -> bool:
+    """Return True if either outer atom of an angle is hydrogen."""
+    return elements[0] == "H" or elements[2] == "H"
 
 
 def _coerce_molecules(
@@ -271,6 +282,7 @@ def estimate_force_constants(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     ts_method: Literal["C", "D"] | None = None,
+    strategy: Literal["fuerza", "qfuerza"] = "fuerza",
 ) -> ForceField:
     """Estimate force constants from one or more QM Hessians using Seminario.
 
@@ -290,6 +302,10 @@ def estimate_force_constants(
             Norrby 2015).  ``"D"`` keeps the natural eigenvalue (Method D).
             ``None`` (default) uses the Hessian as-is, which is correct for
             ground-state molecules.
+        strategy: Initialization strategy. ``"fuerza"`` (default) uses pure
+            Seminario projection.  ``"qfuerza"`` substitutes empirical defaults
+            for hydrogen angle bends, where FUERZA overestimates by ~2×
+            (Farrugia et al. JCTC 2026).
 
     Returns:
         ForceField with estimated parameters
@@ -393,11 +409,21 @@ def estimate_force_constants(
         if equilibria:
             angle_param.equilibrium = float(np.mean(equilibria))
         if force_constants:
-            angle_param.force_constant = float(np.mean(force_constants))
-            logger.info(
-                f"  Angle {angle_param.key}: k={angle_param.force_constant:.4f}, "
-                f"theta0={angle_param.equilibrium:.1f} deg"
-            )
+            fuerza_value = float(np.mean(force_constants))
+
+            if strategy == "qfuerza" and _is_hydrogen_angle(angle_param.elements):
+                angle_param.force_constant = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
+                logger.info(
+                    f"  Angle {angle_param.key}: QFUERZA H-angle substitution — "
+                    f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn/rad² "
+                    f"(FUERZA was {fuerza_value:.4f} kcal/(mol·rad²))"
+                )
+            else:
+                angle_param.force_constant = fuerza_value
+                logger.info(
+                    f"  Angle {angle_param.key}: k={angle_param.force_constant:.4f}, "
+                    f"theta0={angle_param.equilibrium:.1f} deg"
+                )
         else:
             logger.warning(
                 f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant"
@@ -423,6 +449,7 @@ def estimate_force_constants_method_e(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     fc_threshold: float = 0.0,
+    strategy: Literal["fuerza", "qfuerza"] = "fuerza",
 ) -> tuple[ForceField, dict]:
     """Estimate force constants using Method E (hybrid D/C).
 
@@ -446,6 +473,8 @@ def estimate_force_constants_method_e(
         invalid_policy: How to handle negative projected force constants.
         fc_threshold: Force constants at or below this value are
             considered problematic and replaced with Method C values.
+        strategy: Initialization strategy (``"fuerza"`` or ``"qfuerza"``).
+            Passed through to ``estimate_force_constants()``.
 
     Returns:
         Tuple of:
@@ -461,6 +490,7 @@ def estimate_force_constants_method_e(
         zero_torsions=zero_torsions,
         au_hessian=au_hessian,
         invalid_policy=invalid_policy,
+        strategy=strategy,
     )
 
     ff_d = estimate_force_constants(molecule, ts_method="D", **common_kwargs)
