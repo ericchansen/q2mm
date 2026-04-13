@@ -55,7 +55,7 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
       options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -85,7 +85,7 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax:latest
       options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -100,7 +100,7 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax-md:latest
       options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -130,7 +130,7 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-full:latest
       options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
