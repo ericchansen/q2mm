@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
 
-pytestmark = [pytest.mark.benchmark, pytest.mark.medium]
+pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 
 # CH3F has 5 atoms → 3N = 15 total modes, 3N-6 = 9 vibrational modes
 _N_ATOMS = 5

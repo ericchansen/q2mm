@@ -228,7 +228,7 @@ class TestSensitivity:
 
 
 class TestOptimizationLoop:
-    @pytest.mark.medium
+    @pytest.mark.integration
     def test_loop_improves_score(self) -> None:
         """OptimizationLoop should improve over a single-shot Nelder-Mead."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
@@ -255,7 +255,7 @@ class TestOptimizationLoop:
         assert len(result.selected_indices) == result.n_cycles
         assert result.improvement > 0
 
-    @pytest.mark.medium
+    @pytest.mark.integration
     def test_loop_tracks_sensitivity(self) -> None:
         """Each cycle should produce a sensitivity result."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
@@ -326,7 +326,7 @@ class TestConvergence:
         assert result.n_cycles == 2
         assert "max cycles" in result.message
 
-    @pytest.mark.medium
+    @pytest.mark.integration
     def test_summary_output(self) -> None:
         """LoopResult.summary() produces readable output."""
         true_ff = _h2_ff(k=359.7, r0=0.74)

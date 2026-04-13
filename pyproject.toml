@@ -125,8 +125,9 @@ testpaths = ["test"]
 addopts = ""
 markers = [
     "benchmark: performance benchmark tests (requires pytest-benchmark; use --benchmark-enable to collect timing)",
-    "slow: slow tests >10s each (requires --run-slow)",
-    "medium: medium speed tests 1-10s each (requires --run-medium)",
+    "integration: backend integration tests ~1-10s each (requires --run-integration)",
+    "validation: correctness validation with no optimizer loops ~1-30s each (requires --run-validation)",
+    "nightly: heavy tests with optimizer loops or large systems ~1-10min each (requires --run-nightly)",
 ]
 
 [tool.ruff]

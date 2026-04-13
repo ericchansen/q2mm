@@ -250,7 +250,7 @@ def _save_golden_fixture(results: dict, path: Path) -> None:
 
 @requires_openmm
 @pytest.mark.openmm
-@pytest.mark.slow
+@pytest.mark.validation
 class TestPublishedFFEvaluation:
     """Check 1: Evaluate the Donoghue 2008 published Rh-enamide FF.
 

@@ -304,7 +304,7 @@ def test_rh_enamide_param_vector_parity(
 # Runtime benchmarks (informational, never fail)
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
-@pytest.mark.slow
+@pytest.mark.validation
 def test_rh_enamide_seminario_benchmark(
     rh_enamide_clean_results: dict[str, ForceField], capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -1,21 +1,25 @@
 """Shared pytest configuration and fixtures.
 
-Speed tier markers
-------------------
-Tests are categorized into three speed tiers:
+Test tiers
+----------
+Tests are categorized by purpose and time budget:
 
-- **fast** (unmarked): < 1 second. Unit tests, parsers, models. Default run.
-- **medium** (``@pytest.mark.medium``): 1–10 seconds. Integration tests with
-  a single optimizer run or backend call.
-- **slow** (``@pytest.mark.slow``): > 10 seconds. Cross-backend parity,
-  multi-iteration optimizer convergence.
+- **core** (unmarked): < 1 second. Unit tests, parsers, models. Always run.
+- **integration** (``@pytest.mark.integration``): 1–10 seconds. Backend
+  integration: engine contracts, optimizer convergence, parity checks.
+- **validation** (``@pytest.mark.validation``): 1–30 seconds. Correctness
+  validation with *no* optimizer loops — Seminario projection, published
+  FF evaluation, ethane TS.
+- **nightly** (``@pytest.mark.nightly``): 1–10 minutes. Heavy tests with
+  optimizer loops (L-BFGS-B 200 iterations), Rh-enamide full loops, gradient
+  speedup.
 
-By default, ``pytest`` runs only fast tests (~13s). Use CLI flags to include
-slower tiers::
+By default, ``pytest`` runs only core tests::
 
-    pytest                     # fast only (~13s)
-    pytest --run-medium        # fast + medium (~49s)
-    pytest --run-slow          # everything (~330s)
+    pytest                        # core only (~13s)
+    pytest --run-integration      # core + integration (~49s)
+    pytest --run-validation       # core + integration + validation (~80s)
+    pytest --run-nightly          # everything (~330s+)
 
 GPU enforcement
 ---------------
@@ -37,9 +41,9 @@ installed.
 
 Use ``-m`` to filter::
 
-    pytest -m openmm           # only OpenMM tests
-    pytest -m "not tinker"     # skip Tinker tests
-    pytest -m "openmm and slow"  # slow OpenMM tests only
+    pytest -m openmm                     # only OpenMM tests
+    pytest -m "not tinker"               # skip Tinker tests
+    pytest -m "openmm and nightly"       # nightly OpenMM tests only
 """
 
 from __future__ import annotations
@@ -89,16 +93,22 @@ _MARKER_TO_REGISTRY = {
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
-        "--run-medium",
+        "--run-integration",
         action="store_true",
         default=False,
-        help="Include medium-speed tests (1-10s each)",
+        help="Include integration tests (backend contracts, parity, ~1-10s each)",
     )
     parser.addoption(
-        "--run-slow",
+        "--run-validation",
         action="store_true",
         default=False,
-        help="Include slow tests (>10s each); implies --run-medium",
+        help="Include validation tests (no optimizer loops, ~1-30s each); implies --run-integration",
+    )
+    parser.addoption(
+        "--run-nightly",
+        action="store_true",
+        default=False,
+        help="Include nightly tests (optimizer loops, heavy computation, ~1-10min each); implies --run-validation",
     )
     parser.addoption(
         "--gpu",
@@ -111,8 +121,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "slow: marks tests as slow (>10s each)")
-    config.addinivalue_line("markers", "medium: marks tests as medium speed (1-10s each)")
+    config.addinivalue_line("markers", "integration: backend integration tests (~1-10s each)")
+    config.addinivalue_line("markers", "validation: correctness validation, no optimizer loops (~1-30s each)")
+    config.addinivalue_line("markers", "nightly: heavy tests with optimizer loops (~1-10min each)")
     config.addinivalue_line(
         "markers",
         "benchmark: benchmark timing disabled by default; use --benchmark-enable to collect timing",
@@ -142,20 +153,27 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    run_slow = config.getoption("--run-slow")
-    run_medium = config.getoption("--run-medium") or run_slow
+    run_nightly = config.getoption("--run-nightly")
+    run_validation = config.getoption("--run-validation") or run_nightly
+    run_integration = config.getoption("--run-integration") or run_validation
 
-    if not run_slow:
-        skip_slow = pytest.mark.skip(reason="need --run-slow to run")
+    if not run_nightly:
+        skip_nightly = pytest.mark.skip(reason="need --run-nightly to run")
         for item in items:
-            if "slow" in item.keywords:
-                item.add_marker(skip_slow)
+            if "nightly" in item.keywords:
+                item.add_marker(skip_nightly)
 
-    if not run_medium:
-        skip_medium = pytest.mark.skip(reason="need --run-medium to run")
+    if not run_validation:
+        skip_validation = pytest.mark.skip(reason="need --run-validation to run")
         for item in items:
-            if "medium" in item.keywords:
-                item.add_marker(skip_medium)
+            if "validation" in item.keywords:
+                item.add_marker(skip_validation)
+
+    if not run_integration:
+        skip_integration = pytest.mark.skip(reason="need --run-integration to run")
+        for item in items:
+            if "integration" in item.keywords:
+                item.add_marker(skip_integration)
 
     # Auto-skip tests that require a missing backend.
     # Import lazily so that the JAX_PLATFORMS guard above takes effect first.

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
 
-pytestmark = [pytest.mark.benchmark, pytest.mark.medium]
+pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 
 
 # ---------------------------------------------------------------------------

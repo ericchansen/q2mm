@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    # Weekly slow/benchmark run — Sundays at 04:00 UTC
-    - cron: "0 4 * * 0"
+    # Nightly run — every day at 04:00 UTC
+    - cron: "0 4 * * *"
 
 jobs:
   # ================================================================
@@ -42,7 +42,7 @@ jobs:
       - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
 
   # ================================================================
-  # Tier 2 — Backend tests on PRs + master merges (parallel, 2-10 min)
+  # Tier 2 — Backend integration on every push (~2-5 min)
   # Gated behind Tier 1 so lint/core failures are caught first.
   # Images: ghcr.io/ericchansen/q2mm/ci-<backend>:latest
   # ================================================================
@@ -55,11 +55,11 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
       options: --user root
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm --run-integration -q
 
   test-tinker:
     needs: [lint, test-core]
@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker --run-integration -q
 
   test-jax:
     needs: [lint, test-core]
@@ -85,11 +85,11 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax:latest
       options: --user root
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-integration -q
 
   test-jax-md:
     needs: [lint, test-core]
@@ -100,11 +100,11 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax-md:latest
       options: --user root
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -c "import jax_md" && python -m pytest -m jax_md --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -c "import jax_md" && python -m pytest -m jax_md --run-integration -q
 
   test-psi4:
     needs: [lint, test-core]
@@ -119,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 --run-integration -q
 
   test-cross-backend:
     needs: [lint, test-core]
@@ -130,8 +130,49 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-full:latest
       options: --user root
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-slow -q
+      - run: python -m pip install -e . --no-deps && python -m pytest --run-integration -q
+
+  # ================================================================
+  # Tier 3 — Validation on merge to master (~3-5 min)
+  # Fast correctness checks: Seminario parity, published FF, ethane TS.
+  # No optimizer loops — just FF loading, projection, frequency eval.
+  # ================================================================
+  test-validation:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [test-openmm, test-tinker, test-jax, test-jax-md, test-psi4, test-cross-backend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-full:latest
+      options: --user root
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: python -m pip install -e . --no-deps && python -m pytest --run-validation -q
+
+  # ================================================================
+  # Tier 4 — Nightly: heavy tests with optimizer loops (~20-30 min)
+  # SN2 e2e (L-BFGS-B 200 iter), Rh-enamide full loops, benchmarks.
+  # ================================================================
+  test-nightly:
+    if: github.event_name == 'schedule'
+    needs: [lint, test-core]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/ericchansen/q2mm/ci-full:latest
+      options: --user root
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: python -m pip install -e . --no-deps && python -m pytest --run-nightly -q
