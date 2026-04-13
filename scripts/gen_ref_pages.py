@@ -1,9 +1,9 @@
 """Generate API reference pages automatically from the q2mm package.
 
-Called by mkdocs-gen-files at build time.  Walks every ``.py`` file under
-``q2mm/``, creates a corresponding Markdown page with a mkdocstrings
-``::: module.path`` directive, and writes a literate-nav SUMMARY.md so
-the sidebar stays in sync with the source tree.
+Called by mkdocs-gen-files during ``properdocs build``.  Walks every ``.py``
+file under ``q2mm/``, creates a corresponding Markdown page with a
+mkdocstrings ``::: module.path`` directive, and writes a literate-nav
+SUMMARY.md so the sidebar stays in sync with the source tree.
 
 New modules are picked up automatically — no manual ``.md`` files or
 ``properdocs.yml`` edits required.

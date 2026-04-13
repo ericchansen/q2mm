@@ -545,7 +545,5 @@ class GaussLog:
             hess[np.tril_indices_from(hess)] = hess_tri
             hess += np.tril(hess, -1).T
             if not self._au_hessian:
-                hess *= co.HESSIAN_CONVERSION
+                hess *= co.HESSIAN_AU_TO_KJMOLA2
             struct.hess = hess
-            # SECTION 6
-            # Not sure what this is.

@@ -164,7 +164,7 @@ def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# MM3 label regex matchers (moved from q2mm.parsers.mm3)
+# MM3 label regex matchers
 # ---------------------------------------------------------------------------
 
 
@@ -289,7 +289,7 @@ def match_mm3_improper(mm3_label: str) -> re.Match[str] | None:
 
 
 # ---------------------------------------------------------------------------
-# SMILES helpers (ported from q2mm.parsers.mm3.MM3)
+# SMILES helpers
 # ---------------------------------------------------------------------------
 
 
@@ -311,7 +311,7 @@ def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str
 
 
 # ---------------------------------------------------------------------------
-# Standalone import / export (replaces q2mm.parsers.mm3.MM3)
+# Standalone import / export
 # ---------------------------------------------------------------------------
 
 

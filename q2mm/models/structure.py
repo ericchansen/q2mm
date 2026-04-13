@@ -6,7 +6,7 @@ geometry: atoms, bonds, angles, torsions, and full molecular structures.
 Note:
     :class:`q2mm.models.molecule.Q2MMMolecule` is the preferred
     representation for new code.  These legacy classes remain in use by
-    several parsers and will be retained as long as those parsers exist.
+    several I/O modules and will be retained as long as those modules exist.
 
 """
 

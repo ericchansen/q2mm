@@ -186,12 +186,12 @@ class ForceField:
 
     Parameters are identified by element tuples, not format-specific
     atom types or line numbers. This eliminates matching bugs between
-    different parsers.
+    different I/O backends.
 
     Usage:
         ff = ForceField.from_mm3_fld("mm3.fld")
         ff = ForceField(bonds=[BondParam(('C', 'F'), 1.38, 5.0)])
-        # Export to MM3 .fld is planned but not yet implemented.
+        ff.to_mm3_fld("output.fld", template_path="mm3.fld")
     """
 
     name: str = "Q2MM Force Field"
