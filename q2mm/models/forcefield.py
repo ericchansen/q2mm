@@ -625,14 +625,13 @@ class ForceField:
     # ---- Format converters ----
 
     @classmethod
-    def from_mm3_fld(cls, path: str | Path, *, include_standard: bool = False) -> ForceField:
+    def from_mm3_fld(cls, path: str | Path, *, include_standard: bool = True) -> ForceField:
         """Load from Schrödinger MM3 .fld file.
 
         Args:
             path: Path to the mm3.fld file.
-            include_standard: When ``True``, also load standard MM3
-                parameters from the main body of the file (needed for
-                evaluating published force fields).
+            include_standard: When ``True`` (the default), also load
+                standard MM3 parameters from the main body of the file.
 
         """
         from q2mm.io.mm3 import load_mm3_fld

@@ -274,7 +274,7 @@ class TestPublishedFFEvaluation:
 
         if not MM3_FLD_PATH.exists():
             pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        return ForceField.from_mm3_fld(str(MM3_FLD_PATH), include_standard=True)
+        return ForceField.from_mm3_fld(str(MM3_FLD_PATH))
 
     @pytest.fixture(scope="class")
     def seminario_ff(self, molecules: list[Any]) -> Any:
@@ -284,7 +284,7 @@ class TestPublishedFFEvaluation:
 
         if not MM3_FLD_PATH.exists():
             pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH), include_standard=True)
+        ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH))
         return estimate_force_constants(molecules, forcefield=ff_template)
 
     @pytest.fixture(scope="class")
