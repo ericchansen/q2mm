@@ -33,9 +33,9 @@ for b in ff.bonds:
 for a in ff.angles:
     print(f"  Angle {a.key}: theta0={a.equilibrium:.1f} deg, k={a.force_constant:.4f}")
 
-# Run Seminario
+# Run QFUERZA estimation
 print("\n" + "=" * 60)
-print("Running Seminario/QFUERZA estimation...")
+print("Running QFUERZA estimation...")
 print("=" * 60)
 estimated_ff = estimate_force_constants(mol)
 

@@ -3,7 +3,8 @@
     "description": "Ethane Seminario reference values from refactored Q2MM",
     "method": "B3LYP/6-31G(d)",
     "note": "GS=staggered minimum, TS=eclipsed rotation barrier",
-    "units": "canonical: kcal/(mol\u00b7\u00c5\u00b2) for bonds, kcal/(mol\u00b7rad\u00b2) for angles"
+    "units": "canonical: kcal/(mol\u00b7\u00c5\u00b2) for bonds, kcal/(mol\u00b7rad\u00b2) for angles",
+    "strategy": "qfuerza"
   },
   "GS": {
     "n_atoms": 8,
@@ -43,7 +44,7 @@
           "C",
           "H"
         ],
-        "force_constant": 46.84931525335218,
+        "force_constant": 35.97,
         "equilibrium": 107.52693785163196
       },
       {
@@ -52,7 +53,7 @@
           "C",
           "H"
         ],
-        "force_constant": 56.08879792128278,
+        "force_constant": 35.97,
         "equilibrium": 111.3517902735976
       }
     ],
@@ -313,7 +314,7 @@
           "C",
           "H"
         ],
-        "force_constant": 45.82415906513532,
+        "force_constant": 35.97,
         "equilibrium": 107.03554837616792
       },
       {
@@ -322,7 +323,7 @@
           "C",
           "H"
         ],
-        "force_constant": 53.84392987684626,
+        "force_constant": 35.97,
         "equilibrium": 111.80907790584297
       }
     ],

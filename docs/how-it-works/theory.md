@@ -14,14 +14,14 @@ mechanics (MM) force field parameters through a multi-stage pipeline:
 
 ```mermaid
 flowchart LR
-    A["QM Hessian"] --> B["Seminario\nestimation"]
+    A["QM Hessian"] --> B["QFUERZA\nestimation"]
     B --> C["Initial\nparameters"]
     C --> D["Objective\nfunction"]
     D --> E["Grad-simp\noptimization"]
     E --> F["Refined\nforce field"]
 ```
 
-1. **Seminario estimation** extracts initial force constants from the QM
+1. **QFUERZA estimation** extracts initial force constants from the QM
    Hessian — a physically informed starting point
 2. **Eigenvalue treatment** (Methods C/D/E) handles the negative eigenvalue
    present in transition state Hessians
@@ -34,17 +34,22 @@ Each stage is described in detail below.
 
 ---
 
-## Stage 1: Seminario estimation
+## Stage 1: QFUERZA estimation
 
-The Seminario method (Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271)
-extracts bond and angle force constants directly from a quantum mechanical
-Hessian matrix. For each internal coordinate (bond or angle), the method:
+Q2MM estimates initial force constants from a quantum mechanical Hessian
+using Seminario projection (Seminario, *Int. J. Quantum Chem.* **1996**, 60,
+1271) with QFUERZA post-processing (Farrugia et al., *J. Chem. Theory
+Comput.* **2025**, 22, 469–476,
+[DOI:10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751)).
+For each internal coordinate (bond or angle), the method:
 
 1. Extracts the 3×3 Cartesian sub-block of the Hessian for the relevant atoms
 2. Eigendecomposes the sub-block
 3. Projects each eigenvector onto the bond or angle direction
 4. Sums the projected eigenvalues, weighted by the alignment of each
    eigenvector with the internal coordinate
+5. For hydrogen angle bends, substitutes the empirical default
+   (0.5 mdyn·Å/rad²) because Seminario projection overestimates these by ~2×
 
 ```mermaid
 flowchart LR
@@ -60,32 +65,29 @@ potential energy surface curvature at that geometry. These are much better
 starting points than default values from a generic force field — they
 put the optimizer in the right region of parameter space from the start.
 
-### QFUERZA
+### Seminario vs QFUERZA
 
-The **QFUERZA** method (Farrugia et al., *J. Chem. Theory Comput.*
-**2025**, 22, 469–476,
-[DOI:10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751))
-improves on the original Seminario/FUERZA estimation by substituting
-known-problematic values — for example, hydrogen angle bends, which
-FUERZA overestimates — with empirical defaults. QFUERZA then feeds
-these improved initial parameters into Q2MM's gradient optimizer,
-demonstrating faster convergence and fewer local-minimum traps compared
-to starting from generic approximations.
+Seminario projection works well for bonds but overestimates hydrogen angle
+bend force constants by roughly 2×. QFUERZA fixes this by substituting
+the empirical default (0.5 mdyn·Å/rad²) for any angle where either outer
+atom is hydrogen — the same default Q2MM uses when no Hessian is available.
+For non-hydrogen angles and all bonds, QFUERZA and plain Seminario give
+identical results.
 
-The implementation lives in
-[`q2mm.models.seminario`](../reference/q2mm/models/seminario.md).
-
-To use QFUERZA initialization:
+QFUERZA is the default. To use plain Seminario projection instead:
 
 ```python
 from q2mm.models.seminario import estimate_force_constants
 
-# Standard Seminario/FUERZA (default)
+# Default — QFUERZA (recommended)
 ff = estimate_force_constants(molecule)
 
-# QFUERZA: substitutes 0.5 mdyn·Å/rad² for hydrogen angle bends
-ff = estimate_force_constants(molecule, strategy="qfuerza")
+# Plain Seminario projection (no H-angle substitution)
+ff = estimate_force_constants(molecule, strategy="fuerza")
 ```
+
+The implementation lives in
+[`q2mm.models.seminario`](../reference/q2mm/models/seminario.md).
 
 ---
 
@@ -238,11 +240,11 @@ The implementation lives in
 
 ## Stage 4: optimization
 
-### Why not just use Seminario estimates directly?
+### Why not just use QFUERZA estimates directly?
 
-Seminario parameters capture the local curvature of the QM potential energy
+QFUERZA parameters capture the local curvature of the QM potential energy
 surface at each input geometry. When multiple molecules or conformers are
-provided, the Seminario estimates are **averaged** across all of them — but
+provided, the estimates are **averaged** across all of them — but
 each estimate still reflects curvature at a single point. The resulting force
 constants are good initial guesses, but a force field also needs to reproduce
 energies, gradients, and torsional profiles across the full conformational

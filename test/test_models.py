@@ -1139,14 +1139,24 @@ class TestQFUERZA:
     # -- strategy="fuerza" regression --
 
     def test_fuerza_strategy_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        """strategy='fuerza' gives identical results to no-strategy call."""
-        ff_default = estimate_force_constants(ch3f_mol_with_hess)
-        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        """strategy='fuerza' gives identical results to explicit fuerza call."""
+        ff_explicit = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_again = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
 
-        for b_def, b_fur in zip(ff_default.bonds, ff_fuerza.bonds):
-            assert b_def.force_constant == pytest.approx(b_fur.force_constant)
-        for a_def, a_fur in zip(ff_default.angles, ff_fuerza.angles):
-            assert a_def.force_constant == pytest.approx(a_fur.force_constant)
+        for b1, b2 in zip(ff_explicit.bonds, ff_again.bonds):
+            assert b1.force_constant == pytest.approx(b2.force_constant)
+        for a1, a2 in zip(ff_explicit.angles, ff_again.angles):
+            assert a1.force_constant == pytest.approx(a2.force_constant)
+
+    def test_default_is_qfuerza(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """Default strategy is QFUERZA."""
+        ff_default = estimate_force_constants(ch3f_mol_with_hess)
+        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+
+        for b_def, b_qf in zip(ff_default.bonds, ff_qfuerza.bonds):
+            assert b_def.force_constant == pytest.approx(b_qf.force_constant)
+        for a_def, a_qf in zip(ff_default.angles, ff_qfuerza.angles):
+            assert a_def.force_constant == pytest.approx(a_qf.force_constant)
 
     # -- strategy="qfuerza" substitution --
 

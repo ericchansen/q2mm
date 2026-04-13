@@ -1,8 +1,8 @@
-"""Fixture-backed end-to-end Seminario parity tests.
+"""Fixture-backed end-to-end QFUERZA estimation parity tests.
 
 Covers issue #74: validates that the refactored code reproduces the
-upstream Seminario results for both the rh-enamide and SN2 systems,
-plus runtime benchmarks.
+expected Seminario/QFUERZA results for both the rh-enamide and SN2
+systems, plus runtime benchmarks.
 
 Force-constant tolerances use rel=1e-6 (not abs=1e-8) because the
 refactored code derives HESSIAN_AU_TO_KJMOLA2 from base CODATA 2018

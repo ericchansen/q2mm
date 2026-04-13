@@ -44,7 +44,7 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 7. **Farrugia, M.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement. *J. Chem. Theory Comput.* **2025**, *22*, 469–476. [DOI: 10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751)
 
-    Improves on the Seminario/FUERZA method by substituting known-problematic force constants — particularly hydrogen angle bends, which FUERZA overestimates by ~2× — with empirical defaults (0.5 mdyn/rad²). Starting from QFUERZA-initialised parameters leads to faster gradient convergence and fewer local-minimum traps. Tested on cis-platinum (ground state) and Rh-enamide (transition state). Implemented in q2mm as `estimate_force_constants(strategy="qfuerza")` (see [theory](how-it-works/theory.md#qfuerza)).
+    Builds on the Seminario/FUERZA projection method by substituting known-problematic force constants — particularly hydrogen angle bends, which Seminario overestimates by ~2× — with empirical defaults (0.5 mdyn/rad²). QFUERZA is the default strategy for `estimate_force_constants()`. Starting from QFUERZA parameters leads to faster optimizer convergence and fewer local-minimum traps. Tested on cis-platinum (ground state) and Rh-enamide (transition state). See [theory](how-it-works/theory.md#qfuerza-estimation).
 
 ---
 

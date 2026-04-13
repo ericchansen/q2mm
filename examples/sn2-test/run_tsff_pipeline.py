@@ -128,9 +128,9 @@ def main() -> None:
         )
 
     # ------------------------------------------------------------------
-    # Step 4: Run Seminario / QFUERZA
+    # Step 4: Run QFUERZA estimation
     # ------------------------------------------------------------------
-    print("\n[4/5] Running Seminario/QFUERZA estimation...")
+    print("\n[4/5] Running QFUERZA estimation...")
 
     estimated_ff = estimate_force_constants(
         molecule,
@@ -140,7 +140,7 @@ def main() -> None:
         invalid_policy="skip",
     )
 
-    print("  Seminario completed successfully.")
+    print("  QFUERZA estimation completed successfully.")
     print("  Negative or complex TS estimates are skipped to preserve legacy semantics.")
     print("\n  Parameter comparison (initial -> estimated):")
     print(f"  {'Type':4s} {'Elements':20s} {'Initial':>10s} {'Estimated':>10s} {'Change':>10s}")

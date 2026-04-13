@@ -15,9 +15,9 @@ reference data. It is designed for building **transition state force fields
 
 ## Why Q2MM?
 
-- **Hessian-informed initialization** — the Seminario method extracts bond and
-  angle force constants directly from QM Hessians, providing excellent starting
-  parameters before optimization begins.
+- **Hessian-informed initialization** — QFUERZA extracts bond and angle force
+  constants directly from QM Hessians, providing excellent starting parameters
+  before optimization begins.
 - **Open-source backends** — first-class support for [OpenMM](https://openmm.org/)
   and [Psi4](https://psicode.org/) alongside commercial packages (Gaussian,
   Schrödinger, Tinker).
@@ -58,7 +58,7 @@ from q2mm.backends.mm import OpenMMEngine
 # 1. Load QM reference data and molecule from a Gaussian checkpoint
 ref, mol = ReferenceData.from_fchk("ts-optimized.fchk", bond_tolerance=1.4)
 
-# 2. Estimate initial force field from the QM Hessian (Seminario method)
+# 2. Estimate initial force field from the QM Hessian
 ff = estimate_force_constants(mol, au_hessian=True)
 
 # 3. Set up the objective function and optimize

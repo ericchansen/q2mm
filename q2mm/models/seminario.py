@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_DFT_SCALING = 0.963
 
 # QFUERZA empirical default for hydrogen angle bends (mdyn·Å/rad²).
-# Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476, Table 1.
+# Farrugia et al., J. Chem. Theory Comput. 2025, 22, 469-476, Table 1.
 QFUERZA_H_ANGLE_DEFAULT_MDYNA = 0.5
 QFUERZA_H_ANGLE_DEFAULT_CANONICAL = QFUERZA_H_ANGLE_DEFAULT_MDYNA * MDYNA_RAD2_TO_KCALMOLRAD2
 
@@ -282,11 +282,12 @@ def estimate_force_constants(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     ts_method: Literal["C", "D"] | None = None,
-    strategy: Literal["fuerza", "qfuerza"] = "fuerza",
+    strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> ForceField:
-    """Estimate force constants from one or more QM Hessians using Seminario.
+    """Estimate force constants from one or more QM Hessians.
 
-    This is the main entry point for QFUERZA force constant estimation.
+    Uses Seminario projection (FUERZA) to extract initial bond and angle
+    force constants, with QFUERZA post-processing by default.
 
     Args:
         molecule: Molecule with Hessian attached, or an iterable of molecules.
@@ -302,10 +303,10 @@ def estimate_force_constants(
             Norrby 2015).  ``"D"`` keeps the natural eigenvalue (Method D).
             ``None`` (default) uses the Hessian as-is, which is correct for
             ground-state molecules.
-        strategy: Initialization strategy. ``"fuerza"`` (default) uses pure
-            Seminario projection.  ``"qfuerza"`` substitutes empirical defaults
-            for hydrogen angle bends, where FUERZA overestimates by ~2×
-            (Farrugia et al. JCTC 2026).
+        strategy: ``"qfuerza"`` (default) substitutes empirical defaults
+            for hydrogen angle bends, where Seminario projection overestimates
+            by ~2× (Farrugia et al. JCTC 2025).  ``"fuerza"`` uses pure
+            Seminario projection without substitution.
 
     Returns:
         ForceField with estimated parameters
@@ -452,7 +453,7 @@ def estimate_force_constants_method_e(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     fc_threshold: float = 0.0,
-    strategy: Literal["fuerza", "qfuerza"] = "fuerza",
+    strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> tuple[ForceField, dict]:
     """Estimate force constants using Method E (hybrid D/C).
 
