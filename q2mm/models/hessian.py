@@ -2,13 +2,12 @@
 
 Canonical location: :mod:`q2mm.models.hessian` (formerly ``q2mm.linear_algebra``).
 
-Implements eigenvalue manipulation methods from Limé & Norrby
+Implements eigenvalue manipulation from Limé & Norrby
 (J. Comput. Chem. 2015, 36, 244–250, DOI:10.1002/jcc.23797):
 
-- **Method C** (``replace_neg_eigenvalue``): Force reaction coordinate
-  eigenvalue to a large positive value. Simple but distorts the eigenspectrum.
-- **Method D** (``keep_natural_eigenvalue``): Keep the natural (negative)
-  eigenvalue — gives ~13× lower RMS error but may produce unstable FFs.
+- ``replace_neg_eigenvalue``: Force reaction coordinate eigenvalue to a
+  large positive value.  Used by ``invert_ts_curvature`` to convert a
+  transition-state Hessian into one suitable for Seminario projection.
 
 Also provides the **eigenmatrix training data** pipeline:
 
@@ -316,9 +315,9 @@ def replace_neg_eigenvalue(
     units: str = co.GAUSSIAN,
     strict: bool = True,
 ) -> np.ndarray:
-    """Replace the most negative eigenvalue to invert TS curvature (Method C).
+    """Replace the most negative eigenvalue to invert TS curvature.
 
-    Implements "Method C" from Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250,
+    From Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250,
     DOI:10.1002/jcc.23797): the reaction coordinate eigenvalue is forced to a
     large positive value so that the TS is treated as an energy minimum by
     the MM force field.
@@ -328,12 +327,6 @@ def replace_neg_eigenvalue(
     :func:`~q2mm.models.units.hessian_au_to_kjmola2` (≈ 9376) to
     kJ/mol/Å².  This operates on **Cartesian** Hessian eigenvalues —
     not mass-weighted ones.
-
-    Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
-    without forced replacement) gives ~13× lower RMS error, but can produce
-    unstable force fields. Their "Method E" is a full optimization technique
-    (hybrid D→C iterative fitting) not applicable to one-shot Seminario
-    projection. See the paper for details.
 
     Args:
         eigenvalues (np.ndarray): Eigenvalues from Cartesian Hessian decomposition.
@@ -476,56 +469,23 @@ def extract_eigenmatrix_data(
 
 def invert_ts_curvature(
     hessian_matrix: np.ndarray,
-    method: Literal["C", "D"] = "C",
 ) -> np.ndarray:
-    """Invert the curvature of a TS Hessian matrix.
+    """Invert the curvature of a transition-state Hessian.
+
+    Decomposes the Hessian, replaces the negative reaction-coordinate
+    eigenvalue with a large positive value, and reconstructs.  This
+    converts a saddle-point Hessian into one that Seminario projection
+    can safely use to produce positive force constants.
+
+    Based on Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250).
 
     Args:
-        hessian_matrix: Hessian matrix whose curvature to invert.
-        method: Eigenvalue treatment method.
-
-            - ``"C"`` (default): Replace reaction coordinate eigenvalue with a
-              large positive value (Method C from Limé & Norrby 2015).
-            - ``"D"``: Keep the natural eigenvalue without replacement
-              (Method D). Produces better fits but may yield unstable FFs.
+        hessian_matrix: Hessian matrix to process.
 
     Returns:
-        Modified Hessian matrix.
-
-    Raises:
-        ValueError: If *method* is not ``"C"`` or ``"D"``.
+        Modified Hessian with inverted TS curvature.
 
     """
-    if method not in ("C", "D"):
-        raise ValueError(f"Unknown method {method!r}. Supported: 'C', 'D'.")
-
     eigenvalues, eigenvectors = decompose(hessian_matrix)
-
-    if method == "D":
-        modified_evals = keep_natural_eigenvalue(eigenvalues)
-    else:
-        modified_evals = replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False)
-
+    modified_evals = replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False)
     return reform_hessian(modified_evals, eigenvectors)
-
-
-# ---- Method D: Natural eigenvalue fitting ----
-
-
-def keep_natural_eigenvalue(eigenvalues: np.ndarray) -> np.ndarray:
-    """Return eigenvalues unchanged (Method D).
-
-    Method D from Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250): keeps
-    the natural (negative) reaction coordinate eigenvalue during fitting.
-    This avoids the large distortion introduced by Method C and produces
-    ~13× lower RMS error, but the resulting force field may have zero or
-    negative bending constants that lead to unphysical MM minima.
-
-    Args:
-        eigenvalues: Eigenvalues from Hessian decomposition.
-
-    Returns:
-        Unmodified eigenvalues (a copy for safety).
-
-    """
-    return eigenvalues.copy()

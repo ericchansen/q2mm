@@ -30,7 +30,7 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 #                  Hartree/rad² → kcal/(mol·rad²) for angles.
 HARTREE_BOHR2_TO_KCALMOLA2 = AU_BOND_K_TO_CANONICAL
 HARTREE_RAD2_TO_KCALMOLRAD2 = AU_ANGLE_K_TO_CANONICAL
-from q2mm.models.hessian import invert_ts_curvature
+from q2mm.models.hessian import invert_ts_curvature as _invert_ts_curvature
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +277,7 @@ def estimate_force_constants(
     zero_torsions: bool = True,
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
-    ts_method: Literal["C", "D"] | None = None,
+    invert_ts_curvature: bool = False,
     strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> ForceField:
     """Estimate force constants from one or more QM Hessians.
@@ -293,12 +293,10 @@ def estimate_force_constants(
         invalid_policy: Whether to keep negative force constants ("keep") or
             mimic legacy MM3 Seminario averaging by skipping non-positive
             estimates ("skip")
-        ts_method: Eigenvalue treatment for transition-state Hessians.
-            ``"C"`` replaces the reaction-coordinate eigenvalue with a large
-            positive value before Seminario projection (Method C from Limé &
-            Norrby 2015).  ``"D"`` keeps the natural eigenvalue (Method D).
-            ``None`` (default) uses the Hessian as-is, which is correct for
-            ground-state molecules.
+        invert_ts_curvature: If ``True``, invert the reaction-coordinate
+            curvature before projection so that the transition-state Hessian
+            produces valid positive force constants (Limé & Norrby 2015).
+            ``False`` (default) uses the Hessian as-is.
         strategy: ``"qfuerza"`` (default) substitutes empirical defaults
             for hydrogen angle bends, where Seminario projection overestimates
             by ~2× (Farrugia et al. JCTC 2025).  ``"fuerza"`` uses pure
@@ -315,19 +313,13 @@ def estimate_force_constants(
     if any(item.hessian is None for item in molecules):
         raise ValueError("Molecule must have a Hessian attached. Use molecule.with_hessian(hess)")
 
-    # Pre-process Hessians for TS eigenvalue treatment (Method C or D)
-    if ts_method == "C":
-        # Method C: replace the reaction-coordinate eigenvalue before projection
+    # Invert TS curvature if this is a transition-state Hessian
+    if invert_ts_curvature:
         processed_hessians: dict[int, np.ndarray] = {}
         for mol in molecules:
-            processed_hessians[id(mol)] = invert_ts_curvature(mol.hessian, method="C")
-    elif ts_method == "D":
-        # Method D: keep the natural eigenvalue; use the raw Hessian unchanged
-        processed_hessians = {id(mol): mol.hessian for mol in molecules}
-    elif ts_method is None:
-        processed_hessians = None
+            processed_hessians[id(mol)] = _invert_ts_curvature(mol.hessian)
     else:
-        raise ValueError(f"Unsupported ts_method {ts_method!r}; expected 'C', 'D', or None")
+        processed_hessians = None
 
     # Create or copy force field
     if forcefield is None:

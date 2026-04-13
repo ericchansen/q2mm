@@ -35,7 +35,7 @@ class TestLinearAlgebra(unittest.TestCase):
         """Default replacement uses 1.0 Hartree/Bohr² (atomic units).
 
         Per Limé & Norrby (J. Comput. Chem. 2015, 36, 1130, DOI:10.1002/jcc.23797),
-        Method C forces the reaction coordinate eigenvalue to 1 Hartree/Bohr².
+        the reaction coordinate eigenvalue is forced to 1 Hartree/Bohr².
         The default units=constants.GAUSSIAN uses this value directly (AU).
         Pass units=constants.KJMOLA to convert via constants.HESSIAN_AU_TO_KJMOLA2
         (~9376).
