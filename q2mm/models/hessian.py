@@ -9,9 +9,6 @@ Implements eigenvalue manipulation methods from Limé & Norrby
   eigenvalue to a large positive value. Simple but distorts the eigenspectrum.
 - **Method D** (``keep_natural_eigenvalue``): Keep the natural (negative)
   eigenvalue — gives ~13× lower RMS error but may produce unstable FFs.
-- **Method E** (``hybrid_eigenvalue_pipeline``): Run D first, detect
-  problematic parameters (zero/negative force constants), lock those, and
-  reoptimize with C.
 
 Also provides the **eigenmatrix training data** pipeline:
 
@@ -25,15 +22,12 @@ import copy
 import logging
 import warnings
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 
 from q2mm import constants as co
 from q2mm.models.units import hessian_au_to_kjmola2
-
-if TYPE_CHECKING:
-    from q2mm.models.forcefield import ForceField
 
 logger = logging.getLogger(__name__)
 
@@ -397,9 +391,9 @@ def replace_neg_eigenvalue(
 
     Note: Limé & Norrby showed that "Method D" (fitting the natural eigenvalue
     without forced replacement) gives ~13× lower RMS error, but can produce
-    unstable force fields. Their recommended "Method E" is a hybrid: use D
-    first, lock problematic parameters, then reoptimize with C. See the paper
-    for details and issue #75 for implementation status.
+    unstable force fields. Their "Method E" is a full optimization technique
+    (hybrid D→C iterative fitting) not applicable to one-shot Seminario
+    projection. See the paper for details.
 
     Args:
         eigenvalues (np.ndarray): Eigenvalues from Cartesian Hessian decomposition.
@@ -595,91 +589,3 @@ def keep_natural_eigenvalue(eigenvalues: np.ndarray) -> np.ndarray:
 
     """
     return eigenvalues.copy()
-
-
-def detect_problematic_params(
-    forcefield: ForceField,
-    *,
-    fc_threshold: float = 0.0,
-) -> dict[str, set[tuple]]:
-    """Detect force field parameters with zero or negative force constants.
-
-    After fitting with Method D, some parameters may converge to physically
-    unreasonable values. This function identifies them by their canonical key
-    so they can be re-set for Method E re-optimization.
-
-    Args:
-        forcefield (ForceField): ForceField with estimated parameters.
-        fc_threshold (float): Force constants at or below this value are flagged.
-
-    Returns:
-        Dict with ``"bonds"`` and ``"angles"`` keys, each containing a set
-        of canonical parameter keys (element tuples from ``param.key``).
-
-    """
-    problematic: dict[str, set[tuple]] = {"bonds": set(), "angles": set()}
-
-    for bond in forcefield.bonds:
-        if bond.force_constant <= fc_threshold:
-            logger.info(f"Problematic bond {bond.key}: fc={bond.force_constant:.4f} (<= {fc_threshold})")
-            problematic["bonds"].add(bond.key)
-
-    for angle in forcefield.angles:
-        if angle.force_constant <= fc_threshold:
-            logger.info(f"Problematic angle {angle.key}: fc={angle.force_constant:.4f} (<= {fc_threshold})")
-            problematic["angles"].add(angle.key)
-
-    return problematic
-
-
-def lock_params(
-    forcefield: ForceField,
-    lock_keys: dict[str, set[tuple]],
-    source_ff: ForceField,
-) -> None:
-    """Reset problematic parameters to values from a reference force field.
-
-    Copies force constant and equilibrium values from *source_ff* to
-    *forcefield* for parameters whose keys appear in *lock_keys*.
-
-    Note: this only copies values — it does **not** prevent a subsequent
-    optimizer from overwriting them.  To truly freeze parameters during
-    optimization, exclude them from the parameter vector (see
-    ``ForceField.get_param_vector`` / ``set_param_vector``).
-
-    Args:
-        forcefield (ForceField): ForceField to modify in-place.
-        lock_keys (dict[str, set[tuple]]): Dict from ``detect_problematic_params()``, keyed by
-            ``"bonds"`` and ``"angles"`` with sets of canonical keys.
-        source_ff (ForceField): Reference ForceField to copy values from (typically
-            the Method D result or a standard force field).
-
-    """
-    bond_keys = lock_keys.get("bonds", set())
-    angle_keys = lock_keys.get("angles", set())
-
-    source_bonds = {b.key: b for b in source_ff.bonds}
-    source_angles = {a.key: a for a in source_ff.angles}
-
-    missing_bonds = bond_keys - source_bonds.keys()
-    missing_angles = angle_keys - source_angles.keys()
-    if missing_bonds:
-        logger.warning(f"Source FF missing bond keys requested for locking: {missing_bonds}")
-    if missing_angles:
-        logger.warning(f"Source FF missing angle keys requested for locking: {missing_angles}")
-
-    for bond in forcefield.bonds:
-        if bond.key in bond_keys:
-            src = source_bonds.get(bond.key)
-            if src is not None:
-                bond.force_constant = src.force_constant
-                bond.equilibrium = src.equilibrium
-                logger.info(f"Reset bond {bond.key} to fc={src.force_constant:.4f}")
-
-    for angle in forcefield.angles:
-        if angle.key in angle_keys:
-            src = source_angles.get(angle.key)
-            if src is not None:
-                angle.force_constant = src.force_constant
-                angle.equilibrium = src.equilibrium
-                logger.info(f"Reset angle {angle.key} to fc={src.force_constant:.4f}")

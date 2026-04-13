@@ -143,9 +143,6 @@ off-diagonal elements measure how well the MM eigenvectors match the QM
 ones. The methods differ in how they handle the reaction-coordinate
 eigenvalue.
 
-![Methods C, D, and E: eigenvalue treatment](eigenvalue-methods-cde-light.svg#only-light)
-![Methods C, D, and E: eigenvalue treatment](eigenvalue-methods-cde-dark.svg#only-dark)
-
 **Method C** ("forced eigenvalue") replaces the negative reaction-coordinate
 eigenvalue with a large positive value before fitting. This forces the MM
 force field to treat the TS as a minimum. It works, but the artificial
@@ -161,22 +158,15 @@ adjacent to the reaction coordinate. A force field with zero bending
 constants can produce unphysical local minima during conformational
 searching.
 
-**Method E** ("hybrid D→C") combines both: run D first, then rerun C for
-zero-valued parameters. This preserves Method D's accuracy where possible
-while ensuring all force constants are physically reasonable. Limé & Norrby
-recommend Methods D and E for production use.
-
 ### What Q2MM implements
 
 | Method | Function | Module |
 |--------|----------|--------|
 | C | `replace_neg_eigenvalue()` | `q2mm.models.hessian` |
 | D | `keep_natural_eigenvalue()` | `q2mm.models.hessian` |
-| E | `estimate_force_constants_method_e()` | `q2mm.models.seminario` |
 
 The `ts_method` parameter in `estimate_force_constants()` selects between
-C and D. Method E has its own entry point that runs both and merges the
-results.
+C and D.
 
 ---
 
