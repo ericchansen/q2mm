@@ -20,7 +20,7 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 4. **Limé, E.; Norrby, P.-O.** Improving the Q2MM Method for Transition State Force Field Modeling. *J. Comput. Chem.* **2015**, *36*, 244–250. [DOI: 10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)
 
-    Introduces Hessian eigenvalue handling Methods C and D for transition states.
+    Introduces Hessian eigenvalue handling methods (C, D, and E) for transition states. q2mm implements curvature inversion (Method C).
 
 5. **Hansen, E.; Rosales, A. R.; Tutkowski, B.; Norrby, P.-O.; Wiest, O.** Prediction of Stereochemistry using Q2MM. *Acc. Chem. Res.* **2016**, *49*, 996–1005. [DOI: 10.1021/acs.accounts.6b00037](https://doi.org/10.1021/acs.accounts.6b00037)
 
