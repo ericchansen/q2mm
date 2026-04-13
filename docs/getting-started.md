@@ -104,7 +104,7 @@ q2mm/
 ├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
 ├── backends/      # QM/MM engine integrations (OpenMM, Tinker, JAX, Psi4)
 ├── diagnostics/   # Benchmarking and convergence analysis
-├── models/        # Clean molecule/force-field models + Seminario estimation
+├── models/        # Molecule/force-field models + QFUERZA estimation
 └── optimizers/    # Objective functions, scoring, and scipy-based optimization
 ```
 
