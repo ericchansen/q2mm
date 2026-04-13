@@ -60,6 +60,8 @@ potential energy surface curvature at that geometry. These are much better
 starting points than default values from a generic force field — they
 put the optimizer in the right region of parameter space from the start.
 
+### QFUERZA
+
 The **QFUERZA** method (Farrugia et al., *J. Chem. Theory Comput.*
 **2025**, 22, 469–476,
 [DOI:10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751))
