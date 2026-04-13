@@ -269,12 +269,12 @@ class TestPublishedFFEvaluation:
 
     @pytest.fixture(scope="class")
     def published_ff(self) -> Any:
-        """Load the published FF directly from mm3.fld substructure."""
+        """Load the published FF with standard MM3 parameters included."""
         from q2mm.models.forcefield import ForceField
 
         if not MM3_FLD_PATH.exists():
             pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        return ForceField.from_mm3_fld(str(MM3_FLD_PATH))
+        return ForceField.from_mm3_fld(str(MM3_FLD_PATH), include_standard=True)
 
     @pytest.fixture(scope="class")
     def seminario_ff(self, molecules: list[Any]) -> Any:
@@ -284,7 +284,7 @@ class TestPublishedFFEvaluation:
 
         if not MM3_FLD_PATH.exists():
             pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH))
+        ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH), include_standard=True)
         return estimate_force_constants(molecules, forcefield=ff_template)
 
     @pytest.fixture(scope="class")
@@ -312,9 +312,9 @@ class TestPublishedFFEvaluation:
         """All 9 rh-enamide TS structures are loaded."""
         assert published_results["n_molecules"] == 9
 
-    def test_182_parameters(self, published_results: dict[str, Any]) -> None:
-        """Published FF has the expected 182 parameters."""
-        assert published_results["n_params"] == 182
+    def test_includes_standard_parameters(self, published_results: dict[str, Any]) -> None:
+        """Published FF includes standard MM3 params (>182 substructure-only)."""
+        assert published_results["n_params"] > 182
 
     def test_all_molecules_have_frequencies(self, published_results: dict[str, Any]) -> None:
         """Every molecule contributes QM/MM frequency comparisons."""
