@@ -19,7 +19,11 @@ from q2mm.models.forcefield import (
     VdwParam,
     _extract_element,
 )
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import (
+    estimate_force_constants,
+    _is_hydrogen_angle,
+    QFUERZA_H_ANGLE_DEFAULT_CANONICAL,
+)
 from q2mm.io.tinker import _tinker_import_ff
 
 # Fixture paths (test-specific, not shared)
@@ -1093,6 +1097,100 @@ class TestSeminario:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="Hessian"):
             estimate_force_constants(mol)
+
+
+class TestQFUERZA:
+    """Tests for QFUERZA hybrid initialization (issue #208)."""
+
+    @pytest.fixture
+    def ch3f_mol_with_hess(self) -> Q2MMMolecule:
+        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        hess = np.load(CH3F_HESS)
+        return mol.with_hessian(hess)
+
+    @pytest.fixture
+    def water_mol_with_hess(self) -> Q2MMMolecule:
+        from test._shared import make_water
+
+        mol = make_water()
+        n = len(mol.symbols)
+        rng = np.random.default_rng(42)
+        h = rng.standard_normal((3 * n, 3 * n))
+        h = (h + h.T) / 2
+        return mol.with_hessian(h)
+
+    # -- _is_hydrogen_angle helper --
+
+    @pytest.mark.parametrize(
+        "elements,expected",
+        [
+            (("H", "O", "H"), True),
+            (("H", "C", "H"), True),
+            (("H", "C", "F"), True),
+            (("F", "C", "H"), True),
+            (("C", "O", "C"), False),
+            (("C", "C", "C"), False),
+            (("N", "C", "O"), False),
+        ],
+    )
+    def test_is_hydrogen_angle(self, elements: tuple, expected: bool) -> None:
+        assert _is_hydrogen_angle(elements) == expected
+
+    # -- strategy="fuerza" regression --
+
+    def test_fuerza_strategy_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """strategy='fuerza' gives identical results to no-strategy call."""
+        ff_default = estimate_force_constants(ch3f_mol_with_hess)
+        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+
+        for b_def, b_fur in zip(ff_default.bonds, ff_fuerza.bonds):
+            assert b_def.force_constant == pytest.approx(b_fur.force_constant)
+        for a_def, a_fur in zip(ff_default.angles, ff_fuerza.angles):
+            assert a_def.force_constant == pytest.approx(a_fur.force_constant)
+
+    # -- strategy="qfuerza" substitution --
+
+    def test_qfuerza_substitutes_h_angles(self, water_mol_with_hess: Q2MMMolecule) -> None:
+        """QFUERZA replaces the H-O-H angle force constant with the empirical default."""
+        ff = estimate_force_constants(water_mol_with_hess, strategy="qfuerza")
+        for angle in ff.angles:
+            if _is_hydrogen_angle(angle.elements):
+                assert angle.force_constant == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_CANONICAL)
+
+    def test_qfuerza_keeps_bonds_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """QFUERZA does not alter bond force constants."""
+        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+
+        for b_fur, b_qf in zip(ff_fuerza.bonds, ff_qfuerza.bonds):
+            assert b_fur.force_constant == pytest.approx(b_qf.force_constant)
+
+    def test_qfuerza_does_not_substitute_non_h_angles(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """Non-hydrogen angles are not substituted by QFUERZA."""
+        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+
+        for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles):
+            if not _is_hydrogen_angle(a_fur.elements):
+                assert a_fur.force_constant == pytest.approx(a_qf.force_constant)
+
+    def test_qfuerza_ch3f_all_h_angles_substituted(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """CH₃F has H-C-F and H-C-H angles — all have H outer atoms."""
+        ff = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+
+        for angle in ff.angles:
+            if _is_hydrogen_angle(angle.elements):
+                assert angle.force_constant == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_CANONICAL), (
+                    f"H-angle {angle.key} was not substituted"
+                )
+
+    def test_qfuerza_equilibria_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """QFUERZA only changes force constants, not equilibrium values."""
+        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+
+        for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles):
+            assert a_fur.equilibrium == pytest.approx(a_qf.equilibrium)
 
 
 # ---- Saver functional form validation ----
