@@ -55,7 +55,7 @@ print(result.summary())
 
 - **≤ 10 parameters** — small force fields where any method converges quickly
 - **Quick iteration** — you want a fast answer, even if not fully converged
-- **Seminario-initialized** — when the starting point is already close to optimal
+- **QFUERZA-initialized** — when the starting point is already close to optimal
 
 ### Available methods
 
@@ -69,7 +69,7 @@ print(result.summary())
 
 ### What the benchmarks show
 
-On **CH₃F** (8 parameters, Seminario-initialized):
+On **CH₃F** (8 parameters, QFUERZA-initialized):
 
 | Method | Score (harmonic, JAX) | Score (MM3, JAX) | Evals (harmonic) | Evals (MM3) |
 |--------|----------------------|------------------|------------------|-------------|
@@ -282,8 +282,8 @@ Expected output:
     (182 parameters, MM3), JAX L-BFGS-B converges to 5.81 vs 5.11 for
     Nelder-Mead. The grad-simp loop exists to combine the strengths of both.
 
-!!! tip "Seminario initialization matters"
-    Starting from Seminario-estimated parameters (extracted from the QM
+!!! tip "QFUERZA initialization matters"
+    Starting from QFUERZA-estimated parameters (extracted from the QM
     Hessian) puts you much closer to the optimum. The optimizer then needs
     fewer evaluations to converge. Always use
     `estimate_force_constants()` before optimization when QM data is

@@ -18,7 +18,7 @@ completed and archived so far. It is not a full 24-combo Rh-enamide matrix.
   literature-force-field parity check
 
 The MM3 template is used directly on OpenMM and JAX. JAX-MD uses a harmonic
-copy of the same Seminario-derived parameters, so cross-form comparisons are
+copy of the same QFUERZA-derived parameters, so cross-form comparisons are
 useful for workflow guidance but not a statement that the force fields are
 identical.
 
@@ -84,7 +84,7 @@ hours end-to-end per the [archived run log](https://github.com/ericchansen/q2mm/
 
 JAX MM3 grad-simp and OpenMM MM3 grad-simp reach the same final RMSD
 (42.7 cm⁻¹), but the optimised force field parameters differ. A
-systematic comparison of the two parameter sets against Seminario
+systematic comparison of the two parameter sets against QFUERZA
 initial estimates has not yet been committed to the repository.
 [#197](https://github.com/ericchansen/q2mm/issues/197) tracked the
 initial parity investigation (now closed; the gap is attributed to MM3

@@ -34,10 +34,10 @@ implementation against the same 9 transition-state structures and QM
 frequencies.
 
 **What we expected**: the published force field should beat the untrained
-Seminario baseline.
+QFUERZA baseline.
 
 **What we got**: it doesn't. The published force field scores 139,910.7
-(objective) with an RMSD of 13,576.9 cm⁻¹, versus 36.1 for the Seminario
+(objective) with an RMSD of 13,576.9 cm⁻¹, versus 36.1 for the QFUERZA
 baseline. Every per-molecule R² is strongly negative:
 
 | Molecule | Atoms | Freq refs | RMSD (cm⁻¹) | MAE (cm⁻¹) | R² |

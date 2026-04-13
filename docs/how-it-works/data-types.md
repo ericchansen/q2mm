@@ -105,7 +105,7 @@ dihedral values — for example, ensuring that a particular conformation
 constrain where the dihedral sits; torsion *barriers* (the energy cost of
 rotating) are constrained by energy data from torsion scans. For
 transition-state force fields, torsion terms are often zeroed
-(`zero_torsions=True` in the Seminario method) and torsion angle data may
+(`zero_torsions=True` in QFUERZA estimation) and torsion angle data may
 not be needed.
 
 **Weight guidance:** Default weight of 2.0. Torsion angles are soft degrees
@@ -225,10 +225,12 @@ ref.add_frequency(value=1648.5, data_idx=0, weight=1.0)
 The Hessian matrix (second derivatives of the energy with respect to nuclear
 coordinates) contains complete information about the curvature of the
 potential energy surface at a given geometry.
-Seminario's FUERZA procedure showed how to extract internal force constants
+QFUERZA estimation uses Seminario's FUERZA procedure to extract internal force constants
 directly from the Cartesian Hessian via eigenanalysis of atom-pair
 interaction submatrices
-([Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)).
+([Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)),
+with improved handling of hydrogen angle bends
+([Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.4c01372)).
 Limé and Norrby later extended this to transition states, introducing
 Methods C, D, and E for handling the negative eigenvalue along the
 reaction coordinate
@@ -326,7 +328,7 @@ For TSFF parameterization, the standard Q2MM combination is:
 
 - **Geometry** (bond lengths, bond angles, and optionally torsion
   angles) — anchor the TS structure. Torsion terms are often zeroed
-  in the Seminario method, so torsion angle data may not be needed.
+  in QFUERZA estimation, so torsion angle data may not be needed.
 - **Eigenmatrix** (diagonal + off-diagonal) — capture per-mode force
   constants *and* cross-coupling between modes
 
@@ -346,7 +348,7 @@ and subsequent Q2MM publications.
 !!! note "What about the reaction coordinate?"
     The reaction coordinate (imaginary frequency mode) is included in
     the eigenmatrix as mode 0. By default its weight is zero (`eig_i =
-    0.0`), effectively excluding it from the fit. The Seminario method
+    0.0`), effectively excluding it from the fit. QFUERZA estimation
     flips this eigenvalue to make the TS appear as a minimum in the MM
     energy surface, so the force field *does* encode the reaction
     coordinate — it just isn't trained against the QM value. Setting

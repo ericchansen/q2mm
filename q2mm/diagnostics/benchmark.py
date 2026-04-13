@@ -260,7 +260,7 @@ class BenchmarkResult:
             and level_of_theory.
         default_ff (dict | None): Default force field results including
             frequencies_cm1, rmsd, and mae (if evaluated).
-        seminario (dict | None): Seminario estimation results including
+        seminario (dict | None): QFUERZA estimation results including
             frequencies_cm1, rmsd, mae, and elapsed_s.
         optimized (dict | None): Optimization results including
             frequencies_cm1, rmsd, mae, elapsed_s, n_eval, converged,
@@ -607,7 +607,7 @@ def run_combo(
         },
     )
 
-    # Initial (Seminario) state
+    # Initial (QFUERZA) state
     obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
     initial_score = obj(seminario_params)
 

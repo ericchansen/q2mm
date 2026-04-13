@@ -87,7 +87,7 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
     if result.optimized:
         opt = result.optimized
         if opt.get("initial_score") is not None and opt.get("final_score") is not None:
-            # Get starting RMSD (Seminario if available, else default)
+            # Get starting RMSD (QFUERZA if available, else default)
             initial_rmsd = None
             if result.seminario and result.seminario.get("rmsd") is not None:
                 initial_rmsd = result.seminario["rmsd"]
@@ -113,7 +113,7 @@ def detailed_report(result: BenchmarkResult, *, combo_label: str | None = None) 
     if result.default_ff and result.default_ff.get("frequencies_cm1"):
         stages.append(("Default FF", result.default_ff["frequencies_cm1"]))
     if result.seminario and result.seminario.get("frequencies_cm1"):
-        stages.append(("Seminario", result.seminario["frequencies_cm1"]))
+        stages.append(("QFUERZA", result.seminario["frequencies_cm1"]))
     if result.optimized and result.optimized.get("frequencies_cm1"):
         stages.append(("Optimized", result.optimized["frequencies_cm1"]))
 

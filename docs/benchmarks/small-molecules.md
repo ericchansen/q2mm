@@ -92,7 +92,7 @@ JAX engines via `FrequencyEvaluator`
   3 × 10⁻¹⁸ kcal/mol and frequency deltas stay below 0.001 cm⁻¹.
 - grad-simp is not the right default on this problem. Neither the FD nor the
   analytical variant beats the best single-shot result in either form.
-- The optimization loop dominates runtime; Seminario is effectively free by
+- The optimization loop dominates runtime; QFUERZA estimation is effectively free by
   comparison and serves mainly as a starting point, not as the expensive step.
 
 ## Artifacts and provenance

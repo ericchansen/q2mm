@@ -144,7 +144,7 @@ molecule), expand the section for your QM engine:
     ```
 
     Pass `au_hessian=True` to keep the Hessian in atomic units
-    (Hartree/Bohr²) — the Seminario method expects this.
+    (Hartree/Bohr²) — QFUERZA estimation expects this.
 
 ??? example "Jaguar (Schrödinger)"
 
@@ -318,12 +318,14 @@ geometry.
 
 ---
 
-## Step 3: Initialise the Force Field with the Seminario Method
+## Step 3: Initialise the Force Field with QFUERZA
 
-The **Seminario method** ([Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)) extracts
-harmonic force constants directly from the QM Hessian matrix. For each bond
-or angle, it projects the Hessian onto the internal coordinate's subspace and
-takes the eigenvalue along that direction. This produces excellent initial
+**QFUERZA** (Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469–476)
+extracts harmonic force constants directly from the QM Hessian matrix using
+Seminario projection. For each bond or angle, it projects the Hessian onto the
+internal coordinate's subspace and takes the eigenvalue along that direction.
+For hydrogen angle bends — where plain projection overestimates by ~2× — QFUERZA
+substitutes a reliable empirical default. This produces excellent initial
 parameter estimates — often within 10–20% of the final optimised values —
 without running a single MM calculation.
 
@@ -355,7 +357,7 @@ without running a single MM calculation.
 ???+ example "With an existing force field template"
 
     If you already have an MM3 `.fld` file with initial guesses (or placeholder
-    values), pass it so Seminario updates the force constants in place while
+    values), pass it so QFUERZA updates the force constants in place while
     preserving atom types and row numbers:
 
     ```python
@@ -365,7 +367,7 @@ without running a single MM calculation.
     # Load template with initial guesses (replace with your .fld path)
     initial_ff = ForceField.from_mm3_fld("my-system.fld")
 
-    # Seminario updates force constants, keeps equilibrium values and metadata
+    # QFUERZA updates force constants, keeps equilibrium values and metadata
     estimated_ff = estimate_force_constants(
         mol,
         forcefield=initial_ff,
@@ -383,7 +385,7 @@ without running a single MM calculation.
 
     !!! note "What `invalid_policy='skip'` does"
         At a transition state the reaction-coordinate mode has **negative**
-        curvature.  The Seminario projection can produce negative or complex
+        curvature.  The Seminario projection used by QFUERZA can produce negative or complex
         force constants for bonds along this coordinate.  `invalid_policy="skip"`
         leaves those parameters unchanged rather than inserting unphysical
         values.
@@ -542,7 +544,7 @@ objective = ObjectiveFunction(
     reference=ref,
 )
 
-# Evaluate at the initial (Seminario) parameters
+# Evaluate at the initial (QFUERZA) parameters
 initial_params = ff.get_param_vector()
 initial_score = objective(initial_params)
 print(f"Initial score: {initial_score:.6f}")
@@ -804,7 +806,7 @@ Expand each format below for details and template-based export options:
 
 Here is the full pipeline in one script. The SN2 example files in
 `examples/sn2-test/` contain pre-computed QM data so you can run the
-Seminario + analysis steps immediately.
+QFUERZA + analysis steps immediately.
 
 ```python
 """Full TSFF pipeline — SN2 F⁻ + CH₃F transition state."""
@@ -833,7 +835,7 @@ mol = mol.with_hessian(hessian)
 print(f"Loaded: {mol.n_atoms} atoms, {len(mol.bonds)} bonds, "
       f"{len(mol.angles)} angles")
 
-# ── Step 2: Seminario estimation ──────────────────────────────────
+# ── Step 2: QFUERZA estimation ──────────────────────────────────
 ff = estimate_force_constants(
     mol,
     zero_torsions=True,
@@ -841,7 +843,7 @@ ff = estimate_force_constants(
     invalid_policy="skip",
 )
 
-print("\nSeminario estimates:")
+print("\nQFUERZA estimates:")
 for b in ff.bonds:
     print(f"  Bond {b.elements}: k={b.force_constant:.4f} mdyn/Å, "
           f"r₀={b.equilibrium:.4f} Å  {b.label}")
@@ -878,7 +880,7 @@ result = optimizer.optimize(objective)
 print(result.summary())
 
 # ── Step 5: Export ────────────────────────────────────────────────
-ff.to_mm3_fld("sn2-ts-seminario.fld")
+ff.to_mm3_fld("sn2-ts-qfuerza.fld")
 ```
 
 ---
