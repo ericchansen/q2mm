@@ -72,8 +72,9 @@ force-field model.
 
 **E∇** = energy gradient mode, **F∇** = frequency gradient mode.
 **A** = analytical (autodiff), **FD** = finite-difference, **—** = not
-applicable (derivative-free optimizer). Frequency gradients are always FD
-because `FrequencyEvaluator` does not yet support analytical differentiation
+applicable (derivative-free optimizer). All CH3F benchmarks here used FD
+frequency gradients. Analytical frequency gradients are now supported for
+JAX engines via `FrequencyEvaluator`
 (see [#216](https://github.com/ericchansen/q2mm/issues/216)).
 
 - Harmonic + Powell is the clear small-system winner: JAX, JAX-MD, and OpenMM

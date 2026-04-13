@@ -5,9 +5,11 @@ produces physically reasonable MM frequencies when evaluated with the new q2mm
 engines. This is the critical "Check 1" test: load the FF the authors actually
 published, evaluate it against the same QM reference data, and pin the results.
 
-The ``mm3.fld`` file contains the published optimized parameters embedded in its
-Rh-enamide substructure section. ``ForceField.from_mm3_fld`` extracts these
-directly — no Seminario estimation needed. We evaluate with OpenMM and compare
+The ``mm3.fld`` file contains both standard MM3 parameters and the published
+optimized parameters in its Rh-enamide substructure section.
+``ForceField.from_mm3_fld`` loads both sections by default
+(``include_standard=True``), mirroring how MacroModel resolves parameters.
+No Seminario estimation is needed. We evaluate with OpenMM and compare
 against the QM (Jaguar B3LYP/LACVP**) harmonic frequencies.
 
 The Seminario-estimated FF serves as the "unoptimized" baseline. The published
