@@ -81,7 +81,7 @@ from q2mm.models.seminario import estimate_force_constants
 # Standard Seminario/FUERZA (default)
 ff = estimate_force_constants(molecule)
 
-# QFUERZA: substitutes 0.5 mdyn/rad² for hydrogen angle bends
+# QFUERZA: substitutes 0.5 mdyn·Å/rad² for hydrogen angle bends
 ff = estimate_force_constants(molecule, strategy="qfuerza")
 ```
 
