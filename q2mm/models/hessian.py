@@ -103,66 +103,6 @@ def mass_weight_hessian(
         hess *= scale
 
 
-def mass_weight_force_constant(
-    force_const: float,
-    atoms: Sequence[str] | object,
-    reverse: bool = False,
-    rm: bool = False,
-) -> float:
-    """Mass-weight a force constant.
-
-    Args:
-        force_const: Force constant value.
-        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
-            (deprecated) legacy ``Atom`` objects.
-        reverse: If ``True``, un-mass-weight instead.
-        rm: If ``True``, convert to reduced-mass representation instead.
-
-    Returns:
-        Mass-weighted (or un-weighted) force constant.
-
-    """
-    symbols = _resolve_symbols(atoms)
-    masses = [co.MASSES[s] for s in symbols]
-    result = force_const
-    if rm:
-        return result * np.sqrt(masses[0] + masses[1])
-    for m in masses:
-        factor = 1.0 / np.sqrt(m)
-        if reverse:
-            result /= factor
-        else:
-            result *= factor
-    return result
-
-
-def mass_weight_eigenvectors(
-    evecs: np.ndarray,
-    atoms: Sequence[str] | object,
-    reverse: bool = False,
-) -> None:
-    """Mass-weight (or un-weight) eigenvectors **in place**.
-
-    Args:
-        evecs: ``(3N, 3N)`` eigenvector matrix — modified in place.
-        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
-            (deprecated) legacy ``Atom`` objects.
-        reverse: If ``True``, un-mass-weight instead.
-
-    """
-    symbols = _resolve_symbols(atoms)
-    sqrt_mass = []
-    for s in symbols:
-        sqrt_mass.extend([np.sqrt(co.MASSES[s])] * 3)
-    rows, cols = evecs.shape
-    for i in range(rows):
-        for j in range(cols):
-            if reverse:
-                evecs[i, j] /= sqrt_mass[j]
-            else:
-                evecs[i, j] *= sqrt_mass[j]
-
-
 # ---- Frequency pipeline ----
 
 
@@ -496,7 +436,7 @@ def transform_to_eigenmatrix(
 
         Both the Hessian and eigenvectors should be in the same unit
         system (typically mass-weighted Hartree/Bohr² after calling
-        :func:`mass_weight_hessian` and :func:`mass_weight_eigenvectors`).
+        :func:`mass_weight_hessian`).
 
     """
     return eigenvectors.T @ hessian @ eigenvectors
