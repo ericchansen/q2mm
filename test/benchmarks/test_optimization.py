@@ -13,7 +13,7 @@ import math
 
 import pytest
 
-pytestmark = [pytest.mark.benchmark, pytest.mark.slow]
+pytestmark = [pytest.mark.benchmark, pytest.mark.nightly]
 
 
 def _run_and_validate(engine: object) -> None:

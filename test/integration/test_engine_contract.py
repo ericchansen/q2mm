@@ -490,7 +490,7 @@ class TestMinimize:
         dist = np.linalg.norm(coords[0] - coords[1])
         assert abs(dist - 0.74) < 0.05
 
-    @pytest.mark.medium
+    @pytest.mark.integration
     def test_minimize_water(self, engine: MMEngine, water_bent: tuple[Q2MMMolecule, ForceField]) -> None:
         mol, ff = water_bent
         e_before = engine.energy(mol, ff)

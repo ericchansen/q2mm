@@ -6,7 +6,7 @@ for that).  Only one fast (backend, optimizer) combo is run to produce
 a real ``BenchmarkResult``; the rest of the library is tested with
 synthetic data.
 
-Requires ``--run-medium`` and OpenMM.
+Requires ``--run-integration`` and OpenMM.
 """
 
 from __future__ import annotations
@@ -170,7 +170,7 @@ class TestDiagnosticsHelpers:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.medium
+@pytest.mark.integration
 @pytest.mark.openmm
 @pytest.mark.skipif(bool(_missing), reason=f"Missing fixtures: {_missing}")
 class TestBenchmarkPipeline:

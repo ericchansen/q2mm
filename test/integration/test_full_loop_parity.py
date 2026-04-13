@@ -147,7 +147,7 @@ class TestRhEnamideSeminarioTiming:
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
-    @pytest.mark.slow
+    @pytest.mark.validation
     def test_seminario_pipeline_timing(
         self, rh_molecules: list[Q2MMMolecule], capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -172,7 +172,7 @@ class TestRhEnamideSeminarioTiming:
         assert len(ff.bonds) > 0, "No bond parameters"
         assert len(ff.angles) > 0, "No angle parameters"
 
-    @pytest.mark.slow
+    @pytest.mark.validation
     def test_seminario_is_deterministic(self, rh_molecules: list[Q2MMMolecule]) -> None:
         """Two consecutive Seminario runs produce identical results."""
         from q2mm.models.forcefield import ForceField
@@ -210,7 +210,7 @@ def _load_rh_enamide_molecules() -> list[Q2MMMolecule]:
 
 @requires_openmm
 @pytest.mark.openmm
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestRhEnamideFullLoop:
     """D1: Full pipeline on rh-enamide — Jaguar → Seminario → OpenMM → optimize.
 
@@ -351,7 +351,7 @@ class TestRhEnamideFullLoop:
 
 @requires_openmm
 @pytest.mark.openmm
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestEthaneFullLoop:
     """Full pipeline: .fchk → Seminario → frequency objective → optimize.
 
@@ -531,7 +531,7 @@ class TestEthaneFullLoop:
 
 @requires_openmm
 @pytest.mark.openmm
-@pytest.mark.slow
+@pytest.mark.validation
 class TestEthaneTSSeminario:
     """Validate Seminario estimation on ethane TS (eclipsed conformation).
 
@@ -599,7 +599,7 @@ class TestEthaneTSSeminario:
 
 @requires_openmm
 @pytest.mark.openmm
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestPipelineDeterminism:
     """Verify the full pipeline produces identical results across runs."""
 
@@ -718,14 +718,14 @@ def _rh_enamide_harmonic_pipeline(
 
 @requires_jax
 @pytest.mark.jax
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestRhEnamideFullLoopJax:
     """Rh-enamide full pipeline with JaxEngine (harmonic functional form).
 
     Same 9 organometallic structures as TestRhEnamideFullLoop, but using
     JaxEngine with harmonic energy expressions instead of OpenMM with MM3.
     This validates JAX backend compatibility with real-world multi-molecule
-    systems and enables GPU benchmarking via ``pytest -m jax --run-slow``.
+    systems and enables GPU benchmarking via ``pytest -m jax --run-nightly``.
     """
 
     @pytest.fixture(scope="class")
@@ -786,13 +786,13 @@ class TestRhEnamideFullLoopJax:
 
 @requires_jax_md
 @pytest.mark.jax_md
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestRhEnamideFullLoopJaxMD:
     """Rh-enamide full pipeline with JaxMDEngine (harmonic functional form).
 
     Same 9 organometallic structures, using JaxMDEngine with harmonic energy
     expressions. Validates JAX-MD backend on a real organometallic system.
-    Enables GPU benchmarking via ``pytest -m jax_md --run-slow``.
+    Enables GPU benchmarking via ``pytest -m jax_md --run-nightly``.
     """
 
     @pytest.fixture(scope="class")

@@ -760,11 +760,11 @@ class TestCH3FAnalyticalGradients:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestAnalyticalGradientPerformance:
     """Wall-clock timing comparison: analytical vs FD gradients.
 
-    Marked @pytest.mark.slow — not run in normal CI.
+    Marked @pytest.mark.nightly — not run in normal CI.
     """
 
     def setup_method(self) -> None:

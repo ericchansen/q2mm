@@ -238,12 +238,21 @@ nvidia-smi
 # Run core tests (no backends)
 python -m pytest test/ -x -q -m "not (openmm or tinker or jax or jax_md or psi4)"
 
+# Run integration tests (backend contracts, parity)
+python -m pytest --run-integration -q
+
+# Run validation tests (Seminario parity, published FF eval)
+python -m pytest --run-validation -q
+
+# Run nightly tests (optimizer loops, full loops — slow)
+python -m pytest --run-nightly -q
+
 # Run lint + format checks
 python -m ruff check q2mm/ test/ scripts/
 python -m ruff format --check q2mm test scripts examples
 
-# Generate golden fixture (opt-in, slow)
-Q2MM_UPDATE_GOLDEN=1 python -m pytest test/integration/test_published_ff_validation.py --run-slow -v
+# Generate golden fixture (opt-in, requires --run-validation)
+Q2MM_UPDATE_GOLDEN=1 python -m pytest test/integration/test_published_ff_validation.py --run-validation -v
 ```
 
 ---

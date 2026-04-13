@@ -94,7 +94,7 @@ def _imaginary_frequencies(freqs: list[float] | np.ndarray) -> np.ndarray:
 # ---- Test class ----
 
 
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestCH3FGroundState:
     """Validate the full pipeline on CH₃F ground state.
 
@@ -509,7 +509,7 @@ class TestCH3FGroundState:
                 t.flush()
 
 
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestSN2TransitionState:
     """Validate the pipeline on the SN2 F- + CH3F transition state.
 
@@ -695,7 +695,7 @@ class TestSN2TransitionState:
             t.flush()
 
 
-@pytest.mark.slow
+@pytest.mark.nightly
 class TestSN2ReactionProfile:
     """Validate QM energetics across the reaction coordinate.
 
