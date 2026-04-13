@@ -1136,16 +1136,18 @@ class TestQFUERZA:
     def test_is_hydrogen_angle(self, elements: tuple, expected: bool) -> None:
         assert _is_hydrogen_angle(elements) == expected
 
-    # -- strategy="fuerza" regression --
+    # -- strategy="fuerza" determinism --
 
-    def test_fuerza_strategy_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        """strategy='fuerza' gives identical results to explicit fuerza call."""
-        ff_explicit = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
-        ff_again = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+    def test_fuerza_strategy_deterministic(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        """strategy='fuerza' is deterministic across repeated calls."""
+        ff_first = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_second = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
 
-        for b1, b2 in zip(ff_explicit.bonds, ff_again.bonds):
+        assert len(ff_first.bonds) == len(ff_second.bonds)
+        for b1, b2 in zip(ff_first.bonds, ff_second.bonds):
             assert b1.force_constant == pytest.approx(b2.force_constant)
-        for a1, a2 in zip(ff_explicit.angles, ff_again.angles):
+        assert len(ff_first.angles) == len(ff_second.angles)
+        for a1, a2 in zip(ff_first.angles, ff_second.angles):
             assert a1.force_constant == pytest.approx(a2.force_constant)
 
     def test_default_is_qfuerza(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
@@ -1153,8 +1155,10 @@ class TestQFUERZA:
         ff_default = estimate_force_constants(ch3f_mol_with_hess)
         ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
 
+        assert len(ff_default.bonds) == len(ff_qfuerza.bonds)
         for b_def, b_qf in zip(ff_default.bonds, ff_qfuerza.bonds):
             assert b_def.force_constant == pytest.approx(b_qf.force_constant)
+        assert len(ff_default.angles) == len(ff_qfuerza.angles)
         for a_def, a_qf in zip(ff_default.angles, ff_qfuerza.angles):
             assert a_def.force_constant == pytest.approx(a_qf.force_constant)
 

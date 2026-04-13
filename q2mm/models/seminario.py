@@ -6,7 +6,7 @@ Q2MM's internal models (Q2MMMolecule, ForceField) instead of the legacy
 MM3-specific data structures.
 
 Reference:
-    Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476.
+    Farrugia et al., J. Chem. Theory Comput. 2025, 22, 469-476.
     Seminario, Int. J. Quantum Chem. 1996, 60, 1271-1277.
 """
 
