@@ -513,8 +513,10 @@ class TestCH3FGroundState:
 class TestSN2TransitionState:
     """Validate the pipeline on the SN2 F- + CH3F transition state.
 
-    Transition states require special handling — the reaction-coordinate
-    curvature must be inverted before Seminario projection.
+    Transition states have a negative eigenvalue along the reaction
+    coordinate. Curvature inversion (``invert_ts_curvature=True``) can
+    replace it with a positive value before Seminario projection; this
+    test uses the default (no inversion) to validate the baseline.
     """
 
     @pytest.fixture(scope="class")
