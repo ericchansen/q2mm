@@ -528,7 +528,7 @@ class TestCisplatinZenodoQFUERZARules:
 # ¹ Pt-Cl and N-H bond FCs diverge ~17% from the paper. Investigation
 #   (session checkpoint 007) traced this to unreproducible code modifications
 #   in the reference implementation (missing `convert_and_set` method,
-#   `au_hessian` parameter not accepted by GaussLog). See issue #235.
+#   `au_hessian` parameter not accepted by GaussLog). See issue #236.
 # ---------------------------------------------------------------------------
 
 _CISPLATIN_LOG_AVAILABLE = CISPLATIN_GAUSSIAN_LOG.exists()
@@ -713,10 +713,12 @@ class TestCisplatinHessianParity:
         ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
         ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
 
-        assert len(ff_q.bonds) == len(ff_f.bonds)
-        for bq, bf in zip(ff_q.bonds, ff_f.bonds):
-            assert bq.key == bf.key
-            assert bq.force_constant == pytest.approx(bf.force_constant, rel=1e-10)
+        ff_f_bonds = {bp.key: bp for bp in ff_f.bonds}
+        ff_q_bonds = {bp.key: bp for bp in ff_q.bonds}
+
+        assert ff_q_bonds.keys() == ff_f_bonds.keys()
+        for key in ff_f_bonds:
+            assert ff_q_bonds[key].force_constant == pytest.approx(ff_f_bonds[key].force_constant, rel=1e-10)
 
     def test_qfuerza_h_angle_substitution(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """QFUERZA must substitute H-angle FCs with 0.5 mdyne·Å/rad².
@@ -738,22 +740,29 @@ class TestCisplatinHessianParity:
         ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
         ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
 
+        ff_f_angles = {ap.key: ap for ap in ff_f.angles}
+        ff_q_angles = {ap.key: ap for ap in ff_q.angles}
+
         heavy_keys = [("Cl", "Pt", "Cl"), ("Cl", "Pt", "N"), ("N", "Pt", "N")]
-        for aq, af in zip(ff_q.angles, ff_f.angles):
-            if aq.key in heavy_keys:
-                assert aq.force_constant == pytest.approx(af.force_constant, rel=1e-10), (
-                    f"Heavy angle {aq.key}: QFUERZA={aq.force_constant:.4f} ≠ FUERZA={af.force_constant:.4f}"
-                )
+        for key in heavy_keys:
+            af = ff_f_angles[key]
+            aq = ff_q_angles[key]
+            assert aq.force_constant == pytest.approx(af.force_constant, rel=1e-10), (
+                f"Heavy angle {key}: QFUERZA={aq.force_constant:.4f} ≠ FUERZA={af.force_constant:.4f}"
+            )
 
     def test_qfuerza_h_angles_reduced_from_fuerza(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """QFUERZA H-angle FCs must be smaller than FUERZA (corrects overestimation)."""
         ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
         ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
 
+        ff_f_angles = {ap.key: ap for ap in ff_f.angles}
+        ff_q_angles = {ap.key: ap for ap in ff_q.angles}
+
         h_angle_keys = [("H", "N", "Pt"), ("H", "N", "H")]
-        for af, aq in zip(ff_f.angles, ff_q.angles):
-            if af.key in h_angle_keys:
-                assert aq.force_constant < af.force_constant, (
-                    f"Angle {af.key}: QFUERZA ({aq.force_constant:.2f}) should be "
-                    f"less than FUERZA ({af.force_constant:.2f})"
-                )
+        for key in h_angle_keys:
+            af = ff_f_angles[key]
+            aq = ff_q_angles[key]
+            assert aq.force_constant < af.force_constant, (
+                f"Angle {key}: QFUERZA ({aq.force_constant:.2f}) should be less than FUERZA ({af.force_constant:.2f})"
+            )
