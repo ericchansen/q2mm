@@ -234,7 +234,7 @@ def benchmark_stem(metadata: dict) -> str:
     optimizer = metadata.get("optimizer", "unk").lower()
     if optimizer.startswith("l-bfgs-b"):
         optimizer = "lbfgsb" + optimizer[len("l-bfgs-b") :]
-    optimizer = optimizer.replace(" ", "-").replace("(", "").replace(")", "")
+    optimizer = optimizer.replace(":", "-").replace(" ", "-").replace("(", "").replace(")", "")
 
     # Derivative-free methods need no gradient suffix
     deriv_free = {"powell", "nelder-mead"}
@@ -551,8 +551,12 @@ def run_combo(
     Args:
         engine: The MM backend engine to use.
         sys_data: Fully-loaded system data (molecules, forcefield, freq_ref).
-        optimizer_method: Scipy optimizer method (e.g. ``'L-BFGS-B'``).
-        optimizer_kwargs: Extra keyword arguments for ``ScipyOptimizer``.
+        optimizer_method: Optimizer method.  ``'L-BFGS-B'``, ``'Nelder-Mead'``,
+            ``'Powell'`` dispatch to :class:`ScipyOptimizer`; ``'cycling'``
+            dispatches to :class:`OptimizationLoop`; ``'optax:adam'`` (or
+            ``'optax:adagrad'``, ``'optax:sgd'``, ``'optax:adamw'``)
+            dispatches to :class:`OptaxOptimizer`.
+        optimizer_kwargs: Extra keyword arguments forwarded to the optimizer.
         maxiter: Maximum optimizer iterations.
         backend_name: Human-readable backend name for result metadata.
 
@@ -619,7 +623,7 @@ def run_combo(
         "score": initial_score,
     }
 
-    # Optimize — dispatch to cycling or scipy
+    # Optimize — dispatch to cycling, optax, or scipy
     if optimizer_method == "cycling":
         from q2mm.optimizers.cycling import OptimizationLoop
 
@@ -669,6 +673,49 @@ def run_combo(
 
         # Per-evaluator gradient resolution
         gradients = _resolve_gradients(jac_mode, obj, method=loop.full_method)
+    elif optimizer_method.startswith("optax:"):
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        optax_name = optimizer_method.split(":", 1)[1]
+        optax_kwargs: dict[str, Any] = {
+            "optimizer": optax_name,
+            "max_steps": optimizer_kwargs.get("max_steps", maxiter),
+            "verbose": False,
+        }
+        # Forward supported hyperparameters from optimizer_kwargs
+        for key in (
+            "learning_rate",
+            "schedule",
+            "ftol",
+            "grad_norm_tol",
+            "patience",
+            "momentum",
+            "b1",
+            "b2",
+            "decay_rate",
+            "divergence_factor",
+            "divergence_patience",
+        ):
+            if key in optimizer_kwargs:
+                optax_kwargs[key] = optimizer_kwargs[key]
+
+        opt = OptaxOptimizer(**optax_kwargs)
+
+        t0 = time.perf_counter()
+        opt_result = opt.optimize(obj)
+        opt_elapsed = time.perf_counter() - t0
+
+        n_eval = opt_result.n_evaluations
+        converged = opt_result.success
+        opt_initial_score = opt_result.initial_score
+        opt_final_score = opt_result.final_score
+        opt_message = opt_result.message
+        extra_opt_data = {}
+
+        jac_mode = opt_result.jac_mode
+        eps = opt_result.eps
+
+        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 

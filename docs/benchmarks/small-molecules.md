@@ -10,12 +10,13 @@ matrix, so it is the right place to compare combinations directly.
 
 - System: CH₃F (1 molecule, 5 atoms, 8 parameters)
 - QM reference: B3LYP/6-31+G(d)
-- Matrix size: 36 supported combos
+- Matrix size: 44 supported combos
 - Backends/forms: JAX and OpenMM on harmonic + MM3, JAX-MD on harmonic, Tinker
   on MM3
-- Optimizers: Powell, L-BFGS-B, Nelder-Mead, grad-simp — each gradient-using
-  optimizer is run twice (once with analytical frequency gradients, once with
-  pure FD)
+- Optimizers: Powell, L-BFGS-B, Nelder-Mead, grad-simp, and optax (Adam,
+  AdaGrad, SGD) — each gradient-using optimizer is run twice (once with
+  analytical frequency gradients, once with pure FD); optax optimizers use
+  analytical gradients only (JAX backend)
 - Starting point: QFUERZA initialization — JAX/JAX-MD begin at 192.0 cm⁻¹
   RMSD, OpenMM at 191.9 cm⁻¹, Tinker at 192.1 cm⁻¹
 
@@ -52,6 +53,10 @@ force-field model.
 | harmonic | OpenMM | GPU | grad-simp | FD | 981.9 | 794.7 | 67.8 s | 31.0 |
 | harmonic | JAX | GPU | Nelder-Mead | — | 987.4 | 795.0 | 34.2 s | 357.7 |
 | harmonic | JAX-MD | GPU | Nelder-Mead | — | 987.5 | 795.0 | 34.2 s | 344.0 |
+| harmonic | JAX | GPU | optax:sgd | A | 990.0 | 838.0 | 18.2 s | 109.9 |
+| harmonic | JAX | GPU | optax:adam+cosine | A | 999.4 | 831.7 | 29.5 s | 67.7 |
+| harmonic | JAX | GPU | optax:adam | A | 1000.4 | 831.4 | 23.4 s | 85.4 |
+| harmonic | JAX | GPU | optax:adagrad | A | 1000.9 | 868.0 | 19.7 s | 101.5 |
 | harmonic | OpenMM | GPU | Powell | — | 1036.7 | 891.7 | 62.5 s | 97.8 |
 | harmonic | JAX | GPU | Powell | — | 1041.5 | 899.0 | 10.1 s | 342.8 |
 | harmonic | JAX-MD | GPU | Powell | — | 1041.5 | 899.0 | 10.4 s | 342.1 |
@@ -60,11 +65,15 @@ force-field model.
 | harmonic | JAX-MD | GPU | L-BFGS-B | FD | 1048.3 | 934.6 | 0.5 s | 334.8 |
 | harmonic | OpenMM | GPU | L-BFGS-B | FD | 1048.3 | 934.7 | 3.5 s | 77.2 |
 | harmonic | OpenMM | GPU | L-BFGS-B | FD | 1049.5 | 936.1 | 4.0 s | 5.5 |
+| mm3 | JAX | GPU | optax:adam | A | 56.3 | 44.0 | 25.2 s | 79.4 |
 | mm3 | OpenMM | GPU | L-BFGS-B | FD | 59.5 | 46.7 | 4.8 s | 104.4 |
+| mm3 | JAX | GPU | optax:adam+cosine | A | 60.6 | 42.7 | 29.8 s | 67.2 |
 | mm3 | OpenMM | GPU | L-BFGS-B | FD | 83.6 | 62.9 | 9.7 s | 5.4 |
 | mm3 | Tinker | CPU | L-BFGS-B | FD | 83.8 | 63.4 | 152.5 s | 4.1 |
 | mm3 | Tinker | CPU | L-BFGS-B | FD | 83.8 | 63.4 | 150.3 s | 4.2 |
 | mm3 | JAX | GPU | L-BFGS-B | FD | 113.5 | 90.6 | 0.8 s | 347.2 |
+| mm3 | JAX | GPU | optax:adagrad | A | 138.0 | 113.5 | 20.0 s | 100.0 |
+| mm3 | JAX | GPU | optax:sgd | A | 192.0 | 177.5 | 1.7 s | 12.7 |
 | mm3 | Tinker | CPU | Powell | — | 542.5 | 275.2 | 2768.6 s | 4.3 |
 | mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1094.9 s | 4.3 |
 | mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1097.7 s | 4.3 |
@@ -92,6 +101,10 @@ omitted because CH₃F benchmarks optimize on frequency data only.
   JAX and JAX-MD with L-BFGS-B or grad-simp using analytical frequency
   gradients. These combos benefit from QFUERZA's physically motivated
   starting parameters.
+- Optax optimizers (Adam, AdaGrad, SGD) perform poorly on the harmonic form
+  (990–1001 cm⁻¹), comparable to derivative-free methods. The harmonic
+  landscape from the QFUERZA starting point appears to favour quasi-Newton
+  methods (L-BFGS-B) that use curvature information.
 - Derivative-free optimizers (Powell, Nelder-Mead) perform poorly on the
   harmonic form from the QFUERZA starting point, landing in the 987–1049
   range. Under the previous Seminario initialization these reached near-zero
@@ -103,22 +116,34 @@ omitted because CH₃F benchmarks optimize on frequency data only.
 
 ### MM3 form
 
-- The best MM3 result is OpenMM L-BFGS-B with FD gradients at 59.5 cm⁻¹.
+- **Optax Adam achieves the best MM3 result at 56.3 cm⁻¹ RMSD** — a 10×
+  improvement over JAX L-BFGS-B with analytical gradients (579 cm⁻¹). Adam's
+  adaptive per-parameter learning rates and momentum appear to navigate the
+  rugged MM3 potential energy surface far more effectively than L-BFGS-B,
+  which gets trapped in a poor local minimum.
+- Adam with cosine annealing (60.6 cm⁻¹) and AdaGrad (138.0 cm⁻¹) also
+  outperform all scipy-based optimizers on the JAX backend.
+- SGD fails to improve from the starting point (192 cm⁻¹), diverging early
+  at the default learning rate — it needs careful LR tuning.
+- OpenMM L-BFGS-B with FD gradients remains competitive at 59.5 cm⁻¹. The
+  similarity between Adam (56.3) and OpenMM L-BFGS-B FD (59.5) suggests
+  these are converging toward the same basin, but via very different paths.
 - Tinker L-BFGS-B improved significantly from the prior run (114 → 84 cm⁻¹),
   showing that QFUERZA provides a better basin for gradient-based MM3
   optimization through the Tinker backend.
-- Tinker grad-simp also improved dramatically (833 → 564 cm⁻¹), confirming
-  the basin-quality effect.
 - Powell and Nelder-Mead on MM3 remain mid-range (542–608) and are
   insensitive to the initialization change, as expected for derivative-free
   methods on a rugged landscape.
 
 ### Cross-cutting observations
 
-- Analytical frequency gradients produce the best results on this problem.
-  The top four harmonic results all use analytical frequency gradients (A)
-  or analytical-fallback (FD with JAX-MD). Energy gradients are not used
-  here because the CH₃F objective optimizes on frequencies only.
+- **Optimizer choice matters more than backend choice on MM3.** The spread
+  between the best (Adam, 56.3) and worst (Powell, 1081) optimizer on JAX MM3
+  is 19×, while the spread between backends using the same optimizer is
+  typically < 2×.
+- Analytical frequency gradients produce the best results on the harmonic
+  problem. The top four harmonic results all use analytical frequency
+  gradients (A) or analytical-fallback (FD with JAX-MD).
 - On identical parameters, JAX, JAX-MD, and OpenMM agree to machine precision
   when the functional form matches: energy deltas stay at or below
   3 × 10⁻¹⁸ kcal/mol and frequency deltas stay below 0.001 cm⁻¹.
@@ -134,7 +159,7 @@ omitted because CH₃F benchmarks optimize on frequency data only.
   [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results)
   and
   [optimized force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
-- Git SHA: `69e4f7c4` (q2mm 5.0.0a3.dev223)
+- Git SHA: `690f81d4` (q2mm 5.0.0a3 + optax integration)
 - GPU: NVIDIA GeForce RTX 5090
 
 This page uses the current full-matrix artifact set in `benchmarks/ch3f/`.
@@ -142,7 +167,17 @@ This page uses the current full-matrix artifact set in `benchmarks/ch3f/`.
 ## Reproducing
 
 ```bash
+# Run full matrix (all backends, all optimizers)
 q2mm-benchmark --system ch3f --output benchmarks/ch3f --platform CUDA
+
+# Run optax optimizers only (JAX backend)
+q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
+  --optimizer "optax:adam" "optax:adam+cosine" "optax:adagrad" "optax:sgd" \
+  --learning-rate 0.01 --optax-max-steps 2000
+
+# Load and display results
 q2mm-benchmark --load benchmarks/ch3f/results
+
+# List available optimizers
 q2mm-benchmark --list
 ```

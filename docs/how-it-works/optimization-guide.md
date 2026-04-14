@@ -1,6 +1,6 @@
 # Optimization Guide
 
-Q2MM provides three optimization strategies with increasing sophistication.
+Q2MM provides four optimization strategies with increasing sophistication.
 This page explains each one and when to use it.
 
 ---
@@ -15,6 +15,7 @@ so far:
 |----------|-------------|---------------------|
 | `ScipyOptimizer("Nelder-Mead")` | Derivative-free simplex on all params | Low optimization scores on both CH₃F and Rh-enamide, but final RMSD can be poor (1038 cm⁻¹ on CH₃F harmonic). Needs many evaluations. |
 | `ScipyOptimizer("L-BFGS-B")` | Gradient-based on all params | Fewest evaluations; with analytical gradients, reaches much better RMSD than Nelder-Mead on CH₃F (30.4 vs 564 on MM3). FD gradients are weaker. |
+| `OptaxOptimizer("adam")` | JAX-native adaptive optimizer | **Best MM3 result on CH₃F at 56.3 cm⁻¹ RMSD** — 10× better than L-BFGS-B (579). Momentum-based methods navigate rugged MM3 landscapes more effectively. Requires JAX backend. |
 | `OptimizationLoop(max_params=3)` | Grad-simp cycling | Best overall scores on Rh-enamide: JAX MM3 scored 3.54 in 25 min, OpenMM MM3 scored 3.29 in 9 hrs. JAX-MD harmonic scored 11.66 (different functional form). JAX harmonic not yet re-run post-fix. |
 | `SubspaceObjective` + manual | Optimise specific params | For expert users; not benchmarked |
 | `compute_sensitivity()` | Rank parameter sensitivity | Diagnostic tool, not an optimizer |
@@ -105,7 +106,85 @@ vs 0.000 for Nelder-Mead on CH₃F harmonic.
 
 ---
 
-## Strategy 2: Grad-Simp Cycling
+## Strategy 2: Optax Adaptive Optimizers (JAX only)
+
+Optax is a JAX-native gradient processing library that provides modern
+adaptive optimizers (Adam, AdaGrad, SGD, AdamW) with features like momentum,
+per-parameter learning rates, and learning rate schedules.
+
+```python
+from q2mm.optimizers.optax import OptaxOptimizer
+
+optimizer = OptaxOptimizer(
+    optimizer="adam",
+    learning_rate=0.01,
+    max_steps=2000,
+)
+result = optimizer.optimize(objective)
+print(result.summary())
+```
+
+### When to Use
+
+- **MM3 or other rugged potential forms** — Adam's momentum helps escape
+  local minima that trap L-BFGS-B
+- **JAX backend** — optax is JAX-native and uses analytical gradients
+  automatically. It works with other backends via finite-difference
+  fallback, but the FD overhead negates the advantage.
+- **QFUERZA-initialized** — starting close to the optimum, Adam can refine
+  parameters that L-BFGS-B overshoots or gets stuck on
+
+### Available optimizers
+
+| Optimizer | Type | Notes |
+|-----------|------|-------|
+| `adam` | Adaptive + momentum | Best default choice; per-parameter LR adaptation |
+| `adamw` | Adam + weight decay | Slight regularisation; may prevent overfitting |
+| `adagrad` | Adaptive | Accumulates gradient history; good for sparse gradients |
+| `sgd` | Stochastic gradient descent | Simplest; very sensitive to learning rate |
+
+### Learning rate schedules
+
+Optax supports learning rate schedules that decay the LR during optimisation:
+
+```python
+optimizer = OptaxOptimizer(
+    optimizer="adam",
+    learning_rate=0.01,
+    max_steps=2000,
+    schedule="cosine",  # LR decays from 0.01 → 0 over 2000 steps
+)
+```
+
+### What the benchmarks show
+
+On **CH₃F** (8 parameters, QFUERZA-initialized, JAX GPU):
+
+| Method | RMSD (harmonic) | RMSD (MM3) | Time (MM3) |
+|--------|----------------:|-----------:|-----------:|
+| optax:adam | 1000.4 | **56.3** | 25.2 s |
+| optax:adam+cosine | 999.4 | 60.6 | 29.8 s |
+| optax:adagrad | 1000.9 | 138.0 | 20.0 s |
+| optax:sgd | 990.0 | 192.0 | 1.7 s |
+| L-BFGS-B (analytical) | **528.7** | 579.0 | 2.2 s |
+
+Adam achieves the best MM3 result across ALL backends and optimizers —
+56.3 cm⁻¹ vs 579.0 for L-BFGS-B with analytical gradients (10× better).
+On harmonic, optax performs poorly (~1000 cm⁻¹); the smooth harmonic
+landscape benefits more from L-BFGS-B's curvature information.
+
+!!! warning "Bounds enforcement"
+    Optax has no native bounds support. `OptaxOptimizer` enforces bounds
+    via parameter clamping after each update step. Momentum-based
+    optimizers (Adam, SGD with momentum) accumulate state that pushes into
+    walls, which can waste steps. This is a known limitation.
+
+For all `OptaxOptimizer` parameters, see the
+[API reference](../reference/q2mm/optimizers/optax.md).
+
+---
+
+## Strategy 3: Grad-Simp Cycling
 
 The flagship optimization strategy, based on Norrby & Liljefors
 ([*J. Comput. Chem.* **1998**, 19, 1146](https://doi.org/10.1002/(SICI)1096-987X(19980730)19:10%3C1146::AID-JCC4%3E3.0.CO;2-M)).
@@ -202,7 +281,7 @@ For all `OptimizationLoop` parameters, return values, and defaults, see the
 
 ---
 
-## Strategy 3: Manual Subspace Optimization
+## Strategy 4: Manual Subspace Optimization
 
 For advanced users who want direct control over which parameters to optimise.
 `SubspaceObjective` wraps your full objective and only exposes a subset of
