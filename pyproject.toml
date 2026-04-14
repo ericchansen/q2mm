@@ -63,6 +63,7 @@ qm = [
 jax = [
     "jax",
     "jaxlib",
+    "optax",
     "scipy",
 ]
 jax-md = [

@@ -509,6 +509,9 @@ class OptimizationLoop:
         sensitivity_results: list[SensitivityResult] = []
         converged = False
 
+        # Detect optax: prefix for full-space optimizer
+        use_optax = self.full_method.startswith("optax:")
+
         try:
             if self.verbose:
                 logger.info(
@@ -521,14 +524,25 @@ class OptimizationLoop:
                 score_before = cycle_scores[-1]
 
                 # --- Step 1: Full-space optimisation ---
-                full_opt = ScipyOptimizer(
-                    method=self.full_method,
-                    maxiter=self.full_maxiter,
-                    eps=self.eps,
-                    jac=self.full_jac,
-                    verbose=False,
-                )
-                full_result = full_opt.optimize(self.objective)
+                if use_optax:
+                    from q2mm.optimizers.optax import OptaxOptimizer
+
+                    optax_name = self.full_method.split(":", 1)[1]
+                    full_opt = OptaxOptimizer(
+                        optimizer=optax_name,
+                        max_steps=self.full_maxiter,
+                        verbose=False,
+                    )
+                    full_result = full_opt.optimize(self.objective)
+                else:
+                    full_opt = ScipyOptimizer(
+                        method=self.full_method,
+                        maxiter=self.full_maxiter,
+                        eps=self.eps,
+                        jac=self.full_jac,
+                        verbose=False,
+                    )
+                    full_result = full_opt.optimize(self.objective)
                 score_after_grad = full_result.final_score
 
                 if self.verbose:
