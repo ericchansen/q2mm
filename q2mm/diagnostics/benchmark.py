@@ -723,6 +723,9 @@ def run_combo(
             "verbose": False,
             "jac": "auto",
         }
+        # Parse optional local method suffix: "basinhopping:SLSQP" → local_method="SLSQP"
+        if ":" in optimizer_method:
+            bh_kwargs["local_method"] = optimizer_method.split(":", 1)[1]
         for key in ("niter", "T", "stepsize", "local_method", "local_maxiter", "seed"):
             if key in optimizer_kwargs:
                 bh_kwargs[key] = optimizer_kwargs[key]
@@ -746,6 +749,43 @@ def run_combo(
         eps = opt_result.eps
 
         gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
+    elif optimizer_method.startswith("multi:"):
+        from q2mm.optimizers.multistart import MultiStartOptimizer
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        inner_method = optimizer_method.split(":", 1)[1]
+        inner_kwargs: dict[str, Any] = {
+            "method": inner_method,
+            "maxiter": maxiter,
+            "verbose": False,
+            "jac": "auto",
+        }
+        inner_opt = ScipyOptimizer(**inner_kwargs)
+        multi_kwargs: dict[str, Any] = {
+            "optimizer": inner_opt,
+            "verbose": False,
+        }
+        for key in ("n_starts", "perturbation_pct", "seed"):
+            if key in optimizer_kwargs:
+                multi_kwargs[key] = optimizer_kwargs[key]
+
+        opt = MultiStartOptimizer(**multi_kwargs)
+
+        t0 = time.perf_counter()
+        opt_result = opt.optimize(obj)
+        opt_elapsed = time.perf_counter() - t0
+
+        n_eval = opt_result.n_evaluations
+        converged = opt_result.success
+        opt_initial_score = opt_result.initial_score
+        opt_final_score = opt_result.final_score
+        opt_message = opt_result.message
+        extra_opt_data = {"n_starts": multi_kwargs.get("n_starts", 5)}
+
+        jac_mode = opt_result.jac_mode
+        eps = opt_result.eps
+
+        gradients = _resolve_gradients(jac_mode, obj, method=inner_method)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
