@@ -40,50 +40,51 @@ force-field model.
 
 <div class="benchmark-table-anchor" data-benchmark-table="small-molecules"></div>
 
-| Form | Backend | Device | Optimizer | E∇ | F∇ | Final RMSD (cm⁻¹) | Final MAE | Time | eval/s |
-|------|---------|--------|-----------|:--:|:--:|-------------------:|----------:|-----:|--------:|
-| harmonic | JAX | GPU | L-BFGS-B | — | A | 528.7 | 257.3 | 1.9 s | 41.1 |
-| harmonic | JAX-MD | GPU | grad-simp | — | FD | 528.8 | 242.3 | 5.9 s | 142.5 |
-| harmonic | JAX | GPU | grad-simp | — | A | 529.1 | 243.3 | 5.5 s | 243.1 |
-| harmonic | JAX-MD | GPU | L-BFGS-B | — | FD | 531.1 | 254.6 | 4.3 s | 20.2 |
-| harmonic | OpenMM | GPU | grad-simp | — | FD | 979.5 | 786.3 | 45.8 s | 91.5 |
-| harmonic | JAX | GPU | grad-simp | — | FD | 981.4 | 790.1 | 13.1 s | 353.4 |
-| harmonic | JAX-MD | GPU | grad-simp | — | FD | 981.4 | 790.1 | 13.8 s | 334.7 |
-| harmonic | OpenMM | GPU | grad-simp | — | FD | 981.9 | 794.7 | 67.8 s | 31.0 |
-| harmonic | JAX | GPU | Nelder-Mead | — | — | 987.4 | 795.0 | 34.2 s | 357.7 |
-| harmonic | JAX-MD | GPU | Nelder-Mead | — | — | 987.5 | 795.0 | 34.2 s | 344.0 |
-| harmonic | OpenMM | GPU | Powell | — | — | 1036.7 | 891.7 | 62.5 s | 97.8 |
-| harmonic | JAX | GPU | Powell | — | — | 1041.5 | 899.0 | 10.1 s | 342.8 |
-| harmonic | JAX-MD | GPU | Powell | — | — | 1041.5 | 899.0 | 10.4 s | 342.1 |
-| harmonic | OpenMM | GPU | Nelder-Mead | — | — | 1043.6 | 868.8 | 9.2 s | 102.7 |
-| harmonic | JAX | GPU | L-BFGS-B | — | FD | 1048.3 | 934.6 | 0.5 s | 336.0 |
-| harmonic | JAX-MD | GPU | L-BFGS-B | — | FD | 1048.3 | 934.6 | 0.5 s | 334.8 |
-| harmonic | OpenMM | GPU | L-BFGS-B | — | FD | 1048.3 | 934.7 | 3.5 s | 77.2 |
-| harmonic | OpenMM | GPU | L-BFGS-B | — | FD | 1049.5 | 936.1 | 4.0 s | 5.5 |
-| mm3 | OpenMM | GPU | L-BFGS-B | — | FD | 59.5 | 46.7 | 4.8 s | 104.4 |
-| mm3 | OpenMM | GPU | L-BFGS-B | — | FD | 83.6 | 62.9 | 9.7 s | 5.4 |
-| mm3 | Tinker | CPU | L-BFGS-B | — | FD | 83.8 | 63.4 | 152.5 s | 4.1 |
-| mm3 | Tinker | CPU | L-BFGS-B | — | FD | 83.8 | 63.4 | 150.3 s | 4.2 |
-| mm3 | JAX | GPU | L-BFGS-B | — | FD | 113.5 | 90.6 | 0.8 s | 347.2 |
-| mm3 | Tinker | CPU | Powell | — | — | 542.5 | 275.2 | 2768.6 s | 4.3 |
-| mm3 | Tinker | CPU | grad-simp | — | FD | 564.4 | 314.5 | 1094.9 s | 4.3 |
-| mm3 | Tinker | CPU | grad-simp | — | FD | 564.4 | 314.5 | 1097.7 s | 4.3 |
-| mm3 | OpenMM | GPU | grad-simp | — | FD | 566.2 | 306.6 | 36.1 s | 24.7 |
-| mm3 | OpenMM | GPU | grad-simp | — | FD | 573.1 | 311.6 | 29.5 s | 97.1 |
-| mm3 | Tinker | CPU | Nelder-Mead | — | — | 576.3 | 311.5 | 152.5 s | 4.3 |
-| mm3 | JAX | GPU | L-BFGS-B | — | A | 579.0 | 313.9 | 2.2 s | 31.4 |
-| mm3 | JAX | GPU | grad-simp | — | A | 579.0 | 313.9 | 3.4 s | 139.1 |
-| mm3 | OpenMM | GPU | Nelder-Mead | — | — | 581.1 | 315.1 | 8.5 s | 97.0 |
-| mm3 | JAX | GPU | Nelder-Mead | — | — | 608.1 | 334.2 | 25.6 s | 344.9 |
-| mm3 | JAX | GPU | grad-simp | — | FD | 1050.0 | 910.4 | 8.2 s | 343.0 |
-| mm3 | JAX | GPU | Powell | — | — | 1080.7 | 937.3 | 15.1 s | 339.0 |
-| mm3 | OpenMM | GPU | Powell | — | — | 1090.5 | 950.4 | 124.2 s | 95.3 |
+| Form | Backend | Device | Optimizer | F∇ | Final RMSD (cm⁻¹) | Final MAE | Time | eval/s |
+|------|---------|--------|-----------|:--:|-------------------:|----------:|-----:|--------:|
+| harmonic | JAX | GPU | L-BFGS-B | A | 528.7 | 257.3 | 1.9 s | 41.1 |
+| harmonic | JAX-MD | GPU | grad-simp | FD | 528.8 | 242.3 | 5.9 s | 142.5 |
+| harmonic | JAX | GPU | grad-simp | A | 529.1 | 243.3 | 5.5 s | 243.1 |
+| harmonic | JAX-MD | GPU | L-BFGS-B | FD | 531.1 | 254.6 | 4.3 s | 20.2 |
+| harmonic | OpenMM | GPU | grad-simp | FD | 979.5 | 786.3 | 45.8 s | 91.5 |
+| harmonic | JAX | GPU | grad-simp | FD | 981.4 | 790.1 | 13.1 s | 353.4 |
+| harmonic | JAX-MD | GPU | grad-simp | FD | 981.4 | 790.1 | 13.8 s | 334.7 |
+| harmonic | OpenMM | GPU | grad-simp | FD | 981.9 | 794.7 | 67.8 s | 31.0 |
+| harmonic | JAX | GPU | Nelder-Mead | — | 987.4 | 795.0 | 34.2 s | 357.7 |
+| harmonic | JAX-MD | GPU | Nelder-Mead | — | 987.5 | 795.0 | 34.2 s | 344.0 |
+| harmonic | OpenMM | GPU | Powell | — | 1036.7 | 891.7 | 62.5 s | 97.8 |
+| harmonic | JAX | GPU | Powell | — | 1041.5 | 899.0 | 10.1 s | 342.8 |
+| harmonic | JAX-MD | GPU | Powell | — | 1041.5 | 899.0 | 10.4 s | 342.1 |
+| harmonic | OpenMM | GPU | Nelder-Mead | — | 1043.6 | 868.8 | 9.2 s | 102.7 |
+| harmonic | JAX | GPU | L-BFGS-B | FD | 1048.3 | 934.6 | 0.5 s | 336.0 |
+| harmonic | JAX-MD | GPU | L-BFGS-B | FD | 1048.3 | 934.6 | 0.5 s | 334.8 |
+| harmonic | OpenMM | GPU | L-BFGS-B | FD | 1048.3 | 934.7 | 3.5 s | 77.2 |
+| harmonic | OpenMM | GPU | L-BFGS-B | FD | 1049.5 | 936.1 | 4.0 s | 5.5 |
+| mm3 | OpenMM | GPU | L-BFGS-B | FD | 59.5 | 46.7 | 4.8 s | 104.4 |
+| mm3 | OpenMM | GPU | L-BFGS-B | FD | 83.6 | 62.9 | 9.7 s | 5.4 |
+| mm3 | Tinker | CPU | L-BFGS-B | FD | 83.8 | 63.4 | 152.5 s | 4.1 |
+| mm3 | Tinker | CPU | L-BFGS-B | FD | 83.8 | 63.4 | 150.3 s | 4.2 |
+| mm3 | JAX | GPU | L-BFGS-B | FD | 113.5 | 90.6 | 0.8 s | 347.2 |
+| mm3 | Tinker | CPU | Powell | — | 542.5 | 275.2 | 2768.6 s | 4.3 |
+| mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1094.9 s | 4.3 |
+| mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1097.7 s | 4.3 |
+| mm3 | OpenMM | GPU | grad-simp | FD | 566.2 | 306.6 | 36.1 s | 24.7 |
+| mm3 | OpenMM | GPU | grad-simp | FD | 573.1 | 311.6 | 29.5 s | 97.1 |
+| mm3 | Tinker | CPU | Nelder-Mead | — | 576.3 | 311.5 | 152.5 s | 4.3 |
+| mm3 | JAX | GPU | L-BFGS-B | A | 579.0 | 313.9 | 2.2 s | 31.4 |
+| mm3 | JAX | GPU | grad-simp | A | 579.0 | 313.9 | 3.4 s | 139.1 |
+| mm3 | OpenMM | GPU | Nelder-Mead | — | 581.1 | 315.1 | 8.5 s | 97.0 |
+| mm3 | JAX | GPU | Nelder-Mead | — | 608.1 | 334.2 | 25.6 s | 344.9 |
+| mm3 | JAX | GPU | grad-simp | FD | 1050.0 | 910.4 | 8.2 s | 343.0 |
+| mm3 | JAX | GPU | Powell | — | 1080.7 | 937.3 | 15.1 s | 339.0 |
+| mm3 | OpenMM | GPU | Powell | — | 1090.5 | 950.4 | 124.2 s | 95.3 |
 
 ## Interpretation
 
-**E∇** = energy gradient mode, **F∇** = frequency gradient mode.
+**F∇** = frequency gradient mode.
 **A** = analytical (autodiff), **FD** = finite-difference, **—** = not
-applicable (derivative-free optimizer).
+applicable (derivative-free optimizer). The energy gradient column (E∇) is
+omitted because CH₃F benchmarks optimize on frequency data only.
 
 ### Harmonic form
 
@@ -114,11 +115,10 @@ applicable (derivative-free optimizer).
 
 ### Cross-cutting observations
 
-- Analytical frequency gradients now matter more than energy gradients on
-  this problem. The top four harmonic results all use analytical frequency
-  gradients (A) or analytical-fallback (FD with JAX-MD). The energy gradient
-  column shows "—" because QFUERZA initialization does not affect the
-  gradient pipeline — the E∇ distinction is less important than F∇.
+- Analytical frequency gradients produce the best results on this problem.
+  The top four harmonic results all use analytical frequency gradients (A)
+  or analytical-fallback (FD with JAX-MD). Energy gradients are not used
+  here because the CH₃F objective optimizes on frequencies only.
 - On identical parameters, JAX, JAX-MD, and OpenMM agree to machine precision
   when the functional form matches: energy deltas stay at or below
   3 × 10⁻¹⁸ kcal/mol and frequency deltas stay below 0.001 cm⁻¹.
