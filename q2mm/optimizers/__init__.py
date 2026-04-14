@@ -53,3 +53,11 @@ try:
     __all__ += ["BasinHoppingOptimizer"]
 except ImportError:
     pass
+
+# Multi-start meta-optimizer (wraps any optimizer)
+try:
+    from q2mm.optimizers.multistart import MultiStartOptimizer  # noqa: F401
+
+    __all__ += ["MultiStartOptimizer"]
+except ImportError:
+    pass
