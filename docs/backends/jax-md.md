@@ -2,7 +2,7 @@
 
 Built on the [JAX-MD](https://github.com/jax-md/jax-md) library, this
 engine adds **periodic boundary conditions**, **neighbor lists**, and
-**configurable 1-4 scaling** on top of JAX's differentiable energy
+**configurable 1-4 scaling** on top of [JAX](https://jax.readthedocs.io/)'s differentiable energy
 functions.
 
 ---

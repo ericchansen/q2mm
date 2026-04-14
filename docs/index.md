@@ -15,9 +15,10 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 - **Hessian-informed starting points** — QFUERZA extracts bond and angle
   force constants from the QM Hessian, giving the optimizer a physically motivated
   initial guess.
-- **Open-source backends** — First-class support for OpenMM, JAX, JAX-MD,
-  Tinker, and Psi4.
-- **Robust optimization** — Leverages `scipy.optimize` methods (L-BFGS-B,
+- **Open-source backends** — First-class support for [OpenMM](https://openmm.org/),
+  [JAX](https://jax.readthedocs.io/), [JAX-MD](https://jax-md.readthedocs.io/),
+  [Tinker](https://dasher.wustl.edu/tinker/), and [Psi4](https://psicode.org/).
+- **Robust optimization** — Leverages [`scipy.optimize`](https://docs.scipy.org/doc/scipy/reference/optimize.html) methods (L-BFGS-B,
   Nelder-Mead, trust-constr, Powell, least-squares) and JAX-native
   [optax](https://optax.readthedocs.io/) adaptive optimizers (Adam, AdaGrad,
   SGD) for force field parameter fitting.

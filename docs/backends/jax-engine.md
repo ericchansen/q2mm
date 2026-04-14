@@ -1,6 +1,6 @@
 # JaxEngine
 
-A pure-JAX implementation supporting both harmonic (OPLSAA-style) and MM3
+A pure-[JAX](https://jax.readthedocs.io/) implementation supporting both harmonic (OPLSAA-style) and MM3
 functional forms, including bond, angle, torsion, and vdW energy terms.
 Best for small-to-medium molecules where periodic boundaries and neighbor
 lists are not needed.  All energy functions are differentiable via

@@ -14,14 +14,14 @@ field parameters against quantum mechanical reference data.
 
 ## What changed and why
 
-The original Q2MM code drives external programs (MacroModel, Tinker, Gaussian)
+The original Q2MM code drives external programs (MacroModel, [Tinker](https://dasher.wustl.edu/tinker/), Gaussian)
 via subprocess calls, parses text output, and implements its own gradient
 solvers. This works, but each force-field evaluation requires writing files,
 spawning a process, and reading results back — a cycle that dominates runtime
 on large systems.
 
 ericchansen/q2mm replaces the subprocess loop with in-process Python backends
-(OpenMM, JAX, JAX-MD) where energy, gradient, and Hessian computations happen
+([OpenMM](https://openmm.org/), [JAX](https://jax.readthedocs.io/), [JAX-MD](https://jax-md.readthedocs.io/)) where energy, gradient, and Hessian computations happen
 inside the same process. [JAX backends are fully differentiable](backends/jax-engine.md)
 ([`jax.grad`](https://jax.readthedocs.io/en/latest/_autosummary/jax.grad.html), [`jax.hessian`](https://jax.readthedocs.io/en/latest/_autosummary/jax.hessian.html), [`jax.vmap`](https://jax.readthedocs.io/en/latest/_autosummary/jax.vmap.html)), which
 eliminates finite-difference overhead for gradient and Hessian evaluation.
@@ -37,7 +37,7 @@ The practical result on committed benchmarks
   leaving the Python process
   ([GPU benchmarks](benchmarks/gpu.md)).
 
-The codebase also replaces the hand-rolled solvers with SciPy wrappers, adds
+The codebase also replaces the hand-rolled solvers with [SciPy](https://scipy.org/) wrappers, adds
 eigendecomposition safety checks (symmetrization, NaN/Inf detection, penalty
 fallback), and introduces bound-aware sensitivity analysis. Details for each
 area are linked in the table below.

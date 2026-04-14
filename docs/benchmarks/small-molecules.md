@@ -11,9 +11,9 @@ matrix, so it is the right place to compare combinations directly.
 - System: CH₃F (1 molecule, 5 atoms, 8 parameters)
 - QM reference: B3LYP/6-31+G(d)
 - Matrix size: 44 supported combos
-- Backends/forms: JAX and OpenMM on harmonic + MM3, JAX-MD on harmonic, Tinker
+- Backends/forms: [JAX](https://jax.readthedocs.io/) and [OpenMM](https://openmm.org/) on harmonic + MM3, [JAX-MD](https://jax-md.readthedocs.io/) on harmonic, [Tinker](https://dasher.wustl.edu/tinker/)
   on MM3
-- Optimizers: Powell, L-BFGS-B, Nelder-Mead, grad-simp, and optax (Adam,
+- Optimizers: Powell, L-BFGS-B, Nelder-Mead, grad-simp, and [optax](https://optax.readthedocs.io/) (Adam,
   AdaGrad, SGD) — each gradient-using optimizer is run twice (once with
   analytical frequency gradients, once with pure FD); optax optimizers use
   analytical gradients only (JAX backend)
