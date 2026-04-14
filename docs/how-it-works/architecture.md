@@ -212,6 +212,7 @@ q2mm/
 ├── optimizers/           # Parameter fitting machinery
 │   ├── objective.py      # ObjectiveFunction, ReferenceData
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
+│   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
 │   ├── cycling.py        # grad-simp parameter cycling
 │   ├── scoring.py        # Legacy scoring functions
 │   └── defaults.py       # Default step sizes and bounds
@@ -262,6 +263,7 @@ flowchart TD
         obj[Objective]
         ref[ReferenceData]
         scipy[ScipyOptimizer]
+        optax_opt[OptaxOptimizer]
         cycling[OptimizationLoop]
     end
 
@@ -289,6 +291,7 @@ flowchart TD
     ref --> obj
     mol --> obj
     obj --> scipy
+    obj --> optax_opt
     obj --> cycling
 
     obj --> omm

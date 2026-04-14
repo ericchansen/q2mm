@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `OptaxOptimizer` for JAX-native Adam, AdaGrad, SGD, and AdamW optimization
+  with analytical gradients and learning rate schedules
+- Optax benchmark configs in CLI (`--optimizer "optax:adam"`, etc.)
+- `--learning-rate` and `--optax-max-steps` CLI arguments for benchmark runner
 - `--preflight` flag for benchmark CLI to verify GPU environment before running
 - Platform support documentation (`docs/platform-support.md`)
 - Published FF validation test harness (`test/integration/test_published_ff_validation.py`)
