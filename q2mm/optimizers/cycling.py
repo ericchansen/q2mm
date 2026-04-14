@@ -527,10 +527,16 @@ class OptimizationLoop:
                 if use_optax:
                     from q2mm.optimizers.optax import OptaxOptimizer
 
-                    optax_name = self.full_method.split(":", 1)[1]
+                    optax_spec = self.full_method.split(":", 1)[1]
+                    if "+" in optax_spec:
+                        optax_name, schedule = optax_spec.split("+", 1)
+                    else:
+                        optax_name = optax_spec
+                        schedule = None
                     full_opt = OptaxOptimizer(
                         optimizer=optax_name,
                         max_steps=self.full_maxiter,
+                        schedule=schedule,
                         verbose=False,
                     )
                     full_result = full_opt.optimize(self.objective)

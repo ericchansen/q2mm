@@ -731,9 +731,9 @@ outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
 
     ```
     Method: optax:adam
-    Converged: False (max_steps reached)
-    Score: 192.000 → 56.300
-    Steps: 2000
+    Success: False — max_steps reached
+    Score: 192.000000 → 56.300000 (70.7% improvement)
+    Iterations: 2000, Evaluations: 2000
     ```
 
 ??? example "Learning rate schedules"
