@@ -252,7 +252,9 @@ def seminario_angle_fc(
     k_kj = k_kj.real
 
     # Combine via reciprocal sum: 1/k = 1/(k_ij·r_ij²) + 1/(k_kj·r_kj²)
-    # Q2MM approximation (avoids FUERZA's 2x overestimate for angles)
+    # Standard Seminario angle formula. Note: FUERZA still overestimates
+    # H-angle FCs by ~2× (Allen et al. 2018); QFUERZA addresses this via
+    # substitution in estimate_force_constants().
     denom_ij = k_ij * r_ij_len**2
     denom_kj = k_kj * r_kj_len**2
 
