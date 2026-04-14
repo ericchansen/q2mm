@@ -84,6 +84,8 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("optax:adam+cosine", {"method": "optax:adam", "schedule": "cosine"}),
         ("optax:adagrad", {"method": "optax:adagrad"}),
         ("optax:sgd", {"method": "optax:sgd"}),
+        ("basinhopping", {"method": "basinhopping", "niter": 25}),
+        ("basinhopping", {"method": "basinhopping", "niter": 25, "T": 0.5}),
     ]
     return configs
 
