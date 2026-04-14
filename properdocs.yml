@@ -33,6 +33,7 @@ nav:
   - Q2MM v5 Improvements: comparison.md
   - How It Works:
     - Theory & Methods: how-it-works/theory.md
+    - QFUERZA Validation: how-it-works/qfuerza-validation.md
     - Architecture: how-it-works/architecture.md
     - Data Types: how-it-works/data-types.md
     - Optimization Guide: how-it-works/optimization-guide.md
