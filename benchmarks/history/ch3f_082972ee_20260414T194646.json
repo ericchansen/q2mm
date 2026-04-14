@@ -1,0 +1,134 @@
+{
+  "run_id": "ch3f_082972ee_20260414T194646",
+  "system": "ch3f",
+  "git_sha": "082972ee5d0bee051a6ccfe86f490bdbf0dbbdb7",
+  "git_dirty": true,
+  "timestamp": "2026-04-14T19:46:48.926114+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev269",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "JAX (gpu)"
+    ],
+    "forms": [
+      "Harmonic"
+    ],
+    "optimizers": [
+      "basinhopping (T=1.0)",
+      "basinhopping (T=0.5)",
+      "multi:L-BFGS-B (n=5)",
+      "multi:L-BFGS-B (n=10)",
+      "L-BFGS-B + L2(\u03bb=0.01)",
+      "optax:adam + L2(\u03bb=0.01)"
+    ],
+    "max_iter": 10000,
+    "n_combos": 6
+  },
+  "combos": {
+    "ch3f_jax_harmonic_gpu_basinhopping-t=1.0_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_basinhopping-t=1.0_auto",
+      "status": "converged",
+      "rmsd": 530.8975922060025,
+      "mae": 253.32942792947182,
+      "time_s": 6.353086989009171,
+      "n_eval": 745,
+      "seminario_rmsd": 191.95023884919462,
+      "backend": "JAX (gpu)",
+      "optimizer": "basinhopping (T=1.0)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_basinhopping-t=0.5_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_basinhopping-t=0.5_auto",
+      "status": "converged",
+      "rmsd": 530.6717214820377,
+      "mae": 253.15783542073217,
+      "time_s": 5.337533444006112,
+      "n_eval": 627,
+      "seminario_rmsd": 191.95023884919502,
+      "backend": "JAX (gpu)",
+      "optimizer": "basinhopping (T=0.5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_multi-l-bfgs-b-n=5_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_multi-l-bfgs-b-n=5_auto",
+      "status": "converged",
+      "rmsd": 531.728971582482,
+      "mae": 254.1693476009358,
+      "time_s": 4.275150500994641,
+      "n_eval": 457,
+      "seminario_rmsd": 191.95023884919445,
+      "backend": "JAX (gpu)",
+      "optimizer": "multi:L-BFGS-B (n=5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_multi-l-bfgs-b-n=10_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_multi-l-bfgs-b-n=10_auto",
+      "status": "converged",
+      "rmsd": 529.4554319731153,
+      "mae": 246.1644591279344,
+      "time_s": 7.909248222989845,
+      "n_eval": 994,
+      "seminario_rmsd": 191.95023884919462,
+      "backend": "JAX (gpu)",
+      "optimizer": "multi:L-BFGS-B (n=10)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto",
+      "status": "converged",
+      "rmsd": 993.3313568156339,
+      "mae": 852.4725163643063,
+      "time_s": 1.3289066349971108,
+      "n_eval": 27,
+      "seminario_rmsd": 191.95023884919462,
+      "backend": "JAX (gpu)",
+      "optimizer": "L-BFGS-B + L2(\u03bb=0.01)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_optax-adam-+-l2\u03bb=0.01_auto": {
+      "stem": "ch3f_jax_harmonic_gpu_optax-adam-+-l2\u03bb=0.01_auto",
+      "status": "converged",
+      "rmsd": 993.3665340056702,
+      "mae": 852.5262305929637,
+      "time_s": 5.96974632400088,
+      "n_eval": 403,
+      "seminario_rmsd": 191.9502388491945,
+      "backend": "JAX (gpu)",
+      "optimizer": "optax:adam + L2(\u03bb=0.01)",
+      "form": "harmonic",
+      "jac_mode": "analytical",
+      "gradients": {
+        "frequency": "analytical"
+      }
+    }
+  }
+}

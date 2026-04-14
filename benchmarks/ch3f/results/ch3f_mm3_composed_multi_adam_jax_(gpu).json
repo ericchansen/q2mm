@@ -1,0 +1,51 @@
+{
+  "metadata": {
+    "backend": "JAX (gpu)",
+    "optimizer": "composed:multi\u2192adam",
+    "molecule": "CH3F",
+    "functional_form": "mm3",
+    "source": "q2mm",
+    "composed": true,
+    "phases": [
+      "multi:L-BFGS-B (n=10)",
+      "optax:adam (100 steps)"
+    ],
+    "timestamp": "2026-04-14T21:46:44.876276+00:00",
+    "git_sha": "b11eb6b9c1b845b2485dc30ac060d7d1674574bb",
+    "git_dirty": true
+  },
+  "environment": {
+    "python_version": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "packages": {
+      "q2mm": "5.0.0a3.dev206",
+      "numpy": "2.4.3",
+      "scipy": "1.17.1",
+      "jax": "0.9.2",
+      "jaxlib": "0.9.2",
+      "openmm": "8.5.0"
+    }
+  },
+  "seminario_rmsd": 191.95023873728297,
+  "phase1": {
+    "optimizer": "multi:L-BFGS-B (n=10)",
+    "rmsd": 563.8231917337316,
+    "score": 4.77032177623634e-05,
+    "n_eval": 867,
+    "elapsed_s": 8.058846079002251
+  },
+  "phase2": {
+    "optimizer": "optax:adam (100 steps)",
+    "rmsd": 563.840590424116,
+    "score": 4.7509345431903556e-05,
+    "n_eval": 101,
+    "elapsed_s": 3.084965767004178
+  },
+  "composed": {
+    "final_rmsd": 563.840590424116,
+    "total_elapsed_s": 24.738225075998344,
+    "total_n_eval": 968,
+    "improvement_over_phase1_rmsd": -0.01739869038442521
+  }
+}
