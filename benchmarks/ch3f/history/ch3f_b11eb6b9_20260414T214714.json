@@ -1,0 +1,49 @@
+{
+  "run_id": "ch3f_b11eb6b9_20260414T214714",
+  "system": "ch3f",
+  "git_sha": "b11eb6b9c1b845b2485dc30ac060d7d1674574bb",
+  "git_dirty": true,
+  "timestamp": "2026-04-14T21:47:16.596709+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev269",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "JAX (gpu)"
+    ],
+    "forms": [
+      "MM3"
+    ],
+    "optimizers": [
+      "grad-simp (multi:L-BFGS-B inner)"
+    ],
+    "max_iter": 10000,
+    "n_combos": 1
+  },
+  "combos": {
+    "ch3f_jax_mm3_gpu_grad-simp-multi-l-bfgs-b-inner_fd": {
+      "stem": "ch3f_jax_mm3_gpu_grad-simp-multi-l-bfgs-b-inner_fd",
+      "status": "converged",
+      "rmsd": 526.6760020642743,
+      "mae": 238.20314678393495,
+      "time_s": 24.309285644005286,
+      "n_eval": 8970,
+      "seminario_rmsd": 191.95023873728312,
+      "backend": "JAX (gpu)",
+      "optimizer": "grad-simp (multi:L-BFGS-B inner)",
+      "form": "mm3",
+      "jac_mode": null,
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    }
+  }
+}

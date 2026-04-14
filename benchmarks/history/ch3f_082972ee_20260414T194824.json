@@ -1,0 +1,198 @@
+{
+  "run_id": "ch3f_082972ee_20260414T194824",
+  "system": "ch3f",
+  "git_sha": "082972ee5d0bee051a6ccfe86f490bdbf0dbbdb7",
+  "git_dirty": true,
+  "timestamp": "2026-04-14T19:48:32.425314+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev269",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "OpenMM (CUDA)"
+    ],
+    "forms": [
+      "Harmonic",
+      "MM3"
+    ],
+    "optimizers": [
+      "basinhopping (T=1.0)",
+      "basinhopping (T=0.5)",
+      "multi:L-BFGS-B (n=5)",
+      "multi:L-BFGS-B (n=10)",
+      "L-BFGS-B + L2(\u03bb=0.01)"
+    ],
+    "max_iter": 10000,
+    "n_combos": 10
+  },
+  "combos": {
+    "ch3f_openmm_harmonic_gpu_basinhopping-t=1.0_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_basinhopping-t=1.0_auto",
+      "status": "converged",
+      "rmsd": 1041.3738904597872,
+      "mae": 872.4409250834111,
+      "time_s": 140.0227541790082,
+      "n_eval": 849,
+      "seminario_rmsd": 191.94830494239028,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "basinhopping (T=1.0)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_basinhopping-t=0.5_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_basinhopping-t=0.5_auto",
+      "status": "converged",
+      "rmsd": 1021.4920689284461,
+      "mae": 857.44096557887,
+      "time_s": 155.12902638899686,
+      "n_eval": 950,
+      "seminario_rmsd": 191.94830494239028,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "basinhopping (T=0.5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_multi-l-bfgs-b-n=5_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_multi-l-bfgs-b-n=5_auto",
+      "status": "converged",
+      "rmsd": 983.4004802031053,
+      "mae": 837.3309851210503,
+      "time_s": 34.124241703000735,
+      "n_eval": 216,
+      "seminario_rmsd": 191.94830494239028,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "multi:L-BFGS-B (n=5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_multi-l-bfgs-b-n=10_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_multi-l-bfgs-b-n=10_auto",
+      "status": "converged",
+      "rmsd": 985.4566363382028,
+      "mae": 836.0864315523927,
+      "time_s": 64.4830888860015,
+      "n_eval": 410,
+      "seminario_rmsd": 191.94830494239028,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "multi:L-BFGS-B (n=10)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto": {
+      "stem": "ch3f_openmm_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto",
+      "status": "converged",
+      "rmsd": 995.752412041637,
+      "mae": 857.5821976905206,
+      "time_s": 19.528839374004747,
+      "n_eval": 126,
+      "seminario_rmsd": 191.94830494239028,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B + L2(\u03bb=0.01)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_basinhopping-t=1.0_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_basinhopping-t=1.0_auto",
+      "status": "converged",
+      "rmsd": 842.6365618950077,
+      "mae": 636.2365940254156,
+      "time_s": 168.03029745699314,
+      "n_eval": 1061,
+      "seminario_rmsd": 191.9477160768676,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "basinhopping (T=1.0)",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_basinhopping-t=0.5_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_basinhopping-t=0.5_auto",
+      "status": "converged",
+      "rmsd": 513.812708271946,
+      "mae": 263.92687024037014,
+      "time_s": 179.28996580000967,
+      "n_eval": 1131,
+      "seminario_rmsd": 191.9477160768676,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "basinhopping (T=0.5)",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_multi-l-bfgs-b-n=5_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_multi-l-bfgs-b-n=5_auto",
+      "status": "converged",
+      "rmsd": 578.0745804310644,
+      "mae": 341.11891070150307,
+      "time_s": 59.80363201801083,
+      "n_eval": 394,
+      "seminario_rmsd": 191.9477160768676,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "multi:L-BFGS-B (n=5)",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_multi-l-bfgs-b-n=10_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_multi-l-bfgs-b-n=10_auto",
+      "status": "converged",
+      "rmsd": 28.70499422642961,
+      "mae": 20.157966149840817,
+      "time_s": 157.35712705999322,
+      "n_eval": 1001,
+      "seminario_rmsd": 191.9477160768676,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "multi:L-BFGS-B (n=10)",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_openmm_mm3_gpu_lbfgsb-+-l2\u03bb=0.01_auto": {
+      "stem": "ch3f_openmm_mm3_gpu_lbfgsb-+-l2\u03bb=0.01_auto",
+      "status": "not_converged",
+      "rmsd": 133.25120434264159,
+      "mae": 108.8166527434876,
+      "time_s": 12.656701636995422,
+      "n_eval": 80,
+      "seminario_rmsd": 191.9477160768676,
+      "backend": "OpenMM (CUDA)",
+      "optimizer": "L-BFGS-B + L2(\u03bb=0.01)",
+      "form": "mm3",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    }
+  }
+}

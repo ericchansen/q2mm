@@ -1,0 +1,118 @@
+{
+  "run_id": "ch3f_082972ee_20260414T204508",
+  "system": "ch3f",
+  "git_sha": "082972ee5d0bee051a6ccfe86f490bdbf0dbbdb7",
+  "git_dirty": true,
+  "timestamp": "2026-04-14T20:45:14.268309+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev269",
+    "numpy": "2.4.3",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "JAX-MD (OPLSAA, gpu)"
+    ],
+    "forms": [
+      "Harmonic",
+      "MM3"
+    ],
+    "optimizers": [
+      "basinhopping (T=1.0)",
+      "basinhopping (T=0.5)",
+      "multi:L-BFGS-B (n=5)",
+      "multi:L-BFGS-B (n=10)",
+      "L-BFGS-B + L2(\u03bb=0.01)"
+    ],
+    "max_iter": 10000,
+    "n_combos": 5
+  },
+  "combos": {
+    "ch3f_jax-md_harmonic_gpu_basinhopping-t=1.0_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_basinhopping-t=1.0_auto",
+      "status": "converged",
+      "rmsd": 531.3399213241722,
+      "mae": 255.3710274653746,
+      "time_s": 31.28685780199885,
+      "n_eval": 609,
+      "seminario_rmsd": 191.95023884919587,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "basinhopping (T=1.0)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_basinhopping-t=0.5_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_basinhopping-t=0.5_auto",
+      "status": "converged",
+      "rmsd": 531.153521344569,
+      "mae": 254.09946476465652,
+      "time_s": 31.005626268000924,
+      "n_eval": 609,
+      "seminario_rmsd": 191.95023884919559,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "basinhopping (T=0.5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_multi-l-bfgs-b-n=5_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_multi-l-bfgs-b-n=5_auto",
+      "status": "converged",
+      "rmsd": 525.8791629662486,
+      "mae": 241.5474602569718,
+      "time_s": 20.61394315000507,
+      "n_eval": 408,
+      "seminario_rmsd": 191.95023884919556,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "multi:L-BFGS-B (n=5)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_multi-l-bfgs-b-n=10_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_multi-l-bfgs-b-n=10_auto",
+      "status": "converged",
+      "rmsd": 994.6257774538623,
+      "mae": 815.8987713032375,
+      "time_s": 48.57325084300828,
+      "n_eval": 952,
+      "seminario_rmsd": 191.95023884919536,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "multi:L-BFGS-B (n=10)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax-md_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto": {
+      "stem": "ch3f_jax-md_harmonic_gpu_lbfgsb-+-l2\u03bb=0.01_auto",
+      "status": "converged",
+      "rmsd": 993.3313649629532,
+      "mae": 852.4724894523814,
+      "time_s": 1.313609520002501,
+      "n_eval": 27,
+      "seminario_rmsd": 191.95023884919556,
+      "backend": "JAX-MD (OPLSAA, gpu)",
+      "optimizer": "L-BFGS-B + L2(\u03bb=0.01)",
+      "form": "harmonic",
+      "jac_mode": "auto",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    }
+  }
+}
