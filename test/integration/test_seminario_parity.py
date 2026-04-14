@@ -4,6 +4,11 @@ Covers issue #74: validates that the refactored code reproduces the
 expected Seminario/QFUERZA results for both the rh-enamide and SN2
 systems, plus runtime benchmarks.
 
+Also includes Zenodo-validated tests (cisplatin) that verify QFUERZA
+rules against the paper authors' own force field files:
+  Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476
+  Zenodo DOI: 10.5281/zenodo.17386006
+
 Force-constant tolerances use rel=1e-6 (not abs=1e-8) because the
 refactored code derives HESSIAN_AU_TO_KJMOLA2 from base CODATA 2018
 constants instead of the legacy hardcoded value.  The difference is
@@ -27,11 +32,18 @@ from test._shared import REPO_ROOT, SN2_XYZ, SN2_HESSIAN
 
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
+from q2mm.models.seminario import (
+    estimate_force_constants,
+    seminario_bond_fc,
+    QFUERZA_H_ANGLE_DEFAULT_MDYNA,
+    _is_hydrogen_angle,
+)
 from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
 from q2mm.io import JaguarIn, MacroModel
 
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
+
+CISPLATIN_ZENODO_PATH = FIXTURE_DIR / "cisplatin_zenodo_reference.json"
 
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
 SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
@@ -345,3 +357,138 @@ def test_rh_enamide_seminario_benchmark(
         print(f"  Seminario estimate: {t_est_mean:.4f}s ± {t_est_std:.4f}s (10 runs)")
         print(f"  Total (single run): {t_parse + t_mol + t_est_mean:.3f}s")
         print(f"{'=' * 60}")
+
+
+# ---------------------------------------------------------------------------
+# Zenodo-validated cisplatin tests (externally grounded)
+#
+# These tests verify QFUERZA rules against force field files published by
+# the paper authors in Zenodo (DOI: 10.5281/zenodo.17386006).  Unlike the
+# self-referential golden fixtures above, these reference values come from
+# an independent source.
+# ---------------------------------------------------------------------------
+_CISPLATIN_AVAILABLE = CISPLATIN_ZENODO_PATH.exists()
+
+# Atom labels used in the .fld files that correspond to hydrogen
+_CISPLATIN_H_LABELS = {"H3"}
+
+
+@pytest.fixture(scope="module")
+def cisplatin_zenodo() -> dict[str, Any]:
+    return _load_json(CISPLATIN_ZENODO_PATH)
+
+
+def _h_angle_in_cisplatin(atoms: str) -> bool:
+    """Return True if the angle involves hydrogen as an outer atom."""
+    parts = atoms.split("-")
+    return parts[0] in _CISPLATIN_H_LABELS or parts[2] in _CISPLATIN_H_LABELS
+
+
+@pytest.mark.skipif(not _CISPLATIN_AVAILABLE, reason="Cisplatin Zenodo fixture not found")
+class TestCisplatinZenodoQFUERZARules:
+    """Verify QFUERZA definition rules against the paper's own force field files."""
+
+    def test_qfuerza_bonds_equal_fuerza(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """QFUERZA must not modify bond force constants (same as FUERZA)."""
+        fuerza = cisplatin_zenodo["methods"]["fuerza"]
+        qfuerza = cisplatin_zenodo["methods"]["qfuerza"]
+
+        assert len(qfuerza["bonds"]) == len(fuerza["bonds"])
+        for qb, fb in zip(qfuerza["bonds"], fuerza["bonds"]):
+            assert qb["atoms"] == fb["atoms"]
+            assert qb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-10), (
+                f"Bond {qb['atoms']}: QFUERZA={qb['force_constant']}, FUERZA={fb['force_constant']}"
+            )
+            assert qb["equilibrium"] == pytest.approx(fb["equilibrium"], abs=1e-10)
+
+    def test_qfuerza_nonhydrogen_angles_equal_fuerza(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """Non-hydrogen angle FCs must be unchanged from FUERZA."""
+        fuerza_angles = cisplatin_zenodo["methods"]["fuerza"]["angles"]
+        qfuerza_angles = cisplatin_zenodo["methods"]["qfuerza"]["angles"]
+
+        for qa, fa in zip(qfuerza_angles, fuerza_angles):
+            assert qa["atoms"] == fa["atoms"]
+            if not _h_angle_in_cisplatin(qa["atoms"]):
+                assert qa["force_constant"] == pytest.approx(fa["force_constant"], abs=1e-10), (
+                    f"Non-H angle {qa['atoms']}: QFUERZA={qa['force_constant']}, FUERZA={fa['force_constant']}"
+                )
+
+    def test_qfuerza_hydrogen_angles_substituted(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """H-angle FCs must be exactly 0.5 mdyn·Å/rad²."""
+        qfuerza_angles = cisplatin_zenodo["methods"]["qfuerza"]["angles"]
+        h_angles = [a for a in qfuerza_angles if _h_angle_in_cisplatin(a["atoms"])]
+
+        assert len(h_angles) >= 2, "Expected at least 2 H-angles (H-N-Pt and H-N-H)"
+        for a in h_angles:
+            assert a["force_constant"] == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_MDYNA, abs=1e-10), (
+                f"H-angle {a['atoms']}: expected {QFUERZA_H_ANGLE_DEFAULT_MDYNA}, got {a['force_constant']}"
+            )
+
+    def test_fuerza_overestimates_hydrogen_angles(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """FUERZA H-angle FCs must be larger than 0.5 (the known overestimation)."""
+        fuerza_angles = cisplatin_zenodo["methods"]["fuerza"]["angles"]
+        h_angles = [a for a in fuerza_angles if _h_angle_in_cisplatin(a["atoms"])]
+
+        for a in h_angles:
+            ratio = a["force_constant"] / QFUERZA_H_ANGLE_DEFAULT_MDYNA
+            assert ratio > 1.5, (
+                f"H-angle {a['atoms']}: FUERZA={a['force_constant']}, "
+                f"ratio to QFUERZA default={ratio:.2f}× (expected >1.5×)"
+            )
+
+    def test_gamma_fuerza_bonds_equal_fuerza(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """γ-FUERZA does not modify bonds (same as FUERZA)."""
+        fuerza = cisplatin_zenodo["methods"]["fuerza"]
+        gamma = cisplatin_zenodo["methods"]["gamma_fuerza"]
+
+        for gb, fb in zip(gamma["bonds"], fuerza["bonds"]):
+            assert gb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-10)
+
+    def test_gamma_fuerza_scales_angles(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """γ-FUERZA angle FCs should be FUERZA × γ where γ ≈ 0.68."""
+        fuerza_angles = cisplatin_zenodo["methods"]["fuerza"]["angles"]
+        gamma_angles = cisplatin_zenodo["methods"]["gamma_fuerza"]["angles"]
+
+        ratios = []
+        for ga, fa in zip(gamma_angles, fuerza_angles):
+            if fa["force_constant"] > 0.01:
+                ratios.append(ga["force_constant"] / fa["force_constant"])
+
+        assert len(ratios) >= 4
+        mean_gamma = sum(ratios) / len(ratios)
+        assert mean_gamma == pytest.approx(0.68, abs=0.01), f"Mean γ={mean_gamma:.4f}, expected ~0.68"
+        # All ratios should be the same γ
+        for r in ratios:
+            assert r == pytest.approx(mean_gamma, rel=1e-3)
+
+    def test_optimized_methods_converge(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """After optimization, QFUERZA and FUERZA should produce similar final parameters."""
+        qopt = cisplatin_zenodo["methods"]["qfuerza_optimized"]
+        fopt = cisplatin_zenodo["methods"]["fuerza_optimized"]
+
+        for qb, fb in zip(qopt["bonds"], fopt["bonds"]):
+            assert qb["force_constant"] == pytest.approx(fb["force_constant"], rel=0.01), (
+                f"Optimized bond {qb['atoms']}: QFUERZA={qb['force_constant']}, FUERZA={fb['force_constant']}"
+            )
+
+    def test_is_hydrogen_angle_matches_paper_labels(self) -> None:
+        """Our _is_hydrogen_angle logic must agree with the paper's H-angle classification."""
+        # Cisplatin angles from the .fld files, mapped to element tuples
+        # In cisplatin: atoms 1=N(NH3), 2=Pt, 3=Cl, H3=H
+        cisplatin_angles = [
+            (("N", "Pt", "Cl"), False),  # N-Pt-Cl
+            (("N", "Pt", "N"), False),  # N-Pt-N
+            (("Cl", "Pt", "Cl"), False),  # Cl-Pt-Cl
+            (("H", "N", "Pt"), True),  # H-N-Pt
+            (("H", "N", "H"), True),  # H-N-H
+        ]
+        for elements, expected in cisplatin_angles:
+            assert _is_hydrogen_angle(elements) == expected, f"_is_hydrogen_angle({elements}) should be {expected}"
+
+    def test_approximation_uses_fixed_defaults(self, cisplatin_zenodo: dict[str, Any]) -> None:
+        """Approximation method: bonds=5.0, angles=0.5 (fixed defaults, no Hessian)."""
+        approx = cisplatin_zenodo["methods"]["approximation"]
+        for b in approx["bonds"]:
+            assert b["force_constant"] == pytest.approx(5.0, abs=1e-10)
+        for a in approx["angles"]:
+            assert a["force_constant"] == pytest.approx(0.5, abs=1e-10)

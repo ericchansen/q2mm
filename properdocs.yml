@@ -33,7 +33,6 @@ nav:
   - Q2MM v5 Improvements: comparison.md
   - How It Works:
     - Theory & Methods: how-it-works/theory.md
-    - QFUERZA Validation: how-it-works/qfuerza-validation.md
     - Architecture: how-it-works/architecture.md
     - Data Types: how-it-works/data-types.md
     - Optimization Guide: how-it-works/optimization-guide.md
@@ -50,6 +49,7 @@ nav:
     - Rh-Enamide: benchmarks/rh-enamide.md
     - GPU Acceleration: benchmarks/gpu.md
     - Published FF Validation: benchmarks/published-ff-validation.md
+    - QFUERZA Validation: benchmarks/qfuerza-validation.md
     - Benchmark History: benchmarks/history.md
   - API Reference: reference/
   - References: references.md
