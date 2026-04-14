@@ -80,6 +80,10 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("Powell", {"method": "Powell"}),
         ("grad-simp", {"method": "cycling"}),
         ("grad-simp", {"method": "cycling", "full_jac": "auto"}),
+        ("optax:adam", {"method": "optax:adam"}),
+        ("optax:adam+cosine", {"method": "optax:adam", "schedule": "cosine"}),
+        ("optax:adagrad", {"method": "optax:adagrad"}),
+        ("optax:sgd", {"method": "optax:sgd"}),
     ]
     return configs
 
@@ -561,6 +565,20 @@ def main(argv: list[str] | None = None) -> int:
         default=0.01,
         help="Cycling optimizer: fractional improvement threshold (default: 0.01).",
     )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        metavar="FLOAT",
+        default=0.01,
+        help="Optax optimizer: learning rate (default: 0.01).",
+    )
+    parser.add_argument(
+        "--optax-max-steps",
+        type=int,
+        metavar="N",
+        default=2000,
+        help="Optax optimizer: maximum gradient steps (default: 2000).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -652,6 +670,18 @@ def main(argv: list[str] | None = None) -> int:
             "convergence": args.convergence,
         }
         optimizers = [(l, {**c, **cycling_kwargs}) if c.get("method") == "cycling" else (l, c) for l, c in optimizers]
+
+        # Inject optax-specific CLI args into optax optimizer configs
+        optax_kwargs = {
+            "learning_rate": args.learning_rate,
+            "max_steps": args.optax_max_steps,
+        }
+        optimizers = [
+            (l, {**c, **optax_kwargs})
+            if isinstance(c.get("method"), str) and c["method"].startswith("optax:")
+            else (l, c)
+            for l, c in optimizers
+        ]
 
         # Filter forms: --form overrides system defaults
         if args.form:
