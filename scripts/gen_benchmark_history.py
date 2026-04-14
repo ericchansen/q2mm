@@ -63,6 +63,119 @@ def _format_delta(current: float | None, previous: float | None) -> str:
     return f"{sign}{delta:.1f}"
 
 
+def _render_system_section(lines: list[str], system: str, runs: list[dict]) -> None:
+    """Render RMSD and timing tables for a single benchmark system."""
+    lines.append(f"## {system}\n")
+
+    if len(runs) < 2:
+        lines.append(f"Only {len(runs)} run(s) recorded for **{system}** — need at least 2 for comparison.\n")
+        return
+
+    # --- RMSD comparison grid ---
+    lines.append("### RMSD Comparison\n")
+    lines.append(
+        "Each cell shows the optimized RMSD for that combo. "
+        "The **Δ** column shows the change from the previous run. "
+        "Lower RMSD is better.\n"
+    )
+
+    # Collect all combo stems across runs for this system
+    all_stems: list[str] = []
+    seen: set[str] = set()
+    for run in runs:
+        for stem in run.get("combos", {}):
+            if stem not in seen:
+                all_stems.append(stem)
+                seen.add(stem)
+
+    # Group by backend for readability
+    by_backend: dict[str, list[str]] = {}
+    for stem in all_stems:
+        parts = stem.split("_")
+        if len(parts) >= 2:
+            backend = parts[1]
+        else:
+            backend = "other"
+        by_backend.setdefault(backend, []).append(stem)
+
+    for backend_key in ["jax", "jax-md", "openmm", "tinker"]:
+        stems = by_backend.get(backend_key, [])
+        if not stems:
+            continue
+
+        label = BACKEND_LABELS.get(backend_key, backend_key)
+        lines.append(f"#### {label}\n")
+
+        header = "| Combo |"
+        sep = "|-------|"
+        for i, run in enumerate(runs, 1):
+            sha = _short_sha(run.get("git_sha"))
+            header += f" `{sha}` |"
+            sep += "--------:|"
+            if i > 1:
+                header += " Δ |"
+                sep += "---:|"
+
+        lines.append(header)
+        lines.append(sep)
+
+        for stem in sorted(stems):
+            parts = stem.split("_")
+            display = "_".join(parts[1:]) if len(parts) >= 2 else stem
+
+            row = f"| `{display}` |"
+            prev_rmsd: float | None = None
+
+            for i, run in enumerate(runs):
+                combo = run.get("combos", {}).get(stem, {})
+                rmsd = combo.get("rmsd")
+
+                if rmsd is not None:
+                    row += f" {rmsd:.1f} |"
+                elif combo.get("status") == "failed":
+                    row += " ❌ |"
+                else:
+                    row += " — |"
+
+                if i > 0:
+                    delta = _format_delta(rmsd, prev_rmsd)
+                    if delta and delta != "=":
+                        if delta.startswith("-"):
+                            row += f" **{delta}** |"
+                        elif delta.startswith("+"):
+                            row += f" {delta} |"
+                        else:
+                            row += f" {delta} |"
+                    else:
+                        row += f" {delta} |"
+
+                prev_rmsd = rmsd
+
+            lines.append(row)
+
+        lines.append("")
+
+    # --- Timing comparison ---
+    lines.append("### Timing\n")
+    lines.append(
+        "Optimizer time (seconds) per combo. Timing depends on "
+        "hardware and system load, so small variations are expected.\n"
+    )
+
+    lines.append("| Run | Commit | Total Time (s) | Avg Time/Combo (s) |")
+    lines.append("|-----|--------|---------------:|-------------------:|")
+
+    for i, run in enumerate(runs, 1):
+        sha = _short_sha(run.get("git_sha"))
+        combos = run.get("combos", {})
+        times = [c.get("time_s") for c in combos.values() if c.get("time_s") is not None]
+        total = sum(times)
+        avg = total / len(times) if times else 0
+        lines.append(f"| {i} | `{sha}` | {total:.0f} | {avg:.1f} |")
+
+    lines.append("")
+
+
 def _generate_page(runs: list[dict]) -> str:
     """Build the Markdown content for the history page."""
     lines: list[str] = []
@@ -102,122 +215,16 @@ def _generate_page(runs: list[dict]) -> str:
 
     lines.append("")
 
-    # --- RMSD comparison grid ---
-    if len(runs) >= 2:
-        lines.append("## RMSD Comparison\n")
-        lines.append(
-            "Each cell shows the optimized RMSD for that combo. "
-            "The **Δ** column shows the change from the previous run. "
-            "Lower RMSD is better.\n"
-        )
+    # --- Group runs by system ---
+    by_system: dict[str, list[dict]] = {}
+    for run in runs:
+        system = run.get("system", "unknown")
+        by_system.setdefault(system, []).append(run)
 
-        # Collect all combo stems across all runs
-        all_stems: list[str] = []
-        seen: set[str] = set()
-        for run in runs:
-            for stem in run.get("combos", {}):
-                if stem not in seen:
-                    all_stems.append(stem)
-                    seen.add(stem)
-
-        # Group by backend for readability
-        by_backend: dict[str, list[str]] = {}
-        for stem in all_stems:
-            # Extract backend from stem: ch3f_{backend}_{form}_{device}_{opt}[_{jac}]
-            # Stems use hyphens (e.g. "jax-md"), so split carefully
-            parts = stem.split("_")
-            if len(parts) >= 2:
-                backend = parts[1]
-                # jax-md is a single hyphenated token after splitting on _
-            else:
-                backend = "other"
-            by_backend.setdefault(backend, []).append(stem)
-
-        for backend_key in ["jax", "jax-md", "openmm", "tinker"]:
-            stems = by_backend.get(backend_key, [])
-            if not stems:
-                continue
-
-            label = BACKEND_LABELS.get(backend_key, backend_key)
-            lines.append(f"### {label}\n")
-
-            # Build header: Combo | Run 1 | Run 2 | Δ(1→2) | ...
-            header = "| Combo |"
-            sep = "|-------|"
-            for i, run in enumerate(runs, 1):
-                sha = _short_sha(run.get("git_sha"))
-                header += f" `{sha}` |"
-                sep += "--------:|"
-                if i > 1:
-                    header += " Δ |"
-                    sep += "---:|"
-
-            lines.append(header)
-            lines.append(sep)
-
-            for stem in sorted(stems):
-                # Build a short display name from the stem
-                # Remove the system prefix (e.g. "ch3f_")
-                parts = stem.split("_")
-                if len(parts) >= 2:
-                    display = "_".join(parts[1:])
-                else:
-                    display = stem
-
-                row = f"| `{display}` |"
-                prev_rmsd: float | None = None
-
-                for i, run in enumerate(runs):
-                    combo = run.get("combos", {}).get(stem, {})
-                    rmsd = combo.get("rmsd")
-
-                    if rmsd is not None:
-                        row += f" {rmsd:.1f} |"
-                    elif combo.get("status") == "failed":
-                        row += " ❌ |"
-                    else:
-                        row += " — |"
-
-                    if i > 0:
-                        delta = _format_delta(rmsd, prev_rmsd)
-                        if delta and delta != "=":
-                            # Highlight improvements (negative) vs regressions (positive)
-                            if delta.startswith("-"):
-                                row += f" **{delta}** |"
-                            elif delta.startswith("+"):
-                                row += f" {delta} |"
-                            else:
-                                row += f" {delta} |"
-                        else:
-                            row += f" {delta} |"
-
-                    prev_rmsd = rmsd
-
-                lines.append(row)
-
-            lines.append("")
-
-    # --- Timing comparison ---
-    if len(runs) >= 2:
-        lines.append("## Timing Comparison\n")
-        lines.append(
-            "Optimizer time (seconds) per combo. Timing depends on "
-            "hardware and system load, so small variations are expected.\n"
-        )
-
-        # Just show a summary: total time per run
-        lines.append("| Run | Commit | Total Time (s) | Avg Time/Combo (s) |")
-        lines.append("|-----|--------|---------------:|-------------------:|")
-
-        for i, run in enumerate(runs, 1):
-            sha = _short_sha(run.get("git_sha"))
-            combos = run.get("combos", {})
-            times = [c.get("time_s") for c in combos.values() if c.get("time_s") is not None]
-            total = sum(times)
-            avg = total / len(times) if times else 0
-            lines.append(f"| {i} | `{sha}` | {total:.0f} | {avg:.1f} |")
-
-        lines.append("")
+    # Render RMSD + timing sections per system
+    for system_key in sorted(by_system):
+        system_runs = by_system[system_key]
+        _render_system_section(lines, system_key, system_runs)
 
     return "\n".join(lines)
 
