@@ -1,6 +1,6 @@
 # Tinker Backend
 
-The `TinkerEngine` wraps external Tinker executables (`analyze`, `minimize`,
+The `TinkerEngine` wraps external [Tinker](https://dasher.wustl.edu/tinker/) executables (`analyze`, `minimize`,
 `vibrate`, `testhess`) via subprocess calls. It is the original subprocess-based
 MM3 backend and remains useful when an external Tinker installation is available.
 

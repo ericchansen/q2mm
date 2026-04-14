@@ -11,7 +11,7 @@ well-defined D₃ₕ-like transition state.
 
 !!! note "What you need before starting"
     - **Python 3.10+** with Q2MM installed (`pip install q2mm`)
-    - **NumPy** and **SciPy** (installed automatically with Q2MM)
+    - **[NumPy](https://numpy.org/)** and **[SciPy](https://scipy.org/)** (installed automatically with Q2MM)
     - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`), [JAX](https://jax.readthedocs.io/) (`pip install "q2mm[jax]"`), [JAX-MD](https://github.com/jax-md/jax-md) (`pip install "q2mm[jax-md]"`), or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
     - The SN2 example files in `examples/sn2-test/`
 

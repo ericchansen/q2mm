@@ -2,7 +2,7 @@
 
 The `OpenMMEngine` is Q2MM's most versatile backend, supporting both
 **Harmonic** and **MM3** functional forms. It runs in-process via the
-OpenMM Python API, avoiding subprocess overhead.
+[OpenMM](https://openmm.org/) Python API, avoiding subprocess overhead.
 
 ---
 

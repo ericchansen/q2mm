@@ -108,7 +108,7 @@ vs 0.000 for Nelder-Mead on CH₃F harmonic.
 
 ## Strategy 2: Optax Adaptive Optimizers (JAX only)
 
-Optax is a JAX-native gradient processing library that provides modern
+[Optax](https://optax.readthedocs.io/) is a [JAX](https://jax.readthedocs.io/)-native gradient processing library that provides modern
 adaptive optimizers (Adam, AdaGrad, SGD, AdamW) with features like momentum,
 per-parameter learning rates, and learning rate schedules.
 
