@@ -39,6 +39,20 @@ def _generate_run_id(system: str) -> str:
     return generate_run_id(system)
 
 
+def _find_history_dir(output_dir: Path) -> Path:
+    """Locate the canonical ``benchmarks/history/`` directory.
+
+    Walks up from *output_dir* looking for a parent named ``benchmarks``.
+    If found, returns ``<benchmarks>/history``.  Otherwise falls back to
+    ``output_dir.parent / "history"`` for custom output paths.
+    """
+    candidate = output_dir.resolve()
+    for part in (candidate, *candidate.parents):
+        if part.name == "benchmarks":
+            return part / "history"
+    return output_dir.parent / "history"
+
+
 def _discover_backends() -> list[tuple[str, type, str]]:
     """Discover available MM backends at runtime via the engine registry.
 
@@ -313,7 +327,7 @@ def _run_matrix(
             "n_combos": len(results),
         }
         summary = build_run_summary(results, system=system_key, run_id=run_id, config=config)
-        history_dir = output_dir.parent / "history"
+        history_dir = _find_history_dir(output_dir)
         history_path = history_dir / f"{run_id}.json"
         summary.to_json(history_path)
         print(f"  History saved to: {history_path}")

@@ -302,17 +302,7 @@ debug why optimization stalls.
 ## Optimizer Reference
 
 For constructor parameters, return types, and full API details, see the
-source code:
-
-| Optimizer | Source | Notes |
-|-----------|--------|-------|
-| [`ScipyOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/scipy_opt.py) | SciPy wrapper | L-BFGS-B, Nelder-Mead, Powell, least_squares, trust-constr |
-| [`OptaxOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/optax.py) | [Optax](https://optax.readthedocs.io/) wrapper (JAX only) | Adam, AdamW, AdaGrad, SGD; supports LR schedules (cosine, etc.) |
-| [`OptimizationLoop`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py) | Grad-simp cycling | Alternates gradient + sensitivity-selected simplex |
-| [`BasinHoppingOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/basinhopping.py) | [SciPy basin-hopping](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html) wrapper | Stochastic hops + local minimization |
-| [`MultiStartOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/multistart.py) | Meta-optimizer | N perturbed starts, keep best; wraps any optimizer |
-| [`SubspaceObjective`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py) | Subspace projection | Optimize a subset of parameters, hold rest fixed |
-| [`ObjectiveFunction`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py) | Objective with optional L2 | `regularization` and `reference_params` kwargs |
+[API Reference](../reference/q2mm/optimizers/).
 
 ### Gradient modes
 
