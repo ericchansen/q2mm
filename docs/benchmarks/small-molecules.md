@@ -20,17 +20,6 @@ matrix, so it is the right place to compare combinations directly.
 - Starting point: QFUERZA initialization — JAX/JAX-MD begin at 192.0 cm⁻¹
   RMSD, OpenMM at 191.9 cm⁻¹, Tinker at 192.1 cm⁻¹
 
-!!! note "Starting-point change (April 2026)"
-    Prior benchmarks (commits before `69e4f7c4`) used the original Seminario
-    method for initialization, which produced a starting RMSD of ~157 cm⁻¹.
-    The default was changed to QFUERZA in commit `650e62e` — see
-    [QFUERZA strategy](../how-it-works/theory.md#stage-1-qfuerza-estimation). QFUERZA starts at ~192 cm⁻¹
-    but uses physically motivated force-constant estimates that provide a
-    more robust basin for gradient-based optimizers. Results before and after
-    this change are **not directly comparable** as a pure optimizer
-    leaderboard, because local optimizers converge to different basins
-    depending on the starting point.
-
 ## Full CH₃F matrix
 
 Default rows are grouped by functional form and then by final RMSD. Use the
