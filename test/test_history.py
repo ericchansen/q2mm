@@ -149,3 +149,45 @@ class TestGenerateRunId:
         time.sleep(1.1)
         r2 = generate_run_id("ch3f")
         assert r1 != r2
+
+
+class TestFindHistoryDir:
+    """Tests for _find_history_dir()."""
+
+    def test_finds_benchmarks_parent(self, tmp_path: Path) -> None:
+        """Should walk up to find benchmarks/ and return benchmarks/history."""
+        from q2mm.diagnostics.cli import _find_history_dir
+
+        benchmarks = tmp_path / "benchmarks"
+        output = benchmarks / "ch3f" / "results"
+        output.mkdir(parents=True)
+        result = _find_history_dir(output)
+        assert result == benchmarks / "history"
+
+    def test_deeply_nested(self, tmp_path: Path) -> None:
+        """Should work even with deeply nested output paths."""
+        from q2mm.diagnostics.cli import _find_history_dir
+
+        benchmarks = tmp_path / "benchmarks"
+        output = benchmarks / "ch3f" / "deep" / "nested"
+        output.mkdir(parents=True)
+        result = _find_history_dir(output)
+        assert result == benchmarks / "history"
+
+    def test_fallback_without_benchmarks(self, tmp_path: Path) -> None:
+        """Should fall back to output_dir.parent/history if no benchmarks/ ancestor."""
+        from q2mm.diagnostics.cli import _find_history_dir
+
+        output = tmp_path / "custom" / "results"
+        output.mkdir(parents=True)
+        result = _find_history_dir(output)
+        assert result == tmp_path / "custom" / "history"
+
+    def test_output_is_benchmarks_itself(self, tmp_path: Path) -> None:
+        """When output_dir IS benchmarks/, should return benchmarks/history."""
+        from q2mm.diagnostics.cli import _find_history_dir
+
+        benchmarks = tmp_path / "benchmarks"
+        benchmarks.mkdir()
+        result = _find_history_dir(benchmarks)
+        assert result == benchmarks / "history"
