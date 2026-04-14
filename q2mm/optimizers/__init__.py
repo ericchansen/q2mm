@@ -1,7 +1,7 @@
-"""Scipy-based force field optimizers for Q2MM.
+"""Force field optimizers for Q2MM.
 
 Provides a clean, composable optimization framework built on
-:mod:`scipy.optimize` and the Q2MM clean model layer.
+:mod:`scipy.optimize`, :mod:`optax`, and the Q2MM clean model layer.
 """
 
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
@@ -35,5 +35,13 @@ try:
         "SensitivityResult",
         "compute_sensitivity",
     ]
+except ImportError:
+    pass
+
+# Lazy import: optax + jax are optional dependencies
+try:
+    from q2mm.optimizers.optax import OptaxOptimizer  # noqa: F401
+
+    __all__ += ["OptaxOptimizer"]
 except ImportError:
     pass
