@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `BasinHoppingOptimizer` wrapping `scipy.optimize.basinhopping` with bounded
+  perturbation steps and L-BFGS-B local minimization for global optimization
+  (#232)
+- `MultiStartOptimizer` meta-optimizer that runs any inner optimizer from N
+  perturbed starting points and returns the best result (#231)
+- L2 regularization on `ObjectiveFunction` via `regularization` and
+  `reference_params` kwargs — penalizes parameter drift from QFUERZA starting
+  values on under-determined systems (#229)
+- Basin-hopping and multi-start dispatch in benchmark CLI
+  (`--optimizer "basinhopping"`, `--optimizer "multi:L-BFGS-B"`)
+- `multi:` prefix support in `OptimizationLoop.full_method` for multi-start
+  as the gradient phase of grad-simp cycling
+- Composed workflow benchmark script (`scripts/bench_composed.py`) for
+  multi-start → optax Adam pipelines
+- 75-combo CH₃F benchmark matrix (71 single-shot + 4 composed workflows)
+  with full results, force fields, and history
 - `OptaxOptimizer` for JAX-native Adam, AdaGrad, SGD, and AdamW optimization
   with analytical gradients and learning rate schedules
 - Optax benchmark configs in CLI (`--optimizer "optax:adam"`, etc.)

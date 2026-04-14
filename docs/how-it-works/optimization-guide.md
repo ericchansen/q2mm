@@ -1,201 +1,137 @@
 # Optimization Guide
 
-Q2MM provides four optimization strategies with increasing sophistication.
-This page explains each one and when to use it.
+Force field optimization is hard because the objective landscape — the surface
+defined by how well MM frequencies match QM reference data — is rarely smooth.
+**MM3** landscapes are rugged with many local minima (Buckingham potentials,
+coupled torsions). **Harmonic** landscapes are smoother but still
+non-trivial from a poor starting point. No single optimizer handles both
+cases well.
+
+This guide tells you **what to do** for your system. It recommends concrete
+workflows grounded in [CH₃F benchmark evidence](../benchmarks/small-molecules.md),
+then links to source code for API details.
 
 ---
 
-## Choosing a strategy
+## Quick-start: which workflow?
 
-We don't yet have enough benchmark data across system sizes to give
-confident thresholds for when to switch strategies. Here's what we know
-so far:
+| Your system | Recommended workflow | Why |
+|-------------|---------------------|-----|
+| ≤ 10 params, harmonic form | [Workflow A](#workflow-a-small-smooth) | L-BFGS-B alone reaches the best basin (529 cm⁻¹ RMSD on CH₃F) |
+| ≤ 10 params, MM3 form | [Workflow B](#workflow-b-small-rugged) | Multi-start finds basins single-start misses (28.7 vs 579 RMSD) |
+| 10–50 params, any form | [Workflow C](#workflow-c-medium-systems) | Grad-simp cycling combines gradient speed with simplex robustness |
+| 50+ params | [Workflow C](#workflow-c-medium-systems) + [L2](#l2-regularization) | Regularization prevents parameter drift in under-determined systems |
 
-| Strategy | What it does | What we've observed |
-|----------|-------------|---------------------|
-| `ScipyOptimizer("Nelder-Mead")` | Derivative-free simplex on all params | Low optimization scores on both CH₃F and Rh-enamide, but final RMSD can be poor (1038 cm⁻¹ on CH₃F harmonic). Needs many evaluations. |
-| `ScipyOptimizer("L-BFGS-B")` | Gradient-based on all params | Fewest evaluations; with analytical gradients, reaches much better RMSD than Nelder-Mead on CH₃F (30.4 vs 564 on MM3). FD gradients are weaker. |
-| `OptaxOptimizer("adam")` | JAX-native adaptive optimizer | **Best MM3 result on CH₃F at 56.3 cm⁻¹ RMSD** — 10× better than L-BFGS-B (579). Momentum-based methods navigate rugged MM3 landscapes more effectively. Requires JAX backend. |
-| `OptimizationLoop(max_params=3)` | Grad-simp cycling | Best overall scores on Rh-enamide: JAX MM3 scored 3.54 in 25 min, OpenMM MM3 scored 3.29 in 9 hrs. JAX-MD harmonic scored 11.66 (different functional form). JAX harmonic not yet re-run post-fix. |
-| `SubspaceObjective` + manual | Optimise specific params | For expert users; not benchmarked |
-| `compute_sensitivity()` | Rank parameter sensitivity | Diagnostic tool, not an optimizer |
+Every workflow assumes **QFUERZA initialization** — run
+`estimate_force_constants()` before optimization. QFUERZA puts you in the
+right neighbourhood; the optimizer refines from there.
 
 ---
 
-## The problem: why one method isn't enough
+## Workflow A: Small + Smooth
 
-Force field optimization is a balancing act between **exploration** (searching
-the parameter space broadly) and **exploitation** (following gradients to the
-nearest minimum). No single optimizer excels at both:
+**When:** ≤ 10 parameters, harmonic functional form, analytical gradients
+available.
 
-| | Gradient methods (L-BFGS-B) | Simplex methods (Nelder-Mead) |
-|-----------|---------------------------|-------------------------------|
-| Convergence speed | ✅ Converges in fewer evaluations | ❌ Needs many more evaluations |
-| Solution quality | ❌ Can get stuck at suboptimal solutions | ✅ More robust on complex surfaces |
-| Gradients needed | ⚠️ Yes — quality depends on gradient source | ✅ Derivative-free |
-
-Q2MM solves this by combining both in a **cycling
-loop**: gradient methods handle the bulk of convergence, then simplex polishes
-the parameters that gradients struggle with.
-
----
-
-## Strategy 1: Single-Shot Optimizer
-
-The simplest approach — run one optimizer on all parameters at once.
+**Recipe:** One call to L-BFGS-B with analytical gradients. Done.
 
 ```python
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500, eps=1e-3)
+optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500, jac="auto")
 result = optimizer.optimize(objective)
 print(result.summary())
 ```
 
-### When to Use
+**Why this works:** On smooth harmonic landscapes, L-BFGS-B's curvature
+information reaches the best basin in the fewest evaluations. On CH₃F
+harmonic, L-BFGS-B with analytical gradients achieves 529 cm⁻¹ RMSD in
+~2 seconds. Basin-hopping, multi-start, and optax Adam all match or
+slightly beat this (~526–531), but none find a meaningfully better basin —
+the harmonic landscape simply doesn't have hidden minima worth searching
+for.
 
-- **≤ 10 parameters** — small force fields where any method converges quickly
-- **Quick iteration** — you want a fast answer, even if not fully converged
-- **QFUERZA-initialized** — when the starting point is already close to optimal
+**What doesn't work here:**
 
-### Available methods
-
-| Method | Type | Notes |
-|--------|------|-------|
-| `Nelder-Mead` | Simplex | Derivative-free, robust; no bounds support |
-| `L-BFGS-B` | Quasi-Newton | Fast, bounded; may not fully converge (see below) |
-| `Powell` | Direction-set | Derivative-free; more evaluations than Nelder-Mead |
-| `least_squares` | Levenberg-Marquardt | Exploits residual structure |
-| `trust-constr` | Trust-region | Supports constraints |
-
-### What the benchmarks show
-
-On **CH₃F** (8 parameters, QFUERZA-initialized):
-
-| Method | Score (harmonic, JAX) | Score (MM3, JAX) | Evals (harmonic) | Evals (MM3) |
-|--------|----------------------|------------------|------------------|-------------|
-| Nelder-Mead | 0.0000 | 0.0001 | 1,202 | 14,417 |
-| L-BFGS-B | 0.0000 | 0.0007 | 151 | 77 |
-| Powell | 0.0000 | 0.0001 | 2,541 | 12,034 |
-
-On **Rh-enamide** (182 parameters, MM3, JAX):
-
-| Method | Final Score | Evals |
-|--------|-------------|-------|
-| Nelder-Mead | 5.11 | 10,668 |
-| L-BFGS-B | 5.81 | 142 |
-
-L-BFGS-B converges in far fewer evaluations but doesn't always reach the
-same final score. On OpenMM the gap is larger — L-BFGS-B scores 0.087
-vs 0.000 for Nelder-Mead on CH₃F harmonic.
-
-!!! note "Gradient modes"
-    `ScipyOptimizer` supports three gradient modes via the `jac` parameter:
-
-    - `jac=None` — SciPy finite-difference (default)
-    - `jac="auto"` — uses analytical gradients when the engine supports
-      them, with FD fallback for evaluators that lack analytical support
-    - `jac="analytical"` — forces analytical gradients
-
-    The benchmark runner uses `jac="auto"` for single-shot gradient methods.
-    JAX, JAX-MD, and OpenMM all support analytical gradients, so L-BFGS-B
-    benchmarks on these backends use a hybrid of analytical and FD gradients.
-    Each benchmark JSON records the per-evaluator gradient mode in
-    `metadata.gradients` (e.g., ``{"energy": "analytical", "frequency":
-    "finite-diff"}``).
+- **Optax Adam** (990–1001 RMSD) — adaptive learning rates can't exploit
+  curvature the way L-BFGS-B can on a smooth surface
+- **L2 regularization** (993 RMSD) — the penalty prevents parameters from
+  reaching the deep basin. Don't regularize well-conditioned problems.
+- **FD-only gradients** (1048 RMSD) — finite-difference frequency gradients
+  are too noisy to guide L-BFGS-B from the QFUERZA starting point
 
 ---
 
-## Strategy 2: Optax Adaptive Optimizers (JAX only)
+## Workflow B: Small + Rugged
 
-[Optax](https://optax.readthedocs.io/) is a [JAX](https://jax.readthedocs.io/)-native gradient processing library that provides modern
-adaptive optimizers (Adam, AdaGrad, SGD, AdamW) with features like momentum,
-per-parameter learning rates, and learning rate schedules.
+**When:** ≤ 10 parameters, MM3 or other non-harmonic functional form.
 
-```python
-from q2mm.optimizers.optax import OptaxOptimizer
-
-optimizer = OptaxOptimizer(
-    optimizer="adam",
-    learning_rate=0.01,
-    max_steps=2000,
-)
-result = optimizer.optimize(objective)
-print(result.summary())
-```
-
-### When to Use
-
-- **MM3 or other rugged potential forms** — Adam's momentum helps escape
-  local minima that trap L-BFGS-B
-- **JAX backend** — optax is JAX-native and uses analytical gradients
-  automatically. It works with other backends via finite-difference
-  fallback, but the FD overhead negates the advantage.
-- **QFUERZA-initialized** — starting close to the optimum, Adam can refine
-  parameters that L-BFGS-B overshoots or gets stuck on
-
-### Available optimizers
-
-| Optimizer | Type | Notes |
-|-----------|------|-------|
-| `adam` | Adaptive + momentum | Best default choice; per-parameter LR adaptation |
-| `adamw` | Adam + weight decay | Slight regularisation; may prevent overfitting |
-| `adagrad` | Adaptive | Accumulates gradient history; good for sparse gradients |
-| `sgd` | Stochastic gradient descent | Simplest; very sensitive to learning rate |
-
-### Learning rate schedules
-
-Optax supports learning rate schedules that decay the LR during optimisation:
+**Recipe:** Multi-start L-BFGS-B to find the best basin.
 
 ```python
-optimizer = OptaxOptimizer(
-    optimizer="adam",
-    learning_rate=0.01,
-    max_steps=2000,
-    schedule="cosine",  # LR decays from 0.01 → 0 over 2000 steps
+from q2mm.optimizers.multistart import MultiStartOptimizer
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+# Multi-start global search
+inner = ScipyOptimizer(method="L-BFGS-B", maxiter=500, jac="auto")
+multi = MultiStartOptimizer(
+    optimizer=inner,
+    n_starts=10,
+    perturbation_pct=0.1,
+    seed=42,
 )
+result = multi.optimize(objective)
 ```
 
-### What the benchmarks show
+**Why this works:** The MM3 landscape has many local minima. Single-start
+L-BFGS-B gets trapped at 579 cm⁻¹ RMSD on CH₃F — a poor basin. Running
+10 starts from perturbed initial points finds basins that single-start
+misses:
 
-On **CH₃F** (8 parameters, QFUERZA-initialized, JAX GPU):
+| Strategy | CH₃F MM3 RMSD | Notes |
+|----------|-------------:|-------|
+| L-BFGS-B (single start) | 579.0 | Stuck in poor local minimum |
+| L-BFGS-B + L2(λ=0.01) | 133.5 | L2 steers away from the bad basin |
+| optax Adam | 56.3 | Momentum navigates rugged landscape |
+| **multi-start n=10 (OpenMM)** | **28.7–46.2** | **Best strategy — stochastic, varies by run** |
 
-| Method | RMSD (harmonic) | RMSD (MM3) | Time (MM3) |
-|--------|----------------:|-----------:|-----------:|
-| optax:adam | 1000.4 | **56.3** | 25.2 s |
-| optax:adam+cosine | 999.4 | 60.6 | 29.8 s |
-| optax:adagrad | 1000.9 | 138.0 | 20.0 s |
-| optax:sgd | 990.0 | 192.0 | 1.7 s |
-| L-BFGS-B (analytical) | **528.7** | 579.0 | 2.2 s |
+Multi-start is the recommended approach because it's simple and consistently
+finds the best basins on rugged landscapes.
 
-Adam achieves the best MM3 result across ALL backends and optimizers —
-56.3 cm⁻¹ vs 579.0 for L-BFGS-B with analytical gradients (10× better).
-On harmonic, optax performs poorly (~1000 cm⁻¹); the smooth harmonic
-landscape benefits more from L-BFGS-B's curvature information.
+**Does Adam refinement help after multi-start?** In
+[composed benchmarks](../benchmarks/small-molecules.md#composed-workflows),
+running optax Adam from the multi-start winner barely changed the result:
+46.2 → 46.1 on OpenMM (FD gradients limit Adam), 563.8 → 563.8 on JAX
+(same local minimum). Multi-start alone finds the basin; refinement adds
+diminishing returns.
 
-!!! warning "Bounds enforcement"
-    Optax has no native bounds support. `OptaxOptimizer` enforces bounds
-    via parameter clamping after each update step. Momentum-based
-    optimizers (Adam, SGD with momentum) accumulate state that pushes into
-    walls, which can waste steps. This is a known limitation.
+**Alternatives that also work:**
 
-For all `OptaxOptimizer` parameters, see the
-[API reference](../reference/q2mm/optimizers/optax.md).
+- **[Basin-hopping](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html)**
+  with T=0.5 improved on single-start L-BFGS-B (514 vs 579) but didn't
+  match multi-start n=10 (28.7). Basin-hopping is more sensitive to
+  temperature tuning — T=1.0 produced the *worst* result (1105 RMSD) by
+  accepting too many uphill moves.
+- **L2 regularization** (λ=0.01) improved single-start L-BFGS-B by 4×
+  (579 → 134) by preventing parameter drift into the bad basin. It's a
+  good safety net when you can't afford multi-start.
+
+**What doesn't work here:**
+
+- **Multi-start on JAX** (579–586 RMSD) — JAX's analytical gradients
+  consistently converge to the same local minimum regardless of starting
+  point. The OpenMM FD gradient noise actually helps escape this basin.
+  This is a case where FD noise acts as implicit regularization.
 
 ---
 
-## Strategy 3: Grad-Simp Cycling
+## Workflow C: Medium and Large Systems
 
-The flagship optimization strategy, based on Norrby & Liljefors
-([*J. Comput. Chem.* **1998**, 19, 1146](https://doi.org/10.1002/(SICI)1096-987X(19980730)19:10%3C1146::AID-JCC4%3E3.0.CO;2-M)).
-Each cycle:
+**When:** 10+ parameters, any functional form. This is the
+production workflow.
 
-1. **Full-space gradient pass** — L-BFGS-B on all N parameters
-2. **Sensitivity analysis** — rank every parameter by how the objective
-   responds to perturbation
-3. **Subspace simplex** — Nelder-Mead on the top `max_params` parameters
-   (ranked by `simp_var`, see below)
-4. **Convergence check** — stop when improvement drops below threshold
+**Recipe:** Grad-simp cycling — alternating L-BFGS-B full-space passes
+with Nelder-Mead on the most sensitive parameters.
 
 ```python
 from q2mm.optimizers.cycling import OptimizationLoop
@@ -209,33 +145,20 @@ loop = OptimizationLoop(
     simp_method="Nelder-Mead",
     full_maxiter=200,
     simp_maxiter=200,
+    full_jac="auto",      # analytical gradients where available
     verbose=True,
 )
-
 result = loop.run()
 print(result.summary())
 ```
 
-### When to Use
+**How it works:** Each cycle:
 
-- **10+ parameters** — where single-shot simplex becomes slow and
-  gradients alone leave residual error
-- **Production optimizations** — when you need the best possible parameters
-- **Stubborn parameters** — when L-BFGS-B converges but leaves a non-trivial
-  residual
-
-### How Sensitivity Selection Works
-
-Before each simplex pass, Q2MM perturbs every parameter by its type-specific
-step size and computes:
-
-- **d1** — first derivative (how steeply the objective changes)
-- **d2** — second derivative (curvature)
-- **simp_var = d2 / d1²** — the selection metric
-
-Parameters are ranked by **ascending** `simp_var`. Low `simp_var` means the
-objective responds strongly (high |d1|) relative to curvature (d2), which is
-exactly where simplex tends to outperform gradient methods.
+1. **Full-space gradient pass** — L-BFGS-B on all N parameters
+2. **Sensitivity analysis** — rank every parameter by `simp_var = d2/d1²`
+   (high gradient response relative to curvature = best for simplex)
+3. **Subspace simplex** — Nelder-Mead on the top `max_params` parameters
+4. **Convergence check** — stop when improvement drops below threshold
 
 ```mermaid
 flowchart LR
@@ -247,152 +170,205 @@ flowchart LR
     E -->|Yes| F[Done]
 ```
 
+**Why this works:** L-BFGS-B quickly converges most parameters, then
+Nelder-Mead polishes the stubborn ones that gradients can't handle.
+On Rh-enamide (182 parameters, MM3), grad-simp achieves the best
+observed score (3.29 with OpenMM) — better than either L-BFGS-B (5.81) or
+Nelder-Mead (5.11) alone.
+
 !!! info "Why only 3 parameters per simplex pass?"
-    Nelder-Mead creates an N+1 vertex simplex. With 3 parameters that's
+    Nelder-Mead creates an (N+1)-vertex simplex. With 3 parameters that's
     4 vertices; with 20 it's 21 — and convergence slows significantly.
-    The default `max_params=3` keeps simplex passes fast while still
-    addressing the most problematic parameters each cycle.
+    `max_params=3` keeps simplex passes fast while addressing the most
+    problematic parameters each cycle.
 
-!!! note "Cycling gradient mode"
-    The cycling loop defaults to `full_jac=None` (SciPy finite-difference
-    gradients for the L-BFGS-B pass). Setting `full_jac="auto"` enables
-    analytical gradients where the engine supports them. Both modes are
-    included in the CH₃F benchmark matrix as "grad-simp (FD)" and
-    "grad-simp (auto)" — see [Small Molecules](../benchmarks/small-molecules.md).
+### Composing with global search
 
-### What the benchmarks show
-
-Grad-simp cycling has only been benchmarked on a few combinations:
-
-| System | Backend | Score | Evals |
-|--------|---------|-------|-------|
-| CH₃F (harmonic) | JAX (GPU) | 0.0008 | 3,948 |
-| CH₃F (MM3) | OpenMM (GPU) | 0.0004 | 2,692 |
-| Rh-enamide (MM3) | OpenMM (GPU) | 3.29 | 35,343 |
-
-On Rh-enamide, grad-simp with OpenMM achieves the best score observed
-(3.29 vs 5.11 for Nelder-Mead and 5.81 for L-BFGS-B), but at the cost of
-many more evaluations. Grad-simp with JAX/JAX-MD on Rh-enamide failed due
-to eigendecomposition errors, which have since been fixed
-([PR #207](https://github.com/ericchansen/q2mm/pull/207)).
-
-For all `OptimizationLoop` parameters, return values, and defaults, see the
-[API reference](../reference/q2mm/optimizers/cycling.md).
-
----
-
-## Strategy 4: Manual Subspace Optimization
-
-For advanced users who want direct control over which parameters to optimise.
-`SubspaceObjective` wraps your full objective and only exposes a subset of
-parameters, holding the rest fixed.
+You can use multi-start as the gradient phase inside grad-simp cycling
+via the `full_method="multi:L-BFGS-B"` parameter:
 
 ```python
-from q2mm.optimizers.cycling import SubspaceObjective
+from q2mm.optimizers.cycling import OptimizationLoop
 
-# Only optimise bond force constants (indices 0 and 2)
-full_vec = ff.get_param_vector()
-sub_obj = SubspaceObjective(objective, [0, 2], full_vec)
-
-# Use any scipy method on the small subspace
-import scipy.optimize
-result = scipy.optimize.minimize(
-    sub_obj,
-    sub_obj.get_initial_vector(),
-    method="Nelder-Mead",
-    options={"maxiter": 500},
+loop = OptimizationLoop(
+    objective,
+    max_params=3,
+    max_cycles=5,
+    full_method="multi:L-BFGS-B",  # multi-start each gradient phase
+    simp_method="Nelder-Mead",
+    full_jac="auto",
 )
-
-# Apply optimised subspace back to the full force field
-best_full = sub_obj.build_full_vector(result.x)
-ff.set_param_vector(best_full)
+result = loop.run()
 ```
 
-### When to Use
+!!! warning "Evidence: this composition doesn't outperform plain cycling"
+    In [CH₃F benchmarks](../benchmarks/small-molecules.md#composed-workflows),
+    grad-simp with multi-start inner achieved **592 RMSD on OpenMM** and
+    **527 RMSD on JAX** — comparable to or worse than plain grad-simp
+    (586 / 579). The random restarts within each cycle disrupt inter-cycle
+    convergence. For rugged landscapes, multi-start alone
+    ([Workflow B](#workflow-b-small-rugged)) is more effective than
+    embedding multi-start inside cycling.
 
-- **Expert parameter tuning** — you know exactly which parameters need attention
-- **Debugging** — isolate whether a specific parameter type is causing issues
-- **Custom cycling strategies** — build your own outer loop with domain knowledge
+### Adding L2 regularization to cycling
+
+For under-determined systems (more parameters than independent
+observations), add L2 to the objective:
+
+```python
+objective = ObjectiveFunction(
+    forcefield=ff,
+    engine=engine,
+    molecules=molecules,
+    reference=reference,
+    regularization=0.01,   # keeps params near QFUERZA values
+)
+
+loop = OptimizationLoop(objective, max_params=3, max_cycles=10)
+result = loop.run()
+```
+
+The L2 penalty flows through every evaluator automatically — no
+optimizer-specific code needed.
 
 ---
 
-## Standalone sensitivity analysis
+## Modifiers
 
-You can run sensitivity analysis independently, without the full
-grad-simp loop. This is useful for diagnosing which parameters matter most
-in your problem.
+These cross-cutting options layer onto any workflow.
+
+### L2 Regularization
+
+Penalizes parameter drift from the starting values (QFUERZA estimates).
+The total loss becomes:
+
+$$\text{loss}_\text{total} = \text{loss}_\text{data} + \lambda \cdot \| \mathbf{p} - \mathbf{p}_\text{ref} \|^2$$
+
+```python
+objective = ObjectiveFunction(
+    forcefield=ff, engine=engine,
+    molecules=molecules, reference=reference,
+    regularization=0.01,      # λ — penalty strength
+    # reference_params=...    # defaults to initial FF params
+)
+```
+
+**When it helps:** Rugged MM3 landscapes where single-start optimizers
+find poor local minima. On CH₃F MM3, L2 improved L-BFGS-B by 4×
+(579 → 134 RMSD). Also useful for under-determined systems (more
+parameters than observations).
+
+**When it hurts:** Well-conditioned problems. On CH₃F harmonic, L2
+*doubled* the RMSD (529 → 993) by preventing parameters from reaching
+the optimal basin.
+
+!!! tip "Choosing λ"
+    Start with 0.001–0.01. Increase until parameters stay close to
+    QFUERZA values. Aim for the penalty term to be ~1–10% of data loss
+    at the optimum. Too large = can't improve; too small = no effect.
+
+L2 works with **every** optimizer — [SciPy](https://docs.scipy.org/doc/scipy/reference/optimize.html),
+[optax](https://optax.readthedocs.io/), basin-hopping, multi-start, and
+grad-simp — because it modifies the
+[`ObjectiveFunction`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py),
+not the optimizer.
+
+### Sensitivity Analysis
+
+A diagnostic tool that ranks parameters by how the objective responds to
+perturbation, using the ratio `simp_var = d2/d1²`. Low `simp_var` means
+the parameter strongly affects the objective relative to its curvature —
+these are parameters where simplex outperforms gradient methods.
 
 ```python
 from q2mm.optimizers.cycling import compute_sensitivity
 
 sens = compute_sensitivity(objective, metric="simp_var")
-
-# Rank parameters from most to least suitable for simplex
 labels = ff.get_param_type_labels()
 for rank, idx in enumerate(sens.ranking):
-    print(f"  {rank+1}. {labels[idx]:12s}  d1={sens.d1[idx]:+.4f}  "
-          f"d2={sens.d2[idx]:.4f}  simp_var={sens.simp_var[idx]:.4f}")
+    print(f"  {rank+1}. {labels[idx]:12s}  "
+          f"d1={sens.d1[idx]:+.4f}  simp_var={sens.simp_var[idx]:.4f}")
 ```
 
-Expected output:
-
-```
-  1. bond_k        d1=+0.3421  d2=0.0012  simp_var=0.0102
-  2. angle_eq      d1=-0.1893  d2=0.0089  simp_var=0.2483
-  3. bond_eq       d1=+0.0542  d2=0.0031  simp_var=1.0541
-  4. angle_k       d1=-0.0103  d2=0.0002  simp_var=1.8856
-```
+Use this to understand your landscape before choosing a workflow, or to
+debug why optimization stalls.
 
 !!! note "Cost"
     Sensitivity analysis requires **2N + 1** objective evaluations in the
     worst case (one baseline plus two perturbations per parameter).
-    Parameters at bounds are skipped, reducing the count.
 
 ---
 
-## Tips and pitfalls
+## Optimizer Reference
 
-!!! warning "L-BFGS-B may not fully converge"
-    On CH₃F (8 parameters), L-BFGS-B final scores range from 0.0000 (JAX,
-    harmonic) to 0.087 (OpenMM, harmonic), while Nelder-Mead consistently
-    reaches 0.0000–0.0001. However, low scores don't always mean low RMSD:
-    Nelder-Mead reaches score ≈ 0 on harmonic but RMSD 1038 cm⁻¹, while
-    L-BFGS-B with analytical gradients reaches RMSD 553 cm⁻¹. On Rh-enamide
-    (182 parameters, MM3), JAX L-BFGS-B converges to 5.81 vs 5.11 for
-    Nelder-Mead. The grad-simp loop exists to combine the strengths of both.
+For constructor parameters, return types, and full API details, see the
+source code:
+
+| Optimizer | Source | Notes |
+|-----------|--------|-------|
+| [`ScipyOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/scipy_opt.py) | SciPy wrapper | L-BFGS-B, Nelder-Mead, Powell, least_squares, trust-constr |
+| [`OptaxOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/optax.py) | [Optax](https://optax.readthedocs.io/) wrapper (JAX only) | Adam, AdamW, AdaGrad, SGD; supports LR schedules (cosine, etc.) |
+| [`OptimizationLoop`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py) | Grad-simp cycling | Alternates gradient + sensitivity-selected simplex |
+| [`BasinHoppingOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/basinhopping.py) | [SciPy basin-hopping](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html) wrapper | Stochastic hops + local minimization |
+| [`MultiStartOptimizer`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/multistart.py) | Meta-optimizer | N perturbed starts, keep best; wraps any optimizer |
+| [`SubspaceObjective`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/cycling.py) | Subspace projection | Optimize a subset of parameters, hold rest fixed |
+| [`ObjectiveFunction`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py) | Objective with optional L2 | `regularization` and `reference_params` kwargs |
+
+### Gradient modes
+
+All gradient-using optimizers support three modes via the `jac` parameter:
+
+| Mode | What it does | When to use |
+|------|-------------|-------------|
+| `jac=None` | SciPy finite-difference | Default; works everywhere but noisy |
+| `jac="auto"` | Analytical where available, FD fallback | **Recommended** — best quality gradients |
+| `jac="analytical"` | Forces analytical only | Only if all evaluators support it |
+
+Analytical gradients produce the best results on harmonic problems. The
+top harmonic results on CH₃F all use analytical or auto mode.
+
+---
+
+## Tips and Pitfalls
+
+!!! warning "L-BFGS-B may not fully converge on rugged landscapes"
+    On CH₃F MM3, L-BFGS-B gets trapped at 579 cm⁻¹ RMSD — a poor local
+    minimum. Use multi-start or optax Adam on MM3 forms. On smooth
+    harmonic forms, L-BFGS-B is the best choice.
 
 !!! tip "QFUERZA initialization matters"
-    Starting from QFUERZA-estimated parameters (extracted from the QM
-    Hessian) puts you much closer to the optimum. The optimizer then needs
-    fewer evaluations to converge. Always use
-    `estimate_force_constants()` before optimization when QM data is
-    available.
+    Starting from QFUERZA-estimated parameters puts you close to the
+    optimum. Always run `estimate_force_constants()` before optimization
+    when QM data is available.
 
 !!! tip "Monitor convergence"
-    Plot `result.history` (for single-shot) or `result.cycle_scores`
-    (for cycling) to visualize convergence. If the score plateaus early,
-    the optimizer may be stuck — try increasing `max_params` or switching
-    the sensitivity metric to `"abs_d1"`.
+    Plot `result.history` (single-shot) or `result.cycle_scores` (cycling)
+    to visualize convergence. If the score plateaus early, the optimizer
+    may be stuck — try multi-start or switch the sensitivity metric to
+    `"abs_d1"`.
 
-!!! info "Backend speed comparison"
-    Per-evaluation cost on CH₃F (8 parameters), measured from
-    derivative-free methods (Nelder-Mead, Powell):
+!!! info "Backend speed"
+    Per-evaluation cost on CH₃F (8 parameters), from derivative-free
+    methods:
 
-    | Backend | Per-eval Cost | Relative to Tinker |
-    |---------|--------------|-------------------|
-    | JAX (GPU) | ~2.5 ms | ~96× faster |
-    | OpenMM (GPU) | ~10 ms | ~24× faster |
+    | Backend | Per-eval | vs Tinker |
+    |---------|---------|-----------|
+    | JAX (GPU) | ~2.5 ms | 96× faster |
+    | OpenMM (GPU) | ~10 ms | 24× faster |
     | Tinker (CPU) | ~240 ms | baseline |
 
-    L-BFGS-B per-eval cost is higher (~43 ms on JAX, ~172 ms on OpenMM)
-    because each evaluation includes gradient computation. These numbers
-    are from the CH₃F full-matrix rerun — see
-    [Small Molecules](../benchmarks/small-molecules.md).
+!!! info "FD noise as implicit regularization"
+    On CH₃F MM3, OpenMM multi-start n=10 (FD gradients) achieved 28.7
+    RMSD while JAX multi-start n=10 (analytical gradients) stayed at 586.
+    The FD gradient noise helped OpenMM escape the local minimum that
+    JAX's precise gradients consistently converge to. This is an unusual
+    case where lower-quality gradients produced a better result.
 
 ---
 
-## Further reading
+## Further Reading
 
-- [Tutorial: Step 6 — Optimize](../tutorial.md#step-6-optimise-the-force-field) — full walkthrough of a single-shot optimization
-- [Benchmarks](../benchmarks/index.md) — benchmark results across systems, backends, and methods
+- [Tutorial: Step 6 — Optimize](../tutorial.md#step-6-optimise-the-force-field) — walkthrough of a single-shot optimization
+- [CH₃F Benchmarks](../benchmarks/small-molecules.md) — full 71-combo comparison matrix with RMSD, timing, and per-eval costs
+- [Rh-Enamide Benchmarks](../benchmarks/rh-enamide.md) — large-system case study (182 parameters)
 - [References](../references.md) — academic papers describing the Q2MM methodology
