@@ -738,6 +738,9 @@ class _StubForceField:
     def with_params(self, param_vector: np.ndarray) -> _StubForceField:
         return self
 
+    def get_param_vector(self) -> np.ndarray:
+        return np.zeros(self.n_params)
+
 
 # ---- Parsers ----
 

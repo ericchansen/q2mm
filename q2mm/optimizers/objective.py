@@ -904,6 +904,9 @@ class ObjectiveFunction:
         engine: MMEngine,
         molecules: list[Q2MMMolecule],
         reference: ReferenceData,
+        *,
+        regularization: float = 0.0,
+        reference_params: np.ndarray | None = None,
     ) -> None:
         """Initialize the objective function.
 
@@ -914,6 +917,15 @@ class ObjectiveFunction:
             molecules (list[Q2MMMolecule]): Training set molecules.
             reference (ReferenceData): QM/experimental reference
                 observations.
+            regularization: L2 penalty strength (λ).  The total loss
+                becomes ``loss_data + λ * ||params - ref||²``.  Keeps
+                optimised parameters near their physical starting
+                values, preventing overfitting on under-determined
+                small-molecule systems.  Default ``0.0`` (no penalty).
+            reference_params: Parameter vector treated as the L2
+                "anchor."  If *None* (default), the force field's
+                initial parameter vector is used — typically the
+                QFUERZA-derived starting point.
 
         """
         self.forcefield = forcefield
@@ -923,6 +935,13 @@ class ObjectiveFunction:
         self.n_eval = 0
         self.fd_step = 1e-4
         self.history: list[float] = []
+        self.regularization = float(regularization)
+        if reference_params is not None:
+            self._reference_params = np.asarray(reference_params, dtype=float)
+        elif forcefield is not None:
+            self._reference_params = np.array(forcefield.get_param_vector(), dtype=float)
+        else:
+            self._reference_params = np.array([], dtype=float)
         #: Error handling for eigendecomposition in frequency evaluation.
         #: ``"raise"`` (default) propagates exceptions; ``"penalty"``
         #: returns large penalty frequencies so the optimizer retreats.
@@ -971,6 +990,10 @@ class ObjectiveFunction:
         residuals = self._compute_residuals(ff)
         score = float(np.sum(residuals**2))
 
+        if self.regularization > 0:
+            diff = param_vector - self._reference_params
+            score += self.regularization * float(np.dot(diff, diff))
+
         self.n_eval += 1
         self.history.append(score)
         return score
@@ -978,15 +1001,26 @@ class ObjectiveFunction:
     def residuals(self, param_vector: np.ndarray) -> np.ndarray:
         """Compute weighted residual vector (for least-squares methods).
 
+        When L2 regularization is active, ``sqrt(λ) * (params - ref)`` is
+        appended to the residual vector so that
+        ``sum(residuals²) == data_loss + λ * ||params - ref||²``.
+
         Args:
             param_vector (np.ndarray): Flat parameter vector.
 
         Returns:
-            np.ndarray: Weighted residuals for each reference observation.
+            np.ndarray: Weighted residuals for each reference observation,
+            with optional L2 regularization terms appended.
 
         """
         ff = self.forcefield.with_params(param_vector)
         r = self._compute_residuals(ff)
+
+        if self.regularization > 0:
+            diff = param_vector - self._reference_params
+            l2_residuals = np.sqrt(self.regularization) * diff
+            r = np.concatenate([r, l2_residuals])
+
         self.n_eval += 1
         self.history.append(float(np.sum(r**2)))
         return r
@@ -1062,6 +1096,12 @@ class ObjectiveFunction:
 
         n = len(param_matrix)
         self.n_eval += n
+
+        # Add L2 regularization to batched scores
+        if self.regularization > 0:
+            diff = param_matrix - self._reference_params[np.newaxis, :]
+            scores += self.regularization * np.sum(diff**2, axis=1)
+
         for s in scores:
             self.history.append(float(s))
         return scores
@@ -1278,6 +1318,11 @@ class ObjectiveFunction:
                         refs,
                     )
                     total_grad += grad
+
+        # L2 regularization gradient: d/dp [λ * ||p - p_ref||²] = 2λ(p - p_ref)
+        if self.regularization > 0:
+            diff = param_vector - self._reference_params
+            total_grad += 2.0 * self.regularization * diff
 
         # Warn about zero-gradient slots which may indicate incomplete
         # analytical gradient support (e.g. missing improper torsions).
