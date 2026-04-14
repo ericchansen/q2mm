@@ -10,7 +10,7 @@
 ```bash
 pip install q2mm                   # core package
 pip install "q2mm[openmm]"         # with OpenMM backend
-pip install "q2mm[jax]"            # with JAX backend (gas-phase)
+pip install "q2mm[jax]"            # with JAX backend + optax optimizers
 pip install "q2mm[jax-md]"         # with JAX-MD backend (periodic, PBC)
 pip install "q2mm[amber]"          # with parmed (AMBER support)
 pip install "q2mm[all]"            # all optional dependencies

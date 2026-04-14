@@ -17,8 +17,10 @@ produces force fields with near-QM accuracy at a fraction of the computational c
   initial guess.
 - **Open-source backends** — First-class support for OpenMM, JAX, JAX-MD,
   Tinker, and Psi4.
-- **Robust optimization** — Leverages `scipy.optimize` methods (L-BFGS-B, Nelder-Mead,
-  trust-constr, Powell, least-squares) instead of custom gradient code.
+- **Robust optimization** — Leverages `scipy.optimize` methods (L-BFGS-B,
+  Nelder-Mead, trust-constr, Powell, least-squares) and JAX-native
+  [optax](https://optax.readthedocs.io/) adaptive optimizers (Adam, AdaGrad,
+  SGD) for force field parameter fitting.
 - **Clean model layer** — `ForceField`, `Q2MMMolecule`, and `ReferenceData` objects
   decouple algorithms from file formats, making it straightforward to add new
   I/O modules or backends.
@@ -75,7 +77,7 @@ flowchart LR
    physically motivated initial bond and angle force constants.
 3. **Objective function** computes weighted residuals between QM reference values and
    MM-calculated properties for the current parameter set.
-4. **Optimizer** drives `scipy.optimize` to minimize the objective, iterating over
-   parameter updates.
+4. **Optimizer** drives `scipy.optimize` or [optax](https://optax.readthedocs.io/)
+   to minimize the objective, iterating over parameter updates.
 5. **MM backends** (OpenMM, Tinker, or JAX) evaluate energies and gradients at each
    optimization step.

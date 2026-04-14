@@ -699,6 +699,76 @@ parameters, combining the strengths of both approaches.
 
 ---
 
+## Step 6c: Optax Optimizers (JAX only)
+
+If you're using the **JAX backend**, you can use [optax](https://optax.readthedocs.io/)
+optimizers — Adam, AdaGrad, SGD, and AdamW — as an alternative to SciPy's
+L-BFGS-B. These are JAX-native adaptive optimizers that use analytical
+gradients automatically.
+
+**Why would you use optax?** On rugged potential energy surfaces like MM3,
+Adam's per-parameter adaptive learning rates and momentum can dramatically
+outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
+10× better than L-BFGS-B's 579.0 (see
+[Small Molecules](benchmarks/small-molecules.md)).
+
+???+ example "Optax Adam optimization"
+
+    ```python
+    from q2mm.optimizers.optax import OptaxOptimizer
+
+    optimizer = OptaxOptimizer(
+        optimizer="adam",
+        learning_rate=0.01,
+        max_steps=2000,
+    )
+
+    result = optimizer.optimize(objective)
+    print(result.summary())
+    ```
+
+    Expected output:
+
+    ```
+    Method: optax:adam
+    Converged: False (max_steps reached)
+    Score: 192.000 → 56.300
+    Steps: 2000
+    ```
+
+??? example "Learning rate schedules"
+    Optax supports learning rate schedules that decay the LR during
+    optimisation. Cosine annealing starts at your LR and decays smoothly
+    to zero:
+
+    ```python
+    optimizer = OptaxOptimizer(
+        optimizer="adam",
+        learning_rate=0.01,
+        max_steps=2000,
+        schedule="cosine",
+    )
+    ```
+
+!!! warning "JAX backend required"
+    `OptaxOptimizer` works best with the JAX backend because it uses
+    analytical gradients via `jax.grad`. It will fall back to finite-difference
+    gradients on other backends (OpenMM, Tinker), but the FD overhead negates
+    the advantage of adaptive optimizers. Use `ScipyOptimizer` for non-JAX
+    backends.
+
+!!! tip "When to use optax vs SciPy vs cycling"
+    - **Smooth landscape (harmonic form):** Use `ScipyOptimizer("L-BFGS-B")` —
+      curvature information matters here and L-BFGS-B excels.
+    - **Rugged landscape (MM3 form):** Use `OptaxOptimizer("adam")` — momentum
+      helps escape local minima.
+    - **Large systems (10+ params):** Use `OptimizationLoop` (Step 6b) — the
+      grad-simp cycling loop combines multiple strategies.
+    - See the [Optimization Guide](how-it-works/optimization-guide.md) for a
+      full comparison with benchmark data.
+
+---
+
 ## Step 7: Export the Optimised Force Field
 
 Q2MM can write the optimised parameters to **MM3 `.fld`**, **Tinker `.prm`**,

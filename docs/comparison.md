@@ -48,7 +48,7 @@ area are linked in the table below.
 
 | Capability | q2mm/q2mm | ericchansen/q2mm |
 |---|---|---|
-| Gradient solvers | 5 hand-rolled ([least-squares](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L485), [Lagrange](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L448), [LM](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L467), [NR](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L498), [SVD](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L533)) | [SciPy wrapper](#optimizers) (L-BFGS-B, Nelder-Mead, Powell, trust-constr, least_squares) |
+| Gradient solvers | 5 hand-rolled ([least-squares](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L485), [Lagrange](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L448), [LM](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L467), [NR](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L498), [SVD](https://github.com/Q2MM/q2mm/blob/b26404b/q2mm/gradient.py#L533)) | [SciPy wrapper](#optimizers) (L-BFGS-B, Nelder-Mead, Powell, trust-constr, least_squares) + [optax](#optimizers) (Adam, AdaGrad, SGD) |
 | Simplex | Custom Nelder-Mead (3 params) | [SciPy Nelder-Mead via subspace projection](#optimizers) |
 | Cycling loop | Text command file | Dataclass-configured [`OptimizationLoop`](how-it-works/optimization-guide.md) |
 | Sensitivity | Exception-based, one-sided FD fallback | [Symmetric step shrinking, bound-aware](#sensitivity-bounds) |
@@ -82,6 +82,15 @@ The cycling loop is a dataclass-configured `OptimizationLoop` that:
 
 Delegating to SciPy means the numerics are maintained by a large community and
 benefit from ongoing improvements.
+
+For JAX-based workflows, ericchansen/q2mm also provides an `OptaxOptimizer`
+that wraps [optax](https://optax.readthedocs.io/) adaptive optimizers (Adam,
+AdaGrad, SGD, AdamW). These use JAX's analytical gradients directly and excel
+on rugged potential energy surfaces like MM3, where Adam achieves 10× better
+RMSD than L-BFGS-B on CH₃F
+([benchmark results](benchmarks/small-molecules.md)). See the
+[Optimization Guide](how-it-works/optimization-guide.md#strategy-2-optax-adaptive-optimizers-jax-only)
+for details.
 
 ---
 
