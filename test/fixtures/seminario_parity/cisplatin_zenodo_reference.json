@@ -1,0 +1,397 @@
+{
+  "_metadata": {
+    "source": "Farrugia et al., JCTC 2026, 22, 469-476",
+    "doi": "10.1021/acs.jctc.5c01751",
+    "zenodo_doi": "10.5281/zenodo.17386006",
+    "system": "cisplatin",
+    "qm_method": "M06/LanL2DZ (Gaussian 16)",
+    "ff_type": "MM3*",
+    "units": {
+      "bond_force_constant": "mdyn/\u00c5",
+      "angle_force_constant": "mdyn\u00b7\u00c5/rad\u00b2",
+      "bond_equilibrium": "\u00c5",
+      "angle_equilibrium": "degrees"
+    },
+    "note": "Extracted from .fld files in Zenodo archive ct5c01751_si_001. Two 1-2-3 angle entries: type 2 (trans, eq~179\u00b0) and type a2 (cis, eq~84\u00b0)."
+  },
+  "methods": {
+    "approximation": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 5.0
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 5.0
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 5.0
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 0.5
+        }
+      ]
+    },
+    "fuerza": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 1.1687
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 5.7649
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 1.3918
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 3.0737
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 3.0682
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 2.561
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 3.7497
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 2.063
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 1.444
+        }
+      ]
+    },
+    "gamma_fuerza": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 1.1687
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 5.7649
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 1.3918
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 2.0901
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 2.0864
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 1.7415
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 2.5498
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 1.4028
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 0.9819
+        }
+      ]
+    },
+    "qfuerza": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 1.1687
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 5.7649
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 1.3918
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 3.0737
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 3.0682
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 2.561
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 3.7497
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 0.5
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 0.5
+        }
+      ]
+    },
+    "qfuerza_optimized": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 1.1622
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 7.0059
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 1.9243
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 0.0113
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 0.5322
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 0.2734
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 1.4627
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 0.2239
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 0.6243
+        }
+      ]
+    },
+    "fuerza_optimized": {
+      "bonds": [
+        {
+          "atoms": "1-2",
+          "equilibrium": 2.12,
+          "force_constant": 1.1621
+        },
+        {
+          "atoms": "1-H3",
+          "equilibrium": 1.0193,
+          "force_constant": 7.0059
+        },
+        {
+          "atoms": "2-3",
+          "equilibrium": 2.3197,
+          "force_constant": 1.9336
+        }
+      ],
+      "angles": [
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "2",
+          "label": "1-2-3",
+          "equilibrium": 178.8085,
+          "force_constant": 0.0115
+        },
+        {
+          "atoms": "1-2-3",
+          "mm3_type": "a2",
+          "label": "alt 1-2-3",
+          "equilibrium": 83.733,
+          "force_constant": 0.5853
+        },
+        {
+          "atoms": "1-2-N3",
+          "mm3_type": "2",
+          "label": "1-2-N3",
+          "equilibrium": 97.458,
+          "force_constant": 0.3072
+        },
+        {
+          "atoms": "Cl-2-3",
+          "mm3_type": "2",
+          "label": "Cl-2-3",
+          "equilibrium": 95.075,
+          "force_constant": 0.9805
+        },
+        {
+          "atoms": "H3-1-2",
+          "mm3_type": "2",
+          "label": "H3-1-2",
+          "equilibrium": 110.42,
+          "force_constant": 0.2239
+        },
+        {
+          "atoms": "H3-1-H3",
+          "mm3_type": "2",
+          "label": "H3-1-H3",
+          "equilibrium": 108.354,
+          "force_constant": 0.6242
+        }
+      ]
+    }
+  }
+}
