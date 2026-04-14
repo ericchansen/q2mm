@@ -45,3 +45,11 @@ try:
     __all__ += ["OptaxOptimizer"]
 except ImportError:
     pass
+
+# Basin-hopping wraps scipy.optimize.basinhopping (always available with scipy)
+try:
+    from q2mm.optimizers.basinhopping import BasinHoppingOptimizer  # noqa: F401
+
+    __all__ += ["BasinHoppingOptimizer"]
+except ImportError:
+    pass

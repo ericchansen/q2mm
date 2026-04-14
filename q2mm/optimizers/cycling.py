@@ -511,6 +511,7 @@ class OptimizationLoop:
 
         # Detect optax: prefix for full-space optimizer
         use_optax = self.full_method.startswith("optax:")
+        use_basinhopping = self.full_method.startswith("basinhopping:")
 
         try:
             if self.verbose:
@@ -537,6 +538,17 @@ class OptimizationLoop:
                         optimizer=optax_name,
                         max_steps=self.full_maxiter,
                         schedule=schedule,
+                        verbose=False,
+                    )
+                    full_result = full_opt.optimize(self.objective)
+                elif use_basinhopping:
+                    from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
+
+                    bh_spec = self.full_method.split(":", 1)[1] if ":" in self.full_method else "L-BFGS-B"
+                    full_opt = BasinHoppingOptimizer(
+                        local_method=bh_spec,
+                        local_maxiter=self.full_maxiter,
+                        jac=self.full_jac,
                         verbose=False,
                     )
                     full_result = full_opt.optimize(self.objective)

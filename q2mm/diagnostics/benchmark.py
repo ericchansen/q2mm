@@ -716,6 +716,36 @@ def run_combo(
         eps = opt_result.eps
 
         gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
+    elif optimizer_method.startswith("basinhopping"):
+        from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
+
+        bh_kwargs: dict[str, Any] = {
+            "verbose": False,
+            "jac": "auto",
+        }
+        for key in ("niter", "T", "stepsize", "local_method", "local_maxiter", "seed"):
+            if key in optimizer_kwargs:
+                bh_kwargs[key] = optimizer_kwargs[key]
+        if "jac" in optimizer_kwargs:
+            bh_kwargs["jac"] = optimizer_kwargs["jac"]
+
+        opt = BasinHoppingOptimizer(**bh_kwargs)
+
+        t0 = time.perf_counter()
+        opt_result = opt.optimize(obj)
+        opt_elapsed = time.perf_counter() - t0
+
+        n_eval = opt_result.n_evaluations
+        converged = opt_result.success
+        opt_initial_score = opt_result.initial_score
+        opt_final_score = opt_result.final_score
+        opt_message = opt_result.message
+        extra_opt_data = {"niter": bh_kwargs.get("niter", 50)}
+
+        jac_mode = opt_result.jac_mode
+        eps = opt_result.eps
+
+        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
