@@ -180,8 +180,10 @@ def seminario_angle_fc(
 ) -> float:
     """Estimate angle bending force constant via modified Seminario method.
 
-    Uses the Q2MM approximation for angles (FUERZA overestimates by ~2x).
-    Uses |dot| projection and DFT scaling to match upstream Q2MM.
+    Computes the standard Seminario reciprocal-sum angle formula with
+    |dot| projection and DFT scaling. Note that FUERZA overestimates
+    H-angle FCs by ~2×; the QFUERZA substitution is applied downstream
+    in ``estimate_force_constants()``, not here.
 
     Args:
         atom_i: outer atom (0-based)
