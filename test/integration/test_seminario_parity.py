@@ -444,6 +444,7 @@ class TestCisplatinZenodoQFUERZARules:
 
         assert len(gamma["bonds"]) == len(fuerza["bonds"])
         for gb, fb in zip(gamma["bonds"], fuerza["bonds"]):
+            assert gb["atoms"] == fb["atoms"]
             assert gb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-6)
 
     def test_gamma_fuerza_scales_angles(self, cisplatin_zenodo: dict[str, Any]) -> None:
@@ -454,6 +455,7 @@ class TestCisplatinZenodoQFUERZARules:
         assert len(gamma_angles) == len(fuerza_angles)
         ratios = []
         for ga, fa in zip(gamma_angles, fuerza_angles):
+            assert ga["atoms"] == fa["atoms"]
             if fa["force_constant"] > 0.01:
                 ratios.append(ga["force_constant"] / fa["force_constant"])
 
@@ -476,6 +478,7 @@ class TestCisplatinZenodoQFUERZARules:
 
         assert len(qopt["bonds"]) == len(fopt["bonds"])
         for qb, fb in zip(qopt["bonds"], fopt["bonds"]):
+            assert qb["atoms"] == fb["atoms"]
             assert qb["force_constant"] == pytest.approx(fb["force_constant"], rel=0.01), (
                 f"Optimized bond {qb['atoms']}: QFUERZA={qb['force_constant']}, FUERZA={fb['force_constant']}"
             )
