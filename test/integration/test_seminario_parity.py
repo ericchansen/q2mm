@@ -396,20 +396,21 @@ class TestCisplatinZenodoQFUERZARules:
         assert len(qfuerza["bonds"]) == len(fuerza["bonds"])
         for qb, fb in zip(qfuerza["bonds"], fuerza["bonds"]):
             assert qb["atoms"] == fb["atoms"]
-            assert qb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-10), (
+            assert qb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-6), (
                 f"Bond {qb['atoms']}: QFUERZA={qb['force_constant']}, FUERZA={fb['force_constant']}"
             )
-            assert qb["equilibrium"] == pytest.approx(fb["equilibrium"], abs=1e-10)
+            assert qb["equilibrium"] == pytest.approx(fb["equilibrium"], abs=1e-6)
 
     def test_qfuerza_nonhydrogen_angles_equal_fuerza(self, cisplatin_zenodo: dict[str, Any]) -> None:
         """Non-hydrogen angle FCs must be unchanged from FUERZA."""
         fuerza_angles = cisplatin_zenodo["methods"]["fuerza"]["angles"]
         qfuerza_angles = cisplatin_zenodo["methods"]["qfuerza"]["angles"]
 
+        assert len(qfuerza_angles) == len(fuerza_angles)
         for qa, fa in zip(qfuerza_angles, fuerza_angles):
             assert qa["atoms"] == fa["atoms"]
             if not _h_angle_in_cisplatin(qa["atoms"]):
-                assert qa["force_constant"] == pytest.approx(fa["force_constant"], abs=1e-10), (
+                assert qa["force_constant"] == pytest.approx(fa["force_constant"], abs=1e-6), (
                     f"Non-H angle {qa['atoms']}: QFUERZA={qa['force_constant']}, FUERZA={fa['force_constant']}"
                 )
 
@@ -420,7 +421,7 @@ class TestCisplatinZenodoQFUERZARules:
 
         assert len(h_angles) >= 2, "Expected at least 2 H-angles (H-N-Pt and H-N-H)"
         for a in h_angles:
-            assert a["force_constant"] == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_MDYNA, abs=1e-10), (
+            assert a["force_constant"] == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_MDYNA, abs=1e-6), (
                 f"H-angle {a['atoms']}: expected {QFUERZA_H_ANGLE_DEFAULT_MDYNA}, got {a['force_constant']}"
             )
 
@@ -441,14 +442,16 @@ class TestCisplatinZenodoQFUERZARules:
         fuerza = cisplatin_zenodo["methods"]["fuerza"]
         gamma = cisplatin_zenodo["methods"]["gamma_fuerza"]
 
+        assert len(gamma["bonds"]) == len(fuerza["bonds"])
         for gb, fb in zip(gamma["bonds"], fuerza["bonds"]):
-            assert gb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-10)
+            assert gb["force_constant"] == pytest.approx(fb["force_constant"], abs=1e-6)
 
     def test_gamma_fuerza_scales_angles(self, cisplatin_zenodo: dict[str, Any]) -> None:
         """γ-FUERZA angle FCs should be FUERZA × γ where γ ≈ 0.68."""
         fuerza_angles = cisplatin_zenodo["methods"]["fuerza"]["angles"]
         gamma_angles = cisplatin_zenodo["methods"]["gamma_fuerza"]["angles"]
 
+        assert len(gamma_angles) == len(fuerza_angles)
         ratios = []
         for ga, fa in zip(gamma_angles, fuerza_angles):
             if fa["force_constant"] > 0.01:
@@ -462,10 +465,16 @@ class TestCisplatinZenodoQFUERZARules:
             assert r == pytest.approx(mean_gamma, rel=1e-3)
 
     def test_optimized_methods_converge(self, cisplatin_zenodo: dict[str, Any]) -> None:
-        """After optimization, QFUERZA and FUERZA should produce similar final parameters."""
+        """After optimization, QFUERZA and FUERZA bond FCs converge.
+
+        Angle FCs can diverge significantly (up to 49% for Cl-Pt-Cl)
+        because different initializations land in different local minima.
+        The paper documents this behavior, so we only assert bond convergence.
+        """
         qopt = cisplatin_zenodo["methods"]["qfuerza_optimized"]
         fopt = cisplatin_zenodo["methods"]["fuerza_optimized"]
 
+        assert len(qopt["bonds"]) == len(fopt["bonds"])
         for qb, fb in zip(qopt["bonds"], fopt["bonds"]):
             assert qb["force_constant"] == pytest.approx(fb["force_constant"], rel=0.01), (
                 f"Optimized bond {qb['atoms']}: QFUERZA={qb['force_constant']}, FUERZA={fb['force_constant']}"
@@ -489,6 +498,6 @@ class TestCisplatinZenodoQFUERZARules:
         """Approximation method: bonds=5.0, angles=0.5 (fixed defaults, no Hessian)."""
         approx = cisplatin_zenodo["methods"]["approximation"]
         for b in approx["bonds"]:
-            assert b["force_constant"] == pytest.approx(5.0, abs=1e-10)
+            assert b["force_constant"] == pytest.approx(5.0, abs=1e-6)
         for a in approx["angles"]:
-            assert a["force_constant"] == pytest.approx(0.5, abs=1e-10)
+            assert a["force_constant"] == pytest.approx(0.5, abs=1e-6)

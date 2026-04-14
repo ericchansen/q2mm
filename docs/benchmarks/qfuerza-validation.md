@@ -159,25 +159,26 @@ rules. The reference values are stored in
 
 | Parameter | Approxn | FUERZA | γ-FUERZA | QFUERZA | Rule check |
 |-----------|---------|--------|----------|---------|------------|
-| N–Pt | 5.000 | 1.169 | 1.169 | **1.169** | ✅ Same as FUERZA |
-| N–H | 5.000 | 5.765 | 5.765 | **5.765** | ✅ Same as FUERZA |
-| Pt–Cl | 5.000 | 1.392 | 1.392 | **1.392** | ✅ Same as FUERZA |
+| N–Pt | 5.000 | 1.169 | 1.169 | **1.169** | ✅ Matches Zenodo |
+| N–H | 5.000 | 5.765 | 5.765 | **5.765** | ✅ Matches Zenodo |
+| Pt–Cl | 5.000 | 1.392 | 1.392 | **1.392** | ✅ Matches Zenodo |
 
-QFUERZA bond FCs are identical to FUERZA — as expected.
+QFUERZA bond FCs are identical to FUERZA — as expected per the paper's
+definition (QFUERZA only modifies H-angle FCs, not bonds).
 
 ### Angles (mdyn·Å/rad²)
 
 | Parameter | Approxn | FUERZA | γ-FUERZA | QFUERZA | H-angle? | Rule check |
 |-----------|---------|--------|----------|---------|----------|------------|
-| N–Pt–Cl (trans) | 0.500 | 3.074 | 2.090 | **3.074** | No | ✅ Same as FUERZA |
-| N–Pt–Cl (cis) | 0.500 | 3.068 | 2.086 | **3.068** | No | ✅ Same as FUERZA |
-| N–Pt–N | 0.500 | 2.561 | 1.742 | **2.561** | No | ✅ Same as FUERZA |
-| Cl–Pt–Cl | 0.500 | 3.750 | 2.550 | **3.750** | No | ✅ Same as FUERZA |
-| **H–N–Pt** | 0.500 | 2.063 | 1.403 | **0.500** | **Yes** | ✅ **Substituted** |
-| **H–N–H** | 0.500 | 1.444 | 0.982 | **0.500** | **Yes** | ✅ **Substituted** |
+| N–Pt–Cl (trans) | 0.500 | 3.074 | 2.090 | **3.074** | No | ✅ Matches Zenodo (= FUERZA) |
+| N–Pt–Cl (cis) | 0.500 | 3.068 | 2.086 | **3.068** | No | ✅ Matches Zenodo (= FUERZA) |
+| N–Pt–N | 0.500 | 2.561 | 1.742 | **2.561** | No | ✅ Matches Zenodo (= FUERZA) |
+| Cl–Pt–Cl | 0.500 | 3.750 | 2.550 | **3.750** | No | ✅ Matches Zenodo (= FUERZA) |
+| **H–N–Pt** | 0.500 | 2.063 | 1.403 | **0.500** | **Yes** | ✅ Matches Zenodo (= 0.5) |
+| **H–N–H** | 0.500 | 1.444 | 0.982 | **0.500** | **Yes** | ✅ Matches Zenodo (= 0.5) |
 
-Non-hydrogen angles match FUERZA exactly. Hydrogen angles are substituted
-with 0.5 — confirming our rules are correct.
+Every QFUERZA value matches the Zenodo archive exactly. Non-H angles
+equal FUERZA; H-angles are substituted with 0.5.
 
 !!! note "FUERZA overestimation is not a fixed 2×"
     The paper describes FUERZA as producing angle FCs "two times too
