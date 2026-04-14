@@ -88,6 +88,10 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("basinhopping (T=0.5)", {"method": "basinhopping", "niter": 25, "T": 0.5}),
         ("multi:L-BFGS-B (n=5)", {"method": "multi:L-BFGS-B", "n_starts": 5}),
         ("multi:L-BFGS-B (n=10)", {"method": "multi:L-BFGS-B", "n_starts": 10}),
+        ("L-BFGS-B + L2(λ=0.01)", {"method": "L-BFGS-B", "regularization": 0.01}),
+        ("optax:adam + L2(λ=0.01)", {"method": "optax:adam", "regularization": 0.01}),
+        # Composed workflows
+        ("grad-simp (multi:L-BFGS-B inner)", {"method": "cycling", "full_method": "multi:L-BFGS-B"}),
     ]
     return configs
 

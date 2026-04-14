@@ -512,6 +512,7 @@ class OptimizationLoop:
         # Detect optax: prefix for full-space optimizer
         use_optax = self.full_method.startswith("optax:")
         use_basinhopping = self.full_method.startswith("basinhopping:")
+        use_multistart = self.full_method.startswith("multi:")
 
         try:
             if self.verbose:
@@ -549,6 +550,23 @@ class OptimizationLoop:
                         local_method=bh_spec,
                         local_maxiter=self.full_maxiter,
                         jac=self.full_jac,
+                        verbose=False,
+                    )
+                    full_result = full_opt.optimize(self.objective)
+                elif use_multistart:
+                    from q2mm.optimizers.multistart import MultiStartOptimizer
+
+                    ms_spec = self.full_method.split(":", 1)[1]
+                    inner_opt = ScipyOptimizer(
+                        method=ms_spec,
+                        maxiter=self.full_maxiter,
+                        eps=self.eps,
+                        jac=self.full_jac,
+                        verbose=False,
+                    )
+                    full_opt = MultiStartOptimizer(
+                        optimizer=inner_opt,
+                        n_starts=5,
                         verbose=False,
                     )
                     full_result = full_opt.optimize(self.objective)

@@ -612,7 +612,10 @@ def run_combo(
     )
 
     # Initial (QFUERZA) state
-    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref)
+    obj_kwargs: dict[str, Any] = {}
+    if "regularization" in optimizer_kwargs:
+        obj_kwargs["regularization"] = optimizer_kwargs.pop("regularization")
+    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref, **obj_kwargs)
     initial_score = obj(seminario_params)
 
     result.seminario = {
@@ -644,6 +647,9 @@ def run_combo(
         loop_kwargs["full_jac"] = optimizer_kwargs.get("full_jac")
         if "eps" in optimizer_kwargs:
             loop_kwargs["eps"] = optimizer_kwargs["eps"]
+        # Forward full_method if specified (e.g. "multi:L-BFGS-B")
+        if "full_method" in optimizer_kwargs:
+            loop_kwargs["full_method"] = optimizer_kwargs["full_method"]
 
         loop = OptimizationLoop(**loop_kwargs)
         t0 = time.perf_counter()
@@ -814,6 +820,8 @@ def run_combo(
     result.metadata["jac_mode"] = jac_mode
     result.metadata["gradients"] = gradients
     result.metadata["eps"] = eps
+    if obj_kwargs.get("regularization"):
+        result.metadata["regularization"] = obj_kwargs["regularization"]
     result.metadata["metadata_version"] = 2
 
     # Final aggregate frequencies and RMSD
