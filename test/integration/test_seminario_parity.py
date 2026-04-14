@@ -38,12 +38,18 @@ from q2mm.models.seminario import (
     QFUERZA_H_ANGLE_DEFAULT_MDYNA,
     _is_hydrogen_angle,
 )
-from q2mm.models.units import MDYNA_TO_KCALMOLA2, MDYNA_RAD2_TO_KCALMOLRAD2
+from q2mm.models.units import (
+    MDYNA_TO_KCALMOLA2,
+    MDYNA_RAD2_TO_KCALMOLRAD2,
+    KCALMOLRAD2_TO_MDYNA_RAD2,
+)
 from q2mm.io import JaguarIn, MacroModel
+from q2mm.io.gaussian import GaussLog
 
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
 
 CISPLATIN_ZENODO_PATH = FIXTURE_DIR / "cisplatin_zenodo_reference.json"
+CISPLATIN_GAUSSIAN_LOG = FIXTURE_DIR / "cisplatin_opt_freq_m06.log"
 
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
 SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
@@ -504,3 +510,250 @@ class TestCisplatinZenodoQFUERZARules:
             assert b["force_constant"] == pytest.approx(5.0, abs=1e-6)
         for a in approx["angles"]:
             assert a["force_constant"] == pytest.approx(0.5, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+#   Cisplatin Hessian → Force Constant Parity Tests (Issues #233 / #234)
+# ---------------------------------------------------------------------------
+#
+# These tests parse the actual Gaussian log from the QFUERZA paper's Zenodo
+# archive (DOI: 10.5281/zenodo.17386006), run our Seminario projection,
+# and verify that:
+#   1. Structure parsing produces the expected cisplatin geometry.
+#   2. Bond/angle auto-detection finds the correct connectivity.
+#   3. FUERZA bond FCs are reproducible from the Hessian.
+#   4. The N-Pt bond FC matches the paper's published value exactly¹.
+#   5. QFUERZA correctly substitutes H-angle defaults (0.5 mdyne·Å/rad²).
+#
+# ¹ Pt-Cl and N-H bond FCs diverge ~17% from the paper. Investigation
+#   (session checkpoint 007) traced this to unreproducible code modifications
+#   in the reference implementation (missing `convert_and_set` method,
+#   `au_hessian` parameter not accepted by GaussLog). See issue #235.
+# ---------------------------------------------------------------------------
+
+_CISPLATIN_LOG_AVAILABLE = CISPLATIN_GAUSSIAN_LOG.exists()
+
+
+@pytest.fixture(scope="module")
+def cisplatin_molecule() -> Q2MMMolecule:
+    """Parse the cisplatin Gaussian log and build a Q2MMMolecule.
+
+    Uses direct Q2MMMolecule construction (not GaussLog.molecules) because
+    GaussLog.molecules passes ``_bonds=[]`` via ``from_structure``, which
+    bypasses auto-detection.  Direct construction leaves ``_bonds=None``,
+    triggering covalent-radii bond detection.
+    """
+    log = GaussLog(str(CISPLATIN_GAUSSIAN_LOG), au_hessian=True)
+    s = log.structures[-1]
+    return Q2MMMolecule(
+        symbols=[a.element for a in s.atoms],
+        geometry=[a.coords for a in s.atoms],
+        hessian=s.hess,
+        bond_tolerance=1.3,
+    )
+
+
+@pytest.mark.skipif(not _CISPLATIN_LOG_AVAILABLE, reason="Cisplatin Gaussian log not found")
+@pytest.mark.integration
+class TestCisplatinHessianParity:
+    """Reproduce FUERZA/QFUERZA force constants from the cisplatin QM Hessian.
+
+    Reference: Farrugia et al., JCTC 2026, 22, 469-476.
+    Zenodo archive: 10.5281/zenodo.17386006
+    """
+
+    # ── Structure parsing ─────────────────────────────────────────────
+
+    def test_structure_atom_count(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Cisplatin has 11 atoms: Pt + 2 Cl + 2 N + 6 H."""
+        assert len(cisplatin_molecule.symbols) == 11
+
+    def test_structure_elements(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Element composition: 1 Pt, 2 Cl, 2 N, 6 H."""
+        from collections import Counter
+
+        counts = Counter(cisplatin_molecule.symbols)
+        assert counts == {"Pt": 1, "Cl": 2, "N": 2, "H": 6}
+
+    def test_hessian_shape(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Hessian must be 33×33 (3N × 3N for 11 atoms)."""
+        assert cisplatin_molecule.hessian.shape == (33, 33)
+
+    def test_hessian_symmetric(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Full Hessian must be symmetric."""
+        np.testing.assert_allclose(
+            cisplatin_molecule.hessian,
+            cisplatin_molecule.hessian.T,
+            atol=1e-12,
+        )
+
+    # ── Connectivity detection ────────────────────────────────────────
+
+    def test_bond_count(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Auto-detection must find 10 bonds: 2 Pt-Cl + 2 Pt-N + 6 N-H."""
+        assert len(cisplatin_molecule.bonds) == 10
+
+    def test_bond_types(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Three bond types: Cl-Pt, H-N, N-Pt."""
+        from collections import Counter
+
+        types = Counter(tuple(sorted(b.elements)) for b in cisplatin_molecule.bonds)
+        assert types == {("Cl", "Pt"): 2, ("N", "Pt"): 2, ("H", "N"): 6}
+
+    def test_angle_count(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Auto-detection must find 18 angles."""
+        assert len(cisplatin_molecule.angles) == 18
+
+    def test_angle_types(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Five angle types matching cisplatin square-planar + NH3 geometry."""
+        from collections import Counter
+
+        types = Counter(a.element_triple for a in cisplatin_molecule.angles)
+        expected = {
+            ("Cl", "Pt", "Cl"): 1,
+            ("Cl", "Pt", "N"): 4,
+            ("N", "Pt", "N"): 1,
+            ("H", "N", "Pt"): 6,
+            ("H", "N", "H"): 6,
+        }
+        assert types == expected
+
+    # ── FUERZA bond force constants ──────────────────────────────────
+
+    def test_fuerza_n_pt_matches_paper(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """N-Pt bond FC must match the paper's FUERZA value (1.1687 mdyne/Å).
+
+        This is a direct validation that our Seminario eigenvalue projection
+        reproduces the published result.  Uses dft_scaling=1.0 because the
+        paper does not apply DFT frequency scaling to FUERZA estimates.
+        """
+        # Average over both N-Pt bonds
+        n_pt_bonds = [b for b in cisplatin_molecule.bonds if tuple(sorted(b.elements)) == ("N", "Pt")]
+        assert len(n_pt_bonds) == 2
+
+        fcs = []
+        for bond in n_pt_bonds:
+            k = seminario_bond_fc(
+                bond.atom_i,
+                bond.atom_j,
+                cisplatin_molecule.geometry,
+                cisplatin_molecule.hessian,
+                au_units=True,
+                dft_scaling=1.0,
+            )
+            fcs.append(k / MDYNA_TO_KCALMOLA2)
+
+        avg_fc = np.mean(fcs)
+        # Paper: N-Pt = 1.1687 mdyne/Å (FUERZA, no DFT scaling)
+        assert avg_fc == pytest.approx(1.1687, abs=0.001), f"N-Pt avg FC = {avg_fc:.4f} mdyne/Å, expected ~1.1687"
+
+    def test_fuerza_bond_fcs_self_consistent(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """All FUERZA bond FCs must be reproducible from the Hessian.
+
+        Tests self-consistency: our code produces stable values from the
+        Gaussian log.  Uses default dft_scaling=0.963.
+        """
+        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+
+        # Expected values from our pipeline (mdyne/Å, with default DFT scaling)
+        expected = {
+            ("Cl", "Pt"): 1.5676,
+            ("N", "Pt"): 1.1253,
+            ("H", "N"): 6.4537,
+        }
+
+        for bp in ff.bonds:
+            fc_mdyna = bp.force_constant / MDYNA_TO_KCALMOLA2
+            exp = expected[bp.key]
+            assert fc_mdyna == pytest.approx(exp, abs=0.01), (
+                f"Bond {bp.key}: got {fc_mdyna:.4f}, expected ~{exp:.4f} mdyne/Å"
+            )
+
+    def test_fuerza_bond_equilibria(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """Bond equilibrium lengths must match the optimized QM geometry."""
+        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+
+        expected_eq = {
+            ("Cl", "Pt"): 2.32,
+            ("N", "Pt"): 2.12,
+            ("H", "N"): 1.02,
+        }
+
+        for bp in ff.bonds:
+            exp = expected_eq[bp.key]
+            assert bp.equilibrium == pytest.approx(exp, abs=0.02), (
+                f"Bond {bp.key}: r0={bp.equilibrium:.3f}, expected ~{exp:.2f} Å"
+            )
+
+    # ── FUERZA angle force constants ─────────────────────────────────
+
+    def test_fuerza_angle_fcs_self_consistent(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """FUERZA angle FCs must be reproducible from the Hessian."""
+        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+
+        # Expected values (kcal/(mol·rad²), with default DFT scaling)
+        expected = {
+            ("Cl", "Pt", "Cl"): 89.76,
+            ("Cl", "Pt", "N"): 106.11,
+            ("N", "Pt", "N"): 129.50,
+            ("H", "N", "Pt"): 54.38,
+            ("H", "N", "H"): 46.82,
+        }
+
+        for ap in ff.angles:
+            exp = expected[ap.key]
+            assert ap.force_constant == pytest.approx(exp, abs=0.1), (
+                f"Angle {ap.key}: k={ap.force_constant:.2f}, expected ~{exp:.2f} kcal/(mol·rad²)"
+            )
+
+    # ── QFUERZA tests ────────────────────────────────────────────────
+
+    def test_qfuerza_bonds_same_as_fuerza(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """QFUERZA must not modify bond force constants."""
+        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+
+        assert len(ff_q.bonds) == len(ff_f.bonds)
+        for bq, bf in zip(ff_q.bonds, ff_f.bonds):
+            assert bq.key == bf.key
+            assert bq.force_constant == pytest.approx(bf.force_constant, rel=1e-10)
+
+    def test_qfuerza_h_angle_substitution(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """QFUERZA must substitute H-angle FCs with 0.5 mdyne·Å/rad².
+
+        This matches the paper's QFUERZA definition exactly.
+        """
+        ff = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+
+        h_angle_keys = [("H", "N", "Pt"), ("H", "N", "H")]
+        for ap in ff.angles:
+            if ap.key in h_angle_keys:
+                fc_mdyna = ap.force_constant * KCALMOLRAD2_TO_MDYNA_RAD2
+                assert fc_mdyna == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_MDYNA, abs=1e-6), (
+                    f"QFUERZA angle {ap.key}: got {fc_mdyna:.4f} mdyne·Å/rad², expected {QFUERZA_H_ANGLE_DEFAULT_MDYNA}"
+                )
+
+    def test_qfuerza_heavy_angles_unchanged(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """QFUERZA must not modify non-hydrogen angle FCs."""
+        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+
+        heavy_keys = [("Cl", "Pt", "Cl"), ("Cl", "Pt", "N"), ("N", "Pt", "N")]
+        for aq, af in zip(ff_q.angles, ff_f.angles):
+            if aq.key in heavy_keys:
+                assert aq.force_constant == pytest.approx(af.force_constant, rel=1e-10), (
+                    f"Heavy angle {aq.key}: QFUERZA={aq.force_constant:.4f} ≠ FUERZA={af.force_constant:.4f}"
+                )
+
+    def test_qfuerza_h_angles_reduced_from_fuerza(self, cisplatin_molecule: Q2MMMolecule) -> None:
+        """QFUERZA H-angle FCs must be smaller than FUERZA (corrects overestimation)."""
+        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+
+        h_angle_keys = [("H", "N", "Pt"), ("H", "N", "H")]
+        for af, aq in zip(ff_f.angles, ff_q.angles):
+            if af.key in h_angle_keys:
+                assert aq.force_constant < af.force_constant, (
+                    f"Angle {af.key}: QFUERZA ({aq.force_constant:.2f}) should be "
+                    f"less than FUERZA ({af.force_constant:.2f})"
+                )
