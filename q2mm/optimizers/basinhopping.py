@@ -113,12 +113,18 @@ class BasinHoppingOptimizer:
         jac_fn = self._resolve_jac(objective)
 
         # Local minimizer kwargs
+        options: dict[str, Any] = {"maxiter": self.local_maxiter}
+        if jac_fn is None:
+            # Match ScipyOptimizer: SciPy default FD step is too small for
+            # force-field parameters.
+            options["eps"] = 1e-3
+
         minimizer_kwargs: dict[str, Any] = {
             "method": self.local_method,
             "jac": jac_fn,
-            "options": {"maxiter": self.local_maxiter},
+            "options": options,
         }
-        if bounds and self.local_method in ("L-BFGS-B", "trust-constr"):
+        if bounds and self.local_method in ("L-BFGS-B", "trust-constr", "SLSQP"):
             minimizer_kwargs["bounds"] = bounds
 
         take_step = _BoundedStep(self.stepsize, bounds, rng)

@@ -89,6 +89,7 @@ class MultiStartOptimizer:
         best_history: list[float] = []
         all_scores: list[float] = []
         n_failed = 0
+        true_initial_score: float | None = None
 
         for i, x0 in enumerate(starts):
             # Reset starting point for each run
@@ -102,6 +103,8 @@ class MultiStartOptimizer:
                 continue
 
             all_scores.append(result.final_score)
+            if true_initial_score is None:
+                true_initial_score = result.initial_score
 
             if self.verbose:
                 logger.info(
@@ -136,7 +139,7 @@ class MultiStartOptimizer:
         return OptimizationResult(
             success=best_result.success,
             message=f"multi-start best of {len(all_scores)}/{self.n_starts}: {best_result.message}",
-            initial_score=all_scores[0] if all_scores else 0.0,
+            initial_score=true_initial_score if true_initial_score is not None else 0.0,
             final_score=best_result.final_score,
             n_iterations=best_result.n_iterations,
             n_evaluations=total_evals,

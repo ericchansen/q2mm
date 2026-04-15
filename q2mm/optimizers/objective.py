@@ -936,11 +936,17 @@ class ObjectiveFunction:
         self.fd_step = 1e-4
         self.history: list[float] = []
         self.regularization = float(regularization)
+        if self.regularization < 0:
+            raise ValueError("regularization must be non-negative")
         if reference_params is not None:
             self._reference_params = np.asarray(reference_params, dtype=float)
+            if self._reference_params.ndim != 1:
+                raise ValueError("reference_params must be a 1-D vector")
         elif forcefield is not None:
             self._reference_params = np.array(forcefield.get_param_vector(), dtype=float)
         else:
+            if self.regularization > 0:
+                raise ValueError("regularization > 0 requires a forcefield or explicit reference_params")
             self._reference_params = np.array([], dtype=float)
         #: Error handling for eigendecomposition in frequency evaluation.
         #: ``"raise"`` (default) propagates exceptions; ``"penalty"``
