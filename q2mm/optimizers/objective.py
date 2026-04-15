@@ -5,23 +5,12 @@ callable that :func:`scipy.optimize.minimize` can drive.
 
 Scoring approach
 ----------------
-This module uses **raw weighted residuals** (modern approach):
+This module uses **raw weighted residuals**:
 
 .. math:: r_i = w_i (x_{ref,i} - x_{calc,i})
 
 The objective value is ``sum(r_i**2)``.  This is the standard form expected
 by ``scipy.optimize.least_squares`` and gradient-based minimizers.
-
-The legacy code in ``q2mm.optimizers.scoring`` uses a different normalisation
-inherited from upstream ``compare.py``:
-
-- Energies are zero-referenced via ``correlate_energies()`` before scoring
-- A denominator based on the *total* count of energy-type data points is
-  applied (see ``compare_data()``).
-
-For migration validation, use :func:`q2mm.optimizers.scoring.compare_data`
-directly — it is importable and usable standalone to cross-check scores
-against the upstream code path.
 """
 
 from __future__ import annotations
