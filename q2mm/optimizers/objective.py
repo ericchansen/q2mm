@@ -942,6 +942,11 @@ class ObjectiveFunction:
             self._reference_params = np.asarray(reference_params, dtype=float)
             if self._reference_params.ndim != 1:
                 raise ValueError("reference_params must be a 1-D vector")
+            if forcefield is not None and len(self._reference_params) != forcefield.n_params:
+                raise ValueError(
+                    f"reference_params length ({len(self._reference_params)}) "
+                    f"does not match forcefield.n_params ({forcefield.n_params})"
+                )
         elif forcefield is not None:
             self._reference_params = np.array(forcefield.get_param_vector(), dtype=float)
         else:

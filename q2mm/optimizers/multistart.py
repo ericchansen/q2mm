@@ -52,6 +52,10 @@ class MultiStartOptimizer:
         verbose: bool = True,
     ) -> None:
         self.optimizer = optimizer
+        if n_starts < 1:
+            raise ValueError("n_starts must be >= 1")
+        if perturbation_pct < 0:
+            raise ValueError("perturbation_pct must be >= 0")
         self.n_starts = n_starts
         self.perturbation_pct = perturbation_pct
         self.seed = seed
@@ -89,7 +93,10 @@ class MultiStartOptimizer:
         best_history: list[float] = []
         all_scores: list[float] = []
         n_failed = 0
-        true_initial_score: float | None = None
+        # Evaluate once at the original (unperturbed) parameters so
+        # initial_score always corresponds to initial_params=x0_original.
+        objective.forcefield.set_param_vector(x0_original)
+        true_initial_score = objective(x0_original)
 
         for i, x0 in enumerate(starts):
             # Reset starting point for each run
@@ -103,8 +110,6 @@ class MultiStartOptimizer:
                 continue
 
             all_scores.append(result.final_score)
-            if true_initial_score is None:
-                true_initial_score = result.initial_score
 
             if self.verbose:
                 logger.info(
@@ -139,7 +144,7 @@ class MultiStartOptimizer:
         return OptimizationResult(
             success=best_result.success,
             message=f"multi-start best of {len(all_scores)}/{self.n_starts}: {best_result.message}",
-            initial_score=true_initial_score if true_initial_score is not None else 0.0,
+            initial_score=true_initial_score,
             final_score=best_result.final_score,
             n_iterations=best_result.n_iterations,
             n_evaluations=total_evals,
