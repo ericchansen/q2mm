@@ -167,3 +167,8 @@ class TestL2Validation:
         """2-D reference_params must raise ValueError."""
         with pytest.raises(ValueError, match="1-D"):
             _make_objective(reference_params=np.ones((3, 2)))
+
+    def test_reference_params_length_mismatch_raises(self) -> None:
+        """Reference_params length must match forcefield.n_params."""
+        with pytest.raises(ValueError, match="does not match"):
+            _make_objective(n_params=3, reference_params=np.ones(5))

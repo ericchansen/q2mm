@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from q2mm.optimizers.multistart import MultiStartOptimizer
 from q2mm.optimizers.scipy_opt import OptimizationResult
@@ -144,13 +145,13 @@ class TestMultiStartOptimizer:
         np.testing.assert_array_equal(final_call, result.final_params)
 
     def test_total_eval_count(self) -> None:
-        """n_evaluations should reflect all starts, not just the last."""
+        """n_evaluations should reflect all starts plus initial eval."""
         obj = MockObjective(np.array([1.0, 2.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=5, verbose=False, seed=42)
         result = opt.optimize(obj)
-        # Each stub start calls objective once → 5 total evals
-        assert result.n_evaluations == 5
+        # 1 upfront eval for initial_score + 5 per-start evals = 6
+        assert result.n_evaluations == 6
 
     def test_best_history_returned(self) -> None:
         """History should come from the best run, not the last."""
@@ -197,7 +198,6 @@ class TestMultiStartOptimizer:
 
     def test_all_starts_fail_raises(self) -> None:
         """Should raise RuntimeError if every start fails."""
-        import pytest
 
         class AlwaysFailOptimizer:
             def optimize(self, objective: MockObjective) -> OptimizationResult:
@@ -208,3 +208,27 @@ class TestMultiStartOptimizer:
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
         with pytest.raises(RuntimeError, match="All 3 multi-start runs failed"):
             opt.optimize(obj)
+
+    def test_n_starts_zero_raises(self) -> None:
+        """n_starts < 1 must raise ValueError."""
+        with pytest.raises(ValueError, match="n_starts must be >= 1"):
+            MultiStartOptimizer(MagicMock(), n_starts=0)
+
+    def test_negative_perturbation_raises(self) -> None:
+        """Negative perturbation_pct must raise ValueError."""
+        with pytest.raises(ValueError, match="perturbation_pct must be >= 0"):
+            MultiStartOptimizer(MagicMock(), perturbation_pct=-0.1)
+
+    def test_initial_score_matches_original_params(self) -> None:
+        """Initial_score must correspond to x0_original, not a perturbed start."""
+        target = np.array([1.0, 2.0])
+        obj = MockObjective(target)
+        obj.forcefield.get_param_vector.return_value = np.array([0.0, 0.0])
+
+        inner = StubOptimizer()
+        opt = MultiStartOptimizer(inner, n_starts=3, perturbation_pct=0.5, verbose=False, seed=42)
+        result = opt.optimize(obj)
+
+        # initial_score should be obj(x0_original) = (0-1)^2 + (0-2)^2 = 5.0
+        assert result.initial_score == pytest.approx(5.0, abs=1e-10)
+        np.testing.assert_array_equal(result.initial_params, np.array([0.0, 0.0]))

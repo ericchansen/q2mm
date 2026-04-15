@@ -613,8 +613,13 @@ def run_combo(
 
     # Initial (QFUERZA) state
     obj_kwargs: dict[str, Any] = {}
-    if "regularization" in optimizer_kwargs:
-        obj_kwargs["regularization"] = optimizer_kwargs["regularization"]
+    # Separate objective-only keys from optimizer_kwargs so they don't leak
+    # into ScipyOptimizer/BasinHopping constructors (which would raise TypeError).
+    _obj_only_keys = {"regularization", "reference_params"}
+    for _k in _obj_only_keys:
+        if _k in optimizer_kwargs:
+            obj_kwargs[_k] = optimizer_kwargs[_k]
+    optimizer_kwargs = {k: v for k, v in optimizer_kwargs.items() if k not in _obj_only_keys}
     obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref, **obj_kwargs)
     initial_score = obj(seminario_params)
 
