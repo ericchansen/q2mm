@@ -492,96 +492,166 @@ def _vdw_epsilon_to_openmm(epsilon: float) -> float:
     return canonical_to_openmm_epsilon(epsilon)
 
 
-def _match_bond(
-    forcefield: ForceField, elements: tuple[str, str], env_id: str = "", ff_row: int | None = None
-) -> BondParam | None:
-    """Look up a bond parameter from the force field.
-
-    Args:
-        forcefield: Force field to search.
-        elements: Element symbols of the two bonded atoms.
-        env_id: Chemical environment identifier.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        BondParam | None: Matched parameter, or ``None`` if not found.
-
-    """
-    return forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
-
-
-def _match_angle(
-    forcefield: ForceField, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
-) -> AngleParam | None:
-    """Look up an angle parameter from the force field.
-
-    Args:
-        forcefield: Force field to search.
-        elements: Element symbols of the three atoms (i, central, k).
-        env_id: Chemical environment identifier.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        AngleParam | None: Matched parameter, or ``None`` if not found.
-
-    """
-    return forcefield.match_angle(elements, env_id=env_id, ff_row=ff_row)
-
-
-def _match_vdw(
-    forcefield: ForceField, atom_type: str = "", element: str = "", ff_row: int | None = None
-) -> VdwParam | None:
-    """Look up a vdW parameter from the force field.
-
-    Args:
-        forcefield: Force field to search.
-        atom_type: Atom type label for matching.
-        element: Element symbol for fallback matching.
-        ff_row: Optional row index hint for matching.
-
-    Returns:
-        VdwParam | None: Matched parameter, or ``None`` if not found.
-
-    """
-    return forcefield.match_vdw(atom_type=atom_type, element=element, ff_row=ff_row)
-
-
-def _torsion_k_to_openmm(force_constant: float) -> float:
-    """Convert canonical torsion force constant (kcal/mol) to kJ/mol.
-
-    Args:
-        force_constant: Torsion force constant in kcal/mol.
-
-    Returns:
-        float: Torsion force constant in kJ/mol.
-
-    """
-    return canonical_to_openmm_torsion_k(force_constant)
-
-
-def _match_torsions(
+def _collect_bond_assignments(
+    molecule: Q2MMMolecule,
     forcefield: ForceField,
-    elements: tuple[str, str, str, str],
-    env_id: str = "",
-    ff_row: int | None = None,
-    is_improper: bool | None = None,
-) -> list[TorsionParam]:
-    """Look up torsion parameters from the force field.
+) -> list[tuple[Any, BondParam]]:
+    """Match each molecule bond to a force field bond parameter.
 
-    Returns all periodicity components matching the given torsion.
+    Returns a list of ``(detected_bond, matched_param)`` pairs, preserving
+    molecule traversal order.  Bonds with no matching parameter are skipped.
+    """
+    assignments: list[tuple[Any, BondParam]] = []
+    for bond in molecule.bonds:
+        param = forcefield.match_bond(bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+        if param is not None:
+            assignments.append((bond, param))
+    return assignments
+
+
+def _collect_angle_assignments(
+    molecule: Q2MMMolecule,
+    forcefield: ForceField,
+) -> list[tuple[Any, AngleParam]]:
+    """Match each molecule angle to a force field angle parameter.
+
+    Returns a list of ``(detected_angle, matched_param)`` pairs, preserving
+    molecule traversal order.  Angles with no matching parameter are skipped.
+    """
+    assignments: list[tuple[Any, AngleParam]] = []
+    for angle in molecule.angles:
+        param = forcefield.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+        if param is not None:
+            assignments.append((angle, param))
+    return assignments
+
+
+def _collect_torsion_assignments(
+    molecule: Q2MMMolecule,
+    forcefield: ForceField,
+    *,
+    is_improper: bool,
+) -> list[tuple[Any, TorsionParam]]:
+    """Match each molecule torsion to its force field torsion parameter(s).
+
+    Each torsion may match multiple parameters (one per periodicity), so
+    the result is flattened: one entry per ``(torsion, param)`` pair.
 
     Args:
-        forcefield: Force field to search.
-        elements: Element symbols of the four torsion atoms.
-        env_id: Chemical environment identifier.
-        ff_row: Optional row index hint for matching.
-        is_improper: If set, only match proper (False) or improper (True).
-
-    Returns:
-        list[TorsionParam]: All matching torsion parameter components.
+        molecule: Molecular structure.
+        forcefield: Force field to match against.
+        is_improper: If ``True``, match improper torsions; otherwise proper.
 
     """
-    return forcefield.match_torsion(elements, env_id=env_id, ff_row=ff_row, is_improper=is_improper)
+    source = molecule.improper_torsions if is_improper else molecule.torsions
+    assignments: list[tuple[Any, TorsionParam]] = []
+    for torsion in source:
+        params = forcefield.match_torsion(
+            torsion.element_quad,
+            env_id=torsion.env_id,
+            ff_row=torsion.ff_row,
+            is_improper=is_improper,
+        )
+        for param in params:
+            assignments.append((torsion, param))
+    return assignments
+
+
+def _collect_vdw_assignments(
+    molecule: Q2MMMolecule,
+    forcefield: ForceField,
+) -> list[tuple[int, str, str, VdwParam]]:
+    """Match each atom to a force field vdW parameter.
+
+    Returns a list of ``(atom_index, symbol, atom_type, param)`` tuples.
+
+    Raises:
+        ValueError: If any atom has no matching vdW parameter.
+
+    """
+    assignments: list[tuple[int, str, str, VdwParam]] = []
+    for atom_index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=False)):
+        param = forcefield.match_vdw(atom_type=atom_type, element=symbol)
+        if param is None:
+            raise ValueError(f"Missing vdW parameter for atom {atom_index + 1} ({atom_type or symbol}).")
+        assignments.append((atom_index, symbol, atom_type, param))
+    return assignments
+
+
+def _index_by_param_id(
+    assignments: list[tuple[Any, Any]],
+) -> dict[int, list[Any]]:
+    """Build a reverse index from ``id(param)`` to topology items.
+
+    Given a list of ``(topology_item, param)`` pairs, returns a dict mapping
+    ``id(param)`` → list of topology items that matched that param.  Preserves
+    the original traversal order within each group.
+    """
+    by_param: dict[int, list[Any]] = {}
+    for item, param in assignments:
+        key = id(param)
+        if key not in by_param:
+            by_param[key] = []
+        by_param[key].append(item)
+    return by_param
+
+
+def _build_harmonic_exclusions(
+    molecule: Q2MMMolecule,
+    vdw_force: Any,
+) -> list[_Exception14]:
+    """Add 1-2/1-3 exclusions and scaled 1-4 exceptions to a NonbondedForce.
+
+    Follows AMBER conventions: full exclusion for 1-2 and 1-3 pairs,
+    ``scnb=2.0`` scaling for 1-4 pairs (epsilon divided by 2).
+
+    Args:
+        molecule: Molecular structure for bond/angle topology.
+        vdw_force: An ``openmm.NonbondedForce`` to modify in-place.
+
+    Returns:
+        List of :class:`_Exception14` records for later update.
+
+    """
+    excluded_12: set[tuple[int, int]] = set()
+    for bond in molecule.bonds:
+        excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
+
+    excluded_13: set[tuple[int, int]] = set()
+    for angle in molecule.angles:
+        excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
+    excluded_13 -= excluded_12
+
+    neighbors: dict[int, set[int]] = {}
+    for bond in molecule.bonds:
+        neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
+        neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
+
+    pairs_14: set[tuple[int, int]] = set()
+    for angle in molecule.angles:
+        for nb in neighbors.get(angle.atom_i, ()):
+            if nb != angle.atom_j and nb != angle.atom_k:
+                pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
+        for nb in neighbors.get(angle.atom_k, ()):
+            if nb != angle.atom_j and nb != angle.atom_i:
+                pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
+    pairs_14 -= excluded_12
+    pairs_14 -= excluded_13
+
+    for p1, p2 in sorted(excluded_12 | excluded_13):
+        vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
+
+    SCNB = 2.0
+    exceptions_14: list[_Exception14] = []
+    for p1, p2 in sorted(pairs_14):
+        sig1, eps1 = vdw_force.getParticleParameters(p1)[1:]
+        sig2, eps2 = vdw_force.getParticleParameters(p2)[1:]
+        sig_14 = 0.5 * (sig1 + sig2)
+        eps_14 = (eps1 * eps2) ** 0.5 / SCNB
+        exc_idx = vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+        exceptions_14.append(_Exception14(exception_index=exc_idx, particle_i=p1, particle_j=p2))
+
+    return exceptions_14
 
 
 def _build_atom_type_index(molecule: Q2MMMolecule) -> dict[str, list[int]]:
@@ -917,11 +987,9 @@ class OpenMMEngine(MMEngine):
             vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
 
         # --- Assign bond parameters ---
+        bond_assignments = _collect_bond_assignments(molecule, forcefield)
         bond_terms: list[_BondTerm] = []
-        for bond in molecule.bonds:
-            param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
-            if param is None:
-                continue
+        for bond, param in bond_assignments:
             if use_harmonic:
                 force_index = bond_force.addBond(
                     bond.atom_i,
@@ -947,11 +1015,9 @@ class OpenMMEngine(MMEngine):
             )
 
         # --- Assign angle parameters ---
+        angle_assignments = _collect_angle_assignments(molecule, forcefield)
         angle_terms: list[_AngleTerm] = []
-        for angle in molecule.angles:
-            param = _match_angle(forcefield, angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
-            if param is None:
-                continue
+        for angle, param in angle_assignments:
             if use_harmonic:
                 force_index = angle_force.addAngle(
                     angle.atom_i,
@@ -980,15 +1046,10 @@ class OpenMMEngine(MMEngine):
             )
 
         # --- Assign Urey-Bradley terms (1-3 distance for CHARMM angles) ---
+        # Reuse precomputed angle assignments to avoid rematching.
         ub_force = None
         ub_terms: list[_UBTerm] = []
-        for angle_term in angle_terms:
-            param = _match_angle(forcefield, angle_term.elements, env_id=angle_term.env_id, ff_row=angle_term.ff_row)
-            if param is None:
-                continue
-            # Require both UB parameters to be provided together. If neither is
-            # set, there is simply no UB term for this angle; if only one is set,
-            # this is a configuration error that should fail fast.
+        for (angle, param), angle_term in zip(angle_assignments, angle_terms, strict=True):
             if param.ub_force_constant is None and param.ub_equilibrium is None:
                 continue
             if param.ub_force_constant is None or param.ub_equilibrium is None:
@@ -999,9 +1060,6 @@ class OpenMMEngine(MMEngine):
                 )
             if ub_force is None:
                 ub_force = mm.HarmonicBondForce()
-            # UB uses atom_i and atom_k (the two outer atoms of the angle)
-            # Convert: k in kcal/(mol·Å²) → kJ/(mol·nm²) via _bond_k_to_harmonic
-            # eq in Å → nm via ang_to_nm
             force_index = ub_force.addBond(
                 angle_term.atom_i,
                 angle_term.atom_k,
@@ -1019,84 +1077,65 @@ class OpenMMEngine(MMEngine):
                 )
             )
 
-        # --- Assign proper torsion parameters ---
-        torsion_terms: list[_TorsionTerm] = []
-        for torsion in molecule.torsions:
-            params = _match_torsions(
-                forcefield,
-                torsion.element_quad,
-                env_id=torsion.env_id,
-                ff_row=torsion.ff_row,
-                is_improper=False,
-            )
-            for param in params:
-                force_index = torsion_force.addTorsion(
-                    torsion.atom_i,
-                    torsion.atom_j,
-                    torsion.atom_k,
-                    torsion.atom_l,
-                    param.periodicity,
-                    np.deg2rad(float(param.phase)),
-                    _torsion_k_to_openmm(param.force_constant),
-                )
-                torsion_terms.append(
-                    _TorsionTerm(
-                        force_index=force_index,
-                        atom_i=torsion.atom_i,
-                        atom_j=torsion.atom_j,
-                        atom_k=torsion.atom_k,
-                        atom_l=torsion.atom_l,
-                        elements=torsion.element_quad,
-                        periodicity=param.periodicity,
-                        env_id=torsion.env_id,
-                        ff_row=param.ff_row,
-                    )
-                )
+        # --- Assign proper and improper torsion parameters ---
+        proper_assignments = _collect_torsion_assignments(molecule, forcefield, is_improper=False)
+        improper_assignments = _collect_torsion_assignments(molecule, forcefield, is_improper=True)
 
-        # --- Assign improper torsion parameters ---
-        # Improper torsions are detected from trigonal centres in the
-        # molecule topology and matched against FF params with
-        # is_improper=True.
-        for imp_torsion in molecule.improper_torsions:
-            params = _match_torsions(
-                forcefield,
-                imp_torsion.element_quad,
-                env_id=imp_torsion.env_id,
-                ff_row=imp_torsion.ff_row,
-                is_improper=True,
+        torsion_terms: list[_TorsionTerm] = []
+        for torsion, param in proper_assignments:
+            force_index = torsion_force.addTorsion(
+                torsion.atom_i,
+                torsion.atom_j,
+                torsion.atom_k,
+                torsion.atom_l,
+                param.periodicity,
+                np.deg2rad(float(param.phase)),
+                canonical_to_openmm_torsion_k(param.force_constant),
             )
-            for param in params:
-                force_index = torsion_force.addTorsion(
-                    imp_torsion.atom_i,
-                    imp_torsion.atom_j,
-                    imp_torsion.atom_k,
-                    imp_torsion.atom_l,
-                    param.periodicity,
-                    np.deg2rad(float(param.phase)),
-                    _torsion_k_to_openmm(param.force_constant),
+            torsion_terms.append(
+                _TorsionTerm(
+                    force_index=force_index,
+                    atom_i=torsion.atom_i,
+                    atom_j=torsion.atom_j,
+                    atom_k=torsion.atom_k,
+                    atom_l=torsion.atom_l,
+                    elements=torsion.element_quad,
+                    periodicity=param.periodicity,
+                    env_id=torsion.env_id,
+                    ff_row=param.ff_row,
                 )
-                torsion_terms.append(
-                    _TorsionTerm(
-                        force_index=force_index,
-                        atom_i=imp_torsion.atom_i,
-                        atom_j=imp_torsion.atom_j,
-                        atom_k=imp_torsion.atom_k,
-                        atom_l=imp_torsion.atom_l,
-                        elements=imp_torsion.element_quad,
-                        periodicity=param.periodicity,
-                        env_id=imp_torsion.env_id,
-                        ff_row=param.ff_row,
-                        is_improper=True,
-                    )
+            )
+
+        for imp_torsion, param in improper_assignments:
+            force_index = torsion_force.addTorsion(
+                imp_torsion.atom_i,
+                imp_torsion.atom_j,
+                imp_torsion.atom_k,
+                imp_torsion.atom_l,
+                param.periodicity,
+                np.deg2rad(float(param.phase)),
+                canonical_to_openmm_torsion_k(param.force_constant),
+            )
+            torsion_terms.append(
+                _TorsionTerm(
+                    force_index=force_index,
+                    atom_i=imp_torsion.atom_i,
+                    atom_j=imp_torsion.atom_j,
+                    atom_k=imp_torsion.atom_k,
+                    atom_l=imp_torsion.atom_l,
+                    elements=imp_torsion.element_quad,
+                    periodicity=param.periodicity,
+                    env_id=imp_torsion.env_id,
+                    ff_row=param.ff_row,
+                    is_improper=True,
                 )
+            )
 
         # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []
         if forcefield.vdws:
-            for atom_index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=False)):
-                param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-                if param is None:
-                    raise ValueError(f"Missing vdW parameter for atom {atom_index + 1} ({atom_type or symbol}).")
+            vdw_assignments = _collect_vdw_assignments(molecule, forcefield)
+            for atom_index, symbol, atom_type, param in vdw_assignments:
                 if use_harmonic:
                     vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
                 else:
@@ -1110,48 +1149,7 @@ class OpenMMEngine(MMEngine):
                     )
                 )
             if use_harmonic:
-                # Exclude 1-2 and 1-3 pairs; scale 1-4 pairs by 1/2 (AMBER scnb=2.0)
-                excluded_12: set[tuple[int, int]] = set()
-                for bond in molecule.bonds:
-                    excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
-
-                excluded_13: set[tuple[int, int]] = set()
-                for angle in molecule.angles:
-                    excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
-                excluded_13 -= excluded_12  # pure 1-3 only
-
-                # Build adjacency for 1-4 detection
-                neighbors: dict[int, set[int]] = {}
-                for bond in molecule.bonds:
-                    neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
-                    neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
-
-                pairs_14: set[tuple[int, int]] = set()
-                for angle in molecule.angles:
-                    # 1-4 pairs: atoms bonded to angle endpoints but not in the angle
-                    for nb in neighbors.get(angle.atom_i, ()):
-                        if nb != angle.atom_j and nb != angle.atom_k:
-                            pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
-                    for nb in neighbors.get(angle.atom_k, ()):
-                        if nb != angle.atom_j and nb != angle.atom_i:
-                            pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
-                pairs_14 -= excluded_12
-                pairs_14 -= excluded_13
-
-                # Fully exclude 1-2 and 1-3
-                for p1, p2 in sorted(excluded_12 | excluded_13):
-                    vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
-
-                # Scale 1-4 pairs (AMBER: scnb=2.0 → epsilon/2, scee=1.2 → no charges here)
-                SCNB = 2.0
-                exceptions_14: list[_Exception14] = []
-                for p1, p2 in sorted(pairs_14):
-                    sig1, eps1 = vdw_force.getParticleParameters(p1)[1:]
-                    sig2, eps2 = vdw_force.getParticleParameters(p2)[1:]
-                    sig_14 = 0.5 * (sig1 + sig2)
-                    eps_14 = (eps1 * eps2) ** 0.5 / SCNB
-                    exc_idx = vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
-                    exceptions_14.append(_Exception14(exception_index=exc_idx, particle_i=p1, particle_j=p2))
+                exceptions_14 = _build_harmonic_exclusions(molecule, vdw_force)
             else:
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
@@ -1297,7 +1295,7 @@ class OpenMMEngine(MMEngine):
 
         if handle.bond_force is not None:
             for term in handle.bond_terms:
-                param = _match_bond(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                param = forcefield.match_bond(term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
                 if use_harmonic:
@@ -1319,7 +1317,7 @@ class OpenMMEngine(MMEngine):
 
         if handle.angle_force is not None:
             for term in handle.angle_terms:
-                param = _match_angle(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                param = forcefield.match_angle(term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing angle parameter for {term.elements}.")
                 if use_harmonic:
@@ -1343,8 +1341,8 @@ class OpenMMEngine(MMEngine):
 
         if handle.torsion_force is not None:
             for term in handle.torsion_terms:
-                params = _match_torsions(
-                    forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row, is_improper=term.is_improper
+                params = forcefield.match_torsion(
+                    term.elements, env_id=term.env_id, ff_row=term.ff_row, is_improper=term.is_improper
                 )
                 matched = [p for p in params if p.periodicity == term.periodicity]
                 if not matched:
@@ -1361,13 +1359,13 @@ class OpenMMEngine(MMEngine):
                     term.atom_l,
                     param.periodicity,
                     np.deg2rad(float(param.phase)),
-                    _torsion_k_to_openmm(param.force_constant),
+                    canonical_to_openmm_torsion_k(param.force_constant),
                 )
             handle.torsion_force.updateParametersInContext(handle.context)
 
         if handle.vdw_force is not None:
             for term in handle.vdw_terms:
-                param = _match_vdw(forcefield, atom_type=term.atom_type, element=term.element, ff_row=term.ff_row)
+                param = forcefield.match_vdw(atom_type=term.atom_type, element=term.element, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(
                         f"Updated force field is missing vdW parameter for {term.atom_type or term.element}."
@@ -1401,7 +1399,7 @@ class OpenMMEngine(MMEngine):
 
         if handle.ub_force is not None:
             for term in handle.ub_terms:
-                param = _match_angle(forcefield, term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                param = forcefield.match_angle(term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing UB parameter for angle {term.elements}.")
                 if param.ub_force_constant is None and param.ub_equilibrium is None:
@@ -1536,10 +1534,12 @@ class OpenMMEngine(MMEngine):
         param_vector = forcefield.get_param_vector()
         pv_idx = 0  # tracks position in flat param vector
 
+        # Precompute assignments and build reverse indices for O(n) lookups.
+        bond_assignments = _collect_bond_assignments(molecule, forcefield)
+        bonds_by_param = _index_by_param_id(bond_assignments)
+
         # --- Bonds: each bond param contributes (k, r0) ---
         bond_global_map: dict[int, tuple[str, str]] = {}
-        # Conversion factors differ: HARMONIC CustomBondForce uses
-        # kJ/mol/nm² directly; MM3 uses kJ/mol/Å² (expression handles nm→Å).
         bond_k_factor = canonical_to_openmm_bond_k_nm(1.0) if use_harmonic else _bond_k_to_openmm(1.0)
         for bp_idx, bp in enumerate(forcefield.bonds):
             k_name = f"bond_k_{bp_idx}"
@@ -1555,8 +1555,6 @@ class OpenMMEngine(MMEngine):
             )
             pv_idx += 2
 
-        # Build one CustomBondForce per bond-param type so each force has
-        # just two global parameters (k, r0) — avoids the select() limit.
         for bp_idx, bp in enumerate(forcefield.bonds):
             k_name, r0_name = bond_global_map[bp_idx]
             k_val = (
@@ -1575,20 +1573,16 @@ class OpenMMEngine(MMEngine):
             bf.addEnergyParameterDerivative(k_name)
             bf.addEnergyParameterDerivative(r0_name)
 
-            for bond in molecule.bonds:
-                param = _match_bond(
-                    forcefield,
-                    bond.elements,
-                    env_id=bond.env_id,
-                    ff_row=bond.ff_row,
-                )
-                if param is bp:
-                    bf.addBond(bond.atom_i, bond.atom_j)
+            for bond in bonds_by_param.get(id(bp), []):
+                bf.addBond(bond.atom_i, bond.atom_j)
             system.addForce(bf)
+
+        # Precompute angle assignments and build reverse index.
+        angle_assignments = _collect_angle_assignments(molecule, forcefield)
+        angles_by_param = _index_by_param_id(angle_assignments)
 
         # --- Angles: each angle param contributes (k, theta0) ---
         angle_global_map: dict[int, tuple[str, str]] = {}
-        # CustomAngleForce uses E=k·(θ−θ₀)² (no ½), same conversion for both forms.
         angle_k_factor = _angle_k_to_openmm(1.0)
         for ap_idx, ap in enumerate(forcefield.angles):
             k_name = f"angle_k_{ap_idx}"
@@ -1598,13 +1592,12 @@ class OpenMMEngine(MMEngine):
             param_vector_indices.extend([pv_idx, pv_idx + 1])
             grad_unit_factors.extend(
                 [
-                    angle_k_factor,  # dk_openmm/dk_canonical
-                    np.deg2rad(1.0),  # dtheta0_openmm/dtheta0_canonical (deg → rad)
+                    angle_k_factor,
+                    np.deg2rad(1.0),
                 ]
             )
             pv_idx += 2
 
-        # Build one CustomAngleForce per angle-param type.
         for ap_idx, ap in enumerate(forcefield.angles):
             k_name, t0_name = angle_global_map[ap_idx]
             k_val = _angle_k_to_openmm(ap.force_constant)
@@ -1631,24 +1624,19 @@ class OpenMMEngine(MMEngine):
             af.addEnergyParameterDerivative(k_name)
             af.addEnergyParameterDerivative(t0_name)
 
-            for angle in molecule.angles:
-                param = _match_angle(
-                    forcefield,
-                    angle.elements,
-                    env_id=angle.env_id,
-                    ff_row=angle.ff_row,
-                )
-                if param is ap:
-                    af.addAngle(angle.atom_i, angle.atom_j, angle.atom_k)
+            for angle in angles_by_param.get(id(ap), []):
+                af.addAngle(angle.atom_i, angle.atom_j, angle.atom_k)
             system.addForce(af)
 
+        # Precompute torsion assignments and build reverse indices.
+        proper_assignments = _collect_torsion_assignments(molecule, forcefield, is_improper=False)
+        improper_assignments = _collect_torsion_assignments(molecule, forcefield, is_improper=True)
+        all_torsion_assignments = proper_assignments + improper_assignments
+        torsions_by_param = _index_by_param_id(all_torsion_assignments)
+
         # --- Torsions: each torsion param (proper and improper) contributes (k,) ---
-        # Use CustomTorsionForce with global parameters so that
-        # addEnergyParameterDerivative() provides exact dE/dk.
-        # One CustomTorsionForce per (torsion_param, periodicity) to keep
-        # each force object's global params small — same pattern as bonds/angles.
         torsion_global_map: dict[int, str] = {}
-        torsion_k_factor = _torsion_k_to_openmm(1.0)
+        torsion_k_factor = canonical_to_openmm_torsion_k(1.0)
         for tp_idx, tp in enumerate(forcefield.torsions):
             k_name = f"torsion_k_{tp_idx}"
             torsion_global_map[tp_idx] = k_name
@@ -1657,57 +1645,25 @@ class OpenMMEngine(MMEngine):
             grad_unit_factors.append(torsion_k_factor)
             pv_idx += 1
 
-        # Build one CustomTorsionForce per torsion param type.
         for tp_idx, tp in enumerate(forcefield.torsions):
             k_name = torsion_global_map[tp_idx]
-            k_val = _torsion_k_to_openmm(tp.force_constant)
+            k_val = canonical_to_openmm_torsion_k(tp.force_constant)
             phase_rad = np.deg2rad(float(tp.phase))
             n = tp.periodicity
-            # Periodic torsion: E = k·(1 + cos(n·θ − φ))
             expr = f"{k_name}*(1+cos({n}*theta-{phase_rad:.15g}))"
             tf = mm.CustomTorsionForce(expr)
             tf.setForceGroup(1)
             tf.addGlobalParameter(k_name, k_val)
             tf.addEnergyParameterDerivative(k_name)
 
-            # Match proper torsions from molecule topology
-            if not tp.is_improper:
-                for torsion in molecule.torsions:
-                    params = _match_torsions(
-                        forcefield,
-                        torsion.element_quad,
-                        env_id=torsion.env_id,
-                        ff_row=torsion.ff_row,
-                        is_improper=False,
-                    )
-                    for param in params:
-                        if param is tp:
-                            tf.addTorsion(
-                                torsion.atom_i,
-                                torsion.atom_j,
-                                torsion.atom_k,
-                                torsion.atom_l,
-                                [],
-                            )
-            else:
-                # Match improper torsions from trigonal centres
-                for imp in molecule.improper_torsions:
-                    params = _match_torsions(
-                        forcefield,
-                        imp.element_quad,
-                        env_id=imp.env_id,
-                        ff_row=imp.ff_row,
-                        is_improper=True,
-                    )
-                    for param in params:
-                        if param is tp:
-                            tf.addTorsion(
-                                imp.atom_i,
-                                imp.atom_j,
-                                imp.atom_k,
-                                imp.atom_l,
-                                [],
-                            )
+            for torsion in torsions_by_param.get(id(tp), []):
+                tf.addTorsion(
+                    torsion.atom_i,
+                    torsion.atom_j,
+                    torsion.atom_k,
+                    torsion.atom_l,
+                    [],
+                )
             system.addForce(tf)
 
         # --- vdW: advance pv_idx past vdW params ---
@@ -1716,54 +1672,14 @@ class OpenMMEngine(MMEngine):
         pv_idx += 2 * len(forcefield.vdws)
 
         if forcefield.vdws:
+            vdw_assignments = _collect_vdw_assignments(molecule, forcefield)
             if use_harmonic:
-                # HARMONIC: standard NonbondedForce with LJ 12-6, no charges
                 vdw_force = mm.NonbondedForce()
                 vdw_force.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
-                for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
-                    param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-                    if param is None:
-                        raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
+                for _atom_index, _symbol, _atom_type, param in vdw_assignments:
                     vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
-
-                # Exclude 1-2 and 1-3; scale 1-4 (AMBER scnb=2.0)
-                excluded_12: set[tuple[int, int]] = set()
-                for bond in molecule.bonds:
-                    excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
-
-                excluded_13: set[tuple[int, int]] = set()
-                for angle in molecule.angles:
-                    excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
-                excluded_13 -= excluded_12
-
-                neighbors: dict[int, set[int]] = {}
-                for bond in molecule.bonds:
-                    neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
-                    neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
-
-                pairs_14: set[tuple[int, int]] = set()
-                for angle in molecule.angles:
-                    for nb in neighbors.get(angle.atom_i, ()):
-                        if nb != angle.atom_j and nb != angle.atom_k:
-                            pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
-                    for nb in neighbors.get(angle.atom_k, ()):
-                        if nb != angle.atom_j and nb != angle.atom_i:
-                            pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
-                pairs_14 -= excluded_12
-                pairs_14 -= excluded_13
-
-                for p1, p2 in sorted(excluded_12 | excluded_13):
-                    vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
-
-                SCNB = 2.0
-                for p1, p2 in sorted(pairs_14):
-                    _, sig1, eps1 = vdw_force.getParticleParameters(p1)
-                    _, sig2, eps2 = vdw_force.getParticleParameters(p2)
-                    sig_14 = 0.5 * (sig1 + sig2)
-                    eps_14 = (eps1 * eps2) ** 0.5 / SCNB
-                    vdw_force.addException(p1, p2, 0.0, sig_14, eps_14)
+                _build_harmonic_exclusions(molecule, vdw_force)
             else:
-                # MM3: Buckingham exp-6 with per-particle params
                 vdw_force = mm.CustomNonbondedForce(
                     f"step(r - rc) * epsilon*(-{MM3_VDW_C}*(rv/r)^6 + {MM3_VDW_A}*exp(-{MM3_VDW_B}*r/rv))"
                     f" + step(rc - r) * epsilon*{MM3_VDW_A}*exp(-{MM3_VDW_B}*rc/rv) * (rc/r)^12;"
@@ -1774,10 +1690,7 @@ class OpenMMEngine(MMEngine):
                 vdw_force.addPerParticleParameter("radius")
                 vdw_force.addPerParticleParameter("epsilon")
                 vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
-                for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
-                    param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-                    if param is None:
-                        raise ValueError(f"Missing vdW parameter for {atom_type or symbol}.")
+                for _atom_index, _symbol, _atom_type, param in vdw_assignments:
                     vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
                 vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
 

@@ -97,6 +97,59 @@ def _collect_environment() -> dict[str, Any]:
     return env
 
 
+@dataclass(frozen=True)
+class _OptResult:
+    """Normalized result from any optimizer dispatch."""
+
+    elapsed: float
+    n_eval: int
+    converged: bool
+    initial_score: float
+    final_score: float
+    message: str
+    jac_mode: str | None
+    eps: float | None
+    gradients: dict[str, str]
+    extra: dict[str, Any]
+
+
+def _run_optimizer(
+    opt: Any,
+    obj: ObjectiveFunction,
+    *,
+    method: str,
+    extra: dict[str, Any] | None = None,
+) -> _OptResult:
+    """Run an optimizer and extract result fields into a uniform struct.
+
+    Args:
+        opt: Optimizer with an ``.optimize(obj)`` method.
+        obj: Objective function.
+        method: Method name for gradient resolution.
+        extra: Additional metadata to include in the result.
+
+    """
+    t0 = time.perf_counter()
+    opt_result = opt.optimize(obj)
+    elapsed = time.perf_counter() - t0
+
+    jac_mode = opt_result.jac_mode
+    eps = opt_result.eps
+
+    return _OptResult(
+        elapsed=elapsed,
+        n_eval=opt_result.n_evaluations,
+        converged=opt_result.success,
+        initial_score=opt_result.initial_score,
+        final_score=opt_result.final_score,
+        message=opt_result.message,
+        jac_mode=jac_mode,
+        eps=eps,
+        gradients=_resolve_gradients(jac_mode, obj, method=method),
+        extra=extra or {},
+    )
+
+
 def _resolve_gradients(
     jac_mode: str | None,
     objective: ObjectiveFunction,
@@ -712,21 +765,17 @@ def run_combo(
 
         opt = OptaxOptimizer(**optax_kwargs)
 
-        t0 = time.perf_counter()
-        opt_result = opt.optimize(obj)
-        opt_elapsed = time.perf_counter() - t0
-
-        n_eval = opt_result.n_evaluations
-        converged = opt_result.success
-        opt_initial_score = opt_result.initial_score
-        opt_final_score = opt_result.final_score
-        opt_message = opt_result.message
-        extra_opt_data = {}
-
-        jac_mode = opt_result.jac_mode
-        eps = opt_result.eps
-
-        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
+        r = _run_optimizer(opt, obj, method=optimizer_method)
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
     elif optimizer_method.startswith("basinhopping"):
         from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
 
@@ -746,21 +795,22 @@ def run_combo(
 
         opt = BasinHoppingOptimizer(**bh_kwargs)
 
-        t0 = time.perf_counter()
-        opt_result = opt.optimize(obj)
-        opt_elapsed = time.perf_counter() - t0
-
-        n_eval = opt_result.n_evaluations
-        converged = opt_result.success
-        opt_initial_score = opt_result.initial_score
-        opt_final_score = opt_result.final_score
-        opt_message = opt_result.message
-        extra_opt_data = {"niter": bh_kwargs.get("niter", 50)}
-
-        jac_mode = opt_result.jac_mode
-        eps = opt_result.eps
-
-        gradients = _resolve_gradients(jac_mode, obj, method=bh_kwargs.get("local_method", "L-BFGS-B"))
+        r = _run_optimizer(
+            opt,
+            obj,
+            method=bh_kwargs.get("local_method", "L-BFGS-B"),
+            extra={"niter": bh_kwargs.get("niter", 50)},
+        )
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
     elif optimizer_method.startswith("multi:"):
         from q2mm.optimizers.multistart import MultiStartOptimizer
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
@@ -783,21 +833,22 @@ def run_combo(
 
         opt = MultiStartOptimizer(**multi_kwargs)
 
-        t0 = time.perf_counter()
-        opt_result = opt.optimize(obj)
-        opt_elapsed = time.perf_counter() - t0
-
-        n_eval = opt_result.n_evaluations
-        converged = opt_result.success
-        opt_initial_score = opt_result.initial_score
-        opt_final_score = opt_result.final_score
-        opt_message = opt_result.message
-        extra_opt_data = {"n_starts": multi_kwargs.get("n_starts", 5)}
-
-        jac_mode = opt_result.jac_mode
-        eps = opt_result.eps
-
-        gradients = _resolve_gradients(jac_mode, obj, method=inner_method)
+        r = _run_optimizer(
+            opt,
+            obj,
+            method=inner_method,
+            extra={"n_starts": multi_kwargs.get("n_starts", 5)},
+        )
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -805,22 +856,17 @@ def run_combo(
         opt_kwargs.update(optimizer_kwargs)
         opt = ScipyOptimizer(**opt_kwargs)
 
-        t0 = time.perf_counter()
-        opt_result = opt.optimize(obj)
-        opt_elapsed = time.perf_counter() - t0
-
-        n_eval = opt_result.n_evaluations
-        converged = opt_result.success
-        opt_initial_score = opt_result.initial_score
-        opt_final_score = opt_result.final_score
-        opt_message = opt_result.message
-        extra_opt_data = {}
-
-        jac_mode = opt_result.jac_mode
-        eps = opt_result.eps
-
-        # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
+        r = _run_optimizer(opt, obj, method=optimizer_method)
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
 
     # Record optimizer settings in metadata
     result.metadata["jac_mode"] = jac_mode
