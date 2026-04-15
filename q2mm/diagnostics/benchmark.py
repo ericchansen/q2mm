@@ -614,7 +614,7 @@ def run_combo(
     # Initial (QFUERZA) state
     obj_kwargs: dict[str, Any] = {}
     if "regularization" in optimizer_kwargs:
-        obj_kwargs["regularization"] = optimizer_kwargs.pop("regularization")
+        obj_kwargs["regularization"] = optimizer_kwargs["regularization"]
     obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref, **obj_kwargs)
     initial_score = obj(seminario_params)
 
@@ -754,7 +754,7 @@ def run_combo(
         jac_mode = opt_result.jac_mode
         eps = opt_result.eps
 
-        gradients = _resolve_gradients(jac_mode, obj, method=optimizer_method)
+        gradients = _resolve_gradients(jac_mode, obj, method=bh_kwargs.get("local_method", "L-BFGS-B"))
     elif optimizer_method.startswith("multi:"):
         from q2mm.optimizers.multistart import MultiStartOptimizer
         from q2mm.optimizers.scipy_opt import ScipyOptimizer

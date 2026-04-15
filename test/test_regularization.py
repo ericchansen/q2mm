@@ -147,3 +147,23 @@ class TestL2Gradient:
         obj = _make_objective(regularization=10.0, reference_params=ref)
         g = obj.gradient(ref)
         np.testing.assert_array_almost_equal(g, np.zeros(3))
+
+
+class TestL2Validation:
+    """Input validation for regularization parameters."""
+
+    def test_negative_regularization_raises(self) -> None:
+        """Negative regularization must raise ValueError."""
+        with pytest.raises(ValueError, match="non-negative"):
+            _make_objective(regularization=-0.1)
+
+    def test_regularization_without_forcefield_raises(self) -> None:
+        """Regularization > 0 without forcefield or reference_params raises."""
+        ref = ReferenceData()
+        with pytest.raises(ValueError, match="requires a forcefield"):
+            ObjectiveFunction(None, MagicMock(), [], ref, regularization=0.5)
+
+    def test_reference_params_wrong_ndim_raises(self) -> None:
+        """2-D reference_params must raise ValueError."""
+        with pytest.raises(ValueError, match="1-D"):
+            _make_objective(reference_params=np.ones((3, 2)))
