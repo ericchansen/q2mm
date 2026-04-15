@@ -93,7 +93,7 @@ or `JAX (harmonic, cpu)`).
 
 !!! tip "Optax optimizers"
     JaxEngine pairs naturally with
-    [optax adaptive optimizers](../how-it-works/optimization-guide.md#workflow-b-small--rugged)
+    [optax adaptive optimizers](../how-it-works/optimization-guide.md#workflow-b-small-rugged)
     (Adam, AdaGrad, SGD) via `OptaxOptimizer`. These use JAX's analytical
     gradients automatically — no finite-difference overhead. On CH₃F MM3,
     Adam achieves 56.3 cm⁻¹ RMSD (10× better than L-BFGS-B).
