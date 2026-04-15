@@ -100,14 +100,6 @@ scripts/ci_local.sh --all
 
 This runs the full CI matrix locally inside Docker containers.
 
-### GPG Signing
-
-GPG signing is broken (expired key). **Always** use:
-
-```bash
-git -c commit.gpgsign=false commit
-```
-
 ---
 
 ## 4. Platform Guide
@@ -159,7 +151,7 @@ python -c "import jax; print(jax.devices())"
   `fix/openmm-parity`).
 - Conventional commit prefixes: `feat`, `fix`, `docs`, `refactor`, `chore`,
   `test`, `ci`, `perf`.
-- GPG signing is broken — see §3 above.
+
 
 ---
 
@@ -175,7 +167,10 @@ python -c "import jax; print(jax.devices())"
 5. **Benchmark data is tracked in git** — `benchmarks/` is committed,
    not gitignored. Any data referenced in documentation **must** be in the
    repo. If it's not tracked, it doesn't exist for publication purposes.
-6. **Run sequentially on an idle system** for consistent timing.
+6. **History snapshots go to `benchmarks/history/`** — the CLI auto-discovers
+   this directory by walking up from the output path. Do not create per-system
+   history directories (e.g., `benchmarks/ch3f/history/`).
+7. **Run sequentially on an idle system** for consistent timing.
 
 ### Expected Runtimes
 
@@ -188,42 +183,7 @@ python -c "import jax; print(jax.devices())"
 
 ---
 
-## 7. Active Workstreams
-
-### Check 1 — Published Force Field Evaluation
-
-Load published force fields, evaluate them with q2mm engines, and compare to
-literature values. Rh-enamide is in progress; issue **#197** tracks the parity
-gap between q2mm and published results. Golden fixture lives at
-`test/fixtures/published_ff/`.
-
-### Check 2 — Force Field Re-derivation
-
-Re-derive published force fields from scratch using q2mm optimizers. **Not
-started yet** — blocked on resolving Check 1 first.
-
-### Validation Roadmap
-
-Issue **#198** is the umbrella tracker for the overall published-validation
-program.
-
-### GPU Benchmarks
-
-Issue **#194** tracks re-running benchmarks with CUDA and saving all artifacts.
-
----
-
-## 8. Key Open Issues
-
-| Issue  | Title                          | Status  | Next Action                              |
-|--------|--------------------------------|---------|------------------------------------------|
-| **#198** | Published validation roadmap | Active  | Umbrella tracker                         |
-| **#197** | Check 1: OpenMM parity gap   | Blocked | Debug MM3 functional-form differences    |
-| **#194** | Re-run GPU benchmarks        | Active  | Run with CUDA, save artifacts            |
-
----
-
-## 9. Diagnostic Commands
+## 7. Diagnostic Commands
 
 ```bash
 # Check OpenMM platforms (must show CUDA for GPU work)
@@ -257,7 +217,7 @@ Q2MM_UPDATE_GOLDEN=1 python -m pytest test/integration/test_published_ff_validat
 
 ---
 
-## 10. Publication Metadata
+## 8. Publication Metadata
 
 **Always validate publication years and metadata via Zotero MCP**, not
 raw CrossRef API fields. CrossRef exposes multiple date fields
@@ -274,7 +234,7 @@ metadata in this project.
 
 ---
 
-## 11. Common Pitfalls
+## 9. Common Pitfalls
 
 | Pitfall | What Happens | Fix |
 |---------|-------------|-----|
@@ -285,6 +245,5 @@ metadata in this project.
 | **JAX on Windows** | JAX CPU works but JAX CUDA is excluded in `pyproject.toml` | Use WSL2 for GPU |
 | **`--no-save`** | Benchmark results and force fields are lost | Never use `--no-save` — always save artifacts |
 | **Long benchmarks** | OpenMM L-BFGS-B can take hours | Check CPU/GPU utilization periodically with `nvidia-smi` |
-| **GPG signing** | Commits fail with signing error | Always use `git -c commit.gpgsign=false commit` |
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
