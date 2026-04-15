@@ -1,12 +1,14 @@
 """Data classes for molecular structures, atoms, and degrees of freedom.
 
-This module defines the core data structures used to represent molecular
-geometry: atoms, bonds, angles, torsions, and full molecular structures.
+This module defines the data structures used by I/O parsers to
+represent molecular geometry during file parsing: atoms, bonds,
+angles, torsions, and full molecular structures.
 
-Note:
-    :class:`q2mm.models.molecule.Q2MMMolecule` is the preferred
-    representation for new code.  These legacy classes remain in use by
-    several I/O modules and will be retained as long as those modules exist.
+:class:`q2mm.models.molecule.Q2MMMolecule` is the preferred
+representation for computation and optimization.  These classes serve
+as the adapter layer between file-format parsers (``q2mm.io``) and
+``Q2MMMolecule`` — parsers populate :class:`Structure`, and
+:meth:`Q2MMMolecule.from_structure` converts it to the modern form.
 
 """
 

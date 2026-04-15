@@ -5,7 +5,7 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
   1. The optimizer actually improves the force field
   2. Multiple scipy methods converge to the same endpoint
   3. OpenMM and Tinker backends produce the same optimized FF
-  4. The objective function's scoring relates correctly to the legacy formula
+  4. The objective function's scoring formula is correct
   5. Round-trip recovery of known parameters
   6. Parameter vector roundtrip (get→set→get identity)
   7. Atom-identity matching for bond/angle references
@@ -29,8 +29,6 @@ from test._shared import CH3F_HESS, CH3F_XYZ, make_water
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.optimizers.scoring import compare_data
-from q2mm.models.datum import Datum
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
@@ -279,55 +277,40 @@ class TestMultiMethodConvergence:
             assert results[method].final_score < 1.0, f"{method} score too high: {results[method].final_score:.4f}"
 
 
-# ---- Objective function vs legacy compare.compare_data() ----
+# ---- Objective function scoring formula verification ----
 
 
 class TestScoreParity:
-    """Verify new objective scoring relates correctly to legacy formula.
+    """Verify ObjectiveFunction scoring computes sum((w * diff)²).
 
-    The formulas differ intentionally:
-      New:    score = sum( (w_i × diff_i)² )
-      Legacy: energy terms   → sum( w_i² × diff_i² ) / total_num_energy
-              non-energy terms → sum( w_i² × diff_i² ) / N_type
-
-    For a single data point of one type, N_type=1, total_num_energy=1,
-    so both give w²×diff².
-    For N>1 points of one type, new_score = legacy_score × N_type.
-    This is documented and tested below.
+    The objective function's score is defined as:
+        score = sum( (weight_i × (calc_i - ref_i))² )
+    These tests verify that formula against hand-computed expected values.
     """
 
-    def test_single_energy_scores_match(self) -> None:
-        """With 1 energy point, new and legacy scores are identical."""
+    def test_single_energy_score(self) -> None:
+        """With 1 energy point, score = (w * diff)²."""
         mol = _water()
         ff = _water_ff()
         engine = OpenMMEngine()
 
         calc_energy = engine.energy(mol, ff)
-        ref_energy = calc_energy + 0.5
+        offset = 0.5
+        ref_energy = calc_energy + offset
 
-        # NEW
         ref = ReferenceData()
         ref.add_energy(ref_energy, weight=1.0, molecule_idx=0)
         obj = ObjectiveFunction(ff, engine, [mol], ref)
-        new_score = obj(ff.get_param_vector())
+        score = obj(ff.get_param_vector())
 
-        # LEGACY — compare_data needs numpy arrays of Datum
-        r_datum = Datum(val=ref_energy, wht=1.0, typ="e", lbl="ref-energy", idx_1=1, idx_2=0)
-        c_datum = Datum(val=calc_energy, wht=1.0, typ="e", lbl="calc-energy", idx_1=1, idx_2=0)
-        r_arr = np.array([r_datum], dtype=object)
-        c_arr = np.array([c_datum], dtype=object)
-        legacy_score = compare_data({"e": r_arr}, {"e": c_arr})
+        # Expected: (1.0 * 0.5)² = 0.25
+        expected = (1.0 * offset) ** 2
+        assert score == pytest.approx(expected, rel=0.01), f"score={score}, expected={expected}"
 
-        # N_type=1 ⇒ identical
-        assert new_score == pytest.approx(legacy_score, rel=0.01), f"New={new_score}, Legacy={legacy_score}"
+    def test_multi_energy_score(self) -> None:
+        """With N energy points, score = sum of (w * diff)² for each.
 
-    def test_multi_energy_normalization_relationship(self) -> None:
-        """With N energy points, score relationship accounts for legacy correlation.
-
-        The legacy compare_data correlates energies (shifts calculated values
-        so the minimum-reference-energy point becomes zero in the calc set).
-        This changes the effective diffs. We verify the relationship holds for
-        a single-group case where correlation is predictable.
+        Uses a uniform offset so the expected value is trivially N × (w × offset)².
         """
         mol1 = _water()
         mol2 = _water(110.0, 0.96)
@@ -336,41 +319,19 @@ class TestScoreParity:
 
         e1 = engine.energy(mol1, ff)
         e2 = engine.energy(mol2, ff)
-        # Use offsets that make the relationship clear:
-        # ref_e1 = e1 + delta1, ref_e2 = e2 + delta2
-        # Legacy correlate_energies shifts calc so c[min_ref_idx].val = 0,
-        # then scores correlated diffs.
-        # Our new ObjectiveFunction scores absolute diffs (no correlation).
-        # Both formulas are valid; they encode different physical assumptions
-        # about what matters (absolute vs relative energies).
-        delta1, delta2 = 0.3, 0.3  # Same offset → correlation doesn't change diffs
-        ref_e1 = e1 + delta1
-        ref_e2 = e2 + delta2
+        offset = 0.3
+        ref_e1 = e1 + offset
+        ref_e2 = e2 + offset
 
-        # NEW
         ref = ReferenceData()
         ref.add_energy(ref_e1, weight=1.0, molecule_idx=0)
         ref.add_energy(ref_e2, weight=1.0, molecule_idx=1)
         obj = ObjectiveFunction(ff, engine, [mol1, mol2], ref)
-        new_score = obj(ff.get_param_vector())
+        score = obj(ff.get_param_vector())
 
-        # LEGACY
-        r1 = Datum(val=ref_e1, wht=1.0, typ="e", lbl="e1", idx_1=1, idx_2=0)
-        c1 = Datum(val=e1, wht=1.0, typ="e", lbl="e1", idx_1=1, idx_2=0)
-        r2 = Datum(val=ref_e2, wht=1.0, typ="e", lbl="e2", idx_1=1, idx_2=0)
-        c2 = Datum(val=e2, wht=1.0, typ="e", lbl="e2", idx_1=1, idx_2=0)
-        r_arr = np.array([r1, r2], dtype=object)
-        c_arr = np.array([c1, c2], dtype=object)
-        legacy_score = compare_data({"e": r_arr}, {"e": c_arr})
-
-        # With uniform offsets, correlation preserves the diffs, so:
-        # new_score = sum((w*diff)^2) = 2 * (1.0 * 0.3)^2 = 0.18
-        # legacy_score = sum(w^2 * diff^2 / N) = 0.09 (N=2)
-        # Therefore: new_score equals legacy_score times N
-        n_energy = 2
-        assert new_score == pytest.approx(legacy_score * n_energy, rel=0.05), (
-            f"New={new_score}, Legacy×N={legacy_score * n_energy}"
-        )
+        # Expected: 2 × (1.0 × 0.3)² = 0.18
+        expected = 2 * (1.0 * offset) ** 2
+        assert score == pytest.approx(expected, rel=0.05), f"score={score}, expected={expected}"
 
 
 # ---- Optimization round-trip validation ----
