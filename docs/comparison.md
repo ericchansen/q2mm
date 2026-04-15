@@ -91,7 +91,7 @@ AdaGrad, SGD, AdamW). These use JAX's analytical gradients directly and excel
 on rugged potential energy surfaces like MM3, where Adam achieves 10× better
 RMSD than L-BFGS-B on CH₃F
 ([benchmark results](benchmarks/small-molecules.md)). See the
-[Optimization Guide](how-it-works/optimization-guide.md#workflow-b-small--rugged)
+[Optimization Guide](how-it-works/optimization-guide.md#workflow-b-small-rugged)
 for details.
 
 For global optimization, `BasinHoppingOptimizer` wraps

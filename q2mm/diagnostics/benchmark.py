@@ -733,6 +733,7 @@ def run_combo(
         bh_kwargs: dict[str, Any] = {
             "verbose": False,
             "jac": "auto",
+            "local_maxiter": maxiter,
         }
         # Parse optional local method suffix: "basinhopping:SLSQP" → local_method="SLSQP"
         if ":" in optimizer_method:
