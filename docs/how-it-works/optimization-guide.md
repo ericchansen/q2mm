@@ -359,6 +359,6 @@ top harmonic results on CH₃F all use analytical or auto mode.
 ## Further Reading
 
 - [Tutorial: Step 6 — Optimize](../tutorial.md#step-6-optimise-the-force-field) — walkthrough of a single-shot optimization
-- [CH₃F Benchmarks](../benchmarks/small-molecules.md) — full 71-combo comparison matrix with RMSD, timing, and per-eval costs
+- [CH₃F Benchmarks](../benchmarks/small-molecules.md) — full 75-combo comparison matrix with RMSD, timing, and per-eval costs
 - [Rh-Enamide Benchmarks](../benchmarks/rh-enamide.md) — large-system case study (182 parameters)
 - [References](../references.md) — academic papers describing the Q2MM methodology
