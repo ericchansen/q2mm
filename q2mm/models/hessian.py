@@ -370,6 +370,49 @@ def _jax_frequency_param_jacobian(
     return freqs_arr, d_freq_dp
 
 
+def _jax_frequencies_from_hessian(
+    hessian_au: np.ndarray,
+    masses_3n: np.ndarray,
+) -> np.ndarray:
+    """JIT-compatible frequencies from a mass-weighted Hessian eigendecomposition.
+
+    Returns only frequencies — no parameter Jacobian.  Use this helper
+    inside a ``jax.jit`` / ``jax.grad`` graph when you only need
+    ``freqs`` and the outer autodiff will supply parameter gradients
+    via reverse-mode AD.  Avoids the expensive ``jax.jacrev`` of the
+    Hessian needed by :func:`_jax_frequency_param_jacobian`.
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Hessian in Hartree/Bohr².
+        masses_3n: ``(3N,)`` masses repeated per Cartesian DOF.
+
+    Returns:
+        ``(3N,)`` frequencies in cm⁻¹, sorted ascending.
+
+    """
+    from q2mm.backends.mm._jax_common import ensure_jax
+
+    ensure_jax(engine_name="jax_frequencies")
+
+    from q2mm.backends.mm._jax_common import jnp
+
+    inv_sqrt = 1.0 / jnp.sqrt(masses_3n)
+    scale = jnp.outer(inv_sqrt, inv_sqrt)
+
+    hess = hessian_au * scale
+    hess = 0.5 * (hess + hess.T)
+
+    eigenvalues = jnp.linalg.eigvalsh(hess)
+
+    bohr_to_m = co.BOHR_TO_ANG * 1e-10
+    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
+    denom = 2.0 * jnp.pi * co.SPEED_OF_LIGHT_MS * 100.0
+
+    vals_si = eigenvalues * factor
+    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / denom
+    return jnp.sort(freqs_arr)
+
+
 def symbols_to_masses_3n(symbols: list[str] | Sequence[str]) -> list[float]:
     """Convert element symbols to a flat ``3N`` mass array.
 
