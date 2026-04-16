@@ -99,6 +99,14 @@ or `JAX (harmonic, cpu)`).
     Adam achieves 56.3 cm⁻¹ RMSD (10× better than L-BFGS-B).
     See [Small Molecules](../benchmarks/small-molecules.md) for full results.
 
+!!! tip "JaxOpt end-to-end optimization"
+    JaxEngine also supports fully JIT-compiled optimization via
+    [`JaxOptOptimizer`](../how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jaxopt),
+    which runs the entire loss + gradient + L-BFGS step inside JAX with
+    no Python callbacks. Supports energy, frequency, hessian element, and
+    eigenmatrix objectives. Use `full_method="jaxopt:lbfgs"` in the
+    cycling loop for JIT-compiled gradient phases.
+
 ---
 
 ## Limitations

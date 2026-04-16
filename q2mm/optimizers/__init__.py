@@ -46,6 +46,14 @@ try:
 except ImportError:
     pass
 
+# Lazy import: jaxopt + jax are optional dependencies
+try:
+    from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer  # noqa: F401
+
+    __all__ += ["JaxOptOptimizer"]
+except ImportError:
+    pass
+
 # Basin-hopping wraps scipy.optimize.basinhopping (always available with scipy)
 try:
     from q2mm.optimizers.basinhopping import BasinHoppingOptimizer  # noqa: F401

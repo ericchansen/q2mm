@@ -511,6 +511,7 @@ class OptimizationLoop:
 
         # Detect optax: prefix for full-space optimizer
         use_optax = self.full_method.startswith("optax:")
+        use_jaxopt = self.full_method.startswith("jaxopt:")
         use_basinhopping = self.full_method.startswith("basinhopping")
         use_multistart = self.full_method.startswith("multi:")
 
@@ -539,6 +540,16 @@ class OptimizationLoop:
                         optimizer=optax_name,
                         max_steps=self.full_maxiter,
                         schedule=schedule,
+                        verbose=False,
+                    )
+                    full_result = full_opt.optimize(self.objective)
+                elif use_jaxopt:
+                    from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+                    jaxopt_method = self.full_method.split(":", 1)[1]
+                    full_opt = JaxOptOptimizer(
+                        method=jaxopt_method,
+                        maxiter=self.full_maxiter,
                         verbose=False,
                     )
                     full_result = full_opt.optimize(self.objective)

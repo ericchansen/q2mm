@@ -30,7 +30,7 @@ from q2mm.models.molecule import Q2MMMolecule
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    pass
+    from q2mm.optimizers.spec import ObjectiveSpec
 
 
 # ---- Reference data containers ----
@@ -1357,6 +1357,76 @@ class ObjectiveFunction:
                 evaluator = self._get_evaluator(cat)
                 categories[cat] = evaluator.supports_analytical_gradient(self.engine)
         return dict(sorted(categories.items()))
+
+    def to_jax_spec(self) -> ObjectiveSpec:
+        """Build a JAX-compatible objective specification.
+
+        Encodes reference data, regularization settings, and parameter
+        bounds into the :class:`~q2mm.optimizers.spec.ObjectiveSpec`
+        format consumed by :class:`~q2mm.optimizers.jaxloss.JaxLoss`.
+
+        Geometry references (bond_length, bond_angle, torsion_angle)
+        are silently excluded — they require differentiable energy
+        minimization which is not yet supported in the JIT loss path.
+
+        Returns:
+            ObjectiveSpec ready for JIT compilation.
+
+        Raises:
+            ValueError: If no JIT-compatible references remain after
+                excluding geometry.
+
+        """
+        from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
+
+        # Group references by molecule index
+        refs_by_mol: dict[int, list[ReferenceValue]] = {}
+        for ref in self.reference.values:
+            refs_by_mol.setdefault(ref.molecule_idx, []).append(ref)
+
+        # Build per-molecule specs
+        mol_specs = []
+        categories: set[str] = set()
+        for mol_idx in sorted(refs_by_mol):
+            mol = self.molecules[mol_idx]
+            refs = refs_by_mol[mol_idx]
+            spec = _build_molecule_spec(
+                mol_idx=mol_idx,
+                symbols=tuple(mol.symbols),
+                refs=refs,
+            )
+            mol_specs.append(spec)
+            # Track which categories are present
+            if spec.has_energy:
+                categories.add("energy")
+            if spec.has_frequency:
+                categories.add("frequency")
+            if spec.has_hessian:
+                categories.add("hessian")
+            if spec.has_eigenmatrix:
+                categories.add("eigenmatrix")
+
+        if not categories:
+            raise ValueError(
+                "No JIT-compatible references found. "
+                "Geometry references require differentiable minimization "
+                "and are not supported in the JIT loss path."
+            )
+
+        # Parameter bounds from the force field
+        bounds = self.forcefield.get_bounds()
+        lower = np.array([b[0] for b in bounds], dtype=float)
+        upper = np.array([b[1] for b in bounds], dtype=float)
+
+        return ObjectiveSpec(
+            molecules=tuple(mol_specs),
+            n_params=self.forcefield.n_params,
+            regularization=self.regularization,
+            reference_params=self._reference_params.copy(),
+            lower_bounds=lower,
+            upper_bounds=upper,
+            supported_categories=frozenset(categories),
+        )
 
     def _finite_difference_gradient(
         self,

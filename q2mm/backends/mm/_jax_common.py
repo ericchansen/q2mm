@@ -20,10 +20,12 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 
 # Cheap availability check — does NOT import JAX or initialize CUDA.
 _HAS_JAX: bool = importlib.util.find_spec("jax") is not None
+_HAS_JAXOPT: bool = importlib.util.find_spec("jaxopt") is not None
 
-# These are populated lazily by ensure_jax().
+# These are populated lazily by ensure_jax() / ensure_jaxopt().
 jax: ModuleType | None = None
 jnp: ModuleType | None = None
+jaxopt: ModuleType | None = None
 _jax_initialized: bool = False
 
 
@@ -64,6 +66,27 @@ def ensure_jax(engine_name: str = "JaxEngine") -> None:
     jax = _jax
     jnp = _jnp
     _jax_initialized = True
+
+
+def ensure_jaxopt() -> None:
+    """Import jaxopt, ensuring JAX float64 is configured first.
+
+    Subsequent calls are no-ops.
+
+    Raises:
+        ImportError: If the ``jaxopt`` package cannot be imported.
+
+    """
+    global jaxopt  # noqa: PLW0603
+    if jaxopt is not None:
+        return
+    if not _HAS_JAXOPT:
+        raise ImportError("jaxopt is required. Install with: pip install q2mm[jax]")
+    ensure_jax(engine_name="jaxopt")
+
+    import jaxopt as _jaxopt
+
+    jaxopt = _jaxopt
 
 
 def compute_param_offsets(

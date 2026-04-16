@@ -19,8 +19,9 @@ then links to source code for API details.
 |-------------|---------------------|-----|
 | ≤ 10 params, harmonic form | [Workflow A](#workflow-a-small-smooth) | L-BFGS-B alone reaches the best basin (529 cm⁻¹ RMSD on CH₃F) |
 | ≤ 10 params, MM3 form | [Workflow B](#workflow-b-small-rugged) | Multi-start finds basins single-start misses (28.7 vs 579 RMSD) |
-| 10–50 params, any form | [Workflow C](#workflow-c-medium-systems) | Grad-simp cycling combines gradient speed with simplex robustness |
-| 50+ params | [Workflow C](#workflow-c-medium-systems) + [L2](#l2-regularization) | Regularization prevents parameter drift in under-determined systems |
+| 10–50 params, any form | [Workflow C](#workflow-c-medium-and-large-systems) | Grad-simp cycling combines gradient speed with simplex robustness |
+| 50+ params | [Workflow C](#workflow-c-medium-and-large-systems) + [L2](#l2-regularization) | Regularization prevents parameter drift in under-determined systems |
+| JAX engine, want JIT-compiled optimization | [Workflow D](#workflow-d-end-to-end-differentiable-jaxopt) | Entire loss+grad+step runs inside JAX — no Python overhead |
 
 Every workflow assumes **QFUERZA initialization** — run
 `estimate_force_constants()` before optimization. QFUERZA puts you in the
@@ -233,6 +234,84 @@ optimizer-specific code needed.
 
 ---
 
+## Workflow D: End-to-End Differentiable (JaxOpt)
+
+**When:** You want JIT-compiled loss *and* optimizer in a single JAX
+computation graph — no Python callbacks, no finite-difference overhead.
+
+**Recipe:** Use `JaxOptOptimizer` with `method="lbfgs"` or `"lbfgsb"`.
+
+```python
+from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200)
+result = optimizer.optimize(objective)
+print(result.summary())
+```
+
+**How it works:** `JaxOptOptimizer` converts the Python
+`ObjectiveFunction` into an `ObjectiveSpec` — a frozen data snapshot —
+and passes it to `JaxLoss`, a JIT-compiled JAX function that computes
+loss *and* gradients entirely on-device (CPU or GPU). The
+[jaxopt](https://jaxopt.github.io/) L-BFGS solver then runs inside JAX,
+eliminating the Python–JAX boundary on every iteration.
+
+**Supported reference types:**
+
+| Reference type | Supported | Notes |
+|----------------|:---------:|-------|
+| Energy | ✅ | Weighted residuals |
+| Frequency | ✅ | Closed-form sensitivity via eigenvalue derivatives |
+| Hessian elements | ✅ | Raw Cartesian Hessian entries |
+| Eigenmatrix (Q^T H Q) | ✅ | Diagonal projection terms |
+| Geometry | ❌ | Requires differentiable geometry optimization |
+
+**When to use this vs SciPy L-BFGS-B:**
+
+- JaxOpt is faster per-iteration because the entire loss+grad+step
+  happens inside JIT-compiled JAX — no Python overhead.
+- SciPy L-BFGS-B works with *any* engine (OpenMM, Tinker, etc.).
+  JaxOpt requires the JAX engine.
+- Both support bounds (L-BFGS-B variant).
+
+**Benchmark results (CH₃F, see [Small Molecules](../benchmarks/small-molecules.md)):**
+
+| Form | Device | Optimizer | RMSD (cm⁻¹) | Time | eval/s |
+|------|--------|-----------|:-----------:|-----:|-------:|
+| harmonic | CPU | jaxopt:lbfgsb | 528.3 | 4.8s | 45.4 |
+| harmonic | GPU | jaxopt:lbfgs | 532.0 | 16.3s | 9.9 |
+| harmonic | GPU | SciPy L-BFGS-B (A) | 528.7 | 1.9s | 41.1 |
+| mm3 | GPU | jaxopt:lbfgs | 578.7 | 16.2s | 18.3 |
+| mm3 | GPU | SciPy L-BFGS-B (A) | 579.0 | 2.2s | 31.4 |
+
+JaxOpt matches SciPy's solution quality on both functional forms. SciPy
+is faster wall-clock (no JIT compilation overhead) but JaxOpt uses fewer
+function evaluations due to exact gradients. On rugged landscapes (MM3),
+neither method escapes the 579 cm⁻¹ local minimum — use
+[multi-start](../benchmarks/small-molecules.md) or
+[optax Adam](../benchmarks/small-molecules.md) instead.
+
+**Using JaxOpt in grad-simp cycling:**
+
+```python
+from q2mm.optimizers.cycling import OptimizationLoop
+
+loop = OptimizationLoop(
+    objective,
+    full_method="jaxopt:lbfgs",   # or "jaxopt:lbfgsb"
+    simp_method="Nelder-Mead",
+    max_cycles=10,
+    full_maxiter=200,
+)
+result = loop.run()
+```
+
+The `jaxopt:` prefix tells the cycling loop to dispatch to
+`JaxOptOptimizer` instead of SciPy for the gradient phase. This
+combines JIT-compiled gradient passes with simplex polishing.
+
+---
+
 ## Modifiers
 
 These cross-cutting options layer onto any workflow.
@@ -302,7 +381,7 @@ debug why optimization stalls.
 ## Optimizer Reference
 
 For constructor parameters, return types, and full API details, see the
-[API Reference](../reference/q2mm/optimizers/).
+[API Reference](../reference/q2mm/optimizers/index.md).
 
 ### Gradient modes
 

@@ -104,6 +104,9 @@ def _optimizer_configs() -> list[tuple[str, dict]]:
         ("multi:L-BFGS-B (n=10)", {"method": "multi:L-BFGS-B", "n_starts": 10}),
         ("L-BFGS-B + L2(λ=0.01)", {"method": "L-BFGS-B", "regularization": 0.01}),
         ("optax:adam + L2(λ=0.01)", {"method": "optax:adam", "regularization": 0.01}),
+        # JaxOpt (end-to-end differentiable pipeline)
+        ("jaxopt:lbfgs", {"method": "jaxopt:lbfgs"}),
+        ("jaxopt:lbfgsb", {"method": "jaxopt:lbfgsb"}),
         # Composed workflows
         ("grad-simp (multi:L-BFGS-B inner)", {"method": "cycling", "full_method": "multi:L-BFGS-B"}),
     ]
