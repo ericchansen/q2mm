@@ -92,6 +92,21 @@ python -m pytest --gpu                 # CLI flag
 Q2MM_USE_GPU=1 python -m pytest        # environment variable
 ```
 
+### Docs (properdocs)
+
+```bash
+uv sync --extra docs                                   # install docs deps once
+uv run properdocs serve -f properdocs.yml              # live preview
+uv run properdocs build -f properdocs.yml              # static build to site/
+```
+
+> ⚠️ **Always use `uv run properdocs`, not a globally-installed one.** A
+> standalone install at `~/.local/bin/properdocs` may be missing transitive
+> deps (notably `yaml_env_tag` → `pyyaml-env-tag`) and will fail on import.
+> The `docs` extra pulls the full toolchain (`properdocs`, `mkdocs-material`,
+> `mkdocstrings[python]`, `mkdocs-gen-files`, `mkdocs-literate-nav`,
+> `mkdocs-section-index`, and transitive deps).
+
 ### Backend Tests (require Docker)
 
 ```bash

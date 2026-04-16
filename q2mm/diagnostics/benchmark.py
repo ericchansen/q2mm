@@ -608,7 +608,9 @@ def run_combo(
             ``'Powell'`` dispatch to :class:`ScipyOptimizer`; ``'cycling'``
             dispatches to :class:`OptimizationLoop`; ``'optax:adam'`` (or
             ``'optax:adagrad'``, ``'optax:sgd'``, ``'optax:adamw'``)
-            dispatches to :class:`OptaxOptimizer`.
+            dispatches to :class:`OptaxOptimizer`; ``'jaxopt:lbfgs'`` (or
+            ``'jaxopt:lbfgsb'``, ``'jaxopt:gd'``) dispatches to
+            :class:`JaxOptOptimizer`.
         optimizer_kwargs: Extra keyword arguments forwarded to the optimizer.
         maxiter: Maximum optimizer iterations.
         backend_name: Human-readable backend name for result metadata.
@@ -764,6 +766,32 @@ def run_combo(
                 optax_kwargs[key] = optimizer_kwargs[key]
 
         opt = OptaxOptimizer(**optax_kwargs)
+
+        r = _run_optimizer(opt, obj, method=optimizer_method)
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
+    elif optimizer_method.startswith("jaxopt:"):
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+        jaxopt_method = optimizer_method.split(":", 1)[1]
+        jaxopt_kwargs: dict[str, Any] = {
+            "method": jaxopt_method,
+            "maxiter": maxiter,
+            "verbose": False,
+        }
+        for key in ("tol", "stepsize", "linesearch"):
+            if key in optimizer_kwargs:
+                jaxopt_kwargs[key] = optimizer_kwargs[key]
+
+        opt = JaxOptOptimizer(**jaxopt_kwargs)
 
         r = _run_optimizer(opt, obj, method=optimizer_method)
         opt_elapsed = r.elapsed

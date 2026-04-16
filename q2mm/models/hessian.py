@@ -288,6 +288,106 @@ def frequency_param_jacobian(
     return freqs_arr.tolist(), d_freq_dp
 
 
+# ---- JAX-compatible frequency sensitivity ----
+
+
+def _jax_frequency_param_jacobian(
+    hessian_au: np.ndarray,
+    dH_dp_au: np.ndarray,
+    masses_3n: np.ndarray,
+    *,
+    epsilon: float = 1e-20,
+) -> tuple:
+    """JIT-compatible frequency sensitivity via closed-form eigenvalue derivatives.
+
+    Pure JAX equivalent of :func:`frequency_param_jacobian`.  Operates on
+    JAX arrays and is fully compatible with ``jax.jit``, ``jax.grad``,
+    and ``jax.vmap``.
+
+    Unlike the NumPy version, this function takes pre-resolved masses
+    (one per Cartesian DOF, length ``3N``) instead of element symbols,
+    because string lookups are not JAX-traceable.
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Hessian in Hartree/Bohr².
+        dH_dp_au: ``(3N, 3N, n_params)`` Hessian parameter Jacobian
+            in Hartree/Bohr².
+        masses_3n: ``(3N,)`` atomic masses repeated per Cartesian DOF
+            (e.g. ``[m_C, m_C, m_C, m_H, m_H, m_H, ...]``).
+        epsilon: Regularisation floor for near-zero eigenvalues.
+
+    Returns:
+        ``(frequencies, d_freq_d_params)`` — frequencies is ``(3N,)``
+        sorted ascending in cm⁻¹; Jacobian is ``(3N, n_params)``.
+
+    """
+    from q2mm.backends.mm._jax_common import ensure_jax
+
+    ensure_jax(engine_name="jax_frequency_sensitivity")
+
+    from q2mm.backends.mm._jax_common import jnp
+
+    # Mass-weighting scale: 1/sqrt(m_i * m_j)
+    inv_sqrt = 1.0 / jnp.sqrt(masses_3n)
+    scale = jnp.outer(inv_sqrt, inv_sqrt)
+
+    # Mass-weight the Hessian
+    hess = hessian_au * scale
+    hess = 0.5 * (hess + hess.T)
+
+    # Mass-weight each dH/dp slice (broadcasting over last axis)
+    mw_dH_dp = dH_dp_au * scale[:, :, None]
+
+    # Eigendecompose the mass-weighted Hessian
+    eigenvalues, eigenvectors = jnp.linalg.eigh(hess)
+
+    # Eigenvalue sensitivity: dλ_k/dp_j = v_k^T @ (mw_dH/dp_j) @ v_k
+    d_eig_dp = jnp.einsum("ik,ijp,jk->kp", eigenvectors, mw_dH_dp, eigenvectors)
+
+    # Chain through eigenvalue → frequency conversion
+    bohr_to_m = co.BOHR_TO_ANG * 1e-10
+    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
+    denom = 2.0 * jnp.pi * co.SPEED_OF_LIGHT_MS * 100.0
+
+    vals_si = eigenvalues * factor
+
+    # d(freq)/d(λ) with regularisation for near-zero eigenvalues
+    abs_vals_si = jnp.maximum(jnp.abs(vals_si), epsilon)
+    d_freq_d_eig = factor / (2.0 * jnp.sqrt(abs_vals_si) * denom)
+
+    # d(freq_k)/dp_j = d(freq_k)/d(λ_k) * d(λ_k)/dp_j
+    d_freq_dp = d_freq_d_eig[:, None] * d_eig_dp
+
+    # Compute frequencies
+    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / denom
+
+    # Sort ascending (argsort is fine here — used only for output ordering,
+    # not differentiated through)
+    order = jnp.argsort(freqs_arr)
+    freqs_arr = freqs_arr[order]
+    d_freq_dp = d_freq_dp[order, :]
+
+    return freqs_arr, d_freq_dp
+
+
+def symbols_to_masses_3n(symbols: list[str] | Sequence[str]) -> list[float]:
+    """Convert element symbols to a flat ``3N`` mass array.
+
+    Each atom's mass is repeated 3 times (one per Cartesian DOF).
+    The returned list can be converted to a JAX array for use with
+    :func:`_jax_frequency_param_jacobian`.
+
+    Args:
+        symbols: Element symbols (length *N*).
+
+    Returns:
+        list[float]: Masses of length ``3N``.
+
+    """
+    resolved = _resolve_symbols(symbols)
+    return [co.MASSES[s] for s in resolved for _ in range(3)]
+
+
 # ---- Linear algebra operations ----
 
 

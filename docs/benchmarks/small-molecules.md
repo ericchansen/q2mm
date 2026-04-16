@@ -10,16 +10,18 @@ matrix, so it is the right place to compare combinations directly.
 
 - System: CH₃F (1 molecule, 5 atoms, 8 parameters)
 - QM reference: B3LYP/6-31+G(d)
-- Matrix size: 75 supported combos (71 single-shot + 4 composed workflows)
+- Matrix size: 82 supported combos (77 single-shot + 5 composed)
 - Backends/forms: [JAX](https://jax.readthedocs.io/) and [OpenMM](https://openmm.org/) on harmonic + MM3, [JAX-MD](https://jax-md.readthedocs.io/) on harmonic, [Tinker](https://dasher.wustl.edu/tinker/)
   on MM3
 - Optimizers: Powell, L-BFGS-B, Nelder-Mead, grad-simp,
   [optax](https://optax.readthedocs.io/) (Adam, AdaGrad, SGD),
+  [jaxopt](https://jaxopt.github.io/) (L-BFGS, L-BFGS-B),
   [basin-hopping](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html)
   (T=1.0, T=0.5), multi-start (n=5, n=10), and L2-regularized variants —
   each gradient-using optimizer is run twice (once with analytical frequency
   gradients, once with pure FD); optax optimizers use analytical gradients
-  only (JAX backend); global optimizers (basin-hopping, multi-start) and L2
+  only (JAX backend); jaxopt optimizers use JIT-compiled analytical gradients
+  (JAX backend only); global optimizers (basin-hopping, multi-start) and L2
   variants run on fast GPU backends only (JAX, JAX-MD, OpenMM CUDA);
   composed workflows (multi-start → Adam, grad-simp with multi-start inner)
   on MM3 only
@@ -36,9 +38,10 @@ force-field model.
 
 <div class="benchmark-table-anchor" data-benchmark-table="small-molecules"></div>
 
-| Form | Backend | Device | Optimizer | F∇ | Final RMSD (cm⁻¹) | Final MAE | Time | eval/s |
-|------|---------|--------|-----------|:--:|-------------------:|----------:|-----:|--------:|
+| Form | Backend | Device | Optimizer | F∇ | RMSD | MAE | Time | eval/s |
+|------|---------|--------|-----------|:--:|-----:|----:|-----:|-------:|
 | harmonic | JAX-MD | GPU | multi:L-BFGS-B (n=5) | FD | 525.9 | 241.5 | 20.6 s | 19.8 |
+| harmonic | JAX | CPU | jaxopt:lbfgsb | A | 528.3 | 235.4 | 4.8 s | 45.4 |
 | harmonic | JAX | GPU | L-BFGS-B | A | 528.7 | 257.3 | 1.9 s | 41.1 |
 | harmonic | JAX-MD | GPU | grad-simp | FD | 528.8 | 242.3 | 5.9 s | 142.5 |
 | harmonic | JAX | GPU | grad-simp | A | 529.1 | 243.3 | 5.5 s | 243.1 |
@@ -49,6 +52,8 @@ force-field model.
 | harmonic | JAX-MD | GPU | basinhopping (T=0.5) | FD | 531.2 | 254.1 | 31.0 s | 19.6 |
 | harmonic | JAX-MD | GPU | basinhopping (T=1.0) | FD | 531.3 | 255.4 | 31.3 s | 19.5 |
 | harmonic | JAX | GPU | multi:L-BFGS-B (n=5) | A | 531.7 | 254.2 | 4.3 s | 106.9 |
+| harmonic | JAX | CPU | jaxopt:lbfgs | A | 531.9 | 254.6 | 6.2 s | 30.3 |
+| harmonic | JAX | GPU | jaxopt:lbfgs | A | 532.0 | 254.8 | 16.3 s | 9.9 |
 | harmonic | OpenMM | GPU | grad-simp | FD | 979.5 | 786.3 | 45.8 s | 91.5 |
 | harmonic | JAX | GPU | grad-simp | FD | 981.4 | 790.1 | 13.1 s | 353.4 |
 | harmonic | JAX-MD | GPU | grad-simp | FD | 981.4 | 790.1 | 13.8 s | 334.7 |
@@ -68,8 +73,8 @@ force-field model.
 | harmonic | JAX | GPU | optax:adagrad | A | 1000.9 | 868.0 | 19.7 s | 101.5 |
 | harmonic | OpenMM | GPU | basinhopping (T=0.5) | FD | 1021.5 | 857.4 | 155.1 s | 6.1 |
 | harmonic | OpenMM | GPU | Powell | — | 1036.7 | 891.7 | 62.5 s | 97.8 |
-| harmonic | JAX | GPU | Powell | — | 1041.5 | 899.0 | 10.1 s | 342.8 |
 | harmonic | OpenMM | GPU | basinhopping (T=1.0) | FD | 1041.4 | 872.4 | 140.0 s | 6.1 |
+| harmonic | JAX | GPU | Powell | — | 1041.5 | 899.0 | 10.1 s | 342.8 |
 | harmonic | JAX-MD | GPU | Powell | — | 1041.5 | 899.0 | 10.4 s | 342.1 |
 | harmonic | OpenMM | GPU | Nelder-Mead | — | 1043.6 | 868.8 | 9.2 s | 102.7 |
 | harmonic | JAX | GPU | L-BFGS-B | FD | 1048.3 | 934.6 | 0.5 s | 336.0 |
@@ -91,16 +96,20 @@ force-field model.
 | mm3 | JAX | GPU | optax:sgd | A | 192.0 | 177.5 | 1.7 s | 12.7 |
 | mm3 | OpenMM | GPU | basinhopping (T=0.5) | FD | 513.8 | 263.9 | 179.3 s | 6.3 |
 | mm3 | Tinker | CPU | Powell | — | 542.5 | 275.2 | 2768.6 s | 4.3 |
+| mm3 | JAX | GPU | multi:L-BFGS-B (n=10) → optax:adam | A | 563.8 | — | 24.7 s | 968 |
 | mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1094.9 s | 4.3 |
 | mm3 | Tinker | CPU | grad-simp | FD | 564.4 | 314.5 | 1097.7 s | 4.3 |
 | mm3 | OpenMM | GPU | grad-simp | FD | 566.2 | 306.6 | 36.1 s | 24.7 |
 | mm3 | OpenMM | GPU | grad-simp | FD | 573.1 | 311.6 | 29.5 s | 97.1 |
 | mm3 | Tinker | CPU | Nelder-Mead | — | 576.3 | 311.5 | 152.5 s | 4.3 |
 | mm3 | OpenMM | GPU | multi:L-BFGS-B (n=5) | FD | 578.1 | 341.1 | 59.8 s | 6.6 |
+| mm3 | JAX | GPU | jaxopt:lbfgs | A | 578.7 | 312.6 | 16.2 s | 18.3 |
 | mm3 | JAX | GPU | L-BFGS-B | A | 579.0 | 313.9 | 2.2 s | 31.4 |
 | mm3 | JAX | GPU | grad-simp | A | 579.0 | 313.9 | 3.4 s | 139.1 |
 | mm3 | JAX | GPU | multi:L-BFGS-B (n=5) | A | 579.0 | 313.9 | 4.6 s | 92.3 |
 | mm3 | JAX | GPU | basinhopping (T=0.5) | A | 579.0 | 313.9 | 10.7 s | 125.4 |
+| mm3 | JAX | CPU | jaxopt:lbfgs | A | 579.1 | 312.9 | 6.3 s | 45.6 |
+| mm3 | JAX | CPU | jaxopt:lbfgsb | A | 579.5 | 313.3 | 6.8 s | 74.0 |
 | mm3 | OpenMM | GPU | Nelder-Mead | — | 581.1 | 315.1 | 8.5 s | 97.0 |
 | mm3 | JAX | GPU | multi:L-BFGS-B (n=10) | A | 586.3 | 319.6 | 7.5 s | 112.3 |
 | mm3 | JAX | GPU | Nelder-Mead | — | 608.1 | 334.2 | 25.6 s | 344.9 |
@@ -109,16 +118,26 @@ force-field model.
 | mm3 | JAX | GPU | Powell | — | 1080.7 | 937.3 | 15.1 s | 339.0 |
 | mm3 | OpenMM | GPU | Powell | — | 1090.5 | 950.4 | 124.2 s | 95.3 |
 | mm3 | JAX | GPU | basinhopping (T=1.0) | A | 1105.0 | 978.2 | 11.7 s | 122.1 |
-| | | | | | | | | |
-| **Composed workflows** | | | | | | | | |
+
+## Composed workflows
+
+Composed workflows chain two optimizers in sequence (or embed one inside
+another). They are run on **MM3 only** — the harmonic landscape is too
+smooth for staged refinement to add value.
+
+| Form | Backend | Device | Optimizer | F∇ | RMSD | MAE | Time | eval/s |
+|------|---------|--------|-----------|:--:|-----:|----:|-----:|-------:|
 | mm3 | OpenMM | GPU | multi:L-BFGS-B (n=10) → optax:adam | FD | 46.1 | — | 604.0 s | 1084 |
+| mm3 | JAX | GPU | grad-simp (multi:L-BFGS-B inner) | A | 526.7 | 238.2 | 31.6 s | 8970 |
 | mm3 | JAX | GPU | multi:L-BFGS-B (n=10) → optax:adam | A | 563.8 | — | 24.7 s | 968 |
 | mm3 | OpenMM | GPU | grad-simp (multi:L-BFGS-B inner) | FD | 592.1 | 341.1 | 450.2 s | 23586 |
-| mm3 | JAX | GPU | grad-simp (multi:L-BFGS-B inner) | A | 526.7 | 238.2 | 31.6 s | 8970 |
+
+See [Composed workflows analysis](#composed-workflows-analysis) below.
 
 ## Interpretation
 
-**F∇** = frequency gradient mode.
+**RMSD** and **MAE** are in cm⁻¹ (frequency error vs QM reference).
+**F∇** = frequency gradient mode:
 **A** = analytical (autodiff), **FD** = finite-difference, **—** = not
 applicable (derivative-free optimizer). The energy gradient column (E∇) is
 omitted because CH₃F benchmarks optimize on frequency data only.
@@ -127,7 +146,7 @@ omitted because CH₃F benchmarks optimize on frequency data only.
 
 - The best harmonic results cluster around 526–531 cm⁻¹ RMSD, achieved by
   JAX, JAX-MD, and OpenMM with [L-BFGS-B](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html), [grad-simp](../how-it-works/optimization-guide.md#workflow-c-medium-and-large-systems),
-  [multi-start](../how-it-works/optimization-guide.md#workflow-b-small--rugged), or [basin-hopping](../how-it-works/optimization-guide.md#workflow-b-small--rugged)
+  [multi-start](../how-it-works/optimization-guide.md#workflow-b-small-rugged), or [basin-hopping](../how-it-works/optimization-guide.md#workflow-b-small-rugged)
   using analytical frequency gradients. These combos benefit from QFUERZA's
   physically motivated starting parameters.
 - **[Multi-start](https://en.wikipedia.org/wiki/Multi-start_method) and
@@ -152,6 +171,14 @@ omitted because CH₃F benchmarks optimize on frequency data only.
 - FD-only gradient combos (L-BFGS-B with FD) also perform poorly (~1048),
   suggesting that finite-difference frequency gradients are too noisy to
   guide L-BFGS-B from the QFUERZA basin.
+- **[JaxOpt](https://jaxopt.github.io/) L-BFGS matches the top harmonic
+  cluster** (528–532 cm⁻¹) using JIT-compiled analytical gradients. This
+  confirms that end-to-end differentiation through the JAX engine produces
+  gradients of the same quality as the optax analytical path, and that
+  jaxopt's second-order L-BFGS method exploits them effectively. L-BFGS-B
+  (bounded) runs on CPU only due to a jaxopt XLA compilation bug on GPU
+  (`argsort` shape mismatch); the unbounded L-BFGS variant works on both
+  CPU and GPU.
 
 ### MM3 form
 
@@ -184,8 +211,13 @@ omitted because CH₃F benchmarks optimize on frequency data only.
 - Powell and Nelder-Mead on MM3 remain mid-range (542–608) and are
   insensitive to the initialization change, as expected for derivative-free
   methods on a rugged landscape.
+- **JaxOpt L-BFGS matches SciPy L-BFGS-B** on MM3 (579 cm⁻¹ for both).
+  End-to-end differentiation does not help escape the poor local minimum
+  that L-BFGS-B finds on the rugged MM3 landscape — gradient quality is
+  not the bottleneck here. Multi-start or Adam remain the better strategies
+  for MM3.
 
-### Composed workflows
+### Composed workflows analysis
 
 Two composed strategies were benchmarked on CH₃F MM3 — the only landscape
 where multi-start and global search methods show material differences:
@@ -266,6 +298,11 @@ q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
 # Run L2-regularized optimizers
 q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
   --optimizer "L-BFGS-B + L2(λ=0.01)" "optax:adam + L2(λ=0.01)" \
+  --platform CUDA
+
+# Run JaxOpt optimizers (JAX backend, end-to-end differentiable)
+q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
+  --optimizer "jaxopt:lbfgs" "jaxopt:lbfgsb" --max-iter 500 \
   --platform CUDA
 
 # Load and display results

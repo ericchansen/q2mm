@@ -213,6 +213,9 @@ q2mm/
 │   ├── objective.py      # ObjectiveFunction, ReferenceData
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
+│   ├── jaxopt_opt.py     # JaxOptOptimizer (L-BFGS, L-BFGS-B — end-to-end differentiable)
+│   ├── jaxloss.py        # JaxLoss — JIT-compiled loss for JaxOpt
+│   ├── spec.py           # ObjectiveSpec — frozen JAX-compatible objective description
 │   ├── cycling.py        # grad-simp parameter cycling
 │   ├── scoring.py        # Legacy scoring functions
 │   └── defaults.py       # Default step sizes and bounds
@@ -264,6 +267,9 @@ flowchart TD
         ref[ReferenceData]
         scipy[ScipyOptimizer]
         optax_opt[OptaxOptimizer]
+        jaxopt_opt[JaxOptOptimizer]
+        spec[ObjectiveSpec]
+        jaxloss[JaxLoss]
         cycling[OptimizationLoop]
     end
 
@@ -292,6 +298,9 @@ flowchart TD
     mol --> obj
     obj --> scipy
     obj --> optax_opt
+    obj --> spec
+    spec --> jaxloss
+    jaxloss --> jaxopt_opt
     obj --> cycling
 
     obj --> omm

@@ -769,6 +769,46 @@ outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
 
 ---
 
+## Step 6d: JaxOpt Optimizers (JAX only — End-to-End Differentiable)
+
+If you're using the **JAX backend**, you can also use
+[JAXopt](https://jaxopt.github.io/) for **end-to-end differentiable**
+optimisation. Unlike optax (which differentiates through the *loss* only),
+JaxOpt compiles the entire objective — force field → MM engine → loss — into
+a single JIT-traced function. This enables true second-order methods like
+L-BFGS and L-BFGS-B with exact gradients.
+
+???+ example "JaxOpt L-BFGS-B optimization"
+
+    ```python
+    from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+    optimizer = JaxOptOptimizer(
+        method="lbfgsb",   # or "lbfgs", "gd"
+        maxiter=500,
+    )
+
+    result = optimizer.optimize(objective)
+    print(result.summary())
+    ```
+
+    On CH₃F (harmonic), JaxOpt L-BFGS-B achieves **528 cm⁻¹ RMSD** — matching
+    SciPy L-BFGS-B's 529 cm⁻¹ while using exact gradients throughout.
+
+!!! warning "JAX backend required"
+    `JaxOptOptimizer` only works with `JaxEngine`. It converts the
+    `ObjectiveFunction` into a frozen `ObjectiveSpec` and compiles the
+    entire pipeline with `jax.jit`. Non-JAX backends are not supported.
+
+!!! tip "When to use JaxOpt"
+    JaxOpt is most useful when you want the same algorithms as SciPy (L-BFGS-B)
+    but with **exact analytical gradients** instead of finite differences. The
+    gradient quality is identical to optax, but the optimiser itself is
+    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d)
+    in the Optimization Guide for details.
+
+---
+
 ## Step 7: Export the Optimised Force Field
 
 Q2MM can write the optimised parameters to **MM3 `.fld`**, **Tinker `.prm`**,

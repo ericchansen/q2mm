@@ -1,0 +1,77 @@
+{
+  "run_id": "ch3f_e4751730_20260416T142324",
+  "system": "ch3f",
+  "git_sha": "e4751730160d300c3570f77b29b29b9180621243",
+  "git_dirty": true,
+  "timestamp": "2026-04-16T14:23:26.043257+00:00",
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+    "gpu": "NVIDIA GeForce RTX 5090, 32607",
+    "q2mm": "5.0.0a3.dev285",
+    "numpy": "2.4.4",
+    "scipy": "1.17.1",
+    "jax": "0.9.2",
+    "jaxlib": "0.9.2",
+    "openmm": "8.5.0"
+  },
+  "config": {
+    "backends": [
+      "JAX (gpu)"
+    ],
+    "forms": [
+      "Harmonic",
+      "MM3"
+    ],
+    "optimizers": [
+      "jaxopt:lbfgs",
+      "jaxopt:lbfgsb"
+    ],
+    "max_iter": 500,
+    "n_combos": 4
+  },
+  "combos": {
+    "ch3f_jax_harmonic_gpu_jaxopt-lbfgs_fd": {
+      "stem": "ch3f_jax_harmonic_gpu_jaxopt-lbfgs_fd",
+      "status": "converged",
+      "rmsd": 532.0100231908157,
+      "mae": 254.75498453706203,
+      "time_s": 16.3054180969998,
+      "n_eval": 161,
+      "seminario_rmsd": 191.95023884919462,
+      "backend": "JAX (gpu)",
+      "optimizer": "jaxopt:lbfgs",
+      "form": "harmonic",
+      "jac_mode": "jit",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_harmonic_gpu_jaxopt-lbfgsb_fd": {
+      "stem": "ch3f_jax_harmonic_gpu_jaxopt-lbfgsb_fd",
+      "status": "failed",
+      "error": "INVALID_ARGUMENT: during context [hlo verifier]: Reduction function's accumulator shape at index 0 differs from the init_value shape: s32[] vs s64[]\n\t, for instruction %scatter = s64[8]{0} scatter(%broadcast.706, %reshape.557, %iota.101), update_window_dims={}, inserted_window_dims={0}, scatter_dims_to_operand_dims={0}, index_vector_dim=1, unique_indices=true, to_apply=%update_replace_computation, metadata={op_name=\"jit(update)/jit(argsort)/sort\" stack_frame_id=732}\n\nFailed after permutation_sort_simplifier"
+    },
+    "ch3f_jax_mm3_gpu_jaxopt-lbfgs_fd": {
+      "stem": "ch3f_jax_mm3_gpu_jaxopt-lbfgs_fd",
+      "status": "converged",
+      "rmsd": 578.7294932947997,
+      "mae": 312.618068079051,
+      "time_s": 16.15764583500004,
+      "n_eval": 295,
+      "seminario_rmsd": 191.95023873728346,
+      "backend": "JAX (gpu)",
+      "optimizer": "jaxopt:lbfgs",
+      "form": "mm3",
+      "jac_mode": "jit",
+      "gradients": {
+        "frequency": "finite-diff"
+      }
+    },
+    "ch3f_jax_mm3_gpu_jaxopt-lbfgsb_fd": {
+      "stem": "ch3f_jax_mm3_gpu_jaxopt-lbfgsb_fd",
+      "status": "failed",
+      "error": "INVALID_ARGUMENT: during context [hlo verifier]: Reduction function's accumulator shape at index 0 differs from the init_value shape: s32[] vs s64[]\n\t, for instruction %scatter = s64[8]{0} scatter(%broadcast.1258, %reshape.953, %iota.101), update_window_dims={}, inserted_window_dims={0}, scatter_dims_to_operand_dims={0}, index_vector_dim=1, unique_indices=true, to_apply=%update_replace_computation, metadata={op_name=\"jit(update)/jit(argsort)/sort\" stack_frame_id=749}\n\nFailed after permutation_sort_simplifier"
+    }
+  }
+}

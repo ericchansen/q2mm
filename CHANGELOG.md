@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `JaxOptOptimizer` for end-to-end differentiable optimization using jaxopt
+  L-BFGS / L-BFGS-B — entire loss, gradient, and step computation runs inside
+  JIT-compiled JAX with no Python callbacks (#152, #176)
+- `JaxLoss` JIT-compiled loss function supporting energy, frequency, hessian
+  element, and eigenmatrix reference types in a single differentiable graph
+- `ObjectiveSpec` frozen dataclass as the shared contract between Python-side
+  `ObjectiveFunction` and JAX-side `JaxLoss`
+- `jaxopt:` prefix support in `OptimizationLoop.full_method` (e.g.
+  `"jaxopt:lbfgs"`, `"jaxopt:lbfgsb"`) for using JaxOpt as the gradient phase
+  in grad-simp cycling
+- JAX-native frequency parameter sensitivity (`_jax_frequency_param_jacobian`)
+  using closed-form eigenvalue derivatives — replaces finite-difference Jacobian
+  for frequency objectives in the differentiable pipeline
 - `BasinHoppingOptimizer` wrapping `scipy.optimize.basinhopping` with bounded
   perturbation steps and L-BFGS-B local minimization for global optimization
   (#232)

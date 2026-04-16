@@ -63,6 +63,7 @@ qm = [
 jax = [
     "jax",
     "jaxlib",
+    "jaxopt",
     "optax",
     "scipy",
 ]
@@ -74,6 +75,7 @@ jax-md = [
 ]
 gpu = [
     "jax[cuda12]; sys_platform != 'win32'",
+    "jaxopt; sys_platform != 'win32'",
     "scipy",
 ]
 qcel = [

@@ -9,7 +9,7 @@ the benchmark program is complete today.
 
 | Page | Primary question | Current scope | Status |
 |------|------------------|---------------|--------|
-| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 75 supported combos (71 single-shot + 4 composed workflows) across JAX, JAX-MD, OpenMM, and Tinker (including optax, basin-hopping, multi-start, L2-regularized, and composed optimizers) | **Complete** |
+| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 82 supported combos across JAX, JAX-MD, OpenMM, and Tinker (including optax, jaxopt, basin-hopping, multi-start, L2-regularized, and composed optimizers) | **Complete** |
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap likely due to MM3 functional-form differences** |
