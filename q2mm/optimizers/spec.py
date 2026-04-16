@@ -34,16 +34,17 @@ class MoleculeSpec:
             ``3N``-length frequency array.
         freq_refs: ``(n_freq,)`` reference frequencies (cm⁻¹).
         freq_weights: ``(n_freq,)`` weights for frequency residuals.
-        hess_indices: ``(n_hess, 2)`` row/column pairs into the
-            ``(3N, 3N)`` Hessian for hessian-element references.
+        hess_indices: ``(n_hess,)`` packed Hessian indices
+            (``row * 3N + col``) into the flat ``(3N * 3N,)`` Hessian
+            for hessian-element references.
         hess_refs: ``(n_hess,)`` reference Hessian element values.
         hess_weights: ``(n_hess,)`` weights for Hessian residuals.
         eig_diag_indices: ``(n_ediag,)`` indices into the eigenvalue
             vector for diagonal eigenmatrix references.
         eig_diag_refs: ``(n_ediag,)`` reference eigenvalue values.
         eig_diag_weights: ``(n_ediag,)`` weights for diagonal residuals.
-        eig_offdiag_indices: ``(n_eoff, 2)`` row/column pairs for
-            off-diagonal eigenmatrix references.
+        eig_offdiag_indices: ``(n_eoff,)`` packed indices
+            (``row * 3N + col``) for off-diagonal eigenmatrix references.
         eig_offdiag_refs: ``(n_eoff,)`` reference off-diagonal values.
         eig_offdiag_weights: ``(n_eoff,)`` weights for off-diagonal
             residuals.
@@ -193,7 +194,14 @@ def _build_molecule_spec(
             ediag_vals.append(ref.value)
             ediag_wts.append(ref.weight)
         elif ref.kind == "eig_offdiagonal":
-            eoff_idx.append(ref.data_idx)
+            # Pack (row, col) as row * 3N + col for JaxLoss indexing.
+            # add_hessian_offdiagonal stores indices in atom_indices=(row, col).
+            if ref.atom_indices is not None and len(ref.atom_indices) >= 2:
+                row, col = ref.atom_indices[:2]
+                n3 = 3 * len(symbols)
+                eoff_idx.append(row * n3 + col)
+            else:
+                eoff_idx.append(ref.data_idx)
             eoff_vals.append(ref.value)
             eoff_wts.append(ref.weight)
         elif ref.kind in ("bond_length", "bond_angle", "torsion_angle"):

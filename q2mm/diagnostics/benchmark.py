@@ -609,7 +609,7 @@ def run_combo(
             dispatches to :class:`OptimizationLoop`; ``'optax:adam'`` (or
             ``'optax:adagrad'``, ``'optax:sgd'``, ``'optax:adamw'``)
             dispatches to :class:`OptaxOptimizer`; ``'jaxopt:lbfgs'`` (or
-            ``'jaxopt:lbfgsb'``, ``'jaxopt:gd'``) dispatches to
+            ``'jaxopt:lbfgsb'``, ``'jaxopt:gradient_descent'``) dispatches to
             :class:`JaxOptOptimizer`.
         optimizer_kwargs: Extra keyword arguments forwarded to the optimizer.
         maxiter: Maximum optimizer iterations.
@@ -787,7 +787,7 @@ def run_combo(
             "maxiter": maxiter,
             "verbose": False,
         }
-        for key in ("tol", "stepsize", "linesearch"):
+        for key in ("tol",):
             if key in optimizer_kwargs:
                 jaxopt_kwargs[key] = optimizer_kwargs[key]
 

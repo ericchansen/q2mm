@@ -95,7 +95,7 @@ class JaxLoss:
         """Pre-build JaxHandles and compile the loss function."""
         from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.models.hessian import (
-            _jax_frequency_param_jacobian,
+            _jax_frequencies_from_hessian,
             symbols_to_masses_3n,
         )
         from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
@@ -196,20 +196,13 @@ class JaxLoss:
 
                     # Frequency contribution
                     if mol_spec.has_frequency:
-                        dh_dp_kcal = jax.jacrev(hess_fn, argnums=1)(flat_coords, params)
-                        dh_dp_au = dh_dp_kcal * hess_au_scale
-
-                        freqs, d_freq_dp = _jax_frequency_param_jacobian(hess_au, dh_dp_au, entry["masses_3n"])
+                        freqs = _jax_frequencies_from_hessian(hess_au, entry["masses_3n"])
                         calc_freqs = freqs[entry["freq_indices"]]
                         residuals = entry["freq_weights"] * (entry["freq_refs"] - calc_freqs)
                         total = total + jnp.sum(residuals**2)
 
                     # Hessian element contribution
                     if mol_spec.has_hessian:
-                        if not mol_spec.has_frequency:
-                            dh_dp_kcal = jax.jacrev(hess_fn, argnums=1)(flat_coords, params)
-                            dh_dp_au = dh_dp_kcal * hess_au_scale
-
                         n3 = hess_au.shape[0]
                         indices = entry["hess_indices"]
                         rows = indices // n3

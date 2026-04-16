@@ -784,7 +784,7 @@ L-BFGS and L-BFGS-B with exact gradients.
     from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
     optimizer = JaxOptOptimizer(
-        method="lbfgsb",   # or "lbfgs", "gd"
+        method="lbfgsb",   # or "lbfgs", "gradient_descent"
         maxiter=500,
     )
 

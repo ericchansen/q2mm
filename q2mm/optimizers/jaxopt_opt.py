@@ -108,7 +108,7 @@ class JaxOptOptimizer:
         """
         _ensure_jaxopt()
 
-        from q2mm.backends.mm._jax_common import jnp
+        from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.optimizers.jaxloss import JaxLoss
 
@@ -143,6 +143,19 @@ class JaxOptOptimizer:
 
         # Run the solver (LBFGSB needs bounds passed to run())
         if self.method == "lbfgsb":
+            # jaxopt's LBFGSB uses XLA argsort/scatter primitives that
+            # currently fail on GPU backends with dtype-mismatch errors.
+            # Bail out early with a clear message rather than let the user
+            # hit a cryptic XLA trace mid-compile.
+            backend = jax.default_backend()
+            if backend != "cpu":
+                raise RuntimeError(
+                    "jaxopt LBFGSB is not supported on the "
+                    f"{backend!r} backend — it triggers an XLA "
+                    "argsort/scatter dtype error. Use method='lbfgs' "
+                    "on GPU, or force CPU with "
+                    "`jax.config.update('jax_platform_name', 'cpu')`."
+                )
             lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
             upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
             result = solver.run(params, bounds=(lower, upper))
@@ -185,7 +198,7 @@ class JaxOptOptimizer:
             final_params=final_params,
             history=[initial_score, final_score],
             method=method_str,
-            jac_mode="jit",
+            jac_mode="analytical",
             eps=None,
         )
 
