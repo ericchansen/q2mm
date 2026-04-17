@@ -485,8 +485,6 @@ def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolec
         FileNotFoundError: If *path* does not exist.
 
     """
-    if yaml is None:
-        raise ImportError("pyyaml is required for YAML support: pip install pyyaml")
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Reference YAML file not found: {path}")
@@ -614,8 +612,6 @@ def save_reference_yaml(
         molecules: Molecules corresponding to the reference data.
 
     """
-    if yaml is None:
-        raise ImportError("pyyaml is required for YAML support: pip install pyyaml")
     path = Path(path)
 
     # Group reference values by molecule_idx.
