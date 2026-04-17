@@ -12,6 +12,7 @@ dependencies:
   - jaxlib
   - jaxopt
   - optax
+  - pyyaml
   - pytest
   - ruff
   - pip

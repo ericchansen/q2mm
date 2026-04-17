@@ -6,6 +6,7 @@ dependencies:
   - numpy
   - scipy
   - psi4
+  - pyyaml
   - pytest
   - ruff
   - pip

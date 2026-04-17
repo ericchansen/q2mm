@@ -7,6 +7,7 @@ dependencies:
   - scipy
   - jax
   - jaxlib
+  - pyyaml
   - pytest
   - ruff
   - pip
