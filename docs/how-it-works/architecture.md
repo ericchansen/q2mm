@@ -314,6 +314,77 @@ flowchart TD
 
 ---
 
+## Differentiability status
+
+Q2MM's long-term goal is end-to-end analytical optimisation: every
+reference-to-loss contribution expressed as a pure, JIT-compiled JAX
+computation so that `jax.value_and_grad` gives exact parameter gradients
+in one XLA kernel.  The table below records what is delivered today
+versus what is still tracked.
+
+### Reference kinds
+
+Columns:
+
+- **Python path** — does `ObjectiveFunction` already score this kind via
+  its Python evaluators?
+- **Analytical ∂L/∂p** — is the residual differentiable through the
+  category's per-category evaluator on the Python path?
+- **In JIT loss** — does `jaxloss.JaxLoss` score this kind inside the
+  JIT-compiled graph (auto-diff through `value_and_grad`)?
+- **Tracker** — issue for any remaining gap.
+
+| Reference kind     | Python path | Analytical ∂L/∂p | In JIT loss | Notes |
+| ------------------ | :---------: | :--------------: | :---------: | ----- |
+| `energy`           | ✅ | ✅ | ✅ | `energy_fn(params, coords)` directly. |
+| `frequency`        | ✅ | ✅ | ✅ | `_jax_frequencies_from_hessian` + autodiff through `eigh`. |
+| `hessian_element`  | ✅ | ✅ | ✅ | Packed `row * 3N + col` index into `jax.hessian` output. |
+| `eig_diagonal`     | ✅ | ✅ | ✅ | Diagonal of `Vᵀ H V` in QM eigenbasis. |
+| `eig_offdiagonal`  | ✅ | ✅ | ✅ | Off-diagonal of `Vᵀ H V`; same packed index. |
+| `bond_length`      | ✅ | partial | ❌ | Geometry requires differentiable inner-minimisation. Tracked in [#243] (spike) / [#152] (umbrella). |
+| `bond_angle`       | ✅ | partial | ❌ | Same as `bond_length`. |
+| `torsion_angle`    | ✅ | partial | ❌ | Same as `bond_length`. |
+
+### Optimisers
+
+Columns:
+
+- **Uses JIT loss** — pulls gradients from `JaxLoss` rather than the
+  Python-side evaluators.
+- **Full XLA loop** — the entire optimiser iteration lives inside
+  `jax.jit` (no Python ↔ XLA round-trips per step).
+- **Multi-start in XLA** — N-start search fused into one kernel via
+  `jax.vmap` (vs. Python `for`-loop orchestration).
+
+| Optimizer                  | Uses JIT loss | Full XLA loop | Multi-start in XLA |
+| -------------------------- | :-----------: | :-----------: | :----------------: |
+| `ScipyOptimizer`           | ❌ | ❌ | ❌ |
+| `OptimizationLoop` (cycling) | ❌ | ❌ | ❌ |
+| `OptaxOptimizer`           | ✅ | ❌ (Python step loop) | ❌ |
+| `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ✅ | ❌ |
+
+[^lbfgsb-cpu]: `jaxopt:lbfgsb` raises `RuntimeError` on non-CPU backends —
+    the upstream jaxopt LBFGSB kernel uses XLA argsort/scatter primitives
+    that dtype-mismatch on GPU. Use `lbfgs` on GPU.
+
+### Performance levers still open
+
+| Lever                                   | Status | Tracker |
+| --------------------------------------- | :----: | ------- |
+| `vmap` over molecules in `JaxLoss._loss_fn` | Python-unrolled | [#244] / [#176] |
+| Multi-start as one XLA kernel (`vmap` over init params) | Not started | [#176] |
+| Basin-hopping as a `lax.while_loop` primitive | Not started | — |
+| TS curvature inversion (QFUERZA) inside JIT | Python-side only | [#245] |
+| Parameter constraints (equivalences, type limits) as JAX projections | Enforced in `ForceField`, not in the JIT graph | — |
+
+[#152]: https://github.com/ericchansen/q2mm/issues/152
+[#176]: https://github.com/ericchansen/q2mm/issues/176
+[#243]: https://github.com/ericchansen/q2mm/issues/243
+[#244]: https://github.com/ericchansen/q2mm/issues/244
+[#245]: https://github.com/ericchansen/q2mm/issues/245
+
+---
+
 ## Design invariants
 
 1. **Canonical units everywhere inside the pipeline.** No format-specific unit
