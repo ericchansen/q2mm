@@ -1394,7 +1394,18 @@ class ObjectiveFunction:
         """
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
 
-        ts_set = set(int(i) for i in ts_mol_indices) if ts_mol_indices else set()
+        if ts_mol_indices is not None:
+            ts_set: set[int] = set()
+            n_mols = len(self.molecules)
+            for i in ts_mol_indices:
+                idx = int(i)
+                if idx < 0 or idx >= n_mols:
+                    raise ValueError(
+                        f"ts_mol_indices contains out-of-range molecule index {idx}; valid range is [0, {n_mols})."
+                    )
+                ts_set.add(idx)
+        else:
+            ts_set = set()
 
         # Group references by molecule index
         refs_by_mol: dict[int, list[ReferenceValue]] = {}

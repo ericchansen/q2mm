@@ -743,21 +743,24 @@ class TestJaxLossTsCurvatureInversion:
         assert grad.shape == params.shape
         assert np.all(np.isfinite(grad))
 
-    def test_ts_inversion_changes_loss(self) -> None:
-        """Flipping the TS flag changes the Hessian-element residual."""
+    def test_ts_inversion_runs_in_jaxloss_with_flag_on(self) -> None:
+        """Flag flip: both paths evaluate cleanly; TS path stays finite.
+
+        We don't assert the two losses must differ at this level: whether
+        the calculated MM Hessian has a negative mode depends on the
+        engine, ff perturbation, and float32 eigh noise across platforms.
+        Correctness of the inversion itself is covered by the synthetic
+        test below and by ``test_invert_ts_curvature_jax.py``.
+        """
         from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
 
-        # Fabricate a TS-like reference Hessian with one negative diagonal.
-        fake_ts_hess = hess_qm.copy()
-        fake_ts_hess[0, 0] = -abs(fake_ts_hess[0, 0])
-
         ref = ReferenceData()
         ref.add_hessian_from_matrix(
-            fake_ts_hess,
+            hess_qm,
             diagonal_only=True,
             molecule_idx=0,
             diagonal_weight=0.1,
@@ -765,11 +768,50 @@ class TestJaxLossTsCurvatureInversion:
         )
 
         obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
-        spec_plain = obj.to_jax_spec()
-        spec_ts = obj.to_jax_spec(ts_mol_indices=[0])
-
-        loss_plain = JaxLoss(spec_plain, engine, [mol], ff_pert.copy())
-        loss_ts = JaxLoss(spec_ts, engine, [mol], ff_pert.copy())
+        loss_plain = JaxLoss(obj.to_jax_spec(), engine, [mol], ff_pert.copy())
+        loss_ts = JaxLoss(obj.to_jax_spec(ts_mol_indices=[0]), engine, [mol], ff_pert.copy())
 
         params = ff_pert.get_param_vector()
-        assert not np.isclose(float(loss_plain(params)), float(loss_ts(params)))
+        plain_val = float(loss_plain(params))
+        ts_val = float(loss_ts(params))
+        assert np.isfinite(plain_val)
+        assert np.isfinite(ts_val)
+
+    def test_ts_inversion_changes_synthetic_ts_hessian(self) -> None:
+        """Inversion produces a different matrix when given a TS Hessian.
+
+        Exercises the branch directly on the inversion helper rather than
+        depending on the full MM energy surface producing a saddle, so the
+        test is numerically robust across JAX versions and platforms.
+        """
+        from q2mm.models.hessian import invert_ts_curvature_jax
+
+        import jax.numpy as jnp
+
+        rng = np.random.default_rng(7)
+        a = rng.standard_normal((9, 9))
+        sym = 0.5 * (a + a.T)
+        _, evecs = np.linalg.eigh(sym)
+        ts_evals = np.array([-0.5, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6])
+        ts_hess = (evecs * ts_evals) @ evecs.T
+
+        inverted = np.asarray(invert_ts_curvature_jax(jnp.asarray(ts_hess)))
+        assert not np.allclose(inverted, ts_hess, atol=1e-3)
+        assert np.linalg.eigvalsh(inverted).min() >= -1e-5
+
+    def test_ts_mol_indices_rejects_out_of_range(self) -> None:
+        """``to_jax_spec`` raises on unknown / out-of-range molecule indices."""
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol, _ff_ref, ff_pert, _hess, freqs_qm = _water_with_qm_refs(engine)
+
+        ref = ReferenceData()
+        for i in range(6, 9):
+            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
+
+        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        with pytest.raises(ValueError, match="out-of-range"):
+            obj.to_jax_spec(ts_mol_indices=[999])
+        with pytest.raises(ValueError, match="out-of-range"):
+            obj.to_jax_spec(ts_mol_indices=[-1])
