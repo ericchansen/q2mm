@@ -61,8 +61,9 @@ class JaxMultiStartOptimizer:
             ``'lbfgsb'`` (CPU-only), or ``'gradient_descent'``.
         n_starts: Number of parallel replicas.  Must be ``>= 1``.
         maxiter: Maximum optimizer iterations per replica.
-        tol: Convergence tolerance (passed to the solver; not used for
-            early-stopping the vmapped run).
+        tol: Convergence tolerance passed to each replica's solver;
+            individual replicas may stop early when this tolerance is
+            met.
         perturbation_pct: Max perturbation as a fraction of each
             parameter's value.  ``0.1`` means ±10%.  Perturbations are
             clipped to the force field's parameter bounds.
@@ -107,7 +108,8 @@ class JaxMultiStartOptimizer:
 
         Returns:
             OptimizationResult for the replica with the lowest final
-            loss.  ``extra`` carries per-replica final scores.
+            loss.  ``n_iterations`` and ``success`` are taken from the
+            winning replica's jaxopt state.
 
         Raises:
             TypeError: If the engine is not a JaxEngine.
@@ -162,51 +164,74 @@ class JaxMultiStartOptimizer:
         if self.method == "lbfgs":
             solver = jaxopt.LBFGS(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
             run_one = lambda p: solver.run(p)  # noqa: E731
-            final_params_batch, _state_batch = jax.vmap(run_one)(starts)
+            final_params_batch, state_batch = jax.vmap(run_one)(starts)
         elif self.method == "lbfgsb":
             solver = jaxopt.LBFGSB(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
             lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
             upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
             run_one = lambda p: solver.run(p, bounds=(lower, upper))  # noqa: E731
-            final_params_batch, _state_batch = jax.vmap(run_one)(starts)
+            final_params_batch, state_batch = jax.vmap(run_one)(starts)
         elif self.method == "gradient_descent":
             solver = jaxopt.GradientDescent(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
             run_one = lambda p: solver.run(p)  # noqa: E731
-            final_params_batch, _state_batch = jax.vmap(run_one)(starts)
+            final_params_batch, state_batch = jax.vmap(run_one)(starts)
         else:  # pragma: no cover - guarded by __init__ validation
             raise ValueError(f"Unhandled method: {self.method}")
 
-        # Score each replica's final params and pick argmin.
+        # Score each replica's final params on-device and pick argmin.
+        # Only the best replica's params/state are transferred to host;
+        # the full (n_starts, n_params) batch stays on-device.
         final_scores = jax.vmap(loss_fn)(final_params_batch)
-        best_idx = int(jnp.argmin(final_scores))
-        final_scores_np = np.asarray(final_scores, dtype=float)
-        final_params_np = np.asarray(final_params_batch, dtype=float)
+        best_idx = int(jax.device_get(jnp.argmin(final_scores)))
+        best_params = np.asarray(jax.device_get(final_params_batch[best_idx]), dtype=float)
+        best_score = float(jax.device_get(final_scores[best_idx]))
 
-        best_params = final_params_np[best_idx]
-        best_score = float(final_scores_np[best_idx])
+        # Pull best replica's solver state (per-replica metadata lives
+        # on-device until we index into it here).
+        best_error = (
+            float(jax.device_get(state_batch.error[best_idx])) if hasattr(state_batch, "error") else float("inf")
+        )
+        best_iter = (
+            int(jax.device_get(state_batch.iter_num[best_idx])) if hasattr(state_batch, "iter_num") else self.maxiter
+        )
+        converged = best_error < self.tol
 
         # Apply best params to the forcefield.
         objective.forcefield.set_param_vector(best_params)
 
         if self.verbose:
+            min_score = float(jax.device_get(jnp.min(final_scores)))
+            median_score = float(jax.device_get(jnp.median(final_scores)))
+            max_score = float(jax.device_get(jnp.max(final_scores)))
             logger.info(
                 "%s best: %.6f (replica %d/%d; scores min=%.6f, median=%.6f, max=%.6f)",
                 method_str,
                 best_score,
                 best_idx,
                 self.n_starts,
-                float(final_scores_np.min()),
-                float(np.median(final_scores_np)),
-                float(final_scores_np.max()),
+                min_score,
+                median_score,
+                max_score,
+            )
+
+        if converged:
+            message = (
+                f"jaxopt-multi best of {self.n_starts}: replica {best_idx}, final {best_score:.6g} "
+                f"(converged: error {best_error:.2e} < {self.tol:.2e})"
+            )
+        else:
+            message = (
+                f"jaxopt-multi best of {self.n_starts}: replica {best_idx}, final {best_score:.6g} "
+                f"(maxiter reached, error={best_error:.2e})"
             )
 
         return OptimizationResult(
-            success=True,
-            message=f"jaxopt-multi best of {self.n_starts}: replica {best_idx}, final {best_score:.6g}",
+            success=converged,
+            message=message,
             initial_score=initial_score,
             final_score=best_score,
-            n_iterations=self.maxiter,
-            n_evaluations=self.maxiter * self.n_starts,
+            n_iterations=best_iter,
+            n_evaluations=best_iter * self.n_starts,
             initial_params=x0,
             final_params=best_params,
             history=[initial_score, best_score],

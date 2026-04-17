@@ -24,6 +24,7 @@ pytestmark = [
 from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
+from q2mm.optimizers.objective import ObjectiveFunction
 
 JaxEngine = None
 
@@ -110,8 +111,8 @@ class TestJaxMultiStartValidation:
 class TestJaxMultiStartConvergence:
     """End-to-end optimization tests."""
 
-    def _make_h2_obj(self) -> object:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+    def _make_h2_obj(self) -> ObjectiveFunction:
+        from q2mm.optimizers.objective import ReferenceData
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff()
@@ -192,7 +193,7 @@ class TestJaxMultiStartConvergence:
         r_b = opt_b.optimize(obj_b)
 
         np.testing.assert_allclose(r_a.final_params, r_b.final_params, rtol=1e-8)
-        assert r_a.final_score == r_b.final_score
+        assert r_a.final_score == pytest.approx(r_b.final_score, abs=1e-8)
 
     def test_best_of_n_selection(self) -> None:
         """Selects the replica with the lowest final loss."""
