@@ -25,6 +25,7 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check q2mm/ test/ scripts/
       - run: python -m ruff format --check q2mm test scripts examples
+      - run: python scripts/check_env_dep_parity.py
 
   test-core:
     runs-on: ubuntu-latest
