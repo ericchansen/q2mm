@@ -30,6 +30,8 @@ from q2mm.models.molecule import Q2MMMolecule
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from q2mm.optimizers.spec import ObjectiveSpec
 
 
@@ -1358,7 +1360,11 @@ class ObjectiveFunction:
                 categories[cat] = evaluator.supports_analytical_gradient(self.engine)
         return dict(sorted(categories.items()))
 
-    def to_jax_spec(self) -> ObjectiveSpec:
+    def to_jax_spec(
+        self,
+        *,
+        ts_mol_indices: Iterable[int] | None = None,
+    ) -> ObjectiveSpec:
         """Build a JAX-compatible objective specification.
 
         Encodes reference data, regularization settings, and parameter
@@ -1370,6 +1376,15 @@ class ObjectiveFunction:
         differentiation through an inner ``jaxopt.LBFGS`` geometry
         minimization.
 
+        Args:
+            ts_mol_indices: Optional iterable of molecule indices whose
+                MM Hessian should have its transition-state curvature
+                inverted (QFUERZA) before frequency / Hessian-element /
+                eigenmatrix residuals are computed.  Mirrors the
+                ``invert_ts_curvature`` flag on
+                :func:`~q2mm.models.seminario.estimate_force_constants`
+                but threaded through the analytical JAX loss path.
+
         Returns:
             ObjectiveSpec ready for JIT compilation.
 
@@ -1378,6 +1393,8 @@ class ObjectiveFunction:
 
         """
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
+
+        ts_set = set(int(i) for i in ts_mol_indices) if ts_mol_indices else set()
 
         # Group references by molecule index
         refs_by_mol: dict[int, list[ReferenceValue]] = {}
@@ -1395,6 +1412,7 @@ class ObjectiveFunction:
                 symbols=tuple(mol.symbols),
                 refs=refs,
                 topology=mol,
+                invert_ts_curvature=(mol_idx in ts_set),
             )
             mol_specs.append(spec)
             # Track which categories are present

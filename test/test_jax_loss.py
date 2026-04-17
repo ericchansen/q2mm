@@ -691,3 +691,85 @@ class TestJaxLossGeometryParity:
         # Un-wrapped diff would be 358° → loss ≈ 128164.  Wrapped: −2° → 4.
         assert loss < 10.0
         np.testing.assert_allclose(loss, 4.0, atol=1e-6)
+
+
+class TestJaxLossTsCurvatureInversion:
+    """TS-curvature inversion (QFUERZA) inside the JIT loss path."""
+
+    def test_to_jax_spec_marks_ts_molecules(self) -> None:
+        """``to_jax_spec(ts_mol_indices=...)`` sets the per-mol flag."""
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol, _ff_ref, ff_pert, _hess, freqs_qm = _water_with_qm_refs(engine)
+
+        ref = ReferenceData()
+        for i in range(6, 9):
+            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
+
+        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        spec_plain = obj.to_jax_spec()
+        spec_ts = obj.to_jax_spec(ts_mol_indices=[0])
+
+        assert spec_plain.molecules[0].invert_ts_curvature is False
+        assert spec_ts.molecules[0].invert_ts_curvature is True
+
+    def test_ts_inversion_runs_in_jaxloss(self) -> None:
+        """JaxLoss evaluates a TS-flagged objective without raising."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
+
+        ref = ReferenceData()
+        ref.add_hessian_from_matrix(
+            hess_qm,
+            diagonal_only=True,
+            molecule_idx=0,
+            diagonal_weight=0.1,
+            offdiagonal_weight=0.0,
+        )
+
+        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec(ts_mol_indices=[0])
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+
+        params = ff_pert.get_param_vector()
+        score = jax_loss(params)
+        assert np.isfinite(score)
+        # Gradients must also propagate through the inversion.
+        _, grad = jax_loss.loss_and_grad(params)
+        assert grad.shape == params.shape
+        assert np.all(np.isfinite(grad))
+
+    def test_ts_inversion_changes_loss(self) -> None:
+        """Flipping the TS flag changes the Hessian-element residual."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
+
+        # Fabricate a TS-like reference Hessian with one negative diagonal.
+        fake_ts_hess = hess_qm.copy()
+        fake_ts_hess[0, 0] = -abs(fake_ts_hess[0, 0])
+
+        ref = ReferenceData()
+        ref.add_hessian_from_matrix(
+            fake_ts_hess,
+            diagonal_only=True,
+            molecule_idx=0,
+            diagonal_weight=0.1,
+            offdiagonal_weight=0.0,
+        )
+
+        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        spec_plain = obj.to_jax_spec()
+        spec_ts = obj.to_jax_spec(ts_mol_indices=[0])
+
+        loss_plain = JaxLoss(spec_plain, engine, [mol], ff_pert.copy())
+        loss_ts = JaxLoss(spec_ts, engine, [mol], ff_pert.copy())
+
+        params = ff_pert.get_param_vector()
+        assert not np.isclose(float(loss_plain(params)), float(loss_ts(params)))
