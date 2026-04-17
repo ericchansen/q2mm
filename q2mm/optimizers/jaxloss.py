@@ -6,10 +6,16 @@ JAX's XLA backend.  This eliminates Python-loop overhead and enables
 end-to-end gradient computation via ``jax.grad``.
 
 The compiled loss supports **energy**, **frequency**, **hessian-element**,
-and **eigenmatrix** reference types.  Geometry references (bond_length,
-bond_angle, torsion_angle) are excluded — they require differentiable
-energy minimization via implicit differentiation, which is planned for
-a later phase.
+**eigenmatrix**, and **geometry** (bond_length / bond_angle /
+torsion_angle) reference types.  Geometry references are handled via
+implicit differentiation: each loss call runs an inner
+``jaxopt.LBFGS(fun=handle._energy_fn, implicit_diff=True)`` geometry
+minimization at the current parameters, computes bond/angle/torsion
+observables from the relaxed coordinates, and accumulates weighted
+residuals.  The implicit-function theorem gives the exact gradient of
+the relaxed observables with respect to the force-field parameters
+without autodiff-through-iteration.  See
+``docs/how-it-works/geometry-refs-spike.md`` for the design decision.
 
 Usage::
 
@@ -37,6 +43,124 @@ if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.optimizers.spec import ObjectiveSpec
+
+
+# Tolerance + iteration cap for the inner geometry minimizer used when a
+# molecule has geometry references.  The outer gradient does NOT depend on
+# inner_tol for well-conditioned convex problems (see geometry-refs-spike.md),
+# but a tight-enough tol is needed so that ``∇_x E(x*) ≈ 0`` at which the
+# implicit-function theorem applies.
+_GEOM_INNER_TOL = 1e-8
+_GEOM_INNER_MAXITER = 200
+
+
+def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
+    """Return the relaxed geometry ``x*(params)`` for a single molecule.
+
+    Uses ``jaxopt.LBFGS(fun=energy_of_coords, implicit_diff=True)`` so the
+    outer ``jax.grad`` sees the exact parameter-gradient of ``x*`` via the
+    implicit function theorem, avoiding autodiff-through-iteration.
+
+    Args:
+        energy_fn: ``(params, coords) -> scalar`` energy function
+            (typically ``handle._energy_fn``).  Coords shape ``(N, 3)``.
+        params: Current parameter vector (JAX array).
+        coords0: Initial coordinates, shape ``(N, 3)``.
+
+    Returns:
+        Relaxed coordinates, shape ``(N, 3)``.
+
+    """
+    import jaxopt
+
+    def energy_of_coords(coords, p):  # noqa: ANN001, ANN202
+        return energy_fn(p, coords)
+
+    solver = jaxopt.LBFGS(
+        fun=energy_of_coords,
+        tol=_GEOM_INNER_TOL,
+        maxiter=_GEOM_INNER_MAXITER,
+        implicit_diff=True,
+    )
+    sol = solver.run(coords0, params)
+    return sol.params
+
+
+def _bond_lengths(coords, atoms):  # noqa: ANN001, ANN202
+    """Compute bond lengths (Å) for pairs of atoms.
+
+    Args:
+        coords: ``(N, 3)`` Cartesian coordinates.
+        atoms: ``(M, 2)`` integer array of atom-index pairs.
+
+    Returns:
+        ``(M,)`` array of bond lengths.
+
+    """
+    from q2mm.backends.mm._jax_common import jnp
+
+    d = coords[atoms[:, 0]] - coords[atoms[:, 1]]
+    return jnp.sqrt(jnp.sum(d * d, axis=-1))
+
+
+def _bond_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
+    """Compute bond angles in degrees for atom triples.
+
+    The middle atom is the vertex.  Cos of the angle is clipped to
+    ``[-1+ε, 1-ε]`` to avoid NaN gradients at collinear geometries (see
+    geometry-refs-spike.md for the watch-out).
+
+    Args:
+        coords: ``(N, 3)`` Cartesian coordinates.
+        atoms: ``(M, 3)`` integer array of atom-index triples
+            (outer, vertex, outer).
+
+    Returns:
+        ``(M,)`` array of angles in degrees.
+
+    """
+    from q2mm.backends.mm._jax_common import jnp
+
+    v1 = coords[atoms[:, 0]] - coords[atoms[:, 1]]
+    v2 = coords[atoms[:, 2]] - coords[atoms[:, 1]]
+    n1 = jnp.linalg.norm(v1, axis=-1)
+    n2 = jnp.linalg.norm(v2, axis=-1)
+    cos = jnp.sum(v1 * v2, axis=-1) / (n1 * n2)
+    cos = jnp.clip(cos, -1.0 + 1e-12, 1.0 - 1e-12)
+    return jnp.arccos(cos) * (180.0 / jnp.pi)
+
+
+def _torsion_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
+    """Compute torsion (dihedral) angles in degrees for atom quadruples.
+
+    Uses the numerically stable ``atan2`` formulation so the result is
+    smooth across the ±180° wrap.
+
+    Args:
+        coords: ``(N, 3)`` Cartesian coordinates.
+        atoms: ``(M, 4)`` integer array of atom-index quadruples.
+
+    Returns:
+        ``(M,)`` array of dihedrals in degrees, in ``[-180, 180]``.
+
+    """
+    from q2mm.backends.mm._jax_common import jnp
+
+    p0 = coords[atoms[:, 0]]
+    p1 = coords[atoms[:, 1]]
+    p2 = coords[atoms[:, 2]]
+    p3 = coords[atoms[:, 3]]
+    b1 = p1 - p0
+    b2 = p2 - p1
+    b3 = p3 - p2
+    b2_norm = jnp.linalg.norm(b2, axis=-1, keepdims=True)
+    b2_hat = b2 / b2_norm
+    n1 = jnp.cross(b1, b2)
+    n2 = jnp.cross(b2, b3)
+    m = jnp.cross(n1, b2_hat)
+    x = jnp.sum(n1 * n2, axis=-1)
+    y = jnp.sum(m * n2, axis=-1)
+    return jnp.arctan2(y, x) * (180.0 / jnp.pi)
 
 
 class JaxLoss:
@@ -158,6 +282,18 @@ class JaxLoss:
                     entry["eoff_indices"] = jnp.array(mol_spec.eig_offdiag_indices, dtype=jnp.int32)
                     entry["eoff_refs"] = jnp.array(mol_spec.eig_offdiag_refs)
                     entry["eoff_weights"] = jnp.array(mol_spec.eig_offdiag_weights)
+            if mol_spec.has_bond_length:
+                entry["bond_atoms"] = jnp.array(mol_spec.bond_atoms, dtype=jnp.int32)
+                entry["bond_refs"] = jnp.array(mol_spec.bond_refs)
+                entry["bond_weights"] = jnp.array(mol_spec.bond_weights)
+            if mol_spec.has_bond_angle:
+                entry["angle_atoms"] = jnp.array(mol_spec.angle_atoms, dtype=jnp.int32)
+                entry["angle_refs"] = jnp.array(mol_spec.angle_refs)
+                entry["angle_weights"] = jnp.array(mol_spec.angle_weights)
+            if mol_spec.has_torsion:
+                entry["torsion_atoms"] = jnp.array(mol_spec.torsion_atoms, dtype=jnp.int32)
+                entry["torsion_refs"] = jnp.array(mol_spec.torsion_refs)
+                entry["torsion_weights"] = jnp.array(mol_spec.torsion_weights)
 
             mol_data.append(entry)
 
@@ -182,6 +318,31 @@ class JaxLoss:
                     energy = energy_fn(params, coords)
                     residuals = entry["energy_weights"] * (entry["energy_refs"] - energy)
                     total = total + jnp.sum(residuals**2)
+
+                # Geometry contributions — relax coords at current params,
+                # then compute bond/angle/torsion observables.  Implicit
+                # differentiation through the inner jaxopt.LBFGS gives the
+                # exact gradient w.r.t. params; see geometry-refs-spike.md.
+                if mol_spec.has_geometry:
+                    relaxed = _relax_coords(energy_fn, params, coords)
+
+                    if mol_spec.has_bond_length:
+                        calc = _bond_lengths(relaxed, entry["bond_atoms"])
+                        residuals = entry["bond_weights"] * (entry["bond_refs"] - calc)
+                        total = total + jnp.sum(residuals**2)
+
+                    if mol_spec.has_bond_angle:
+                        calc = _bond_angles_deg(relaxed, entry["angle_atoms"])
+                        residuals = entry["angle_weights"] * (entry["angle_refs"] - calc)
+                        total = total + jnp.sum(residuals**2)
+
+                    if mol_spec.has_torsion:
+                        calc = _torsion_angles_deg(relaxed, entry["torsion_atoms"])
+                        # Wrap torsion residuals into [-180, 180) before squaring.
+                        diff = entry["torsion_refs"] - calc
+                        diff = (diff + 180.0) % 360.0 - 180.0
+                        residuals = entry["torsion_weights"] * diff
+                        total = total + jnp.sum(residuals**2)
 
                 # Hessian-dependent contributions
                 if mol_spec.needs_hessian_computation:

@@ -1366,15 +1366,15 @@ class ObjectiveFunction:
         format consumed by :class:`~q2mm.optimizers.jaxloss.JaxLoss`.
 
         Geometry references (bond_length, bond_angle, torsion_angle)
-        are silently excluded — they require differentiable energy
-        minimization which is not yet supported in the JIT loss path.
+        are included; the JIT loss handles them via implicit
+        differentiation through an inner ``jaxopt.LBFGS`` geometry
+        minimization.
 
         Returns:
             ObjectiveSpec ready for JIT compilation.
 
         Raises:
-            ValueError: If no JIT-compatible references remain after
-                excluding geometry.
+            ValueError: If the objective has no references.
 
         """
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
@@ -1394,6 +1394,7 @@ class ObjectiveFunction:
                 mol_idx=mol_idx,
                 symbols=tuple(mol.symbols),
                 refs=refs,
+                topology=mol,
             )
             mol_specs.append(spec)
             # Track which categories are present
@@ -1405,12 +1406,12 @@ class ObjectiveFunction:
                 categories.add("hessian")
             if spec.has_eigenmatrix:
                 categories.add("eigenmatrix")
+            if spec.has_geometry:
+                categories.add("geometry")
 
         if not categories:
             raise ValueError(
-                "No JIT-compatible references found. "
-                "Geometry references require differentiable minimization "
-                "and are not supported in the JIT loss path."
+                "No references found. ObjectiveFunction.to_jax_spec() requires at least one reference value."
             )
 
         # Parameter bounds from the force field

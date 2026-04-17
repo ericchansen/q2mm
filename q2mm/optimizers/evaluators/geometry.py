@@ -229,16 +229,24 @@ class GeometryEvaluator:
         raise ValueError(f"GeometryEvaluator cannot handle kind: {ref.kind}")
 
     def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Geometry gradients require differentiating through the minimizer.
+        """Whether the geometry evaluator supports analytical gradients.
+
+        Geometry gradients through the force-field parameters require
+        differentiating through a geometry minimization.  The JAX
+        backend supports this via :class:`~q2mm.optimizers.jaxloss.JaxLoss`,
+        which uses implicit differentiation through an inner
+        ``jaxopt.LBFGS`` minimizer.  Other backends do not.
 
         Args:
             engine: The MM backend to check.
 
         Returns:
-            Always ``False`` — not yet implemented.
+            ``True`` when *engine* is a JaxEngine; otherwise ``False``.
 
         """
-        return False
+        from q2mm.backends.mm.jax_engine import JaxEngine
+
+        return isinstance(engine, JaxEngine)
 
     def gradient(
         self,
