@@ -126,7 +126,7 @@ class TestJaxOptOptimizerConvergence:
 
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgs"
-        assert result.jac_mode == "jit"
+        assert result.jac_mode == "analytical"
         assert result.eps is None
 
     def test_lbfgsb_h2_energy(self) -> None:

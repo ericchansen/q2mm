@@ -804,6 +804,37 @@ def run_combo(
         jac_mode = r.jac_mode
         eps = r.eps
         gradients = r.gradients
+    elif optimizer_method.startswith("jaxopt-multi:"):
+        from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
+
+        jaxopt_multi_method = optimizer_method.split(":", 1)[1]
+        jaxopt_multi_kwargs: dict[str, Any] = {
+            "method": jaxopt_multi_method,
+            "maxiter": maxiter,
+            "verbose": False,
+        }
+        for key in ("tol", "n_starts", "perturbation_pct", "seed"):
+            if key in optimizer_kwargs:
+                jaxopt_multi_kwargs[key] = optimizer_kwargs[key]
+
+        opt = JaxMultiStartOptimizer(**jaxopt_multi_kwargs)
+
+        r = _run_optimizer(
+            opt,
+            obj,
+            method=optimizer_method,
+            extra={"n_starts": jaxopt_multi_kwargs.get("n_starts", 10)},
+        )
+        opt_elapsed = r.elapsed
+        n_eval = r.n_eval
+        converged = r.converged
+        opt_initial_score = r.initial_score
+        opt_final_score = r.final_score
+        opt_message = r.message
+        extra_opt_data = r.extra
+        jac_mode = r.jac_mode
+        eps = r.eps
+        gradients = r.gradients
     elif optimizer_method.startswith("basinhopping"):
         from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
 
