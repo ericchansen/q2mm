@@ -10,8 +10,15 @@ new dep is added to a ``[project.optional-dependencies]`` extra in
 updated, the dep silently goes missing from CI — exactly the bug that bit
 PR #250 (jaxopt was in the ``[jax]`` extra but not in ``full.yml``).
 
-This script enforces the contract: every package declared in a backend extra
-must appear in both the backend-specific env file and ``full.yml``.
+This script enforces two contracts:
+
+1. Every package declared in a backend extra must appear in both the
+   backend-specific env file and ``full.yml``.
+2. Every package in the core ``[project] dependencies`` list must appear in
+   *every* backend env file. ``pip install -e . --no-deps`` skips them, so a
+   core dep missing from a backend env breaks collection (e.g. PR #250 added
+   ``pyyaml`` as a core dep but no backend env declared it, and every backend
+   test job failed with ``ModuleNotFoundError: No module named 'yaml'``).
 
 Run manually:
     python scripts/check_env_dep_parity.py
@@ -71,6 +78,14 @@ def load_extras() -> dict[str, set[str]]:
     return {name: {_strip_marker_and_specifier(d) for d in deps} for name, deps in extras.items()}
 
 
+def load_core_deps() -> set[str]:
+    """Return the normalized package names in ``[project] dependencies``."""
+    with PYPROJECT.open("rb") as f:
+        data = tomllib.load(f)
+    deps = data.get("project", {}).get("dependencies", [])
+    return {_strip_marker_and_specifier(d) for d in deps}
+
+
 def load_env_packages(env_file: Path) -> set[str]:
     """Return the set of normalized package names in a conda env file."""
     with env_file.open() as f:
@@ -89,8 +104,10 @@ def load_env_packages(env_file: Path) -> set[str]:
 def check_parity() -> list[str]:
     """Return a list of human-readable error messages (empty = OK)."""
     extras = load_extras()
+    core_deps = load_core_deps()
     errors: list[str] = []
 
+    # Contract 1: each backend extra must be a subset of its env file(s).
     for extra_name, env_filenames in EXTRA_TO_ENV_FILES.items():
         if extra_name not in extras:
             errors.append(f"pyproject.toml extra [{extra_name}] is missing — expected by check_env_dep_parity.py")
@@ -112,6 +129,23 @@ def check_parity() -> list[str]:
                     f"{sorted(missing)}\n"
                     f"  → add them to {env_path.relative_to(REPO_ROOT)} "
                     "so the CI container image picks them up on next build."
+                )
+
+    # Contract 2: every core dep must appear in every backend env file.
+    # `pip install -e . --no-deps` skips them, so the env must provide them.
+    required_core = core_deps - BASELINE_PACKAGES
+    if required_core:
+        for env_path in sorted(ENVS_DIR.glob("*.yml")):
+            present = load_env_packages(env_path)
+            missing = required_core - present - BASELINE_PACKAGES
+            if missing:
+                errors.append(
+                    f"{env_path.name} is missing core deps from "
+                    f"pyproject.toml [project] dependencies: "
+                    f"{sorted(missing)}\n"
+                    f"  → add them to {env_path.relative_to(REPO_ROOT)}; "
+                    "backend jobs use `pip install -e . --no-deps` and the "
+                    "env must provide every core dep."
                 )
 
     return errors
