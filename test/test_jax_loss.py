@@ -637,3 +637,57 @@ class TestJaxLossGeometryParity:
         assert np.isfinite(loss)
         assert grad.shape == params.shape
         assert np.all(np.isfinite(grad))
+
+    def test_torsion_observable_math(self) -> None:
+        """_torsion_angles_deg produces correct dihedrals for known geometries."""
+        import jax.numpy as jnp
+
+        from q2mm.optimizers.jaxloss import _torsion_angles_deg
+
+        # Planar cis (0°): all four atoms in xy-plane, zig-zag along y.
+        coords_cis = jnp.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ]
+        )
+        # Planar trans (180°): atom 3 on opposite side.
+        coords_trans = jnp.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [2.0, 1.0, 0.0],
+            ]
+        )
+        # Perpendicular (+90°): atom 3 rotated about b2 axis.
+        coords_90 = jnp.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+            ]
+        )
+        atoms = jnp.array([[0, 1, 2, 3]])
+
+        np.testing.assert_allclose(float(_torsion_angles_deg(coords_cis, atoms)[0]), 0.0, atol=1e-6)
+        np.testing.assert_allclose(abs(float(_torsion_angles_deg(coords_trans, atoms)[0])), 180.0, atol=1e-6)
+        np.testing.assert_allclose(abs(float(_torsion_angles_deg(coords_90, atoms)[0])), 90.0, atol=1e-6)
+
+    def test_torsion_residual_wraps_across_180(self) -> None:
+        """Torsion loss at observed=+179°, ref=-179° gives ~2° residual, not 358°."""
+        import jax.numpy as jnp
+
+        # Mimic the wrap logic used inside _loss_fn.
+        observed = jnp.array([179.0])
+        ref = jnp.array([-179.0])
+        weights = jnp.array([1.0])
+        diff = observed - ref
+        diff = (diff + 180.0) % 360.0 - 180.0
+        loss = float(jnp.sum(weights * diff * diff))
+        # Un-wrapped diff would be 358° → loss ≈ 128164.  Wrapped: −2° → 4.
+        assert loss < 10.0
+        np.testing.assert_allclose(loss, 4.0, atol=1e-6)
