@@ -1389,15 +1389,21 @@ class ObjectiveFunction:
             ObjectiveSpec ready for JIT compilation.
 
         Raises:
-            ValueError: If the objective has no references.
+            ValueError: If the objective has no references, or if any
+                ``ts_mol_indices`` entry is not an integer or falls
+                outside ``[0, len(self.molecules))``.
 
         """
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
 
         if ts_mol_indices is not None:
+            import numbers
+
             ts_set: set[int] = set()
             n_mols = len(self.molecules)
             for i in ts_mol_indices:
+                if isinstance(i, bool) or not isinstance(i, (numbers.Integral, np.integer)):
+                    raise ValueError(f"ts_mol_indices entries must be integers; got {i!r} ({type(i).__name__}).")
                 idx = int(i)
                 if idx < 0 or idx >= n_mols:
                     raise ValueError(

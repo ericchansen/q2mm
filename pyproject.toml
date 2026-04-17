@@ -90,6 +90,7 @@ dev = [
     "qcelemental",
     "openmm",
     "build",
+    "tomli; python_version < '3.11'",
 ]
 docs = [
     "properdocs",
