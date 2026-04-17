@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
+_HAS_JAXOPT = importlib.util.find_spec("jaxopt") is not None
 
 pytestmark = [
     pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"),
@@ -538,6 +539,8 @@ class TestFrequencySensitivityParity:
 
 class TestJaxLossGeometryParity:
     """Tests for the geometry-references implicit-diff loss path."""
+
+    pytestmark = pytest.mark.skipif(not _HAS_JAXOPT, reason="jaxopt not installed (required for geometry refs)")
 
     def test_bond_length_relaxes_to_eq(self) -> None:
         """Relaxed H2 bond length matches the FF equilibrium parameter."""
