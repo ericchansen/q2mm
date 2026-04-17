@@ -79,8 +79,8 @@ class TestObjectiveSpec:
         np.testing.assert_array_equal(spec.molecules[0].energy_refs, [0.0])
         np.testing.assert_array_equal(spec.molecules[0].energy_weights, [1.0])
 
-    def test_geometry_excluded(self) -> None:
-        """Geometry references silently excluded from spec."""
+    def test_geometry_included(self) -> None:
+        """Geometry references are included via implicit-diff path."""
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
@@ -94,8 +94,12 @@ class TestObjectiveSpec:
         spec = obj.to_jax_spec()
 
         assert spec.molecules[0].has_energy
-        assert "geometry" not in spec.supported_categories
-        assert spec.has_geometry_refs() is False
+        assert spec.molecules[0].has_bond_length
+        assert spec.molecules[0].has_geometry
+        assert "geometry" in spec.supported_categories
+        assert spec.has_geometry_refs() is True
+        np.testing.assert_array_equal(spec.molecules[0].bond_atoms, [[0, 1]])
+        np.testing.assert_array_equal(spec.molecules[0].bond_refs, [0.96])
 
     def test_bounds_roundtrip(self) -> None:
         """Parameter bounds transferred to spec."""
@@ -530,3 +534,106 @@ class TestFrequencySensitivityParity:
             if norm_np > 1e-10 and norm_jax > 1e-10:
                 cos_sim = np.dot(j_np, j_jax) / (norm_np * norm_jax)
                 assert cos_sim > 0.99, f"Mode {i}: cosine similarity {cos_sim:.4f} too low"
+
+
+class TestJaxLossGeometryParity:
+    """Tests for the geometry-references implicit-diff loss path."""
+
+    def test_bond_length_relaxes_to_eq(self) -> None:
+        """Relaxed H2 bond length matches the FF equilibrium parameter."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        # Start with a stretched bond; equilibrium r0 = 0.74 Å.
+        mol = make_diatomic(distance=0.90, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        engine = JaxEngine()
+
+        # Reference equals the eq value → relaxed loss should be ~0.
+        ref = ReferenceData()
+        ref.add_bond_length(value=0.74, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff)
+
+        params = ff.get_param_vector()
+        loss = jax_loss(params)
+        # relaxed bond ≈ 0.74, so (0.74 − 0.74)^2 should be ~0.
+        assert loss < 1e-10
+
+    def test_bond_length_grad_matches_fd(self) -> None:
+        """∇_p loss for a bond-length ref matches finite differences."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_diatomic(distance=0.90, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        engine = JaxEngine()
+
+        # Reference offset from current r0 so the gradient is non-trivial.
+        ref = ReferenceData()
+        ref.add_bond_length(value=0.80, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff)
+
+        params = ff.get_param_vector()
+        _, grad_jax = jax_loss.loss_and_grad(params)
+
+        # Central-difference reference gradient (full-pipeline FD: each
+        # eval relaxes the geometry at the perturbed parameters).
+        eps = 1e-4
+        grad_fd = np.zeros_like(params)
+        for i in range(len(params)):
+            dp = np.zeros_like(params)
+            dp[i] = eps
+            grad_fd[i] = (jax_loss(params + dp) - jax_loss(params - dp)) / (2 * eps)
+
+        np.testing.assert_allclose(grad_jax, grad_fd, atol=1e-5, rtol=1e-3)
+
+    def test_bond_angle_relaxes_to_eq(self) -> None:
+        """Relaxed H2O bond angle matches the FF equilibrium parameter."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        # Start with a perturbed angle; eq is 104.5°.
+        mol = make_water(bond_length=0.96, angle_deg=110.0)
+        ff = _water_ff(bond_k=553.0, bond_r0=0.96, angle_k=49.9, angle_eq=104.5)
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        # Atom indices: H(1)–O(0)–H(2) with O as vertex.
+        ref.add_bond_angle(value=104.5, molecule_idx=0, atom_indices=(1, 0, 2), weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff)
+
+        params = ff.get_param_vector()
+        loss = jax_loss(params)
+        assert loss < 1e-6
+
+    def test_geometry_grad_jit_callable(self) -> None:
+        """JaxLoss.loss_and_grad with geometry refs is jit-compilable."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_water(bond_length=0.97, angle_deg=104.5)
+        ff = _water_ff()
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        ref.add_bond_length(value=0.96, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref.add_bond_angle(value=104.5, molecule_idx=0, atom_indices=(1, 0, 2), weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff)
+
+        params = ff.get_param_vector()
+        loss, grad = jax_loss.loss_and_grad(params)
+        assert np.isfinite(loss)
+        assert grad.shape == params.shape
+        assert np.all(np.isfinite(grad))

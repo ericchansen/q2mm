@@ -73,6 +73,18 @@ class MoleculeSpec:
     eig_offdiag_indices: np.ndarray
     eig_offdiag_refs: np.ndarray
     eig_offdiag_weights: np.ndarray
+    # Geometry — bond length (atom pairs, Å)
+    bond_atoms: np.ndarray = field(default_factory=lambda: np.zeros((0, 2), dtype=int))
+    bond_refs: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    bond_weights: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    # Geometry — bond angle (atom triples, degrees; middle atom is vertex)
+    angle_atoms: np.ndarray = field(default_factory=lambda: np.zeros((0, 3), dtype=int))
+    angle_refs: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    angle_weights: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    # Geometry — torsion angle (atom quadruples, degrees, range [-180, 180])
+    torsion_atoms: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), dtype=int))
+    torsion_refs: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    torsion_weights: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
 
     @property
     def has_energy(self) -> bool:
@@ -95,9 +107,46 @@ class MoleculeSpec:
         return len(self.eig_diag_refs) > 0 or len(self.eig_offdiag_refs) > 0
 
     @property
+    def has_bond_length(self) -> bool:
+        """Whether this molecule has bond-length geometry references."""
+        return len(self.bond_refs) > 0
+
+    @property
+    def has_bond_angle(self) -> bool:
+        """Whether this molecule has bond-angle geometry references."""
+        return len(self.angle_refs) > 0
+
+    @property
+    def has_torsion(self) -> bool:
+        """Whether this molecule has torsion-angle geometry references."""
+        return len(self.torsion_refs) > 0
+
+    @property
+    def has_geometry(self) -> bool:
+        """Whether this molecule has any geometry references.
+
+        Geometry references require relaxing the molecular geometry at
+        each set of parameters; :class:`~q2mm.optimizers.jaxloss.JaxLoss`
+        handles them via implicit differentiation through
+        ``jaxopt.LBFGS``.
+        """
+        return self.has_bond_length or self.has_bond_angle or self.has_torsion
+
+    @property
     def needs_hessian_computation(self) -> bool:
         """Whether this molecule requires a Hessian from the engine."""
         return self.has_frequency or self.has_hessian or self.has_eigenmatrix
+
+    @property
+    def needs_geometry_relaxation(self) -> bool:
+        """Whether this molecule requires a relaxed geometry from the engine.
+
+        True when any bond/angle/torsion geometry reference is present.
+        :class:`~q2mm.optimizers.jaxloss.JaxLoss` will run an inner
+        ``jaxopt.LBFGS`` geometry minimization per loss call and
+        differentiate through it via the implicit function theorem.
+        """
+        return self.has_geometry
 
 
 @dataclass(frozen=True)
@@ -119,8 +168,10 @@ class ObjectiveSpec:
         lower_bounds: ``(n_params,)`` lower bounds (``-inf`` = unbounded).
         upper_bounds: ``(n_params,)`` upper bounds (``+inf`` = unbounded).
         supported_categories: Frozenset of evaluator categories present
-            in the spec (e.g. ``{"energy", "frequency"}``).  Geometry
-            is excluded — see module docstring.
+            in the spec (e.g. ``{"energy", "frequency", "geometry"}``).
+            Geometry references are handled via implicit differentiation
+            through an inner ``jaxopt.LBFGS`` geometry minimization; see
+            :class:`~q2mm.optimizers.jaxloss.JaxLoss`.
 
     """
 
@@ -136,11 +187,11 @@ class ObjectiveSpec:
         """Return True if any molecule has geometry references.
 
         Geometry references (bond_length, bond_angle, torsion_angle)
-        are NOT supported by the JIT loss — they require differentiable
-        energy minimization (implicit differentiation).  This method
-        is provided for diagnostic checks.
+        are supported by the JIT loss via implicit differentiation
+        through ``jaxopt.LBFGS``. See
+        :class:`~q2mm.optimizers.jaxloss.JaxLoss` for details.
         """
-        return False  # ObjectiveSpec intentionally excludes geometry
+        return any(m.has_geometry for m in self.molecules)
 
     @property
     def n_molecules(self) -> int:
@@ -152,6 +203,8 @@ def _build_molecule_spec(
     mol_idx: int,
     symbols: tuple[str, ...],
     refs: list,
+    *,
+    topology: object | None = None,
 ) -> MoleculeSpec:
     """Build a MoleculeSpec from a list of ReferenceValue objects.
 
@@ -159,9 +212,18 @@ def _build_molecule_spec(
         mol_idx: Molecule index in the training set.
         symbols: Element symbols for this molecule.
         refs: List of ReferenceValue objects for this molecule.
+        topology: Optional molecule object providing ``bonds``,
+            ``angles``, and ``torsions`` lists. Used to resolve
+            positional ``data_idx`` for geometry references (e.g.
+            ``ref.kind == "bond_length"`` with no ``atom_indices``) to
+            explicit atom-index tuples required by the JIT loss.
 
     Returns:
         MoleculeSpec with arrays populated from the references.
+
+    Raises:
+        ValueError: If a geometry reference uses ``data_idx`` but no
+            ``topology`` is provided, or if ``data_idx`` is out of range.
 
     """
     energy_vals, energy_wts = [], []
@@ -169,6 +231,9 @@ def _build_molecule_spec(
     hess_idx, hess_vals, hess_wts = [], [], []
     ediag_idx, ediag_vals, ediag_wts = [], [], []
     eoff_idx, eoff_vals, eoff_wts = [], [], []
+    bond_at, bond_v, bond_w = [], [], []
+    ang_at, ang_v, ang_w = [], [], []
+    tor_at, tor_v, tor_w = [], [], []
 
     for ref in refs:
         if ref.kind == "energy":
@@ -204,8 +269,21 @@ def _build_molecule_spec(
                 eoff_idx.append(ref.data_idx)
             eoff_vals.append(ref.value)
             eoff_wts.append(ref.weight)
-        elif ref.kind in ("bond_length", "bond_angle", "torsion_angle"):
-            pass  # Geometry excluded from JIT loss
+        elif ref.kind == "bond_length":
+            atoms = _resolve_geom_atoms(ref, "bonds", 2, topology)
+            bond_at.append(atoms)
+            bond_v.append(ref.value)
+            bond_w.append(ref.weight)
+        elif ref.kind == "bond_angle":
+            atoms = _resolve_geom_atoms(ref, "angles", 3, topology)
+            ang_at.append(atoms)
+            ang_v.append(ref.value)
+            ang_w.append(ref.weight)
+        elif ref.kind == "torsion_angle":
+            atoms = _resolve_geom_atoms(ref, "torsions", 4, topology)
+            tor_at.append(atoms)
+            tor_v.append(ref.value)
+            tor_w.append(ref.weight)
         else:
             raise ValueError(f"Unknown reference kind: {ref.kind!r}")
 
@@ -227,4 +305,63 @@ def _build_molecule_spec(
         eig_offdiag_indices=np.array(eoff_idx, dtype=int),
         eig_offdiag_refs=np.array(eoff_vals, dtype=float),
         eig_offdiag_weights=np.array(eoff_wts, dtype=float),
+        bond_atoms=np.array(bond_at, dtype=int).reshape(-1, 2),
+        bond_refs=np.array(bond_v, dtype=float),
+        bond_weights=np.array(bond_w, dtype=float),
+        angle_atoms=np.array(ang_at, dtype=int).reshape(-1, 3),
+        angle_refs=np.array(ang_v, dtype=float),
+        angle_weights=np.array(ang_w, dtype=float),
+        torsion_atoms=np.array(tor_at, dtype=int).reshape(-1, 4),
+        torsion_refs=np.array(tor_v, dtype=float),
+        torsion_weights=np.array(tor_w, dtype=float),
     )
+
+
+def _resolve_geom_atoms(
+    ref: object,
+    attr: str,
+    arity: int,
+    topology: object | None,
+) -> tuple[int, ...]:
+    """Resolve a geometry reference to an explicit atom-index tuple.
+
+    Prefers ``ref.atom_indices`` when present. Falls back to looking up
+    ``topology.<attr>[ref.data_idx]`` (e.g. ``topology.bonds[0]``) and
+    pulling the atom indices off that record (``atom_i``, ``atom_j``,
+    ...).
+
+    Args:
+        ref: The :class:`~q2mm.optimizers.objective.ReferenceValue`.
+        attr: The topology attribute to fall back to
+            (``"bonds"`` / ``"angles"`` / ``"torsions"``).
+        arity: Number of atom indices expected (2, 3, or 4).
+        topology: Molecule object; required when falling back to
+            ``data_idx``.
+
+    Returns:
+        Tuple of atom indices with length ``arity``.
+
+    Raises:
+        ValueError: If atoms cannot be resolved.
+
+    """
+    if ref.atom_indices is not None and len(ref.atom_indices) >= arity:
+        return tuple(int(i) for i in ref.atom_indices[:arity])
+    if topology is None:
+        raise ValueError(
+            f"{ref.kind} reference {ref.label!r} has no atom_indices and no "
+            "molecule topology was provided to resolve data_idx."
+        )
+    records = getattr(topology, attr, None)
+    if records is None:
+        raise ValueError(
+            f"{ref.kind} reference {ref.label!r} requires molecule.{attr}, but molecule has no such attribute."
+        )
+    if ref.data_idx < 0 or ref.data_idx >= len(records):
+        raise ValueError(
+            f"{ref.kind} reference {ref.label!r} has data_idx={ref.data_idx} "
+            f"out of range (molecule.{attr} has {len(records)} entries)."
+        )
+    record = records[ref.data_idx]
+    index_attrs = ("atom_i", "atom_j", "atom_k", "atom_l")[:arity]
+    return tuple(int(getattr(record, a)) for a in index_attrs)

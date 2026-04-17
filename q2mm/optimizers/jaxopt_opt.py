@@ -59,9 +59,11 @@ class JaxOptOptimizer:
     This optimizer requires:
 
     1. A **JaxEngine** backend (other engines are not supported).
-    2. Only reference types supported by the JIT loss: energy,
-       frequency, hessian-element, eigenmatrix.  Geometry references
-       are silently excluded.
+    2. Reference types supported by the JIT loss: energy, frequency,
+       hessian-element, eigenmatrix, and geometry (bond_length,
+       bond_angle, torsion_angle).  Geometry references are handled via
+       implicit differentiation through an inner ``jaxopt.LBFGS``
+       geometry minimization.
 
     Args:
         method: Optimization method.  One of ``'lbfgs'`` (default),
