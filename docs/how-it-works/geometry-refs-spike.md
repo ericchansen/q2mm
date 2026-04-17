@@ -72,7 +72,7 @@ def relax_bwd(saved, g):
     H = jax.hessian(energy, argnums=0)(x, p)                 # ∂²E/∂x²
     M = jax.jacfwd(jax.grad(energy, argnums=0), argnums=1)(x, p)  # ∂²E/∂x∂p
     lam = jnp.linalg.solve(H.T, g)
-    return (−(lam @ M),)
+    return (-(lam @ M),)
 
 relax.defvjp(relax_fwd, relax_bwd)
 ```
