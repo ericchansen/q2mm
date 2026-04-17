@@ -22,7 +22,7 @@ def _ts_like_hessian(seed: int = 0) -> np.ndarray:
     rng = np.random.default_rng(seed)
     a = rng.standard_normal((6, 6))
     sym = 0.5 * (a + a.T)
-    evals, evecs = np.linalg.eigh(sym)
+    _, evecs = np.linalg.eigh(sym)
     evals = np.array([-0.3, 0.1, 0.5, 0.9, 1.4, 2.0])
     return (evecs * evals) @ evecs.T
 
