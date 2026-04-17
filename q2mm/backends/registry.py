@@ -105,7 +105,17 @@ def register_qm(name: str) -> Callable[[type[QMEngine]], type[QMEngine]]:
 
 
 def _discover() -> None:
-    """Import all known engine modules to trigger ``@register_*`` decorators."""
+    """Import all known engine modules to trigger ``@register_*`` decorators.
+
+    ``ImportError`` (and its subclasses) is the expected failure mode here:
+    optional backends raise it when their native deps are missing, and we
+    silently skip those — the engine simply won't be registered.
+
+    Any *other* exception during import indicates a real bug (syntax error,
+    misconfigured registration, JAX/OpenMM raising ``RuntimeError`` from
+    init code) that we should surface. Log it at WARNING so the user
+    sees why a backend they expect to be available isn't there.
+    """
     global _discovered
     if _discovered:
         return
@@ -113,8 +123,15 @@ def _discover() -> None:
     for module_path in _ENGINE_MODULES:
         try:
             importlib.import_module(module_path)
-        except Exception as exc:  # pragma: no cover
-            logger.debug("Could not import engine module %s: %s", module_path, exc)
+        except ImportError as exc:
+            logger.debug("Optional backend %s unavailable: %s", module_path, exc)
+        except Exception as exc:
+            logger.warning(
+                "Unexpected error importing engine module %s: %s",
+                module_path,
+                exc,
+                exc_info=True,
+            )
 
 
 def _check_available(cls: type) -> bool:
