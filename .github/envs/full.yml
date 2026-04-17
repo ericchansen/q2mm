@@ -10,6 +10,8 @@ dependencies:
   - tinker
   - jax
   - jaxlib
+  - jaxopt
+  - optax
   - pytest
   - ruff
   - pip
