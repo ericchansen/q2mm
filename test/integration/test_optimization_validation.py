@@ -618,12 +618,13 @@ class TestGoldenFixtureRegression:
     @pytest.mark.xfail(
         strict=False,
         reason=(
-            "Final optimized parameters vary across OpenMM/scipy versions "
-            "because L-BFGS-B follows different trajectories through the loss "
-            "landscape depending on numerical precision of the Hessian "
-            "eigenvalue solver. The optimizer may land in different local "
-            "minima. test_optimizer_improves_score verifies meaningful "
-            "progress; exact reproducibility requires pinned environments."
+            "Tracked in #258. Final optimized parameters vary across "
+            "OpenMM/scipy versions because L-BFGS-B follows different "
+            "trajectories through the loss landscape depending on numerical "
+            "precision of the Hessian eigenvalue solver. The optimizer may "
+            "land in different local minima. test_optimizer_improves_score "
+            "verifies meaningful progress; exact reproducibility requires "
+            "pinned environments."
         ),
     )
     def test_matches_golden_fixture(self) -> None:
