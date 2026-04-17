@@ -54,6 +54,14 @@ try:
 except ImportError:
     pass
 
+# Vmap-fused multi-start optimizer (requires jaxopt + jax)
+try:
+    from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer  # noqa: F401
+
+    __all__ += ["JaxMultiStartOptimizer"]
+except ImportError:
+    pass
+
 # Basin-hopping wraps scipy.optimize.basinhopping (always available with scipy)
 try:
     from q2mm.optimizers.basinhopping import BasinHoppingOptimizer  # noqa: F401
