@@ -32,11 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-try:
-    import yaml
-except ImportError:  # pragma: no cover
-    yaml = None  # type: ignore[assignment]
+import yaml
 
 from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.molecule import Q2MMMolecule
