@@ -208,9 +208,10 @@ def run_accuracy_table() -> None:
         loss_b = jax.jit(make_loss(make_option_b(tol=tol), refs))
         g_a = jax.grad(loss_a)(p)
         g_b = jax.grad(loss_b)(p)
+        denom = jnp.maximum(jnp.abs(g_exact), 1e-30)
         for name, g in [("A: jaxopt", g_a), ("B: custom", g_b)]:
             err = float(jnp.max(jnp.abs(g - g_exact)))
-            rel = float(jnp.max(jnp.abs((g - g_exact) / g_exact)))
+            rel = float(jnp.max(jnp.abs(g - g_exact) / denom))
             print(f"{tol:>10.0e} | {name:>10} | {err:>12.3e} | {rel:>12.3e}")
 
     print()
@@ -223,7 +224,8 @@ def run_accuracy_table() -> None:
             dp[i] = eps
             g_fd[i] = (loss_ref(p + dp) - loss_ref(p - dp)) / (2 * eps)
         err = float(np.max(np.abs(g_fd - np.asarray(g_exact))))
-        rel = float(np.max(np.abs((g_fd - np.asarray(g_exact)) / np.asarray(g_exact))))
+        denom = np.maximum(np.abs(np.asarray(g_exact)), 1e-30)
+        rel = float(np.max(np.abs(g_fd - np.asarray(g_exact)) / denom))
         print(f"{eps:>10.0e} | {'FD':>10} | {err:>12.3e} | {rel:>12.3e}")
 
 
@@ -261,14 +263,18 @@ def run_conditioning_table() -> None:
     print(header)
     print("-" * len(header))
 
+    grad_a = jax.jit(jax.grad(make_loss(make_option_a(tol=1e-10), refs)))
+    grad_b = jax.jit(jax.grad(make_loss(make_option_b(tol=1e-10), refs)))
+    hess_fn = jax.jit(jax.hessian(energy, argnums=0))
+
     for k1 in [2.0, 0.1, 1e-3, 1e-5]:
         p = jnp.array([k1, 1.5, 3.0, 1.2])
         g_exact = closed_form_grad(p, refs)
         x_star = closed_form_geometry(p)
-        h_mat = jax.hessian(energy, argnums=0)(x_star, p)
+        h_mat = hess_fn(x_star, p)
         cond = float(jnp.linalg.cond(h_mat))
-        g_a = jax.grad(jax.jit(make_loss(make_option_a(tol=1e-10), refs)))(p)
-        g_b = jax.grad(jax.jit(make_loss(make_option_b(tol=1e-10), refs)))(p)
+        g_a = grad_a(p)
+        g_b = grad_b(p)
         err_a = float(jnp.max(jnp.abs(g_a - g_exact)))
         err_b = float(jnp.max(jnp.abs(g_b - g_exact)))
         print(f"{k1:>10.1e} | {cond:>12.3e} | {err_a:>12.3e} | {err_b:>12.3e}")
