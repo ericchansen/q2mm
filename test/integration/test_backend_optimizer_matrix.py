@@ -208,14 +208,15 @@ class TestBenchmarkPipeline:
     @pytest.mark.xfail(
         strict=False,
         reason=(
-            "L-BFGS-B frequently fails to converge within 200 iterations on "
-            "frequency-fitting problems. The objective landscape is noisy — "
-            "each evaluation requires a Hessian eigenvalue solve, creating "
-            "discontinuities that frustrate gradient-based convergence criteria "
-            "(gtol). Even with the grad-simp cycling optimizer available, "
-            "this single-shot L-BFGS-B test uses a fixed iteration budget "
-            "that may not suffice on all platforms. Non-convergence is "
-            "expected; the structural checks (test_optimizer_executed, "
+            "Tracked in #258. L-BFGS-B frequently fails to converge within "
+            "200 iterations on frequency-fitting problems. The objective "
+            "landscape is noisy — each evaluation requires a Hessian "
+            "eigenvalue solve, creating discontinuities that frustrate "
+            "gradient-based convergence criteria (gtol). Even with the "
+            "grad-simp cycling optimizer available, this single-shot "
+            "L-BFGS-B test uses a fixed iteration budget that may not "
+            "suffice on all platforms. Non-convergence is expected; the "
+            "structural checks (test_optimizer_executed, "
             "test_rmsd_values_finite) verify the pipeline ran correctly."
         ),
     )
