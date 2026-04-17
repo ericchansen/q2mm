@@ -361,6 +361,11 @@ class JaxLoss:
                     hess_kcal = hess_fn(flat_coords, params)
                     hess_au = hess_kcal * hess_au_scale
 
+                    if mol_spec.invert_ts_curvature:
+                        from q2mm.models.hessian import invert_ts_curvature_jax
+
+                        hess_au = invert_ts_curvature_jax(hess_au)
+
                     # Frequency contribution
                     if mol_spec.has_frequency:
                         freqs = _jax_frequencies_from_hessian(hess_au, entry["masses_3n"])

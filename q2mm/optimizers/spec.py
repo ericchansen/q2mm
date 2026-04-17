@@ -98,6 +98,11 @@ class MoleculeSpec:
     torsion_atoms: np.ndarray = field(default_factory=lambda: np.zeros((0, 4), dtype=int))
     torsion_refs: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
     torsion_weights: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
+    # Transition-state curvature inversion (QFUERZA). When True, the JIT
+    # loss applies :func:`~q2mm.models.hessian.invert_ts_curvature_jax` to
+    # the MM Hessian before computing frequency / Hessian-element /
+    # eigenmatrix residuals for this molecule.
+    invert_ts_curvature: bool = False
 
     @property
     def has_energy(self) -> bool:
@@ -218,6 +223,7 @@ def _build_molecule_spec(
     refs: list,
     *,
     topology: object | None = None,
+    invert_ts_curvature: bool = False,
 ) -> MoleculeSpec:
     """Build a MoleculeSpec from a list of ReferenceValue objects.
 
@@ -230,6 +236,9 @@ def _build_molecule_spec(
             positional ``data_idx`` for geometry references (e.g.
             ``ref.kind == "bond_length"`` with no ``atom_indices``) to
             explicit atom-index tuples required by the JIT loss.
+        invert_ts_curvature: If True, mark this molecule for
+            transition-state curvature inversion (QFUERZA) inside the
+            JIT loss.  See :func:`~q2mm.models.hessian.invert_ts_curvature_jax`.
 
     Returns:
         MoleculeSpec with arrays populated from the references.
@@ -327,6 +336,7 @@ def _build_molecule_spec(
         torsion_atoms=np.array(tor_at, dtype=int).reshape(-1, 4),
         torsion_refs=np.array(tor_v, dtype=float),
         torsion_weights=np.array(tor_w, dtype=float),
+        invert_ts_curvature=bool(invert_ts_curvature),
     )
 
 

@@ -610,6 +610,53 @@ def extract_eigenmatrix_data(
     return data
 
 
+def invert_ts_curvature_jax(
+    hessian_matrix: np.ndarray,
+    replace_with: float = 1.0,
+) -> np.ndarray:
+    """JIT-compatible transition-state curvature inversion.
+
+    JAX sibling of :func:`invert_ts_curvature`: replaces the most negative
+    eigenvalue of a Cartesian Hessian (in Hartree/Bohr²) with a large
+    positive value so Seminario projection yields positive force constants,
+    and zeros out any other negative eigenvalues.  All operations are
+    traceable by ``jax.jit`` / ``jax.grad`` so the inversion can live inside
+    the analytical loss pipeline.
+
+    ``jnp.linalg.eigh`` returns eigenvalues in ascending order, so the most
+    negative eigenvalue is ``evals[0]``.  We use ``jnp.where`` rather than
+    Python branching to keep the control flow traceable: positive-definite
+    Hessians pass through unchanged (within machine precision) because only
+    negative eigenvalues are rewritten.
+
+    Based on Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250,
+    DOI:10.1002/jcc.23797).
+
+    Args:
+        hessian_matrix: ``(3N, 3N)`` Cartesian Hessian in Hartree/Bohr².
+        replace_with: Replacement value for the reaction-coordinate
+            eigenvalue in Hartree/Bohr².  Defaults to ``1.0``.
+
+    Returns:
+        ``(3N, 3N)`` modified Hessian with TS curvature inverted.
+
+    """
+    from q2mm.backends.mm._jax_common import ensure_jax
+
+    ensure_jax(engine_name="invert_ts_curvature_jax")
+
+    from q2mm.backends.mm._jax_common import jnp
+
+    hess = 0.5 * (hessian_matrix + hessian_matrix.T)
+    evals, evecs = jnp.linalg.eigh(hess)
+
+    new_smallest = jnp.where(evals[0] < 0, replace_with, evals[0])
+    rest = jnp.where(evals[1:] < 0, 0.0, evals[1:])
+    new_evals = jnp.concatenate([new_smallest[jnp.newaxis], rest])
+
+    return (evecs * new_evals) @ evecs.T
+
+
 def invert_ts_curvature(
     hessian_matrix: np.ndarray,
 ) -> np.ndarray:
