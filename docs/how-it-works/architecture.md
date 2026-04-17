@@ -344,7 +344,7 @@ Columns:
 | `hessian_element`  | ✅ | ✅ | ✅ | Packed `row * 3N + col` index into `jax.hessian` output. |
 | `eig_diagonal`     | ✅ | ✅ | ✅ | Diagonal of `Vᵀ H V` in QM eigenbasis. |
 | `eig_offdiagonal`  | ✅ | ✅ | ✅ | Off-diagonal of `Vᵀ H V`; same packed index. |
-| `bond_length`      | ✅ | ❌ | ❌ | Direct geometry observables are differentiable w.r.t. coordinates, but end-to-end `∂L/∂p` on the current Python path requires differentiable inner minimization. Tracked in [#243] (spike) / [#152] (umbrella). |
+| `bond_length`      | ✅ | ❌ | ❌ | Direct geometry observables are differentiable w.r.t. coordinates, but end-to-end `∂L/∂p` on the current Python path requires differentiable inner minimization. Approach chosen in the [geometry-refs spike](./geometry-refs-spike.md); full implementation tracked in [#243] (spike) / [#152] (umbrella). |
 | `bond_angle`       | ✅ | ❌ | ❌ | Same as `bond_length`. |
 | `torsion_angle`    | ✅ | ❌ | ❌ | Same as `bond_length`. |
 
