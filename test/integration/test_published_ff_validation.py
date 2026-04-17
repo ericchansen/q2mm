@@ -336,8 +336,9 @@ class TestPublishedFFEvaluation:
 
     @pytest.mark.xfail(
         reason=(
-            "Known Check 1 gap: the published MacroModel/MM3* force field does not "
-            "yet reproduce a better OpenMM fit than the Seminario baseline."
+            "Known Check 1 gap (#255): the published MacroModel/MM3* force "
+            "field does not yet reproduce a better OpenMM fit than the "
+            "Seminario baseline."
         ),
         strict=True,
     )
@@ -362,8 +363,8 @@ class TestPublishedFFEvaluation:
 
     @pytest.mark.xfail(
         reason=(
-            "Known Check 1 gap: published MacroModel/MM3* parameters are not yet "
-            "correlated with the OpenMM frequency evaluation."
+            "Known Check 1 gap (#256): published MacroModel/MM3* parameters "
+            "are not yet correlated with the OpenMM frequency evaluation."
         ),
         strict=True,
     )
@@ -374,8 +375,8 @@ class TestPublishedFFEvaluation:
 
     @pytest.mark.xfail(
         reason=(
-            "Known Check 1 gap: average R² for the published MacroModel/MM3* force "
-            "field is not yet acceptable under OpenMM."
+            "Known Check 1 gap (#257): average R² for the published "
+            "MacroModel/MM3* force field is not yet acceptable under OpenMM."
         ),
         strict=True,
     )
