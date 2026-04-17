@@ -316,11 +316,12 @@ flowchart TD
 
 ## Differentiability status
 
-Q2MM's long-term goal is end-to-end analytical optimisation: every
+Q2MM's long-term goal is end-to-end analytical optimization: every
 reference-to-loss contribution expressed as a pure, JIT-compiled JAX
 computation so that `jax.value_and_grad` gives exact parameter gradients
-in one XLA kernel.  The table below records what is delivered today
-versus what is still tracked.
+within one JIT-compiled XLA program/call, avoiding Python↔JAX
+round-trips. The table below records what is delivered today versus
+what is still tracked.
 
 ### Reference kinds
 
@@ -329,10 +330,12 @@ Columns:
 - **Python path** — does `ObjectiveFunction` already score this kind via
   its Python evaluators?
 - **Analytical ∂L/∂p** — is the residual differentiable through the
-  category's per-category evaluator on the Python path?
+  category's per-category evaluator on the Python path? This assumes a
+  backend that provides the required analytical Jacobians/Hessian-gradient
+  support (for example JAX); otherwise the Python path falls back to
+  finite-difference gradients.
 - **In JIT loss** — does `jaxloss.JaxLoss` score this kind inside the
   JIT-compiled graph (auto-diff through `value_and_grad`)?
-- **Tracker** — issue for any remaining gap.
 
 | Reference kind     | Python path | Analytical ∂L/∂p | In JIT loss | Notes |
 | ------------------ | :---------: | :--------------: | :---------: | ----- |
@@ -341,17 +344,17 @@ Columns:
 | `hessian_element`  | ✅ | ✅ | ✅ | Packed `row * 3N + col` index into `jax.hessian` output. |
 | `eig_diagonal`     | ✅ | ✅ | ✅ | Diagonal of `Vᵀ H V` in QM eigenbasis. |
 | `eig_offdiagonal`  | ✅ | ✅ | ✅ | Off-diagonal of `Vᵀ H V`; same packed index. |
-| `bond_length`      | ✅ | partial | ❌ | Geometry requires differentiable inner-minimisation. Tracked in [#243] (spike) / [#152] (umbrella). |
-| `bond_angle`       | ✅ | partial | ❌ | Same as `bond_length`. |
-| `torsion_angle`    | ✅ | partial | ❌ | Same as `bond_length`. |
+| `bond_length`      | ✅ | ❌ | ❌ | Direct geometry observables are differentiable w.r.t. coordinates, but end-to-end `∂L/∂p` on the current Python path requires differentiable inner minimization. Tracked in [#243] (spike) / [#152] (umbrella). |
+| `bond_angle`       | ✅ | ❌ | ❌ | Same as `bond_length`. |
+| `torsion_angle`    | ✅ | ❌ | ❌ | Same as `bond_length`. |
 
-### Optimisers
+### Optimizers
 
 Columns:
 
 - **Uses JIT loss** — pulls gradients from `JaxLoss` rather than the
   Python-side evaluators.
-- **Full XLA loop** — the entire optimiser iteration lives inside
+- **Full XLA loop** — the entire optimizer iteration lives inside
   `jax.jit` (no Python ↔ XLA round-trips per step).
 - **Multi-start in XLA** — N-start search fused into one kernel via
   `jax.vmap` (vs. Python `for`-loop orchestration).
@@ -359,9 +362,13 @@ Columns:
 | Optimizer                  | Uses JIT loss | Full XLA loop | Multi-start in XLA |
 | -------------------------- | :-----------: | :-----------: | :----------------: |
 | `ScipyOptimizer`           | ❌ | ❌ | ❌ |
-| `OptimizationLoop` (cycling) | ❌ | ❌ | ❌ |
+| `OptimizationLoop` (cycling) | ✅ when configured [^cycling-jit] | ❌ | ❌ |
 | `OptaxOptimizer`           | ✅ | ❌ (Python step loop) | ❌ |
 | `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ✅ | ❌ |
+
+[^cycling-jit]: `OptimizationLoop` uses `JaxLoss` only when its
+    full-space phase is configured with `full_method="jaxopt:*"` or
+    `full_method="optax:*"`; otherwise it uses the Python-side evaluators.
 
 [^lbfgsb-cpu]: `jaxopt:lbfgsb` raises `RuntimeError` on non-CPU backends —
     the upstream jaxopt LBFGSB kernel uses XLA argsort/scatter primitives
