@@ -818,3 +818,7 @@ class TestJaxLossTsCurvatureInversion:
             obj.to_jax_spec(ts_mol_indices=[999])
         with pytest.raises(ValueError, match="out-of-range"):
             obj.to_jax_spec(ts_mol_indices=[-1])
+        with pytest.raises(ValueError, match="must be integers"):
+            obj.to_jax_spec(ts_mol_indices=[0.5])
+        with pytest.raises(ValueError, match="must be integers"):
+            obj.to_jax_spec(ts_mol_indices=["0"])

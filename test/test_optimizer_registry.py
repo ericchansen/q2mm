@@ -3,7 +3,7 @@
 Covers ``available_optimizers``, ``get_optimizer``, and the module
 ``__getattr__`` descriptive-error fallback.  These ensure that a
 missing optional dependency surfaces with an actionable install hint
-instead of being silently swallowed (as it was prior to PR-C).
+instead of being silently swallowed.
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ def test_module_getattr_missing_dep_raises_descriptive_importerror(
     """``from q2mm.optimizers import X`` → descriptive ``ImportError``.
 
     This is the most common consumer pattern and the highest-leverage fix:
-    before PR-C this would be ``ImportError: cannot import name 'X'`` with
+    before this fixture-driven check this would be ``ImportError: cannot import name 'X'`` with
     no install hint.
     """
     fake_exc = ImportError("No module named 'fake_dep'")

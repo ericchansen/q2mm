@@ -226,6 +226,7 @@ class JaxLoss:
         from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.models.hessian import (
             _jax_frequencies_from_hessian,
+            invert_ts_curvature_jax,
             symbols_to_masses_3n,
         )
         from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
@@ -362,8 +363,6 @@ class JaxLoss:
                     hess_au = hess_kcal * hess_au_scale
 
                     if mol_spec.invert_ts_curvature:
-                        from q2mm.models.hessian import invert_ts_curvature_jax
-
                         hess_au = invert_ts_curvature_jax(hess_au)
 
                     # Frequency contribution

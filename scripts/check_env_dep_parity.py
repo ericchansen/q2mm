@@ -23,8 +23,12 @@ from __future__ import annotations
 
 import re
 import sys
-import tomllib
 from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # Python 3.10 — use the tomli backport (stdlib tomllib lands in 3.11)
+    import tomli as tomllib
 
 import yaml
 
