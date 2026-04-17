@@ -106,9 +106,11 @@ def _bond_lengths(coords, atoms):  # noqa: ANN001, ANN202
 def _bond_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
     """Compute bond angles in degrees for atom triples.
 
-    The middle atom is the vertex.  Cos of the angle is clipped to
-    ``[-1+ε, 1-ε]`` to avoid NaN gradients at collinear geometries (see
-    geometry-refs-spike.md for the watch-out).
+    The middle atom is the vertex.  Norms are floored by a small
+    epsilon so that degenerate (zero-length arm) geometries encountered
+    during relaxation produce finite values instead of NaNs, and the
+    cos is clipped to ``[-1+ε, 1-ε]`` to avoid NaN gradients at
+    collinear geometries (see geometry-refs-spike.md).
 
     Args:
         coords: ``(N, 3)`` Cartesian coordinates.
@@ -125,7 +127,8 @@ def _bond_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
     v2 = coords[atoms[:, 2]] - coords[atoms[:, 1]]
     n1 = jnp.linalg.norm(v1, axis=-1)
     n2 = jnp.linalg.norm(v2, axis=-1)
-    cos = jnp.sum(v1 * v2, axis=-1) / (n1 * n2)
+    denom = jnp.maximum(n1 * n2, 1e-12)
+    cos = jnp.sum(v1 * v2, axis=-1) / denom
     cos = jnp.clip(cos, -1.0 + 1e-12, 1.0 - 1e-12)
     return jnp.arccos(cos) * (180.0 / jnp.pi)
 
@@ -134,7 +137,10 @@ def _torsion_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
     """Compute torsion (dihedral) angles in degrees for atom quadruples.
 
     Uses the numerically stable ``atan2`` formulation so the result is
-    smooth across the ±180° wrap.
+    smooth across the ±180° wrap.  Norms are floored by a small
+    epsilon so degenerate geometries (collinear triplets, zero-length
+    ``b2``) produce finite values instead of NaN/inf, matching the
+    NumPy reference behavior in :func:`q2mm.geometry.dihedral_angle`.
 
     Args:
         coords: ``(N, 3)`` Cartesian coordinates.
@@ -154,7 +160,7 @@ def _torsion_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
     b2 = p2 - p1
     b3 = p3 - p2
     b2_norm = jnp.linalg.norm(b2, axis=-1, keepdims=True)
-    b2_hat = b2 / b2_norm
+    b2_hat = b2 / jnp.maximum(b2_norm, 1e-12)
     n1 = jnp.cross(b1, b2)
     n2 = jnp.cross(b2, b3)
     m = jnp.cross(n1, b2_hat)

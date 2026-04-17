@@ -48,6 +48,19 @@ class MoleculeSpec:
         eig_offdiag_refs: ``(n_eoff,)`` reference off-diagonal values.
         eig_offdiag_weights: ``(n_eoff,)`` weights for off-diagonal
             residuals.
+        bond_atoms: ``(n_bond, 2)`` integer atom-index pairs for
+            bond-length geometry references.
+        bond_refs: ``(n_bond,)`` reference bond lengths (Å).
+        bond_weights: ``(n_bond,)`` weights for bond-length residuals.
+        angle_atoms: ``(n_angle, 3)`` integer atom-index triples
+            ``(outer, vertex, outer)`` for bond-angle references.
+        angle_refs: ``(n_angle,)`` reference bond angles (degrees).
+        angle_weights: ``(n_angle,)`` weights for bond-angle residuals.
+        torsion_atoms: ``(n_tors, 4)`` integer atom-index quadruples
+            for dihedral references.
+        torsion_refs: ``(n_tors,)`` reference dihedrals in ``[-180, 180]``
+            degrees.
+        torsion_weights: ``(n_tors,)`` weights for torsion residuals.
 
     """
 
