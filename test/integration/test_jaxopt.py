@@ -24,11 +24,9 @@ pytestmark = [
 ]
 
 from test._shared import (
-    CH3F_DATA_AVAILABLE,
     CH3F_FREQS,
     CH3F_HESS,
     CH3F_XYZ,
-    SN2_DATA_AVAILABLE,
     SN2_FREQS,
     SN2_HESSIAN,
     SN2_XYZ,
@@ -40,9 +38,6 @@ from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import estimate_force_constants
 
 JaxEngine = None
-
-_HAS_CH3F = CH3F_DATA_AVAILABLE
-_HAS_SN2 = SN2_DATA_AVAILABLE
 
 
 def _load_qm_frequencies(path: Path) -> np.ndarray:
@@ -141,9 +136,6 @@ class TestCyclingJaxoptDispatch:
 # ---------------------------------------------------------------------------
 # End-to-end validation on real QM systems
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(not _HAS_CH3F, reason="CH3F QM reference data not found")
 class TestJaxOptCH3FValidation:
     """Validate JaxOptOptimizer on CH₃F with real QM reference data."""
 
@@ -317,7 +309,6 @@ class TestJaxOptWaterHessianValidation:
         )
 
 
-@pytest.mark.skipif(not _HAS_SN2, reason="SN2 QM reference data not found")
 class TestJaxOptSN2TSValidation:
     """Validate JaxOptOptimizer on SN₂ transition state with frequencies."""
 

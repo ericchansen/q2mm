@@ -18,7 +18,6 @@ from q2mm.backends.registry import available_mm_engines, get_mm_engine
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
 from test._shared import (
-    SN2_HESSIAN,
     SN2_XYZ,
     make_diatomic,
     make_ethane,
@@ -31,8 +30,6 @@ _AVAILABLE = available_mm_engines()
 
 if not _AVAILABLE:
     pytest.skip("no MM engines available", allow_module_level=True)
-
-_SN2_DATA_AVAILABLE = SN2_XYZ.exists() and SN2_HESSIAN.exists()
 
 
 def _functional_form(engine: MMEngine) -> FunctionalForm:
@@ -500,7 +497,6 @@ class TestMinimize:
         assert coords.shape == (len(mol.symbols), 3)
 
 
-@pytest.mark.skipif(not _SN2_DATA_AVAILABLE, reason="SN2 fixtures not found")
 class TestRealMolecule:
     """Every engine should handle a realistic molecule."""
 

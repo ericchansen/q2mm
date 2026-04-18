@@ -193,7 +193,6 @@ class TestAddFrequenciesFromArray:
 
 
 class TestParseFchk:
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_parse_gs(self) -> None:
         symbols, coords, hessian, charge, mult = _parse_fchk(GS_FCHK)
         assert len(symbols) == 8
@@ -207,14 +206,12 @@ class TestParseFchk:
         # Hessian should be symmetric
         np.testing.assert_allclose(hessian, hessian.T, atol=1e-15)
 
-    @pytest.mark.skipif(not TS_FCHK.exists(), reason="Ethane fixture not found")
     def test_parse_ts(self) -> None:
         symbols, coords, hessian, charge, mult = _parse_fchk(TS_FCHK)
         assert len(symbols) == 8
         assert hessian is not None
         assert hessian.shape == (24, 24)
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_coordinates_reasonable(self) -> None:
         """Coordinates should be in Angstrom and within reasonable range."""
         symbols, coords, _, _, _ = _parse_fchk(GS_FCHK)
@@ -230,7 +227,6 @@ class TestParseFchk:
 
 
 class TestFromFchk:
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_basic(self) -> None:
         ref, mol = ReferenceData.from_fchk(GS_FCHK)
 
@@ -243,14 +239,12 @@ class TestFromFchk:
         assert "bond_length" in kinds
         assert "bond_angle" in kinds
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_bond_count(self) -> None:
         ref, mol = ReferenceData.from_fchk(GS_FCHK)
         n_bonds = len(mol.bonds)
         bond_refs = [v for v in ref.values if v.kind == "bond_length"]
         assert len(bond_refs) == n_bonds
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_custom_weights(self) -> None:
         ref, _ = ReferenceData.from_fchk(GS_FCHK, weights={"bond_length": 100.0, "bond_angle": 50.0})
         bond_vals = [v for v in ref.values if v.kind == "bond_length"]
@@ -258,10 +252,6 @@ class TestFromFchk:
         assert all(v.weight == 100.0 for v in bond_vals)
         assert all(v.weight == 50.0 for v in angle_vals)
 
-    @pytest.mark.skipif(
-        not GS_FCHK.exists() or not TS_FCHK.exists(),
-        reason="Ethane fixtures not found",
-    )
     def test_gs_vs_ts_different_geometries(self) -> None:
         """GS (staggered) and TS (eclipsed) should have different angles."""
         ref_gs, mol_gs = ReferenceData.from_fchk(GS_FCHK)

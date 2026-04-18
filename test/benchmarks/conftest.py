@@ -40,7 +40,6 @@ except ImportError:
 
 
 from test._shared import (
-    CH3F_DATA_AVAILABLE,
     CH3F_ENERGY,
     CH3F_FREQS,
     CH3F_HESS,
@@ -62,8 +61,6 @@ if TYPE_CHECKING:
 @pytest.fixture(scope="session")
 def ch3f_mol() -> Q2MMMolecule:
     """Load the CH3F molecule from QM reference data."""
-    if not CH3F_DATA_AVAILABLE:
-        pytest.skip("CH3F reference data not found")
     from q2mm.models.molecule import Q2MMMolecule
 
     return Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)

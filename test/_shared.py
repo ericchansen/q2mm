@@ -43,9 +43,23 @@ COMPLEX_XYZ = SN2_QM_REF / "complex-optimized.xyz"
 GS_FCHK = ETHANE_DIR / "GS.fchk"
 TS_FCHK = ETHANE_DIR / "TS.fchk"
 
-# Data availability flags
-SN2_DATA_AVAILABLE = SN2_XYZ.exists() and SN2_HESSIAN.exists()
-CH3F_DATA_AVAILABLE = CH3F_XYZ.exists() and CH3F_HESS.exists()
+# In-repo fixture availability — assert at import time per AGENTS.md §2.
+# These files are tracked in the repo; if any is missing, the working copy is
+# corrupt and tests should fail loudly at collection rather than silently skip.
+_REQUIRED_FIXTURES = {
+    "SN2_XYZ": SN2_XYZ,
+    "SN2_HESSIAN": SN2_HESSIAN,
+    "CH3F_XYZ": CH3F_XYZ,
+    "CH3F_HESS": CH3F_HESS,
+    "GS_FCHK": GS_FCHK,
+    "TS_FCHK": TS_FCHK,
+}
+_missing = sorted(name for name, p in _REQUIRED_FIXTURES.items() if not p.exists())
+if _missing:
+    raise RuntimeError(
+        "Missing in-repo test fixtures (working copy corrupt?): "
+        + ", ".join(f"{n}={_REQUIRED_FIXTURES[n]}" for n in _missing)
+    )
 
 
 # ---------------------------------------------------------------------------

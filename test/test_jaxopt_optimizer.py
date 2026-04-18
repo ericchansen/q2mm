@@ -24,14 +24,6 @@ from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 
-_HAS_CH3F = False
-try:
-    from test._shared import CH3F_DATA_AVAILABLE
-
-    _HAS_CH3F = CH3F_DATA_AVAILABLE
-except ImportError:
-    pass
-
 # Module-level globals populated by autouse fixture
 JaxEngine = None
 
@@ -224,7 +216,6 @@ class TestJaxOptOptimizerConvergence:
 class TestJaxOptFrequencyConvergence:
     """Frequency-based optimization convergence."""
 
-    @pytest.mark.skipif(not _HAS_CH3F, reason="CH3F data not available")
     def test_ch3f_frequency_convergence(self) -> None:
         """L-BFGS converges on CH3F frequency optimization."""
         from q2mm.models.hessian import hessian_to_frequencies

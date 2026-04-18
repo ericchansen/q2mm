@@ -748,7 +748,6 @@ class _StubForceField:
 class TestFchkParser:
     """Tests that the moved parse_fchk still works identically."""
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_parse_fchk_from_new_location(self) -> None:
         from q2mm.io.fchk import parse_fchk
 
@@ -763,7 +762,6 @@ class TestFchkParser:
         assert hessian.shape == (24, 24)
         np.testing.assert_allclose(hessian, hessian.T, atol=1e-15)
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_backward_compat_import(self) -> None:
         """Old import path still works via delegation."""
         from q2mm.optimizers.objective import _parse_fchk
@@ -811,7 +809,6 @@ class TestEvaluatorObjectiveParity:
         assert obj._extract_value(result, ref.values[0]) == 100.0
         assert obj._extract_value(result, ref.values[1]) == 200.0
 
-    @pytest.mark.skipif(not GS_FCHK.exists(), reason="Ethane fixture not found")
     def test_eigenmatrix_parity(self) -> None:
         """Eigenmatrix evaluation via evaluator matches old implementation."""
         from q2mm.optimizers.objective import ObjectiveFunction

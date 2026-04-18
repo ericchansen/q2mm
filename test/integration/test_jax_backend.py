@@ -24,7 +24,7 @@ _HAS_JAX = importlib.util.find_spec("jax") is not None
 
 pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pytest.mark.jax]
 
-from test._shared import CH3F_DATA_AVAILABLE, CH3F_HESS, CH3F_XYZ, make_diatomic, make_water
+from test._shared import CH3F_HESS, CH3F_XYZ, make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 
@@ -648,9 +648,6 @@ class TestJaxEigenmatrixGradients:
 # ---------------------------------------------------------------------------
 # CH₃F real-molecule validation
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(not CH3F_DATA_AVAILABLE, reason="CH3F QM data not available")
 class TestCH3FAnalyticalGradients:
     """Validate analytical gradients on CH₃F (5 atoms, 8 params).
 
@@ -835,7 +832,6 @@ class TestAnalyticalGradientPerformance:
         speedup = t_fd / t_analytical if t_analytical > 0 else float("inf")
         print(f"\nWater (4 params): analytical={t_analytical:.4f}s, FD={t_fd:.4f}s, speedup={speedup:.1f}×")
 
-    @pytest.mark.skipif(not CH3F_DATA_AVAILABLE, reason="CH3F QM data not available")
     def test_gradient_speedup_ch3f(self) -> None:
         """Measure analytical vs FD speedup on CH₃F (8 params)."""
         from q2mm.models.molecule import Q2MMMolecule

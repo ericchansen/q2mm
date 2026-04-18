@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from test._shared import GS_FCHK, SN2_DATA_AVAILABLE, SN2_QM_REF
+from test._shared import GS_FCHK, SN2_QM_REF
 
 from q2mm.models.hessian import (
     decompose,
@@ -22,9 +22,6 @@ from q2mm.optimizers.objective import ReferenceData, ReferenceValue
 
 # ---- Fixtures ----
 
-_ETHANE_FCHK = GS_FCHK
-_ETHANE_DATA_AVAILABLE = _ETHANE_FCHK.exists()
-
 
 @pytest.fixture
 def symmetric_matrix() -> np.ndarray:
@@ -34,8 +31,6 @@ def symmetric_matrix() -> np.ndarray:
 
 @pytest.fixture
 def sn2_hessian() -> np.ndarray:
-    if not SN2_DATA_AVAILABLE:
-        pytest.skip("SN2 data not available")
     return np.load(str(SN2_QM_REF / "sn2-ts-hessian.npy"))
 
 
@@ -73,7 +68,6 @@ class TestTransformToEigenmatrix:
         reformed = reform_hessian(diagonal_evals, evecs)
         np.testing.assert_allclose(reformed, symmetric_matrix, atol=1e-12)
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_self_projection(self, sn2_hessian: np.ndarray) -> None:
         """SN2 TS Hessian self-projection should be diagonal with eigenvalues."""
         evals, evecs = decompose(sn2_hessian)
@@ -84,7 +78,6 @@ class TestTransformToEigenmatrix:
         off_diag_norm = np.linalg.norm(eigenmatrix - np.diag(np.diag(eigenmatrix)))
         assert off_diag_norm < 1e-10
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_has_negative_eigenvalue(self, sn2_hessian: np.ndarray) -> None:
         """SN2 TS should have a negative eigenvalue (reaction coordinate)."""
         evals, evecs = decompose(sn2_hessian)
@@ -127,7 +120,6 @@ class TestExtractEigenmatrixData:
         data = extract_eigenmatrix_data(mat)
         assert len(data) == 6  # n*(n+1)/2
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_diagonal_count(self, sn2_hessian: np.ndarray) -> None:
         """SN2 has 6 atoms → 18x18 Hessian → 18 diagonal eigenvalues."""
         evals, evecs = decompose(sn2_hessian)
@@ -135,7 +127,6 @@ class TestExtractEigenmatrixData:
         data = extract_eigenmatrix_data(eigenmatrix, diagonal_only=True)
         assert len(data) == 18
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_full_count(self, sn2_hessian: np.ndarray) -> None:
         """18x18 lower triangle = 18*19/2 = 171 elements."""
         evals, evecs = decompose(sn2_hessian)
@@ -235,7 +226,6 @@ class TestReferenceDataEigenvalues:
         weights = sorted(rv.weight for rv in ref.values)
         assert weights == [0.2, 0.9]
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_eigenmatrix_reference_data(self, sn2_hessian: np.ndarray) -> None:
         """SN2 bulk loader produces 18 diagonal + 153 off-diagonal = 171 entries."""
         ref = ReferenceData()
@@ -247,7 +237,6 @@ class TestReferenceDataEigenvalues:
         assert diag_count == 18
         assert offdiag_count == 153
 
-    @pytest.mark.skipif(not SN2_DATA_AVAILABLE, reason="SN2 data not found")
     def test_sn2_first_eigenvalue_weight_zero(self, sn2_hessian: np.ndarray) -> None:
         """For the SN2 TS, the first eigenvalue (imaginary mode) gets weight 0."""
         ref = ReferenceData()
@@ -256,11 +245,10 @@ class TestReferenceDataEigenvalues:
         first_eig = next(rv for rv in ref.values if rv.kind == "eig_diagonal" and rv.data_idx == 0)
         assert first_eig.weight == 0.0
 
-    @pytest.mark.skipif(not _ETHANE_DATA_AVAILABLE, reason="Ethane fchk not found")
     def test_from_molecule_with_eigenmatrix(self) -> None:
         """from_molecule with include_eigenmatrix adds eigenvalue data."""
         # Use ReferenceData.from_fchk to get a molecule with Hessian, then test from_molecule
-        ref_data, mol = ReferenceData.from_fchk(str(_ETHANE_FCHK))
+        ref_data, mol = ReferenceData.from_fchk(str(GS_FCHK))
         assert mol.hessian is not None
 
         ref = ReferenceData.from_molecule(mol, include_eigenmatrix=True, eigenmatrix_diagonal_only=True)
@@ -301,12 +289,11 @@ class TestObjectiveFunctionEigenmatrix:
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 0.3  # eigenmatrix[2, 1]
 
-    @pytest.mark.skipif(not _ETHANE_DATA_AVAILABLE, reason="Ethane fchk not found")
     def test_evaluate_molecule_eigenmatrix_projection_and_caching(self) -> None:
         """_evaluate_molecule computes eigenmatrix from engine.hessian using cached QM eigenvectors."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        ref_data, mol = ReferenceData.from_fchk(str(_ETHANE_FCHK))
+        ref_data, mol = ReferenceData.from_fchk(str(GS_FCHK))
         assert mol.hessian is not None
 
         qm_hessian = np.array(mol.hessian, dtype=float)

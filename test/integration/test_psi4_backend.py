@@ -34,7 +34,6 @@ class TestPsi4EngineAvailability:
 
 
 @pytest.mark.psi4
-@pytest.mark.skipif(not (QM_REF / "ch3f-optimized.xyz").exists(), reason="CH3F fixture not found")
 class TestPsi4EnergyCH3F:
     """Test Psi4 energy calculation on CH3F.
 
@@ -79,7 +78,6 @@ class TestPsi4EngineLoadMolecule:
         assert energy == pytest.approx(-1.17, abs=0.05)
 
 
-@pytest.mark.skipif(not (QM_REF / "sn2-ts-hessian.npy").exists(), reason="SN2 TS Hessian fixture not found")
 class TestPsi4HessianFixture:
     """Verify the saved Hessian fixture is valid (no Psi4 needed)."""
 

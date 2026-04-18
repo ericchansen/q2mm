@@ -63,6 +63,25 @@ JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
 SN2_XYZ_PATH = SN2_XYZ
 SN2_HESSIAN_PATH = SN2_HESSIAN
 
+# All fixtures referenced by this module are tracked in-repo
+# (see AGENTS.md §2 rule 5).  Fail loudly at collection time if any
+# are missing — that means the working copy is corrupt, not that the
+# test should silently skip.
+_REQUIRED_PARITY_FIXTURES: dict[str, Path] = {
+    "CISPLATIN_ZENODO_PATH": CISPLATIN_ZENODO_PATH,
+    "CISPLATIN_GAUSSIAN_LOG": CISPLATIN_GAUSSIAN_LOG,
+    "RH_FIXTURE_PATH": RH_FIXTURE_PATH,
+    "MM3_PATH": MM3_PATH,
+    "MMO_PATH": MMO_PATH,
+    "JAG_DIR": JAG_DIR,
+}
+_missing_parity = [name for name, p in _REQUIRED_PARITY_FIXTURES.items() if not p.exists()]
+if _missing_parity:
+    raise RuntimeError(
+        "Missing in-repo fixtures for test_seminario_parity: "
+        + ", ".join(f"{n}={_REQUIRED_PARITY_FIXTURES[n]}" for n in _missing_parity)
+    )
+
 
 def _load_json(path: Path) -> dict:
     return json.loads(path.read_text())
@@ -239,10 +258,6 @@ def test_sn2_bond_projections_match_fixture(sn2_fixture: dict[str, Any]) -> None
 # ---------------------------------------------------------------------------
 # Rh-enamide full pipeline stability tests (#74)
 # ---------------------------------------------------------------------------
-_RH_DATA_AVAILABLE = MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()
-
-
-@pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
 def test_rh_enamide_forcefield_roundtrip() -> None:
     """Loading, estimating, and re-loading FF gives consistent params."""
     structures = MacroModel(str(MMO_PATH)).structures
@@ -271,7 +286,6 @@ def test_rh_enamide_forcefield_roundtrip() -> None:
         assert a1.equilibrium == pytest.approx(a2.equilibrium, abs=1e-12)
 
 
-@pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
 def test_rh_enamide_param_vector_parity(
     rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
 ) -> None:
@@ -321,7 +335,6 @@ def test_rh_enamide_param_vector_parity(
 # ---------------------------------------------------------------------------
 # Runtime benchmarks (informational, never fail)
 # ---------------------------------------------------------------------------
-@pytest.mark.skipif(not _RH_DATA_AVAILABLE, reason="Rh-enamide data not found")
 @pytest.mark.validation
 def test_rh_enamide_seminario_benchmark(
     rh_enamide_clean_results: dict[str, ForceField], capsys: pytest.CaptureFixture[str]
@@ -373,8 +386,6 @@ def test_rh_enamide_seminario_benchmark(
 # self-referential golden fixtures above, these reference values come from
 # an independent source.
 # ---------------------------------------------------------------------------
-_CISPLATIN_AVAILABLE = CISPLATIN_ZENODO_PATH.exists()
-
 # Atom labels used in the .fld files that correspond to hydrogen
 _CISPLATIN_H_LABELS = {"H3"}
 
@@ -390,7 +401,6 @@ def _h_angle_in_cisplatin(atoms: str) -> bool:
     return parts[0] in _CISPLATIN_H_LABELS or parts[2] in _CISPLATIN_H_LABELS
 
 
-@pytest.mark.skipif(not _CISPLATIN_AVAILABLE, reason="Cisplatin Zenodo fixture not found")
 class TestCisplatinZenodoQFUERZARules:
     """Verify QFUERZA definition rules against the paper's own force field files."""
 
@@ -531,8 +541,6 @@ class TestCisplatinZenodoQFUERZARules:
 #   `au_hessian` parameter not accepted by GaussLog). See issue #236.
 # ---------------------------------------------------------------------------
 
-_CISPLATIN_LOG_AVAILABLE = CISPLATIN_GAUSSIAN_LOG.exists()
-
 
 @pytest.fixture(scope="module")
 def cisplatin_molecule() -> Q2MMMolecule:
@@ -553,7 +561,6 @@ def cisplatin_molecule() -> Q2MMMolecule:
     )
 
 
-@pytest.mark.skipif(not _CISPLATIN_LOG_AVAILABLE, reason="Cisplatin Gaussian log not found")
 @pytest.mark.integration
 class TestCisplatinHessianParity:
     """Reproduce FUERZA/QFUERZA force constants from the cisplatin QM Hessian.
