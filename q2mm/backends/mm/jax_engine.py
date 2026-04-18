@@ -662,7 +662,9 @@ class JaxEngine(MMEngine):
 
         # Match torsions — each detected torsion may match multiple FF
         # entries (one per periodicity component), each becoming a separate
-        # term.  Only proper torsions from molecule geometry are matched.
+        # term.  Both proper and improper torsions are routed through the
+        # same cosine-series energy term (mirrors OpenMM, which puts both
+        # into a single PeriodicTorsionForce; see openmm.py:1080-1132).
         torsion_atom_indices: list[tuple[int, int, int, int]] = []
         torsion_param_map: list[int] = []
         torsion_param_index = {id(p): i for i, p in enumerate(forcefield.torsions)}
@@ -673,6 +675,12 @@ class JaxEngine(MMEngine):
             for param in matches:
                 j_ff = torsion_param_index[id(param)]
                 torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
+                torsion_param_map.append(j_ff)
+        for imp in molecule.improper_torsions:
+            matches = forcefield.match_torsion(imp.element_quad, env_id=imp.env_id, ff_row=imp.ff_row, is_improper=True)
+            for param in matches:
+                j_ff = torsion_param_index[id(param)]
+                torsion_atom_indices.append((imp.atom_i, imp.atom_j, imp.atom_k, imp.atom_l))
                 torsion_param_map.append(j_ff)
 
         # Match vdW
