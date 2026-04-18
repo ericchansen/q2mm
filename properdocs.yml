@@ -49,6 +49,7 @@ nav:
     - Small Molecules: benchmarks/small-molecules.md
     - Rh-Enamide: benchmarks/rh-enamide.md
     - GPU Acceleration: benchmarks/gpu.md
+    - When Analytical Wins: benchmarks/crossover.md
     - Published FF Validation: benchmarks/published-ff-validation.md
     - QFUERZA Validation: benchmarks/qfuerza-validation.md
     - Benchmark History: benchmarks/history.md

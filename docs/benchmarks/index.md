@@ -12,6 +12,7 @@ the benchmark program is complete today.
 | [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 82 supported combos across JAX, JAX-MD, OpenMM, and Tinker (including optax, jaxopt, basin-hopping, multi-start, L2-regularized, and composed optimizers) | **Complete** |
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
+| [When Analytical Wins](crossover.md) | When is the JAX analytical-gradient path worth its compile-time overhead? | Interpretive crossover analysis from existing CH₃F + Rh-enamide rows | **Complete** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap likely due to MM3 functional-form differences** |
 | [History](history.md) | How do benchmark results change across commits? | Auto-generated cross-commit comparison of RMSD, timing, and environment | **Live** |
 
@@ -23,6 +24,8 @@ the benchmark program is complete today.
   study and the large-system results that have actually been archived so far.
 - Read [GPU Acceleration](gpu.md) if you want device-scaling guidance rather
   than a full benchmark matrix.
+- Read [When Analytical Wins](crossover.md) if you are deciding whether to
+  reach for the JAX analytical-gradient path on your problem.
 - Read [Published FF Validation](published-ff-validation.md) if you want the
   correctness/parity status against a literature force field.
 
