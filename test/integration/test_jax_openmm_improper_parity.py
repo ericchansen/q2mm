@@ -57,6 +57,33 @@ def _make_formaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
     )
 
 
+def _make_acetaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
+    """Build CH3-CHO with both impropers and propers.
+
+    Acetaldehyde has an sp2 carbonyl C (→ 1 improper) plus a C-C bond
+    that produces real proper torsions (H_me-C2-C1-O, H_me-C2-C1-H_ald).
+    ``out_of_plane`` displaces the carbonyl C along z so the improper
+    dihedral is non-zero.
+    """
+    from q2mm.models.molecule import Q2MMMolecule as _Q2MMMolecule
+
+    return _Q2MMMolecule(
+        symbols=["C", "O", "H", "C", "H", "H", "H"],
+        geometry=np.array(
+            [
+                [0.0, 0.0, out_of_plane],  # C1 (carbonyl)
+                [1.21, 0.0, 0.0],  # O
+                [-0.55, 0.95, 0.0],  # H_ald
+                [-0.75, -1.30, 0.0],  # C2 (methyl)
+                [-0.30, -2.20, 0.85],  # H_me1
+                [-1.85, -1.30, 0.0],  # H_me2
+                [-0.30, -2.20, -0.85],  # H_me3
+            ]
+        ),
+        name="acetaldehyde",
+    )
+
+
 def _make_ff_with_improper(
     *,
     periodicity: int = 2,
@@ -89,8 +116,8 @@ def _make_ff_with_improper(
     if include_proper:
         torsions.append(
             TorsionParam(
-                elements=("H", "C", "O", "H"),
-                periodicity=1,
+                elements=("H", "C", "C", "O"),
+                periodicity=3,
                 force_constant=0.5,
                 phase=0.0,
                 is_improper=False,
@@ -112,19 +139,27 @@ def _make_ff_with_improper(
 
 
 def _energy_pair(mol: Q2MMMolecule, ff: ForceField) -> tuple[float, float]:
-    """Return (jax_energy, openmm_energy) for a single (mol, ff)."""
+    """Return (jax_energy, openmm_energy) for a single (mol, ff).
+
+    Forces OpenMM onto the CPU platform so parity assertions are
+    deterministic across machines (GPU mixed-precision can drift the
+    result by more than ``1e-6 kcal/mol``).
+    """
     from q2mm.backends.mm.jax_engine import JaxEngine
     from q2mm.backends.mm.openmm import OpenMMEngine
 
-    return float(JaxEngine().energy(mol, ff)), float(OpenMMEngine().energy(mol, ff))
+    return float(JaxEngine().energy(mol, ff)), float(OpenMMEngine(platform_name="CPU").energy(mol, ff))
 
 
 class TestJaxOpenMMImproperParity:
     def test_planar_zero_improper_at_phase_180_periodicity_2(self) -> None:
-        """Planar HCHO: improper dihedral = 0; E_imp = k(1+cos(0-180°)) = 0.
+        """Planar HCHO: phase=180°, periodicity=2 → improper energy term is 0.
 
-        Whole-energy parity should hold trivially because the improper term
-        contributes nothing.  Mostly a sanity check on the rest of the FF.
+        For a planar geometry the signed dihedral returned by the dihedral
+        calculator can be 0 *or* 180 (depending on atom ordering and normal
+        direction); the chosen ``phase=180°``/``periodicity=2`` combination
+        makes ``E_imp = k(1 + cos(n·φ - phase))`` evaluate to 0 in either
+        case, so this asserts whole-energy parity in the trivial regime.
         """
         mol = _make_formaldehyde(out_of_plane=0.0)
         ff = _make_ff_with_improper(periodicity=2, phase=180.0, k_improper=1.5)
@@ -144,8 +179,14 @@ class TestJaxOpenMMImproperParity:
         np.testing.assert_allclose(e_jax, e_omm, atol=1e-6)
 
     def test_proper_and_improper_both_routed(self) -> None:
-        """Mix of proper + improper torsion params; both must contribute in JAX."""
-        mol = _make_formaldehyde(out_of_plane=0.15)
+        """Acetaldehyde exercises both proper and improper routing.
+
+        Formaldehyde alone has no proper torsions (every bond endpoint
+        bar the carbonyl C has only one neighbour), so the proper FF
+        param would never match.  Acetaldehyde adds H_methyl-C2-C1-O and
+        related propers while keeping the sp2 improper at C1.
+        """
+        mol = _make_acetaldehyde(out_of_plane=0.15)
         ff = _make_ff_with_improper(periodicity=2, phase=180.0, k_improper=1.0, include_proper=True)
         e_jax, e_omm = _energy_pair(mol, ff)
         np.testing.assert_allclose(e_jax, e_omm, atol=1e-6)
