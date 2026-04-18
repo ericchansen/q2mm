@@ -71,11 +71,12 @@ _REQUIRED_PARITY_FIXTURES: dict[str, Path] = {
     "CISPLATIN_ZENODO_PATH": CISPLATIN_ZENODO_PATH,
     "CISPLATIN_GAUSSIAN_LOG": CISPLATIN_GAUSSIAN_LOG,
     "RH_FIXTURE_PATH": RH_FIXTURE_PATH,
+    "SN2_FIXTURE_PATH": SN2_FIXTURE_PATH,
     "MM3_PATH": MM3_PATH,
     "MMO_PATH": MMO_PATH,
     "JAG_DIR": JAG_DIR,
 }
-_missing_parity = [name for name, p in _REQUIRED_PARITY_FIXTURES.items() if not p.exists()]
+_missing_parity = sorted(name for name, p in _REQUIRED_PARITY_FIXTURES.items() if not p.exists())
 if _missing_parity:
     raise RuntimeError(
         "Missing in-repo fixtures for test_seminario_parity: "
@@ -139,10 +140,6 @@ def rh_enamide_clean_results() -> dict[str, ForceField]:
     }
 
 
-@pytest.mark.skipif(
-    not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
-    reason="Rh-enamide parity data or fixtures not found",
-)
 def test_from_structure_preserves_legacy_dof_metadata() -> None:
     structures = MacroModel(str(MMO_PATH)).structures
     molecule = Q2MMMolecule.from_structure(structures[0], name="rh_enamide_1")
@@ -153,10 +150,6 @@ def test_from_structure_preserves_legacy_dof_metadata() -> None:
     assert molecule.angles[0].ff_row == structures[0].angles[0].ff_row
 
 
-@pytest.mark.skipif(
-    not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
-    reason="Rh-enamide parity data or fixtures not found",
-)
 def test_bond_params_match_fixture(
     rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
 ) -> None:
@@ -191,10 +184,6 @@ def test_bond_params_match_fixture(
         )
 
 
-@pytest.mark.skipif(
-    not (MM3_PATH.exists() and MMO_PATH.exists() and JAG_DIR.exists() and RH_FIXTURE_PATH.exists()),
-    reason="Rh-enamide parity data or fixtures not found",
-)
 def test_angle_params_match_fixture(
     rh_enamide_clean_results: dict[str, ForceField], rh_enamide_fixture: dict[str, Any]
 ) -> None:
@@ -229,10 +218,6 @@ def test_angle_params_match_fixture(
         )
 
 
-@pytest.mark.skipif(
-    not (SN2_FIXTURE_PATH.exists() and SN2_XYZ_PATH.exists() and SN2_HESSIAN_PATH.exists()),
-    reason="SN2 parity fixtures not found",
-)
 def test_sn2_bond_projections_match_fixture(sn2_fixture: dict[str, Any]) -> None:
     molecule = Q2MMMolecule.from_xyz(SN2_XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
     hessian = np.load(str(SN2_HESSIAN_PATH))
