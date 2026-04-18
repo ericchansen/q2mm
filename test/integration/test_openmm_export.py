@@ -130,7 +130,6 @@ class TestSystemXMLExport:
 
         assert loaded_energy == pytest.approx(original_energy, abs=1e-8)
 
-    @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
     def test_sn2_system_xml_round_trip(self, tmp_path: Path) -> None:
         from q2mm.models.seminario import estimate_force_constants
 
@@ -332,7 +331,6 @@ class TestForceFieldXMLExport:
         energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
         assert np.isfinite(energy)
 
-    @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
     def test_sn2_forcefield_xml_export(self, tmp_path: Path) -> None:
         """Export Seminario-estimated SN2 force field to ForceField XML."""
         from q2mm.models.seminario import estimate_force_constants

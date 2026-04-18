@@ -118,7 +118,6 @@ class TestOpenMMEngine:
         )
         assert self.engine.energy(molecule, forcefield) == pytest.approx(tinker.energy(molecule), abs=1.0e-3)
 
-    @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
     def test_sn2_seminario_pipeline_energy_is_finite(self) -> None:
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
         forcefield = estimate_force_constants(molecule)
@@ -130,7 +129,6 @@ class TestOpenMMEngine:
         assert hessian.shape == (18, 18)
         np.testing.assert_allclose(hessian, hessian.T, atol=1.0e-6)
 
-    @pytest.mark.skipif(not TS_XYZ.exists() or not TS_HESS.exists(), reason="SN2 TS fixtures not found")
     def test_sn2_seminario_pipeline_has_imaginary_mode(self) -> None:
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
         forcefield = estimate_force_constants(molecule)

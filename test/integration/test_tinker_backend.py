@@ -41,20 +41,17 @@ class TestTinkerFilePathAPI:
     def setup_method(self) -> None:
         self.engine = TinkerEngine()
 
-    @pytest.mark.skipif(not CH3F_XYZ.exists(), reason="CH3F fixture not found")
     def test_energy_from_file_path(self) -> None:
         energy = self.engine.energy(str(CH3F_XYZ))
         assert isinstance(energy, float)
         assert np.isfinite(energy)
 
-    @pytest.mark.skipif(not CH3F_XYZ.exists(), reason="CH3F fixture not found")
     def test_minimize_from_file_path(self) -> None:
         energy, atoms, coords = self.engine.minimize(str(CH3F_XYZ), rms_grad=0.1)
         assert isinstance(energy, float)
         assert len(atoms) == 5  # CH3F
         assert coords.shape == (5, 3)
 
-    @pytest.mark.skipif(not SN2_XYZ.exists(), reason="SN2 TS fixture not found")
     def test_sn2_ts_has_imaginary_frequencies(self) -> None:
         """SN2 TS is not an MM minimum — expect imaginary frequencies."""
         freqs = self.engine.frequencies(str(SN2_XYZ))

@@ -53,7 +53,6 @@ import pytest
 # Re-export shared constants and factories so conftest fixtures can use them.
 # Test files should import directly from ``test._shared``.
 from test._shared import (  # noqa: F401
-    CH3F_DATA_AVAILABLE,
     CH3F_ENERGY,
     CH3F_FREQS,
     CH3F_HESS,
@@ -64,7 +63,6 @@ from test._shared import (  # noqa: F401
     EXAMPLES_DIR,
     GS_FCHK,
     REPO_ROOT,
-    SN2_DATA_AVAILABLE,
     SN2_ENERGY,
     SN2_FREQS,
     SN2_HESSIAN,
