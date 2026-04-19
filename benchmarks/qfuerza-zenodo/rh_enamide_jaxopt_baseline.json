@@ -9,7 +9,7 @@
     "time_s": 301.8,
     "n_iterations": 50
   },
-  "note": "SciPy FD comparison requires GPU \u2014 too slow on CPU for 2739 params. See benchmarks/rh-enamide/ for GPU results.",
+  "note": "SciPy FD comparison requires GPU \u2014 too slow on CPU for this system (2739 total FF parameters). See benchmarks/rh-enamide/ for GPU results.",
   "n_ff_params_total": 2739,
   "n_ff_params_total_note": "Total scalar entries in the ForceField parameter vector (all bond/angle/torsion/vdW params from the MM3 .fld). The subset actually optimized depends on which params have reference data."
 }

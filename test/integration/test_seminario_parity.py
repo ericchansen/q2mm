@@ -6,7 +6,7 @@ systems, plus runtime benchmarks.
 
 Also includes Zenodo-validated tests (cisplatin) that verify QFUERZA
 rules against the paper authors' own force field files:
-  Farrugia et al., J. Chem. Theory Comput. 2026, 22, 469-476
+  Farrugia et al., J. Chem. Theory Comput. 2025, 22, 469-476
   Zenodo DOI: 10.5281/zenodo.17386006
 
 Force-constant tolerances use rel=1e-6 (not abs=1e-8) because the
@@ -550,7 +550,7 @@ def cisplatin_molecule() -> Q2MMMolecule:
 class TestCisplatinHessianParity:
     """Reproduce FUERZA/QFUERZA force constants from the cisplatin QM Hessian.
 
-    Reference: Farrugia et al., JCTC 2026, 22, 469-476.
+    Reference: Farrugia et al., JCTC 2025, 22, 469-476.
     Zenodo archive: 10.5281/zenodo.17386006
     """
 
