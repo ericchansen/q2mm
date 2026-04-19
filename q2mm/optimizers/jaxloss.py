@@ -222,7 +222,14 @@ class JaxLoss:
         self._build()
 
     def _build(self) -> None:
-        """Pre-build JaxHandles and compile the loss function."""
+        """Pre-build JaxHandles and compile the loss function.
+
+        When multiple molecules share the same topology (same energy
+        function), their Hessian computations are batched via
+        ``jax.vmap`` — one vectorised call per topology group instead
+        of one traced call per molecule.  This reduces JIT compile time
+        and can improve GPU utilisation on multi-conformer systems.
+        """
         from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.models.hessian import (
             _jax_frequencies_from_hessian,
@@ -304,6 +311,75 @@ class JaxLoss:
 
             mol_data.append(entry)
 
+        # ---- Topology-grouped Hessian batching ----
+        #
+        # Group molecules that share the same topology (same handle →
+        # same energy function).  For multi-molecule groups, build a
+        # single vmapped Hessian function instead of tracing one per
+        # molecule.  This reduces JIT compilation time and can improve
+        # GPU utilisation.
+        from q2mm.backends.mm.batched import _topology_signature
+
+        hess_groups: dict[str, dict] = {}
+        entry_to_group: dict[int, str] = {}
+
+        for i, entry in enumerate(mol_data):
+            mol_spec = entry["mol_spec"]
+            if not mol_spec.needs_hessian_computation:
+                continue
+            handle = entry["handle"]
+            sig = _topology_signature(handle)
+            entry_to_group[i] = sig
+
+            if sig not in hess_groups:
+                hess_groups[sig] = {
+                    "handle": handle,
+                    "entry_indices": [],
+                    "coords_list": [],
+                }
+            hess_groups[sig]["entry_indices"].append(i)
+            hess_groups[sig]["coords_list"].append(entry["coords"].flatten())
+
+        # Pre-build per-group Hessian functions (single or vmapped)
+        group_hess_fns: dict[str, dict] = {}
+        for sig, gdata in hess_groups.items():
+            handle = gdata["handle"]
+            energy_fn = handle._energy_fn
+
+            def _make_hess_fn(efn):  # noqa: ANN001, ANN202
+                """Closure to capture the correct energy_fn per group."""
+
+                def _energy_of_flat(fc, p):  # noqa: ANN001, ANN202
+                    return efn(p, fc.reshape(-1, 3))
+
+                return jax.hessian(_energy_of_flat, argnums=0)
+
+            single_hess_fn = _make_hess_fn(energy_fn)
+
+            n_mols = len(gdata["entry_indices"])
+            if n_mols > 1:
+                batched_hess_fn = jax.vmap(single_hess_fn, in_axes=(0, None))
+                batch_coords = jnp.stack(gdata["coords_list"])
+                group_hess_fns[sig] = {
+                    "batched": True,
+                    "fn": batched_hess_fn,
+                    "batch_coords": batch_coords,
+                    "entry_indices": gdata["entry_indices"],
+                }
+                logger.debug(
+                    "JaxLoss: topology group %s — %d molecules, vmapped Hessian",
+                    sig[:12],
+                    n_mols,
+                )
+            else:
+                flat_coords = gdata["coords_list"][0]
+                group_hess_fns[sig] = {
+                    "batched": False,
+                    "fn": single_hess_fn,
+                    "flat_coords": flat_coords,
+                    "entry_idx": gdata["entry_indices"][0],
+                }
+
         # Regularization arrays
         reg = spec.regularization
         ref_params = jnp.array(spec.reference_params, dtype=jnp.float64)
@@ -311,10 +387,27 @@ class JaxLoss:
         hess_au_scale = float(KCALMOLA2_TO_HESSIAN_AU)
 
         def _loss_fn(params: np.ndarray) -> np.ndarray:
-            """Pure JAX loss function: params → scalar loss."""
+            """Pure JAX loss function: params → scalar loss.
+
+            Hessian computations for molecules sharing the same topology
+            are batched via ``jax.vmap`` — one vectorised call per
+            topology group.
+            """
             total = jnp.float64(0.0)
 
-            for entry in mol_data:
+            # ---- Phase 1: Compute all Hessians (batched by topology) ----
+            hessians_au: dict[int, np.ndarray] = {}
+            for gdata in group_hess_fns.values():
+                if gdata["batched"]:
+                    batch_hess = gdata["fn"](gdata["batch_coords"], params)
+                    for local_i, entry_i in enumerate(gdata["entry_indices"]):
+                        hessians_au[entry_i] = batch_hess[local_i] * hess_au_scale
+                else:
+                    hess = gdata["fn"](gdata["flat_coords"], params)
+                    hessians_au[gdata["entry_idx"]] = hess * hess_au_scale
+
+            # ---- Phase 2: Accumulate residuals per molecule ----
+            for i, entry in enumerate(mol_data):
                 handle = entry["handle"]
                 coords = entry["coords"]
                 mol_spec = entry["mol_spec"]
@@ -327,9 +420,7 @@ class JaxLoss:
                     total = total + jnp.sum(residuals**2)
 
                 # Geometry contributions — relax coords at current params,
-                # then compute bond/angle/torsion observables.  Implicit
-                # differentiation through the inner jaxopt.LBFGS gives the
-                # exact gradient w.r.t. params; see geometry-refs-spike.md.
+                # then compute bond/angle/torsion observables.
                 if mol_spec.has_geometry:
                     relaxed = _relax_coords(energy_fn, params, coords)
 
@@ -345,22 +436,14 @@ class JaxLoss:
 
                     if mol_spec.has_torsion:
                         calc = _torsion_angles_deg(relaxed, entry["torsion_atoms"])
-                        # Wrap torsion residuals into [-180, 180) before squaring.
                         diff = entry["torsion_refs"] - calc
                         diff = (diff + 180.0) % 360.0 - 180.0
                         residuals = entry["torsion_weights"] * diff
                         total = total + jnp.sum(residuals**2)
 
-                # Hessian-dependent contributions
+                # Hessian-dependent contributions (Hessian already computed)
                 if mol_spec.needs_hessian_computation:
-                    flat_coords = coords.flatten()
-
-                    def _energy_of_flat(fc: np.ndarray, p: np.ndarray) -> np.ndarray:
-                        return energy_fn(p, fc.reshape(-1, 3))
-
-                    hess_fn = jax.hessian(_energy_of_flat, argnums=0)
-                    hess_kcal = hess_fn(flat_coords, params)
-                    hess_au = hess_kcal * hess_au_scale
+                    hess_au = hessians_au[i]
 
                     if mol_spec.invert_ts_curvature:
                         hess_au = invert_ts_curvature_jax(hess_au)
