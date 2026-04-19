@@ -321,7 +321,6 @@ class JaxLoss:
         from q2mm.backends.mm.batched import _topology_signature
 
         hess_groups: dict[str, dict] = {}
-        entry_to_group: dict[int, str] = {}
 
         for i, entry in enumerate(mol_data):
             mol_spec = entry["mol_spec"]
@@ -329,7 +328,6 @@ class JaxLoss:
                 continue
             handle = entry["handle"]
             sig = _topology_signature(handle)
-            entry_to_group[i] = sig
 
             if sig not in hess_groups:
                 hess_groups[sig] = {
