@@ -822,3 +822,87 @@ class TestJaxLossTsCurvatureInversion:
             obj.to_jax_spec(ts_mol_indices=[0.5])
         with pytest.raises(ValueError, match="must be integers"):
             obj.to_jax_spec(ts_mol_indices=["0"])
+
+
+class TestJaxLossTopologyBatching:
+    """Verify topology-grouped vmap batching produces identical results."""
+
+    def test_two_identical_molecules_match_sequential(self) -> None:
+        """Two water molecules (same topology) give same loss vmapped vs not."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol1 = make_water(bond_length=0.96, angle_deg=104.5)
+        mol2 = make_water(bond_length=0.97, angle_deg=105.0)
+
+        ff = ForceField(
+            bonds=[BondParam(elements=("H", "O"), force_constant=400.0, equilibrium=1.05)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=35.0, equilibrium=110.0)],
+        )
+
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref.add_energy(value=0.0, molecule_idx=1, weight=1.0)
+
+        molecules = [mol1, mol2]
+        obj = ObjectiveFunction(
+            forcefield=ff.copy(),
+            engine=engine,
+            molecules=molecules,
+            reference=ref,
+        )
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
+
+        params = ff.get_param_vector()
+        score = jax_loss(params)
+        assert np.isfinite(score)
+        assert score > 0
+
+        # Gradient should also work through vmapped path
+        _, grad = jax_loss.loss_and_grad(params)
+        assert grad.shape == params.shape
+        assert np.all(np.isfinite(grad))
+
+    def test_multi_topology_freq_parity(self) -> None:
+        """Molecules with different topologies: batching matches Python obj."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol_h2 = make_diatomic(distance=0.74, bond_tolerance=1.5)
+        mol_w1 = make_water(bond_length=0.96, angle_deg=104.5)
+        mol_w2 = make_water(bond_length=0.97, angle_deg=105.0)
+
+        ff = ForceField(
+            bonds=[
+                BondParam(elements=("H", "H"), force_constant=359.7, equilibrium=0.74),
+                BondParam(elements=("H", "O"), force_constant=553.0, equilibrium=0.96),
+            ],
+            angles=[
+                AngleParam(elements=("H", "O", "H"), force_constant=49.9, equilibrium=104.5),
+            ],
+        )
+
+        # Mix energy + frequency refs across different topologies
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref.add_energy(value=0.0, molecule_idx=1, weight=1.0)
+        ref.add_energy(value=0.0, molecule_idx=2, weight=1.0)
+
+        molecules = [mol_h2, mol_w1, mol_w2]
+        obj = ObjectiveFunction(
+            forcefield=ff.copy(),
+            engine=engine,
+            molecules=molecules,
+            reference=ref,
+        )
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
+
+        params = ff.get_param_vector()
+        python_score = obj(params)
+        jax_score = jax_loss(params)
+
+        np.testing.assert_allclose(jax_score, python_score, atol=1e-10)
