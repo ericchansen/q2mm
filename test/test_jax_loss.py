@@ -825,10 +825,14 @@ class TestJaxLossTsCurvatureInversion:
 
 
 class TestJaxLossTopologyBatching:
-    """Verify topology-grouped vmap batching produces identical results."""
+    """Verify topology-grouped vmap batching produces identical results.
 
-    def test_two_identical_molecules_match_sequential(self) -> None:
-        """Two water molecules (same topology) give same loss vmapped vs not."""
+    Both tests add frequency references so ``needs_hessian_computation``
+    is True and the topology-grouped vmap Hessian path is exercised.
+    """
+
+    def test_two_water_freq_batching_parity(self) -> None:
+        """Two water molecules (same topology) — vmapped Hessian matches sequential."""
         from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
@@ -837,13 +841,21 @@ class TestJaxLossTopologyBatching:
         mol2 = make_water(bond_length=0.97, angle_deg=105.0)
 
         ff = ForceField(
-            bonds=[BondParam(elements=("H", "O"), force_constant=400.0, equilibrium=1.05)],
-            angles=[AngleParam(elements=("H", "O", "H"), force_constant=35.0, equilibrium=110.0)],
+            bonds=[BondParam(elements=("H", "O"), force_constant=553.0, equilibrium=0.96)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=49.9, equilibrium=104.5)],
         )
 
+        # Get MM frequencies to build realistic reference indices
+        mm_freqs1 = engine.frequencies(mol1, ff)
+        mm_freqs2 = engine.frequencies(mol2, ff)
+        real_indices1 = [i for i, f in enumerate(mm_freqs1) if f > 50.0]
+        real_indices2 = [i for i, f in enumerate(mm_freqs2) if f > 50.0]
+
         ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
-        ref.add_energy(value=0.0, molecule_idx=1, weight=1.0)
+        for idx in real_indices1[:3]:
+            ref.add_frequency(mm_freqs1[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=0)
+        for idx in real_indices2[:3]:
+            ref.add_frequency(mm_freqs2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=1)
 
         molecules = [mol1, mol2]
         obj = ObjectiveFunction(
@@ -852,21 +864,25 @@ class TestJaxLossTopologyBatching:
             molecules=molecules,
             reference=ref,
         )
+
+        # Batched JaxLoss (exercises vmap path — same topology, 2 molecules)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
 
         params = ff.get_param_vector()
-        score = jax_loss(params)
-        assert np.isfinite(score)
-        assert score > 0
+        python_score = obj(params)
+        jax_score = jax_loss(params)
 
-        # Gradient should also work through vmapped path
+        assert jax_score > 0, "Frequency loss should be nonzero"
+        np.testing.assert_allclose(jax_score, python_score, rtol=1e-6)
+
+        # Gradient should propagate through vmapped Hessian path
         _, grad = jax_loss.loss_and_grad(params)
         assert grad.shape == params.shape
         assert np.all(np.isfinite(grad))
 
-    def test_multi_topology_freq_parity(self) -> None:
-        """Molecules with different topologies: batching matches Python obj."""
+    def test_mixed_topology_freq_parity(self) -> None:
+        """H₂ + 2× water: singleton and multi-molecule topology groups."""
         from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
@@ -885,11 +901,21 @@ class TestJaxLossTopologyBatching:
             ],
         )
 
-        # Mix energy + frequency refs across different topologies
+        # Frequency refs for all three molecules (exercises Hessian path)
+        mm_h2 = engine.frequencies(mol_h2, ff)
+        mm_w1 = engine.frequencies(mol_w1, ff)
+        mm_w2 = engine.frequencies(mol_w2, ff)
+
         ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
-        ref.add_energy(value=0.0, molecule_idx=1, weight=1.0)
-        ref.add_energy(value=0.0, molecule_idx=2, weight=1.0)
+        # H₂ — singleton topology group
+        real_h2 = [i for i, f in enumerate(mm_h2) if f > 50.0]
+        for idx in real_h2[:1]:
+            ref.add_frequency(mm_h2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=0)
+        # Water 1 + 2 — same topology group (vmapped)
+        real_w = [i for i, f in enumerate(mm_w1) if f > 50.0]
+        for idx in real_w[:3]:
+            ref.add_frequency(mm_w1[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=1)
+            ref.add_frequency(mm_w2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=2)
 
         molecules = [mol_h2, mol_w1, mol_w2]
         obj = ObjectiveFunction(
@@ -905,4 +931,5 @@ class TestJaxLossTopologyBatching:
         python_score = obj(params)
         jax_score = jax_loss(params)
 
-        np.testing.assert_allclose(jax_score, python_score, atol=1e-10)
+        assert jax_score > 0, "Frequency loss should be nonzero"
+        np.testing.assert_allclose(jax_score, python_score, rtol=1e-6)
