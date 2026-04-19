@@ -177,8 +177,17 @@ definition (QFUERZA only modifies H-angle FCs, not bonds).
 | **H–N–Pt** | 0.500 | 2.063 | 1.403 | **0.500** | **Yes** | ✅ Matches Zenodo (= 0.5) |
 | **H–N–H** | 0.500 | 1.444 | 0.982 | **0.500** | **Yes** | ✅ Matches Zenodo (= 0.5) |
 
-Every QFUERZA value matches the Zenodo archive exactly. Non-H angles
-equal FUERZA; H-angles are substituted with 0.5.
+Every QFUERZA **angle** value matches the Zenodo archive exactly: non-H
+angles equal FUERZA; H-angles are substituted with 0.5.
+
+!!! warning "Seminario projection divergence on bonds"
+    When we independently recompute Seminario/FUERZA bond force constants
+    from the Gaussian Hessian (`cisplatin_opt_freq_m06.log`), our N-Pt
+    bond matches exactly but Pt-Cl (+16.9%) and N-H (+16.3%) diverge from
+    the values in the Zenodo `.fld` files. The bond values in the table
+    above are read directly from the Zenodo `.fld` (not recomputed). See
+    [`benchmarks/qfuerza-zenodo/README.md`](https://github.com/ericchansen/q2mm/blob/master/benchmarks/qfuerza-zenodo/README.md)
+    and [#236](https://github.com/ericchansen/q2mm/issues/236).
 
 !!! note "FUERZA overestimation is not a fixed 2×"
     The paper describes FUERZA as producing angle FCs "two times too

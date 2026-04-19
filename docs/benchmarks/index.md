@@ -13,6 +13,7 @@ the benchmark program is complete today.
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [When Analytical Wins](crossover.md) | When is the JAX analytical-gradient path worth its compile-time overhead? | Interpretive crossover analysis from existing CH₃F + Rh-enamide rows | **Complete** |
+| [QFUERZA Validation](qfuerza-validation.md) | Does our Seminario/QFUERZA implementation reproduce the paper's force constants? | Cisplatin Zenodo validation: QFUERZA angles exact, bond FCs partially diverge | **Partial — Pt-Cl/N-H divergence under investigation ([#236](https://github.com/ericchansen/q2mm/issues/236))** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap likely due to MM3 functional-form differences** |
 | [History](history.md) | How do benchmark results change across commits? | Auto-generated cross-commit comparison of RMSD, timing, and environment | **Live** |
 
@@ -55,6 +56,7 @@ artifacts in more than one historical location:
 
 - Current CH₃F full-matrix artifacts: `benchmarks/ch3f/`
 - Archived Rh-enamide benchmark artifacts: `benchmarks/rh-enamide/`
+- QFUERZA Zenodo validation data: `benchmarks/qfuerza-zenodo/`
 - Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
 - Published-force-field validation artifacts: `test/fixtures/published_ff/` and
   `validation/published_ffs/README.md`
