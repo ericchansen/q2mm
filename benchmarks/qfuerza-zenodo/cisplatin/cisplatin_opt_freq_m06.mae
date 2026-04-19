@@ -1,0 +1,75 @@
+{ 
+ s_m_m2io_version
+ :::
+ 2.0.0 
+} 
+
+f_m_ct { 
+ s_m_title
+ i_m_ct_enhanced_stereo_status
+ s_m_entry_id
+ s_m_entry_name
+ s_sd_program
+ b_sd_chiral_flag
+ i_sd_version
+ s_m_Source_Path
+ s_m_Source_File
+ i_m_Source_File_Index
+ i_m_ct_format
+ :::
+ /scratch365/mfarrugi/cisplatin_gs_ff/reference_data_gen/cisplatin_opt_freq_m06.log 
+  0
+  1 
+  cisplatin_opt_freq_m06.1 
+  "Gaussian 16, Revision C.01" 
+  0
+  0
+  /scratch365/mfarrugi/cisplatin_gs_ff/reference_data_gen 
+  cisplatin_opt_freq_m06.log 
+  1
+  2
+ m_atom[11] { 
+  # First column is atom index #
+  i_m_mmod_type
+  r_m_x_coord
+  r_m_y_coord
+  r_m_z_coord
+  i_m_residue_number
+  i_m_color
+  i_m_atomic_number
+  s_m_color_rgb
+  r_m_charge1
+  :::
+  1 255 0.000000 0.182800 0.000000 900 4 78 1E1EE1 0.025057 
+  2 57 -1.711400 -1.383100 -0.000200 900 9 17 006400 -0.340721 
+  3 57 1.711100 -1.383300 -0.000200 900 9 17 006400 -0.339962 
+  4 26 -1.593200 1.581400 0.000200 900 43 7 5757FF -0.655298 
+  5 43 -1.635500 2.171000 0.827700 900 21 1 FFFFFF 0.342963 
+  6 43 -1.635000 2.172300 -0.826400 900 21 1 FFFFFF 0.342996 
+  7 26 1.593600 1.581000 0.000500 900 43 7 5757FF -0.629313 
+  8 43 1.636200 2.171000 -0.826800 900 21 1 FFFFFF 0.337334 
+  9 43 1.635400 2.171700 0.827300 900 21 1 FFFFFF 0.337369 
+  10 43 -2.417700 0.974000 -0.000400 900 21 1 FFFFFF 0.294840 
+  11 43 2.418000 0.973500 0.001100 900 21 1 FFFFFF 0.284735 
+  :::
+ } 
+ m_bond[10] { 
+  # First column is bond index #
+  i_m_from
+  i_m_to
+  i_m_order
+  :::
+  1 1 4 0
+  2 1 7 0
+  3 1 2 1
+  4 1 3 1
+  5 4 5 1
+  6 4 6 1
+  7 4 10 1
+  8 7 11 1
+  9 7 9 1
+  10 7 8 1
+  :::
+ } 
+} 
+
