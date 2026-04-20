@@ -13,9 +13,8 @@ the benchmark program is complete today.
 | [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [When Analytical Wins](crossover.md) | When is the JAX analytical-gradient path worth its compile-time overhead? | Interpretive crossover analysis from existing CH₃F + Rh-enamide rows | **Complete** |
-| [QFUERZA Validation](qfuerza-validation.md) | Does our Seminario/QFUERZA implementation reproduce the paper's force constants? | Cisplatin Zenodo validation: QFUERZA angles exact, bond FCs partially diverge | **Partial — Pt-Cl/N-H divergence under investigation ([#236](https://github.com/ericchansen/q2mm/issues/236))** |
+| [QFUERZA Validation](qfuerza-validation.md) | Does our Seminario/QFUERZA implementation reproduce the paper's force constants? | Cisplatin Zenodo validation: QFUERZA angles exact, bond FCs partially diverge | **Partial — Pt-Cl/N-H divergence root cause documented ([#236](https://github.com/ericchansen/q2mm/issues/236), closed)** |
 | [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap likely due to MM3 functional-form differences** |
-| [History](history.md) | How do benchmark results change across commits? | Auto-generated cross-commit comparison of RMSD, timing, and environment | **Live** |
 
 ## How to use this section
 
@@ -43,11 +42,11 @@ the benchmark program is complete today.
 
 ## What is not covered yet
 
-- A full Rh-enamide 36-combo matrix across all supported combinations.
-- Check 2: re-deriving the published force field and comparing it against the
-  literature result.
-- A broader multi-system published-force-field validation set beyond the current
-  Rh-enamide check.
+- A full Rh-enamide optimizer matrix across all supported combinations
+  (individual combos like JaxOpt L-BFGS have been run; the full matrix
+  exceeds available GPU memory for some combos).
+- A broader multi-system published-force-field validation set beyond
+  Rh-enamide.
 
 ## Artifacts and provenance
 

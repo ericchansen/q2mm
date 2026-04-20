@@ -36,7 +36,6 @@ nav:
     - Architecture: how-it-works/architecture.md
     - Data Types: how-it-works/data-types.md
     - Optimization Guide: how-it-works/optimization-guide.md
-    - Geometry-refs implicit-diff spike: how-it-works/geometry-refs-spike.md
   - Backend Engines:
     - Overview: backends/index.md
     - OpenMM: backends/openmm.md
@@ -52,7 +51,6 @@ nav:
     - When Analytical Wins: benchmarks/crossover.md
     - Published FF Validation: benchmarks/published-ff-validation.md
     - QFUERZA Validation: benchmarks/qfuerza-validation.md
-    - Benchmark History: benchmarks/history.md
   - API Reference: reference/
   - References: references.md
 
@@ -88,7 +86,6 @@ plugins:
   - gen-files:
       scripts:
         - scripts/gen_ref_pages.py
-        - scripts/gen_benchmark_history.py
   - literate-nav:
       nav_file: SUMMARY.md
   - section-index
