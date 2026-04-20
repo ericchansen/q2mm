@@ -21,13 +21,13 @@
   <CustomBondForce energy="k*(10*(r-r0))^2*(1-2.55*(10*(r-r0))+3.793125*(10*(r-r0))^2)">
     <PerBondParameter name="k" />
     <PerBondParameter name="r0" />
-    <Bond class1="C" class2="F" k="1130.906672" r0="0.099105" />
-    <Bond class1="C" class2="H" k="1378.314536" r0="0.111189" />
+    <Bond class1="C" class2="F" k="1137.136496" r0="0.099103" />
+    <Bond class1="C" class2="H" k="1302.043978" r0="0.111979" />
   </CustomBondForce>
   <CustomAngleForce energy="k*(theta-theta0)^2*(1+-0.014*((theta-theta0)*57.29577951308232)+5.6e-05*((theta-theta0)*57.29577951308232)^2+-7e-07*((theta-theta0)*57.29577951308232)^3+9e-10*((theta-theta0)*57.29577951308232)^4)">
     <PerAngleParameter name="k" />
     <PerAngleParameter name="theta0" />
-    <Angle class1="F" class2="C" class3="H" k="168.992069" theta0="2.338187" />
-    <Angle class1="H" class2="C" class3="H" k="268.204722" theta0="1.652990" />
+    <Angle class1="F" class2="C" class3="H" k="47.677837" theta0="2.883938" />
+    <Angle class1="H" class2="C" class3="H" k="206.080442" theta0="1.841440" />
   </CustomAngleForce>
 </ForceField>
