@@ -22,15 +22,18 @@ optimized geometry and frequencies. Contains:
 - `gamma_fuerza/cisplatin_gamma_fuerza.fld` — γ-FUERZA variant
 - Score files for each method variant
 
-### Rh-enamide (1.8 GB, NOT downloaded)
+### rh-enamide/ (extracted from 1.8 GB archive)
 
-The Rh-enamide TSFF data (1.8 GB) is too large to commit. Download
-manually if needed:
+Rh-enamide transition state force field — the primary Q2MM benchmark
+system (9 TS structures, Donoghue et al. 2008). Only `.fld` force field
+files, `param_eig.txt`, `atom.typ`, and `rh-hydrogenation-enamide-template.mae`
+are committed (the full archive includes ~1.8 GB of MacroModel `.in`/`.out`
+files).
 
-```bash
-curl -L -o /tmp/rh_enamide.zip \
-  "https://zenodo.org/api/records/17386006/files/rh_hydrogn_enamides_TSFF.zip/content"
-```
+Subdirectories mirror the Zenodo archive structure:
+- `fuerza/` — FUERZA (Seminario) starting point + gradient-optimized FF
+- `qfuerza/` — QFUERZA initialization + gradient-optimized FF
+- `approximation/` — approximation-based starting point + optimized FF
 
 ## Validation Results
 
@@ -58,3 +61,23 @@ paper's unpublished code fork.
 **Status**: QFUERZA H-angle substitution works correctly. Bond force
 constant divergences (Pt-Cl, N-H) are tracked in issue #236 and likely
 stem from a different Hessian processing path in the paper's code fork.
+
+### Rh-enamide QFUERZA Pipeline (Zenodo archive)
+
+The Zenodo archive contains the full FUERZA → QFUERZA → optimization
+pipeline for Rh-enamide. Eigenmode fitting scores from the archive:
+
+| Method | Score | vs FUERZA |
+|--------|------:|----------:|
+| FUERZA (Seminario) | 1.361 | baseline |
+| QFUERZA (optimized) | 1.005 | −26% |
+
+Key observations from the parameter comparison:
+- Optimization changes most force constants dramatically (some by
+  100–1000%) — Seminario/QFUERZA estimates are starting points, not
+  final values
+- 11 of 23 angles have QFUERZA H-angle substitution (0.5 mdyn·Å/rad²)
+- Bond force constants shift substantially during optimization
+  (e.g., Rh-P bond: 0.81 → 2.59 mdyn/Å, +218%)
+- The C-H bond (reaction coordinate, atom 4-5) drops from 3.85 → 0.17
+  mdyn/Å, consistent with TS character
