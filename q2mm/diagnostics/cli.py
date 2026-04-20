@@ -32,27 +32,6 @@ if TYPE_CHECKING:
     from q2mm.diagnostics.systems import BenchmarkSystem
 
 
-def _generate_run_id(system: str) -> str:
-    """Generate a unique run identifier for history tracking."""
-    from q2mm.diagnostics.history import generate_run_id
-
-    return generate_run_id(system)
-
-
-def _find_history_dir(output_dir: Path) -> Path:
-    """Locate the canonical ``benchmarks/history/`` directory.
-
-    Walks up from *output_dir* looking for a parent named ``benchmarks``.
-    If found, returns ``<benchmarks>/history``.  Otherwise falls back to
-    ``output_dir.parent / "history"`` for custom output paths.
-    """
-    candidate = output_dir.resolve()
-    for part in (candidate, *candidate.parents):
-        if part.name == "benchmarks":
-            return part / "history"
-    return output_dir.parent / "history"
-
-
 def _discover_backends() -> list[tuple[str, type, str]]:
     """Discover available MM backends at runtime via the engine registry.
 
@@ -161,7 +140,6 @@ def _run_matrix(
     platform: str | None = None,
     system_key: str = "ch3f",
     max_iter: int = 10_000,
-    run_id: str | None = None,
 ) -> list:
     """Run the full backend × form × optimizer matrix.
 
@@ -184,8 +162,6 @@ def _run_matrix(
         system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
             ``"rh-enamide"``).
         max_iter (int): Maximum optimizer iterations.
-        run_id (str | None): Unique identifier for this run, used for
-            history tracking.  If ``None``, history is not saved.
 
     Returns:
         list[BenchmarkResult]: One result per (backend, form, optimizer)
@@ -198,8 +174,20 @@ def _run_matrix(
     system_cfg = _resolve_system(system_key)
 
     results: list[BenchmarkResult] = []
-    result_molecules: list = []
     idx = 0
+
+    # Create output directories up front so results can be saved
+    # incrementally — if the process is killed, completed combos
+    # are already on disk.
+    results_dir: Path | None = None
+    ff_dir: Path | None = None
+    if output_dir is not None:
+        from q2mm.diagnostics.benchmark import benchmark_stem
+
+        results_dir = output_dir / "results"
+        ff_dir = output_dir / "forcefields"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        ff_dir.mkdir(parents=True, exist_ok=True)
 
     for backend_name, engine_cls, registry_key in backends:
         try:
@@ -262,7 +250,19 @@ def _run_matrix(
 
                     elapsed = time.perf_counter() - t0
                     results.append(r)
-                    result_molecules.append(sys_data.molecules[0])
+
+                    # Save immediately so kills don't lose completed work
+                    if results_dir is not None and ff_dir is not None:
+                        stem = benchmark_stem(r.metadata)
+                        r.to_json(results_dir / f"{stem}.json")
+                        saved_ffs = r.save_forcefields(
+                            ff_dir,
+                            stem=stem,
+                            molecule=sys_data.molecules[0],
+                        )
+                        if saved_ffs:
+                            exts = ", ".join(p.suffix for p in saved_ffs)
+                            print(f"    FF saved: {stem} ({exts})")
 
                     opt = r.optimized or {}
                     rmsd = opt.get("rmsd", float("nan"))
@@ -282,58 +282,26 @@ def _run_matrix(
 
                 except Exception as e:
                     print(f"FAILED: {e}", file=sys.stderr)
-                    results.append(
-                        BenchmarkResult(
-                            metadata={
-                                "backend": backend_name,
-                                "optimizer": opt_label,
-                                "functional_form": form_value,
-                                "molecule": molecule_name,
-                                "source": "q2mm",
-                                "error": str(e),
-                            },
-                        )
+                    err_result = BenchmarkResult(
+                        metadata={
+                            "backend": backend_name,
+                            "optimizer": opt_label,
+                            "functional_form": form_value,
+                            "molecule": molecule_name,
+                            "source": "q2mm",
+                            "error": str(e),
+                        },
                     )
-                    result_molecules.append(None)
+                    results.append(err_result)
 
-    # Save results if output directory specified
+                    # Save error results incrementally too
+                    if results_dir is not None:
+                        stem = benchmark_stem(err_result.metadata)
+                        err_result.to_json(results_dir / f"{stem}.json")
+
+    # Summary: report output location
     if output_dir is not None:
-        from q2mm.diagnostics.benchmark import benchmark_stem
-
-        system_output = output_dir
-        results_dir = system_output / "results"
-        ff_dir = system_output / "forcefields"
-        results_dir.mkdir(parents=True, exist_ok=True)
-        ff_dir.mkdir(parents=True, exist_ok=True)
-
-        for i, r in enumerate(results):
-            stem = benchmark_stem(r.metadata)
-            r.to_json(results_dir / f"{stem}.json")
-            mol_for_save = result_molecules[i] if i < len(result_molecules) else None
-            if mol_for_save is not None:
-                saved_ffs = r.save_forcefields(ff_dir, stem=stem, molecule=mol_for_save)
-                if saved_ffs:
-                    exts = ", ".join(p.suffix for p in saved_ffs)
-                    print(f"    FF saved: {stem} ({exts})")
-
-        print(f"\n  Results saved to: {system_output}/")
-
-    # Save run summary to history
-    if run_id is not None and output_dir is not None:
-        from q2mm.diagnostics.history import build_run_summary
-
-        config = {
-            "backends": [n for n, _, _ in backends],
-            "forms": [l for l, _ in forms],
-            "optimizers": [l for l, _ in optimizers],
-            "max_iter": max_iter,
-            "n_combos": len(results),
-        }
-        summary = build_run_summary(results, system=system_key, run_id=run_id, config=config)
-        history_dir = _find_history_dir(output_dir)
-        history_path = history_dir / f"{run_id}.json"
-        summary.to_json(history_path)
-        print(f"  History saved to: {history_path}")
+        print(f"\n  Results saved to: {output_dir}/")
 
     return results
 
@@ -738,7 +706,6 @@ def main(argv: list[str] | None = None) -> int:
             platform=args.platform,
             system_key=args.system,
             max_iter=args.max_iter,
-            run_id=_generate_run_id(args.system) if output_dir else None,
         )
 
     if not results:
