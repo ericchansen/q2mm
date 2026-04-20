@@ -1,0 +1,2123 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ForceField>
+  <AtomTypes>
+    <Type name="q2mm-C1" element="C" mass="12.0000" class="C1" />
+    <Type name="q2mm-C2" element="C" mass="12.0000" class="C2" />
+    <Type name="q2mm-C3" element="C" mass="12.0000" class="C3" />
+    <Type name="q2mm-H1" element="H" mass="1.0078" class="H1" />
+    <Type name="q2mm-H3" element="H" mass="1.0078" class="H3" />
+    <Type name="q2mm-N1" element="N" mass="14.0031" class="N1" />
+    <Type name="q2mm-N2" element="N" mass="14.0031" class="N2" />
+    <Type name="q2mm-O2" element="O" mass="15.9949" class="O2" />
+    <Type name="q2mm-P3" element="P" mass="30.9738" class="P3" />
+    <Type name="q2mm-RH" element="Rh" mass="102.9055" class="RH" />
+  </AtomTypes>
+  <Residues>
+    <Residue name="Q2MM">
+      <Atom name="Rh1" type="q2mm-RH" />
+      <Atom name="O2" type="q2mm-O2" />
+      <Atom name="C3" type="q2mm-C2" />
+      <Atom name="N4" type="q2mm-N2" />
+      <Atom name="C5" type="q2mm-C2" />
+      <Atom name="C6" type="q2mm-C2" />
+      <Atom name="C7" type="q2mm-C1" />
+      <Atom name="N8" type="q2mm-N1" />
+      <Atom name="H9" type="q2mm-H1" />
+      <Atom name="H10" type="q2mm-H1" />
+      <Atom name="H11" type="q2mm-H3" />
+      <Atom name="H12" type="q2mm-H1" />
+      <Atom name="P13" type="q2mm-P3" />
+      <Atom name="P14" type="q2mm-P3" />
+      <Atom name="C15" type="q2mm-C2" />
+      <Atom name="C16" type="q2mm-C2" />
+      <Atom name="H17" type="q2mm-H1" />
+      <Atom name="H18" type="q2mm-H1" />
+      <Atom name="C19" type="q2mm-C3" />
+      <Atom name="C20" type="q2mm-C3" />
+      <Atom name="C21" type="q2mm-C3" />
+      <Atom name="C22" type="q2mm-C3" />
+      <Atom name="H23" type="q2mm-H1" />
+      <Atom name="H24" type="q2mm-H1" />
+      <Atom name="H25" type="q2mm-H1" />
+      <Atom name="H26" type="q2mm-H1" />
+      <Atom name="H27" type="q2mm-H1" />
+      <Atom name="H28" type="q2mm-H1" />
+      <Atom name="H29" type="q2mm-H1" />
+      <Atom name="H30" type="q2mm-H1" />
+      <Atom name="H31" type="q2mm-H1" />
+      <Atom name="H32" type="q2mm-H1" />
+      <Atom name="H33" type="q2mm-H1" />
+      <Atom name="H34" type="q2mm-H1" />
+      <Atom name="H35" type="q2mm-H1" />
+      <Atom name="H36" type="q2mm-H1" />
+      <Bond atomName1="Rh1" atomName2="O2" />
+      <Bond atomName1="Rh1" atomName2="C5" />
+      <Bond atomName1="Rh1" atomName2="P13" />
+      <Bond atomName1="Rh1" atomName2="P14" />
+      <Bond atomName1="Rh1" atomName2="H17" />
+      <Bond atomName1="Rh1" atomName2="H18" />
+      <Bond atomName1="O2" atomName2="C3" />
+      <Bond atomName1="C3" atomName2="N4" />
+      <Bond atomName1="C3" atomName2="H12" />
+      <Bond atomName1="N4" atomName2="C5" />
+      <Bond atomName1="N4" atomName2="H11" />
+      <Bond atomName1="C5" atomName2="C6" />
+      <Bond atomName1="C5" atomName2="C7" />
+      <Bond atomName1="C6" atomName2="H9" />
+      <Bond atomName1="C6" atomName2="H10" />
+      <Bond atomName1="C6" atomName2="H18" />
+      <Bond atomName1="C7" atomName2="N8" />
+      <Bond atomName1="P13" atomName2="C15" />
+      <Bond atomName1="P13" atomName2="C19" />
+      <Bond atomName1="P13" atomName2="C20" />
+      <Bond atomName1="P14" atomName2="C16" />
+      <Bond atomName1="P14" atomName2="C21" />
+      <Bond atomName1="P14" atomName2="C22" />
+      <Bond atomName1="C15" atomName2="C16" />
+      <Bond atomName1="C15" atomName2="H27" />
+      <Bond atomName1="C16" atomName2="H28" />
+      <Bond atomName1="C19" atomName2="H23" />
+      <Bond atomName1="C19" atomName2="H33" />
+      <Bond atomName1="C19" atomName2="H34" />
+      <Bond atomName1="C20" atomName2="H24" />
+      <Bond atomName1="C20" atomName2="H35" />
+      <Bond atomName1="C20" atomName2="H36" />
+      <Bond atomName1="C21" atomName2="H25" />
+      <Bond atomName1="C21" atomName2="H31" />
+      <Bond atomName1="C21" atomName2="H32" />
+      <Bond atomName1="C22" atomName2="H26" />
+      <Bond atomName1="C22" atomName2="H29" />
+      <Bond atomName1="C22" atomName2="H30" />
+    </Residue>
+  </Residues>
+  <CustomBondForce energy="k*(10*(r-r0))^2*(1-2.55*(10*(r-r0))+3.793125*(10*(r-r0))^2)">
+    <PerBondParameter name="k" />
+    <PerBondParameter name="r0" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151770" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151770" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151970" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.150970" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.150270" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151670" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151270" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151970" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.152370" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.153370" />
+    <Bond class1="C3" class2="C3" k="1351.970622" r0="0.151870" />
+    <Bond class1="C3" class2="C3" k="872.873123" r0="0.152999" />
+    <Bond class1="C2" class2="C3" k="1445.313806" r0="0.150900" />
+    <Bond class1="C2" class2="C3" k="1896.974370" r0="0.152200" />
+    <Bond class1="C2" class2="C3" k="1896.974370" r0="0.149900" />
+    <Bond class1="C3" class2="H1" k="1427.247383" r0="0.111000" />
+    <Bond class1="C3" class2="H1" k="1427.247383" r0="0.110900" />
+    <Bond class1="C3" class2="H1" k="1427.247383" r0="0.110200" />
+    <Bond class1="C3" class2="H1" k="1427.247383" r0="0.110700" />
+    <Bond class1="C3" class2="H1" k="1427.247383" r0="0.110600" />
+    <Bond class1="C3" class2="H1" k="1422.508733" r0="0.107750" />
+    <Bond class1="C2" class2="H1" k="1431.986614" r0="0.110237" />
+    <Bond class1="C2" class2="H1" k="1580.324282" r0="0.109478" />
+    <Bond class1="C1" class2="H1" k="1797.609046" r0="0.108000" />
+    <Bond class1="C3" class2="O3" k="1716.310144" r0="0.141300" />
+    <Bond class1="C2" class2="O3" k="1520.590566" r0="0.133800" />
+    <Bond class1="C2" class2="O3" k="1806.642257" r0="0.135500" />
+    <Bond class1="O3" class2="O3" k="1189.372819" r0="0.145400" />
+    <Bond class1="O3" class2="O3" k="1189.372819" r0="0.144800" />
+    <Bond class1="H2" class2="O3" k="2167.970709" r0="0.097200" />
+    <Bond class1="H2" class2="O3" k="2297.446737" r0="0.096400" />
+    <Bond class1="H2" class2="O3" k="2297.446737" r0="0.094700" />
+    <Bond class1="C2" class2="OM" k="2279.380314" r0="0.125000" />
+    <Bond class1="C2" class2="O2" k="2279.380314" r0="0.125000" />
+    <Bond class1="C2" class2="O2" k="2692.414060" r0="0.124192" />
+    <Bond class1="C2" class2="C2" k="1806.642257" r0="0.147000" />
+    <Bond class1="C2" class2="C2" k="2258.302821" r0="0.134300" />
+    <Bond class1="C2" class2="C2" k="2465.762124" r0="0.133634" />
+    <Bond class1="C2" class2="C2" k="1505.535214" r0="0.151000" />
+    <Bond class1="C2" class2="C2" k="1505.535214" r0="0.146000" />
+    <Bond class1="C2" class2="C2" k="1505.535214" r0="0.148000" />
+    <Bond class1="C2" class2="SX" k="1204.428171" r0="0.176500" />
+    <Bond class1="C1" class2="C3" k="1656.088736" r0="0.147000" />
+    <Bond class1="C1" class2="C2" k="3372.398880" r0="0.131000" />
+    <Bond class1="C1" class2="C2" k="1363.163301" r0="0.142131" />
+    <Bond class1="C1" class2="C1" k="4591.882403" r0="0.121000" />
+    <Bond class1="C3" class2="N3" k="1595.867327" r0="0.144800" />
+    <Bond class1="H3" class2="N3" k="1933.107215" r0="0.101500" />
+    <Bond class1="C2" class2="N3" k="1902.996511" r0="0.137800" />
+    <Bond class1="N3" class2="N3" k="1686.199440" r0="0.138100" />
+    <Bond class1="C3" class2="N2" k="1568.767693" r0="0.144600" />
+    <Bond class1="C2" class2="N2" k="1801.524398" r0="0.133878" />
+    <Bond class1="C2" class2="N2" k="1045.371585" r0="0.144185" />
+    <Bond class1="H3" class2="N2" k="2038.494153" r0="0.099855" />
+    <Bond class1="H3" class2="N2" k="2038.494680" r0="0.102800" />
+    <Bond class1="C2" class2="N2" k="3011.070429" r0="0.134500" />
+    <Bond class1="C1" class2="N1" k="5334.663483" r0="0.114318" />
+    <Bond class1="C3" class2="F0" k="1535.645919" r0="0.134600" />
+    <Bond class1="C3" class2="F0" k="1535.645919" r0="0.136000" />
+    <Bond class1="C3" class2="F0" k="1535.645919" r0="0.137600" />
+    <Bond class1="C3" class2="F0" k="1535.645919" r0="0.138000" />
+    <Bond class1="C2" class2="F0" k="1625.978031" r0="0.132000" />
+    <Bond class1="C3" class2="Cl" k="972.575748" r0="0.175300" />
+    <Bond class1="C3" class2="Cl" k="972.575748" r0="0.176300" />
+    <Bond class1="C3" class2="Cl" k="972.575748" r0="0.178300" />
+    <Bond class1="C2" class2="Cl" k="1023.763946" r0="0.171900" />
+    <Bond class1="Br" class2="C3" k="692.546199" r0="0.194400" />
+    <Bond class1="Br" class2="C2" k="752.767607" r0="0.188000" />
+    <Bond class1="C3" class2="I0" k="662.435494" r0="0.213900" />
+    <Bond class1="C2" class2="I0" k="662.435494" r0="0.208000" />
+    <Bond class1="C3" class2="SX" k="967.456929" r0="0.178400" />
+    <Bond class1="H1" class2="SX" k="1144.206763" r0="0.134600" />
+    <Bond class1="O2" class2="SX" k="2532.912444" r0="0.145000" />
+    <Bond class1="C3" class2="SX" k="967.456929" r0="0.180500" />
+    <Bond class1="H1" class2="SX" k="1144.206763" r0="0.134600" />
+    <Bond class1="O2" class2="SX" k="1505.535214" r0="0.148000" />
+    <Bond class1="C3" class2="SX" k="903.321129" r0="0.180500" />
+    <Bond class1="H1" class2="SX" k="1165.284256" r0="0.133900" />
+    <Bond class1="H1" class2="SX" k="1165.284256" r0="0.134200" />
+    <Bond class1="SX" class2="SX" k="788.900452" r0="0.203700" />
+    <Bond class1="SX" class2="SX" k="788.900452" r0="0.201500" />
+    <Bond class1="C3" class2="PX" k="561.589502" r0="0.186377" />
+    <Bond class1="C2" class2="PX" k="673.184605" r0="0.183683" />
+    <Bond class1="H1" class2="PX" k="1002.686453" r0="0.143000" />
+    <Bond class1="O3" class2="PX" k="873.210424" r0="0.161500" />
+    <Bond class1="C3" class2="Si" k="918.376481" r0="0.187200" />
+    <Bond class1="C3" class2="Si" k="918.376481" r0="0.187600" />
+    <Bond class1="H1" class2="Si" k="797.933664" r0="0.148300" />
+    <Bond class1="O3" class2="Si" k="1656.088736" r0="0.162600" />
+    <Bond class1="C2" class2="Si" k="903.321129" r0="0.185600" />
+    <Bond class1="Si" class2="Si" k="496.826621" r0="0.232600" />
+    <Bond class1="Si" class2="Si" k="496.826621" r0="0.232000" />
+    <Bond class1="Si" class2="Si" k="496.826621" r0="0.232200" />
+    <Bond class1="C3" class2="CR" k="1324.870989" r0="0.149700" />
+    <Bond class1="CR" class2="H1" k="1385.092397" r0="0.110100" />
+    <Bond class1="C3" class2="CP" k="2228.192117" r0="0.148000" />
+    <Bond class1="CP" class2="H1" k="2228.192117" r0="0.108570" />
+    <Bond class1="C2" class2="N4" k="2056.561103" r0="0.132500" />
+    <Bond class1="C3" class2="N4" k="1656.088736" r0="0.149500" />
+    <Bond class1="C2" class2="N4" k="1520.590566" r0="0.147300" />
+    <Bond class1="N4" class2="O2" k="2258.302821" r0="0.122250" />
+    <Bond class1="N4" class2="OM" k="2258.302821" r0="0.122250" />
+    <Bond class1="C3" class2="N5" k="1189.372819" r0="0.147300" />
+    <Bond class1="C2" class2="N5" k="3339.277105" r0="0.126000" />
+    <Bond class1="H4" class2="N5" k="1577.800905" r0="0.102200" />
+    <Bond class1="1" class2="2" k="1513.740440" r0="0.139921" />
+    <Bond class1="1" class2="1" k="1545.121563" r0="0.108960" />
+    <Bond class1="1" class2="3" k="1896.974370" r0="0.149900" />
+    <Bond class1="1" class2="2" k="1631.307626" r0="0.145750" />
+    <Bond class1="1" class2="2" k="1902.996511" r0="0.137800" />
+    <Bond class1="1" class2="3" k="1505.535214" r0="0.151400" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.146700" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.144700" />
+    <Bond class1="1" class2="1" k="1544.679130" r0="0.108600" />
+    <Bond class1="1" class2="i" k="1053.874650" r0="0.184100" />
+    <Bond class1="1" class2="2" k="1505.535214" r0="0.150300" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.149700" />
+    <Bond class1="2" class2="3" k="2890.627611" r0="0.130300" />
+    <Bond class1="1" class2="3" k="1505.535214" r0="0.151400" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.146700" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.144700" />
+    <Bond class1="1" class2="1" k="1544.679130" r0="0.108600" />
+    <Bond class1="1" class2="i" k="1053.874650" r0="0.184100" />
+    <Bond class1="2" class2="3" k="1324.870989" r0="0.149700" />
+    <Bond class1="2" class2="2" k="2890.627611" r0="0.133600" />
+    <Bond class1="1" class2="2" k="1385.092397" r0="0.107200" />
+    <Bond class1="1" class2="3" k="1505.535214" r0="0.151400" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.146700" />
+    <Bond class1="1" class2="2" k="1324.870989" r0="0.144700" />
+    <Bond class1="1" class2="1" k="1544.679130" r0="0.108600" />
+    <Bond class1="1" class2="i" k="1053.874650" r0="0.184100" />
+    <Bond class1="1" class2="2" k="1505.535214" r0="0.150300" />
+    <Bond class1="2" class2="3" k="1896.974370" r0="0.182500" />
+    <Bond class1="1" class2="2" k="1351.970622" r0="0.153710" />
+    <Bond class1="1" class2="3" k="1351.970622" r0="0.152470" />
+    <Bond class1="1" class2="2" k="1896.974370" r0="0.149900" />
+    <Bond class1="1" class2="1" k="1427.247383" r0="0.111200" />
+    <Bond class1="1" class2="i" k="391.439156" r0="0.187900" />
+    <Bond class1="1" class2="2" k="1351.970622" r0="0.153710" />
+    <Bond class1="1" class2="3" k="1351.970622" r0="0.152470" />
+    <Bond class1="1" class2="2" k="1896.974370" r0="0.149900" />
+    <Bond class1="1" class2="1" k="1427.247383" r0="0.111200" />
+    <Bond class1="1" class2="i" k="391.439156" r0="0.187900" />
+    <Bond class1="3" class2="4" k="903.321129" r0="0.188800" />
+    <Bond class1="1" class2="2" k="2258.302821" r0="0.133800" />
+    <Bond class1="2" class2="3" k="1896.974370" r0="0.151900" />
+    <Bond class1="1" class2="3" k="1896.974370" r0="0.149900" />
+    <Bond class1="1" class2="2" k="2258.302821" r0="0.133300" />
+    <Bond class1="1" class2="2" k="2890.627611" r0="0.135100" />
+    <Bond class1="1" class2="1" k="1550.701271" r0="0.110100" />
+    <Bond class1="1" class2="3" k="1806.642257" r0="0.135500" />
+    <Bond class1="3" class2="3" k="1351.970622" r0="0.152470" />
+    <Bond class1="2" class2="3" k="1896.974370" r0="0.149900" />
+    <Bond class1="1" class2="3" k="1427.247383" r0="0.111200" />
+    <Bond class1="3" class2="i" k="391.439156" r0="0.187900" />
+    <Bond class1="1" class2="2" k="802.758615" r0="0.153940" />
+    <Bond class1="1" class2="2" k="1896.974370" r0="0.151200" />
+    <Bond class1="1" class2="5" k="1351.970622" r0="0.152580" />
+    <Bond class1="2" class2="3" k="2318.524230" r0="0.133400" />
+    <Bond class1="1" class2="2" k="1445.313806" r0="0.150800" />
+    <Bond class1="1" class2="6" k="1351.970622" r0="0.152580" />
+    <Bond class1="1" class2="2" k="2318.524230" r0="0.135800" />
+    <Bond class1="2" class2="3" k="2318.524230" r0="0.142600" />
+    <Bond class1="1" class2="5" k="3011.070429" r0="0.136000" />
+    <Bond class1="1" class2="1" k="1550.701271" r0="0.110100" />
+    <Bond class1="1" class2="2" k="1550.701271" r0="0.110100" />
+    <Bond class1="1" class2="2" k="2318.524230" r0="0.137000" />
+    <Bond class1="2" class2="3" k="2318.524230" r0="0.141000" />
+    <Bond class1="4" class2="5" k="3339.277105" r0="0.137070" />
+    <Bond class1="5" class2="H3" k="1836.752961" r0="0.105000" />
+    <Bond class1="1" class2="H1" k="1550.701271" r0="0.110100" />
+    <Bond class1="2" class2="H1" k="1550.701271" r0="0.110100" />
+    <Bond class1="1" class2="2" k="2709.963386" r0="0.134300" />
+    <Bond class1="1" class2="2" k="2318.524230" r0="0.136800" />
+    <Bond class1="2" class2="3" k="2318.524230" r0="0.141800" />
+    <Bond class1="4" class2="5" k="1948.463674" r0="0.171400" />
+    <Bond class1="1" class2="1" k="1550.701271" r0="0.110100" />
+    <Bond class1="1" class2="2" k="1550.701271" r0="0.110100" />
+    <Bond class1="HX" class2="RH" k="681.013707" r0="0.154744" />
+    <Bond class1="PX" class2="RH" k="277.554429" r0="0.239201" />
+    <Bond class1="PX" class2="RH" k="422.433733" r0="0.229120" />
+    <Bond class1="HX" class2="RH" k="479.261389" r0="0.161685" />
+    <Bond class1="C2" class2="RH" k="90.109086" r0="0.233880" />
+    <Bond class1="C2" class2="RH" k="164.542221" r0="0.222452" />
+    <Bond class1="C2" class2="HX" k="-67.412334" r0="0.171057" />
+    <Bond class1="C2" class2="C2" k="1396.942617" r0="0.142120" />
+  </CustomBondForce>
+  <CustomAngleForce energy="k*(theta-theta0)^2*(1+-0.014*((theta-theta0)*57.29577951308232)+5.6e-05*((theta-theta0)*57.29577951308232)^2+-7e-07*((theta-theta0)*57.29577951308232)^3+9e-10*((theta-theta0)*57.29577951308232)^4)">
+    <PerAngleParameter name="k" />
+    <PerAngleParameter name="theta0" />
+    <Angle class1="H1" class2="C3" class3="H1" k="165.548328" theta0="1.910612" />
+    <Angle class1="H1" class2="C3" class3="H1" k="150.496559" theta0="1.887768" />
+    <Angle class1="H1" class2="C3" class3="H1" k="150.498310" theta0="1.866160" />
+    <Angle class1="C3" class2="C3" class3="C3" k="201.667885" theta0="1.937315" />
+    <Angle class1="C3" class2="C3" class3="C3" k="589.550551" theta0="2.002262" />
+    <Angle class1="C3" class2="C3" class3="C3" k="210.697872" theta0="1.911136" />
+    <Angle class1="C3" class2="C3" class3="H1" k="150.498069" theta0="1.939425" />
+    <Angle class1="C3" class2="C3" class3="H1" k="150.497409" theta0="1.929684" />
+    <Angle class1="C3" class2="C3" class3="H1" k="150.498158" theta0="1.890656" />
+    <Angle class1="C2" class2="C3" class3="C3" k="240.797568" theta0="1.930334" />
+    <Angle class1="C2" class2="C3" class3="C3" k="162.538358" theta0="1.930334" />
+    <Angle class1="C2" class2="C3" class3="C3" k="162.538358" theta0="1.916372" />
+    <Angle class1="C2" class2="C3" class3="C3" k="162.538358" theta0="1.930334" />
+    <Angle class1="C3" class2="C2" class3="C3" k="376.246200" theta0="2.038545" />
+    <Angle class1="C3" class2="C2" class3="C3" k="162.538358" theta0="2.042035" />
+    <Angle class1="C2" class2="C2" class3="C3" k="150.498480" theta0="2.042035" />
+    <Angle class1="C2" class2="C2" class3="C3" k="150.498480" theta0="2.024582" />
+    <Angle class1="C2" class2="C2" class3="C3" k="141.468571" theta0="2.134538" />
+    <Angle class1="C2" class2="C3" class3="C2" k="141.468571" theta0="1.923353" />
+    <Angle class1="C2" class2="C3" class3="C2" k="141.468571" theta0="1.928763" />
+    <Angle class1="C2" class2="C3" class3="C2" k="141.468571" theta0="1.910612" />
+    <Angle class1="C2" class2="C3" class3="C2" k="135.448632" theta0="1.972222" />
+    <Angle class1="C2" class2="C3" class3="C2" k="135.448632" theta0="2.015855" />
+    <Angle class1="C2" class2="C3" class3="C2" k="135.448632" theta0="1.975713" />
+    <Angle class1="C2" class2="C2" class3="C2" k="150.498448" theta0="2.024581" />
+    <Angle class1="C2" class2="C2" class3="C2" k="228.757690" theta0="2.134538" />
+    <Angle class1="C2" class2="C2" class3="C2" k="228.757690" theta0="2.124066" />
+    <Angle class1="C2" class2="C2" class3="C2" k="228.757690" theta0="2.129302" />
+    <Angle class1="C2" class2="C2" class3="C2" k="180.598176" theta0="2.007129" />
+    <Angle class1="C1" class2="C3" class3="C3" k="288.957082" theta0="1.919862" />
+    <Angle class1="C1" class2="C3" class3="C3" k="288.957082" theta0="1.914626" />
+    <Angle class1="C1" class2="C3" class3="C3" k="288.957082" theta0="1.898918" />
+    <Angle class1="C1" class2="C2" class3="C3" k="141.468571" theta0="2.035054" />
+    <Angle class1="C2" class2="C1" class3="C2" k="120.398784" theta0="3.141593" />
+    <Angle class1="C1" class2="C3" class3="CU" k="141.468571" theta0="1.923353" />
+    <Angle class1="C1" class2="C3" class3="CU" k="141.468571" theta0="1.928763" />
+    <Angle class1="C1" class2="C3" class3="CU" k="141.468571" theta0="1.910612" />
+    <Angle class1="C1" class2="C1" class3="C3" k="94.814042" theta0="3.141593" />
+    <Angle class1="C1" class2="C1" class3="CU" k="141.468571" theta0="3.141593" />
+    <Angle class1="C3" class2="C2" class3="H1" k="139.662589" theta0="2.047271" />
+    <Angle class1="C3" class2="C2" class3="H1" k="147.488510" theta0="2.050762" />
+    <Angle class1="C2" class2="C3" class3="H1" k="162.538358" theta0="1.910961" />
+    <Angle class1="C2" class2="C3" class3="H1" k="165.548328" theta0="1.926843" />
+    <Angle class1="C2" class2="C3" class3="H1" k="165.548328" theta0="1.907819" />
+    <Angle class1="C2" class2="C3" class3="H1" k="165.548328" theta0="1.911136" />
+    <Angle class1="C2" class2="C2" class3="H1" k="90.298801" theta0="1.954767" />
+    <Angle class1="C2" class2="C2" class3="H1" k="150.498480" theta0="2.042035" />
+    <Angle class1="C1" class2="C3" class3="H1" k="204.677933" theta0="1.898918" />
+    <Angle class1="C1" class2="C3" class3="H1" k="204.677933" theta0="1.909565" />
+    <Angle class1="C1" class2="C3" class3="H1" k="204.677933" theta0="1.909216" />
+    <Angle class1="C1" class2="C2" class3="H1" k="90.299088" theta0="2.085668" />
+    <Angle class1="C1" class2="C1" class3="H1" k="75.249240" theta0="3.141593" />
+    <Angle class1="C2" class2="C2" class3="H1" k="150.498280" theta0="2.055669" />
+    <Angle class1="C2" class2="C2" class3="H1" k="150.498393" theta0="2.117720" />
+    <Angle class1="H1" class2="C2" class3="H1" k="195.648024" theta0="1.998402" />
+    <Angle class1="H1" class2="C2" class3="H1" k="150.498242" theta0="2.009847" />
+    <Angle class1="C3" class2="C3" class3="CR" k="135.448632" theta0="1.919862" />
+    <Angle class1="CR" class2="C3" class3="H1" k="108.358906" theta0="1.919862" />
+    <Angle class1="C3" class2="CR" class3="C3" k="135.448632" theta0="2.094395" />
+    <Angle class1="C3" class2="CR" class3="H1" k="108.358906" theta0="2.094395" />
+    <Angle class1="H1" class2="CR" class3="H1" k="96.319027" theta0="2.094395" />
+    <Angle class1="C3" class2="C3" class3="CP" k="156.518419" theta0="1.911136" />
+    <Angle class1="CP" class2="C3" class3="H1" k="156.518419" theta0="1.911136" />
+    <Angle class1="C3" class2="C3" class3="O3" k="249.827477" theta0="1.883210" />
+    <Angle class1="C3" class2="C3" class3="O3" k="249.827477" theta0="1.867502" />
+    <Angle class1="C3" class2="C3" class3="O3" k="249.827477" theta0="1.876229" />
+    <Angle class1="H1" class2="C3" class3="O3" k="246.817507" theta0="1.897173" />
+    <Angle class1="H1" class2="C3" class3="O3" k="246.817507" theta0="1.900664" />
+    <Angle class1="H1" class2="C3" class3="O3" k="246.817507" theta0="1.919862" />
+    <Angle class1="C3" class2="O3" class3="C3" k="246.817507" theta0="1.870993" />
+    <Angle class1="C3" class2="O3" class3="H2" k="225.747720" theta0="1.864012" />
+    <Angle class1="H2" class2="O3" class3="H2" k="189.628085" theta0="1.832596" />
+    <Angle class1="C3" class2="C2" class3="O3" k="195.648024" theta0="2.043781" />
+    <Angle class1="C3" class2="C2" class3="O3" k="150.498480" theta0="2.094395" />
+    <Angle class1="H1" class2="C2" class3="O3" k="195.648024" theta0="1.848304" />
+    <Angle class1="H1" class2="C2" class3="O3" k="162.538358" theta0="2.031563" />
+    <Angle class1="C2" class2="C3" class3="O3" k="210.697872" theta0="1.911136" />
+    <Angle class1="C2" class2="C3" class3="O3" k="210.697872" theta0="1.867502" />
+    <Angle class1="C2" class2="C2" class3="O3" k="210.697872" theta0="2.169444" />
+    <Angle class1="C2" class2="C2" class3="O3" k="180.598176" theta0="2.094395" />
+    <Angle class1="C2" class2="O3" class3="C3" k="180.598176" theta0="1.918117" />
+    <Angle class1="C2" class2="O3" class3="C3" k="231.767659" theta0="1.933825" />
+    <Angle class1="C2" class2="O3" class3="H2" k="90.299088" theta0="1.851794" />
+    <Angle class1="C2" class2="O3" class3="H2" k="108.358906" theta0="1.902409" />
+    <Angle class1="C2" class2="O3" class3="C2" k="231.767659" theta0="1.864012" />
+    <Angle class1="O3" class2="C3" class3="O3" k="162.538358" theta0="1.895428" />
+    <Angle class1="C3" class2="O3" class3="O3" k="318.454784" theta0="1.802925" />
+    <Angle class1="H2" class2="O3" class3="O3" k="256.449410" theta0="1.736603" />
+    <Angle class1="C3" class2="C2" class3="O2" k="255.847416" theta0="2.155482" />
+    <Angle class1="H1" class2="C2" class3="O2" k="150.498245" theta0="2.108772" />
+    <Angle class1="C2" class2="C2" class3="O2" k="361.196352" theta0="2.146755" />
+    <Angle class1="C2" class2="C2" class3="O2" k="361.196352" theta0="2.129302" />
+    <Angle class1="O2" class2="C2" class3="O3" k="240.797568" theta0="2.129302" />
+    <Angle class1="C3" class2="C3" class3="N3" k="234.777629" theta0="1.937315" />
+    <Angle class1="C3" class2="C3" class3="N3" k="234.777629" theta0="1.884956" />
+    <Angle class1="C3" class2="C3" class3="N3" k="234.777629" theta0="1.910612" />
+    <Angle class1="H1" class2="C3" class3="N3" k="246.817507" theta0="1.907645" />
+    <Angle class1="C2" class2="C3" class3="N3" k="314.541823" theta0="1.932778" />
+    <Angle class1="C3" class2="C3" class3="N2" k="225.747720" theta0="1.951278" />
+    <Angle class1="C3" class2="C3" class3="N2" k="225.747720" theta0="1.942551" />
+    <Angle class1="C3" class2="C3" class3="N2" k="225.747720" theta0="1.910786" />
+    <Angle class1="H1" class2="C3" class3="N2" k="228.757690" theta0="1.937315" />
+    <Angle class1="C2" class2="C3" class3="N2" k="255.847416" theta0="1.960005" />
+    <Angle class1="C2" class2="C3" class3="N2" k="255.847416" theta0="1.930334" />
+    <Angle class1="C2" class2="C3" class3="N2" k="255.847416" theta0="1.911136" />
+    <Angle class1="C2" class2="C2" class3="N2" k="2708.972640" theta0="2.094395" />
+    <Angle class1="C2" class2="C2" class3="N2" k="180.598176" theta0="2.181662" />
+    <Angle class1="C2" class2="C2" class3="N2" k="521.971942" theta0="2.056673" />
+    <Angle class1="C3" class2="C2" class3="N2" k="171.568267" theta0="1.996657" />
+    <Angle class1="C3" class2="C2" class3="N2" k="150.498480" theta0="2.042035" />
+    <Angle class1="H1" class2="C2" class3="N2" k="150.498230" theta0="2.026803" />
+    <Angle class1="H1" class2="C2" class3="N2" k="162.538358" theta0="2.042035" />
+    <Angle class1="N2" class2="C2" class3="O2" k="560.114394" theta0="2.147597" />
+    <Angle class1="C3" class2="C1" class3="N1" k="100.833982" theta0="3.141593" />
+    <Angle class1="C3" class2="N3" class3="C3" k="216.717811" theta0="1.888446" />
+    <Angle class1="C3" class2="N3" class3="C3" k="216.717811" theta0="1.870993" />
+    <Angle class1="C3" class2="N3" class3="H3" k="180.598176" theta0="1.935570" />
+    <Angle class1="C3" class2="N3" class3="H3" k="180.598176" theta0="1.886701" />
+    <Angle class1="C3" class2="N2" class3="C3" k="228.757690" theta0="2.138028" />
+    <Angle class1="C3" class2="N2" class3="H3" k="57.189422" theta0="2.136283" />
+    <Angle class1="C2" class2="N2" class3="H3" k="150.498418" theta0="2.086137" />
+    <Angle class1="C2" class2="N2" class3="H3" k="150.498383" theta0="2.085172" />
+    <Angle class1="H3" class2="N2" class3="H3" k="123.408754" theta0="2.146755" />
+    <Angle class1="C2" class2="N3" class3="H3" k="176.685216" theta0="1.911136" />
+    <Angle class1="C2" class2="N3" class3="H3" k="176.685216" theta0="1.902409" />
+    <Angle class1="C2" class2="N3" class3="C3" k="179.996182" theta0="1.797689" />
+    <Angle class1="C2" class2="N3" class3="C3" k="179.996182" theta0="1.788962" />
+    <Angle class1="H3" class2="N3" class3="H3" k="182.103161" theta0="1.869248" />
+    <Angle class1="H3" class2="N3" class3="H3" k="182.103161" theta0="1.857030" />
+    <Angle class1="C2" class2="N2" class3="C3" k="487.615075" theta0="2.113594" />
+    <Angle class1="C2" class2="N2" class3="C3" k="189.628085" theta0="2.092650" />
+    <Angle class1="C2" class2="N2" class3="C2" k="630.907415" theta0="2.106352" />
+    <Angle class1="C3" class2="N3" class3="N3" k="222.737750" theta0="1.841322" />
+    <Angle class1="H3" class2="N3" class3="N3" k="129.428693" theta0="1.801180" />
+    <Angle class1="N3" class2="C3" class3="N3" k="314.541823" theta0="1.932778" />
+    <Angle class1="N2" class2="C2" class3="N2" k="150.498480" theta0="2.094395" />
+    <Angle class1="N2" class2="C2" class3="N2" k="120.398784" theta0="2.094395" />
+    <Angle class1="C3" class2="C3" class3="SX" k="126.418723" theta0="1.780236" />
+    <Angle class1="H1" class2="C3" class3="SX" k="115.582833" theta0="1.895428" />
+    <Angle class1="C3" class2="SX" class3="C3" k="216.717811" theta0="1.780236" />
+    <Angle class1="C3" class2="SX" class3="O2" k="179.695185" theta0="1.879720" />
+    <Angle class1="O2" class2="SX" class3="O2" k="270.897264" theta0="2.035054" />
+    <Angle class1="C3" class2="C3" class3="SX" k="126.418723" theta0="1.850049" />
+    <Angle class1="H1" class2="C3" class3="SX" k="115.582833" theta0="1.895428" />
+    <Angle class1="C3" class2="SX" class3="C3" k="216.717811" theta0="1.623156" />
+    <Angle class1="C3" class2="SX" class3="O2" k="179.695185" theta0="1.850049" />
+    <Angle class1="C3" class2="C3" class3="SX" k="222.737750" theta0="1.921608" />
+    <Angle class1="C3" class2="C3" class3="SX" k="222.737750" theta0="1.911136" />
+    <Angle class1="C3" class2="C3" class3="SX" k="222.737750" theta0="1.884956" />
+    <Angle class1="H1" class2="C3" class3="SX" k="222.737750" theta0="1.884956" />
+    <Angle class1="H1" class2="C3" class3="SX" k="222.737750" theta0="1.933825" />
+    <Angle class1="C3" class2="SX" class3="C3" k="252.837446" theta0="1.673771" />
+    <Angle class1="C2" class2="C3" class3="SX" k="126.418723" theta0="1.881465" />
+    <Angle class1="C2" class2="C3" class3="SX" k="126.418723" theta0="1.911136" />
+    <Angle class1="C2" class2="C3" class3="SX" k="126.418723" theta0="1.881465" />
+    <Angle class1="C3" class2="SX" class3="SX" k="300.996960" theta0="1.780236" />
+    <Angle class1="SX" class2="C3" class3="SX" k="126.418723" theta0="1.919862" />
+    <Angle class1="C3" class2="C3" class3="PX" k="475.872054" theta0="1.931125" />
+    <Angle class1="C2" class2="C2" class3="PX" k="515.601707" theta0="2.099230" />
+    <Angle class1="H1" class2="C3" class3="PX" k="150.496766" theta0="1.879378" />
+    <Angle class1="C3" class2="O3" class3="PX" k="231.767659" theta0="2.024582" />
+    <Angle class1="C2" class2="O3" class3="PX" k="240.797568" theta0="2.059489" />
+    <Angle class1="C3" class2="PX" class3="C3" k="533.009216" theta0="1.795372" />
+    <Angle class1="C2" class2="PX" class3="C3" k="581.983296" theta0="1.863918" />
+    <Angle class1="C2" class2="PX" class3="C2" k="144.478541" theta0="1.658063" />
+    <Angle class1="C3" class2="PX" class3="H1" k="144.478541" theta0="1.658063" />
+    <Angle class1="H1" class2="PX" class3="H1" k="131.836668" theta0="1.605703" />
+    <Angle class1="O3" class2="PX" class3="O3" k="135.448632" theta0="1.736603" />
+    <Angle class1="C3" class2="C3" class3="F0" k="228.757690" theta0="1.911136" />
+    <Angle class1="F0" class2="C3" class3="H1" k="171.568267" theta0="1.911136" />
+    <Angle class1="C3" class2="C2" class3="F0" k="135.448632" theta0="2.094395" />
+    <Angle class1="F0" class2="C2" class3="H1" k="135.448632" theta0="2.094395" />
+    <Angle class1="C2" class2="C3" class3="F0" k="195.648024" theta0="1.905900" />
+    <Angle class1="C2" class2="C3" class3="F0" k="195.648024" theta0="1.902409" />
+    <Angle class1="C2" class2="C2" class3="F0" k="195.648024" theta0="2.111848" />
+    <Angle class1="F0" class2="C3" class3="F0" k="225.747720" theta0="1.904154" />
+    <Angle class1="C3" class2="C3" class3="Cl" k="195.648024" theta0="1.888446" />
+    <Angle class1="Cl" class2="C3" class3="H1" k="180.598176" theta0="1.876229" />
+    <Angle class1="C3" class2="C2" class3="Cl" k="135.448632" theta0="1.965241" />
+    <Angle class1="Cl" class2="C2" class3="H1" k="135.448632" theta0="1.965241" />
+    <Angle class1="C2" class2="C3" class3="Cl" k="168.558298" theta0="1.916372" />
+    <Angle class1="C2" class2="C3" class3="Cl" k="168.558298" theta0="1.911136" />
+    <Angle class1="C2" class2="C2" class3="Cl" k="165.548328" theta0="2.073451" />
+    <Angle class1="Cl" class2="C3" class3="O3" k="168.558298" theta0="1.893682" />
+    <Angle class1="Cl" class2="C3" class3="F0" k="225.747720" theta0="1.926843" />
+    <Angle class1="Cl" class2="C3" class3="Cl" k="228.757690" theta0="1.949533" />
+    <Angle class1="Br" class2="C3" class3="C3" k="222.737750" theta0="1.888446" />
+    <Angle class1="Br" class2="C3" class3="H1" k="153.508450" theta0="1.858776" />
+    <Angle class1="Br" class2="C3" class3="C2" k="189.628085" theta0="1.904154" />
+    <Angle class1="Br" class2="C2" class3="C3" k="138.458602" theta0="2.094395" />
+    <Angle class1="Br" class2="C2" class3="H1" k="138.458602" theta0="1.956514" />
+    <Angle class1="Br" class2="C2" class3="C2" k="135.448632" theta0="2.061234" />
+    <Angle class1="Br" class2="C3" class3="F0" k="216.717811" theta0="1.909390" />
+    <Angle class1="Br" class2="C3" class3="Cl" k="216.717811" theta0="1.932079" />
+    <Angle class1="Br" class2="C3" class3="Br" k="207.687902" theta0="1.914626" />
+    <Angle class1="C3" class2="C3" class3="I0" k="171.568267" theta0="1.900664" />
+    <Angle class1="C2" class2="C3" class3="I0" k="147.488510" theta0="1.900664" />
+    <Angle class1="H1" class2="C3" class3="I0" k="189.628085" theta0="1.857030" />
+    <Angle class1="C3" class2="C2" class3="I0" k="120.398784" theta0="2.094395" />
+    <Angle class1="H1" class2="C2" class3="I0" k="120.398784" theta0="1.954769" />
+    <Angle class1="C3" class2="C3" class3="Si" k="120.398784" theta0="1.946042" />
+    <Angle class1="C3" class2="C3" class3="Si" k="120.398784" theta0="1.966986" />
+    <Angle class1="C3" class2="C3" class3="Si" k="120.398784" theta0="1.902409" />
+    <Angle class1="H1" class2="C3" class3="Si" k="162.538358" theta0="1.900664" />
+    <Angle class1="H1" class2="C3" class3="Si" k="162.538358" theta0="1.919862" />
+    <Angle class1="H1" class2="C3" class3="Si" k="162.538358" theta0="1.911136" />
+    <Angle class1="C3" class2="C2" class3="Si" k="120.398784" theta0="2.094395" />
+    <Angle class1="H1" class2="C2" class3="Si" k="158.023404" theta0="2.085668" />
+    <Angle class1="C2" class2="C3" class3="Si" k="150.498480" theta0="1.911136" />
+    <Angle class1="C2" class2="C3" class3="Si" k="150.498480" theta0="1.832596" />
+    <Angle class1="C2" class2="C3" class3="Si" k="150.498480" theta0="1.911136" />
+    <Angle class1="C2" class2="C2" class3="Si" k="96.319027" theta0="2.129302" />
+    <Angle class1="C3" class2="O3" class3="Si" k="120.398784" theta0="2.000147" />
+    <Angle class1="Si" class2="O3" class3="Si" k="45.149544" theta0="2.542945" />
+    <Angle class1="Si" class2="C3" class3="Si" k="105.348936" theta0="2.042035" />
+    <Angle class1="Si" class2="C3" class3="Si" k="105.348936" theta0="2.085668" />
+    <Angle class1="Si" class2="C3" class3="Si" k="105.348936" theta0="1.911136" />
+    <Angle class1="Si" class2="C2" class3="Si" k="120.398784" theta0="2.094395" />
+    <Angle class1="C3" class2="Si" class3="C3" k="144.478541" theta0="1.905900" />
+    <Angle class1="C3" class2="Si" class3="C3" k="144.478541" theta0="1.926843" />
+    <Angle class1="C3" class2="Si" class3="C3" k="144.478541" theta0="1.911136" />
+    <Angle class1="C3" class2="Si" class3="H1" k="120.398784" theta0="1.937315" />
+    <Angle class1="C3" class2="Si" class3="H1" k="120.398784" theta0="1.867502" />
+    <Angle class1="C3" class2="Si" class3="H1" k="120.398784" theta0="1.907645" />
+    <Angle class1="H1" class2="Si" class3="H1" k="138.458602" theta0="1.911136" />
+    <Angle class1="H1" class2="Si" class3="H1" k="138.458602" theta0="1.897173" />
+    <Angle class1="H1" class2="Si" class3="H1" k="138.458602" theta0="1.858776" />
+    <Angle class1="C2" class2="Si" class3="C3" k="120.398784" theta0="1.923353" />
+    <Angle class1="C2" class2="Si" class3="H1" k="165.548328" theta0="1.911136" />
+    <Angle class1="C2" class2="Si" class3="C2" k="180.598176" theta0="1.823869" />
+    <Angle class1="C3" class2="Si" class3="O3" k="105.348936" theta0="1.893682" />
+    <Angle class1="H1" class2="Si" class3="O3" k="105.348936" theta0="1.911136" />
+    <Angle class1="O3" class2="Si" class3="O3" k="135.448632" theta0="1.980949" />
+    <Angle class1="C3" class2="Si" class3="Si" k="135.448632" theta0="1.902409" />
+    <Angle class1="H1" class2="Si" class3="Si" k="126.418723" theta0="1.909390" />
+    <Angle class1="C2" class2="Si" class3="Si" k="120.398784" theta0="1.923353" />
+    <Angle class1="Si" class2="Si" class3="Si" k="75.249240" theta0="1.940806" />
+    <Angle class1="Si" class2="Si" class3="Si" k="75.249240" theta0="1.933825" />
+    <Angle class1="Si" class2="Si" class3="Si" k="75.249240" theta0="2.059489" />
+    <Angle class1="HX" class2="RH" class3="PX" k="150.498395" theta0="1.469330" />
+    <Angle class1="HX" class2="RH" class3="PX" k="150.498440" theta0="1.383047" />
+    <Angle class1="HX" class2="RH" class3="HX" k="150.498421" theta0="1.481115" />
+    <Angle class1="C2" class2="RH" class3="HX" k="150.498437" theta0="2.829180" />
+    <Angle class1="C2" class2="RH" class3="HX" k="150.498434" theta0="1.623757" />
+    <Angle class1="HX" class2="RH" class3="PX" k="150.498423" theta0="2.945317" />
+    <Angle class1="HX" class2="RH" class3="PX" k="150.498411" theta0="1.561579" />
+    <Angle class1="C2" class2="RH" class3="PX" k="608.928680" theta0="1.887432" />
+    <Angle class1="C2" class2="RH" class3="PX" k="202.985347" theta0="1.983406" />
+    <Angle class1="C2" class2="RH" class3="PX" k="353.973022" theta0="1.565744" />
+    <Angle class1="C2" class2="RH" class3="PX" k="544.157985" theta0="2.992331" />
+    <Angle class1="C2" class2="RH" class3="HX" k="150.498403" theta0="1.448846" />
+    <Angle class1="C2" class2="RH" class3="HX" k="150.498403" theta0="1.623968" />
+    <Angle class1="C2" class2="RH" class3="C2" k="181.496093" theta0="1.301988" />
+    <Angle class1="C2" class2="HX" class3="RH" k="94.460353" theta0="1.596837" />
+    <Angle class1="C2" class2="C2" class3="HX" k="150.498340" theta0="1.977955" />
+    <Angle class1="C0" class2="C2" class3="RH" k="261.375456" theta0="1.966006" />
+    <Angle class1="C2" class2="C2" class3="RH" k="748.158044" theta0="1.953756" />
+    <Angle class1="C2" class2="C2" class3="RH" k="275.059029" theta0="1.235429" />
+    <Angle class1="RH" class2="C2" class3="RH" k="236.158064" theta0="1.832252" />
+    <Angle class1="N2" class2="C2" class3="RH" k="350.864140" theta0="2.004650" />
+    <Angle class1="PX" class2="RH" class3="PX" k="698.412864" theta0="1.508690" />
+  </CustomAngleForce>
+  <CustomTorsionForce energy="k*(1+cos(n*theta-phase))">
+    <PerTorsionParameter name="k" />
+    <PerTorsionParameter name="n" />
+    <PerTorsionParameter name="phase" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="H1" k="0.000022" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="H1" k="0.000001" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="H1" k="-0.001893" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="H1" k="0.000008" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="H1" k="-0.000010" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="H1" k="-0.001402" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C3" k="-0.000004" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C3" k="0.000018" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C3" k="-0.000058" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000022" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000086" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000194" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000022" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000086" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000194" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C1" class3="C1" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C1" class3="C1" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C1" class3="C1" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000022" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000086" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000194" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C1" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C1" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C1" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C1" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000009" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000035" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C2" k="0.000079" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="C2" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000022" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000086" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="H1" k="0.000194" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000013" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="0.000051" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="H1" k="-0.000114" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C1" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C1" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C1" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C1" class3="C1" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C2" class3="C2" class4="H1" k="0.000002" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C2" class3="C2" class4="H1" k="0.000082" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C2" class3="C2" class4="H1" k="0.000303" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="C1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="C1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="C1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C1" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C0" class2="C3" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N2" k="0.000002" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N2" k="0.000074" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N2" k="0.000046" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="C2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N3" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C2" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C2" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="C2" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C3" class4="N3" k="0.002487" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C3" class4="N3" k="0.000806" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C3" class4="N3" k="0.003047" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="N3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="N3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="N3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N2" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N2" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="C2" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C2" k="0.000007" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C2" k="0.000028" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="C2" k="0.000062" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="N2" k="0.002487" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="N2" k="0.000806" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="C2" class4="N2" k="0.003047" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="N2" k="0.002487" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="N2" k="0.000806" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="N2" k="0.003047" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C2" class3="C2" class4="F0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C2" class3="C2" class4="F0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C2" class3="C2" class4="F0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="O3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="O3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="O3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C2" class3="C2" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C2" class3="C2" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C2" class3="C2" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C2" class3="C2" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Cl" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="F0" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Cl" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C3" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C3" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Br" class2="C3" class3="C3" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Br" class2="C2" class3="C2" class4="Br" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Br" class2="C2" class3="C2" class4="Br" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Br" class2="C2" class3="C2" class4="Br" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="I0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="I0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="I0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="I0" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="I0" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="I0" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="I0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="I0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="I0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="I0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="I0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="I0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="I0" class2="C1" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="I0" class2="C1" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="I0" class2="C1" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="SX" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="SX" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="SX" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="SX" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="SX" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="SX" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="SX" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="SX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="SX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="SX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="SX" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C2" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="Si" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C3" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C3" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="C3" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="C2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="C2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C2" class3="C2" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C2" class3="C2" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C2" class3="C2" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="C3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="Si" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="O3" class3="Si" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="Si" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="Si" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="Si" class2="Si" class3="Si" class4="Si" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="Si" class2="Si" class3="Si" class4="Si" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="Si" class2="Si" class3="Si" class4="Si" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H2" class2="O3" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H2" class2="O3" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H2" class2="O3" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N3" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N3" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N3" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="N3" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="N3" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="N3" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="N3" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H3" class2="N3" class3="N3" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H3" class2="N3" class3="N3" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H3" class2="N3" class3="N3" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="PX" k="0.000001" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="PX" k="0.000012" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="PX" k="-0.000035" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C3" k="-0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C3" k="-0.000009" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C3" k="0.000054" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C2" k="-0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C2" k="-0.000009" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="C2" k="0.000054" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C3" k="-0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C3" k="-0.000009" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C3" k="0.000054" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="PX" k="0.000001" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="PX" k="0.000012" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="PX" k="-0.000035" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C2" k="-0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C2" k="-0.000009" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="PX" class4="C2" k="0.000054" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="PX" k="0.000001" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="PX" k="0.000012" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="PX" k="-0.000035" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="PX" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="PX" k="-0.000048" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="PX" k="0.000057" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="PX" k="-0.001362" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C3" k="0.000031" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C3" k="-0.000053" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C3" k="-0.001772" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C2" k="0.000031" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C2" k="-0.000053" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="C2" k="-0.001772" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="PX" k="-0.000048" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="PX" k="0.000057" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="PX" k="-0.001362" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="PX" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="PX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="PX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="O3" class4="PX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="PX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="PX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="PX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="PX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="PX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="O3" class4="PX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="PX" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="PX" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="PX" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="PX" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="PX" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="O3" class3="PX" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="O3" class3="PX" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="O3" class3="PX" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="O3" class3="PX" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="O3" class4="H2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N2" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="H3" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="H3" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N2" class4="H3" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="H3" k="0.000001" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="H3" k="0.000006" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N2" class4="H3" k="0.000013" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="H3" k="-0.000002" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="H3" k="0.000007" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="N2" class4="H3" k="-0.000015" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="CR" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="CR" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="CR" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="CR" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="CR" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="CR" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="CR" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="CR" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="CR" class2="C3" class3="C3" class4="CR" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="CR" class2="C3" class3="C3" class4="CR" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="CR" class2="C3" class3="C3" class4="CR" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="CP" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="CP" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N2" class4="CP" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="CP" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="CP" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N2" class4="CP" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="N2" class3="CP" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="N2" class3="CP" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="N2" class3="CP" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H3" class2="N2" class3="CP" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H3" class2="N2" class3="CP" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H3" class2="N2" class3="CP" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N5" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N5" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N5" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="C3" class4="N5" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="C3" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="C3" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N5" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N5" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C2" class4="N5" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N5" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N5" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="N5" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="C2" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="C2" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="C2" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N5" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N5" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N5" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N5" class4="C2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N5" class4="C2" k="-0.000017" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N5" class4="C2" k="-0.000044" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N5" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N5" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N5" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N5" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N5" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="N5" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C2" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C2" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="C2" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C3" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C3" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C3" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N5" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N5" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N5" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C2" k="-0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C2" k="0.000002" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N5" class4="C2" k="-0.000004" n="3" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N5" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N5" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O3" class2="C3" class3="C3" class4="N5" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N5" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N5" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N3" class2="C3" class3="N5" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="N2" k="0.002487" n="1" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="N2" k="0.000806" n="2" phase="0.000000" />
+    <Torsion class1="N5" class2="C3" class3="C2" class4="N2" k="0.003047" n="3" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="N5" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="N5" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="SX" class2="C3" class3="C3" class4="N5" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N4" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N4" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C3" class4="N4" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N4" k="-0.001959" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N4" k="-0.002590" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="N4" k="0.000978" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N4" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N4" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C3" class4="N4" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N4" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N4" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="N4" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N4" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N4" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="N4" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N4" class2="C2" class3="C2" class4="N4" k="0.002487" n="1" phase="0.000000" />
+    <Torsion class1="N4" class2="C2" class3="C2" class4="N4" k="0.000806" n="2" phase="0.000000" />
+    <Torsion class1="N4" class2="C2" class3="C2" class4="N4" k="0.003047" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C2" class3="N2" class4="H3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="N2" class2="C3" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C3" class3="N5" class4="H4" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="0.000003" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="-0.000013" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C3" class3="N5" class4="H4" k="-0.000017" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C3" class3="N5" class4="H4" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="O2" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="C2" class4="OM" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="SX" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="SX" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="SX" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C2" class2="C2" class3="N4" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="H1" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="H1" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="H1" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="C3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="C3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C3" class2="C2" class3="C3" class4="C3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="C0" class2="C2" class3="C2" class4="RH" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="-0.000072" n="2" phase="0.000000" />
+    <Torsion class1="H1" class2="C2" class3="C2" class4="RH" k="0.000248" n="3" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="HX" class2="C2" class3="C2" class4="RH" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="O3" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="-0.001589" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="0.003352" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="C2" class4="N2" k="0.003607" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="H0" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000000" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000000" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="C2" class3="RH" class4="N2" k="0.000000" n="3" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000006" n="1" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000020" n="2" phase="0.000000" />
+    <Torsion class1="RH" class2="PX" class3="C2" class4="C0" k="0.000036" n="3" phase="0.000000" />
+  </CustomTorsionForce>
+  <CustomNonbondedForce energy="epsilon*(-2.25*(rv/r)^6+184000*exp(-12*r/rv));rv=radius1+radius2;epsilon=sqrt(epsilon1*epsilon2)" bondCutoff="2">
+    <PerParticleParameter name="radius" />
+    <PerParticleParameter name="epsilon" />
+    <Atom class="C1" radius="0.193997" epsilon="0.233053" />
+    <Atom class="C2" radius="0.193986" epsilon="0.232364" />
+    <Atom class="C2" radius="0.196000" epsilon="0.234304" />
+    <Atom class="C3" radius="0.203982" epsilon="0.104053" />
+    <Atom class="CP" radius="0.194000" epsilon="0.234304" />
+    <Atom class="CR" radius="0.196000" epsilon="0.234304" />
+    <Atom class="O2" radius="0.182003" epsilon="0.246331" />
+    <Atom class="O3" radius="0.182000" epsilon="0.246856" />
+    <Atom class="OM" radius="0.182000" epsilon="0.246856" />
+    <Atom class="OP" radius="0.182000" epsilon="0.246856" />
+    <Atom class="OQ" radius="0.182000" epsilon="0.246856" />
+    <Atom class="H1" radius="0.161846" epsilon="0.000000" />
+    <Atom class="H1" radius="0.162000" epsilon="0.083680" />
+    <Atom class="H2" radius="0.160000" epsilon="0.066944" />
+    <Atom class="H3" radius="0.159999" epsilon="0.058538" />
+    <Atom class="H3" radius="0.160000" epsilon="0.075312" />
+    <Atom class="H4" radius="0.160000" epsilon="0.142256" />
+    <Atom class="N1" radius="0.193003" epsilon="0.179237" />
+    <Atom class="N2" radius="0.192992" epsilon="0.179186" />
+    <Atom class="N3" radius="0.193000" epsilon="0.179912" />
+    <Atom class="N4" radius="0.193000" epsilon="0.179912" />
+    <Atom class="N5" radius="0.193000" epsilon="0.179912" />
+    <Atom class="B2" radius="0.215000" epsilon="0.058576" />
+    <Atom class="B3" radius="0.215000" epsilon="0.058576" />
+    <Atom class="SX" radius="0.215000" epsilon="0.845168" />
+    <Atom class="PX" radius="0.221998" epsilon="0.702214" />
+    <Atom class="F0" radius="0.171000" epsilon="0.313800" />
+    <Atom class="Cl" radius="0.207000" epsilon="1.004160" />
+    <Atom class="Br" radius="0.222000" epsilon="1.338880" />
+    <Atom class="I0" radius="0.236000" epsilon="1.774016" />
+    <Atom class="Si" radius="0.229000" epsilon="0.585760" />
+    <Atom class="Z0" radius="0.200000" epsilon="2.635920" />
+    <Atom class="RH" radius="0.269000" epsilon="0.584490" />
+    <Atom class="H5" radius="0.162000" epsilon="0.083680" />
+    <Atom class="H6" radius="0.162000" epsilon="0.083680" />
+    <Atom class="H7" radius="0.162000" epsilon="0.083680" />
+  </CustomNonbondedForce>
+</ForceField>
