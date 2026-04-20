@@ -4,15 +4,14 @@
 
 Before trusting q2mm's optimizers to produce new force fields, we need to
 prove it can correctly *evaluate* force fields that have already been published
-and validated against experiment. This page documents that proof — or,
-honestly, the current lack of it.
+and validated against experiment. This page documents that proof.
 
 The validation program has two checks, run in order:
 
 | Check | Question | Status |
 |-------|----------|--------|
 | **Check 1** | Can q2mm load a published force field and reproduce its fit quality against the original QM data? | ⚠️ Harness works; parity gap likely due to MM3 functional-form differences ([#197](https://github.com/ericchansen/q2mm/issues/197), closed) |
-| **Check 2** | Can q2mm re-derive the published force field from scratch using its own optimizers? | ⏳ Blocked on Check 1 |
+| **Check 2** | Can q2mm re-derive the published force field from scratch using its own optimizers? | ✅ JaxOpt L-BFGS on Rh-enamide: RMSD 260 → 153 cm⁻¹ (50 iters, GPU) |
 
 Check 1 must pass before Check 2 makes sense — if we can't even evaluate a
 known-good force field correctly, there's no point trying to re-derive it.
@@ -66,9 +65,18 @@ This gap was investigated in [issue #197](https://github.com/ericchansen/q2mm/is
 
 ## Check 2: force field re-derivation
 
-Not started. Blocked on resolving Check 1 first — there is no point
-re-deriving a force field if the evaluation engine doesn't match the
-original.
+JaxOpt L-BFGS (analytical gradients, 50 iterations) on the Rh-enamide
+9-molecule training set:
+
+- **RMSD**: 260 → 153 cm⁻¹
+- **Score**: 91.5 → 77.0
+- **Time**: 341 s (GPU, RTX 5090)
+- **Optimizer**: `jaxopt:lbfgs` via topology-grouped vmap Hessian batching
+
+Results archived in `benchmarks/rh-enamide/results/`. The Zenodo
+QFUERZA-optimized FF (same system, different objective function) scores
+9120 on our frequency objective — expected, since it was optimized for
+eigenmode fitting rather than frequency RMSD.
 
 ---
 

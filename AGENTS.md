@@ -182,10 +182,7 @@ python -c "import jax; print(jax.devices())"
 5. **Benchmark data is tracked in git** — `benchmarks/` is committed,
    not gitignored. Any data referenced in documentation **must** be in the
    repo. If it's not tracked, it doesn't exist for publication purposes.
-6. **History snapshots go to `benchmarks/history/`** — the CLI auto-discovers
-   this directory by walking up from the output path. Do not create per-system
-   history directories (e.g., `benchmarks/ch3f/history/`).
-7. **Run sequentially on an idle system** for consistent timing.
+6. **Run sequentially on an idle system** for consistent timing.
 
 ### Expected Runtimes
 

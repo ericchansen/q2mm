@@ -68,10 +68,10 @@ as the OpenMM sequential row (28.7). Two reasons it does not:
    landscape. Both are valid optima of the chosen loss; the basins
    they prefer differ. This is a parameterization issue, not a
    correctness gap.
-2. The JAX multi-start is not currently `vmap`'d over molecules
-   (Phase 2 is deferred — see [next section](#what-is-not-on-the-path)).
-   That is unrelated for a 1-molecule benchmark, but matters for
-   training sets with multiple geometries.
+2. The JAX path now uses topology-grouped `vmap` for Hessian batching
+   (PR #264) — molecules sharing the same topology compute their
+   Hessians in a single vectorised call. This matters for training
+   sets with multiple geometries (e.g., Rh-enamide's 9 molecules).
 
 ### Rh-enamide (9 mols, 182 params, organometallic, frequency-only)
 
@@ -114,14 +114,11 @@ acceleration in the project.
 
 The "analytical path" today does not include:
 
-- **`vmap` over molecules.** `JaxLoss._loss_fn` Python-unrolls over the
-  per-molecule energy/observable kernels (see
-  `q2mm/optimizers/jaxloss.py`). The pad-and-mask refactor needed to
-  batch over molecules is straightforward in principle but expensive in
-  engineering effort, and both reference benchmarks (CH₃F and
-  rh-enamide) are frequency-driven, not energy-driven, so the immediate
-  win is small. Tracked but deferred. See `plan.md` Phase 2 in the
-  session state for the full rationale.
+- **`vmap` over molecules.** ~~Deferred~~ — **Done** (PR #264).
+  `JaxLoss` now groups molecules by topology and uses `jax.vmap` for
+  Hessian batching within each group. 25% loss-eval speedup on
+  Rh-enamide (632 → 472 ms). Molecules with different topologies still
+  use a small outer loop (no padding, no eigendecomposition corruption).
 - **Stretch-bend cross-term in any backend.** Parsed from MM3 `.fld`
   files (`q2mm/io/mm3.py:498-525`) but not built into `ForceField` for
   any of OpenMM, Tinker, or JAX. Symmetric gap — not a parity bug.
@@ -138,7 +135,6 @@ will be revisited when a real workflow makes them necessary.
 - CH₃F rows: [`benchmarks/ch3f/`](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f)
   (golden fixtures committed to the repo).
 - Rh-enamide rows: [`benchmarks/rh-enamide/`](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide).
-- GPU comparisons: [`benchmarks/history/`](https://github.com/ericchansen/q2mm/tree/master/benchmarks/history).
 - Architectural background: [Architecture](../how-it-works/architecture.md).
 - Theory of analytical-gradient observables:
   [Theory & Methods](../how-it-works/theory.md).

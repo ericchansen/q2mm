@@ -23,7 +23,7 @@ before Q2MM optimization:
 
 | Method | Bonds | Angles |
 |--------|-------|--------|
-| **Approxn** | 5.0 mdyn/Å (fixed) | 0.5 mdyn·Å/rad² (fixed) |
+| **Approximation** | 5.0 mdyn/Å (fixed) | 0.5 mdyn·Å/rad² (fixed) |
 | **FUERZA** | Seminario projection | Seminario projection |
 | **γ-FUERZA** | Seminario projection | Seminario × γ (γ ≈ 0.68) |
 | **QFUERZA** | Seminario projection | Seminario, but H-angles → 0.5 |
@@ -48,7 +48,7 @@ force constants (higher is better):
 
 | Method | Unoptimized R² |
 |--------|---------------|
-| Approxn | 0.878 |
+| Approximation | 0.878 |
 | FUERZA | 0.735 |
 | γ-FUERZA | 0.889 |
 | **QFUERZA** | **0.952** |
@@ -58,7 +58,7 @@ deviations from QM reference, lower is better):
 
 | Method | Preliminary | Optimized | Cycles |
 |--------|------------|-----------|--------|
-| Approxn | 6.375 | 0.812 | 17 |
+| Approximation | 6.375 | 0.812 | 17 |
 | FUERZA | 1.361 | 0.812 | 12 |
 | γ-FUERZA | 1.143 | 0.812 | 11 |
 | **QFUERZA** | **1.005** | **0.812** | **10** |
@@ -157,7 +157,7 @@ rules. The reference values are stored in
 
 ### Bonds (mdyn/Å)
 
-| Parameter | Approxn | FUERZA | γ-FUERZA | QFUERZA | Rule check |
+| Parameter | Approximation | FUERZA | γ-FUERZA | QFUERZA | Rule check |
 |-----------|---------|--------|----------|---------|------------|
 | N–Pt | 5.000 | 1.169 | 1.169 | **1.169** | ✅ Matches Zenodo |
 | N–H | 5.000 | 5.765 | 5.765 | **5.765** | ✅ Matches Zenodo |
@@ -168,7 +168,7 @@ definition (QFUERZA only modifies H-angle FCs, not bonds).
 
 ### Angles (mdyn·Å/rad²)
 
-| Parameter | Approxn | FUERZA | γ-FUERZA | QFUERZA | H-angle? | Rule check |
+| Parameter | Approximation | FUERZA | γ-FUERZA | QFUERZA | H-angle? | Rule check |
 |-----------|---------|--------|----------|---------|----------|------------|
 | N–Pt–Cl (trans) | 0.500 | 3.074 | 2.090 | **3.074** | No | ✅ Matches Zenodo (= FUERZA) |
 | N–Pt–Cl (cis) | 0.500 | 3.068 | 2.086 | **3.068** | No | ✅ Matches Zenodo (= FUERZA) |
@@ -187,7 +187,7 @@ angles equal FUERZA; H-angles are substituted with 0.5.
     the values in the Zenodo `.fld` files. The bond values in the table
     above are read directly from the Zenodo `.fld` (not recomputed). See
     [`benchmarks/qfuerza-zenodo/README.md`](https://github.com/ericchansen/q2mm/blob/master/benchmarks/qfuerza-zenodo/README.md)
-    and [#236](https://github.com/ericchansen/q2mm/issues/236).
+    and [#236](https://github.com/ericchansen/q2mm/issues/236) (closed).
 
 !!! note "FUERZA overestimation is not a fixed 2×"
     The paper describes FUERZA as producing angle FCs "two times too
@@ -275,7 +275,7 @@ Seminario projection, and verifies:
     traced this to unreproducible modifications in the reference code
     (missing `convert_and_set` method, `au_hessian` parameter not accepted
     by `GaussLog`). The N-Pt exact match validates our core algorithm.
-    See [issue #236](https://github.com/ericchansen/q2mm/issues/236) for
+    See [issue #236](https://github.com/ericchansen/q2mm/issues/236) (closed) for
     ongoing investigation.
 
 ---
@@ -285,6 +285,6 @@ Seminario projection, and verifies:
 1. ~~Parse the cisplatin Gaussian log~~ — **done** (see §4 above)
 2. ~~Add cisplatin as a parity test system~~ — **done** (16 integration tests)
 3. **Investigate Pt-Cl / N-H FC divergence** — tracked in
-   [issue #236](https://github.com/ericchansen/q2mm/issues/236)
+   [issue #236](https://github.com/ericchansen/q2mm/issues/236) (closed)
 4. **Compare Rh-enamide TSFF** — the Zenodo archive also contains the
    full Rh-enamide force field files (~1.8 GB, includes QM data)

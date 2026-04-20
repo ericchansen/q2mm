@@ -99,7 +99,6 @@ run_step "STEP 3: JAX-MD backend — harmonic" \
         --system rh-enamide \
         --backend jax-md \
         --form harmonic \
-        --form harmonic \
         --optimizer L-BFGS-B Nelder-Mead Powell grad-simp \
         --output "$OUT"
 

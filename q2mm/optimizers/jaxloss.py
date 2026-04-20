@@ -15,7 +15,7 @@ observables from the relaxed coordinates, and accumulates weighted
 residuals.  The implicit-function theorem gives the exact gradient of
 the relaxed observables with respect to the force-field parameters
 without autodiff-through-iteration.  See
-``docs/how-it-works/geometry-refs-spike.md`` for the design decision.
+issue #243 (https://github.com/ericchansen/q2mm/issues/243) for the design decision.
 
 Usage::
 
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 # Tolerance + iteration cap for the inner geometry minimizer used when a
 # molecule has geometry references.  The outer gradient does NOT depend on
-# inner_tol for well-conditioned convex problems (see geometry-refs-spike.md),
+# inner_tol for well-conditioned convex problems (see issue #243),
 # but a tight-enough tol is needed so that ``∇_x E(x*) ≈ 0`` at which the
 # implicit-function theorem applies.
 _GEOM_INNER_TOL = 1e-8
@@ -110,7 +110,7 @@ def _bond_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
     epsilon so that degenerate (zero-length arm) geometries encountered
     during relaxation produce finite values instead of NaNs, and the
     cos is clipped to ``[-1+ε, 1-ε]`` to avoid NaN gradients at
-    collinear geometries (see geometry-refs-spike.md).
+    collinear geometries (see issue #243).
 
     Args:
         coords: ``(N, 3)`` Cartesian coordinates.
