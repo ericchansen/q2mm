@@ -373,6 +373,25 @@ def _mm3_vdw_energy(
     return jnp.sum(jnp.where(r >= rc, e_buckingham, e_wall))
 
 
+def _smoothstep(x: jnp.ndarray, edge0: float, edge1: float) -> jnp.ndarray:
+    """Hermite smoothstep: 0 below *edge0*, 1 above *edge1*, C¹ between."""
+    t = jnp.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+# Near-linear torsion suppression thresholds.
+# Torsions whose central bond angle exceeds ~170° are physically meaningless
+# (the dihedral is ill-defined when three consecutive atoms are collinear).
+# The dihedral gradient diverges as 1/sin²(θ), producing forces thousands of
+# times larger than the underlying barrier height.  A Hermite smoothstep on
+# min(sin θ_b, sin θ_c) suppresses these terms smoothly.
+#
+# sin(175°) ≈ 0.087  → full suppression (w = 0)
+# sin(170°) ≈ 0.174  → no suppression  (w = 1)
+_SIN_LO = math.sin(math.radians(175.0))  # ≈ 0.0872
+_SIN_HI = math.sin(math.radians(170.0))  # ≈ 0.1736
+
+
 def _torsion_energy(
     k: jnp.ndarray,
     periodicity: jnp.ndarray,
@@ -380,9 +399,11 @@ def _torsion_energy(
     coords: jnp.ndarray,
     torsion_indices: jnp.ndarray,
 ) -> jnp.ndarray:
-    """Cosine torsion energy: ``E = Σ k_i · (1 + cos(n_i·φ_i − γ_i))``.
+    """Cosine torsion energy: ``E = Σ w_i · k_i · (1 + cos(n_i·φ_i − γ_i))``.
 
-    Uses an atan2-based signed dihedral angle computation.
+    Uses an atan2-based signed dihedral angle computation.  Torsion terms
+    whose central bond angle is near-linear (>170°) are smoothly suppressed
+    to avoid the well-known gradient singularity at 180°.
 
     Args:
         k (jnp.ndarray): Force constants, shape ``(n_torsions,)``, kcal/mol.
@@ -408,6 +429,14 @@ def _torsion_energy(
     b0 = p1 - p0
     b1 = p2 - p1
     b2 = p3 - p2
+
+    # Near-linear suppression: compute sin(θ) at each central atom via
+    # |a × b| / (|a| |b|).  When either central angle approaches 180°,
+    # sin(θ) → 0 and the torsion term is smoothly turned off.
+    sin_b = _safe_norm(jnp.cross(-b0, b1)) / (_safe_norm(b0) * _safe_norm(b1) + 1e-30)
+    sin_c = _safe_norm(jnp.cross(-b1, b2)) / (_safe_norm(b1) * _safe_norm(b2) + 1e-30)
+    w = _smoothstep(jnp.minimum(sin_b, sin_c), _SIN_LO, _SIN_HI)
+
     # Normal vectors to the two planes
     n1 = jnp.cross(b0, b1)
     n2 = jnp.cross(b1, b2)
@@ -418,7 +447,7 @@ def _torsion_energy(
     x = jnp.sum(n1 * n2, axis=-1) + 1e-20
     y = jnp.sum(m1 * n2, axis=-1)
     phi = jnp.arctan2(y, x)
-    return jnp.sum(k * (1.0 + jnp.cos(periodicity * phi - phase)))
+    return jnp.sum(w * k * (1.0 + jnp.cos(periodicity * phi - phase)))
 
 
 # ---------------------------------------------------------------------------
