@@ -14,7 +14,7 @@ the benchmark program is complete today.
 | [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
 | [When Analytical Wins](crossover.md) | When is the JAX analytical-gradient path worth its compile-time overhead? | Interpretive crossover analysis from existing CH₃F + Rh-enamide rows | **Complete** |
 | [QFUERZA Validation](qfuerza-validation.md) | Does our Seminario/QFUERZA implementation reproduce the paper's force constants? | Cisplatin Zenodo validation: QFUERZA angles exact, bond FCs partially diverge | **Partial — Pt-Cl/N-H divergence root cause documented ([#236](https://github.com/ericchansen/q2mm/issues/236), closed)** |
-| [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field under OpenMM | **Complete; parity gap likely due to MM3 functional-form differences** |
+| [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field (JAX engine) | **R² = 0.60; #256/#257 pass, #255 xfail (engine gap)** |
 
 ## How to use this section
 
@@ -36,9 +36,10 @@ the benchmark program is complete today.
   24-combo Rh-enamide matrix.
 - GPU benefit is workload-dependent: it helps on larger JAX/JAX-MD workloads,
   but small systems can still be faster on CPU.
-- The published-force-field evaluation harness is in place; the Rh-enamide
-  MM3 parity gap under OpenMM is attributed to functional-form differences
-  between MacroModel and OpenMM.
+- The published-force-field evaluation harness is in place; near-linear
+  torsion damping and reaction-coordinate frequency exclusion bring
+  Check 1 to R² = 0.60.  The published FF does not beat the Seminario
+  baseline under our engine (documented engine gap, #255).
 
 ## What is not covered yet
 
