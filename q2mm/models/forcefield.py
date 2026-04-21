@@ -96,6 +96,31 @@ class AngleParam:
 
 
 @dataclass
+class StretchBendParam:
+    """A stretch-bend cross-term parameter (MM3).
+
+    Couples bond stretching with angle bending:
+    ``E_sb = k_sb · (r_ij − r₀) · (θ − θ₀) + k_sb · (r_jk − r₀') · (θ − θ₀)``
+
+    Each stretch-bend parameter is associated with an angle triple
+    (i, j, k).  The force constant ``k_sb`` has units of
+    mdyn/rad (canonical: kcal/(mol·Å·rad)).
+    """
+
+    elements: tuple[str, str, str]  # Same triple as the parent angle
+    force_constant: float = 0.0  # kcal/(mol·Å·rad)
+    label: str = ""
+    env_id: str = ""
+    ff_row: int | None = None
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        """Canonical key: center fixed, outers sorted."""
+        outer = tuple(sorted([self.elements[0], self.elements[2]]))
+        return (outer[0], self.elements[1], outer[1])
+
+
+@dataclass
 class TorsionParam:
     """A torsion/dihedral force field parameter.
 
@@ -197,6 +222,7 @@ class ForceField:
     name: str = "Q2MM Force Field"
     bonds: list[BondParam] = field(default_factory=list)
     angles: list[AngleParam] = field(default_factory=list)
+    stretch_bends: list[StretchBendParam] = field(default_factory=list)
     torsions: list[TorsionParam] = field(default_factory=list)
     vdws: list[VdwParam] = field(default_factory=list)
     cmaps: list[CmapGrid] = field(default_factory=list)
@@ -214,6 +240,7 @@ class ForceField:
         ("bonds", ["force_constant", "equilibrium"]),
         ("angles", ["force_constant", "equilibrium"]),
         ("torsions", ["force_constant"]),
+        ("stretch_bends", ["force_constant"]),
         ("vdws", ["radius", "epsilon"]),
     ]
 
@@ -351,6 +378,28 @@ class ForceField:
                 return matched
         return self.get_angle(elements[0], elements[1], elements[2])
 
+    def match_stretch_bend(
+        self,
+        elements: tuple[str, str, str],
+        env_id: str = "",
+        ff_row: int | None = None,
+    ) -> StretchBendParam | None:
+        """Match stretch-bend parameter using ff_row, then env_id, then elements."""
+        if ff_row is not None:
+            for sb in self.stretch_bends:
+                if sb.ff_row == ff_row:
+                    return sb
+        outer = tuple(sorted([elements[0], elements[2]]))
+        target_key = (outer[0], elements[1], outer[1])
+        if env_id:
+            for sb in self.stretch_bends:
+                if sb.key == target_key and sb.env_id == env_id:
+                    return sb
+        for sb in self.stretch_bends:
+            if sb.key == target_key:
+                return sb
+        return None
+
     def match_torsion(
         self,
         elements: tuple[str, str, str, str],
@@ -487,6 +536,7 @@ class ForceField:
         "angle_k": (-720.0, 720.0),
         "angle_eq": (30.0, 180.0),
         "torsion_k": (-20.0, 20.0),
+        "sb_k": (-50.0, 50.0),
         "vdw_radius": (0.5, 5.0),
         "vdw_epsilon": (0.001, 2.0),
         "ub_k": (0.0, 500.0),
@@ -501,6 +551,7 @@ class ForceField:
         "angle_k": "af",
         "angle_eq": "ae",
         "torsion_k": "df",
+        "sb_k": "sb",
         "vdw_radius": "vdwr",
         "vdw_epsilon": "vdwfc",
         "ub_k": "bf",
@@ -522,6 +573,7 @@ class ForceField:
             "angle_k": [],
             "angle_eq": [],
             "torsion_k": [],
+            "sb_k": [],
             "vdw_radius": [],
             "vdw_epsilon": [],
             "ub_k": [],
@@ -537,6 +589,9 @@ class ForceField:
             idx += 2
         for _ in self.torsions:
             result["torsion_k"].append(idx)
+            idx += 1
+        for _ in self.stretch_bends:
+            result["sb_k"].append(idx)
             idx += 1
         for _ in self.vdws:
             result["vdw_radius"].append(idx)
@@ -561,6 +616,8 @@ class ForceField:
             labels.extend(["angle_k", "angle_eq"])
         for _ in self.torsions:
             labels.append("torsion_k")
+        for _ in self.stretch_bends:
+            labels.append("sb_k")
         for _ in self.vdws:
             labels.extend(["vdw_radius", "vdw_epsilon"])
         for _ in self._ub_angles:
@@ -589,15 +646,16 @@ class ForceField:
         """Get (min, max) bounds for each element of the param vector.
 
         Matches the layout of :meth:`get_param_vector`:
-        bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon),
-        UB (ub_k, ub_eq) for angles with Urey-Bradley terms.
+        bond (k, r0), angle (k, theta0), torsion (k), stretch-bend (k),
+        vdw (radius, epsilon), UB (ub_k, ub_eq).
 
         Parameters
         ----------
         overrides : dict, optional
             Override default bounds per type. Keys: ``bond_k``,
             ``bond_eq``, ``angle_k``, ``angle_eq``, ``torsion_k``,
-            ``vdw_radius``, ``vdw_epsilon``, ``ub_k``, ``ub_eq``.
+            ``sb_k``, ``vdw_radius``, ``vdw_epsilon``, ``ub_k``,
+            ``ub_eq``.
 
         """
         b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
@@ -610,6 +668,8 @@ class ForceField:
             bounds.append(b["angle_eq"])
         for _torsion in self.torsions:
             bounds.append(b["torsion_k"])
+        for _sb in self.stretch_bends:
+            bounds.append(b["sb_k"])
         for _vdw in self.vdws:
             bounds.append(b["vdw_radius"])
             bounds.append(b["vdw_epsilon"])

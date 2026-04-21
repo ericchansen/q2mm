@@ -168,6 +168,7 @@ class JaxMDHandle:
     n_torsion_types: int
     n_vdw_types: int
     n_atoms: int
+    n_sb_types: int = 0
     # Whether charges are present
     has_charges: bool = False
     # Compiled functions (lazy, JIT-compiled)
@@ -218,7 +219,7 @@ def _build_jaxmd_params_fn(
     atom_vdw_map = jnp.array(handle.atom_vdw_map, dtype=jnp.int32)
 
     # Param vector offsets (same layout as ForceField.get_param_vector)
-    _offsets = compute_param_offsets(n_bt, n_at, n_tt)
+    _offsets = compute_param_offsets(n_bt, n_at, n_tt, n_sb_types=handle.n_sb_types)
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
@@ -627,6 +628,11 @@ class JaxMDEngine(MMEngine):
         """
         if forcefield is not None:
             self._validate_forcefield(forcefield)
+            if forcefield.stretch_bends:
+                raise NotImplementedError(
+                    "JaxMDEngine does not support stretch-bend cross terms. "
+                    "Use JaxEngine for force fields with stretch-bend parameters."
+                )
         molecule = coerce_molecule(structure, engine_name="JaxMDEngine")
         if forcefield is None:
             forcefield = ForceField.create_for_molecule(molecule)
@@ -702,6 +708,7 @@ class JaxMDEngine(MMEngine):
             n_angle_types=len(forcefield.angles),
             n_torsion_types=len(forcefield.torsions),
             n_vdw_types=len(forcefield.vdws),
+            n_sb_types=len(forcefield.stretch_bends),
             n_atoms=len(molecule.symbols),
         )
 

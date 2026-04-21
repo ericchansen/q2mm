@@ -44,7 +44,7 @@ from q2mm.constants import (
     MM3_VDW_B,
     MM3_VDW_C,
 )
-from q2mm.models.forcefield import ForceField
+from q2mm.models.forcefield import BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
 
 from q2mm.backends.mm._jax_common import (
@@ -373,21 +373,69 @@ def _mm3_vdw_energy(
     return jnp.sum(jnp.where(r >= rc, e_buckingham, e_wall))
 
 
+def _mm3_stretch_bend_energy(
+    k_sb: jnp.ndarray,
+    r0_ij: jnp.ndarray,
+    r0_jk: jnp.ndarray,
+    theta0: jnp.ndarray,
+    coords: jnp.ndarray,
+    angle_indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """MM3 stretch-bend cross-term energy.
+
+    ``E = Σ k_sb · [(r_ij − r0_ij) + (r_jk − r0_jk)] · (θ − θ0)``
+
+    Couples bond stretching with angle bending for each angle triple.
+
+    Args:
+        k_sb: Stretch-bend force constants, shape ``(n_sb,)``,
+            kcal/(mol·Å·rad).
+        r0_ij: Equilibrium i–j bond lengths, shape ``(n_sb,)``, Å.
+        r0_jk: Equilibrium j–k bond lengths, shape ``(n_sb,)``, Å.
+        theta0: Equilibrium angles, shape ``(n_sb,)``, radians.
+        coords: Cartesian coordinates, shape ``(n_atoms, 3)``, Å.
+        angle_indices: Atom index triples ``(i, j, k)``, shape
+            ``(n_sb, 3)``.
+
+    Returns:
+        Scalar total stretch-bend energy in kcal/mol.
+
+    """
+    rij_vec = coords[angle_indices[:, 0]] - coords[angle_indices[:, 1]]
+    rjk_vec = coords[angle_indices[:, 2]] - coords[angle_indices[:, 1]]
+    r_ij = _safe_norm(rij_vec, axis=-1)
+    r_jk = _safe_norm(rjk_vec, axis=-1)
+
+    rij_norm = rij_vec / _safe_norm_keepdims(rij_vec, axis=-1)
+    rjk_norm = rjk_vec / _safe_norm_keepdims(rjk_vec, axis=-1)
+    cos_theta = jnp.sum(rij_norm * rjk_norm, axis=-1)
+
+    # Near-linear suppression: dθ/dr diverges as 1/sin(θ) at 0° and 180°,
+    # same singularity that motivated torsion damping.
+    sin_theta = jnp.sqrt(jnp.maximum(1.0 - cos_theta**2, 1e-30))
+    w = _smoothstep(sin_theta, _SIN_LO, _SIN_HI)
+
+    theta = _safe_arccos(cos_theta)
+    dr_sum = (r_ij - r0_ij) + (r_jk - r0_jk)
+    dtheta = theta - theta0
+    return jnp.sum(w * k_sb * dr_sum * dtheta)
+
+
 def _smoothstep(x: jnp.ndarray, edge0: float, edge1: float) -> jnp.ndarray:
     """Hermite smoothstep: 0 below *edge0*, 1 above *edge1*, C¹ between."""
     t = jnp.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
 
 
-# Near-linear torsion suppression thresholds.
-# Torsions whose central bond angle exceeds ~170° are physically meaningless
-# (the dihedral is ill-defined when three consecutive atoms are collinear).
-# The dihedral gradient diverges as 1/sin²(θ), producing forces thousands of
-# times larger than the underlying barrier height.  A Hermite smoothstep on
-# min(sin θ_b, sin θ_c) suppresses these terms smoothly.
+# Near-linear suppression thresholds.
+# Torsions/stretch-bends whose central bond angle is near-collinear
+# (close to 0° or 180°) are physically meaningless — the dihedral is
+# ill-defined and the angle gradient diverges as 1/sin(θ).  A Hermite
+# smoothstep on min(sin θ_b, sin θ_c) suppresses these terms smoothly.
+# sin(θ) is symmetric, so this fires for both near-0° and near-180°.
 #
-# sin(175°) ≈ 0.087  → full suppression (w = 0)
-# sin(170°) ≈ 0.174  → no suppression  (w = 1)
+# sin(175°) = sin(5°) ≈ 0.087  → full suppression (w = 0)
+# sin(170°) = sin(10°) ≈ 0.174  → no suppression  (w = 1)
 _SIN_LO = math.sin(math.radians(175.0))  # ≈ 0.0872
 _SIN_HI = math.sin(math.radians(170.0))  # ≈ 0.1736
 
@@ -402,8 +450,8 @@ def _torsion_energy(
     """Cosine torsion energy: ``E = Σ w_i · k_i · (1 + cos(n_i·φ_i − γ_i))``.
 
     Uses an atan2-based signed dihedral angle computation.  Torsion terms
-    whose central bond angle is near-linear (>170°) are smoothly suppressed
-    to avoid the well-known gradient singularity at 180°.
+    whose central bond angle is near-collinear (within ~10° of 0° or 180°)
+    are smoothly suppressed to avoid the well-known gradient singularity.
 
     Args:
         k (jnp.ndarray): Force constants, shape ``(n_torsions,)``, kcal/mol.
@@ -540,6 +588,13 @@ class JaxHandle:
     ub_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
     ub_param_map: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
     n_ub_types: int = 0
+    # Stretch-bend cross terms
+    sb_angle_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 3), dtype=np.int32))
+    sb_param_map: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    sb_bond_ij_idx: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    sb_bond_jk_idx: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    sb_angle_idx: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
+    n_sb_types: int = 0
     # Functional form used to compile the energy function
     functional_form: str = "harmonic"
     # Compiled energy function (captures topology, JIT-compiled)
@@ -689,6 +744,42 @@ class JaxEngine(MMEngine):
                     ub_atom_indices.append((angle.atom_i, angle.atom_k))
                     ub_param_map.append(ub_idx)
 
+        # Match stretch-bend cross terms
+        # Use match_stretch_bend() with proper env_id/ff_row fallback.
+        # Look up adjacent bonds from the already-matched bond set (not
+        # re-matching with the wrong env_id).
+        sb_angle_indices: list[tuple[int, int, int]] = []
+        sb_param_map_list: list[int] = []
+        sb_bond_ij_idx: list[int] = []
+        sb_bond_jk_idx: list[int] = []
+        sb_angle_idx: list[int] = []
+        sb_param_index = {id(p): i for i, p in enumerate(forcefield.stretch_bends)}
+        bond_ff_index = {id(p): i for i, p in enumerate(forcefield.bonds)}
+        angle_ff_index = {id(p): i for i, p in enumerate(forcefield.angles)}
+
+        # Pre-build lookup from atom pair → matched bond param (using the
+        # bond's own env_id, not the angle's).
+        matched_bond_by_atoms: dict[tuple[int, int], BondParam] = {}
+        for bond in molecule.bonds:
+            _, param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+            if param is not None:
+                matched_bond_by_atoms[(bond.atom_i, bond.atom_j)] = param
+                matched_bond_by_atoms[(bond.atom_j, bond.atom_i)] = param
+
+        for angle in molecule.angles:
+            sb = forcefield.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+            if sb is None:
+                continue
+            bond_ij = matched_bond_by_atoms.get((angle.atom_i, angle.atom_j))
+            bond_jk = matched_bond_by_atoms.get((angle.atom_j, angle.atom_k))
+            angle_param = forcefield.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+            if bond_ij is not None and bond_jk is not None and angle_param is not None:
+                sb_angle_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
+                sb_param_map_list.append(sb_param_index[id(sb)])
+                sb_bond_ij_idx.append(bond_ff_index[id(bond_ij)])
+                sb_bond_jk_idx.append(bond_ff_index[id(bond_jk)])
+                sb_angle_idx.append(angle_ff_index[id(angle_param)])
+
         # Match torsions — each detected torsion may match multiple FF
         # entries (one per periodicity component), each becoming a separate
         # term.  Both proper and improper torsions are routed through the
@@ -772,6 +863,16 @@ class JaxEngine(MMEngine):
             ub_indices=ub_indices_arr,
             ub_param_map=np.array(ub_param_map, dtype=np.int32),
             n_ub_types=len(ub_angles),
+            sb_angle_indices=(
+                np.array(sb_angle_indices, dtype=np.int32) if sb_angle_indices else np.empty((0, 3), dtype=np.int32)
+            ),
+            sb_param_map=np.array(sb_param_map_list, dtype=np.int32)
+            if sb_param_map_list
+            else np.empty(0, dtype=np.int32),
+            sb_bond_ij_idx=np.array(sb_bond_ij_idx, dtype=np.int32),
+            sb_bond_jk_idx=np.array(sb_bond_jk_idx, dtype=np.int32),
+            sb_angle_idx=np.array(sb_angle_idx, dtype=np.int32),
+            n_sb_types=len(forcefield.stretch_bends),
             functional_form=_resolve_form(forcefield),
         )
 
@@ -1064,9 +1165,10 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     n_tt = handle.n_torsion_types
     n_vt = handle.n_vdw_types
     n_ubt = handle.n_ub_types
+    n_sbt = handle.n_sb_types
 
     # Param vector offsets
-    _offsets = compute_param_offsets(n_bt, n_at, n_tt, n_vdw_types=n_vt)
+    _offsets = compute_param_offsets(n_bt, n_at, n_tt, n_vdw_types=n_vt, n_sb_types=n_sbt)
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
@@ -1078,6 +1180,17 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     has_ub = n_ubt > 0 and len(handle.ub_indices) > 0
     _ub_indices = jnp.array(handle.ub_indices) if has_ub else None
     _ub_map = jnp.array(handle.ub_param_map) if has_ub else None
+
+    # Stretch-bend topology
+    has_sb = n_sbt > 0 and len(handle.sb_angle_indices) > 0
+    _sb_angle_indices = jnp.array(handle.sb_angle_indices) if has_sb else None
+    _sb_map = jnp.array(handle.sb_param_map) if has_sb else None
+    # Indices into the bond/angle param blocks — used at runtime to gather
+    # equilibrium values from the param vector (not frozen constants).
+    _sb_bond_ij_idx = jnp.array(handle.sb_bond_ij_idx) if has_sb else None
+    _sb_bond_jk_idx = jnp.array(handle.sb_bond_jk_idx) if has_sb else None
+    _sb_angle_idx = jnp.array(handle.sb_angle_idx) if has_sb else None
+    sb_offset = _offsets["sb"]
 
     if use_mm3:
 
@@ -1115,6 +1228,17 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
                 k = ub_params[_ub_map, 0]
                 r0 = ub_params[_ub_map, 1]
                 E = E + _ub_energy(k, r0, coords, _ub_indices)
+
+            if has_sb:
+                sb_k = params[sb_offset : sb_offset + n_sbt]
+                k = sb_k[_sb_map]
+                # Read equilibrium values from the runtime param vector
+                bond_params_sb = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
+                angle_params_sb = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
+                r0_ij = bond_params_sb[_sb_bond_ij_idx, 1]
+                r0_jk = bond_params_sb[_sb_bond_jk_idx, 1]
+                theta0 = angle_params_sb[_sb_angle_idx, 1] * (jnp.pi / 180.0)
+                E = E + _mm3_stretch_bend_energy(k, r0_ij, r0_jk, theta0, coords, _sb_angle_indices)
 
             return E
 

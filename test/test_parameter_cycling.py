@@ -43,6 +43,7 @@ class TestParamIndicesByType:
             "angle_k",
             "angle_eq",
             "torsion_k",
+            "sb_k",
             "vdw_radius",
             "vdw_epsilon",
             "ub_k",

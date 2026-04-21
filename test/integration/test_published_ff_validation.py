@@ -122,8 +122,14 @@ def _build_frequency_reference(
     modes and QM imaginary modes).  MM frequencies above
     *upper_threshold* are excluded — these correspond to the
     reaction-coordinate mode whose QM counterpart is imaginary and thus
-    already excluded.  This matches the Q2MM convention of assigning
-    weight 0.00 to the first eigenvalue (``eig_i``).
+    already excluded.
+
+    The 4000 cm⁻¹ default assumes that exactly one MM mode per TS
+    molecule exceeds this value (the reaction-coordinate mode from the
+    deliberately stiffened TS bond), corresponding to the single QM
+    imaginary mode already filtered by the lower threshold.  For systems
+    with multiple stiff modes or multiple imaginary modes, this
+    threshold should be reviewed.
     """
     from q2mm.optimizers.objective import ReferenceData
 
@@ -286,15 +292,15 @@ def _save_golden_fixture(results: dict, path: Path) -> None:
 # ===========================================================================
 
 
-@requires_any_engine
+@pytest.mark.skipif(not _HAS_JAX, reason="JAX required for torsion damping and stretch-bend support")
 @pytest.mark.validation
 class TestPublishedFFEvaluation:
     """Check 1: Evaluate the Donoghue 2008 published Rh-enamide FF.
 
     The ``mm3.fld`` file contains the published optimized parameters in its
     Rh-enamide substructure section. We load these directly (no Seminario),
-    evaluate with the best available engine (JAX preferred for its near-linear
-    torsion damping, OpenMM as fallback), and compare against QM frequencies.
+    evaluate with the JAX engine (which provides near-linear torsion damping
+    and stretch-bend support), and compare against QM frequencies.
 
     The Seminario-estimated FF serves as the "unoptimized" baseline — the
     published FF should produce a meaningfully lower objective score.
@@ -329,14 +335,10 @@ class TestPublishedFFEvaluation:
 
     @pytest.fixture(scope="class")
     def engine(self) -> Any:
-        """Return the best available engine (JAX preferred for torsion damping)."""
-        if _HAS_JAX:
-            from q2mm.backends.mm.jax_engine import JaxEngine
+        """Return JaxEngine (required for torsion damping + stretch-bend)."""
+        from q2mm.backends.mm.jax_engine import JaxEngine
 
-            return JaxEngine()
-        from q2mm.backends.mm import OpenMMEngine
-
-        return OpenMMEngine()
+        return JaxEngine()
 
     @pytest.fixture(scope="class")
     def published_results(self, published_ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
