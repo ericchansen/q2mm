@@ -27,7 +27,8 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 
 from test._shared import make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, VdwParam
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
+from q2mm.models.molecule import Q2MMMolecule
 
 
 @pytest.fixture(autouse=True)
@@ -408,3 +409,160 @@ class TestMM3ParityJaxVsOpenMM:
         jax_e = JaxEngine().energy(mol, ff)
         omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
         assert jax_e == pytest.approx(omm_e, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Near-linear torsion damping (issue #255 root cause)
+# ---------------------------------------------------------------------------
+
+
+def _make_four_atom_chain(
+    central_angle_deg: float,
+    dihedral_deg: float = 60.0,
+) -> Q2MMMolecule:
+    """Build a 4-atom chain C-C-C-C with a controlled central angle.
+
+    Atom 0 at origin, atom 1 along +x, atom 2 at the specified
+    angle from the 0→1 bond, atom 3 rotated by dihedral_deg.
+    """
+    from q2mm.models.molecule import Q2MMMolecule
+
+    r = 1.5  # bond length
+    theta = np.radians(central_angle_deg)
+    phi = np.radians(dihedral_deg)
+
+    p0 = np.array([0.0, 0.0, 0.0])
+    p1 = np.array([r, 0.0, 0.0])
+    # p2 at angle theta from p0-p1 bond, in the xy plane
+    p2 = p1 + r * np.array([-np.cos(np.pi - theta), np.sin(np.pi - theta), 0.0])
+    # p3 rotated by dihedral around the p1-p2 axis
+    b1 = p2 - p1
+    b1_hat = b1 / np.linalg.norm(b1)
+    # perpendicular in the plane of p0,p1,p2
+    v_in = p0 - p1 - np.dot(p0 - p1, b1_hat) * b1_hat
+    v_in_hat = v_in / (np.linalg.norm(v_in) + 1e-30)
+    v_out = np.cross(b1_hat, v_in_hat)
+    p3 = p2 + r * (
+        -np.cos(np.pi - theta) * b1_hat + np.sin(np.pi - theta) * (np.cos(phi) * v_in_hat + np.sin(phi) * v_out)
+    )
+
+    return Q2MMMolecule(
+        symbols=["C", "C", "C", "C"],
+        geometry=np.array([p0, p1, p2, p3]),
+    )
+
+
+def _torsion_ff() -> ForceField:
+    """Return a 4-atom FF with one torsion term."""
+    return ForceField(
+        bonds=[BondParam(elements=("C", "C"), force_constant=5.0, equilibrium=1.5)],
+        angles=[AngleParam(elements=("C", "C", "C"), force_constant=0.5, equilibrium=109.5)],
+        torsions=[
+            TorsionParam(elements=("C", "C", "C", "C"), periodicity=3, force_constant=2.0),
+        ],
+        functional_form=FunctionalForm.MM3,
+    )
+
+
+class TestNearLinearTorsionDamping:
+    """Verify the smoothstep damping for near-linear central angles."""
+
+    def test_normal_angle_undamped(self) -> None:
+        """Torsion energy at 109.5° central angle is NOT suppressed."""
+        mol = _make_four_atom_chain(central_angle_deg=109.5)
+        ff = _torsion_ff()
+        engine = JaxEngine()
+        e = engine.energy(mol, ff)
+        # Energy should be non-trivial (torsion + angle + bond contributions)
+        assert abs(e) > 0.01, f"Energy too small: {e}"
+
+        # Compare against a manually computed torsion: at 109.5° the
+        # smoothstep weight should be exactly 1.0 (sin(109.5°) >> sin(170°))
+        from q2mm.backends.mm.jax_engine import _smoothstep, _SIN_LO, _SIN_HI
+
+        sin_109 = np.sin(np.radians(109.5))
+        w = float(_smoothstep(jnp.float64(sin_109), _SIN_LO, _SIN_HI))
+        assert w == pytest.approx(1.0, abs=1e-10)
+
+    def test_near_linear_suppressed(self) -> None:
+        """Torsion energy at 179° central angle IS suppressed."""
+        from q2mm.backends.mm.jax_engine import _smoothstep, _SIN_LO, _SIN_HI
+
+        sin_179 = np.sin(np.radians(179.0))
+        w = float(_smoothstep(jnp.float64(sin_179), _SIN_LO, _SIN_HI))
+        assert w == pytest.approx(0.0, abs=1e-10)
+
+        # Full energy check: 179° vs 120° — torsion contribution at 179°
+        # should be negligible
+        mol_linear = _make_four_atom_chain(central_angle_deg=179.0)
+        mol_normal = _make_four_atom_chain(central_angle_deg=120.0)
+        ff = _torsion_ff()
+        engine = JaxEngine()
+        e_linear = engine.energy(mol_linear, ff)
+        e_normal = engine.energy(mol_normal, ff)
+        # Both have bond + angle energy, but 179° should have near-zero
+        # torsion contribution.  The angle energy at 179° is large (far
+        # from 109.5° equilibrium), so total energy is still substantial.
+        # Key: the energy should be FINITE and not blown up.
+        assert np.isfinite(e_linear), f"Energy at 179° is not finite: {e_linear}"
+        assert np.isfinite(e_normal), f"Energy at 120° is not finite: {e_normal}"
+
+    def test_gradient_finite_at_179(self) -> None:
+        """Gradient (force) at 179° central angle is finite and bounded."""
+        mol = _make_four_atom_chain(central_angle_deg=179.0)
+        ff = _torsion_ff()
+        engine = JaxEngine()
+        handle = engine._get_handle(mol, ff)
+        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        coords = jnp.array(mol.geometry, dtype=jnp.float64)
+
+        grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
+        grad_np = np.array(grad)
+        max_force = float(np.abs(grad_np).max())
+        assert np.all(np.isfinite(grad_np)), "Gradient contains NaN/Inf"
+        # Without damping, max force would be ~1000+.  With damping,
+        # torsion forces are suppressed; remaining forces come from the
+        # angle term (179° is 70° from the 109.5° equilibrium — the MM3
+        # sextic angle produces ~350 kcal/(mol·Å) at that displacement).
+        assert max_force < 500.0, (
+            f"Max force {max_force:.1f} kcal/(mol·Å) too large at 179° — near-linear damping may not be working"
+        )
+
+    def test_hessian_finite_at_179(self) -> None:
+        """Hessian at 179° central angle is finite (no 10⁹ frequencies)."""
+        mol = _make_four_atom_chain(central_angle_deg=179.0)
+        ff = _torsion_ff()
+        engine = JaxEngine()
+        handle = engine._get_handle(mol, ff)
+        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+
+        flat = jnp.array(mol.geometry.flatten(), dtype=jnp.float64)
+        hess = jax.hessian(lambda fc: handle._energy_fn(params, fc.reshape(-1, 3)))(flat)
+        hess_np = np.array(hess)
+        assert np.all(np.isfinite(hess_np)), "Hessian contains NaN/Inf"
+        max_elem = float(np.abs(hess_np).max())
+        # Without damping, Hessian elements could be 10⁶+.  With damping,
+        # they should be bounded.  The MM3 sextic angle term at 179°
+        # (70° from equilibrium) produces large but finite second derivatives.
+        assert max_elem < 5e4, f"Hessian element {max_elem:.1f} too large"
+
+    def test_smoothstep_transition(self) -> None:
+        """Smoothstep transitions correctly between 170° and 175°."""
+        from q2mm.backends.mm.jax_engine import _smoothstep, _SIN_LO, _SIN_HI
+
+        # Below 170°: w = 1.0 (no damping)
+        for angle in [90, 109.5, 120, 150, 160, 170]:
+            s = np.sin(np.radians(angle))
+            w = float(_smoothstep(jnp.float64(s), _SIN_LO, _SIN_HI))
+            assert w == pytest.approx(1.0, abs=1e-6), f"{angle}°: w={w}"
+
+        # Above 175°: w = 0.0 (full suppression)
+        for angle in [175, 178, 179, 179.9]:
+            s = np.sin(np.radians(angle))
+            w = float(_smoothstep(jnp.float64(s), _SIN_LO, _SIN_HI))
+            assert w == pytest.approx(0.0, abs=1e-6), f"{angle}°: w={w}"
+
+        # Between 170-175°: 0 < w < 1 (smooth transition)
+        s_172 = np.sin(np.radians(172.0))
+        w_172 = float(_smoothstep(jnp.float64(s_172), _SIN_LO, _SIN_HI))
+        assert 0.1 < w_172 < 0.9, f"172°: w={w_172} not in transition zone"
