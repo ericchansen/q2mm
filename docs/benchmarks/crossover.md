@@ -119,9 +119,10 @@ The "analytical path" today does not include:
   Hessian batching within each group. 25% loss-eval speedup on
   Rh-enamide (632 → 472 ms). Molecules with different topologies still
   use a small outer loop (no padding, no eigendecomposition corruption).
-- **Stretch-bend cross-term in any backend.** Parsed from MM3 `.fld`
-  files (`q2mm/io/mm3.py:498-525`) but not built into `ForceField` for
-  any of OpenMM, Tinker, or JAX. Symmetric gap — not a parity bug.
+- **Stretch-bend cross-term in OpenMM/Tinker.** The JAX engine now
+  computes stretch-bend energy; OpenMM and Tinker do not yet.
+  `StretchBendParam` is in `ForceField`, and the MM3 `.fld` loader
+  populates it.  Wildcard atom type `00` matching is not yet supported.
 - **Parameter equivalences / linked params** as JIT-traceable
   projections. Box bounds work today via `jaxopt.LBFGSB`. Anything
   more — atom-type equivalence groups, linear constraints — would

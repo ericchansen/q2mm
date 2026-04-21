@@ -1,7 +1,9 @@
 # JaxEngine
 
 A pure-[JAX](https://jax.readthedocs.io/) implementation supporting both harmonic (OPLSAA-style) and MM3
-functional forms, including bond, angle, torsion, and vdW energy terms.
+functional forms, including bond, angle, torsion, stretch-bend cross-term,
+and vdW energy terms.  Near-linear torsion terms (central angle >170°) are
+smoothly suppressed to prevent the well-known dihedral gradient singularity.
 Best for small-to-medium molecules where periodic boundaries and neighbor
 lists are not needed.  All energy functions are differentiable via
 `jax.grad`, enabling analytical gradient computation.
