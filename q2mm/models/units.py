@@ -99,9 +99,16 @@ MDYNA_TO_KCALMOLA2: float = 0.5 * MDYNA_TO_KJMOLA2 / KCAL_TO_KJ
 # to preserve exact MM3 parity.
 MDYNA_RAD2_TO_KCALMOLRAD2: float = 0.5 * MM3_STR / KCAL_TO_KJ
 
+# --- MM3 stretch-bend: mdyn/rad  ↔  kcal/(mol·Å·rad) ---
+# Allinger (JACS 1989, eq. 9): E_sb = 2.51118·k_sba·Δr·Δθ_deg.
+# With Δθ in radians: factor = 2.51118 × (180/π) ≈ 143.88.
+# No ½ factor — stretch-bend is linear, not quadratic.
+MDYNRAD_TO_KCALMOLARAD: float = 2.51118 * (180.0 / math.pi)
+
 # Inverses
 KCALMOLA2_TO_MDYNA: float = 1.0 / MDYNA_TO_KCALMOLA2
 KCALMOLRAD2_TO_MDYNA_RAD2: float = 1.0 / MDYNA_RAD2_TO_KCALMOLRAD2
+KCALMOLARAD_TO_MDYNRAD: float = 1.0 / MDYNRAD_TO_KCALMOLARAD
 
 # Hessian: kcal/(mol·Å²) → Hartree/Bohr² (two-step via kJ intermediary)
 KCALMOLA2_TO_HESSIAN_AU: float = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
@@ -130,9 +137,19 @@ def mm3_angle_k_to_canonical(k: float) -> KcalPerMolRadSq:
     return KcalPerMolRadSq(k * MDYNA_RAD2_TO_KCALMOLRAD2)
 
 
+def mm3_sb_k_to_canonical(k: float) -> float:
+    """Convert MM3 stretch-bend force constant (mdyn/rad) to canonical (kcal/(mol·Å·rad))."""
+    return k * MDYNRAD_TO_KCALMOLARAD
+
+
 def canonical_to_mm3_angle_k(k: float) -> MdynAngPerRadSq:
     """Convert canonical angle force constant (kcal/mol/rad²) to MM3 (mdyn·Å/rad²)."""
     return MdynAngPerRadSq(k * KCALMOLRAD2_TO_MDYNA_RAD2)
+
+
+def canonical_to_mm3_sb_k(k: float) -> float:
+    """Convert canonical stretch-bend force constant (kcal/(mol·Å·rad)) to MM3 (mdyn/rad)."""
+    return k * KCALMOLARAD_TO_MDYNRAD
 
 
 # =====================================================================

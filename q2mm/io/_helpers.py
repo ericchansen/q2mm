@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         AngleParam,
         BondParam,
         ForceField,
+        StretchBendParam,
         VdwParam,
     )
 
@@ -97,6 +98,12 @@ def _build_angle_maps(angles: list[AngleParam]) -> tuple[dict[int, AngleParam], 
     return _build_param_maps(angles, "env_id")
 
 
+def _build_sb_maps(
+    stretch_bends: list[StretchBendParam],
+) -> tuple[dict[int, StretchBendParam], dict[str, StretchBendParam]]:
+    return _build_param_maps(stretch_bends, "env_id")
+
+
 def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
     return _build_param_maps(vdws, "atom_type")
 
@@ -128,6 +135,14 @@ def _match_angle_for_export(
     angle_by_env: dict[str, AngleParam],
 ) -> AngleParam | None:
     return _match_for_export(param, angle_by_row, angle_by_env, 3, canonicalize_angle_env_id)
+
+
+def _match_sb_for_export(
+    param: Any,
+    sb_by_row: dict[int, StretchBendParam],
+    sb_by_env: dict[str, StretchBendParam],
+) -> StretchBendParam | None:
+    return _match_for_export(param, sb_by_row, sb_by_env, 3, canonicalize_angle_env_id)
 
 
 # ---------------------------------------------------------------------------

@@ -924,6 +924,12 @@ class OpenMMEngine(MMEngine):
         forcefield = _coerce_forcefield(forcefield, molecule)
         self._validate_forcefield(forcefield)
 
+        if forcefield.stretch_bends:
+            raise NotImplementedError(
+                "OpenMMEngine does not support stretch-bend cross terms. "
+                "Use JaxEngine for force fields with stretch-bend parameters."
+            )
+
         # Default to MM3 for backward compatibility when functional_form is None
         ff_form = forcefield.functional_form or FunctionalForm.MM3
         use_harmonic = ff_form == FunctionalForm.HARMONIC
@@ -1730,6 +1736,11 @@ class OpenMMEngine(MMEngine):
 
         """
         molecule = _as_molecule(structure)
+        if forcefield.stretch_bends:
+            raise NotImplementedError(
+                "OpenMMEngine does not support stretch-bend cross terms. "
+                "Use JaxEngine for force fields with stretch-bend parameters."
+            )
         diff = self._create_diff_handle(molecule, forcefield)
 
         state = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
@@ -1751,7 +1762,12 @@ class OpenMMEngine(MMEngine):
         # context for each perturbation.  Use double precision on GPU
         # so the finite differences are not lost to float32 rounding.
         if forcefield.vdws:
-            vdw_start = 2 * len(forcefield.bonds) + 2 * len(forcefield.angles) + len(forcefield.torsions)
+            vdw_start = (
+                2 * len(forcefield.bonds)
+                + 2 * len(forcefield.angles)
+                + len(forcefield.torsions)
+                + len(forcefield.stretch_bends)
+            )
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
             handle = self.create_context(molecule, forcefield, precision="double")

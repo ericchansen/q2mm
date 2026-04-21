@@ -14,9 +14,11 @@ from q2mm.io._helpers import (
     Param,
     _build_angle_maps,
     _build_bond_maps,
+    _build_sb_maps,
     _build_vdw_maps,
     _match_angle_for_export,
     _match_bond_for_export,
+    _match_sb_for_export,
     _split_env_id,
     _update_torsion_param,
     _validate_form_for_format,
@@ -26,6 +28,7 @@ from q2mm.models.forcefield import (
     BondParam,
     ForceField,
     FunctionalForm,
+    StretchBendParam,
     TorsionParam,
     VdwParam,
 )
@@ -37,8 +40,10 @@ from q2mm.models.identifiers import (
 from q2mm.models.units import (
     canonical_to_mm3_angle_k,
     canonical_to_mm3_bond_k,
+    canonical_to_mm3_sb_k,
     mm3_angle_k_to_canonical,
     mm3_bond_k_to_canonical,
+    mm3_sb_k_to_canonical,
 )
 
 if TYPE_CHECKING:
@@ -757,6 +762,7 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
 
     bonds = []
     angles = []
+    stretch_bends: list[StretchBendParam] = []
     torsions = []
     vdws = _parse_mm3_vdw_params(Path(path))
 
@@ -831,10 +837,24 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
                 )
             )
 
+        elif param.ptype == "sb" and len(atom_types) >= 3:
+            elems = tuple(_extract_element(t) for t in atom_types[:3])
+            env_id = canonicalize_angle_env_id(atom_types[:3])
+            stretch_bends.append(
+                StretchBendParam(
+                    elements=elems,
+                    force_constant=mm3_sb_k_to_canonical(param.value),
+                    label=f"MM3 row {param.ff_row} SB",
+                    env_id=env_id,
+                    ff_row=param.ff_row,
+                )
+            )
+
     return ForceField(
         name=f"MM3 from {Path(path).name}",
         bonds=bonds,
         angles=angles,
+        stretch_bends=stretch_bends,
         torsions=torsions,
         vdws=vdws,
         source_path=Path(path),
@@ -870,6 +890,7 @@ def save_mm3_fld(
         updated_params = copy.deepcopy(template_params)
         bond_by_row, bond_by_env = _build_bond_maps(ff.bonds)
         angle_by_row, angle_by_env = _build_angle_maps(ff.angles)
+        sb_by_row, sb_by_env = _build_sb_maps(ff.stretch_bends)
 
         for param in updated_params:
             if param.ptype in ("bf", "be"):
@@ -886,6 +907,10 @@ def save_mm3_fld(
                     )
             elif param.ptype == "df":
                 _update_torsion_param(param, ff.torsions)
+            elif param.ptype == "sb":
+                sb = _match_sb_for_export(param, sb_by_row, sb_by_env)
+                if sb is not None:
+                    param.value = canonical_to_mm3_sb_k(sb.force_constant)
 
         _mm3_export_ff(output_path, updated_params, list(template_lines))
         if ff.vdws:

@@ -27,7 +27,15 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 
 from test._shared import make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
+from q2mm.models.forcefield import (
+    AngleParam,
+    BondParam,
+    ForceField,
+    FunctionalForm,
+    StretchBendParam,
+    TorsionParam,
+    VdwParam,
+)
 from q2mm.models.molecule import Q2MMMolecule
 
 
@@ -566,3 +574,93 @@ class TestNearLinearTorsionDamping:
         s_172 = np.sin(np.radians(172.0))
         w_172 = float(_smoothstep(jnp.float64(s_172), _SIN_LO, _SIN_HI))
         assert 0.1 < w_172 < 0.9, f"172°: w={w_172} not in transition zone"
+
+    def test_near_zero_angle_also_suppressed(self) -> None:
+        """Torsion damping fires for near-0° too (sin is symmetric)."""
+        from q2mm.backends.mm.jax_engine import _SIN_HI, _SIN_LO, _smoothstep
+
+        for angle in [1, 3, 5]:
+            s = np.sin(np.radians(angle))
+            w = float(_smoothstep(jnp.float64(s), _SIN_LO, _SIN_HI))
+            assert w == pytest.approx(0.0, abs=1e-6), f"{angle}°: w={w}"
+
+
+class TestStretchBendEnergy:
+    """Verify MM3 stretch-bend cross-term energy and differentiability."""
+
+    def test_analytical_value(self) -> None:
+        """Hand-computed SB energy for a water-like 3-atom system."""
+        import math
+
+        # Water: H-O-H, r0=0.96 Å, theta0=104.5°, k_sb=11.5 kcal/(mol·Å·rad)
+        # At r_OH=1.00 Å, theta=110°:
+        #   dr_sum = (1.00-0.96) + (1.00-0.96) = 0.08
+        #   dtheta = (110-104.5) * pi/180 = 0.09599 rad
+        #   E = 11.5 * 0.08 * 0.09599 = 0.08831 kcal/mol
+        mol = make_water(angle_deg=110.0, bond_length=1.0)
+        ff = ForceField(
+            bonds=[BondParam(elements=("H", "O"), force_constant=8.0, equilibrium=0.96)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.7, equilibrium=104.5)],
+            stretch_bends=[
+                StretchBendParam(elements=("H", "O", "H"), force_constant=11.5),
+            ],
+            functional_form=FunctionalForm.MM3,
+        )
+        engine = JaxEngine()
+        # Total energy includes bond + angle + SB; extract SB by subtraction
+        ff_no_sb = ForceField(
+            bonds=ff.bonds,
+            angles=ff.angles,
+            functional_form=FunctionalForm.MM3,
+        )
+        e_with_sb = engine.energy(mol, ff)
+        e_without_sb = engine.energy(mol, ff_no_sb)
+        sb_energy = e_with_sb - e_without_sb
+
+        dr_sum = 2 * (1.0 - 0.96)
+        dtheta = math.radians(110.0 - 104.5)
+        expected = 11.5 * dr_sum * dtheta
+        assert sb_energy == pytest.approx(expected, abs=1e-4), f"SB energy {sb_energy:.6f} != expected {expected:.6f}"
+
+    def test_at_equilibrium_zero(self) -> None:
+        """SB energy is zero when geometry matches equilibrium."""
+        mol = make_water(angle_deg=104.5, bond_length=0.96)
+        ff = ForceField(
+            bonds=[BondParam(elements=("H", "O"), force_constant=8.0, equilibrium=0.96)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.7, equilibrium=104.5)],
+            stretch_bends=[
+                StretchBendParam(elements=("H", "O", "H"), force_constant=11.5),
+            ],
+            functional_form=FunctionalForm.MM3,
+        )
+        ff_no_sb = ForceField(bonds=ff.bonds, angles=ff.angles, functional_form=FunctionalForm.MM3)
+        engine = JaxEngine()
+        sb_energy = engine.energy(mol, ff) - engine.energy(mol, ff_no_sb)
+        assert abs(sb_energy) < 1e-10
+
+    def test_differentiable(self) -> None:
+        """jax.grad flows through SB energy without NaN."""
+        mol = make_water(angle_deg=110.0, bond_length=1.0)
+        ff = ForceField(
+            bonds=[BondParam(elements=("H", "O"), force_constant=8.0, equilibrium=0.96)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.7, equilibrium=104.5)],
+            stretch_bends=[
+                StretchBendParam(elements=("H", "O", "H"), force_constant=11.5),
+            ],
+            functional_form=FunctionalForm.MM3,
+        )
+        engine = JaxEngine()
+        handle = engine._get_handle(mol, ff)
+        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        coords = jnp.array(mol.geometry, dtype=jnp.float64)
+        grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
+        assert np.all(np.isfinite(np.array(grad))), "SB gradient contains NaN/Inf"
+
+    def test_unit_conversion_matches_allinger(self) -> None:
+        """SB unit conversion factor matches Allinger's 2.51118 × 180/π."""
+        import math
+
+        from q2mm.models.units import MDYNRAD_TO_KCALMOLARAD
+
+        expected = 2.51118 * (180.0 / math.pi)
+        assert pytest.approx(expected, rel=1e-6) == MDYNRAD_TO_KCALMOLARAD
