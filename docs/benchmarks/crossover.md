@@ -119,6 +119,13 @@ The "analytical path" today does not include:
   Hessian batching within each group. 25% loss-eval speedup on
   Rh-enamide (632 → 472 ms). Molecules with different topologies still
   use a small outer loop (no padding, no eigendecomposition corruption).
+- **Geometry references (bond_length, bond_angle, torsion_angle) via
+  implicit differentiation.** ~~Deferred~~ — **Done** (PR #249).
+  `jaxopt.LBFGS(implicit_diff=True)` relaxes coordinates at the current
+  parameters; the outer `jax.grad` gets exact `∂x*/∂p` via the implicit
+  function theorem.  Non-convergence fallback adds a penalty when the
+  inner solver fails to converge (PR #269).  Tested on CH₃F with mixed
+  frequency + geometry objectives.
 - **Stretch-bend cross-term in OpenMM/Tinker.** The JAX engine now
   computes stretch-bend energy; OpenMM and Tinker do not yet.
   `StretchBendParam` is in `ForceField`, and the MM3 `.fld` loader

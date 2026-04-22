@@ -52,14 +52,22 @@ if TYPE_CHECKING:
 # implicit-function theorem applies.
 _GEOM_INNER_TOL = 1e-8
 _GEOM_INNER_MAXITER = 200
+# Penalty added per geometry reference when the inner solver does not
+# converge.  Large enough to dominate the loss and steer the outer
+# optimizer away from pathological parameter regions, but finite so
+# gradients remain usable.
+_GEOM_NONCONV_PENALTY = 1e4
 
 
 def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
-    """Return the relaxed geometry ``x*(params)`` for a single molecule.
+    """Return the relaxed geometry and convergence flag for a molecule.
 
     Uses ``jaxopt.LBFGS(fun=energy_of_coords, implicit_diff=True)`` so the
     outer ``jax.grad`` sees the exact parameter-gradient of ``x*`` via the
     implicit function theorem, avoiding autodiff-through-iteration.
+
+    When the inner solver does not converge (gradient norm > tol after
+    maxiter), the caller should add a penalty to the loss.
 
     Args:
         energy_fn: ``(params, coords) -> scalar`` energy function
@@ -68,7 +76,8 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
         coords0: Initial coordinates, shape ``(N, 3)``.
 
     Returns:
-        Relaxed coordinates, shape ``(N, 3)``.
+        tuple: ``(relaxed_coords, converged)`` where ``converged`` is a
+        scalar boolean (JAX array).
 
     """
     import jaxopt
@@ -83,7 +92,8 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
         implicit_diff=True,
     )
     sol = solver.run(coords0, params)
-    return sol.params
+    converged = sol.state.error <= _GEOM_INNER_TOL
+    return sol.params, converged
 
 
 def _bond_lengths(coords, atoms):  # noqa: ANN001, ANN202
@@ -420,7 +430,19 @@ class JaxLoss:
                 # Geometry contributions — relax coords at current params,
                 # then compute bond/angle/torsion observables.
                 if mol_spec.has_geometry:
-                    relaxed = _relax_coords(energy_fn, params, coords)
+                    relaxed, geom_converged = _relax_coords(energy_fn, params, coords)
+                    # Penalty when inner solver fails to converge — the
+                    # implicit-diff gradient is unreliable in this case.
+                    n_geom_refs = (
+                        len(entry.get("bond_refs", []))
+                        + len(entry.get("angle_refs", []))
+                        + len(entry.get("torsion_refs", []))
+                    )
+                    total = total + jnp.where(
+                        geom_converged,
+                        0.0,
+                        _GEOM_NONCONV_PENALTY * n_geom_refs,
+                    )
 
                     if mol_spec.has_bond_length:
                         calc = _bond_lengths(relaxed, entry["bond_atoms"])
