@@ -695,6 +695,34 @@ class TestJaxLossGeometryParity:
         assert loss < 10.0
         np.testing.assert_allclose(loss, 4.0, atol=1e-6)
 
+    def test_nonconvergence_penalty_is_finite(self) -> None:
+        """When inner solver cannot converge, loss includes a finite penalty."""
+        import jax.numpy as jnp
+
+        from q2mm.optimizers.jaxloss import JaxLoss, _GEOM_NONCONV_PENALTY
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        # Use a very stretched geometry far from equilibrium — the inner
+        # solver with limited iterations may not fully converge.
+        mol = make_diatomic(distance=3.0, bond_tolerance=5.0)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        ref.add_bond_length(value=0.74, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff)
+
+        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        loss, _grad = jax_loss.loss_and_grad(params)
+        loss = float(loss)
+        # Loss must be finite regardless of convergence
+        assert np.isfinite(loss), f"Loss is not finite: {loss}"
+        # The _GEOM_NONCONV_PENALTY constant must be accessible and positive
+        assert _GEOM_NONCONV_PENALTY > 0
+
 
 class TestJaxLossTsCurvatureInversion:
     """TS-curvature inversion (QFUERZA) inside the JIT loss path."""
