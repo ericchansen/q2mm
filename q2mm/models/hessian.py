@@ -35,9 +35,8 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
     """Normalise the *atoms* argument to a plain list of element symbols.
 
     Accepts:
-      - ``list[str]`` — element symbols directly (new API)
+      - ``list[str]`` — element symbols directly
       - Any object with a ``.symbols`` attribute (``Q2MMMolecule``)
-      - Legacy ``list[Atom]`` — reads ``.element`` and filters ``.is_dummy``
 
     Returns:
         list[str]: Non-dummy element symbols.
@@ -51,25 +50,19 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
     if not items:
         return []
 
-    # Plain strings — validate they are known elements
-    if isinstance(items[0], str):
-        unknown = [s for s in items if s not in co.MASSES]
-        if unknown:
-            raise ValueError(
-                f"Unknown element symbol(s): {unknown}. "
-                "Dummy atoms ('X', 'Du') should be excluded before "
-                "calling mass-weighting functions."
-            )
-        return items
+    if not isinstance(items[0], str):
+        raise TypeError(
+            f"Expected element symbols (list[str]) or a Q2MMMolecule; got list of {type(items[0]).__name__}."
+        )
 
-    # Legacy Atom objects (duck-typed: .element, .is_dummy)
-    warnings.warn(
-        "Passing Atom objects to mass-weighting functions is deprecated. "
-        "Pass element symbols (list[str]) or a Q2MMMolecule instead.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-    return [a.element for a in items if not getattr(a, "is_dummy", False)]
+    unknown = [s for s in items if s not in co.MASSES]
+    if unknown:
+        raise ValueError(
+            f"Unknown element symbol(s): {unknown}. "
+            "Dummy atoms ('X', 'Du') should be excluded before "
+            "calling mass-weighting functions."
+        )
+    return items
 
 
 # ---- Mass-weighting functions ----
@@ -88,8 +81,7 @@ def mass_weight_hessian(
 
     Args:
         hess: ``(3N, 3N)`` Hessian matrix — modified in place.
-        atoms: Element symbols (``list[str]``), a ``Q2MMMolecule``, or
-            (deprecated) legacy ``Atom`` objects.
+        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
         reverse: If ``True``, un-mass-weight instead.
 
     """

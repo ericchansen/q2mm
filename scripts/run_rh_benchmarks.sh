@@ -75,7 +75,7 @@ if $QUICK; then
 fi
 
 # ── Step 2: JAX backend (primary — exercises vmap) ───────────────────
-# Only the optimizers that match the pre-vmap archived results + jaxopt.
+# Only the optimizers that match the archived results + jaxopt.
 # Skip multi-start, basin-hopping, optax (OOM on Rh-enamide GPU).
 run_step "STEP 2: JAX backend — mm3, core optimizers" \
     python3 -m q2mm.diagnostics.cli --leaderboard-only \
@@ -175,4 +175,4 @@ else
 fi
 
 echo ""
-echo "Next: git add + commit results, compare against results-pre-vmap/"
+echo "Next: git add + commit results"
