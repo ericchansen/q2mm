@@ -259,3 +259,63 @@ metadata in this project.
 | **Long benchmarks** | OpenMM L-BFGS-B can take hours | Check CPU/GPU utilization periodically with `nvidia-smi` |
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
+
+---
+
+## 10. Validation Data & External Datasets
+
+### Data location
+
+`validation/supporting-info/` (gitignored, ~1.9 GB) contains supporting data
+from the Wahlers and Rosales Notre Dame dissertations: 996 Gaussian DFT logs,
+12 published MM3* force fields, and 134 MacroModel structures across 10
+reaction systems. See `validation/supporting-info/README.md` for provenance,
+file inventories, and how to obtain the zip files.
+
+### MM3 base force field
+
+`validation/published_ffs/mm3_base.fld` is the **standard, unmodified MM3
+force field** (1,850 lines). It provides backbone parameters (bonds, angles,
+torsions, vdW) that all Q2MM systems build on.
+
+- **Not committed** — the header says "Copyright Columbia University 1990 —
+  All rights reserved", which does not grant redistribution rights.
+- **Source:** download from [atlas-nano/ATLAS_toolkit](https://github.com/atlas-nano/ATLAS_toolkit)
+  `ff/macromodel/mm3.fld` or extract from a MacroModel installation.
+- **Identical** to the base section of `examples/rh-enamide/mm3.fld`
+  (the first ~1,850 lines before Rh-specific additions).
+
+### Force field composition
+
+Some published FFs (Wahlers dissertation) are **standalone OPT-substructure-only
+files** (71–238 lines) containing only custom parameters, not the full MM3
+backbone. To build a complete, evaluable force field:
+
+1. Start with `mm3_base.fld` (gitignored, see above for how to obtain)
+2. Insert metal-specific vdW entries before "END OF NONBONDED INTERACTIONS"
+3. Append the OPT substructure blocks from the standalone `.fld` file
+
+Rosales FFs are already complete (full MM3 base + OPT substructures in one
+file, ~2,000 lines) and do not need composition.
+
+### Adding a new benchmark system
+
+1. Write a `load_*()` function in `q2mm/diagnostics/systems.py` following the
+   pattern of `load_rh_enamide()` — load molecules, build `ReferenceData`,
+   return `SystemData`.
+2. Register in the `SYSTEMS` dict at the bottom of `systems.py`.
+3. Create a validation test under `test/integration/` following the pattern
+   of `test_published_ff_validation.py` — load published FF, evaluate with
+   `JaxEngine`, compare QM vs MM, pin results in a golden fixture JSON.
+4. Mark with `@pytest.mark.validation` so it runs with `--run-validation`.
+5. If the system depends on external (gitignored) data, the loader must
+   skip gracefully when files are absent.
+6. Document in `validation/published_ffs/README.md`.
+
+### Published FF validation status
+
+See `validation/published_ffs/README.md` for the full table. As of April 2026:
+- **1 system validated** (Rh-enamide)
+- **4 systems ready to implement** (Heck, Pd-allyl, Pd 1,4-conj, Ferrocene)
+  — QM data available from dissertation supporting info
+- **3 systems blocked** (OsO₄, Ru ketone, Sulfone) — no QM training data
