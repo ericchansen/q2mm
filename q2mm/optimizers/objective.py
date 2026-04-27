@@ -742,7 +742,12 @@ class ReferenceData:
 
         # Override hessian with eigenvalue-reconstructed version if available
         if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
-            mol.hessian = reform_hessian(log.evals, log.evecs)
+            evecs = log.evecs
+            # Gaussian logs store eigenvectors as (3N-6, 3N) — rows are modes.
+            # reform_hessian expects (3N, 3N-6) — columns are modes.
+            if evecs.shape[0] < evecs.shape[1]:
+                evecs = evecs.T
+            mol.hessian = reform_hessian(log.evals, evecs)
 
         # Frequencies in cm⁻¹ from the Gaussian log
         # Note: log.evals are eigenvalues (mass-weighted force constants in

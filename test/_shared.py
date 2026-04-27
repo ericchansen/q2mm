@@ -39,6 +39,19 @@ CH3F_MODES = SN2_QM_REF / "ch3f-normal-modes.npz"
 # Complex
 COMPLEX_XYZ = SN2_QM_REF / "complex-optimized.xyz"
 
+# External validation data (gitignored, ~1.9 GB).
+# Set Q2MM_SUPPORTING_INFO to override the default location.
+import os as _os
+
+SUPPORTING_INFO_DIR: Path | None = None
+_si_env = _os.environ.get("Q2MM_SUPPORTING_INFO")
+if _si_env:
+    _si_candidate = Path(_si_env)
+else:
+    _si_candidate = REPO_ROOT / "validation" / "supporting-info"
+if _si_candidate.is_dir():
+    SUPPORTING_INFO_DIR = _si_candidate
+
 # Ethane
 GS_FCHK = ETHANE_DIR / "GS.fchk"
 TS_FCHK = ETHANE_DIR / "TS.fchk"

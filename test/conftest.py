@@ -68,6 +68,7 @@ from test._shared import (  # noqa: F401
     SN2_HESSIAN,
     SN2_QM_REF,
     SN2_XYZ,
+    SUPPORTING_INFO_DIR,
     TS_FCHK,
     make_diatomic,
     make_noble_gas_pair,
@@ -131,6 +132,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "jax: requires JAX backend")
     config.addinivalue_line("markers", "jax_md: requires JAX-MD backend")
     config.addinivalue_line("markers", "psi4: requires Psi4 QM backend")
+    config.addinivalue_line(
+        "markers",
+        "external_data: requires external validation data in validation/supporting-info/",
+    )
 
     # Force CPU-only unless the user explicitly opts into GPU execution.
     # JAX initializes CUDA at import time, consuming ~25 GiB of VRAM.
@@ -184,3 +189,13 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             for item in items:
                 if marker_name in item.keywords:
                     item.add_marker(skip_marker)
+
+    # Auto-skip external_data tests when supporting-info directory is absent.
+    if SUPPORTING_INFO_DIR is None:
+        skip_data = pytest.mark.skip(
+            reason="external validation data not found "
+            "(set Q2MM_SUPPORTING_INFO or extract to validation/supporting-info/)"
+        )
+        for item in items:
+            if "external_data" in item.keywords:
+                item.add_marker(skip_data)
