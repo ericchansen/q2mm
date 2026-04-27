@@ -1,0 +1,180 @@
+{
+  "system": "heck-relay",
+  "publication": "Rosales et al. JACS 2020, 142, 9700",
+  "doi": "10.1021/jacs.0c01979",
+  "n_molecules": 23,
+  "total_freq_refs": 1564,
+  "published_ff": {
+    "objective_score": 3744419738.1135197,
+    "overall_r_squared": 0.8148511349321924,
+    "overall_rmsd_cm1": 1547.2977306698313,
+    "per_molecule": [
+      {
+        "name": "aagts1",
+        "n_atoms": 41,
+        "n_freq_refs": 56,
+        "r_squared": 0.8127547479820924,
+        "rmsd_cm1": 1702.8764406468708
+      },
+      {
+        "name": "aagts2",
+        "n_atoms": 41,
+        "n_freq_refs": 56,
+        "r_squared": 0.8167977550357278,
+        "rmsd_cm1": 1706.6907346020594
+      },
+      {
+        "name": "bgts1",
+        "n_atoms": 44,
+        "n_freq_refs": 64,
+        "r_squared": 0.8814099257604756,
+        "rmsd_cm1": 1566.9855432624313
+      },
+      {
+        "name": "bgts2",
+        "n_atoms": 44,
+        "n_freq_refs": 64,
+        "r_squared": 0.8832557932852011,
+        "rmsd_cm1": 1567.0609990217126
+      },
+      {
+        "name": "cf3ets1",
+        "n_atoms": 40,
+        "n_freq_refs": 50,
+        "r_squared": 0.95383963065686,
+        "rmsd_cm1": 1797.0912102061518
+      },
+      {
+        "name": "cf3ets2",
+        "n_atoms": 40,
+        "n_freq_refs": 51,
+        "r_squared": 0.9138815366869414,
+        "rmsd_cm1": 1766.094579278674
+      },
+      {
+        "name": "dimeets1",
+        "n_atoms": 43,
+        "n_freq_refs": 64,
+        "r_squared": 0.8581868747036951,
+        "rmsd_cm1": 1570.7563385753388
+      },
+      {
+        "name": "dimeets2",
+        "n_atoms": 43,
+        "n_freq_refs": 65,
+        "r_squared": 0.8751697772287064,
+        "rmsd_cm1": 1543.6119492575262
+      },
+      {
+        "name": "epgts1",
+        "n_atoms": 47,
+        "n_freq_refs": 69,
+        "r_squared": 0.8670853141829084,
+        "rmsd_cm1": 1564.3859123756502
+      },
+      {
+        "name": "epgts2",
+        "n_atoms": 47,
+        "n_freq_refs": 69,
+        "r_squared": 0.8690040493047567,
+        "rmsd_cm1": 1564.744442405367
+      },
+      {
+        "name": "ipets1",
+        "n_atoms": 46,
+        "n_freq_refs": 70,
+        "r_squared": 0.8932329895651979,
+        "rmsd_cm1": 1517.340890236783
+      },
+      {
+        "name": "ipets2",
+        "n_atoms": 46,
+        "n_freq_refs": 71,
+        "r_squared": 0.8989426190429324,
+        "rmsd_cm1": 1491.0798314488657
+      },
+      {
+        "name": "meets1",
+        "n_atoms": 40,
+        "n_freq_refs": 55,
+        "r_squared": 0.7986634667925014,
+        "rmsd_cm1": 1689.2488091056805
+      },
+      {
+        "name": "meets2",
+        "n_atoms": 40,
+        "n_freq_refs": 56,
+        "r_squared": 0.8149888727471465,
+        "rmsd_cm1": 1658.1254870388066
+      },
+      {
+        "name": "prrts2",
+        "n_atoms": 52,
+        "n_freq_refs": 84,
+        "r_squared": 0.9032367881138149,
+        "rmsd_cm1": 1427.0766342941135
+      },
+      {
+        "name": "prsts1",
+        "n_atoms": 52,
+        "n_freq_refs": 85,
+        "r_squared": 0.9127695260192988,
+        "rmsd_cm1": 1403.0243842732416
+      },
+      {
+        "name": "prsts2",
+        "n_atoms": 52,
+        "n_freq_refs": 85,
+        "r_squared": 0.9124303472954989,
+        "rmsd_cm1": 1402.8896960184995
+      },
+      {
+        "name": "tbets1",
+        "n_atoms": 49,
+        "n_freq_refs": 80,
+        "r_squared": 0.9290129190854705,
+        "rmsd_cm1": 1397.3217896594813
+      },
+      {
+        "name": "tbets2",
+        "n_atoms": 49,
+        "n_freq_refs": 80,
+        "r_squared": 0.9292969472728574,
+        "rmsd_cm1": 1396.8204923732158
+      },
+      {
+        "name": "tmets1",
+        "n_atoms": 49,
+        "n_freq_refs": 76,
+        "r_squared": 0.8711905202538831,
+        "rmsd_cm1": 1519.670113277666
+      },
+      {
+        "name": "tmets2",
+        "n_atoms": 49,
+        "n_freq_refs": 74,
+        "r_squared": 0.8535781364451337,
+        "rmsd_cm1": 1557.332780039942
+      },
+      {
+        "name": "zpgts1",
+        "n_atoms": 47,
+        "n_freq_refs": 70,
+        "r_squared": 0.8714046171334242,
+        "rmsd_cm1": 1536.3603065061932
+      },
+      {
+        "name": "zpgts2",
+        "n_atoms": 47,
+        "n_freq_refs": 70,
+        "r_squared": 0.87372771963673,
+        "rmsd_cm1": 1536.9388887725154
+      }
+    ]
+  },
+  "seminario_ff": {
+    "objective_score": 3879418904.5817327,
+    "overall_r_squared": 0.8219470489748109,
+    "overall_rmsd_cm1": 1593.910091838801
+  }
+}
