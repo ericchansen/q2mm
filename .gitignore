@@ -8,6 +8,17 @@ psi*.clean
 examples/sn2-test/qm-reference/psi4-output*.dat
 examples/rh-enamide/psi4_reference/
 
+# ── External validation data (large, not redistributable) ──
+# Dissertation supporting info: ~1.9 GB of Gaussian logs, MacroModel
+# structures, and force fields. See validation/supporting-info/README.md
+# for provenance and how to obtain.
+validation/supporting-info/
+
+# MM3 base force field (Copyright Columbia University 1990, "All rights
+# reserved"). Not redistributable — download from atlas-nano/ATLAS_toolkit
+# or extract from a MacroModel installation.
+validation/published_ffs/mm3_base.fld
+
 # ── Python ──────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
