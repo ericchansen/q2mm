@@ -1,9 +1,0 @@
-Q2MM generated frcmod
-BOND
-c -f      453.0726     2.9793
-c -h      383.3628     0.9839
-
-ANGLE
-f -c -h       27.4811   118.8512
-h -c -h       22.8110    98.0337
-
