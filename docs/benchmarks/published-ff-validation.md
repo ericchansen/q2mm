@@ -10,14 +10,11 @@ The validation program has two checks, run in order:
 
 | Check | Question | Status |
 |-------|----------|--------|
-| **Check 1** | Can q2mm load a published force field and reproduce its fit quality against the original QM data? | ✅ R² = 0.60 (JAX engine + near-linear torsion damping + RC exclusion). Published FF < Seminario baseline due to engine gap ([#255](https://github.com/ericchansen/q2mm/issues/255)). |
+| **Check 1** | Can q2mm load a published force field and reproduce its fit quality against the original QM data? | ✅ R² = 0.60 (JAX engine + near-linear torsion damping + RC exclusion). Published FF < Seminario baseline due to cross-engine gap. |
 | **Check 2** | Can q2mm re-derive the published force field from scratch using its own optimizers? | ✅ JaxOpt L-BFGS on Rh-enamide: RMSD 260 → 153 cm⁻¹ (50 iters, GPU) |
 
 Check 1 must pass before Check 2 makes sense — if we can't even evaluate a
 known-good force field correctly, there's no point trying to re-derive it.
-
-The umbrella tracker for the full validation program is
-[issue #198](https://github.com/ericchansen/q2mm/issues/198).
 
 ---
 
@@ -61,9 +58,9 @@ Q2MM convention of weight 0.00 for the first eigenvalue (`eig_i`).
 
 | Gate | Issue | Status |
 |------|-------|--------|
-| All per-molecule R² > 0 | [#256](https://github.com/ericchansen/q2mm/issues/256) | ✅ Passes |
-| Average R² > 0.40 | [#257](https://github.com/ericchansen/q2mm/issues/257) | ✅ Passes |
-| Published FF beats Seminario | [#255](https://github.com/ericchansen/q2mm/issues/255) | ⚠️ xfail — engine gap |
+| All per-molecule R² > 0 | Eigenvalue R² positive for every molecule | ✅ Passes |
+| Average R² > 0.40 | Mean eigenvalue R² exceeds 0.40 threshold | ✅ Passes |
+| Published FF beats Seminario | Fitted FF outperforms QFUERZA baseline | ⚠️ xfail — engine gap |
 
 The published FF does not beat the Seminario (QFUERZA) baseline because it
 was optimized for MacroModel's MM3* engine, which includes functional-form
@@ -77,18 +74,25 @@ a bug.
 
 ## Check 2: force field re-derivation
 
+!!! note "Frequency-only methodology"
+    This check used a **frequency-only** objective with the old
+    full-FF parameter scope (~2,742 params). The paper's actual
+    methodology uses a multi-target penalty (eigenmatrix + geometry)
+    with only ~182 OPT-substructure params. Results below are valid
+    as a proof-of-concept for the optimization pipeline but do not
+    represent publication reproduction.
+
 JaxOpt L-BFGS (analytical gradients, 50 iterations) on the Rh-enamide
-9-molecule training set:
+9-molecule training set (frequency-only objective):
 
 - **RMSD**: 260 → 153 cm⁻¹
 - **Score**: 91.5 → 77.0
 - **Time**: 341 s (GPU, RTX 5090)
-- **Optimizer**: `jaxopt:lbfgs` via topology-grouped vmap Hessian batching
+- **Objective**: frequency-only (not the paper's multi-target penalty)
 
-Results archived in `benchmarks/rh-enamide/results/`. The Zenodo
-QFUERZA-optimized FF (same system, different objective function) scores
-9120 on our frequency objective — expected, since it was optimized for
-eigenmode fitting rather than frequency RMSD.
+For multi-target results with the correct methodology (frozen params,
+eigenmatrix + geometry refs), see
+[Rh-enamide benchmark results](../systems/rh-enamide.md#benchmark-results).
 
 ---
 
@@ -108,6 +112,26 @@ python3 -m pytest test/integration/test_published_ff_validation.py --run-validat
 # Update the saved snapshot after a verified change
 Q2MM_UPDATE_GOLDEN=1 python3 -m pytest test/integration/test_published_ff_validation.py --run-validation -v
 ```
+
+---
+
+## Optimization Comparison
+
+q2mm v5 achieves lower frequency RMSD than the published FFs when both are
+evaluated under JaxEngine. However, the published FFs were optimized for a
+different engine (MacroModel MM3*) and a broader objective (geometries +
+Hessian + charges + energies). On the papers' own metrics (eigenvalue R²,
+selectivity predictions), the published FFs perform well. See the
+[QFUERZA starting-point quality](qfuerza-validation.md#5-starting-point-quality-across-systems)
+and the merged system pages for detailed, honest comparisons:
+
+- [Rh-enamide](../systems/rh-enamide.md) — published eigenvalue R² ≈ 0.998; our QFUERZA R² = 0.991
+- [Heck relay](../systems/heck-relay.md) — published selectivity RMSD = 2.3 kJ/mol
+- [Pd-allyl](../systems/pd-allyl.md) — published selectivity MUE = 4.4 kJ/mol (77 predictions)
+- [Pd 1,4-conjugate](../systems/pd-conjugate.md) — published selectivity MUE = 1.8 kJ/mol (82 predictions)
+- [Rh 1,4-conjugate](../systems/rh-conjugate.md) — published bisphosphine MUE = 4.1 kJ/mol (67 structures)
+
+---
 
 **Where things live:**
 

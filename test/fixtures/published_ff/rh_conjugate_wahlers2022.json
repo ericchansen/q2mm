@@ -1,0 +1,97 @@
+{
+  "metadata": {
+    "paper": "Wahlers, J. Ph.D. Dissertation, University of Notre Dame, 2022, Ch. 6",
+    "doi": null,
+    "system": "Rh-catalyzed 1,4-conjugate addition"
+  },
+  "summary": {
+    "n_molecules": 10,
+    "n_params": 3230,
+    "total_freq_refs": 925,
+    "overall_rmsd_cm1": 688.9794236017862,
+    "overall_mae_cm1": 371.6554376153279,
+    "overall_r_squared": 0.1712298807144521
+  },
+  "per_molecule": [
+    {
+      "mol_idx": 0,
+      "n_atoms": 34,
+      "n_freq_refs": 73,
+      "rmsd_cm1": 696.2195747292218,
+      "mae_cm1": 377.0356624503636,
+      "r_squared": -0.06825049143540718
+    },
+    {
+      "mol_idx": 1,
+      "n_atoms": 35,
+      "n_freq_refs": 83,
+      "rmsd_cm1": 644.8179555985331,
+      "mae_cm1": 324.05230951937074,
+      "r_squared": 0.4077193377631114
+    },
+    {
+      "mol_idx": 2,
+      "n_atoms": 37,
+      "n_freq_refs": 83,
+      "rmsd_cm1": 545.4063159099695,
+      "mae_cm1": 298.7202946006673,
+      "r_squared": 0.5496903313249095
+    },
+    {
+      "mol_idx": 3,
+      "n_atoms": 37,
+      "n_freq_refs": 84,
+      "rmsd_cm1": 551.4899176766255,
+      "mae_cm1": 293.5939544559247,
+      "r_squared": 0.5298099292603826
+    },
+    {
+      "mol_idx": 4,
+      "n_atoms": 37,
+      "n_freq_refs": 84,
+      "rmsd_cm1": 530.6855167450449,
+      "mae_cm1": 287.03042633953436,
+      "r_squared": 0.5646106226306428
+    },
+    {
+      "mol_idx": 5,
+      "n_atoms": 46,
+      "n_freq_refs": 114,
+      "rmsd_cm1": 326.68056317306036,
+      "mae_cm1": 209.66559767690526,
+      "r_squared": 0.8827772936036146
+    },
+    {
+      "mol_idx": 6,
+      "n_atoms": 86,
+      "n_freq_refs": 175,
+      "rmsd_cm1": 992.2013961104526,
+      "mae_cm1": 614.2943516417436,
+      "r_squared": -5.908442486233416
+    },
+    {
+      "mol_idx": 7,
+      "n_atoms": 36,
+      "n_freq_refs": 72,
+      "rmsd_cm1": 897.7097668564387,
+      "mae_cm1": 517.5258999320536,
+      "r_squared": -4.073833230501712
+    },
+    {
+      "mol_idx": 8,
+      "n_atoms": 38,
+      "n_freq_refs": 85,
+      "rmsd_cm1": 527.7834724467056,
+      "mae_cm1": 287.65650778106243,
+      "r_squared": 0.5711167014648394
+    },
+    {
+      "mol_idx": 9,
+      "n_atoms": 32,
+      "n_freq_refs": 72,
+      "rmsd_cm1": 636.3201644083554,
+      "mae_cm1": 314.98673163263317,
+      "r_squared": 0.4339610832271481
+    }
+  ]
+}

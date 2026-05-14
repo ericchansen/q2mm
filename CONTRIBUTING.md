@@ -25,13 +25,18 @@ pip install -e ".[dev,all]"               # everything (OpenMM, JAX, scipy, etc.
 
 ### Test tiers
 
-Tests are organized into speed tiers so you can iterate quickly:
+Tests are organized into four tiers so you can iterate quickly:
 
 ```bash
-pytest                     # fast only (~13s)
-pytest --run-medium        # fast + medium (~49s)
-pytest --run-slow          # everything (~330s)
+pytest                        # core only (~13s, no backends)
+pytest --run-integration      # core + integration (~49s)
+pytest --run-validation       # core + integration + validation (~80s)
+pytest --run-nightly          # everything (~330s+, optimizer loops)
 ```
+
+By default, all tests run on **CPU only** — no GPU memory is allocated.
+Use `--gpu` or set `Q2MM_USE_GPU=1` to opt into GPU execution for
+benchmarks or GPU-specific tests.
 
 ### Backend markers
 
@@ -44,7 +49,7 @@ pytest -m tinker           # only Tinker tests
 pytest -m "not tinker"     # skip Tinker tests
 ```
 
-Available markers: `openmm`, `tinker`, `jax`, `psi4`.
+Available markers: `openmm`, `tinker`, `jax`, `jax_md`, `psi4`.
 
 ### Running backend tests with Docker
 
@@ -55,22 +60,22 @@ use the pre-built CI images from GitHub Container Registry:
 # OpenMM tests
 docker run --rm -v $PWD:/workspace -w /workspace \
     ghcr.io/ericchansen/q2mm/ci-openmm:latest \
-    pytest -m openmm --run-slow
+    pytest -m openmm --run-nightly
 
 # Tinker tests
 docker run --rm -v $PWD:/workspace -w /workspace \
     ghcr.io/ericchansen/q2mm/ci-tinker:latest \
-    pytest -m tinker --run-slow
+    pytest -m tinker --run-nightly
 
 # JAX tests
 docker run --rm -v $PWD:/workspace -w /workspace \
     ghcr.io/ericchansen/q2mm/ci-jax:latest \
-    pytest -m jax --run-slow
+    pytest -m jax --run-nightly
 
 # All backends (full image)
 docker run --rm -v $PWD:/workspace -w /workspace \
     ghcr.io/ericchansen/q2mm/ci-full:latest \
-    pytest --run-slow
+    pytest --run-nightly
 ```
 
 On Windows (PowerShell), replace `$PWD` with `${PWD}`.
@@ -114,13 +119,15 @@ ruff format --check q2mm test scripts examples
 ## Benchmarks
 
 When running benchmarks with `q2mm-benchmark`, **always save the output force
-fields**.  Benchmark runs can take hours (the JAX-MD CPU Rh-enamide run takes
-~6.5 hours) and are not reproducible bit-for-bit due to floating-point
-reduction-order differences between devices.
+fields**.  Benchmark runs can take minutes to hours depending on the system
+and optimizer.  With SciPy L-BFGS-B + JaxLoss on GPU, all 5 TS systems
+complete in ~15 minutes total (dominated by JIT compilation, not optimization).
+Results are not reproducible bit-for-bit due to floating-point reduction-order
+differences between devices.
 
 ```bash
-# CORRECT — saves output FFs and results to benchmarks/
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B
+# CORRECT — saves output FFs and results locally for later archival
+q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output results/rh-enamide
 
 # WRONG — discards optimized force fields forever
 q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
@@ -130,10 +137,10 @@ q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
 
 1. **Never use `--no-save`** unless you are debugging or testing the benchmark
    harness itself.
-2. **Commit output force fields** to `benchmarks/<system>/forcefields/` so they
-   are tracked in version control.
-3. **Commit result JSON files** to `benchmarks/<system>/results/` for
-   reproducibility and future analysis.
+2. **Commit output force fields** to the separate `q2mm-data` repo under
+   `benchmarks/<system>/forcefields/` so they are tracked in version control.
+3. **Commit result JSON files** to `q2mm-data/benchmarks/<system>/results/`
+   for reproducibility and future analysis.
 4. If running GPU vs CPU comparisons, run them **sequentially** on an idle
    system — parallel benchmark runs produce invalid timing data.
 
@@ -142,17 +149,21 @@ q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
 1. Fork and create a feature branch from `master`
 2. Make your changes with clear, focused commits
 3. Ensure `ruff check` and `ruff format --check` pass
-4. Ensure `pytest` passes (at minimum the fast tier)
+4. Ensure `pytest` passes (at minimum the core tier; `--run-integration` recommended)
 5. Open a pull request against `master`
 
 ## CI Pipeline
 
-Pull requests trigger two CI tiers automatically:
+Pull requests trigger CI automatically across six jobs:
 
-- **Fast tier** — lint on Python 3.12 + pure-Python tests on Python 3.10–3.13 (no backends)
-- **Backend tier** — OpenMM, Tinker, JAX, and Psi4 tests in Docker containers
+- **Lint** — ruff check + format + dependency parity (`check_env_dep_parity.py`)
+- **Core** — pure-Python tests on Python 3.10–3.13 (no backends)
+- **OpenMM** — OpenMM backend tests in Docker
+- **Tinker** — Tinker backend tests in Docker
+- **JAX** — JAX backend tests in Docker
+- **JAX-MD** — JAX-MD backend tests in Docker
 
-Both tiers must pass before merging.
+All jobs must pass before merging.
 
 ## Extending Q2MM
 

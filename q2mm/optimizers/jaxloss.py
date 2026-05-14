@@ -32,6 +32,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -51,12 +52,25 @@ if TYPE_CHECKING:
 # but a tight-enough tol is needed so that ``∇_x E(x*) ≈ 0`` at which the
 # implicit-function theorem applies.
 _GEOM_INNER_TOL = 1e-8
-_GEOM_INNER_MAXITER = 200
+_GEOM_INNER_MAXITER = 500
 # Penalty added per geometry reference when the inner solver does not
-# converge.  Large enough to dominate the loss and steer the outer
-# optimizer away from pathological parameter regions, but finite so
-# gradients remain usable.
-_GEOM_NONCONV_PENALTY = 1e4
+# converge.  Set to 0.0 because:
+# 1. The actual geometry residuals (bonds/angles) naturally penalize poor
+#    convergence — wrong structures yield large residuals.
+# 2. A large binary penalty (the original 1e4) caused 40× score inflation
+#    for nearly-converged geometries where jaxopt's L-BFGS didn't reach
+#    the strict 1e-8 gradient-norm tolerance, making the optimizer report
+#    false divergence.
+_GEOM_NONCONV_PENALTY = 0.0
+# Harmonic restraint (kcal/(mol·Å²) per Cartesian coordinate) that keeps the
+# inner geometry relaxation near the initial QM structure.  For well-behaved
+# systems the minimum is very close to coords0, so a moderate restraint adds
+# negligible energy (<0.1 kcal/mol total).  For pathological TS systems with
+# negative force constants (up to −3753 kcal/(mol·rad²) in Pd benchmarks),
+# the restraint prevents the LBFGS solver from diverging to NaN.  The
+# restraint also improves conditioning of the implicit-differentiation
+# Hessian by adding k·I to ∂²E/∂x².
+_GEOM_RESTRAINT_K = 100.0
 
 
 def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
@@ -65,6 +79,10 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
     Uses ``jaxopt.LBFGS(fun=energy_of_coords, implicit_diff=True)`` so the
     outer ``jax.grad`` sees the exact parameter-gradient of ``x*`` via the
     implicit function theorem, avoiding autodiff-through-iteration.
+
+    A harmonic restraint to the initial geometry prevents divergence for
+    transition-state systems where negative force constants produce an
+    unbounded PES.
 
     When the inner solver does not converge (gradient norm > tol after
     maxiter), the caller should add a penalty to the loss.
@@ -82,8 +100,16 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
     """
     import jaxopt
 
+    from q2mm.backends.mm._jax_common import jnp
+
     def energy_of_coords(coords, p):  # noqa: ANN001, ANN202
-        return energy_fn(p, coords)
+        mm_energy = energy_fn(p, coords)
+        # Harmonic restraint to initial geometry — prevents divergence for
+        # TS systems with negative force constants while barely affecting
+        # well-behaved systems where coords ≈ coords0.
+        disp = coords - coords0
+        restraint = 0.5 * _GEOM_RESTRAINT_K * jnp.sum(disp * disp)
+        return mm_energy + restraint
 
     solver = jaxopt.LBFGS(
         fun=energy_of_coords,
@@ -180,17 +206,23 @@ def _torsion_angles_deg(coords, atoms):  # noqa: ANN001, ANN202
 
 
 class JaxLoss:
-    """JIT-compiled loss function for JAX-native optimization.
+    """Per-molecule JIT-compiled loss for JAX-native optimization.
 
-    Compiles a pure-JAX ``params → loss`` function from an
-    :class:`~q2mm.optimizers.spec.ObjectiveSpec`.  The compiled function
-    is fully compatible with ``jax.jit``, ``jax.grad``, and
-    ``jax.value_and_grad``.
+    Each molecule's loss contribution (Hessian-derived and geometry) is
+    compiled into its own small XLA program.  The aggregate loss and
+    gradient are computed by dispatching these per-molecule programs from
+    Python and summing — no single XLA program contains all molecules,
+    which prevents compilation OOM on multi-molecule systems.
 
-    The loss function is the sum of squared weighted residuals across
-    all supported evaluator categories (energy, frequency,
-    hessian-element, eigenmatrix), plus an optional L2 regularization
-    term.
+    The primary API is :meth:`loss_and_grad` (returns Python float +
+    NumPy array) and :meth:`value_and_grad_jax` (returns JAX types,
+    for use with jaxopt ``value_and_grad=True``).
+
+    A JAX-traceable :attr:`_loss_fn` is also available for callers that
+    need to JIT or vmap the loss (e.g. JaxMultiStartOptimizer).  This
+    function loops over the per-molecule compiled functions; when traced,
+    the loop is unrolled.  It is safe for single-molecule systems but
+    will OOM on large multi-molecule systems if JIT'd externally.
 
     Args:
         spec: Compiled objective specification.
@@ -226,19 +258,24 @@ class JaxLoss:
 
         # Pre-build handles and compile per-molecule loss fragments
         self._handles: dict[int, JaxHandle] = {}
-        self._compiled_loss_fn = None
-        self._compiled_loss_and_grad_fn = None
+        self._loss_fn: Callable | None = None
+        self._compiled_nongeom_vag_fns: list = []
+        self._compiled_geom_vag_fns: list = []
+        self._compiled_reg_vag_fn: Callable | None = None
 
         self._build()
 
     def _build(self) -> None:
-        """Pre-build JaxHandles and compile the loss function.
+        """Pre-build JaxHandles and compile per-molecule loss functions.
 
-        When multiple molecules share the same topology (same energy
-        function), their Hessian computations are batched via
-        ``jax.vmap`` — one vectorised call per topology group instead
-        of one traced call per molecule.  This reduces JIT compile time
-        and can improve GPU utilisation on multi-conformer systems.
+        Each molecule's Hessian-derived loss (eigenmatrix, frequency,
+        hessian-element, energy) and geometry loss are JIT-compiled
+        independently.  This prevents XLA compilation OOM on multi-molecule
+        systems where a monolithic graph would exceed GPU memory.
+
+        The aggregate loss and gradient are computed by dispatching the
+        per-molecule compiled functions from Python and summing — no
+        outer JIT wraps the full set.
         """
         from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.models.hessian import (
@@ -318,206 +355,206 @@ class JaxLoss:
                 entry["torsion_atoms"] = jnp.array(mol_spec.torsion_atoms, dtype=jnp.int32)
                 entry["torsion_refs"] = jnp.array(mol_spec.torsion_refs)
                 entry["torsion_weights"] = jnp.array(mol_spec.torsion_weights)
+            if mol_spec.has_geometry:
+                entry["n_geom_refs"] = len(mol_spec.bond_refs) + len(mol_spec.angle_refs) + len(mol_spec.torsion_refs)
 
             mol_data.append(entry)
 
-        # ---- Topology-grouped Hessian batching ----
+        # ---- Per-molecule Hessian functions ----
         #
-        # Group molecules that share the same topology (same handle →
-        # same energy function).  For multi-molecule groups, build a
-        # single vmapped Hessian function instead of tracing one per
-        # molecule.  This reduces JIT compilation time and can improve
-        # GPU utilisation.
-        from q2mm.backends.mm.batched import _topology_signature
-
-        hess_groups: dict[str, dict] = {}
-
-        for i, entry in enumerate(mol_data):
-            mol_spec = entry["mol_spec"]
-            if not mol_spec.needs_hessian_computation:
-                continue
-            handle = entry["handle"]
-            sig = _topology_signature(handle)
-
-            if sig not in hess_groups:
-                hess_groups[sig] = {
-                    "handle": handle,
-                    "entry_indices": [],
-                    "coords_list": [],
-                }
-            hess_groups[sig]["entry_indices"].append(i)
-            hess_groups[sig]["coords_list"].append(entry["coords"].flatten())
-
-        # Pre-build per-group Hessian functions (single or vmapped)
-        group_hess_fns: dict[str, dict] = {}
-        for sig, gdata in hess_groups.items():
-            handle = gdata["handle"]
-            energy_fn = handle._energy_fn
-
-            def _make_hess_fn(efn):  # noqa: ANN001, ANN202
-                """Closure to capture the correct energy_fn per group."""
-
-                def _energy_of_flat(fc, p):  # noqa: ANN001, ANN202
-                    return efn(p, fc.reshape(-1, 3))
-
-                return jax.hessian(_energy_of_flat, argnums=0)
-
-            single_hess_fn = _make_hess_fn(energy_fn)
-
-            n_mols = len(gdata["entry_indices"])
-            if n_mols > 1:
-                batched_hess_fn = jax.vmap(single_hess_fn, in_axes=(0, None))
-                batch_coords = jnp.stack(gdata["coords_list"])
-                group_hess_fns[sig] = {
-                    "batched": True,
-                    "fn": batched_hess_fn,
-                    "batch_coords": batch_coords,
-                    "entry_indices": gdata["entry_indices"],
-                }
-                logger.debug(
-                    "JaxLoss: topology group %s — %d molecules, vmapped Hessian",
-                    sig[:12],
-                    n_mols,
-                )
-            else:
-                flat_coords = gdata["coords_list"][0]
-                group_hess_fns[sig] = {
-                    "batched": False,
-                    "fn": single_hess_fn,
-                    "flat_coords": flat_coords,
-                    "entry_idx": gdata["entry_indices"][0],
-                }
-
-        # Regularization arrays
-        reg = spec.regularization
-        ref_params = jnp.array(spec.reference_params, dtype=jnp.float64)
+        # Build a Hessian function per topology group.  Each per-molecule
+        # loss is JIT-compiled independently, preventing XLA compilation
+        # OOM on multi-molecule systems.
+        hess_fn_cache: dict[int, object] = {}  # id(handle) → hess_fn
 
         hess_au_scale = float(KCALMOLA2_TO_HESSIAN_AU)
 
-        def _loss_fn(params: np.ndarray) -> np.ndarray:
-            """Pure JAX loss function: params → scalar loss.
+        def _make_hess_fn(efn):  # noqa: ANN001, ANN202
+            """Closure to capture the correct energy_fn per topology."""
 
-            Hessian computations for molecules sharing the same topology
-            are batched via ``jax.vmap`` — one vectorised call per
-            topology group.
-            """
-            total = jnp.float64(0.0)
+            def _energy_of_flat(fc, p):  # noqa: ANN001, ANN202
+                return efn(p, fc.reshape(-1, 3))
 
-            # ---- Phase 1: Compute all Hessians (batched by topology) ----
-            hessians_au: dict[int, np.ndarray] = {}
-            for gdata in group_hess_fns.values():
-                if gdata["batched"]:
-                    batch_hess = gdata["fn"](gdata["batch_coords"], params)
-                    for local_i, entry_i in enumerate(gdata["entry_indices"]):
-                        hessians_au[entry_i] = batch_hess[local_i] * hess_au_scale
-                else:
-                    hess = gdata["fn"](gdata["flat_coords"], params)
-                    hessians_au[gdata["entry_idx"]] = hess * hess_au_scale
+            return jax.hessian(_energy_of_flat, argnums=0)
 
-            # ---- Phase 2: Accumulate residuals per molecule ----
-            for i, entry in enumerate(mol_data):
-                handle = entry["handle"]
-                coords = entry["coords"]
-                mol_spec = entry["mol_spec"]
-                energy_fn = handle._energy_fn
+        for entry in mol_data:
+            handle = entry["handle"]
+            h_id = id(handle)
+            if h_id not in hess_fn_cache and entry["mol_spec"].needs_hessian_computation:
+                hess_fn_cache[h_id] = _make_hess_fn(handle._energy_fn)
 
-                # Energy contribution
-                if mol_spec.has_energy:
+        # ---- Per-molecule non-geometry loss factory ----
+
+        def _make_mol_nongeom_loss(entry_data: dict, mol_hess_fn: object | None, scale: float) -> Callable:
+            """Return a ``params → scalar`` loss for one molecule's non-geometry refs."""
+            ms = entry_data["mol_spec"]
+            coords = entry_data["coords"]
+            flat_coords = coords.reshape(-1)
+            handle = entry_data["handle"]
+            energy_fn = handle._energy_fn
+
+            def _mol_loss(params: np.ndarray) -> np.ndarray:
+                total = jnp.float64(0.0)
+
+                if ms.has_energy:
                     energy = energy_fn(params, coords)
-                    residuals = entry["energy_weights"] * (entry["energy_refs"] - energy)
+                    residuals = entry_data["energy_weights"] * (entry_data["energy_refs"] - energy)
                     total = total + jnp.sum(residuals**2)
 
-                # Geometry contributions — relax coords at current params,
-                # then compute bond/angle/torsion observables.
-                if mol_spec.has_geometry:
-                    relaxed, geom_converged = _relax_coords(energy_fn, params, coords)
-                    # Penalty when inner solver fails to converge — the
-                    # implicit-diff gradient is unreliable in this case.
-                    n_geom_refs = (
-                        len(entry.get("bond_refs", []))
-                        + len(entry.get("angle_refs", []))
-                        + len(entry.get("torsion_refs", []))
-                    )
-                    total = total + jnp.where(
-                        geom_converged,
-                        0.0,
-                        _GEOM_NONCONV_PENALTY * n_geom_refs,
-                    )
+                if ms.needs_hessian_computation:
+                    hess_au = mol_hess_fn(flat_coords, params) * scale
 
-                    if mol_spec.has_bond_length:
-                        calc = _bond_lengths(relaxed, entry["bond_atoms"])
-                        residuals = entry["bond_weights"] * (entry["bond_refs"] - calc)
-                        total = total + jnp.sum(residuals**2)
-
-                    if mol_spec.has_bond_angle:
-                        calc = _bond_angles_deg(relaxed, entry["angle_atoms"])
-                        residuals = entry["angle_weights"] * (entry["angle_refs"] - calc)
-                        total = total + jnp.sum(residuals**2)
-
-                    if mol_spec.has_torsion:
-                        calc = _torsion_angles_deg(relaxed, entry["torsion_atoms"])
-                        diff = entry["torsion_refs"] - calc
-                        diff = (diff + 180.0) % 360.0 - 180.0
-                        residuals = entry["torsion_weights"] * diff
-                        total = total + jnp.sum(residuals**2)
-
-                # Hessian-dependent contributions (Hessian already computed)
-                if mol_spec.needs_hessian_computation:
-                    hess_au = hessians_au[i]
-
-                    if mol_spec.invert_ts_curvature:
+                    if ms.invert_ts_curvature:
                         hess_au = invert_ts_curvature_jax(hess_au)
 
-                    # Frequency contribution
-                    if mol_spec.has_frequency:
-                        freqs = _jax_frequencies_from_hessian(hess_au, entry["masses_3n"])
-                        calc_freqs = freqs[entry["freq_indices"]]
-                        residuals = entry["freq_weights"] * (entry["freq_refs"] - calc_freqs)
+                    if ms.has_frequency:
+                        freqs = _jax_frequencies_from_hessian(hess_au, entry_data["masses_3n"])
+                        calc_freqs = freqs[entry_data["freq_indices"]]
+                        residuals = entry_data["freq_weights"] * (entry_data["freq_refs"] - calc_freqs)
                         total = total + jnp.sum(residuals**2)
 
-                    # Hessian element contribution
-                    if mol_spec.has_hessian:
+                    if ms.has_hessian:
                         n3 = hess_au.shape[0]
-                        indices = entry["hess_indices"]
+                        indices = entry_data["hess_indices"]
                         rows = indices // n3
                         cols = indices % n3
                         calc_hess = hess_au[rows, cols]
-                        residuals = entry["hess_weights"] * (entry["hess_refs"] - calc_hess)
+                        residuals = entry_data["hess_weights"] * (entry_data["hess_refs"] - calc_hess)
                         total = total + jnp.sum(residuals**2)
 
-                    # Eigenmatrix contribution
-                    if mol_spec.has_eigenmatrix:
-                        qm_evecs = entry["qm_evecs"]
+                    if ms.has_eigenmatrix:
+                        qm_evecs = entry_data["qm_evecs"]
                         eigmat = qm_evecs.T @ hess_au @ qm_evecs
 
-                        if "ediag_indices" in entry:
-                            idx = entry["ediag_indices"]
+                        if "ediag_indices" in entry_data:
+                            idx = entry_data["ediag_indices"]
                             calc_diag = eigmat[idx, idx]
-                            residuals = entry["ediag_weights"] * (entry["ediag_refs"] - calc_diag)
+                            residuals = entry_data["ediag_weights"] * (entry_data["ediag_refs"] - calc_diag)
                             total = total + jnp.sum(residuals**2)
 
-                        if "eoff_indices" in entry:
-                            idx = entry["eoff_indices"]
-                            n3 = eigmat.shape[0]
-                            rows = idx // n3
-                            cols = idx % n3
+                        if "eoff_indices" in entry_data:
+                            idx = entry_data["eoff_indices"]
+                            n3e = eigmat.shape[0]
+                            rows = idx // n3e
+                            cols = idx % n3e
                             calc_off = eigmat[rows, cols]
-                            residuals = entry["eoff_weights"] * (entry["eoff_refs"] - calc_off)
+                            residuals = entry_data["eoff_weights"] * (entry_data["eoff_refs"] - calc_off)
                             total = total + jnp.sum(residuals**2)
 
-            # L2 regularization
-            if reg > 0:
-                diff = params - ref_params
-                total = total + reg * jnp.dot(diff, diff)
+                return total
+
+            return _mol_loss
+
+        # Build per-molecule non-geometry loss functions
+        nongeom_loss_fns: list[Callable] = []
+        for entry in mol_data:
+            ms = entry["mol_spec"]
+            if not ms.needs_hessian_computation and not ms.has_energy:
+                continue
+            h_id = id(entry["handle"])
+            mol_hess_fn = hess_fn_cache.get(h_id)
+            nongeom_loss_fns.append(_make_mol_nongeom_loss(entry, mol_hess_fn, hess_au_scale))
+
+        n_nongeom = len(nongeom_loss_fns)
+        logger.debug("JaxLoss: %d per-molecule non-geometry loss functions", n_nongeom)
+
+        # ---- Per-molecule geometry loss ----
+
+        def _geometry_loss_from_entry(entry: dict, params: np.ndarray) -> np.ndarray:
+            total = jnp.float64(0.0)
+            handle = entry["handle"]
+            coords = entry["coords"]
+            mol_spec = entry["mol_spec"]
+            energy_fn = handle._energy_fn
+
+            relaxed, geom_converged = _relax_coords(energy_fn, params, coords)
+            total = total + jnp.where(
+                geom_converged,
+                0.0,
+                _GEOM_NONCONV_PENALTY * entry["n_geom_refs"],
+            )
+
+            if mol_spec.has_bond_length:
+                calc = _bond_lengths(relaxed, entry["bond_atoms"])
+                residuals = entry["bond_weights"] * (entry["bond_refs"] - calc)
+                total = total + jnp.sum(residuals**2)
+
+            if mol_spec.has_bond_angle:
+                calc = _bond_angles_deg(relaxed, entry["angle_atoms"])
+                residuals = entry["angle_weights"] * (entry["angle_refs"] - calc)
+                total = total + jnp.sum(residuals**2)
+
+            if mol_spec.has_torsion:
+                calc = _torsion_angles_deg(relaxed, entry["torsion_atoms"])
+                diff = entry["torsion_refs"] - calc
+                diff = (diff + 180.0) % 360.0 - 180.0
+                residuals = entry["torsion_weights"] * diff
+                total = total + jnp.sum(residuals**2)
 
             return total
 
+        geom_loss_fns: list[Callable] = []
+        for entry in mol_data:
+            if not entry["mol_spec"].has_geometry:
+                continue
+
+            def _make_geom_loss_fn(entry_data: dict) -> Callable[[np.ndarray], np.ndarray]:
+                def _geom_loss_fn(params: np.ndarray) -> np.ndarray:
+                    return _geometry_loss_from_entry(entry_data, params)
+
+                return _geom_loss_fn
+
+            geom_loss_fns.append(_make_geom_loss_fn(entry))
+
+        n_geom = len(geom_loss_fns)
+        logger.debug("JaxLoss: %d per-molecule geometry loss functions", n_geom)
+
+        # ---- Regularization ----
+
+        reg = spec.regularization
+        ref_params = jnp.array(spec.reference_params, dtype=jnp.float64)
+
+        def _reg_fn(params: np.ndarray) -> np.ndarray:
+            diff = params - ref_params
+            return reg * jnp.dot(diff, diff)
+
+        # ---- JIT-compile per-molecule functions ----
+
+        self._compiled_nongeom_vag_fns = [jax.jit(jax.value_and_grad(fn)) for fn in nongeom_loss_fns]
+        self._compiled_geom_vag_fns = [jax.jit(jax.value_and_grad(fn)) for fn in geom_loss_fns]
+        if reg > 0:
+            self._compiled_reg_vag_fn = jax.jit(jax.value_and_grad(_reg_fn))
+
+        # ---- Aggregate _loss_fn (JAX-traceable) ----
+        #
+        # This function loops over per-molecule JIT'd functions.  When
+        # called from Python, each inner call dispatches to its pre-compiled
+        # XLA executable.  When JIT'd or vmapped (e.g. by JaxMultiStart),
+        # the loop is unrolled — safe for single-molecule systems but will
+        # OOM on large multi-molecule systems.  Standard optimizers should
+        # use loss_and_grad() (Python dispatch) instead.
+        compiled_nongeom_fns = tuple(jax.jit(fn) for fn in nongeom_loss_fns)
+        compiled_geom_fns = tuple(jax.jit(fn) for fn in geom_loss_fns)
+        compiled_reg = jax.jit(_reg_fn) if reg > 0 else None
+
+        def _loss_fn(params: np.ndarray) -> np.ndarray:
+            total = jnp.float64(0.0)
+            for fn in compiled_nongeom_fns:
+                total = total + fn(params)
+            for fn in compiled_geom_fns:
+                total = total + fn(params)
+            if compiled_reg is not None:
+                total = total + compiled_reg(params)
+            return total
+
         self._loss_fn = _loss_fn
-        self._compiled_loss_fn = jax.jit(_loss_fn)
-        self._compiled_loss_and_grad_fn = jax.jit(jax.value_and_grad(_loss_fn))
 
     def __call__(self, params: np.ndarray) -> float:
-        """Evaluate the JIT-compiled loss function.
+        """Evaluate the loss via Python dispatch over per-molecule functions.
+
+        Each per-molecule JIT'd function is dispatched independently,
+        avoiding the XLA compilation OOM that occurs when all molecules
+        are compiled into one graph.
 
         Args:
             params: Flat parameter vector (NumPy or JAX array).
@@ -526,27 +563,76 @@ class JaxLoss:
             Scalar loss value.
 
         """
-        from q2mm.backends.mm._jax_common import jnp
+        loss, _ = self.value_and_grad_jax(params)
+        return float(loss)
 
-        p = jnp.array(params, dtype=jnp.float64)
-        return float(self._compiled_loss_fn(p))
+    def value_and_grad_jax(self, params: np.ndarray) -> tuple:
+        """Evaluate loss and gradient, returning JAX-native types.
 
-    def loss_and_grad(self, params: np.ndarray) -> tuple[float, np.ndarray]:
-        """Evaluate loss and gradient in a single JIT-compiled call.
+        This is the core dispatcher.  Each per-molecule compiled
+        ``value_and_grad`` function is called independently from Python,
+        and the results are accumulated as JAX arrays.
+
+        Use this method when the caller needs JAX array outputs
+        (e.g. jaxopt with ``value_and_grad=True``).
 
         Args:
-            params: Flat parameter vector.
+            params: Flat parameter vector (NumPy or JAX array).
 
         Returns:
-            ``(loss, gradient)`` — loss is a scalar, gradient has the
-            same shape as *params*.
+            ``(loss_jax, gradient_jax)`` — JAX scalar and JAX array.
 
         """
         from q2mm.backends.mm._jax_common import jnp
 
         p = jnp.array(params, dtype=jnp.float64)
-        loss, grad = self._compiled_loss_and_grad_fn(p)
-        return float(loss), np.asarray(grad)
+        total_loss = jnp.float64(0.0)
+        total_grad = jnp.zeros_like(p)
+
+        for fn in self._compiled_nongeom_vag_fns:
+            loss_i, grad_i = fn(p)
+            total_loss = total_loss + loss_i
+            total_grad = total_grad + grad_i
+
+        for fn in self._compiled_geom_vag_fns:
+            loss_i, grad_i = fn(p)
+            total_loss = total_loss + loss_i
+            total_grad = total_grad + grad_i
+
+        if self._compiled_reg_vag_fn is not None:
+            reg_loss, reg_grad = self._compiled_reg_vag_fn(p)
+            total_loss = total_loss + reg_loss
+            total_grad = total_grad + reg_grad
+
+        return total_loss, total_grad
+
+    def loss_and_grad(self, params: np.ndarray) -> tuple[float, np.ndarray]:
+        """Evaluate loss and gradient, returning host types.
+
+        Convenience wrapper around :meth:`value_and_grad_jax` that
+        converts the loss to a Python float and the gradient to a
+        NumPy array.
+
+        When the loss or gradient contains NaN/Inf (e.g. from
+        out-of-range parameters), returns a large finite penalty
+        (``1e30``) and a zero gradient so that line-search optimizers
+        like L-BFGS-B can recover gracefully.
+
+        Args:
+            params: Flat parameter vector.
+
+        Returns:
+            ``(loss, gradient)`` — loss is a Python float, gradient is
+            a NumPy array with the same shape as *params*.
+
+        """
+        loss_jax, grad_jax = self.value_and_grad_jax(params)
+        loss = float(loss_jax)
+        grad = np.asarray(grad_jax)
+        if not np.isfinite(loss) or not np.all(np.isfinite(grad)):
+            logger.warning("JaxLoss returned non-finite values; substituting penalty")
+            return 1e30, np.zeros_like(grad)
+        return loss, grad
 
     @property
     def spec(self) -> ObjectiveSpec:

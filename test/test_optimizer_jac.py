@@ -25,7 +25,12 @@ class _MockObjective:
         self.engine.supports_analytical_gradients.return_value = engine_supports_grad
         self.forcefield = MagicMock()
         self.forcefield.get_param_vector.return_value = np.array([1.0, 2.0])
+        self.forcefield.get_active_param_vector.return_value = np.array([1.0, 2.0])
         self.forcefield.get_bounds.return_value = [(0.0, 10.0), (0.0, 10.0)]
+        self.forcefield.get_active_bounds.return_value = np.array([(0.0, 10.0), (0.0, 10.0)])
+        self.forcefield.active_mask = np.array([True, True])
+        self.forcefield.n_params = 2
+        self.forcefield.n_active_params = 2
         self.history: list[float] = []
         self.n_eval = 0
 
@@ -36,6 +41,77 @@ class _MockObjective:
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         return np.array([0.1, 0.2])
+
+
+class _MockFrozenForceField:
+    """Minimal force field exposing the active-parameter API."""
+
+    def __init__(self, full: np.ndarray, mask: np.ndarray, bounds: list[tuple[float, float]]) -> None:
+        self._full = np.asarray(full, dtype=float)
+        self._mask = np.asarray(mask, dtype=bool)
+        self._bounds = list(bounds)
+        self._set_calls: list[np.ndarray] = []
+
+    @property
+    def n_params(self) -> int:
+        return int(self._full.size)
+
+    @property
+    def n_active_params(self) -> int:
+        return int(self._mask.sum())
+
+    @property
+    def active_mask(self) -> np.ndarray:
+        return self._mask.copy()
+
+    def get_param_vector(self) -> np.ndarray:
+        return self._full.copy()
+
+    def get_active_param_vector(self) -> np.ndarray:
+        return self._full[self._mask].copy()
+
+    def get_bounds(self) -> list[tuple[float, float]]:
+        return list(self._bounds)
+
+    def get_active_bounds(self) -> np.ndarray:
+        return np.asarray(self._bounds, dtype=float)[self._mask]
+
+    def set_param_vector(self, vec: np.ndarray) -> None:
+        self._full = np.asarray(vec, dtype=float).copy()
+        self._set_calls.append(self._full.copy())
+
+
+class _MockFrozenObjective:
+    """Quadratic objective over a full parameter vector with frozen entries."""
+
+    def __init__(self, *, method: str) -> None:
+        self.target = np.array([1.0, 4.0, 3.0], dtype=float)
+        self.forcefield = _MockFrozenForceField(
+            full=np.array([0.0, 5.0, 0.0], dtype=float),
+            mask=np.array([True, False, True]),
+            bounds=[(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)],
+        )
+        self.engine = MagicMock()
+        self.engine.supports_analytical_gradients.return_value = method != "least_squares"
+        self.history: list[float] = []
+        self.n_eval = 0
+
+    def __call__(self, x: np.ndarray) -> float:
+        score = float(np.sum((np.asarray(x, dtype=float) - self.target) ** 2))
+        self.n_eval += 1
+        self.history.append(score)
+        return score
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        x = np.asarray(x, dtype=float)
+        return 2.0 * (x - self.target)
+
+    def residuals(self, x: np.ndarray) -> np.ndarray:
+        x = np.asarray(x, dtype=float)
+        residuals = x - self.target
+        self.n_eval += 1
+        self.history.append(float(np.sum(residuals**2)))
+        return residuals
 
 
 def _run_ignoring_errors(opt: ScipyOptimizer, obj: _MockObjective) -> None:
@@ -115,6 +191,31 @@ class TestJacAutoDetection:
         assert "Nelder-Mead" in ScipyOptimizer.DERIVATIVE_FREE_METHODS
         assert "Powell" in ScipyOptimizer.DERIVATIVE_FREE_METHODS
         assert "L-BFGS-B" not in ScipyOptimizer.DERIVATIVE_FREE_METHODS
+
+
+class TestFrozenParameterSupport:
+    """Frozen parameters are excluded from optimizer updates."""
+
+    def test_lbfgsb_updates_only_active_params(self) -> None:
+        obj = _MockFrozenObjective(method="L-BFGS-B")
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False, jac="analytical")
+        result = opt.optimize(obj)
+
+        np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
+        np.testing.assert_allclose(result.final_params[~obj.forcefield.active_mask], [5.0])
+        assert result.final_params[0] != pytest.approx(result.initial_params[0])
+        assert result.final_params[2] != pytest.approx(result.initial_params[2])
+        assert result.final_score < result.initial_score
+        np.testing.assert_allclose(obj.forcefield.get_param_vector(), result.final_params)
+
+    def test_least_squares_updates_only_active_params(self) -> None:
+        obj = _MockFrozenObjective(method="least_squares")
+        opt = ScipyOptimizer(method="least_squares", maxiter=50, verbose=False)
+        result = opt.optimize(obj)
+
+        np.testing.assert_allclose(result.final_params[~obj.forcefield.active_mask], [5.0])
+        assert result.final_score < result.initial_score
+        np.testing.assert_allclose(obj.forcefield.get_param_vector(), result.final_params)
 
 
 class TestOptimizationResultFields:

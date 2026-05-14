@@ -77,16 +77,15 @@ every unit quantity a distinct static type (`KcalPerMolAngSq`,
 overhead.  Static type checkers (mypy, pyright) catch mismatched conversions
 at development time.
 
-[Pint](https://pint.readthedocs.io/) was evaluated as an alternative in
-[issue #161](https://github.com/ericchansen/q2mm/issues/161) because it
+[Pint](https://pint.readthedocs.io/) was evaluated as an alternative because it
 provides **runtime** dimensional analysis that catches unit mismatches in
 `numpy` arrays (which `NewType` cannot cover, since `NewType` wraps scalar
 `float` only).  A real double-conversion bug in the Jaguar Hessian parser was
 found during that evaluation that `NewType` did not catch — the parser was
 incorrectly applying a unit conversion before returning a `numpy.ndarray`,
 and downstream code applied the same conversion again, inflating every force
-constant by ~9,376×.  That bug was fixed independently; see the [published FF
-validation work](https://github.com/ericchansen/q2mm/issues/197).
+constant by ~9,376×.  That bug was fixed independently; see the
+[published FF validation](../benchmarks/published-ff-validation.md) work.
 
 The performance evaluation found Pint's overhead to be unacceptable for
 Q2MM's hot loops:
@@ -98,8 +97,8 @@ Q2MM's hot loops:
 | Pint prebuilt units (reuse parsed unit objects) | ~10 | **~220×** |
 | Pint factor-only (precompute once, then bare multiply) | 0.04 | 1× |
 
-The 220–2,400× overhead far exceeds the 5× acceptance threshold from issue
-#161.  Additional constraints:
+The 220–2,400× overhead far exceeds the 5× acceptance threshold for hot-loop
+code.  Additional constraints:
 
 - Pint quantities are **not JAX-traceable** and cannot enter `jax.jit` or
   `jax.grad` contexts.  Conversions must remain at the FF↔engine boundary
@@ -108,7 +107,7 @@ The 220–2,400× overhead far exceeds the 5× acceptance threshold from issue
 - Q2MM's conversion functions are called millions of times during a single
   Nelder-Mead optimization run across all parameters and molecules.
 
-**Revised position (issue #161): two-tier approach.**
+**Revised position: two-tier approach.**
 
 The 5× threshold was designed for hot loops — millions of scalar calls per
 optimization.  Parser/loader boundary code runs *once per file load*.  A
@@ -344,7 +343,7 @@ Columns:
 | `hessian_element`  | ✅ | ✅ | ✅ | Packed `row * 3N + col` index into `jax.hessian` output. |
 | `eig_diagonal`     | ✅ | ✅ | ✅ | Diagonal of `Vᵀ H V` in QM eigenbasis. |
 | `eig_offdiagonal`  | ✅ | ✅ | ✅ | Off-diagonal of `Vᵀ H V`; same packed index. |
-| `bond_length`      | ✅ | ❌ | ❌ | Direct geometry observables are differentiable w.r.t. coordinates, but end-to-end `∂L/∂p` requires differentiable inner minimization. Implemented via implicit differentiation ([#243](https://github.com/ericchansen/q2mm/issues/243)); umbrella [#152]. |
+| `bond_length`      | ✅ | ❌ | ❌ | End-to-end `∂L/∂p` requires differentiable inner minimization (implicit differentiation). Not yet in JIT loss. |
 | `bond_angle`       | ✅ | ❌ | ❌ | Same as `bond_length`. |
 | `torsion_angle`    | ✅ | ❌ | ❌ | Same as `bond_length`. |
 
@@ -374,21 +373,15 @@ Columns:
     the upstream jaxopt LBFGSB kernel uses XLA argsort/scatter primitives
     that dtype-mismatch on GPU. Use `lbfgs` on GPU.
 
-### Performance levers still open
+### Performance levers
 
-| Lever                                   | Status | Tracker |
-| --------------------------------------- | :----: | ------- |
-| `vmap` over molecules in `JaxLoss._loss_fn` | ✅ Done (topology-grouped) | [#244] (closed) / [#176] |
-| Multi-start as one XLA kernel (`vmap` over init params) | Not started | [#176] |
-| Basin-hopping as a `lax.while_loop` primitive | Not started | — |
-| TS curvature inversion (QFUERZA) inside JIT | ✅ Done | [#245] (closed) |
-| Parameter constraints (equivalences, type limits) as JAX projections | Enforced in `ForceField`, not in the JIT graph | — |
-
-[#152]: https://github.com/ericchansen/q2mm/issues/152
-[#176]: https://github.com/ericchansen/q2mm/issues/176
-[#243]: https://github.com/ericchansen/q2mm/issues/243
-[#244]: https://github.com/ericchansen/q2mm/issues/244
-[#245]: https://github.com/ericchansen/q2mm/issues/245
+| Lever                                   | Status |
+| --------------------------------------- | :----: |
+| `vmap` over molecules in `JaxLoss._loss_fn` | ✅ Done (topology-grouped) |
+| Multi-start as one XLA kernel (`vmap` over init params) | Not started |
+| Basin-hopping as a `lax.while_loop` primitive | Not started |
+| TS curvature inversion (QFUERZA) inside JIT | ✅ Done |
+| Parameter constraints (equivalences, type limits) as JAX projections | Enforced in `ForceField`, not in the JIT graph |
 
 ---
 

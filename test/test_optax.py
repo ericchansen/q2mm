@@ -38,7 +38,14 @@ class MockObjective:
         self.history: list[float] = []
         self.forcefield = MagicMock()
         self.forcefield.get_param_vector.return_value = np.zeros_like(self.target)
+        self.forcefield.get_active_param_vector.return_value = np.zeros_like(self.target)
         self.forcefield.get_bounds.return_value = self._bounds
+        self.forcefield.get_active_bounds.return_value = (
+            None if self._bounds is None else np.asarray(self._bounds, dtype=np.float64)
+        )
+        self.forcefield.active_mask = np.ones_like(self.target, dtype=bool)
+        self.forcefield.n_params = int(self.target.size)
+        self.forcefield.n_active_params = int(self.target.size)
         self.forcefield.set_param_vector = MagicMock()
 
     def __call__(self, x: np.ndarray) -> float:
@@ -60,7 +67,12 @@ class MockDivergentObjective:
         self.history: list[float] = []
         self.forcefield = MagicMock()
         self.forcefield.get_param_vector.return_value = np.ones(n_params)
+        self.forcefield.get_active_param_vector.return_value = np.ones(n_params)
         self.forcefield.get_bounds.return_value = None
+        self.forcefield.get_active_bounds.return_value = None
+        self.forcefield.active_mask = np.ones(n_params, dtype=bool)
+        self.forcefield.n_params = n_params
+        self.forcefield.n_active_params = n_params
         self.forcefield.set_param_vector = MagicMock()
 
     def __call__(self, x: np.ndarray) -> float:
@@ -73,6 +85,65 @@ class MockDivergentObjective:
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
         return np.ones_like(x) * 100.0  # large gradient pushing params away
+
+
+class MockFrozenForceField:
+    """Mock force field exposing the active-parameter API."""
+
+    def __init__(self) -> None:
+        self._full = np.array([0.0, 5.0, 0.0], dtype=np.float64)
+        self._mask = np.array([True, False, True])
+        self._bounds = [(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)]
+        self.set_param_vector = MagicMock(side_effect=self._set_param_vector)
+
+    @property
+    def n_params(self) -> int:
+        return int(self._full.size)
+
+    @property
+    def n_active_params(self) -> int:
+        return int(self._mask.sum())
+
+    @property
+    def active_mask(self) -> np.ndarray:
+        return self._mask.copy()
+
+    def get_param_vector(self) -> np.ndarray:
+        return self._full.copy()
+
+    def get_active_param_vector(self) -> np.ndarray:
+        return self._full[self._mask].copy()
+
+    def get_bounds(self) -> list[tuple[float, float]]:
+        return list(self._bounds)
+
+    def get_active_bounds(self) -> np.ndarray:
+        return np.asarray(self._bounds, dtype=np.float64)[self._mask]
+
+    def _set_param_vector(self, vec: np.ndarray) -> None:
+        self._full = np.asarray(vec, dtype=np.float64).copy()
+
+
+class MockFrozenObjective:
+    """Quadratic objective with one frozen full-vector coordinate."""
+
+    def __init__(self) -> None:
+        self.target = np.array([1.0, 4.0, 3.0], dtype=np.float64)
+        self.n_eval = 0
+        self.history: list[float] = []
+        self.forcefield = MockFrozenForceField()
+        self.engine = MagicMock()
+        self.engine.supports_analytical_gradients.return_value = True
+
+    def __call__(self, x: np.ndarray) -> float:
+        score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))
+        self.n_eval += 1
+        self.history.append(score)
+        return score
+
+    def gradient(self, x: np.ndarray) -> np.ndarray:
+        x = np.asarray(x, dtype=np.float64)
+        return 2.0 * (x - self.target)
 
 
 # ---- Tests ----
@@ -210,6 +281,27 @@ class TestOptaxConvergence:
         # Should have converged via plateau or grad norm
         assert result.success
         assert result.n_iterations < 2000
+
+
+class TestOptaxFrozenParams:
+    """Frozen parameters remain fixed throughout optimization."""
+
+    def test_adam_updates_only_active_params(self) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = MockFrozenObjective()
+        opt = OptaxOptimizer(
+            optimizer="adam",
+            learning_rate=0.1,
+            max_steps=300,
+            verbose=False,
+        )
+        result = opt.optimize(obj)
+
+        np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
+        np.testing.assert_allclose(result.final_params[~obj.forcefield.active_mask], [5.0])
+        assert result.final_score < result.initial_score
+        np.testing.assert_allclose(obj.forcefield.get_param_vector(), result.final_params)
 
 
 class TestOptaxBounds:

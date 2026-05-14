@@ -14,7 +14,7 @@
 #   bash scripts/run_rh_benchmarks.sh          # full run (~1-2 hours)
 #   bash scripts/run_rh_benchmarks.sh --quick  # smoke test (~5 min)
 #
-# Results: benchmarks/rh-enamide/results/*.json
+# Results: results/rh-enamide/results/*.json
 
 set -uo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -52,7 +52,11 @@ if [[ "${1:-}" == "--quick" ]]; then
     echo "=== QUICK MODE (smoke test) ==="
 fi
 
-OUT="benchmarks/rh-enamide"
+OUT="results/rh-enamide"
+# qfuerza-zenodo data lives in the separate q2mm-data repo.
+# Override with Q2MM_DATA_REPO=/path/to/q2mm-data if needed.
+export Q2MM_DATA_REPO="${Q2MM_DATA_REPO:-$(dirname "$REPO_ROOT")/q2mm-data}"
+QFUERZA_DIR="$Q2MM_DATA_REPO/qfuerza-zenodo"
 
 # ── Step 0: Preflight ────────────────────────────────────────────────
 run_step "STEP 0: Preflight check" \
@@ -63,7 +67,7 @@ run_step "STEP 1: Smoke test — JaxOpt L-BFGS (50 iters, exercises vmap)" \
     python3 -m q2mm.diagnostics.cli --leaderboard-only \
         --system rh-enamide \
         --backend jax \
-        --optimizer jaxopt:lbfgs \
+        --optimizer jaxopt-lbfgs \
         --form mm3 \
         --max-iter 50 \
         --output /tmp/rh-smoke
@@ -82,7 +86,7 @@ run_step "STEP 2: JAX backend — mm3, core optimizers" \
         --system rh-enamide \
         --backend jax \
         --form mm3 \
-        --optimizer L-BFGS-B Nelder-Mead Powell grad-simp jaxopt:lbfgs \
+        --optimizer scipy-lbfgsb scipy-nm scipy-powell grad-simp jaxopt-lbfgs \
         --output "$OUT"
 
 run_step "STEP 2b: JAX backend — harmonic, core optimizers" \
@@ -90,7 +94,7 @@ run_step "STEP 2b: JAX backend — harmonic, core optimizers" \
         --system rh-enamide \
         --backend jax \
         --form harmonic \
-        --optimizer L-BFGS-B Nelder-Mead Powell grad-simp jaxopt:lbfgs \
+        --optimizer scipy-lbfgsb scipy-nm scipy-powell grad-simp jaxopt-lbfgs \
         --output "$OUT"
 
 # ── Step 3: JAX-MD backend ───────────────────────────────────────────
@@ -99,7 +103,7 @@ run_step "STEP 3: JAX-MD backend — harmonic" \
         --system rh-enamide \
         --backend jax-md \
         --form harmonic \
-        --optimizer L-BFGS-B Nelder-Mead Powell grad-simp \
+        --optimizer scipy-lbfgsb scipy-nm scipy-powell grad-simp \
         --output "$OUT"
 
 # ── Step 4: OpenMM backend ───────────────────────────────────────────
@@ -108,13 +112,14 @@ run_step "STEP 4: OpenMM backend — mm3" \
         --system rh-enamide \
         --backend openmm \
         --form mm3 \
-        --optimizer Nelder-Mead grad-simp \
+        --optimizer scipy-nm grad-simp \
         --output "$OUT"
 
 # ── Step 5: Evaluate Zenodo FF with our engine ───────────────────────
 run_step "STEP 5: Evaluate Zenodo QFUERZA-optimized FF on our objective" \
     python3 -c "
 import json, sys, os
+from pathlib import Path
 sys.path.insert(0, '.')
 # JAX_PLATFORMS left unset — let JAX auto-detect GPU
 
@@ -125,9 +130,10 @@ from q2mm.optimizers.objective import ObjectiveFunction
 
 engine = JaxEngine()
 sys_data = load_rh_enamide(engine)
+qfuerza_dir = Path(os.environ['Q2MM_DATA_REPO']) / 'qfuerza-zenodo'
 
 # Load Zenodo optimized FF (final iteration)
-zenodo_ff = _mm3_import_ff('benchmarks/qfuerza-zenodo/rh-enamide/qfuerza/mm3_010.fld')
+zenodo_ff = _mm3_import_ff(str(qfuerza_dir / 'rh-enamide/qfuerza/mm3_010.fld'))
 print(f'Zenodo FF: {len(zenodo_ff.bonds)} bonds, {len(zenodo_ff.angles)} angles')
 
 # Evaluate with our objective
@@ -146,8 +152,9 @@ result = {
     'score_on_our_objective': float(score),
     'note': 'Zenodo QFUERZA-optimized FF evaluated with our JaxEngine + freq_ref objective. Comparable to our benchmark final_score values.',
 }
-out = 'benchmarks/qfuerza-zenodo/rh_enamide_zenodo_ff_on_our_objective.json'
-with open(out, 'w') as f:
+out = qfuerza_dir / 'rh_enamide_zenodo_ff_on_our_objective.json'
+out.parent.mkdir(parents=True, exist_ok=True)
+with out.open('w') as f:
     json.dump(result, f, indent=2)
 print(f'Saved to {out}')
 "
@@ -157,7 +164,7 @@ echo ""
 echo "============================================================"
 echo "DONE. Results in:"
 echo "  $OUT/results/*.json"
-echo "  benchmarks/qfuerza-zenodo/rh_enamide_zenodo_ff_on_our_objective.json"
+echo "  $QFUERZA_DIR/rh_enamide_zenodo_ff_on_our_objective.json"
 echo "============================================================"
 
 if [ ${#FAILURES[@]} -gt 0 ]; then

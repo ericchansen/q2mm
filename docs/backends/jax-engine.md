@@ -1,4 +1,4 @@
-# JaxEngine
+# JAX Engine
 
 A pure-[JAX](https://jax.readthedocs.io/) implementation supporting both harmonic (OPLSAA-style) and MM3
 functional forms, including bond, angle, torsion, stretch-bend cross-term,
@@ -31,19 +31,6 @@ pip install jax[cuda12]
 
 ---
 
-## Configuration
-
-```python
-from q2mm.backends.mm import JaxEngine
-
-engine = JaxEngine()
-```
-
-JaxEngine has no constructor parameters.  It runs on whichever JAX backend
-is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
-
----
-
 ## Supported energy terms
 
 | Term | Supported |
@@ -57,6 +44,19 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 | 1-4 scaling | ❌ Not implemented |
 
 **Functional forms:** Harmonic and MM3.
+
+---
+
+## Configuration
+
+```python
+from q2mm.backends.mm import JaxEngine
+
+engine = JaxEngine()
+```
+
+JaxEngine has no constructor parameters.  It runs on whichever JAX backend
+is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 
 ---
 
@@ -99,7 +99,7 @@ or `JAX (harmonic, cpu)`).
     (Adam, AdaGrad, SGD) via `OptaxOptimizer`. These use JAX's analytical
     gradients automatically — no finite-difference overhead. On CH₃F MM3,
     Adam achieves 56.3 cm⁻¹ RMSD (10× better than L-BFGS-B).
-    See [Small Molecules](../benchmarks/small-molecules.md) for full results.
+    See [Small Molecules](../systems/small-molecules.md) for full results.
 
 !!! tip "JaxOpt end-to-end optimization"
     JaxEngine also supports fully JIT-compiled optimization via

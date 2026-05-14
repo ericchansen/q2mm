@@ -44,11 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--preflight` flag for benchmark CLI to verify GPU environment before running
 - Platform support documentation (`docs/platform-support.md`)
 - Published FF validation test harness (`test/integration/test_published_ff_validation.py`)
-- Benchmark results saving to `benchmark_results/` by default
+- Benchmark results saving to `results/` by default
 - CHANGELOG.md (this file)
 
 ### Changed
-- Overhauled `AGENTS.md` and `benchmarks/AGENTS.md` for better AI agent guidance
+- Overhauled `AGENTS.md` for better AI agent guidance
 - OpenMM-CUDA-12 platform gate: now excludes only macOS (was Linux-only)
 - JAX engine now supports both harmonic and MM3 functional forms
 

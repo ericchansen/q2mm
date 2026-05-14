@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from importlib.util import find_spec
+from typing import Any
 
 import numpy as np
 
@@ -201,13 +202,32 @@ class OptaxOptimizer:
         objective.history.clear()
         n_eval_before = objective.n_eval
 
-        x0 = objective.forcefield.get_param_vector().copy()
-        initial_score = objective(x0)
+        ff = objective.forcefield
+        initial_full = ff.get_param_vector().copy()
+        has_frozen = ff.n_active_params < ff.n_params
+        active_indices = np.flatnonzero(ff.active_mask) if has_frozen else None
 
-        bounds = objective.forcefield.get_bounds() if self.use_bounds else None
-        if bounds:
-            lower = np.array([b[0] for b in bounds])
-            upper = np.array([b[1] for b in bounds])
+        if has_frozen:
+            x0 = ff.get_active_param_vector().copy()
+            bounds = ff.get_active_bounds() if self.use_bounds else None
+        else:
+            x0 = initial_full.copy()
+            bounds = ff.get_bounds() if self.use_bounds else None
+
+        bounds_arr = None if bounds is None else np.asarray(bounds, dtype=np.float64)
+        if bounds_arr is not None and bounds_arr.size > 0:
+            lower = bounds_arr[:, 0]
+            upper = bounds_arr[:, 1]
+
+        def expand_np(x: np.ndarray) -> np.ndarray:
+            x = np.asarray(x, dtype=np.float64)
+            if not has_frozen:
+                return x.copy()
+            full = initial_full.copy()
+            full[active_indices] = x
+            return full
+
+        initial_score = objective(expand_np(x0))
 
         # Check gradient support — warn if FD fallback will be used
         jac_mode = "analytical"
@@ -227,21 +247,97 @@ class OptaxOptimizer:
             jac_mode = "auto"
 
         opt = self._build_optimizer()
+
+        # When using JaxEngine, route gradients through JaxLoss to avoid
+        # materializing the (3N, 3N, n_params) Hessian-parameter Jacobian
+        # that causes GPU OOM.  See issue analysis in AGENTS.md §9.
+        use_jax_loss = False
+        jax_loss = None
+        try:
+            from q2mm.backends.mm.jax_engine import JaxEngine
+
+            if isinstance(objective.engine, JaxEngine):
+                from q2mm.optimizers.jaxloss import JaxLoss
+
+                spec = objective.to_jax_spec()
+                jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
+                use_jax_loss = True
+                jac_mode = "jax_loss"
+                logger.info("OptaxOptimizer: using JaxLoss gradient path (memory-efficient)")
+        except (ImportError, AttributeError):
+            pass  # JaxEngine not available or objective lacks .engine
+
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)
+
+        if has_frozen:
+            frozen_template = jnp.array(initial_full, dtype=jnp.float64)
+            active_indices_jax = jnp.array(active_indices, dtype=jnp.int32)
+
+            def expand_jax(x_active: Any):  # noqa: ANN202
+                return frozen_template.at[active_indices_jax].set(x_active)
+
+        else:
+
+            def expand_jax(x_active: Any):  # noqa: ANN202
+                return x_active
 
         method_str = f"optax:{self.optimizer_name}"
         if self.schedule:
             method_str += f"+{self.schedule}"
 
+        if use_jax_loss:
+            # Use Python-dispatch value_and_grad to avoid compiling
+            # all molecules into one XLA program.  Each per-molecule
+            # function is compiled independently.
+            if has_frozen:
+
+                def jax_loss_vag(x_active: Any):  # noqa: ANN202
+                    loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
+                    return loss, full_grad[active_indices_jax]
+
+                def jax_loss_eval(x_active: Any):  # noqa: ANN202
+                    return float(jax_loss.value_and_grad_jax(expand_jax(x_active))[0])
+
+            else:
+
+                def jax_loss_vag(x_active: Any):  # noqa: ANN202
+                    return jax_loss.value_and_grad_jax(x_active)
+
+                def jax_loss_eval(x_active: Any):  # noqa: ANN202
+                    return float(jax_loss.value_and_grad_jax(x_active)[0])
+
+        else:
+            jax_loss_vag = None
+            jax_loss_eval = None
+
         if self.verbose:
             logger.info(
-                "Starting %s optimization: %d params, initial score %.6f, lr=%.1e, max_steps=%d",
+                "Starting %s optimization: %d active params (%d total), initial score %.6f, lr=%.1e, max_steps=%d",
                 method_str,
-                len(x0),
+                ff.n_active_params,
+                ff.n_params,
                 initial_score,
                 self.learning_rate,
                 self.max_steps,
+            )
+
+        if x0.size == 0:
+            final_params = initial_full.copy()
+            objective.forcefield.set_param_vector(final_params)
+            return OptimizationResult(
+                success=True,
+                message="No active parameters to optimize",
+                initial_score=initial_score,
+                final_score=initial_score,
+                n_iterations=0,
+                n_evaluations=objective.n_eval - n_eval_before,
+                initial_params=initial_full,
+                final_params=final_params,
+                history=list(objective.history),
+                method=method_str,
+                jac_mode=jac_mode,
+                eps=None,
             )
 
         best_score = initial_score
@@ -255,8 +351,16 @@ class OptaxOptimizer:
         for step in range(self.max_steps):
             params_np = np.asarray(params, dtype=np.float64)
 
-            # Compute gradient via ObjectiveFunction (analytical or FD)
-            grad_np = objective.gradient(params_np)
+            # Compute gradient
+            if use_jax_loss:
+                # Per-molecule Python-dispatch path — each compiled
+                # value_and_grad is dispatched independently.
+                _pre_loss, grad_jax = jax_loss_vag(params)
+                grad_np = np.asarray(grad_jax, dtype=np.float64)
+            else:
+                grad_np = objective.gradient(expand_np(params_np))
+                if has_frozen:
+                    grad_np = grad_np[active_indices]
             grad = jnp.array(grad_np, dtype=jnp.float64)
 
             # Optax update
@@ -264,12 +368,18 @@ class OptaxOptimizer:
             params = optax.apply_updates(params, updates)
 
             # Enforce bounds via clamping
-            if bounds:
+            if bounds_arr is not None and bounds_arr.size > 0:
                 params = jnp.clip(params, lower, upper)
 
-            # Evaluate new score
+            # Evaluate post-update score
             params_np = np.asarray(params, dtype=np.float64)
-            score = objective(params_np)
+            if use_jax_loss:
+                score = jax_loss_eval(params)
+                # Manually track evaluation for JaxLoss path
+                objective.n_eval += 1
+                objective.history.append(score)
+            else:
+                score = objective(expand_np(params_np))
 
             # Track best
             if score < best_score:
@@ -326,8 +436,9 @@ class OptaxOptimizer:
             prev_score = score
 
         # Use best params found during the run
-        final_params = best_params
+        final_active = best_params
         final_score = best_score
+        final_params = expand_np(final_active)
 
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(final_params)
@@ -349,7 +460,7 @@ class OptaxOptimizer:
             final_score=final_score,
             n_iterations=step + 1 if self.max_steps > 0 else 0,
             n_evaluations=objective.n_eval - n_eval_before,
-            initial_params=x0,
+            initial_params=initial_full if has_frozen else x0,
             final_params=final_params,
             history=list(objective.history),
             method=method_str,

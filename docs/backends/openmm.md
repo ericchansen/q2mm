@@ -115,7 +115,9 @@ rebuilding the system. This makes iterative optimization fast.
 | `supports_runtime_params()` | ✅ | — |
 | `supports_analytical_gradients()` | ✅ | Bond/angle/torsion exact, vdW via FD |
 
-### Serialization
+---
+
+## Serialization
 
 Systems can be saved to and loaded from OpenMM XML:
 

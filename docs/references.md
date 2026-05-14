@@ -34,7 +34,7 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 ## Seminario method
 
-4. **Seminario, J. M.** Calculation of Intramolecular Force Fields from Second-Derivative Tensors. *Int. J. Quantum Chem.* **1996**, *60*, 1271–1277. [DOI: 10.1002/(SICI)1097-461X(1996)60:7<1271::AID-QUA8>3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)
+7. **Seminario, J. M.** Calculation of Intramolecular Force Fields from Second-Derivative Tensors. *Int. J. Quantum Chem.* **1996**, *60*, 1271–1277. [DOI: 10.1002/(SICI)1097-461X(1996)60:7<1271::AID-QUA8>3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)
 
     The foundational method for extracting bond and angle force constants from a QM Hessian matrix. Projects Cartesian second-derivative sub-blocks onto internal coordinates via eigendecomposition, producing initial force constant estimates without any MM calculations. Q2MM uses this as Stage 1 of the pipeline (see [`q2mm.models.seminario`](reference/q2mm/models/seminario.md)).
 
@@ -42,7 +42,7 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 ## QFUERZA
 
-7. **Farrugia, M.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement. *J. Chem. Theory Comput.* **2025**, *22*, 469–476. [DOI: 10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751)
+8. **Farrugia, M.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement. *J. Chem. Theory Comput.* **2025**, *22*, 469–476. [DOI: 10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751)
 
     Builds on the Seminario/FUERZA projection method by substituting known-problematic force constants — particularly hydrogen angle bends, which Seminario overestimates by ~2× — with empirical defaults (0.5 mdyn·Å/rad²). QFUERZA is the default strategy for `estimate_force_constants()`. Starting from QFUERZA parameters leads to faster optimizer convergence and fewer local-minimum traps. Tested on cis-platinum (ground state) and Rh-enamide (transition state). See [theory](how-it-works/theory.md#stage-1-qfuerza-estimation).
 
@@ -50,7 +50,7 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 ## MM3 force field
 
-8. **Allinger, N. L.; Yuh, Y. H.; Lii, J. H.** Molecular Mechanics. The MM3 Force Field for Hydrocarbons. 1. *J. Am. Chem. Soc.* **1989**, *111*, 8551–8566. [DOI: 10.1021/ja00205a001](https://doi.org/10.1021/ja00205a001)
+9. **Allinger, N. L.; Yuh, Y. H.; Lii, J. H.** Molecular Mechanics. The MM3 Force Field for Hydrocarbons. 1. *J. Am. Chem. Soc.* **1989**, *111*, 8551–8566. [DOI: 10.1021/ja00205a001](https://doi.org/10.1021/ja00205a001)
 
     Foundational MM3 force field paper. Q2MM uses the MM3 functional forms (cubic bond stretch, sextic angle bend) defined here; see `q2mm.models.constants`.
 
@@ -58,42 +58,42 @@ If you use Q2MM in your research, please cite the relevant publications below. C
 
 ## Applications
 
-9. **Donoghue, P. J.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Development of a Q2MM Force Field for the Asymmetric Rhodium Catalyzed Hydrogenation of Enamides. *J. Chem. Theory Comput.* **2008**, *4*, 1313–1323. [DOI: 10.1021/ct800132a](https://doi.org/10.1021/ct800132a)
+10. **Donoghue, P. J.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Development of a Q2MM Force Field for the Asymmetric Rhodium Catalyzed Hydrogenation of Enamides. *J. Chem. Theory Comput.* **2008**, *4*, 1313–1323. [DOI: 10.1021/ct800132a](https://doi.org/10.1021/ct800132a)
 
     The original Rh-enamide Q2MM force field — the primary benchmark system used throughout this codebase.
 
-10. **Hansen, E.; Limé, E.; Norrby, P.-O.; Wiest, O.** Anomeric Effects in Sulfamides. *J. Phys. Chem. A* **2016**, *120*, 3677–3682. [DOI: 10.1021/acs.jpca.6b02757](https://doi.org/10.1021/acs.jpca.6b02757)
+11. **Hansen, E.; Limé, E.; Norrby, P.-O.; Wiest, O.** Anomeric Effects in Sulfamides. *J. Phys. Chem. A* **2016**, *120*, 3677–3682. [DOI: 10.1021/acs.jpca.6b02757](https://doi.org/10.1021/acs.jpca.6b02757)
 
     Ground-state force field for sulfamides, using Q2MM to implicitly parameterize coupled anomeric effects via torsional energy scans. Demonstrates Q2MM beyond transition-state applications.
 
-11. **Rosales, A. R.; Wahlers, J.; Limé, E.; Meadows, R. E.; Leslie, K. W.; Savin, R.; Bell, F.; Hansen, E.; Helquist, P.; Munday, R. H.; Wiest, O.; Norrby, P.-O.** Rapid Virtual Screening of Enantioselective Catalysts using CatVS. *Nat. Catal.* **2019**, *2*, 41–45. [DOI: 10.1038/s41929-018-0193-3](https://doi.org/10.1038/s41929-018-0193-3)
+12. **Rosales, A. R.; Wahlers, J.; Limé, E.; Meadows, R. E.; Leslie, K. W.; Savin, R.; Bell, F.; Hansen, E.; Helquist, P.; Munday, R. H.; Wiest, O.; Norrby, P.-O.** Rapid Virtual Screening of Enantioselective Catalysts using CatVS. *Nat. Catal.* **2019**, *2*, 41–45. [DOI: 10.1038/s41929-018-0193-3](https://doi.org/10.1038/s41929-018-0193-3)
 
     Introduces CatVS, a virtual screening platform that uses Q2MM-derived transition state force fields to rapidly evaluate catalyst libraries for enantioselectivity.
 
-12. **Burai Patrascu, M.; Pottel, J.; Pinus, S.; Bezanson, M.; Norrby, P.-O.; Moitessier, N.** From Desktop to Benchtop with Automated Computational Workflows for Computer-Aided Design in Asymmetric Catalysis. *Nat. Catal.* **2020**, *3*, 574–584. [DOI: 10.1038/s41929-020-0468-3](https://doi.org/10.1038/s41929-020-0468-3)
+13. **Burai Patrascu, M.; Pottel, J.; Pinus, S.; Bezanson, M.; Norrby, P.-O.; Moitessier, N.** From Desktop to Benchtop with Automated Computational Workflows for Computer-Aided Design in Asymmetric Catalysis. *Nat. Catal.* **2020**, *3*, 574–584. [DOI: 10.1038/s41929-020-0468-3](https://doi.org/10.1038/s41929-020-0468-3)
 
     Integrates Q2MM with machine learning to predict enantioselectivity for a broader range of reactions and catalyst types.
 
-13. **Rosales, A. R.; Ross, S. P.; Helquist, P.; Norrby, P.-O.; Sigman, M. S.; Wiest, O.** Transition State Force Field for the Asymmetric Redox-Relay Heck Reaction. *J. Am. Chem. Soc.* **2020**, *142*, 9700–9707. [DOI: 10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979)
+14. **Rosales, A. R.; Ross, S. P.; Helquist, P.; Norrby, P.-O.; Sigman, M. S.; Wiest, O.** Transition State Force Field for the Asymmetric Redox-Relay Heck Reaction. *J. Am. Chem. Soc.* **2020**, *142*, 9700–9707. [DOI: 10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979)
 
     Develops a Q2MM transition state force field for the asymmetric redox-relay Heck reaction, accurately predicting both enantio- and site-selectivity.
 
-14. **Wahlers, J.; Maloney, M.; Salahi, F.; Rosales, A. R.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Stereoselectivity Predictions for the Pd-Catalyzed 1,4-Conjugate Addition. *J. Org. Chem.* **2021**, *86*, 5660–5667. [DOI: 10.1021/acs.joc.0c02918](https://doi.org/10.1021/acs.joc.0c02918)
+15. **Wahlers, J.; Maloney, M.; Salahi, F.; Rosales, A. R.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Stereoselectivity Predictions for the Pd-Catalyzed 1,4-Conjugate Addition. *J. Org. Chem.* **2021**, *86*, 5660–5667. [DOI: 10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136)
 
     Applies Q2MM to predict stereoselectivity in palladium-catalyzed conjugate additions, demonstrating transferability to new reaction classes.
 
-15. **Wahlers, J.; Margalef, J.; Hansen, E.; Bayesteh, A.; Helquist, P.; Diéguez, M.; Pàmies, O.; Wiest, O.; Norrby, P.-O.** Proofreading Experimentally Assigned Stereochemistry through Q2MM Predictions. *Nat. Commun.* **2021**, *12*, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2)
+16. **Wahlers, J.; Margalef, J.; Hansen, E.; Bayesteh, A.; Helquist, P.; Diéguez, M.; Pàmies, O.; Wiest, O.; Norrby, P.-O.** Proofreading Experimentally Assigned Stereochemistry through Q2MM Predictions. *Nat. Commun.* **2021**, *12*, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2)
 
     Uses Q2MM predictions to identify and correct experimentally misassigned stereochemistry, demonstrating the method's value as a validation tool.
 
-16. **Quinn, T. R.; Patel, H. N.; Koh, K. H.; Haines, B. E.; Norrby, P.-O.; Helquist, P.; Wiest, O.** Automated Fitting of Transition State Force Fields for Biomolecular Simulations. *PLOS ONE* **2022**, *17*, e0264960. [DOI: 10.1371/journal.pone.0264960](https://doi.org/10.1371/journal.pone.0264960)
+17. **Quinn, T. R.; Patel, H. N.; Koh, K. H.; Haines, B. E.; Norrby, P.-O.; Helquist, P.; Wiest, O.** Automated Fitting of Transition State Force Fields for Biomolecular Simulations. *PLOS ONE* **2022**, *17*, e0264960. [DOI: 10.1371/journal.pone.0264960](https://doi.org/10.1371/journal.pone.0264960)
 
     Extends Q2MM automation for biomolecular systems, enabling transition state force field fitting for enzymatic reactions.
 
-17. **Wahlers, J.; Rosales, A. R.; Berkel, N.; Forbes, A.; Helquist, P.; Norrby, P.-O.; Wiest, O.** A Quantum-Guided Molecular Mechanics Force Field for the Ferrocene Scaffold. *J. Org. Chem.* **2022**, *87*, 12334–12341. [DOI: 10.1021/acs.joc.2c01553](https://doi.org/10.1021/acs.joc.2c01553)
+18. **Wahlers, J.; Rosales, A. R.; Berkel, N.; Forbes, A.; Helquist, P.; Norrby, P.-O.; Wiest, O.** A Quantum-Guided Molecular Mechanics Force Field for the Ferrocene Scaffold. *J. Org. Chem.* **2022**, *87*, 12334–12341. [DOI: 10.1021/acs.joc.2c01553](https://doi.org/10.1021/acs.joc.2c01553)
 
     Develops specialized MM3* force field parameters for ferrocene-based ligands used in asymmetric catalysis.
 
-18. **Maloney, M. P.; Stenfors, B. A.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Interplay of Computation and Experiment in Enantioselective Catalysis. *ACS Catal.* **2023**, *13*, 14285–14299. [DOI: 10.1021/acscatal.3c03706](https://doi.org/10.1021/acscatal.3c03706)
+19. **Maloney, M. P.; Stenfors, B. A.; Helquist, P.; Norrby, P.-O.; Wiest, O.** Interplay of Computation and Experiment in Enantioselective Catalysis. *ACS Catal.* **2023**, *13*, 14285–14299. [DOI: 10.1021/acscatal.3c03706](https://doi.org/10.1021/acscatal.3c03706)
 
     Reviews the synergy between computational (Q2MM) and experimental approaches in developing enantioselective catalysts.

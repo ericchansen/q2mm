@@ -1,64 +1,65 @@
 # Benchmarks
 
-This section is the guide to q2mm's benchmark and validation evidence. It is
-organized by reader question rather than by raw artifact location. Start here
-if you want to know which pages exist, what each one covers, and how much of
-the benchmark program is complete today.
+!!! info "Reading guide"
+    If you're **new to q2mm**, start with the [Tutorial](../tutorial.md) —
+    this section is evidence and analysis, not a learning path. For
+    **per-system results** and literature context, see the
+    [Systems](../systems/rh-enamide.md) section.
 
-## Benchmark program status
+q2mm's benchmark program answers three questions:
 
-| Page | Primary question | Current scope | Status |
-|------|------------------|---------------|--------|
-| [Small Molecules](small-molecules.md) | How do the supported backend/form/optimizer combinations compare on a tractable system? | Full CH₃F matrix: 82 supported combos across JAX, JAX-MD, OpenMM, and Tinker (including optax, jaxopt, basin-hopping, multi-start, L2-regularized, and composed optimizers) | **Complete** |
-| [Rh-Enamide](rh-enamide.md) | What does q2mm currently achieve on a realistic large-system case study? | Selected overnight GPU matrix: 13 attempted combos on the 182-parameter Rh training set | **Partial** |
-| [GPU Acceleration](gpu.md) | When does GPU acceleration help, and when does CPU still win? | Dedicated CPU-vs-GPU comparisons for CH₃F and Rh-enamide on JAX/JAX-MD | **Complete for the current study set** |
-| [When Analytical Wins](crossover.md) | When is the JAX analytical-gradient path worth its compile-time overhead? | Interpretive crossover analysis from existing CH₃F + Rh-enamide rows | **Complete** |
-| [QFUERZA Validation](qfuerza-validation.md) | Does our Seminario/QFUERZA implementation reproduce the paper's force constants? | Cisplatin Zenodo validation: QFUERZA angles exact, bond FCs partially diverge | **Partial — Pt-Cl/N-H divergence root cause documented ([#236](https://github.com/ericchansen/q2mm/issues/236), closed)** |
-| [Published FF Validation](published-ff-validation.md) | Can q2mm correctly evaluate a published force field? | Check 1 on the published Rh-enamide force field (JAX engine) | **R² = 0.60; #256/#257 pass, #255 xfail (engine gap)** |
+1. **Does the engine work?** Can q2mm load published force fields and
+   reproduce their fit quality? → [Published FF Validation](published-ff-validation.md)
+2. **Does the optimizer work?** Given QM reference data and a starting
+   FF, can q2mm reduce the penalty function? →
+   [Optimizer Comparison](optimizer-comparison.md),
+   [Small Molecules](../systems/small-molecules.md)
+3. **Is it fast enough?** When does GPU or the analytical-gradient path
+   pay for itself? → [GPU Acceleration](gpu.md),
+   [When Analytical Wins](crossover.md)
 
-## How to use this section
+## Benchmark sections
 
-- Read [Small Molecules](small-molecules.md) if you want the only full
-  backend/form/optimizer matrix currently documented in the benchmark section.
-- Read [Rh-Enamide](rh-enamide.md) if you want the realistic organometallic case
-  study and the large-system results that have actually been archived so far.
-- Read [GPU Acceleration](gpu.md) if you want device-scaling guidance rather
-  than a full benchmark matrix.
-- Read [When Analytical Wins](crossover.md) if you are deciding whether to
-  reach for the JAX analytical-gradient path on your problem.
-- Read [Published FF Validation](published-ff-validation.md) if you want the
-  correctness/parity status against a literature force field.
+| Section | What it covers | Key result |
+|---------|---------------|------------|
+| [Published FF Validation](published-ff-validation.md) | Load published FFs and reproduce their eigenvalue fit | Rh-enamide Check 1 passes (R² = 0.60) |
+| [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly; Rh-enamide R² = 0.961; 4 other systems limited by parameter quality |
+| [Optimizer Comparison](optimizer-comparison.md) | Compare SciPy, JaxOpt, and Optax optimizers on penalty reduction | All optimizers converge; L-BFGS-B fastest for TS systems |
+| [GPU Acceleration](gpu.md) | CPU-vs-GPU wall-clock comparisons | JAX GPU ~5.6× faster on Rh-enamide |
+| [When Analytical Wins](crossover.md) | System-size crossover for analytical vs finite-difference gradients | Analytical gradients dominate above ~50 parameters |
 
-## What the section demonstrates today
+## Systems
 
-- q2mm has one complete small-system comparison set: the CH₃F full matrix.
-- q2mm has a realistic large-system Rh-enamide case study, but not yet a full
-  24-combo Rh-enamide matrix.
-- GPU benefit is workload-dependent: it helps on larger JAX/JAX-MD workloads,
-  but small systems can still be faster on CPU.
-- The published-force-field evaluation harness is in place; near-linear
-  torsion damping and reaction-coordinate frequency exclusion bring
-  Check 1 to R² = 0.60.  The published FF does not beat the Seminario
-  baseline under our engine (documented engine gap, #255).
+| System | Molecules | Parameters | Status |
+|--------|:---------:|:----------:|--------|
+| [Small Molecules](../systems/small-molecules.md) | 1 (CH₃F) | 6–12 | 82-combination matrix complete |
+| [Rh-enamide](../systems/rh-enamide.md) | 9 | 182 | Validated against Donoghue *JCTC* 2008 |
+| [Heck relay](../systems/heck-relay.md) | 23 | ~180 | QFUERZA evaluated; cross-engine gap |
+| [Pd-allyl](../systems/pd-allyl.md) | 21 | ~200 | QFUERZA evaluated; cross-engine gap |
+| [Pd 1,4-conjugate](../systems/pd-conjugate.md) | 10 | ~200 | QFUERZA evaluated; cross-engine gap |
+| [Rh 1,4-conjugate](../systems/rh-conjugate.md) | 10 | ~200 | QFUERZA evaluated; cross-engine gap |
 
 ## What is not covered yet
 
-- A full Rh-enamide optimizer matrix across all supported combinations
-  (individual combos like JaxOpt L-BFGS have been run; the full matrix
-  exceeds available GPU memory for some combos).
-- A broader multi-system published-force-field validation set beyond
-  Rh-enamide.
+- **Type-normalized penalties** — the upstream Q2MM divides each data
+  type by its count (`score / N_type`). Our un-normalized eigenmatrix
+  loss creates a flat landscape that limits L-BFGS-B convergence.
+- **Selectivity prediction** — q2mm does not yet have the
+  conformational-search infrastructure needed for end-to-end
+  enantioselectivity benchmarks.
 
-## Artifacts and provenance
+??? note "Metrics used in this section"
+    | Metric | Meaning |
+    |--------|---------|
+    | **R²** | Coefficient of determination on eigenvalue scatter — 1.0 = perfect, 0 = no correlation, negative = worse than the mean. |
+    | **RMSD** | Root-mean-square deviation between QM and MM frequencies (cm⁻¹). Lower is better. |
+    | **TS** | Transition state — the highest-energy geometry along a reaction pathway. |
+    | **FF** | Force field — the set of parameters defining how atoms interact. |
+    | **TSFF** | Transition state force field — parameterized specifically for TS geometries. |
 
-The docs describe one benchmark program, but the repo currently stores its
-artifacts in more than one historical location:
+## Artifacts
 
-- Current CH₃F full-matrix artifacts: `benchmarks/ch3f/`
-- Archived Rh-enamide benchmark artifacts: `benchmarks/rh-enamide/`
-- QFUERZA Zenodo validation data: `benchmarks/qfuerza-zenodo/`
-- Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
-- Published-force-field validation artifacts: `test/fixtures/published_ff/` and
-  `validation/published_ffs/README.md`
-
-The detail pages link directly to the specific artifacts they rely on.
+Published-force-field re-evaluations are archived in
+`test/fixtures/published_ff/`. Historical benchmark data (from earlier
+frequency-only runs) is in the
+[q2mm-data](https://github.com/ericchansen/q2mm-data) repo.

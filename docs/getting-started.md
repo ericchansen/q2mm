@@ -1,5 +1,8 @@
 # Getting Started
 
+This page covers installation and a quick sanity check. For a full
+parameterization walkthrough, see the [Tutorial](tutorial.md).
+
 ## Installation
 
 !!! note "Requirements"
@@ -23,26 +26,8 @@ pip install "q2mm[all]"            # all optional dependencies
 
 ### GPU setup
 
-For GPU-accelerated workflows, install with CUDA extras:
-
-```bash
-pip install "q2mm[all,openmm-cuda]"
-```
-
-!!! tip "WSL2 recommended for full GPU stack"
-    **WSL2** (Windows Subsystem for Linux) is the recommended environment for
-    the full GPU stack: JAX CUDA + JAX-MD + OpenMM CUDA all work under WSL2.
-    JAX CUDA and JAX-MD are **not available on native Windows** — only Linux
-    and WSL2 are supported. OpenMM CUDA works on Linux, WSL2, and native
-    Windows.
-
-Verify your CUDA installation:
-
-```bash
-python -c "import openmm; print([openmm.Platform.getPlatform(i).getName() for i in range(openmm.Platform.getNumPlatforms())])"
-nvidia-smi   # confirm driver is visible
-python -c "import jax; print(jax.devices())"  # should show a CudaDevice
-```
+For GPU setup instructions (CUDA, WSL2, verification commands), see
+[Platform Support](platform-support.md#gpu-setup).
 
 ### From source (for development)
 
@@ -76,22 +61,29 @@ engines. Install the ones your workflow requires:
 
 ## Quick example
 
-A minimal script that reads QM reference data, loads a structure, and inspects
-an MM3 force field:
+A minimal script that reads QM reference data from the included example files.
+Clone the repository first to access the example data:
+
+```bash
+git clone https://github.com/ericchansen/q2mm.git
+cd q2mm
+```
 
 ```python
-from q2mm.io import GaussLog, Mol2, load_mm3_fld
+from q2mm.io import GaussLog, load_mm3_fld
+from q2mm.models import Q2MMMolecule
 
-# Parse a Gaussian log for the Hessian
-log = GaussLog("ethane.log")
-hessian = log.structures[0].hess
+# Parse a Gaussian log for the QM Hessian (matrix of energy second derivatives)
+log = GaussLog("examples/ethane/TS.log")
+structure = log.structures[0]
+print(f"Atoms: {structure.num_atoms}, Hessian shape: {structure.hess.shape}")
 
-# Read a MOL2 structure
-mol2 = Mol2("ethane.mol2")
-print(f"Atoms: {len(mol2.structures[0].atoms)}")
+# Load an XYZ geometry into the unified molecule model
+mol = Q2MMMolecule.from_xyz("examples/sn2-test/qm-reference/ch3f-optimized.xyz")
+print(f"Q2MMMolecule atoms: {mol.n_atoms}")
 
 # Load an MM3 force field
-ff = load_mm3_fld("mm3.fld")
+ff = load_mm3_fld("examples/rh-enamide/mm3.fld")
 print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
 ```
 
@@ -108,18 +100,9 @@ q2mm/
 └── optimizers/    # Objective functions, scoring, and scipy-based optimization
 ```
 
----
+## Next steps
 
-## Development
+1. Follow the [Tutorial](tutorial.md) for a complete parameterization walkthrough
+2. Read [Theory & Methods](how-it-works/theory.md) to understand the pipeline
+3. See [Platform Support](platform-support.md) for GPU and backend setup
 
-Install the dev extras, then run the linter and test suite:
-
-```bash
-pip install -e ".[dev]"
-pytest -v
-ruff check q2mm/ test/ scripts/
-ruff format --check q2mm test scripts examples
-```
-
-!!! tip
-    Run `ruff check --fix` to auto-fix simple lint issues before committing.

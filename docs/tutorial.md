@@ -5,6 +5,16 @@ A complete end-to-end guide for optimizing a **Transition State Force Field
 F⁻ + CH₃F → FCH₃ + F⁻ — a textbook nucleophilic substitution with a
 well-defined D₃ₕ-like transition state.
 
+### Why build a transition state force field?
+
+A **transition state (TS)** is the highest-energy point along a reaction
+pathway — the molecular geometry at the instant bonds are breaking and
+forming. Standard force fields are designed for stable molecules, not
+these fleeting arrangements. A **transition state force field (TSFF)**
+captures the unusual bonding at the TS so you can run fast molecular
+mechanics calculations that reproduce quantum mechanical accuracy for
+reaction barriers and selectivity predictions.
+
 ---
 
 ## Prerequisites
@@ -14,6 +24,14 @@ well-defined D₃ₕ-like transition state.
     - **[NumPy](https://numpy.org/)** and **[SciPy](https://scipy.org/)** (installed automatically with Q2MM)
     - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`), [JAX](https://jax.readthedocs.io/) (`pip install "q2mm[jax]"`), [JAX-MD](https://github.com/jax-md/jax-md) (`pip install "q2mm[jax-md]"`), or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
     - The SN2 example files in `examples/sn2-test/`
+
+    !!! warning "Example files require a git clone"
+        The example files are not included in the PyPI package. Clone the
+        repository to get them:
+        ```bash
+        git clone https://github.com/ericchansen/q2mm.git
+        cd q2mm
+        ```
 
     **QM engine optional:** This tutorial includes pre-computed QM reference
     data in `examples/sn2-test/qm-reference/`, so you can complete the full
@@ -166,7 +184,7 @@ molecule), expand the section for your QM engine:
 
     Jaguar is commonly used for organometallic transition states where
     pseudopotentials like LACVP** are needed. See the
-    [Rh-enamide benchmark](benchmarks/rh-enamide.md) for a worked case study.
+    [Rh-enamide benchmark](systems/rh-enamide.md) for a worked case study.
 
 !!! warning "Transition-state validation"
     A valid transition state has **exactly one** imaginary (negative)
@@ -710,7 +728,7 @@ gradients automatically.
 Adam's per-parameter adaptive learning rates and momentum can dramatically
 outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
 10× better than L-BFGS-B's 579.0 (see
-[Small Molecules](benchmarks/small-molecules.md)).
+[Small Molecules](systems/small-molecules.md)).
 
 ???+ example "Optax Adam optimization"
 
@@ -804,7 +822,7 @@ L-BFGS and L-BFGS-B with exact gradients.
     JaxOpt is most useful when you want the same algorithms as SciPy (L-BFGS-B)
     but with **exact analytical gradients** instead of finite differences. The
     gradient quality is identical to optax, but the optimiser itself is
-    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d)
+    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jaxopt)
     in the Optimization Guide for details.
 
 ---

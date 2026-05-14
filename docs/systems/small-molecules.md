@@ -8,6 +8,7 @@ matrix, so it is the right place to compare combinations directly.
 
 ## Scope
 
+- Type: Transition state (SN2: F⁻ + CH₃F → FCH₃ + F⁻)
 - System: CH₃F (1 molecule, 5 atoms, 8 parameters)
 - QM reference: B3LYP/6-31+G(d)
 - Matrix size: 82 supported combos (77 single-shot + 5 composed)
@@ -37,6 +38,11 @@ rows share the same benchmark system, but they do not represent the same
 force-field model.
 
 <div class="benchmark-table-anchor" data-benchmark-table="small-molecules"></div>
+
+*RMSD and MAE are in cm⁻¹ (frequency error vs QM reference).
+F∇ = frequency gradient mode: A = analytical (autodiff), FD = finite-difference,
+— = not applicable (derivative-free optimizer). E∇ is omitted because CH₃F
+benchmarks optimize on frequency data only.*
 
 | Form | Backend | Device | Optimizer | F∇ | RMSD | MAE | Time | eval/s |
 |------|---------|--------|-----------|:--:|-----:|----:|-----:|-------:|
@@ -135,12 +141,6 @@ smooth for staged refinement to add value.
 See [Composed workflows analysis](#composed-workflows-analysis) below.
 
 ## Interpretation
-
-**RMSD** and **MAE** are in cm⁻¹ (frequency error vs QM reference).
-**F∇** = frequency gradient mode:
-**A** = analytical (autodiff), **FD** = finite-difference, **—** = not
-applicable (derivative-free optimizer). The energy gradient column (E∇) is
-omitted because CH₃F benchmarks optimize on frequency data only.
 
 ### Harmonic form
 
@@ -269,44 +269,44 @@ where multi-start and global search methods show material differences:
 - Inputs:
   [QM reference data](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference)
 - Outputs:
-  [Benchmark results (JSON)](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/results)
+  [Benchmark results (JSON)](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f/results)
   and
-  [optimized force fields](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f/forcefields)
-- Git SHA: `690f81d4` (q2mm 5.0.0a3 + optax integration), updated with
-  advanced optimizers in PR #239
+  [optimized force fields](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f/forcefields)
+- Git SHA: `690f81d4` (q2mm 5.0.0a3 + optax integration)
 - GPU: NVIDIA GeForce RTX 5090
 
-This page uses the current full-matrix artifact set in `benchmarks/ch3f/`.
+This page uses the current full-matrix artifact set in
+[`q2mm-data/benchmarks/ch3f/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f).
 
 ## Reproducing
 
 ```bash
 # Run full matrix (all backends, all optimizers)
-q2mm-benchmark --system ch3f --output benchmarks/ch3f --platform CUDA
+q2mm-benchmark --system ch3f --output results/ch3f --platform CUDA
 
 # Run optax optimizers only (JAX backend)
-q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
-  --optimizer "optax:adam" "optax:adam+cosine" "optax:adagrad" "optax:sgd" \
+q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
+  --optimizer optax-adam optax-adam-cosine optax-adagrad optax-sgd \
   --learning-rate 0.01 --optax-max-steps 2000
 
 # Run global optimizers only (fast backends)
-q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
-  --optimizer "basinhopping (T=1.0)" "basinhopping (T=0.5)" \
-  "multi:L-BFGS-B (n=5)" "multi:L-BFGS-B (n=10)" \
+q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
+  --optimizer basinhopping basinhopping-cold \
+  multi-lbfgsb-5 multi-lbfgsb-10 \
   --platform CUDA
 
 # Run L2-regularized optimizers
-q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
-  --optimizer "L-BFGS-B + L2(λ=0.01)" "optax:adam + L2(λ=0.01)" \
+q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
+  --optimizer scipy-lbfgsb-l2 optax-adam-l2 \
   --platform CUDA
 
 # Run JaxOpt optimizers (JAX backend, end-to-end differentiable)
-q2mm-benchmark --system ch3f --output benchmarks/ch3f --backend jax \
-  --optimizer "jaxopt:lbfgs" "jaxopt:lbfgsb" --max-iter 500 \
+q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
+  --optimizer jaxopt-lbfgs jaxopt-lbfgsb --max-iter 500 \
   --platform CUDA
 
 # Load and display results
-q2mm-benchmark --load benchmarks/ch3f/results
+q2mm-benchmark --load results/ch3f
 
 # List available optimizers
 q2mm-benchmark --list

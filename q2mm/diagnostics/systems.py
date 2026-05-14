@@ -35,8 +35,9 @@ class SystemData:
     Attributes:
         molecules: One or more molecules with geometry (and optionally Hessians).
         forcefield: Template force field (from QFUERZA estimation or file).
-        freq_ref: Frequency-based reference data for the objective function.
-        qm_freqs_per_mol: QM real frequencies per molecule (for reporting).
+        reference: Reference data for the objective function.
+        qm_freqs_per_mol: QM real frequencies per molecule (for reporting only).
+            These frequencies are stored separately from ``reference``.
         metadata: Extra info (level of theory, molecule name, etc.).
         normal_modes: Pre-computed normal modes for PES distortion analysis.
             ``None`` when not available.
@@ -45,7 +46,7 @@ class SystemData:
 
     molecules: list[Q2MMMolecule]
     forcefield: ForceField
-    freq_ref: ReferenceData
+    reference: ReferenceData
     qm_freqs_per_mol: list[np.ndarray]
     metadata: dict[str, Any] = field(default_factory=dict)
     normal_modes: dict[str, np.ndarray] | None = None
@@ -99,6 +100,17 @@ def _build_frequency_reference(
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+# Published metal vdW parameters for systems where the base FF lacks them.
+# Source: Rosales Heck FF (mm3.FF1.fld:1063) for PD.
+def _metal_vdw_registry() -> dict[str, Any]:
+    """Lazy-import VdwParam to avoid circular imports at module level."""
+    from q2mm.models.forcefield import VdwParam
+
+    return {
+        "PD": VdwParam(atom_type="PD", radius=1.70, epsilon=0.414, element="Pd"),
+    }
+
+
 def _find_ch3f_data_dir() -> Path:
     """Locate CH3F reference data directory."""
     candidates = [
@@ -146,7 +158,7 @@ def load_ch3f(
     qm_hessian = np.load(hess_path)
 
     mol_h = molecule.with_hessian(qm_hessian)
-    ff = estimate_force_constants(mol_h)
+    ff = estimate_force_constants(mol_h, invert_ts_curvature=True)
 
     if functional_form is not None:
         from q2mm.models.forcefield import FunctionalForm
@@ -171,7 +183,7 @@ def load_ch3f(
     return SystemData(
         molecules=[molecule],
         forcefield=ff,
-        freq_ref=freq_ref,
+        reference=freq_ref,
         qm_freqs_per_mol=[qm_real],
         metadata={
             "molecule_name": "CH3F",
@@ -243,24 +255,27 @@ def load_rh_enamide(
     """Load the Rh-enamide benchmark system (9 molecules).
 
     Args:
-        engine: MM engine instance (used for frequency computation).
+        engine: MM engine instance (accepted for loader interface compatibility).
         functional_form: Override functional form (e.g. ``"harmonic"``,
             ``"mm3"``).  Defaults to ``"mm3"`` since the template is MM3.
 
     Returns:
-        SystemData with 9 Rh-enamide molecules and frequency references.
+        SystemData with 9 Rh-enamide molecules and multi-target references.
 
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
     from q2mm.models.seminario import estimate_force_constants
+    from q2mm.optimizers.objective import ReferenceData
 
     mm3_path = _RH_DIR / "mm3.fld"
     if not mm3_path.exists():
         raise FileNotFoundError(f"Rh-enamide force field not found: {mm3_path}")
 
     molecules = load_rh_enamide_molecules()
-    ff_template = ForceField.from_mm3_fld(str(mm3_path))
-    ff = estimate_force_constants(molecules, forcefield=ff_template)
+    ff_template = ForceField.from_mm3_fld(str(mm3_path), include_standard=True)
+    ff_opt = ForceField.from_mm3_fld(str(mm3_path), include_standard=False)
+    ff_template.freeze_standard_params(ff_opt)
+    ff = estimate_force_constants(molecules, forcefield=ff_template, invert_ts_curvature=True)
 
     # Set functional form: explicit override > default (mm3)
     if functional_form is not None:
@@ -268,24 +283,18 @@ def load_rh_enamide(
     else:
         ff.functional_form = FunctionalForm.MM3
 
-    # Build multi-molecule frequency reference
-    freq_ref = None
     qm_freqs_per_mol = []
-    for mol_idx, mol in enumerate(molecules):
-        mm_freqs = engine.frequencies(mol, ff)
+    for mol in molecules:
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        freq_ref, qm_real = _build_frequency_reference(
-            qm_freqs,
-            mm_freqs,
-            molecule_idx=mol_idx,
-            ref=freq_ref,
-        )
+        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
         qm_freqs_per_mol.append(qm_real)
+
+    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
 
     return SystemData(
         molecules=molecules,
         forcefield=ff,
-        freq_ref=freq_ref,
+        reference=reference,
         qm_freqs_per_mol=qm_freqs_per_mol,
         metadata={
             "molecule_name": "Rh-enamide",
@@ -328,15 +337,16 @@ def load_heck_relay(
     Training set: 23 Gaussian 09 logs with HPModes frequency data.
 
     Args:
-        engine: MM engine instance (used for frequency computation).
+        engine: MM engine instance (accepted for loader interface compatibility).
         functional_form: Override functional form.  Defaults to ``"mm3"``.
 
     Returns:
-        SystemData with 23 Heck TS molecules and frequency references.
+        SystemData with 23 Heck TS molecules and multi-target references.
 
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
     from q2mm.models.seminario import estimate_force_constants
+    from q2mm.optimizers.objective import ReferenceData
 
     si = _resolve_supporting_info_dir()
     ff_path = si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
@@ -344,32 +354,28 @@ def load_heck_relay(
         raise FileNotFoundError(f"Heck relay FF not found: {ff_path}")
 
     molecules = load_heck_relay_molecules()
-    ff_template = ForceField.from_mm3_fld(str(ff_path))
-    ff = estimate_force_constants(molecules, forcefield=ff_template)
+    ff_template = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
+    ff_opt = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
+    ff_template.freeze_standard_params(ff_opt)
+    ff = estimate_force_constants(molecules, forcefield=ff_template, invert_ts_curvature=True)
 
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)
     else:
         ff.functional_form = FunctionalForm.MM3
 
-    # Build multi-molecule frequency reference
-    freq_ref = None
     qm_freqs_per_mol = []
-    for mol_idx, mol in enumerate(molecules):
-        mm_freqs = engine.frequencies(mol, ff)
+    for mol in molecules:
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        freq_ref, qm_real = _build_frequency_reference(
-            qm_freqs,
-            mm_freqs,
-            molecule_idx=mol_idx,
-            ref=freq_ref,
-        )
+        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
         qm_freqs_per_mol.append(qm_real)
+
+    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
 
     return SystemData(
         molecules=molecules,
         forcefield=ff,
-        freq_ref=freq_ref,
+        reference=reference,
         qm_freqs_per_mol=qm_freqs_per_mol,
         metadata={
             "molecule_name": "Heck relay",
@@ -432,15 +438,39 @@ def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> l
 
         # Detect bonds and assign MM3 atom types from connectivity.
         # Gaussian logs only carry element symbols; MM3 engines need
-        # typed atoms (C2/C3, H1, N2, etc.) for vdW matching.
+        # typed atoms (C2/C3, H1, N2, etc.) for parameter matching.
         mol.bond_tolerance = bond_tolerance
         mol._bonds = None  # force re-detection with new tolerance
         _assign_mm3_atom_types(mol)
+        # Invalidate topology caches so that bonds/angles/torsions are
+        # re-detected with the updated MM3 atom_types (env_id depends
+        # on atom_types).  Without this, cached bonds keep element-only
+        # env_id like "C-C" instead of "C2-C3".
+        mol.invalidate_topology()
 
         molecules.append(mol)
 
     return molecules
 
+
+# Elements treated as metals for bond-count purposes.  Bonds to metals
+# are excluded when counting organic hybridization (a C bonded to Pd +
+# 2 C neighbours is sp2, not sp3).
+_METAL_ELEMENTS: frozenset[str] = frozenset(
+    {
+        "Pd",
+        "Rh",
+        "Ru",
+        "Ir",
+        "Fe",
+        "Os",
+        "Pt",
+        "Ni",
+        "Cu",
+        "Zn",
+        "Co",
+    }
+)
 
 # MM3 atom-type assignment from element + bond count.
 _MM3_TYPE_MAP: dict[str, dict[int, str]] = {
@@ -465,14 +495,32 @@ _MM3_TYPE_MAP: dict[str, dict[int, str]] = {
 
 
 def _assign_mm3_atom_types(mol: Any) -> None:
-    """Assign MM3 atom types from element + bond count."""
-    bond_counts: dict[int, int] = {}
+    """Assign MM3 atom types from element + organic bond count.
+
+    Metal bonds are excluded from the bond count for non-metal atoms
+    so that e.g. a carbon bonded to Pd + 2 carbons is typed C2 (sp2),
+    not C3 (sp3).  Metal atoms themselves use the zero-bond-count
+    fallback in ``_MM3_TYPE_MAP``.
+    """
+    # Build adjacency: for non-metal atoms, count only bonds to other
+    # non-metals.  For metal atoms, use 0 (the map fallback).
+    organic_bond_counts: dict[int, int] = {}
     for b in mol.bonds:
-        bond_counts[b.atom_i] = bond_counts.get(b.atom_i, 0) + 1
-        bond_counts[b.atom_j] = bond_counts.get(b.atom_j, 0) + 1
+        sym_i, sym_j = mol.symbols[b.atom_i], mol.symbols[b.atom_j]
+        i_metal = sym_i in _METAL_ELEMENTS
+        j_metal = sym_j in _METAL_ELEMENTS
+        if not i_metal and not j_metal:
+            organic_bond_counts[b.atom_i] = organic_bond_counts.get(b.atom_i, 0) + 1
+            organic_bond_counts[b.atom_j] = organic_bond_counts.get(b.atom_j, 0) + 1
+        elif not i_metal:
+            # i is organic, j is metal — don't count for i
+            pass
+        elif not j_metal:
+            # j is organic, i is metal — don't count for j
+            pass
 
     for i, elem in enumerate(mol.symbols):
-        n_bonds = bond_counts.get(i, 0)
+        n_bonds = organic_bond_counts.get(i, 0)
         type_map = _MM3_TYPE_MAP.get(elem, {})
         if n_bonds in type_map:
             mm3_type = type_map[n_bonds]
@@ -493,6 +541,7 @@ def _load_wahlers_system(
     publication: str = "",
     doi: str = "",
     functional_form: str | None = None,
+    metal: str | None = None,
 ) -> SystemData:
     """Load a Wahlers dissertation system with FF composition.
 
@@ -501,6 +550,7 @@ def _load_wahlers_system(
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
     from q2mm.models.seminario import estimate_force_constants
+    from q2mm.optimizers.objective import ReferenceData
 
     si = _resolve_supporting_info_dir()
     wahlers_base = si / "wahlers" / "Wahlers_Jessica_Supporting_information"
@@ -535,29 +585,43 @@ def _load_wahlers_system(
         stretch_bends=list(opt_ff.stretch_bends) + list(base_ff.stretch_bends),
         functional_form=FunctionalForm.MM3,
     )
-    ff = estimate_force_constants(molecules, forcefield=composed)
+
+    # Inject metal-specific vdW if missing from the base FF
+    if metal:
+        registry = _metal_vdw_registry()
+        metal_key = metal.upper()
+        if metal_key in registry:
+            has_metal_vdw = any(
+                v.atom_type == metal_key or (v.element or "").capitalize() == metal.capitalize() for v in composed.vdws
+            )
+            if not has_metal_vdw:
+                composed = ForceField(
+                    bonds=composed.bonds,
+                    angles=composed.angles,
+                    torsions=composed.torsions,
+                    vdws=list(composed.vdws) + [registry[metal_key]],
+                    stretch_bends=composed.stretch_bends,
+                    functional_form=composed.functional_form,
+                )
+
+    composed.freeze_standard_params(opt_ff)
+    ff = estimate_force_constants(molecules, forcefield=composed, invert_ts_curvature=True)
 
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)
 
-    # Build frequency reference
-    freq_ref = None
     qm_freqs_per_mol = []
-    for mol_idx, mol in enumerate(molecules):
-        mm_freqs = engine.frequencies(mol, ff)
+    for mol in molecules:
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        freq_ref, qm_real = _build_frequency_reference(
-            qm_freqs,
-            mm_freqs,
-            molecule_idx=mol_idx,
-            ref=freq_ref,
-        )
+        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
         qm_freqs_per_mol.append(qm_real)
+
+    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
 
     return SystemData(
         molecules=molecules,
         forcefield=ff,
-        freq_ref=freq_ref,
+        reference=reference,
         qm_freqs_per_mol=qm_freqs_per_mol,
         metadata={
             "molecule_name": system_name,
@@ -586,6 +650,7 @@ def load_pd_allyl(engine: Any, *, functional_form: str | None = None) -> SystemD
         publication="Wahlers et al. Nat. Commun. 2021, 12, 6508",
         doi="10.1038/s41467-021-27065-2",
         functional_form=functional_form,
+        metal="PD",
     )
 
 
@@ -597,8 +662,9 @@ def load_pd_conjugate(engine: Any, *, functional_form: str | None = None) -> Sys
         engine,
         system_name="Pd 1,4-conjugate addition",
         publication="Wahlers et al. J. Org. Chem. 2021, 86, 5660",
-        doi="10.1021/acs.joc.0c02918",
+        doi="10.1021/acs.joc.1c00136",
         functional_form=functional_form,
+        metal="PD",
     )
 
 
@@ -610,6 +676,7 @@ def load_rh_conjugate(engine: Any, *, functional_form: str | None = None) -> Sys
         engine,
         system_name="Rh 1,4-conjugate addition",
         functional_form=functional_form,
+        metal="RH",
     )
 
 

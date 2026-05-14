@@ -3,178 +3,178 @@
   "publication": "Rosales et al. JACS 2020, 142, 9700",
   "doi": "10.1021/jacs.0c01979",
   "n_molecules": 23,
-  "total_freq_refs": 1564,
+  "total_freq_refs": 2673,
   "published_ff": {
-    "objective_score": 3744419738.1135197,
-    "overall_r_squared": 0.8148511349321924,
-    "overall_rmsd_cm1": 1547.2977306698313,
+    "objective_score": 407433619.7746606,
+    "overall_r_squared": 0.9335682280526608,
+    "overall_rmsd_cm1": 390.4172084111008,
     "per_molecule": [
       {
         "name": "aagts1",
         "n_atoms": 41,
-        "n_freq_refs": 56,
-        "r_squared": 0.8127547479820924,
-        "rmsd_cm1": 1702.8764406468708
+        "n_freq_refs": 103,
+        "r_squared": 0.9319631435416148,
+        "rmsd_cm1": 413.6698924482495
       },
       {
         "name": "aagts2",
         "n_atoms": 41,
-        "n_freq_refs": 56,
-        "r_squared": 0.8167977550357278,
-        "rmsd_cm1": 1706.6907346020594
+        "n_freq_refs": 103,
+        "r_squared": 0.9276775735847826,
+        "rmsd_cm1": 416.91230617480795
       },
       {
         "name": "bgts1",
         "n_atoms": 44,
-        "n_freq_refs": 64,
-        "r_squared": 0.8814099257604756,
-        "rmsd_cm1": 1566.9855432624313
+        "n_freq_refs": 110,
+        "r_squared": 0.9332605774084197,
+        "rmsd_cm1": 393.7447166280488
       },
       {
         "name": "bgts2",
         "n_atoms": 44,
-        "n_freq_refs": 64,
-        "r_squared": 0.8832557932852011,
-        "rmsd_cm1": 1567.0609990217126
+        "n_freq_refs": 110,
+        "r_squared": 0.93300027418477,
+        "rmsd_cm1": 396.02986108057087
       },
       {
         "name": "cf3ets1",
         "n_atoms": 40,
-        "n_freq_refs": 50,
-        "r_squared": 0.95383963065686,
-        "rmsd_cm1": 1797.0912102061518
+        "n_freq_refs": 98,
+        "r_squared": 0.8951713925509499,
+        "rmsd_cm1": 439.3533406876812
       },
       {
         "name": "cf3ets2",
         "n_atoms": 40,
-        "n_freq_refs": 51,
-        "r_squared": 0.9138815366869414,
-        "rmsd_cm1": 1766.094579278674
+        "n_freq_refs": 98,
+        "r_squared": 0.8940441564797158,
+        "rmsd_cm1": 440.8918345562691
       },
       {
         "name": "dimeets1",
         "n_atoms": 43,
-        "n_freq_refs": 64,
-        "r_squared": 0.8581868747036951,
-        "rmsd_cm1": 1570.7563385753388
+        "n_freq_refs": 110,
+        "r_squared": 0.9342413472745958,
+        "rmsd_cm1": 402.29134511170065
       },
       {
         "name": "dimeets2",
         "n_atoms": 43,
-        "n_freq_refs": 65,
-        "r_squared": 0.8751697772287064,
-        "rmsd_cm1": 1543.6119492575262
+        "n_freq_refs": 110,
+        "r_squared": 0.9270767454050193,
+        "rmsd_cm1": 393.4588356607555
       },
       {
         "name": "epgts1",
         "n_atoms": 47,
-        "n_freq_refs": 69,
-        "r_squared": 0.8670853141829084,
-        "rmsd_cm1": 1564.3859123756502
+        "n_freq_refs": 119,
+        "r_squared": 0.9372227392083984,
+        "rmsd_cm1": 383.34870986932424
       },
       {
         "name": "epgts2",
         "n_atoms": 47,
-        "n_freq_refs": 69,
-        "r_squared": 0.8690040493047567,
-        "rmsd_cm1": 1564.744442405367
+        "n_freq_refs": 119,
+        "r_squared": 0.9364527413901775,
+        "rmsd_cm1": 385.23745261014733
       },
       {
         "name": "ipets1",
         "n_atoms": 46,
-        "n_freq_refs": 70,
-        "r_squared": 0.8932329895651979,
-        "rmsd_cm1": 1517.340890236783
+        "n_freq_refs": 118,
+        "r_squared": 0.941667386040205,
+        "rmsd_cm1": 388.1525124545827
       },
       {
         "name": "ipets2",
         "n_atoms": 46,
-        "n_freq_refs": 71,
-        "r_squared": 0.8989426190429324,
-        "rmsd_cm1": 1491.0798314488657
+        "n_freq_refs": 118,
+        "r_squared": 0.933680747122393,
+        "rmsd_cm1": 381.42707122638217
       },
       {
         "name": "meets1",
         "n_atoms": 40,
-        "n_freq_refs": 55,
-        "r_squared": 0.7986634667925014,
-        "rmsd_cm1": 1689.2488091056805
+        "n_freq_refs": 101,
+        "r_squared": 0.9287293063292603,
+        "rmsd_cm1": 414.633279999288
       },
       {
         "name": "meets2",
         "n_atoms": 40,
-        "n_freq_refs": 56,
-        "r_squared": 0.8149888727471465,
-        "rmsd_cm1": 1658.1254870388066
+        "n_freq_refs": 101,
+        "r_squared": 0.919902527065275,
+        "rmsd_cm1": 407.2316662406021
       },
       {
         "name": "prrts2",
         "n_atoms": 52,
-        "n_freq_refs": 84,
-        "r_squared": 0.9032367881138149,
-        "rmsd_cm1": 1427.0766342941135
+        "n_freq_refs": 136,
+        "r_squared": 0.939463781358553,
+        "rmsd_cm1": 367.7503334258099
       },
       {
         "name": "prsts1",
         "n_atoms": 52,
-        "n_freq_refs": 85,
-        "r_squared": 0.9127695260192988,
-        "rmsd_cm1": 1403.0243842732416
+        "n_freq_refs": 136,
+        "r_squared": 0.9454844016166346,
+        "rmsd_cm1": 375.6531797273172
       },
       {
         "name": "prsts2",
         "n_atoms": 52,
-        "n_freq_refs": 85,
-        "r_squared": 0.9124303472954989,
-        "rmsd_cm1": 1402.8896960184995
+        "n_freq_refs": 136,
+        "r_squared": 0.939603535620266,
+        "rmsd_cm1": 367.4964859248637
       },
       {
         "name": "tbets1",
         "n_atoms": 49,
-        "n_freq_refs": 80,
-        "r_squared": 0.9290129190854705,
-        "rmsd_cm1": 1397.3217896594813
+        "n_freq_refs": 127,
+        "r_squared": 0.9445186839706713,
+        "rmsd_cm1": 380.0278160461914
       },
       {
         "name": "tbets2",
         "n_atoms": 49,
-        "n_freq_refs": 80,
-        "r_squared": 0.9292969472728574,
-        "rmsd_cm1": 1396.8204923732158
+        "n_freq_refs": 127,
+        "r_squared": 0.9378872931904252,
+        "rmsd_cm1": 372.69148096050634
       },
       {
         "name": "tmets1",
         "n_atoms": 49,
-        "n_freq_refs": 76,
-        "r_squared": 0.8711905202538831,
-        "rmsd_cm1": 1519.670113277666
+        "n_freq_refs": 128,
+        "r_squared": 0.9473358724226488,
+        "rmsd_cm1": 361.7019280566041
       },
       {
         "name": "tmets2",
         "n_atoms": 49,
-        "n_freq_refs": 74,
-        "r_squared": 0.8535781364451337,
-        "rmsd_cm1": 1557.332780039942
+        "n_freq_refs": 127,
+        "r_squared": 0.9483808525623558,
+        "rmsd_cm1": 365.05984809550495
       },
       {
         "name": "zpgts1",
         "n_atoms": 47,
-        "n_freq_refs": 70,
-        "r_squared": 0.8714046171334242,
-        "rmsd_cm1": 1536.3603065061932
+        "n_freq_refs": 119,
+        "r_squared": 0.9367722763301034,
+        "rmsd_cm1": 382.51058855912356
       },
       {
         "name": "zpgts2",
         "n_atoms": 47,
-        "n_freq_refs": 70,
-        "r_squared": 0.87372771963673,
-        "rmsd_cm1": 1536.9388887725154
+        "n_freq_refs": 119,
+        "r_squared": 0.9362545889941121,
+        "rmsd_cm1": 384.32743130741085
       }
     ]
   },
   "seminario_ff": {
-    "objective_score": 3879418904.5817327,
-    "overall_r_squared": 0.8219470489748109,
-    "overall_rmsd_cm1": 1593.910091838801
+    "objective_score": 587853325.8923758,
+    "overall_r_squared": 0.8377669040230789,
+    "overall_rmsd_cm1": 468.9591462405224
   }
 }

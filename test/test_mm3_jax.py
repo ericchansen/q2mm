@@ -49,16 +49,22 @@ def _init_jax() -> None:
     except ImportError as exc:
         pytest.skip(f"JAX not usable: {exc}")
     # Make jax/jnp and engine symbols available as module globals for tests.
-    global jax, jnp, JaxEngine, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy  # noqa: PLW0603
+    global jax, jnp, JaxEngine, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy, _mm3_dipole_energy, _MM3_DIPOLE_CONST  # noqa: PLW0603, E501
     import jax as _jax
     import jax.numpy as _jnp
 
     from q2mm.backends.mm.jax_engine import (
         JaxEngine as _JaxEngine,
+        _MM3_DIPOLE_CONST as _dipole_const,
+        _ensure_jax as _ensure_jax_engine,
         _mm3_angle_energy as _angle,
         _mm3_bond_energy as _bond,
+        _mm3_dipole_energy as _dipole,
         _mm3_vdw_energy as _vdw,
     )
+
+    # Initialize jax_engine module-level jnp (needed for standalone functions)
+    _ensure_jax_engine()
 
     jax = _jax
     jnp = _jnp
@@ -66,6 +72,8 @@ def _init_jax() -> None:
     _mm3_bond_energy = _bond
     _mm3_angle_energy = _angle
     _mm3_vdw_energy = _vdw
+    _mm3_dipole_energy = _dipole
+    _MM3_DIPOLE_CONST = _dipole_const
 
 
 # ---------------------------------------------------------------------------
@@ -664,3 +672,109 @@ class TestStretchBendEnergy:
 
         expected = 2.51118 * (180.0 / math.pi)
         assert pytest.approx(expected, rel=1e-6) == MDYNRAD_TO_KCALMOLARAD
+
+
+# ---------------------------------------------------------------------------
+# MM3 Bond-Dipole Electrostatics
+# ---------------------------------------------------------------------------
+
+
+class TestMM3DipoleElectrostatics:
+    """Tests for _mm3_dipole_energy and the electrostatics constant."""
+
+    def test_constant_value(self) -> None:
+        """MM3 dipole constant = 14.3928 / 1.5 ≈ 9.5952."""
+        assert pytest.approx(14.3928 / 1.5, rel=1e-6) == _MM3_DIPOLE_CONST
+
+    def test_zero_dipole_gives_zero_energy(self) -> None:
+        """Two bonds with zero dipole moment produce zero energy."""
+        # Two bonds: atoms 0-1 and 2-3, both with μ=0
+        coords = jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]])
+        bond_idx = jnp.array([[0, 1], [2, 3]], dtype=jnp.int32)
+        pair_idx = jnp.array([[0, 1]], dtype=jnp.int32)
+        dipoles = jnp.array([0.0, 0.0])
+        E = _mm3_dipole_energy(dipoles, coords, bond_idx, pair_idx)
+        assert float(E) == pytest.approx(0.0, abs=1e-15)
+
+    def test_empty_pairs_gives_zero(self) -> None:
+        """No dipole pairs → zero energy."""
+        coords = jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        bond_idx = jnp.array([[0, 1]], dtype=jnp.int32)
+        pair_idx = jnp.empty((0, 2), dtype=jnp.int32)
+        dipoles = jnp.array([1.5])
+        E = _mm3_dipole_energy(dipoles, coords, bond_idx, pair_idx)
+        assert float(E) == pytest.approx(0.0, abs=1e-15)
+
+    def test_collinear_dipoles_sign(self) -> None:
+        """Two collinear, head-to-tail dipoles on x-axis.
+
+        For collinear head-to-tail: cos χ = 1, cos α_i = 1, cos α_j = 1.
+        angular = 1 - 3·1·1 = -2 → energy is negative (attractive).
+        """
+        coords = jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]])
+        bond_idx = jnp.array([[0, 1], [2, 3]], dtype=jnp.int32)
+        pair_idx = jnp.array([[0, 1]], dtype=jnp.int32)
+        dipoles = jnp.array([1.0, 1.0])
+        E = float(_mm3_dipole_energy(dipoles, coords, bond_idx, pair_idx))
+        assert E < 0, "Collinear head-to-tail dipoles should attract"
+
+        # Verify exact value: const * 1 * 1 * (-2) / r³
+        # r = midpoint distance = |3.5 - 0.5| = 3.0
+        expected = _MM3_DIPOLE_CONST * 1.0 * 1.0 * (-2.0) / (3.0**3)
+        assert pytest.approx(expected, rel=1e-10) == E
+
+    def test_antiparallel_dipoles_repel(self) -> None:
+        """Two antiparallel (opposing) dipoles on x-axis.
+
+        Bond 0: atom0→atom1 (→), Bond 1: atom3→atom2 (←).
+        Dipole vectors: d_0 = (1,0,0), d_1 = (-1,0,0).
+        cos χ = -1, cos α_i = 1, cos α_j = -1.
+        angular = -1 - 3·1·(-1) = -1+3 = 2 → positive (repulsive).
+        """
+        coords = jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [4.0, 0.0, 0.0]])
+        bond_idx = jnp.array([[0, 1], [3, 2]], dtype=jnp.int32)
+        pair_idx = jnp.array([[0, 1]], dtype=jnp.int32)
+        dipoles = jnp.array([1.0, 1.0])
+        E = float(_mm3_dipole_energy(dipoles, coords, bond_idx, pair_idx))
+        assert E > 0, "Antiparallel dipoles should repel"
+
+    def test_differentiable(self) -> None:
+        """jax.grad flows through dipole energy without NaN."""
+        coords = jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [3.0, 1.0, 0.0], [4.0, 1.0, 0.0]])
+        bond_idx = jnp.array([[0, 1], [2, 3]], dtype=jnp.int32)
+        pair_idx = jnp.array([[0, 1]], dtype=jnp.int32)
+        dipoles = jnp.array([1.2, 0.8])
+
+        def energy_of_coords(c: jnp.ndarray) -> jnp.ndarray:
+            return _mm3_dipole_energy(dipoles, c, bond_idx, pair_idx)
+
+        grad = jax.grad(energy_of_coords)(coords)
+        assert np.all(np.isfinite(np.array(grad))), "Dipole gradient contains NaN/Inf"
+
+    def test_engine_with_dipoles(self) -> None:
+        """JaxEngine MM3 includes dipole energy for non-bonded bond pairs."""
+        from test._shared import make_ethane
+
+        mol = make_ethane()  # C₂H₆ has C-H bonds on different carbons
+        ff = ForceField(
+            bonds=[
+                BondParam(elements=("C", "H"), force_constant=5.0, equilibrium=1.09, dipole_moment=0.7),
+                BondParam(elements=("C", "C"), force_constant=4.4, equilibrium=1.54, dipole_moment=0.0),
+            ],
+            angles=[AngleParam(elements=("H", "C", "H"), force_constant=0.5, equilibrium=109.5)],
+            functional_form=FunctionalForm.MM3,
+        )
+        engine = JaxEngine()
+        E_with = engine.energy(mol, ff)
+
+        ff_no_dipole = ForceField(
+            bonds=[
+                BondParam(elements=("C", "H"), force_constant=5.0, equilibrium=1.09, dipole_moment=0.0),
+                BondParam(elements=("C", "C"), force_constant=4.4, equilibrium=1.54, dipole_moment=0.0),
+            ],
+            angles=[AngleParam(elements=("H", "C", "H"), force_constant=0.5, equilibrium=109.5)],
+            functional_form=FunctionalForm.MM3,
+        )
+        E_without = engine.energy(mol, ff_no_dipole)
+
+        assert E_with != pytest.approx(E_without, abs=1e-6), "Dipole moment should contribute non-zero energy"

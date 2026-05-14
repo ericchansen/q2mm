@@ -222,21 +222,9 @@ ref.add_frequency(value=1648.5, data_idx=0, weight=1.0)
 
 ## Hessian-derived data
 
-The Hessian matrix (second derivatives of the energy with respect to nuclear
-coordinates) contains complete information about the curvature of the
-potential energy surface at a given geometry.
-QFUERZA estimation uses Seminario's FUERZA procedure to extract internal force constants
-directly from the Cartesian Hessian via eigenanalysis of atom-pair
-interaction submatrices
-([Seminario, *Int. J. Quantum Chem.* **1996**, 60, 1271](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)),
-with improved handling of hydrogen angle bends
-([Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.5c01751)).
-Limé and Norrby later extended this to transition states, introducing
-methods for handling the negative eigenvalue along the reaction
-coordinate
-([Limé & Norrby, *J. Comput. Chem.* **2015**, 36, 244](https://doi.org/10.1002/jcc.23797)).
-Q2MM supports two ways to use Hessian information as training data, both
-derived from eigendecomposition of the Hessian.
+These data types are derived from the QM Hessian via the Seminario/QFUERZA projection method. See [Theory & Methods — Stage 1](theory.md#stage-1-qfuerza-estimation) for the full mathematical treatment.
+
+Q2MM supports two ways to use Hessian information as training data, both derived from eigendecomposition of the Hessian.
 
 !!! note "Why not use raw Hessian elements directly?"
     The raw Hessian matrix has 3N×3N elements (most redundant due to

@@ -1,9 +1,23 @@
 # Theory & Methods
 
-This page explains the full Q2MM pipeline — from a quantum mechanical
-calculation to a production-ready force field. For code architecture, see
-[Architecture](architecture.md). For practical usage, see the
-[Optimization Guide](optimization-guide.md).
+!!! tip "When to read this page"
+    Read this page after completing the [Tutorial](../tutorial.md). It
+    explains the scientific methods behind q2mm's pipeline — why each
+    stage exists and what the math is doing. For practical "which
+    optimizer should I use?" guidance, see the
+    [Optimization Guide](optimization-guide.md).
+
+**Key terms used on this page:**
+
+| Term | Meaning |
+|------|---------|
+| **Hessian** | Matrix of second derivatives of energy with respect to atomic positions — encodes how stiff each bond and angle is |
+| **QFUERZA** | Q2MM's method for extracting initial force constants from the QM Hessian without iterative fitting |
+| **Eigenvalue** | A number from the Hessian eigendecomposition; each eigenvalue corresponds to a vibrational mode's stiffness |
+| **Objective function** | A single number measuring how poorly the current force field reproduces the QM reference data — the optimizer minimizes this |
+| **Grad-simp** | Q2MM's optimization strategy: alternate gradient-based and simplex refinement passes |
+| **RMSD** | Root-mean-square deviation — average error between QM and MM values |
+| **R²** | Coefficient of determination — 1.0 means perfect agreement, 0.0 means no correlation, negative means worse than the mean |
 
 ---
 

@@ -30,8 +30,9 @@ convergence diagnostics, and bounds support.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -39,6 +40,46 @@ import numpy as np
 from q2mm.optimizers.objective import ObjectiveFunction
 
 logger = logging.getLogger(__name__)
+
+
+class _ActiveObjectiveWrapper:
+    """Objective adapter exposing only the active force-field parameters."""
+
+    def __init__(self, objective: ObjectiveFunction, mask: np.ndarray, frozen_full: np.ndarray) -> None:
+        self._objective = objective
+        self._mask = np.asarray(mask, dtype=bool)
+        self._active_indices = np.flatnonzero(self._mask)
+        self._frozen_full = np.asarray(frozen_full, dtype=float).copy()
+
+    @property
+    def history(self) -> list[float]:
+        return self._objective.history
+
+    @property
+    def n_eval(self) -> int:
+        return self._objective.n_eval
+
+    @property
+    def engine(self) -> Any:
+        return self._objective.engine
+
+    @property
+    def forcefield(self) -> Any:
+        return self._objective.forcefield
+
+    def expand(self, x_active: np.ndarray) -> np.ndarray:
+        full = self._frozen_full.copy()
+        full[self._active_indices] = np.asarray(x_active, dtype=float)
+        return full
+
+    def __call__(self, x_active: np.ndarray) -> float:
+        return self._objective(self.expand(x_active))
+
+    def gradient(self, x_active: np.ndarray) -> np.ndarray:
+        return self._objective.gradient(self.expand(x_active))[self._mask]
+
+    def residuals(self, x_active: np.ndarray) -> np.ndarray:
+        return self._objective.residuals(self.expand(x_active))
 
 
 @dataclass
@@ -143,6 +184,12 @@ class ScipyOptimizer:
             disable.
         divergence_patience (int): Number of consecutive divergent
             callbacks required before stopping.
+        ratio_tol (float | None): Tolerance for the JaxLoss vs
+            ObjectiveFunction ratio check when ``jac='auto'``.
+            Default 0.15 requires ratio within [0.85, 1.15].
+            Set to ``None`` to skip the check entirely — recommended
+            for TS systems where geometry relaxation divergence causes
+            ratios of 0.1–0.4.
 
     """
 
@@ -162,6 +209,7 @@ class ScipyOptimizer:
         jac: str | None = None,
         divergence_factor: float | None = 3.0,
         divergence_patience: int = 5,
+        ratio_tol: float | None = 0.15,
     ) -> None:
         """Initialize the optimizer.
 
@@ -176,6 +224,11 @@ class ScipyOptimizer:
             divergence_factor (float | None): Early stopping threshold.
             divergence_patience (int): Consecutive divergent callbacks
                 before stopping.
+            ratio_tol (float | None): Tolerance for the JaxLoss vs
+                ObjectiveFunction ratio check when ``jac='auto'``.
+                Set to ``None`` to skip the check and always use
+                JaxLoss analytical gradients (recommended for TS
+                systems where the ratio check is known to fail).
 
         """
         self.method = method
@@ -187,6 +240,7 @@ class ScipyOptimizer:
         self.jac = jac
         self.divergence_factor = divergence_factor
         self.divergence_patience = divergence_patience
+        self.ratio_tol = ratio_tol
 
     def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
         """Run the optimization.
@@ -207,32 +261,70 @@ class ScipyOptimizer:
         objective.history.clear()
         n_eval_before = objective.n_eval
 
-        x0 = objective.forcefield.get_param_vector().copy()
-        initial_score = objective(x0)
+        ff = objective.forcefield
+        initial_full = ff.get_param_vector().copy()
+        has_frozen = ff.n_active_params < ff.n_params
+        wrapped_objective: ObjectiveFunction | _ActiveObjectiveWrapper = objective
 
-        bounds = objective.forcefield.get_bounds() if self.use_bounds else None
+        if has_frozen:
+            wrapped_objective = _ActiveObjectiveWrapper(objective, ff.active_mask, initial_full)
+            x0 = ff.get_active_param_vector().copy()
+            bounds = ff.get_active_bounds().tolist() if self.use_bounds else None
+            expand = wrapped_objective.expand
+        else:
+            x0 = initial_full.copy()
+            bounds = ff.get_bounds() if self.use_bounds else None
+
+            def expand(x: np.ndarray) -> np.ndarray:
+                return np.asarray(x, dtype=float).copy()
+
+        initial_score = wrapped_objective(x0)
 
         if self.verbose:
             logger.info(
-                "Starting %s optimization: %d params, initial score %.6f",
+                "Starting %s optimization: %d active params (%d total), initial score %.6f",
                 self.method,
-                len(x0),
+                ff.n_active_params,
+                ff.n_params,
                 initial_score,
             )
 
-        if self.method == "least_squares":
+        if x0.size == 0:
+            result = OptimizationResult(
+                success=True,
+                message="No active parameters to optimize",
+                initial_score=initial_score,
+                final_score=initial_score,
+                n_iterations=0,
+                n_evaluations=objective.n_eval - n_eval_before,
+                initial_params=initial_full,
+                final_params=initial_full.copy(),
+                history=list(objective.history),
+                method=self.method,
+                jac_mode=self.jac,
+                eps=None,
+            )
+        elif self.method == "least_squares":
             if self.jac in ("analytical", "auto"):
                 raise ValueError(
                     f"jac='{self.jac}' is not supported with method='least_squares'. "
                     "Use a minimize-based method (e.g. 'L-BFGS-B') for analytical gradients, "
                     "or set jac=None for least_squares."
                 )
-            result = self._run_least_squares(objective, x0, bounds, n_eval_before)
+            result = self._run_least_squares(wrapped_objective, x0, bounds, n_eval_before)
         else:
-            result = self._run_minimize(objective, x0, bounds, initial_score, n_eval_before)
+            result = self._run_minimize(wrapped_objective, x0, bounds, initial_score, n_eval_before)
+
+        final_full = expand(result.final_params)
+        if has_frozen:
+            result = replace(
+                result,
+                initial_params=initial_full,
+                final_params=final_full,
+            )
 
         # Apply final parameters to the forcefield
-        objective.forcefield.set_param_vector(result.final_params)
+        objective.forcefield.set_param_vector(final_full)
 
         if self.verbose:
             logger.info(
@@ -290,10 +382,13 @@ class ScipyOptimizer:
 
         # Resolve Jacobian strategy:
         #   - jac="analytical" → always use objective.gradient
+        #   - jac="auto" + gradient-based method + JaxEngine → JaxLoss analytical gradients
         #   - jac="auto" + gradient-based method + engine supports it → auto-enable
         #   - jac=None → scipy's own finite differences (default, safest)
         jac = None
         uses_scipy_fd = False
+        use_jax_loss_fun = None  # set to a (loss, grad) function if JaxLoss path
+        jac_mode_str = self.jac
         if self.method in self.DERIVATIVE_FREE_METHODS:
             pass  # no gradients needed
         elif self.jac == "analytical":
@@ -301,29 +396,103 @@ class ScipyOptimizer:
             if self.verbose:
                 logger.info("  Using analytical gradients (jac='analytical')")
         elif self.jac == "auto" and self.method not in self.DERIVATIVE_FREE_METHODS:
-            if objective.engine.supports_analytical_gradients():
+            # Try JaxLoss path first — per-molecule JIT dispatch,
+            # analytical gradients for all ref types including geometry.
+            try:
+                from q2mm.backends.mm.jax_engine import JaxEngine
+
+                if isinstance(objective.engine, JaxEngine):
+                    from q2mm.optimizers.jaxloss import JaxLoss
+
+                    # Unwrap _ActiveObjectiveWrapper to get raw ObjectiveFunction
+                    raw_obj = getattr(objective, "_objective", objective)
+                    spec = raw_obj.to_jax_spec()
+                    jax_loss = JaxLoss(spec, raw_obj.engine, raw_obj.molecules, raw_obj.forcefield)
+
+                    ff = raw_obj.forcefield
+                    active_idx = np.flatnonzero(ff.active_mask)
+                    frozen_full = np.array(ff.get_param_vector(), dtype=float)
+
+                    def _jax_loss_fun(x_active: np.ndarray) -> tuple[float, np.ndarray]:
+                        full = frozen_full.copy()
+                        full[active_idx] = np.asarray(x_active, dtype=float)
+                        loss, grad_full = jax_loss.loss_and_grad(full)
+                        return loss, grad_full[active_idx]
+
+                    # Validate JaxLoss/ObjectiveFunction agreement at x0.
+                    # For pathological systems (negative FCs, unstable PES),
+                    # the geometry relaxation methods can diverge, making JaxLoss
+                    # an unreliable surrogate.  Fall back to FD gradients if the
+                    # ratio deviates more than 15% in either direction, or if
+                    # JaxLoss returns NaN/Inf.
+                    #
+                    # Set ratio_tol=None to skip this check entirely — recommended
+                    # for TS systems where the ratio is known to fail (0.1–0.4)
+                    # due to harmonic restraint vs full-minimize geometry divergence.
+                    jl_val, _ = _jax_loss_fun(x0)
+                    ratio = jl_val / initial_score if initial_score > 0 else 1.0
+                    tol = self.ratio_tol
+                    if tol is None:
+                        # Bypass ratio check — always use JaxLoss
+                        use_jax_loss_fun = _jax_loss_fun
+                        jac_mode_str = "jax_loss"
+                        if self.verbose:
+                            logger.info(
+                                "  Using JaxLoss analytical gradients (ratio check disabled, ratio=%.3f)",
+                                ratio,
+                            )
+                    elif not math.isfinite(ratio) or not (1 - tol <= ratio <= 1 + tol):
+                        logger.warning(
+                            "JaxLoss/ObjectiveFunction ratio %.3f outside [%.2f, %.2f] — "
+                            "geometry relaxation methods disagree. "
+                            "Falling back to finite-difference gradients.",
+                            ratio,
+                            1 - tol,
+                            1 + tol,
+                        )
+                    else:
+                        use_jax_loss_fun = _jax_loss_fun
+                        jac_mode_str = "jax_loss"
+                        if self.verbose:
+                            logger.info("  Using JaxLoss analytical gradients (per-molecule JIT dispatch)")
+            except (ImportError, AttributeError) as exc:
+                logger.debug("JaxLoss auto-path unavailable (%s: %s)", type(exc).__name__, exc)
+
+            if use_jax_loss_fun is None and objective.engine.supports_analytical_gradients():
                 jac = objective.gradient
                 if self.verbose:
                     logger.info(
                         "  Auto-detected analytical gradient support from %s — using analytical+FD hybrid Jacobian",
                         type(objective.engine).__name__,
                     )
-        if jac is None and self.method not in self.DERIVATIVE_FREE_METHODS:
+        if jac is None and use_jax_loss_fun is None and self.method not in self.DERIVATIVE_FREE_METHODS:
             uses_scipy_fd = True
 
         # Finite-difference step: only needed when scipy computes its own FD gradient
         if uses_scipy_fd:
             options["eps"] = self.eps
 
-        scipy_result = optimize.minimize(
-            objective,
-            x0,
-            method=self.method,
-            jac=jac,
-            bounds=effective_bounds,
-            options=options,
-            callback=callback,
-        )
+        if use_jax_loss_fun is not None:
+            # JaxLoss path: fun returns (loss, grad), jac=True tells scipy
+            scipy_result = optimize.minimize(
+                use_jax_loss_fun,
+                x0,
+                method=self.method,
+                jac=True,
+                bounds=effective_bounds,
+                options=options,
+                callback=callback,
+            )
+        else:
+            scipy_result = optimize.minimize(
+                objective,
+                x0,
+                method=self.method,
+                jac=jac,
+                bounds=effective_bounds,
+                options=options,
+                callback=callback,
+            )
 
         # For methods without native bounds support (Powell, Nelder-Mead),
         # project final params into the feasible region.  We don't wrap the
@@ -338,6 +507,26 @@ class ScipyOptimizer:
             if not np.array_equal(clipped, final_x):
                 final_score = float(objective(clipped))
             final_x = clipped
+
+        # When using the JaxLoss path, scipy_result.fun is the JaxLoss
+        # value (a differentiable surrogate).  Re-evaluate with the
+        # ObjectiveFunction so initial_score and final_score are in the
+        # same units — both from ObjectiveFunction.
+        if use_jax_loss_fun is not None:
+            final_score = float(objective(final_x))
+            # Safety guard: JaxLoss can mislead the optimizer for pathological
+            # systems (negative FCs, large geometry relaxation differences).
+            # If the ObjectiveFunction says the step worsened things, revert.
+            if final_score > initial_score:
+                logger.warning(
+                    "JaxLoss-guided step worsened ObjectiveFunction: %.0f -> %.0f (%.1f%% worse). "
+                    "Reverting to initial parameters.",
+                    initial_score,
+                    final_score,
+                    (final_score / initial_score - 1) * 100,
+                )
+                final_x = x0.copy()
+                final_score = initial_score
 
         # Detect callback-triggered early stop
         abandoned = getattr(callback, "state", {}).get("abandoned", False)
@@ -357,7 +546,7 @@ class ScipyOptimizer:
             final_params=final_x,
             history=list(objective.history),
             method=self.method,
-            jac_mode=self.jac,
+            jac_mode=jac_mode_str,
             eps=self.eps if uses_scipy_fd else None,
         )
 

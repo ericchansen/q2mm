@@ -1,0 +1,144 @@
+{
+  "rh-enamide": {
+    "seminario": {
+      "bond_angle": {
+        "n_refs": 1050,
+        "r2": 0.9337,
+        "rmsd": 3.8677,
+        "mae": 2.9925
+      },
+      "bond_length": {
+        "n_refs": 500,
+        "r2": 0.9759,
+        "rmsd": 0.0577,
+        "mae": 0.0306
+      },
+      "eig_diagonal": {
+        "n_refs": 1404,
+        "r2": 0.9626,
+        "rmsd": 0.0733,
+        "mae": 0.0332
+      },
+      "_objective_score": 392491.8944,
+      "_total_refs": 2954
+    },
+    "optimized": {
+      "bond_angle": {
+        "n_refs": 1050,
+        "r2": 0.9548,
+        "rmsd": 3.1933,
+        "mae": 2.5299
+      },
+      "bond_length": {
+        "n_refs": 500,
+        "r2": 0.9868,
+        "rmsd": 0.0428,
+        "mae": 0.0271
+      },
+      "eig_diagonal": {
+        "n_refs": 1404,
+        "r2": 0.9608,
+        "rmsd": 0.0751,
+        "mae": 0.0343
+      },
+      "_objective_score": 267813.0118,
+      "_total_refs": 2954
+    }
+  },
+  "heck-relay": {
+    "seminario": {
+      "bond_angle": {
+        "n_refs": 2157,
+        "r2": -6.2092,
+        "rmsd": 46.1551,
+        "mae": 34.2746
+      },
+      "bond_length": {
+        "n_refs": 1140,
+        "r2": -268.5172,
+        "rmsd": 5.3604,
+        "mae": 2.0366
+      },
+      "eig_diagonal": {
+        "n_refs": 3144,
+        "r2": -4.6529,
+        "rmsd": 0.307,
+        "mae": 0.2337
+      },
+      "_objective_score": 115044932.1224,
+      "_total_refs": 6441
+    }
+  },
+  "pd-allyl": {
+    "seminario": {
+      "bond_angle": {
+        "n_refs": 1582,
+        "r2": 0.3324,
+        "rmsd": 14.2498,
+        "mae": 7.3237
+      },
+      "bond_length": {
+        "n_refs": 849,
+        "r2": 0.0276,
+        "rmsd": 0.3736,
+        "mae": 0.0926
+      },
+      "eig_diagonal": {
+        "n_refs": 2433,
+        "r2": -1.5242,
+        "rmsd": 0.2262,
+        "mae": 0.1857
+      },
+      "_objective_score": 7976590.9777,
+      "_total_refs": 4864
+    }
+  },
+  "pd-conjugate": {
+    "seminario": {
+      "bond_angle": {
+        "n_refs": 892,
+        "r2": -0.1168,
+        "rmsd": 19.2795,
+        "mae": 10.2196
+      },
+      "bond_length": {
+        "n_refs": 473,
+        "r2": 0.4422,
+        "rmsd": 0.2516,
+        "mae": 0.1232
+      },
+      "eig_diagonal": {
+        "n_refs": 1296,
+        "r2": -4.4566,
+        "rmsd": 0.2944,
+        "mae": 0.2299
+      },
+      "_objective_score": 8283669.6729,
+      "_total_refs": 2661
+    }
+  },
+  "rh-conjugate": {
+    "seminario": {
+      "bond_angle": {
+        "n_refs": 926,
+        "r2": -0.9278,
+        "rmsd": 31.1168,
+        "mae": 17.3712
+      },
+      "bond_length": {
+        "n_refs": 457,
+        "r2": -462.0882,
+        "rmsd": 8.4171,
+        "mae": 2.3142
+      },
+      "eig_diagonal": {
+        "n_refs": 1254,
+        "r2": -4.9059,
+        "rmsd": 0.3023,
+        "mae": 0.2209
+      },
+      "_objective_score": 60481980.4519,
+      "_total_refs": 2637
+    }
+  }
+}

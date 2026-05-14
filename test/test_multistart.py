@@ -25,7 +25,14 @@ class MockObjective:
         self.history: list[float] = []
         self.forcefield = MagicMock()
         self.forcefield.get_param_vector.return_value = np.zeros_like(self.target)
+        self.forcefield.get_active_param_vector.return_value = np.zeros_like(self.target)
         self.forcefield.get_bounds.return_value = self._bounds
+        self.forcefield.get_active_bounds.return_value = (
+            None if self._bounds is None else np.asarray(self._bounds, dtype=np.float64)
+        )
+        self.forcefield.active_mask = np.ones_like(self.target, dtype=bool)
+        self.forcefield.n_params = int(self.target.size)
+        self.forcefield.n_active_params = int(self.target.size)
         self.forcefield.set_param_vector = MagicMock()
         self.engine = MagicMock()
         self.engine.supports_analytical_gradients.return_value = False

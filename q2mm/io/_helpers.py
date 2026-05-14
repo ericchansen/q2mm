@@ -154,12 +154,14 @@ def _update_torsion_param(param: Any, torsions: list) -> None:
     """Update a legacy ``df`` param from the ForceField's torsion list.
 
     Matches by ``ff_row`` + ``ff_col`` (periodicity).
+    The ForceField stores ``V_n / 2`` (our convention), but the legacy param
+    needs ``V_n`` (the raw .fld value), so we multiply by 2.
     """
     periodicity = getattr(param, "ff_col", 1)
     ff_row = getattr(param, "ff_row", None)
     for t in torsions:
         if t.ff_row == ff_row and t.periodicity == periodicity:
-            param.value = t.force_constant
+            param.value = t.force_constant * 2.0
             return
 
 
@@ -200,6 +202,8 @@ class Param:
         "_value",
         "atom_labels",
         "atom_types",
+        "bond_order",
+        "context",
         "d1",
         "d2",
         "ff_col",
@@ -221,6 +225,8 @@ class Param:
         ff_col: int | None = None,
         ff_row: int | None = None,
         label: str | None = None,
+        bond_order: str = "",
+        context: str = "",
     ) -> None:
         """Initialize a Param instance.
 
@@ -236,6 +242,9 @@ class Param:
             ff_col (int | None): Column index in the FF file.
             ff_row (int | None): Row number in the FF file.
             label (str | None): FF-specific label string.
+            bond_order (str): Bond order symbol from .fld: ``"-"`` single,
+                ``"="`` double, ``"*"`` aromatic, ``"%"`` triple.
+            context (str): MM3 context flags (e.g., ``"O200 0000"``).
 
         """
         self._allowed_range = None
@@ -250,6 +259,8 @@ class Param:
         self.ff_col = ff_col
         self.ff_row = ff_row
         self.label = label
+        self.bond_order = bond_order
+        self.context = context
         if value is not None:
             self.value = value
 

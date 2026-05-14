@@ -1,4 +1,4 @@
-# JaxMDEngine
+# JAX-MD Engine
 
 Built on the [JAX-MD](https://github.com/jax-md/jax-md) library, this
 engine adds **periodic boundary conditions**, **neighbor lists**, and
@@ -18,6 +18,24 @@ For GPU support:
 ```bash
 pip install jax[cuda12] jax-md
 ```
+
+---
+
+## Supported energy terms
+
+| Term | Supported |
+|------|:---------:|
+| Bonds (harmonic) | ✅ |
+| Angles (harmonic) | ✅ |
+| Torsions (cosine) | ✅ |
+| Improper torsions | ❌ |
+| vdW (LJ 12-6) | ✅ |
+| Electrostatics | Infrastructure only (charges zeroed) |
+| 1-4 scaling | ✅ Configurable (default: AMBER 0.5) |
+| Periodic boundaries | ✅ |
+| Neighbor lists | ✅ (jax-md native) |
+
+**Functional forms:** Harmonic only.
 
 ---
 
@@ -41,24 +59,6 @@ engine = JaxMDEngine(
 
 ---
 
-## Supported energy terms
-
-| Term | Supported |
-|------|:---------:|
-| Bonds (harmonic) | ✅ |
-| Angles (harmonic) | ✅ |
-| Torsions (cosine) | ✅ |
-| Improper torsions | ❌ |
-| vdW (LJ 12-6) | ✅ |
-| Electrostatics | Infrastructure only (charges zeroed) |
-| 1-4 scaling | ✅ Configurable (default: AMBER 0.5) |
-| Periodic boundaries | ✅ |
-| Neighbor lists | ✅ (jax-md native) |
-
-**Functional forms:** Harmonic only.
-
----
-
 ## Capabilities
 
 | Method | Supported | Notes |
@@ -72,6 +72,13 @@ engine = JaxMDEngine(
 | `batched_energy()` | ✅ | **Vectorized** via `jax.vmap` |
 | `supports_runtime_params()` | ✅ | — |
 | `supports_analytical_gradients()` | ✅ | — |
+
+!!! tip "Optax and JaxOpt optimizers"
+    JaxMDEngine supports `energy_and_param_grad()`, making it compatible
+    with [Optax](https://optax.readthedocs.io/) and
+    [JaxOpt](https://jaxopt.github.io/) optimizers. See the
+    [Optimization Guide](../how-it-works/optimization-guide.md) for
+    workflow recommendations.
 
 ---
 
@@ -88,8 +95,7 @@ The engine name includes the backend string (e.g., `JAX-MD (OPLSAA, gpu)`).
 
 ## Limitations
 
-- **Harmonic only** — MM3 support is tracked in
-  [#91](https://github.com/ericchansen/q2mm/issues/91).
+- **Harmonic only** — MM3 functional form is not yet supported.
 - **Electrostatics zeroed** — Coulomb energy is computed with zero charges;
   charge optimization is not yet supported.
 - **No improper torsions** — topology arrays are empty.
