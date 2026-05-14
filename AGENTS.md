@@ -176,22 +176,97 @@ python -c "import jax; print(jax.devices())"
 2. **Use WSL2** for all GPU benchmarks.
 3. **Never use `--no-save`** — always save results and force fields so they
    can be reviewed and compared.
-4. **Save outputs** to `benchmarks/<system>/` (e.g.,
-   `benchmarks/ch3f/`, `benchmarks/rh-enamide/`). Never create
-   one-off or timestamped directories — keep one canonical location per system.
-5. **Benchmark data is tracked in git** — `benchmarks/` is committed,
-   not gitignored. Any data referenced in documentation **must** be in the
-   repo. If it's not tracked, it doesn't exist for publication purposes.
+4. **Save outputs** to a local results directory such as `results/<system>/`
+   (e.g., `results/ch3f/`, `results/rh-enamide/`). Archive the canonical
+   benchmark artifacts in [`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data)
+   under `benchmarks/<system>/`. Never create one-off or timestamped
+   directories — keep one canonical location per system.
+5. **Benchmark data is tracked in git** — commit benchmark artifacts to the
+   separate [`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data)
+   repo, not this code repo. Any data referenced in documentation **must** be
+   tracked there. If it's not tracked, it doesn't exist for publication
+   purposes.
 6. **Run sequentially on an idle system** for consistent timing.
+
+### Reference Data and Objective Function
+
+For **publication reproduction** benchmarks (TS systems from the Q2MM
+literature), use `ReferenceData.from_molecules()` to build the objective.
+This auto-populates bond lengths, bond angles, and Hessian eigenmatrix
+references from the QM training structures — matching the multi-target
+penalty function used in the published papers (Donoghue 2008, Rosales
+2020, Wahlers 2021/2022).
+
+`_build_frequency_reference()` builds frequency-only references. This is
+appropriate for the CH₃F full-matrix benchmark and ground-state force
+fields, but **not** for TS publication reproduction. The papers use a
+multi-target penalty (geometry + Hessian + charges + energies), not
+frequency RMSD.
+
+### TS Curvature Inversion
+
+All TS system loaders **must** pass `invert_ts_curvature=True` to
+`estimate_force_constants()`. Without this, the reaction-coordinate
+eigenvalue stays negative, producing a saddle-point force field where
+geometry minimization blows up. If you see "negative FC (TS reaction
+coordinate?)" warnings, TS inversion is missing.
+
+### Frozen Parameters
+
+Published papers only optimize the OPT substructure parameters near
+the metal center (~182–488 params), not the full composed force field
+(~2,700–3,200). Use `ForceField.freeze_standard_params(opt_ff)` to
+mark base-FF parameters as frozen. All three optimizers (SciPy, Optax,
+JaxOpt) respect `n_active_params`.
+
+### Two Gradient Pipelines
+
+q2mm has two separate gradient pipelines — know which one you are using:
+
+| Pipeline | Used by | Geometry gradients | When to use |
+|----------|---------|:------------------:|-------------|
+| **SciPy + JaxLoss** (recommended) | `ScipyOptimizer(jac='auto')` on JaxEngine | Analytical (per-molecule JIT) | **All TS systems** — fastest, most robust |
+| **Python path** | SciPy (FD fallback), Optax (non-JAX) | FD fallback (slow) | Frequency-only objectives, small systems |
+| **JIT/JaxLoss path** | JaxOpt, Optax (JAX) | Analytical (implicit diff) | ⚠️ See jaxopt warning below |
+
+Both JaxOpt and Optax route through `JaxLoss` when the engine is a
+`JaxEngine`.  `JaxLoss` compiles each molecule's loss function
+independently (per-molecule JIT split), then dispatches them from
+Python and sums — no single XLA program contains all molecules.
+This prevents compilation OOM on multi-molecule systems.
+
+- **SciPy + JaxLoss** (recommended): `ScipyOptimizer(jac='auto',
+  ratio_tol=None)` builds JaxLoss internally and feeds analytical
+  gradients to `scipy.optimize.minimize(method='L-BFGS-B', jac=True)`.
+  Use `ratio_tol=None` for TS systems (the default ratio check fails
+  for all 5 TS systems with ratios of 0.1–0.4).
+- **JaxOpt** uses `jit=False` + `value_and_grad=True` so
+  `solver.run()` executes a Python while-loop, dispatching
+  per-molecule compiled functions at each step.
+- **Optax** calls `JaxLoss.value_and_grad_jax()` directly
+  (Python dispatch) instead of wrapping in `jax.jit(jax.value_and_grad(...))`.
+
+⚠️ **jaxopt ≥ 0.8.5 is not recommended for multi-molecule systems.**
+The default `linesearch="zoom"` triggers 30–60 minutes of additional
+XLA compilation beyond the JaxLoss JIT phase.  This makes jaxopt
+impractical for convergence runs.  Use `scipy-lbfgsb-jax` instead —
+it completes in seconds post-JIT.
 
 ### Expected Runtimes
 
-| Benchmark                         | Approximate Time |
-|-----------------------------------|------------------|
-| JAX CPU — Rh-enamide L-BFGS-B    | ~9 min           |
-| JAX GPU — Rh-enamide L-BFGS-B    | ~6 min           |
-| OpenMM CUDA — Rh-enamide         | Varies by optimizer |
-| OpenMM OpenCL                     | **DO NOT USE** — 14% GPU utilization, hours of wasted compute |
+Runtimes on RTX 5090 GPU (WSL2). Each system's time is JIT + optimization.
+
+| Benchmark | JIT | Optimization | Total |
+|-----------|-----|:------------:|-------|
+| **SciPy L-BFGS-B + JaxLoss (GPU, recommended)** |||
+| Rh-enamide (9 mol, 182 params) | 95 s | 6 s | ~2 min |
+| Heck relay (23 mol, 462 params) | 249 s | 18 s | ~5 min |
+| Pd-allyl (21 mol, 482 params) | 227 s | 13 s | ~4 min |
+| Pd 1,4-conjugate (10 mol, 340 params) | 120 s | 9 s | ~2 min |
+| Rh 1,4-conjugate (10 mol, 488 params) | 122 s | 10 s | ~2 min |
+| **All 5 systems sequentially** | — | — | **~15 min** |
+| **jaxopt L-BFGS (DO NOT USE)** | 95–250 s | 30–60 min zoom linesearch JIT | hours |
+| **OpenMM OpenCL** | — | — | **DO NOT USE** — 14% GPU utilization |
 
 ---
 
@@ -259,6 +334,11 @@ metadata in this project.
 | **Long benchmarks** | OpenMM L-BFGS-B can take hours | Check CPU/GPU utilization periodically with `nvidia-smi` |
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
+| **JIT-wrapping `JaxLoss._loss_fn`** | `jax.jit()` or `jax.vmap()` on multi-molecule `_loss_fn` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxLoss.value_and_grad_jax()` (Python dispatch) or `JaxLoss.loss_and_grad()` instead. See §6 Two Gradient Pipelines. |
+| **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ReferenceData.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
+| **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
+| **TS ratio check fallback** | `ScipyOptimizer(jac='auto')` ratio check fails for ALL TS systems (0.1–0.4), silently falls back to slow FD gradients | Set `ratio_tol=None` to bypass. CLI key: `scipy-lbfgsb-jax` |
+| **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
 
 ---
 

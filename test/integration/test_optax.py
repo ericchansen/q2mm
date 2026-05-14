@@ -219,5 +219,5 @@ class TestOptaxVsScipyBaseline:
         )
         result = optimizer.optimize(objective)
 
-        # JAX engine → full analytical support
-        assert result.jac_mode == "analytical"
+        # JAX engine → uses JaxLoss gradient path (memory-efficient)
+        assert result.jac_mode == "jax_loss"

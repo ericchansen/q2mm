@@ -30,12 +30,12 @@ nav:
   - Getting Started: getting-started.md
   - Tutorial: tutorial.md
   - Platform Support: platform-support.md
-  - Q2MM v5 Improvements: comparison.md
   - How It Works:
     - Theory & Methods: how-it-works/theory.md
     - Architecture: how-it-works/architecture.md
     - Data Types: how-it-works/data-types.md
     - Optimization Guide: how-it-works/optimization-guide.md
+    - Differences from v4: how-it-works/comparison.md
   - Backend Engines:
     - Overview: backends/index.md
     - OpenMM: backends/openmm.md
@@ -45,17 +45,24 @@ nav:
     - Psi4 (QM): backends/psi4.md
   - Benchmarks:
     - Overview: benchmarks/index.md
-    - Small Molecules: benchmarks/small-molecules.md
-    - Rh-Enamide: benchmarks/rh-enamide.md
+    - Optimizer Comparison: benchmarks/optimizer-comparison.md
     - GPU Acceleration: benchmarks/gpu.md
     - When Analytical Wins: benchmarks/crossover.md
     - Published FF Validation: benchmarks/published-ff-validation.md
     - QFUERZA Validation: benchmarks/qfuerza-validation.md
+  - Systems:
+    - Small Molecules: systems/small-molecules.md
+    - Rh-Enamide: systems/rh-enamide.md
+    - Heck Relay: systems/heck-relay.md
+    - Pd-Allyl: systems/pd-allyl.md
+    - Pd 1,4-Conjugate: systems/pd-conjugate.md
+    - Rh 1,4-Conjugate: systems/rh-conjugate.md
   - API Reference: reference/
   - References: references.md
 
 markdown_extensions:
   - admonition
+  - footnotes
   - pymdownx.details
   - pymdownx.superfences:
       custom_fences:

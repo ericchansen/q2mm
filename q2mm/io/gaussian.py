@@ -181,7 +181,7 @@ class GaussLog:
         for s in self.structures:
             hess = getattr(s, "hess", None)
             if hess is not None and not self._au_hessian:
-                logger.warning(
+                logger.debug(
                     "Non-atomic-unit Hessian detected (au_hessian=False); "
                     "not attaching Hessian to Q2MMMolecule, which expects "
                     "Hartree/Bohr²."

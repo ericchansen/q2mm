@@ -29,6 +29,15 @@ conda install psi4 -c conda-forge
 
 ---
 
+## Supported methods
+
+Psi4 supports any method string accepted by `psi4.energy()` — including
+HF, DFT functionals (B3LYP, M06, ωB97X-D, etc.), and post-HF methods
+(MP2, CCSD). The method is configured via the `method` parameter when
+creating the engine. Basis sets are set via `basis`.
+
+---
+
 ## Configuration
 
 ```python

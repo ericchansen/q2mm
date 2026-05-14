@@ -16,6 +16,9 @@ For detailed information on each backend, see the individual pages:
 
 ## Engine overview
 
+Psi4 is a QM engine used to generate reference data and is not included in the
+MM comparison tables below.
+
 | Feature | OpenMM | Tinker | JAX | JAX-MD |
 |---------|--------|--------|-----|--------|
 | **Functional forms** | Harmonic, MM3 | MM3 | Harmonic, MM3 | Harmonic |
@@ -154,7 +157,7 @@ JAX-MD.
 ### Verified parity
 
 Cross-engine energy and frequency agreement has been measured on CH₃F
-(see [benchmarks](../benchmarks/small-molecules.md#interpretation)):
+(see [benchmarks](../systems/small-molecules.md#interpretation)):
 
 - **JAX ↔ JAX-MD:** < 10⁻²⁰ kcal/mol energy difference (machine precision)
 - **JAX ↔ OpenMM:** < 10⁻¹⁸ kcal/mol energy difference

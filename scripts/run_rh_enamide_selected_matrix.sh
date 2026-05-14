@@ -6,7 +6,7 @@
 #
 # Usage:
 #   scripts/run_rh_enamide_selected_matrix.sh
-#   scripts/run_rh_enamide_selected_matrix.sh benchmark_results/rh_enamide_2026-04-03
+#   scripts/run_rh_enamide_selected_matrix.sh results/rh_enamide_2026-04-03
 #
 # Environment overrides:
 #   PYTHON=python3.12
@@ -22,7 +22,7 @@ cd "$repo_root"
 python_bin="${PYTHON:-python3}"
 openmm_platform="${OPENMM_PLATFORM:-CUDA}"
 timestamp="$(date +%F_%H%M%S)"
-output_dir="${1:-benchmark_results/rh_enamide_selected_${timestamp}}"
+output_dir="${1:-results/rh_enamide_selected_${timestamp}}"
 
 mkdir -p "$output_dir"
 
@@ -83,31 +83,31 @@ header "Preflight"
 # Quick failures and lighter JAX single-shot runs first.
 run_combo 3 "JAX GPU harmonic Powell" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form harmonic --optimizer Powell
+    --backend jax --form harmonic --optimizer scipy-powell
 
 run_combo 7 "JAX GPU mm3 Powell" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form mm3 --optimizer Powell
+    --backend jax --form mm3 --optimizer scipy-powell
 
 run_combo 11 "JAX-MD GPU harmonic Powell" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax-md --form harmonic --optimizer Powell
+    --backend jax-md --form harmonic --optimizer scipy-powell
 
 run_combo 2 "JAX GPU harmonic Nelder-Mead" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form harmonic --optimizer Nelder-Mead
+    --backend jax --form harmonic --optimizer scipy-nm
 
 run_combo 6 "JAX GPU mm3 Nelder-Mead" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form mm3 --optimizer Nelder-Mead
+    --backend jax --form mm3 --optimizer scipy-nm
 
 run_combo 1 "JAX GPU harmonic L-BFGS-B" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form harmonic --optimizer L-BFGS-B
+    --backend jax --form harmonic --optimizer scipy-lbfgsb
 
 run_combo 5 "JAX GPU mm3 L-BFGS-B" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax --form mm3 --optimizer L-BFGS-B
+    --backend jax --form mm3 --optimizer scipy-lbfgsb
 
 # Converged JAX cycling runs before the slower JAX-MD work.
 run_combo 4 "JAX GPU harmonic grad-simp" \
@@ -120,11 +120,11 @@ run_combo 8 "JAX GPU mm3 grad-simp" \
 
 run_combo 10 "JAX-MD GPU harmonic Nelder-Mead" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax-md --form harmonic --optimizer Nelder-Mead
+    --backend jax-md --form harmonic --optimizer scipy-nm
 
 run_combo 9 "JAX-MD GPU harmonic L-BFGS-B" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \
-    --backend jax-md --form harmonic --optimizer L-BFGS-B
+    --backend jax-md --form harmonic --optimizer scipy-lbfgsb
 
 run_combo 12 "JAX-MD GPU harmonic grad-simp" \
     "${benchmark_cmd[@]}" "${common_args[@]}" \

@@ -11,8 +11,8 @@ comparison runs rather than on the full benchmark matrices.
   Rh-enamide
 - Comparison metric: seconds per evaluation (`s/eval`); total evaluation count
   can differ between devices
-- Related pages: [Small Molecules](small-molecules.md) for the full CH₃F matrix
-  and [Rh-Enamide](rh-enamide.md) for the selected overnight large-system run
+- Related pages: [Small Molecules](../systems/small-molecules.md) for the full CH₃F matrix
+  and [Rh-Enamide](../systems/rh-enamide.md) for the selected overnight large-system run
 
 ## CPU-vs-GPU comparisons completed so far
 
@@ -49,9 +49,9 @@ is worthwhile.
   kernel.
 - The selected overnight Rh-enamide sweep is useful feasibility evidence for
   OpenMM CUDA and large-system screening, but its outcome-by-outcome details
-  belong on [Rh-Enamide](rh-enamide.md) rather than on this device-comparison
+  belong on [Rh-Enamide](../systems/rh-enamide.md) rather than on this device-comparison
   page.
-- **Grad-simp cycling now works on JAX GPU** (see [Rh-Enamide](rh-enamide.md)).
+- **Grad-simp cycling now works on JAX GPU** (see [Rh-Enamide](../systems/rh-enamide.md)).
   JAX MM3 grad-simp reached the same 42.7 RMSD as the OpenMM overnight run
   in ~25 minutes on the RTX 5090 — a ~23× optimizer-time improvement. This was
   unblocked by Hessian symmetrisation and bound-aware sensitivity analysis
@@ -81,21 +81,28 @@ is worthwhile.
     makes float32 an interesting research direction for relaxed thresholds or
     early screening, not the default benchmark setting.
 
+## Multi-System GPU Results
+
+For the full 5-system × 3-optimizer GPU shootout (timing, RMSD,
+reliability), see [Optimizer Comparison](optimizer-comparison.md).
+
 ## Artifacts and provenance
 
-- Dedicated GPU-study notes: `benchmarks/GPU_BENCHMARKS.md`
-- Related CH₃F full-matrix artifacts: `benchmarks/ch3f/`
-- Related Rh-enamide archive: `benchmarks/rh-enamide/`
+- Related CH₃F full-matrix artifacts:
+  [`q2mm-data/benchmarks/ch3f/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f)
+- Related Rh-enamide archive:
+  [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks)
+  under `rh-enamide/`
 
 ## Reproducing
 
 ```bash
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output benchmarks/rh-enamide
+q2mm-benchmark --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
 
-q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer L-BFGS-B --output benchmarks/rh-enamide
+q2mm-benchmark --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
 
-q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
-JAX_PLATFORMS=cpu q2mm-benchmark --system ch3f --backend jax --optimizer L-BFGS-B --output benchmarks/ch3f
+q2mm-benchmark --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
 ```

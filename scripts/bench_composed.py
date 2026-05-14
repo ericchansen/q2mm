@@ -6,8 +6,8 @@ Workflow B: multi-start → optax Adam refinement
   Phase 2: optax Adam (100 steps) refines from phase-1 winner
 
 Results are saved as separate JSON files for each phase plus a composed
-summary.  All results go to benchmarks/ch3f/results/ with force fields
-to benchmarks/ch3f/forcefields/.
+summary.  All results go to results/ch3f/results/ with force fields
+to results/ch3f/forcefields/.
 """
 
 from __future__ import annotations
@@ -205,8 +205,8 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("benchmarks/ch3f"),
-        help="Output directory (default: benchmarks/ch3f)",
+        default=Path("results/ch3f"),
+        help="Output directory (default: results/ch3f)",
     )
     parser.add_argument(
         "--platform",

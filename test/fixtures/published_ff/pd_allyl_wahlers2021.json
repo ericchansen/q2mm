@@ -1,0 +1,191 @@
+{
+  "metadata": {
+    "paper": "Wahlers, J. et al. Nat. Commun. 2021, 12, 6508",
+    "doi": "10.1038/s41467-021-27065-2",
+    "system": "Pd-catalyzed enantioselective allylic amination",
+    "paper_internal_r2_hessian": 0.998,
+    "paper_internal_r2_geometry": 0.988,
+    "paper_internal_r2_charges": 0.822,
+    "paper_external_n_predictions": 77,
+    "paper_external_mue_kjmol": 4.4,
+    "paper_external_r2_selectivity": 0.41
+  },
+  "summary": {
+    "n_molecules": 21,
+    "n_params": 3226,
+    "total_freq_refs": 1519,
+    "overall_rmsd_cm1": 1100.9794148355832,
+    "overall_mae_cm1": 704.8255527351262,
+    "overall_r_squared": -3.863219559871668
+  },
+  "per_molecule": [
+    {
+      "mol_idx": 0,
+      "n_atoms": 21,
+      "n_freq_refs": 33,
+      "rmsd_cm1": 1293.7418689195474,
+      "mae_cm1": 903.8613112749075,
+      "r_squared": -6.00778553756281
+    },
+    {
+      "mol_idx": 1,
+      "n_atoms": 24,
+      "n_freq_refs": 44,
+      "rmsd_cm1": 1042.110680704184,
+      "mae_cm1": 699.2406398994182,
+      "r_squared": -1.8326668356751417
+    },
+    {
+      "mol_idx": 2,
+      "n_atoms": 31,
+      "n_freq_refs": 55,
+      "rmsd_cm1": 1221.6825887111638,
+      "mae_cm1": 796.5647208213089,
+      "r_squared": -7.496527441242023
+    },
+    {
+      "mol_idx": 3,
+      "n_atoms": 24,
+      "n_freq_refs": 47,
+      "rmsd_cm1": 860.8606156640766,
+      "mae_cm1": 598.903984256375,
+      "r_squared": -0.24952433543397512
+    },
+    {
+      "mol_idx": 4,
+      "n_atoms": 31,
+      "n_freq_refs": 52,
+      "rmsd_cm1": 1308.3171213447565,
+      "mae_cm1": 888.6150309160082,
+      "r_squared": -9.757994887648863
+    },
+    {
+      "mol_idx": 5,
+      "n_atoms": 55,
+      "n_freq_refs": 102,
+      "rmsd_cm1": 1137.3543053833423,
+      "mae_cm1": 736.8893053651994,
+      "r_squared": -7.784491016643178
+    },
+    {
+      "mol_idx": 6,
+      "n_atoms": 51,
+      "n_freq_refs": 104,
+      "rmsd_cm1": 976.6216551383837,
+      "mae_cm1": 570.3556676784309,
+      "r_squared": -3.5251685313216807
+    },
+    {
+      "mol_idx": 7,
+      "n_atoms": 48,
+      "n_freq_refs": 95,
+      "rmsd_cm1": 1021.3186229380555,
+      "mae_cm1": 614.7971041522238,
+      "r_squared": -5.183818071464191
+    },
+    {
+      "mol_idx": 8,
+      "n_atoms": 52,
+      "n_freq_refs": 107,
+      "rmsd_cm1": 942.5445763698452,
+      "mae_cm1": 538.0098956739052,
+      "r_squared": -2.995757308987759
+    },
+    {
+      "mol_idx": 9,
+      "n_atoms": 73,
+      "n_freq_refs": 156,
+      "rmsd_cm1": 924.3278125451938,
+      "mae_cm1": 523.8066079724792,
+      "r_squared": -2.4614810793972968
+    },
+    {
+      "mol_idx": 10,
+      "n_atoms": 59,
+      "n_freq_refs": 106,
+      "rmsd_cm1": 1215.4738833983104,
+      "mae_cm1": 820.0164658604433,
+      "r_squared": -11.306588410337556
+    },
+    {
+      "mol_idx": 11,
+      "n_atoms": 24,
+      "n_freq_refs": 42,
+      "rmsd_cm1": 1128.1375416190779,
+      "mae_cm1": 781.8281409097611,
+      "r_squared": -3.1222989591341133
+    },
+    {
+      "mol_idx": 12,
+      "n_atoms": 51,
+      "n_freq_refs": 104,
+      "rmsd_cm1": 992.8251971843239,
+      "mae_cm1": 577.5688014133596,
+      "r_squared": -3.3173317507286564
+    },
+    {
+      "mol_idx": 13,
+      "n_atoms": 75,
+      "n_freq_refs": 138,
+      "rmsd_cm1": 1212.3034690729903,
+      "mae_cm1": 828.3021769310573,
+      "r_squared": -12.52704438041294
+    },
+    {
+      "mol_idx": 14,
+      "n_atoms": 27,
+      "n_freq_refs": 50,
+      "rmsd_cm1": 985.8874781991825,
+      "mae_cm1": 689.748695639594,
+      "r_squared": -1.458104078214471
+    },
+    {
+      "mol_idx": 15,
+      "n_atoms": 24,
+      "n_freq_refs": 43,
+      "rmsd_cm1": 1056.9555349393972,
+      "mae_cm1": 715.2349178015955,
+      "r_squared": -1.9618183862727308
+    },
+    {
+      "mol_idx": 16,
+      "n_atoms": 31,
+      "n_freq_refs": 53,
+      "rmsd_cm1": 1279.8645886061056,
+      "mae_cm1": 855.526779810227,
+      "r_squared": -9.117213471903112
+    },
+    {
+      "mol_idx": 17,
+      "n_atoms": 24,
+      "n_freq_refs": 45,
+      "rmsd_cm1": 980.9298647776677,
+      "mae_cm1": 659.9997183997501,
+      "r_squared": -1.1847519605895163
+    },
+    {
+      "mol_idx": 18,
+      "n_atoms": 31,
+      "n_freq_refs": 51,
+      "rmsd_cm1": 1346.0134973758297,
+      "mae_cm1": 920.0536023157196,
+      "r_squared": -11.12348897496662
+    },
+    {
+      "mol_idx": 19,
+      "n_atoms": 24,
+      "n_freq_refs": 43,
+      "rmsd_cm1": 1010.2317683805826,
+      "mae_cm1": 700.0340109291128,
+      "r_squared": -1.369222714858811
+    },
+    {
+      "mol_idx": 20,
+      "n_atoms": 31,
+      "n_freq_refs": 49,
+      "rmsd_cm1": 1394.7770147946585,
+      "mae_cm1": 984.9212111581312,
+      "r_squared": -12.443587628766153
+    }
+  ]
+}

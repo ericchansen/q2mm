@@ -145,6 +145,9 @@ def match_bond(
     elements: Sequence[str],
     env_id: str = "",
     ff_row: int | None = None,
+    *,
+    bond_order: str = "",
+    bond_length: float | None = None,
 ) -> tuple[int | None, BondParam | None]:
     """Match a bond to its ForceField index.
 
@@ -153,13 +156,21 @@ def match_bond(
         elements: Element symbols of the two bonded atoms.
         env_id: Chemical environment identifier.
         ff_row: Optional row index hint for matching.
+        bond_order: Bond order symbol (``"-"``, ``"="``, ``"*"``, ``"%"``).
+        bond_length: Measured bond length in Å for closest-r₀ matching.
 
     Returns:
         tuple[int | None, BondParam | None]: ``(index, param)`` or
             ``(None, None)`` if unmatched.
 
     """
-    matched = forcefield.match_bond(elements, env_id=env_id, ff_row=ff_row)
+    matched = forcefield.match_bond(
+        elements,
+        env_id=env_id,
+        ff_row=ff_row,
+        bond_order=bond_order,
+        bond_length=bond_length,
+    )
     if matched is not None:
         return forcefield.bonds.index(matched), matched
     return None, None

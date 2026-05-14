@@ -1,0 +1,97 @@
+{
+  "metadata": {
+    "paper": "Wahlers, J. et al. J. Org. Chem. 2021, 86, 5660",
+    "doi": "10.1021/acs.joc.1c00136",
+    "system": "Pd-catalyzed 1,4-conjugate addition"
+  },
+  "summary": {
+    "n_molecules": 10,
+    "n_params": 3084,
+    "total_freq_refs": 947,
+    "overall_rmsd_cm1": 774.1444687154664,
+    "overall_mae_cm1": 433.53512534901677,
+    "overall_r_squared": -0.31595413572487097
+  },
+  "per_molecule": [
+    {
+      "mol_idx": 0,
+      "n_atoms": 39,
+      "n_freq_refs": 81,
+      "rmsd_cm1": 943.8878341310362,
+      "mae_cm1": 596.2851847054089,
+      "r_squared": -3.828206035280063
+    },
+    {
+      "mol_idx": 1,
+      "n_atoms": 51,
+      "n_freq_refs": 119,
+      "rmsd_cm1": 556.1183036752369,
+      "mae_cm1": 274.27838810946264,
+      "r_squared": 0.5795994331963004
+    },
+    {
+      "mol_idx": 2,
+      "n_atoms": 42,
+      "n_freq_refs": 91,
+      "rmsd_cm1": 793.5895492798684,
+      "mae_cm1": 435.9145961004139,
+      "r_squared": -0.47997911624230705
+    },
+    {
+      "mol_idx": 3,
+      "n_atoms": 42,
+      "n_freq_refs": 93,
+      "rmsd_cm1": 745.7099014037182,
+      "mae_cm1": 418.7605405220802,
+      "r_squared": -0.18460960107413715
+    },
+    {
+      "mol_idx": 4,
+      "n_atoms": 42,
+      "n_freq_refs": 92,
+      "rmsd_cm1": 780.6632980672847,
+      "mae_cm1": 438.2672477787552,
+      "r_squared": -0.45985957595102445
+    },
+    {
+      "mol_idx": 5,
+      "n_atoms": 51,
+      "n_freq_refs": 120,
+      "rmsd_cm1": 556.1285914587502,
+      "mae_cm1": 271.1605953488559,
+      "r_squared": 0.5788278794702475
+    },
+    {
+      "mol_idx": 6,
+      "n_atoms": 39,
+      "n_freq_refs": 81,
+      "rmsd_cm1": 928.9285857722119,
+      "mae_cm1": 579.3780283211382,
+      "r_squared": -3.512799642857222
+    },
+    {
+      "mol_idx": 7,
+      "n_atoms": 42,
+      "n_freq_refs": 89,
+      "rmsd_cm1": 860.9311182690996,
+      "mae_cm1": 507.2086656381293,
+      "r_squared": -1.3236204899715687
+    },
+    {
+      "mol_idx": 8,
+      "n_atoms": 42,
+      "n_freq_refs": 90,
+      "rmsd_cm1": 817.7013454509307,
+      "mae_cm1": 478.94480283174966,
+      "r_squared": -0.8403836768413888
+    },
+    {
+      "mol_idx": 9,
+      "n_atoms": 42,
+      "n_freq_refs": 91,
+      "rmsd_cm1": 814.1715442396569,
+      "mae_cm1": 472.2032419504636,
+      "r_squared": -0.8115145093491254
+    }
+  ]
+}

@@ -59,6 +59,12 @@ P_2_START = 34
 P_2_END = 44
 P_3_START = 45
 P_3_END = 55
+# Context flags occupy cols 56–65 (two 4-char codes separated by space)
+CTX_START = 56
+CTX_END = 66
+# Bond-order symbol is at col 7 in standard section, col 6 in OPT
+_BOND_ORDER_CHARS = frozenset({"-", "=", "*", "%"})
+_GENERIC_CONTEXT = "0000 0000"
 
 
 # ---------------------------------------------------------------------------
@@ -409,14 +415,27 @@ def _mm3_import_ff(
             # Bonds
             if match_mm3_bond(line):
                 logger.log(5, "[L{}] Found bond:\n{}".format(i + 1, line.strip("\n")))
+                bond_order = ""
+                context = ""
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10]]
                     atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                    # OPT sections: bond-order symbol at col 6 (between atoms)
+                    if len(line) > 6 and line[6] in _BOND_ORDER_CHARS:
+                        bond_order = line[6]
                 else:
                     atm_typs = [line[4:6], line[9:11]]
                     atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
+                    # Standard section: bond-order symbol at col 7
+                    if len(line) > 7 and line[7] in _BOND_ORDER_CHARS:
+                        bond_order = line[7]
+                    # Context flags at cols 56-65
+                    if len(line) > CTX_END:
+                        ctx = line[CTX_START:CTX_END].strip()
+                        if ctx and ctx != "0000 0000":
+                            context = ctx
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -433,6 +452,8 @@ def _mm3_import_ff(
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[0],
+                            bond_order=bond_order,
+                            context=context,
                         ),
                         Param(
                             atom_labels=atm_lbls,
@@ -442,6 +463,8 @@ def _mm3_import_ff(
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[1],
+                            bond_order=bond_order,
+                            context=context,
                         ),
                     )
                 )
@@ -455,6 +478,8 @@ def _mm3_import_ff(
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[2],
+                            bond_order=bond_order,
+                            context=context,
                         )
                     )
                 continue
@@ -768,9 +793,12 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
 
     # Pre-build lookup for equilibrium values by (ptype, ff_row)
     eq_lookup = {}
+    dipole_lookup: dict[int, float] = {}  # ff_row → dipole moment (Debye)
     for p in parsed_params:
         if p.ptype in ("be", "ae"):
             eq_lookup[(p.ptype, p.ff_row)] = p.value
+        elif p.ptype == "q":
+            dipole_lookup[p.ff_row] = p.value
 
     for param in parsed_params:
         # Extract element letters from atom type (e.g., 'C1' -> 'C', ' F' -> 'F')
@@ -788,6 +816,9 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
                     label=f"MM3 row {param.ff_row}",
                     env_id=env_id,
                     ff_row=param.ff_row,
+                    bond_order=getattr(param, "bond_order", ""),
+                    context=getattr(param, "context", ""),
+                    dipole_moment=dipole_lookup.get(param.ff_row, 0.0),
                 )
             )
 
@@ -810,11 +841,17 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
             elems = tuple(_extract_element(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
             periodicity = getattr(param, "ff_col", 1)
+            # MM3 torsion: (V1/2)(1+cos ω) + (V2/2)(1−cos 2ω) + (V3/2)(1+cos 3ω)
+            # The .fld stores V_n (full amplitude). Our energy formula uses
+            # k*(1+cos(nφ−γ)), so k = V_n/2.
+            # V2 needs γ=180° for the minus sign: (1+cos(2ω−π)) = (1−cos 2ω).
+            phase = 180.0 if periodicity == 2 else 0.0
             torsions.append(
                 TorsionParam(
                     elements=elems,
                     periodicity=periodicity,
-                    force_constant=param.value,
+                    force_constant=param.value / 2.0,
+                    phase=phase,
                     label=f"MM3 row {param.ff_row} V{periodicity}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -825,11 +862,13 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
             elems = tuple(_extract_element(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
             periodicity = 1 if param.ptype == "imp1" else 2
+            phase = 180.0 if periodicity == 2 else 0.0
             torsions.append(
                 TorsionParam(
                     elements=elems,
                     periodicity=periodicity,
-                    force_constant=param.value,
+                    force_constant=param.value / 2.0,
+                    phase=phase,
                     label=f"MM3 row {param.ff_row} imp V{periodicity}",
                     env_id=env_id,
                     ff_row=param.ff_row,
@@ -850,7 +889,7 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
                 )
             )
 
-    return ForceField(
+    ff = ForceField(
         name=f"MM3 from {Path(path).name}",
         bonds=bonds,
         angles=angles,
@@ -861,6 +900,10 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         source_format="mm3_fld",
         functional_form=FunctionalForm.MM3,
     )
+    if include_standard:
+        opt_ff = load_mm3_fld(path, include_standard=False)
+        ff.freeze_standard_params(opt_ff)
+    return ff
 
 
 def save_mm3_fld(
@@ -943,7 +986,9 @@ def save_mm3_fld(
             if key not in torsion_groups:
                 torsion_groups[key] = {}
                 torsion_elements[key] = tor.elements
-            torsion_groups[key][tor.periodicity] = tor.force_constant
+            torsion_groups[key][tor.periodicity] = (
+                tor.force_constant * 2.0
+            )  # V_n = 2*k (MM3 .fld stores V, we store V/2)
         for key, vs in torsion_groups.items():
             atom_types = _mm3_atom_types(key, torsion_elements[key])
             lines.append(_format_mm3_torsion_line(atom_types, vs.get(1, 0.0), vs.get(2, 0.0), vs.get(3, 0.0)))

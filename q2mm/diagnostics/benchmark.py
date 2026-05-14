@@ -558,33 +558,8 @@ def real_frequencies(freqs: np.ndarray | list, threshold: float = REAL_FREQUENCY
 
 
 def _param_names(ff: ForceField) -> list[str]:
-    """Build human-readable names for each parameter in get_param_vector() order.
-
-    Args:
-        ff (ForceField): Force field object with ``bonds``, ``angles``,
-            ``torsions``, and ``vdws`` attributes.
-
-    Returns:
-        list[str]: Parameter name strings (e.g., ``'kb_C-H'``, ``'ka_H-C-H'``).
-
-    """
-    names = []
-    for b in ff.bonds:
-        label = "-".join(b.key) + (f"[{b.env_id}]" if b.env_id else "")
-        names.append(f"kb_{label}")
-        names.append(f"r0_{label}")
-    for a in ff.angles:
-        label = "-".join(a.key) + (f"[{a.env_id}]" if a.env_id else "")
-        names.append(f"ka_{label}")
-        names.append(f"th0_{label}")
-    for t in ff.torsions:
-        label = "-".join(t.elements) + f"_n{t.periodicity}"
-        names.append(f"kt_{label}")
-    for v in ff.vdws:
-        label = v.atom_type or v.element
-        names.append(f"rvdw_{label}")
-        names.append(f"evdw_{label}")
-    return names
+    """Build human-readable names for each parameter in get_param_vector() order."""
+    return ff.get_param_names()
 
 
 def run_combo(
@@ -593,7 +568,7 @@ def run_combo(
     *,
     optimizer_method: str = "L-BFGS-B",
     optimizer_kwargs: dict[str, Any] | None = None,
-    maxiter: int = 10_000,
+    maxiter: int | None = None,
     backend_name: str = "unknown",
 ) -> BenchmarkResult:
     """Run one benchmark combination on *any* system (N ≥ 1 molecules).
@@ -603,7 +578,7 @@ def run_combo(
 
     Args:
         engine: The MM backend engine to use.
-        sys_data: Fully-loaded system data (molecules, forcefield, freq_ref).
+        sys_data: Fully-loaded system data (molecules, forcefield, reference).
         optimizer_method: Optimizer method.  ``'L-BFGS-B'``, ``'Nelder-Mead'``,
             ``'Powell'`` dispatch to :class:`ScipyOptimizer`; ``'cycling'``
             dispatches to :class:`OptimizationLoop`; ``'optax:adam'`` (or
@@ -612,7 +587,9 @@ def run_combo(
             ``'jaxopt:lbfgsb'``, ``'jaxopt:gradient_descent'``) dispatches to
             :class:`JaxOptOptimizer`.
         optimizer_kwargs: Extra keyword arguments forwarded to the optimizer.
-        maxiter: Maximum optimizer iterations.
+        maxiter: Maximum optimizer iterations.  ``None`` (default) uses each
+            optimizer's own class default: JaxOpt 200, Optax 2000, SciPy 500,
+            cycling 200/pass, basin-hopping 200 inner.
         backend_name: Human-readable backend name for result metadata.
 
     Returns:
@@ -674,8 +651,15 @@ def run_combo(
     for _k in _obj_only_keys:
         if _k in optimizer_kwargs:
             obj_kwargs[_k] = optimizer_kwargs[_k]
+
+    # Auto-regularize unbounded JaxOpt L-BFGS to prevent parameter drift.
+    # jaxopt:lbfgs has no bounds enforcement; without regularization,
+    # equilibrium distances can drift to physically impossible values.
+    if optimizer_method == "jaxopt:lbfgs" and "regularization" not in obj_kwargs:
+        obj_kwargs["regularization"] = 0.01
+
     optimizer_kwargs = {k: v for k, v in optimizer_kwargs.items() if k not in _obj_only_keys}
-    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.freq_ref, **obj_kwargs)
+    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.reference, **obj_kwargs)
     initial_score = obj(seminario_params)
 
     result.seminario = {
@@ -745,7 +729,7 @@ def run_combo(
         optax_name = optimizer_method.split(":", 1)[1]
         optax_kwargs: dict[str, Any] = {
             "optimizer": optax_name,
-            "max_steps": optimizer_kwargs.get("max_steps", maxiter),
+            "max_steps": optimizer_kwargs.get("max_steps", maxiter if maxiter is not None else 2000),
             "verbose": False,
         }
         # Forward supported hyperparameters from optimizer_kwargs
@@ -784,7 +768,7 @@ def run_combo(
         jaxopt_method = optimizer_method.split(":", 1)[1]
         jaxopt_kwargs: dict[str, Any] = {
             "method": jaxopt_method,
-            "maxiter": maxiter,
+            "maxiter": maxiter if maxiter is not None else 200,
             "verbose": False,
         }
         for key in ("tol",):
@@ -810,7 +794,7 @@ def run_combo(
         jaxopt_multi_method = optimizer_method.split(":", 1)[1]
         jaxopt_multi_kwargs: dict[str, Any] = {
             "method": jaxopt_multi_method,
-            "maxiter": maxiter,
+            "maxiter": maxiter if maxiter is not None else 200,
             "verbose": False,
         }
         for key in ("tol", "n_starts", "perturbation_pct", "seed"):
@@ -841,7 +825,7 @@ def run_combo(
         bh_kwargs: dict[str, Any] = {
             "verbose": False,
             "jac": "auto",
-            "local_maxiter": maxiter,
+            "local_maxiter": maxiter if maxiter is not None else 200,
         }
         # Parse optional local method suffix: "basinhopping:SLSQP" → local_method="SLSQP"
         if ":" in optimizer_method:
@@ -877,7 +861,7 @@ def run_combo(
         inner_method = optimizer_method.split(":", 1)[1]
         inner_kwargs: dict[str, Any] = {
             "method": inner_method,
-            "maxiter": maxiter,
+            "maxiter": maxiter if maxiter is not None else 500,
             "verbose": False,
             "jac": "auto",
         }
@@ -911,7 +895,12 @@ def run_combo(
     else:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        opt_kwargs = {"method": optimizer_method, "maxiter": maxiter, "verbose": False, "jac": "auto"}
+        opt_kwargs = {
+            "method": optimizer_method,
+            "maxiter": maxiter if maxiter is not None else 500,
+            "verbose": False,
+            "jac": "auto",
+        }
         opt_kwargs.update(optimizer_kwargs)
         opt = ScipyOptimizer(**opt_kwargs)
 

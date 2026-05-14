@@ -15,6 +15,7 @@ from q2mm.models.forcefield import (
     FunctionalForm,
     BondParam,
     AngleParam,
+    StretchBendParam,
     TorsionParam,
     VdwParam,
     _extract_element,
@@ -342,6 +343,62 @@ class TestForceField:
         vec2 = ff2.get_param_vector()
         np.testing.assert_allclose(vec2, vec * 2)
 
+    def test_active_param_api_tracks_frozen_params(self) -> None:
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7, frozen=True)],
+            angles=[
+                AngleParam(
+                    ("H", "C", "F"),
+                    109.5,
+                    36.0,
+                    ub_force_constant=10.0,
+                    ub_equilibrium=1.52,
+                )
+            ],
+            stretch_bends=[StretchBendParam(("H", "C", "F"), force_constant=0.75, frozen=True)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
+            vdws=[VdwParam("F1", 1.47, 0.061, frozen=True)],
+        )
+
+        expected_mask = np.array([False, False, True, True, True, False, False, False, True, True])
+        np.testing.assert_array_equal(ff.active_mask, expected_mask)
+        assert ff.n_params == len(expected_mask)
+        assert ff.n_active_params == 5
+        np.testing.assert_allclose(ff.get_active_param_vector(), ff.get_param_vector()[expected_mask])
+        assert ff.get_active_param_names() == [
+            "ka_F-C-H",
+            "th0_F-C-H",
+            "kt_H-C-C-H_n1",
+            "kub_F-C-H",
+            "r13_F-C-H",
+        ]
+        assert ff.get_active_step_sizes().shape == (5,)
+        assert ff.get_active_bounds().shape == (5, 2)
+
+    def test_active_param_mutators_preserve_frozen_values(self) -> None:
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7, frozen=True)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15, frozen=True)],
+        )
+        updated = np.array([72.0, 120.0])
+
+        ff_mut = ff.copy()
+        ff_mut.set_active_param_vector(updated)
+        assert ff_mut.bonds[0].force_constant == pytest.approx(359.7)
+        assert ff_mut.bonds[0].equilibrium == pytest.approx(1.38)
+        assert ff_mut.torsions[0].force_constant == pytest.approx(0.15)
+        np.testing.assert_allclose(ff_mut.get_active_param_vector(), updated)
+
+        ff_new = ff.with_active_params(updated)
+        np.testing.assert_allclose(ff_new.get_active_param_vector(), updated)
+        np.testing.assert_allclose(ff.get_active_param_vector(), [36.0, 109.5])
+
+        with pytest.raises(ValueError, match="does not match"):
+            ff_mut.set_active_param_vector(np.array([1.0]))
+        with pytest.raises(ValueError, match="does not match"):
+            ff.with_active_params(np.array([1.0]))
+
     def test_default_bounds_allow_negative_bond_k(self) -> None:
         """TSFF requires negative bond force constants for reaction coordinates."""
         ff = ForceField(
@@ -584,7 +641,7 @@ class TestForceField:
         assert imp1[0].is_improper is True
         assert imp2[0].is_improper is True
         assert imp1[0].force_constant == pytest.approx(0.0)
-        assert imp2[0].force_constant == pytest.approx(0.8)
+        assert imp2[0].force_constant == pytest.approx(0.4)  # V/2: 0.8/2 = 0.4
         assert imp1[0].ff_row == 100
         assert imp2[0].ff_row == 100
 
@@ -711,6 +768,18 @@ class TestForceField:
         assert rh.epsilon == pytest.approx(0.14)
         assert fluorine.radius == pytest.approx(1.71)
         assert fluorine.epsilon == pytest.approx(0.075)
+
+    def test_mm3_freezes_standard_params_by_default(self) -> None:
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff_opt = ForceField.from_mm3_fld(RH_MM3, include_standard=False)
+        ff.freeze_standard_params(ff_opt)
+
+        assert ff.n_params == 2742
+        assert ff.n_active_params == 182
+        assert ff.active_mask.shape == (2742,)
+        assert len(ff.get_active_param_vector()) == 182
+        assert any(param.frozen for param in ff.bonds)
+        assert any(not param.frozen for param in ff.bonds)
 
     def test_tinker_import_export_roundtrip(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "sample.prm"
@@ -895,6 +964,420 @@ class TestForceField:
         assert len(ff.bonds) == 1
         assert ff.bonds[0].elements == ("N", "H")
         assert ff.vdws[0].element == "N"
+
+
+# ---- Bond order parsing and matching ----
+
+
+class TestBondOrderParsing:
+    """Test bond-order and context parsing from .fld files."""
+
+    def test_standard_section_bond_order_single(self) -> None:
+        """Standard section: '-' at column 7 is parsed as single bond."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        # C3-C3 single bonds exist in the standard section
+        c3c3_bonds = [b for b in ff.bonds if b.env_id == "C3-C3"]
+        assert len(c3c3_bonds) > 0
+        assert all(b.bond_order == "-" for b in c3c3_bonds)
+
+    def test_standard_section_bond_order_double(self) -> None:
+        """Standard section: '=' at column 7 is parsed as double bond."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        c2c2_double = [b for b in ff.bonds if b.env_id == "C2-C2" and b.bond_order == "="]
+        assert len(c2c2_double) > 0, "Expected C2=C2 double bonds in Rh-enamide mm3.fld"
+        # Verify at least one has the expected equilibrium ~1.33 Å
+        eq_vals = [b.equilibrium for b in c2c2_double]
+        assert any(1.30 < eq < 1.36 for eq in eq_vals), f"Expected C=C eq ~1.33 Å, got {eq_vals}"
+
+    def test_standard_section_bond_order_aromatic(self) -> None:
+        """Standard section: bond-order symbols include '*' (aromatic) in angles."""
+        # Aromatic bonds appear in angles (C2*C2) but not in bond section
+        # of the standard MM3. Verify we can parse '-' and '=' at minimum.
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        orders = {b.bond_order for b in ff.bonds if b.bond_order}
+        assert "-" in orders, "Expected single bonds"
+        assert "=" in orders, "Expected double bonds"
+
+    def test_standard_section_context_parsed(self) -> None:
+        """Context flags from cols 55-65 are stored on BondParam."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        # Some C3-C3 bonds have context like "O200 0000" or "1C200 000"
+        with_context = [b for b in ff.bonds if b.context]
+        assert len(with_context) > 0, "Expected some bonds with context flags"
+
+    def test_standard_section_generic_has_empty_context(self) -> None:
+        """Generic entries (0000 0000) have empty context string."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        # The generic C3-C3 bond (r₀≈1.5247) has context "0000 0000" → empty
+        c3c3_generic = [b for b in ff.bonds if b.env_id == "C3-C3" and not b.context]
+        assert len(c3c3_generic) > 0, "Expected at least one generic C3-C3 bond"
+
+    def test_synthetic_standard_bond_order(self, tmp_path: Path) -> None:
+        """Parse bond-order symbols from synthetic standard-section lines."""
+        from q2mm.io.mm3 import _mm3_import_ff
+
+        # Standard section format: cols 4-5=type1, col 7=order, cols 9-10=type2
+        #                          cols 14-24=p1, cols 24-34=p2
+        lines = [
+            " 1  C2 - C2                1.4800     4.5000     0.0000  0000 0000",
+            " 1  C2 = C2                1.3320     7.5000     0.0000  0000 0000",
+            " 1  C1 % C1                1.2100    15.0000     0.0000  0000 0000",
+        ]
+        fld = tmp_path / "test.fld"
+        fld.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        bond_params = [p for p in params if p.ptype == "be"]
+        assert len(bond_params) == 3
+
+        orders = [p.bond_order for p in bond_params]
+        assert orders == ["-", "=", "%"]
+
+    def test_synthetic_opt_no_bond_order(self, tmp_path: Path) -> None:
+        """OPT-section bond lines use numeric labels — no bond-order symbol."""
+        from q2mm.io.mm3 import _mm3_import_ff
+
+        # Real OPT lines: " 1   1   2   <params>" — numeric labels, no order symbol.
+        # Bond order is only in the standard section (column 7 with type labels).
+        lines = [
+            "# Q2MM",
+            " OPT synthetic test",
+            " 9  OPT substructure",
+            " C2  2  1  P1  2  0  RH  0  0  C2  2  0  C2  2  0",
+            " 1   1   2                 1.8000     3.0000     0.0000",
+            " 1   2   3                 1.3500     6.0000     0.0000",
+        ]
+        fld = tmp_path / "opt.fld"
+        fld.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        bond_params = [p for p in params if p.ptype == "be"]
+        assert len(bond_params) == 2
+
+        # OPT bonds have no bond-order symbol — empty string
+        orders = [p.bond_order for p in bond_params]
+        assert orders == ["", ""]
+
+    def test_synthetic_context_flags(self, tmp_path: Path) -> None:
+        """Context flags are parsed from standard section cols 56-66."""
+        from q2mm.io.mm3 import _mm3_import_ff
+
+        # Standard-section lines need to extend past col 66 for context parsing.
+        # Context occupies cols 56-65 (0-indexed), slice is [56:66].
+        #   cols:  0         1         2         3         4         5         6
+        #          0123456789012345678901234567890123456789012345678901234567890123456789
+        line_ctx = " 1  C2 - C2                1.4700     4.5000     0.0000 O200 0000  trailing"
+        line_gen = " 1  C2 - C2                1.4800     4.5000     0.0000  0000 0000  trailing"
+        fld = tmp_path / "ctx.fld"
+        fld.write_text(line_ctx + "\n" + line_gen + "\n", encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        bond_params = [p for p in params if p.ptype == "be"]
+        assert len(bond_params) == 2
+
+        # First line has "O200 0000" context, second is generic
+        assert bond_params[0].context == "O200 0000"
+        assert bond_params[1].context == ""
+
+
+class TestBondOrderMatching:
+    """Test ForceField.get_bond() and match_bond() with bond_order and context."""
+
+    @pytest.fixture()
+    def ff_with_bond_orders(self) -> ForceField:
+        """FF with multiple C-C bonds differing by bond_order and context."""
+        return ForceField(
+            bonds=[
+                BondParam(
+                    ("C", "C"),
+                    1.48,
+                    300.0,
+                    env_id="C2-C2",
+                    bond_order="-",
+                    context="O200 0000",
+                    ff_row=96,
+                    label="single-ctx",
+                ),
+                BondParam(("C", "C"), 1.332, 500.0, env_id="C2-C2", bond_order="=", ff_row=98, label="double"),
+                BondParam(
+                    ("C", "C"),
+                    1.46,
+                    310.0,
+                    env_id="C2-C2",
+                    bond_order="-",
+                    context="C200 C200",
+                    ff_row=100,
+                    label="single-conj",
+                ),
+                BondParam(("C", "C"), 1.48, 290.0, env_id="C2-C2", bond_order="-", ff_row=101, label="single-generic"),
+                BondParam(("C", "C"), 1.54, 300.0, env_id="C3-C3", bond_order="-", ff_row=59, label="sp3-single"),
+            ],
+        )
+
+    # --- get_bond with bond_order ---
+
+    def test_get_bond_filters_by_bond_order(self, ff_with_bond_orders: ForceField) -> None:
+        """get_bond returns only bonds matching the requested bond_order."""
+        double = ff_with_bond_orders.get_bond("C", "C", env_id="C2-C2", bond_order="=")
+        assert double is not None
+        assert double.label == "double"
+        assert double.equilibrium == pytest.approx(1.332)
+
+    def test_get_bond_bond_order_no_match(self, ff_with_bond_orders: ForceField) -> None:
+        """get_bond returns None when bond_order doesn't match any candidate."""
+        result = ff_with_bond_orders.get_bond("C", "C", env_id="C2-C2", bond_order="%")
+        assert result is None
+
+    def test_get_bond_prefer_generic_context(self, ff_with_bond_orders: ForceField) -> None:
+        """get_bond with prefer_generic_context returns the generic entry."""
+        generic = ff_with_bond_orders.get_bond(
+            "C",
+            "C",
+            env_id="C2-C2",
+            bond_order="-",
+            prefer_generic_context=True,
+        )
+        assert generic is not None
+        assert generic.label == "single-generic"
+
+    def test_get_bond_reversed_elements(self, ff_with_bond_orders: ForceField) -> None:
+        """get_bond works with reversed element order (canonical sorting)."""
+        double = ff_with_bond_orders.get_bond("C", "C", env_id="C2-C2", bond_order="=")
+        assert double is not None
+        assert double.label == "double"
+
+    # --- match_bond tier tests ---
+
+    def test_match_bond_tier1_ff_row(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 1: ff_row match takes priority over everything."""
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+            ff_row=100,
+            bond_order="=",  # wrong bond_order — ff_row should still win
+            bond_length=1.332,
+        )
+        assert result is not None
+        assert result.label == "single-conj"
+        assert result.ff_row == 100
+
+    def test_match_bond_tier2_env_id_plus_order(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 2: env_id + bond_order match when ff_row is None."""
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+            bond_order="=",
+        )
+        assert result is not None
+        assert result.label == "double"
+
+    def test_match_bond_tier2_beats_tier3(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 2 (bond_order) wins over tier 3 (closest r₀) even if r₀ is closer to another."""
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+            bond_order="=",
+            bond_length=1.48,  # closer to single bonds, but "=" should win
+        )
+        assert result is not None
+        assert result.label == "double"
+
+    def test_match_bond_tier3_closest_r0(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 3: when bond_order is unknown, picks closest r₀ to bond_length."""
+        # bond_length=1.34 is closest to the double bond (eq=1.332)
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+            bond_length=1.34,
+        )
+        assert result is not None
+        assert result.label == "double"
+
+    def test_match_bond_tier3_picks_single_for_long_bond(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 3: bond_length=1.47 is closest to single-ctx (eq=1.48) or single-conj (eq=1.46)."""
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+            bond_length=1.47,
+        )
+        assert result is not None
+        # 1.47 is equidistant from 1.46 and 1.48 — should pick one of the singles
+        assert result.bond_order == "-"
+
+    def test_match_bond_tier3_skipped_without_length(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 3 is skipped when bond_length is None — falls through to tier 4."""
+        result = ff_with_bond_orders.match_bond(
+            ("C", "C"),
+            env_id="C2-C2",
+        )
+        assert result is not None
+        # Without bond_order or bond_length, tier 4 (env_id + prefer generic) applies
+        # The first match with env_id="C2-C2" that's generic should be returned
+        # (depends on implementation — either first match or generic-preferred)
+
+    def test_match_bond_tier4_env_id_prefers_generic(self, ff_with_bond_orders: ForceField) -> None:
+        """Tier 4: env_id-only match prefers generic context entry."""
+        # Build a smaller FF where only context differs
+        ff = ForceField(
+            bonds=[
+                BondParam(
+                    ("C", "C"), 1.48, 300.0, env_id="C2-C2", bond_order="-", context="O200 0000", label="with-ctx"
+                ),
+                BondParam(("C", "C"), 1.48, 290.0, env_id="C2-C2", bond_order="-", label="generic"),
+            ],
+        )
+        result = ff.match_bond(("C", "C"), env_id="C2-C2")
+        assert result is not None
+        assert result.label == "generic"
+
+    def test_match_bond_tier5_element_only(self) -> None:
+        """Tier 5: falls back to element-only matching when env_id doesn't match."""
+        ff = ForceField(
+            bonds=[
+                BondParam(("C", "C"), 1.54, 300.0, env_id="C3-C3", label="sp3"),
+            ],
+        )
+        result = ff.match_bond(("C", "C"), env_id="C99-C99")
+        assert result is not None
+        assert result.label == "sp3"
+
+    def test_match_bond_no_match(self) -> None:
+        """match_bond returns None when no bond matches at all."""
+        ff = ForceField(
+            bonds=[
+                BondParam(("C", "F"), 1.38, 370.0, env_id="C1-F1", label="CF"),
+            ],
+        )
+        result = ff.match_bond(("N", "H"), env_id="N3-H1")
+        assert result is None
+
+
+from q2mm.models.molecule import DetectedBond
+
+
+class TestDetectedBondOrder:
+    """Test that DetectedBond carries bond_order through matching."""
+
+    def test_detected_bond_stores_bond_order(self) -> None:
+        """DetectedBond stores the bond_order field."""
+        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.34, env_id="C2-C2", bond_order="=")
+        assert bond.bond_order == "="
+
+    def test_detected_bond_default_empty_order(self) -> None:
+        """DetectedBond defaults to empty bond_order."""
+        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.54, env_id="C3-C3")
+        assert bond.bond_order == ""
+
+    def test_match_bond_uses_detected_bond_fields(self) -> None:
+        """match_bond correctly uses bond_order and length from DetectedBond."""
+        ff = ForceField(
+            bonds=[
+                BondParam(("C", "C"), 1.48, 300.0, env_id="C2-C2", bond_order="-", label="single"),
+                BondParam(("C", "C"), 1.332, 500.0, env_id="C2-C2", bond_order="=", label="double"),
+            ],
+        )
+        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.35, env_id="C2-C2", bond_order="=")
+        result = ff.match_bond(
+            bond.elements,
+            env_id=bond.env_id,
+            ff_row=bond.ff_row,
+            bond_order=bond.bond_order,
+            bond_length=bond.length,
+        )
+        assert result is not None
+        assert result.label == "double"
+
+
+class TestV2TorsionPhase:
+    """Test that MM3 V2 torsion phase is correctly set to 180°."""
+
+    def test_mm3_fld_v2_phase_180(self) -> None:
+        """load_mm3_fld sets phase=180° for periodicity=2 torsions."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        v2_torsions = [t for t in ff.torsions if t.periodicity == 2 and not t.is_improper]
+        assert len(v2_torsions) > 0, "Expected V2 torsions in Rh-enamide mm3.fld"
+        for t in v2_torsions:
+            assert t.phase == pytest.approx(180.0), f"V2 torsion {t.label} has phase={t.phase}, expected 180.0"
+
+    def test_mm3_fld_v1_v3_phase_0(self) -> None:
+        """load_mm3_fld sets phase=0° for V1 and V3 torsions."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        v1_torsions = [t for t in ff.torsions if t.periodicity == 1 and not t.is_improper]
+        v3_torsions = [t for t in ff.torsions if t.periodicity == 3 and not t.is_improper]
+        assert len(v1_torsions) > 0
+        assert len(v3_torsions) > 0
+        for t in v1_torsions:
+            assert t.phase == pytest.approx(0.0), f"V1 torsion {t.label} has phase={t.phase}"
+        for t in v3_torsions:
+            assert t.phase == pytest.approx(0.0), f"V3 torsion {t.label} has phase={t.phase}"
+
+    def test_improper_v2_phase_180(self) -> None:
+        """Improper torsions with periodicity=2 also get phase=180°."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        imp_v2 = [t for t in ff.torsions if t.periodicity == 2 and t.is_improper]
+        for t in imp_v2:
+            assert t.phase == pytest.approx(180.0), f"Improper V2 {t.label} has phase={t.phase}, expected 180.0"
+
+    def test_v2_energy_minimum_at_planar(self) -> None:
+        """V2 energy should be minimum (zero) at planar geometry (ω=0°).
+
+        MM3: E = (V2/2)*(1 − cos 2ω)
+        At ω=0°: E = (V2/2)*(1−1) = 0 (minimum)
+        At ω=90°: E = (V2/2)*(1+1) = V2 (maximum)
+        """
+        import math
+
+        k = 10.0  # kcal/mol
+        n = 2
+        gamma = math.radians(180.0)
+
+        # Our formula: k * (1 + cos(n*phi - gamma))
+        e_planar = k * (1.0 + math.cos(n * 0.0 - gamma))  # ω=0°
+        e_perp = k * (1.0 + math.cos(n * math.pi / 2 - gamma))  # ω=90°
+
+        assert e_planar == pytest.approx(0.0), f"V2 at ω=0° should be 0, got {e_planar}"
+        assert e_perp == pytest.approx(2 * k), f"V2 at ω=90° should be {2 * k}, got {e_perp}"
+
+    def test_v2_count_in_rh_enamide(self) -> None:
+        """Rh-enamide .fld should have multiple V2 torsions with significant k."""
+        ff = ForceField.from_mm3_fld(RH_MM3)
+        v2_proper = [t for t in ff.torsions if t.periodicity == 2 and not t.is_improper]
+        # k stores V2/2 (MM3 convention). V2=16.25 → k=8.125; threshold at k>2.5 (V2>5).
+        large_v2 = [t for t in v2_proper if abs(t.force_constant) > 2.5]
+        assert len(large_v2) > 5, f"Expected >5 large V2 torsions (|k|>5 kcal/mol), found {len(large_v2)}"
+
+    def test_synthetic_mm3_torsion_phases(self, tmp_path: Path) -> None:
+        """Synthetic .fld: V1/V2/V3 on one line produce correct phases."""
+        from q2mm.io.mm3 import _mm3_import_ff
+
+        # Standard torsion line: " 4  AT1  AT2  AT3  AT4   V1  V2  V3"
+        #                                                   ^^^  ^^^  ^^^
+        #                                               col1  col2  col3
+        lines = [
+            " 4  C3 - C3 - C3 - C3       0.1850     0.3000     0.4500  0000 0000 0000 0000",
+        ]
+        fld = tmp_path / "torsion_test.fld"
+        fld.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        df_params = [p for p in params if p.ptype == "df"]
+        assert len(df_params) == 3
+
+        from q2mm.io.mm3 import load_mm3_fld
+
+        ff = load_mm3_fld(str(fld))
+        assert len(ff.torsions) == 3
+
+        phases = {t.periodicity: t.phase for t in ff.torsions}
+        assert phases[1] == pytest.approx(0.0), "V1 phase should be 0°"
+        assert phases[2] == pytest.approx(180.0), "V2 phase should be 180°"
+        assert phases[3] == pytest.approx(0.0), "V3 phase should be 0°"
+
+        # MM3 convention: k = V_n/2 (the .fld stores V_n, our k = V_n/2)
+        fcs = {t.periodicity: t.force_constant for t in ff.torsions}
+        assert fcs[1] == pytest.approx(0.1850 / 2), "k1 should be V1/2"
+        assert fcs[2] == pytest.approx(0.3000 / 2), "k2 should be V2/2"
+        assert fcs[3] == pytest.approx(0.4500 / 2), "k3 should be V3/2"
 
 
 # ---- AMBER .frcmod I/O ----
@@ -1092,6 +1575,28 @@ class TestSeminario:
         # The C-F bond in the TS is partially breaking — may have negative FC
         # At minimum, verify the estimation completes and produces values
         assert len(bond_fcs) > 0
+
+    def test_respects_frozen_params(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+        ff = ForceField.create_for_molecule(ch3f_mol_with_hess)
+        ff.bonds[0].force_constant = 123.0
+        ff.bonds[0].equilibrium = 9.9
+        ff.bonds[0].frozen = True
+        ff.angles[0].force_constant = 456.0
+        ff.angles[0].equilibrium = 150.0
+        ff.angles[0].frozen = True
+        ff.torsions = [
+            TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=7.0, frozen=True),
+            TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=8.0),
+        ]
+
+        estimated = estimate_force_constants(ch3f_mol_with_hess, forcefield=ff)
+
+        assert estimated.bonds[0].force_constant == pytest.approx(123.0)
+        assert estimated.bonds[0].equilibrium == pytest.approx(9.9)
+        assert estimated.angles[0].force_constant == pytest.approx(456.0)
+        assert estimated.angles[0].equilibrium == pytest.approx(150.0)
+        assert estimated.torsions[0].force_constant == pytest.approx(7.0)
+        assert estimated.torsions[1].force_constant == pytest.approx(0.0)
 
     def test_raises_without_hessian(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)

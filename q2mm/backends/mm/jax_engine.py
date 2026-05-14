@@ -373,6 +373,84 @@ def _mm3_vdw_energy(
     return jnp.sum(jnp.where(r >= rc, e_buckingham, e_wall))
 
 
+# MM3 bond-dipole electrostatic constant.
+# Allinger et al., JACS 1989, 111, 8551 give: E = 14.3928·μ₁·μ₂/r³·f (kcal/mol)
+# with μ in Debye and r in Å.  Derivation:
+#   332.05 kcal·Å/(mol·e²) × (1 D / 4.8032 e·Å)² = 14.394 kcal·Å·mol⁻¹·D⁻²
+# Divided by the MM3 default dielectric D = 1.5.
+_MM3_DIPOLE_CONST = 14.3928 / 1.5  # ≈ 9.595 kcal·Å³/(mol·D²)
+
+
+def _mm3_dipole_energy(
+    dipole_moments: jnp.ndarray,
+    coords: jnp.ndarray,
+    bond_indices: jnp.ndarray,
+    dipole_pair_indices: jnp.ndarray,
+) -> jnp.ndarray:
+    """MM3 bond-dipole electrostatic energy.
+
+    Each bond with a non-zero dipole moment contributes a point dipole
+    at the bond midpoint, directed along the bond vector.  Pairs of
+    dipoles interact via the MM3 point-dipole formula
+    (Allinger et al., JACS 1989, 111, 8551):
+
+    ``E = (14.394 / D) · μ_i · μ_j · (cos χ − 3 cos α_i cos α_j) / r³``
+
+    where ``D = 1.5`` (MM3 default dielectric), ``μ`` is in Debye,
+    ``r`` is the distance between bond midpoints in Å, ``χ`` is the
+    angle between dipole vectors, and ``α_i``, ``α_j`` are angles
+    between each dipole vector and the midpoint-midpoint vector.
+
+    Args:
+        dipole_moments: Per-bond dipole moment (Debye), shape ``(n_bonds,)``.
+            Indexed by the bond's position in ``bond_indices``.
+        coords: Cartesian coordinates, shape ``(n_atoms, 3)``, Å.
+        bond_indices: Atom index pairs for each bond, shape ``(n_bonds, 2)``.
+        dipole_pair_indices: Non-excluded bond pairs ``(bi, bj)`` with
+            ``bi < bj``, shape ``(n_dipole_pairs, 2)``.
+
+    Returns:
+        Scalar total dipole energy in kcal/mol.
+
+    """
+    if dipole_pair_indices.shape[0] == 0:
+        return jnp.float64(0.0)
+
+    # Bond vectors and midpoints
+    a_coords = coords[bond_indices[:, 0]]  # (n_bonds, 3)
+    b_coords = coords[bond_indices[:, 1]]  # (n_bonds, 3)
+    bond_vecs = b_coords - a_coords  # dipole direction: atom_0 → atom_1
+    midpoints = 0.5 * (a_coords + b_coords)  # (n_bonds, 3)
+
+    # Gather pairs
+    bi = dipole_pair_indices[:, 0]
+    bj = dipole_pair_indices[:, 1]
+
+    mu_i = dipole_moments[bi]
+    mu_j = dipole_moments[bj]
+
+    d_i = bond_vecs[bi]  # dipole vector i, shape (n_pairs, 3)
+    d_j = bond_vecs[bj]  # dipole vector j
+    d_i_norm = d_i / (_safe_norm(d_i, axis=-1)[:, None] + 1e-30)
+    d_j_norm = d_j / (_safe_norm(d_j, axis=-1)[:, None] + 1e-30)
+
+    # Midpoint-midpoint vector
+    r_vec = midpoints[bj] - midpoints[bi]  # (n_pairs, 3)
+    r = _safe_norm(r_vec, axis=-1)  # (n_pairs,)
+    r_hat = r_vec / (r[:, None] + 1e-30)
+
+    # Angles: cos χ = d_i · d_j, cos α_i = d_i · r_hat, cos α_j = d_j · r_hat
+    cos_chi = jnp.sum(d_i_norm * d_j_norm, axis=-1)
+    cos_alpha_i = jnp.sum(d_i_norm * r_hat, axis=-1)
+    cos_alpha_j = jnp.sum(d_j_norm * r_hat, axis=-1)
+
+    # E = const * μ_i * μ_j * (cos χ - 3 cos α_i cos α_j) / r³
+    angular = cos_chi - 3.0 * cos_alpha_i * cos_alpha_j
+    e_pair = _MM3_DIPOLE_CONST * mu_i * mu_j * angular / (r**3 + 1e-30)
+
+    return jnp.sum(e_pair)
+
+
 def _mm3_stretch_bend_energy(
     k_sb: jnp.ndarray,
     r0_ij: jnp.ndarray,
@@ -595,6 +673,10 @@ class JaxHandle:
     sb_bond_jk_idx: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
     sb_angle_idx: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.int32))
     n_sb_types: int = 0
+    # Bond-dipole electrostatics
+    dipole_bond_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
+    dipole_moments: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
+    dipole_pair_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
     # Functional form used to compile the energy function
     functional_form: str = "harmonic"
     # Compiled energy function (captures topology, JIT-compiled)
@@ -717,7 +799,14 @@ class JaxEngine(MMEngine):
         bond_atom_indices = []
         bond_param_map = []
         for bond in molecule.bonds:
-            idx, param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+            idx, param = _match_bond(
+                forcefield,
+                bond.elements,
+                env_id=bond.env_id,
+                ff_row=bond.ff_row,
+                bond_order=getattr(bond, "bond_order", ""),
+                bond_length=bond.length,
+            )
             if param is not None:
                 bond_atom_indices.append((bond.atom_i, bond.atom_j))
                 bond_param_map.append(idx)
@@ -761,7 +850,14 @@ class JaxEngine(MMEngine):
         # bond's own env_id, not the angle's).
         matched_bond_by_atoms: dict[tuple[int, int], BondParam] = {}
         for bond in molecule.bonds:
-            _, param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+            _, param = _match_bond(
+                forcefield,
+                bond.elements,
+                env_id=bond.env_id,
+                ff_row=bond.ff_row,
+                bond_order=getattr(bond, "bond_order", ""),
+                bond_length=bond.length,
+            )
             if param is not None:
                 matched_bond_by_atoms[(bond.atom_i, bond.atom_j)] = param
                 matched_bond_by_atoms[(bond.atom_j, bond.atom_i)] = param
@@ -833,6 +929,41 @@ class JaxEngine(MMEngine):
             [(b.atom_i, b.atom_j) for b in molecule.bonds],
         )
 
+        # Build bond-dipole electrostatics topology
+        # Collect bonds with non-zero dipole moments and their atom indices
+        dipole_bond_list: list[tuple[int, int]] = []
+        dipole_moment_list: list[float] = []
+        for bond_idx, bond in enumerate(molecule.bonds):
+            idx, param = _match_bond(
+                forcefield,
+                bond.elements,
+                env_id=bond.env_id,
+                ff_row=bond.ff_row,
+                bond_order=getattr(bond, "bond_order", ""),
+                bond_length=bond.length,
+            )
+            if param is not None and abs(param.dipole_moment) > 1e-10:
+                dipole_bond_list.append((bond.atom_i, bond.atom_j))
+                dipole_moment_list.append(param.dipole_moment)
+
+        # Build dipole pair list: exclude bond pairs that share an atom
+        dipole_pairs_list: list[tuple[int, int]] = []
+        if len(dipole_bond_list) > 1:
+            bond_atom_sets = [set(pair) for pair in dipole_bond_list]
+            for i in range(len(dipole_bond_list)):
+                for j in range(i + 1, len(dipole_bond_list)):
+                    # Exclude if the two bonds share any atom (1-2/1-3 at bond level)
+                    if not bond_atom_sets[i] & bond_atom_sets[j]:
+                        dipole_pairs_list.append((i, j))
+
+        dipole_bond_arr = (
+            np.array(dipole_bond_list, dtype=np.int32) if dipole_bond_list else np.empty((0, 2), dtype=np.int32)
+        )
+        dipole_moment_arr = np.array(dipole_moment_list, dtype=np.float64) if dipole_moment_list else np.empty(0)
+        dipole_pair_arr = (
+            np.array(dipole_pairs_list, dtype=np.int32) if dipole_pairs_list else np.empty((0, 2), dtype=np.int32)
+        )
+
         bond_indices_arr = (
             np.array(bond_atom_indices, dtype=np.int32) if bond_atom_indices else np.empty((0, 2), dtype=np.int32)
         )
@@ -873,6 +1004,9 @@ class JaxEngine(MMEngine):
             sb_bond_jk_idx=np.array(sb_bond_jk_idx, dtype=np.int32),
             sb_angle_idx=np.array(sb_angle_idx, dtype=np.int32),
             n_sb_types=len(forcefield.stretch_bends),
+            dipole_bond_indices=dipole_bond_arr,
+            dipole_moments=dipole_moment_arr,
+            dipole_pair_indices=dipole_pair_arr,
             functional_form=_resolve_form(forcefield),
         )
 
@@ -1192,6 +1326,12 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     _sb_angle_idx = jnp.array(handle.sb_angle_idx) if has_sb else None
     sb_offset = _offsets["sb"]
 
+    # Bond-dipole electrostatics (frozen — not in the param vector)
+    has_dipoles = len(handle.dipole_pair_indices) > 0
+    _dipole_moments = jnp.array(handle.dipole_moments) if has_dipoles else None
+    _dipole_bond_indices = jnp.array(handle.dipole_bond_indices) if has_dipoles else None
+    _dipole_pair_indices = jnp.array(handle.dipole_pair_indices) if has_dipoles else None
+
     if use_mm3:
 
         @jax.jit
@@ -1239,6 +1379,9 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
                 r0_jk = bond_params_sb[_sb_bond_jk_idx, 1]
                 theta0 = angle_params_sb[_sb_angle_idx, 1] * (jnp.pi / 180.0)
                 E = E + _mm3_stretch_bend_energy(k, r0_ij, r0_jk, theta0, coords, _sb_angle_indices)
+
+            if has_dipoles:
+                E = E + _mm3_dipole_energy(_dipole_moments, coords, _dipole_bond_indices, _dipole_pair_indices)
 
             return E
 

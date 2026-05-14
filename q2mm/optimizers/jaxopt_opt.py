@@ -22,16 +22,14 @@ Usage::
 from __future__ import annotations
 
 import logging
+import math
 from importlib.util import find_spec
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
 
 from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import OptimizationResult
-
-if TYPE_CHECKING:
-    from q2mm.optimizers.jaxloss import JaxLoss
 
 logger = logging.getLogger(__name__)
 
@@ -126,21 +124,77 @@ class JaxOptOptimizer:
         spec = objective.to_jax_spec()
         jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
 
-        x0 = np.array(objective.forcefield.get_param_vector(), dtype=float)
-        initial_score = float(jax_loss(x0))
+        ff = objective.forcefield
+        initial_full = np.array(ff.get_param_vector(), dtype=float)
+        has_frozen = ff.n_active_params < ff.n_params
+        active_indices = np.flatnonzero(ff.active_mask) if has_frozen else None
+
+        if has_frozen:
+            x0 = np.array(ff.get_active_param_vector(), dtype=float)
+            active_bounds = np.asarray(ff.get_active_bounds(), dtype=float)
+            frozen_template = jnp.array(initial_full, dtype=jnp.float64)
+            active_indices_jax = jnp.array(active_indices, dtype=jnp.int32)
+
+            def expand_jax(x_active: Any):  # noqa: ANN202
+                return frozen_template.at[active_indices_jax].set(x_active)
+
+            def expand_np(x_active: np.ndarray) -> np.ndarray:
+                full = initial_full.copy()
+                full[active_indices] = np.asarray(x_active, dtype=float)
+                return full
+
+            def vag_fn(x_active: Any):  # noqa: ANN202
+                loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
+                return loss, full_grad[active_indices_jax]
+        else:
+            x0 = initial_full.copy()
+            active_bounds = np.asarray(spec.lower_bounds, dtype=float)
+
+            def expand_jax(x_active: Any):  # noqa: ANN202
+                return x_active
+
+            def expand_np(x_active: np.ndarray) -> np.ndarray:
+                return np.asarray(x_active, dtype=float).copy()
+
+            vag_fn = jax_loss.value_and_grad_jax
+
+        # Use Python dispatch (value_and_grad_jax) to avoid compiling
+        # all molecules into one XLA program.  jit=False makes
+        # solver.run() use a Python while-loop; value_and_grad=True
+        # tells jaxopt not to wrap vag_fn with jax.value_and_grad.
+        initial_score = float(vag_fn(jnp.array(x0, dtype=jnp.float64))[0])
         params = jnp.array(x0, dtype=jnp.float64)
 
         # Build the jaxopt solver
         method_str = f"jaxopt:{self.method}"
-        solver = self._build_solver(jaxopt, jax_loss)
+        solver = self._build_solver(jaxopt, vag_fn)
 
         if self.verbose:
             logger.info(
-                "Starting %s optimization: %d params, initial score %.6f, maxiter=%d",
+                "Starting %s optimization: %d active params (%d total), initial score %.6f, maxiter=%d",
                 method_str,
-                len(x0),
+                ff.n_active_params,
+                ff.n_params,
                 initial_score,
                 self.maxiter,
+            )
+
+        if x0.size == 0:
+            final_params = initial_full.copy()
+            objective.forcefield.set_param_vector(final_params)
+            return OptimizationResult(
+                success=True,
+                message="No active parameters to optimize",
+                initial_score=initial_score,
+                final_score=initial_score,
+                n_iterations=0,
+                n_evaluations=0,
+                initial_params=initial_full,
+                final_params=final_params,
+                history=[initial_score],
+                method=method_str,
+                jac_mode="analytical",
+                eps=None,
             )
 
         # Run the solver (LBFGSB needs bounds passed to run())
@@ -158,24 +212,59 @@ class JaxOptOptimizer:
                     "on GPU, or force CPU with "
                     "`jax.config.update('jax_platform_name', 'cpu')`."
                 )
-            lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
-            upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
+            if has_frozen:
+                lower = jnp.array(active_bounds[:, 0], dtype=jnp.float64)
+                upper = jnp.array(active_bounds[:, 1], dtype=jnp.float64)
+            else:
+                lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
+                upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
             result = solver.run(params, bounds=(lower, upper))
         else:
             result = solver.run(params)
         final_params_jax, state = result
 
-        final_params = np.asarray(final_params_jax, dtype=float)
-        final_score = float(jax_loss(final_params))
+        final_active = np.asarray(final_params_jax, dtype=float)
+        final_params = expand_np(final_active)
+        final_score = float(vag_fn(final_params_jax)[0])
 
-        # Determine convergence
-        converged = bool(getattr(state, "error", float("inf")) < self.tol)
+        # Determine convergence — detect NaN divergence explicitly
+        error_val = float(getattr(state, "error", float("inf")))
         n_iter = int(getattr(state, "iter_num", self.maxiter))
+        diverged = not math.isfinite(error_val) or not math.isfinite(final_score)
 
-        if converged:
-            message = f"Converged: gradient error {getattr(state, 'error', 'N/A'):.2e} < {self.tol:.2e}"
+        if diverged:
+            converged = False
+            message = (
+                f"Optimizer diverged after {n_iter} iterations "
+                "(gradient or loss became NaN). "
+                "Try reducing --max-iter or increasing --regularization."
+            )
+        elif error_val < self.tol:
+            converged = True
+            message = f"Converged: error {error_val:.2e} < tol {self.tol:.2e}"
         else:
-            message = f"Max iterations ({self.maxiter}) reached (error={getattr(state, 'error', 'N/A')})"
+            converged = False
+            message = f"Max iterations ({self.maxiter}) reached (error={error_val:.2e})"
+
+        # Revert to initial parameters if optimizer diverged or made things
+        # worse.  NaN > x is always False, so check diverged flag explicitly.
+        if diverged or final_score > initial_score:
+            diverged_score = final_score
+            logger.warning(
+                "JaxOpt final score (%.4f) is worse than initial (%.4f); reverting to initial parameters.",
+                diverged_score,
+                initial_score,
+            )
+            final_params = initial_full.copy()
+            final_score = initial_score
+            converged = False
+            if not math.isfinite(diverged_score):
+                message = f"Reverted to initial params — final score was NaN/Inf (initial={initial_score:.4f})"
+            else:
+                message = (
+                    f"Reverted to initial params — final score ({diverged_score:.4f}) "
+                    f"was worse than initial ({initial_score:.4f})"
+                )
 
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(final_params)
@@ -196,7 +285,7 @@ class JaxOptOptimizer:
             final_score=final_score,
             n_iterations=n_iter,
             n_evaluations=n_iter,
-            initial_params=x0,
+            initial_params=initial_full if has_frozen else x0,
             final_params=final_params,
             history=[initial_score, final_score],
             method=method_str,
@@ -207,35 +296,49 @@ class JaxOptOptimizer:
     def _build_solver(
         self,
         jaxopt_mod: object,
-        jax_loss: JaxLoss,
+        loss_fn: object,
     ) -> object:
         """Construct the jaxopt solver.
 
+        Uses ``jit=False`` so ``solver.run()`` executes a Python
+        while-loop instead of ``lax.while_loop``.  This prevents the
+        outer JIT from tracing through the per-molecule dispatch loop
+        in ``JaxLoss``, which would re-inline all molecules into one
+        XLA program and OOM.
+
+        Uses ``value_and_grad=True`` so jaxopt does not wrap
+        *loss_fn* with ``jax.value_and_grad`` (the function already
+        returns ``(value, grad)``).
+
         Args:
             jaxopt_mod: The imported jaxopt module.
-            jax_loss: Compiled loss function.
+            loss_fn: Function returning ``(value, grad)``.
 
         Returns:
             A jaxopt solver instance.
 
         """
-        loss_fn = jax_loss._loss_fn
-
         if self.method == "lbfgs":
             return jaxopt_mod.LBFGS(
                 fun=loss_fn,
+                value_and_grad=True,
+                jit=False,
                 maxiter=self.maxiter,
                 tol=self.tol,
             )
         if self.method == "lbfgsb":
             return jaxopt_mod.LBFGSB(
                 fun=loss_fn,
+                value_and_grad=True,
+                jit=False,
                 maxiter=self.maxiter,
                 tol=self.tol,
             )
         if self.method == "gradient_descent":
             return jaxopt_mod.GradientDescent(
                 fun=loss_fn,
+                value_and_grad=True,
+                jit=False,
                 maxiter=self.maxiter,
                 tol=self.tol,
             )

@@ -75,6 +75,7 @@ class DetectedBond:
     length: float  # Angstrom
     env_id: str = ""
     ff_row: int | None = None
+    bond_order: str = ""  # "-" single, "=" double, "*" aromatic, "%" triple
 
     @property
     def element_pair(self) -> tuple[str, str]:
@@ -194,6 +195,17 @@ class Q2MMMolecule:
         if self._improper_torsions is None:
             self._improper_torsions = self._detect_improper_torsions()
         return self._improper_torsions
+
+    def invalidate_topology(self) -> None:
+        """Clear all cached bond/angle/torsion data.
+
+        Call this after changing ``atom_types`` so that ``env_id`` values
+        in the cached topology are recomputed on next access.
+        """
+        self._bonds = None
+        self._angles = None
+        self._torsions = None
+        self._improper_torsions = None
 
     def _detect_bonds(self, tolerance: float = 1.3) -> list[DetectedBond]:
         """Detect bonds based on covalent radii with tolerance factor."""

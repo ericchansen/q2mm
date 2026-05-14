@@ -338,10 +338,12 @@ def estimate_force_constants(
 
     # Estimate bond force constants
     for bond_param in ff.bonds:
+        if getattr(bond_param, "frozen", False):
+            continue
         matching_bonds = _collect_matching(molecules, bond_param, "bonds", "element_pair")
 
         if not matching_bonds:
-            logger.warning(f"No bonds match {bond_param.key} in molecule")
+            logger.debug("No bonds match %s in molecule", bond_param.key)
             continue
 
         force_constants = []
@@ -377,10 +379,12 @@ def estimate_force_constants(
 
     # Estimate angle force constants
     for angle_param in ff.angles:
+        if getattr(angle_param, "frozen", False):
+            continue
         matching_angles = _collect_matching(molecules, angle_param, "angles", "element_triple")
 
         if not matching_angles:
-            logger.warning(f"No angles match {angle_param.key} in molecule")
+            logger.debug("No angles match %s in molecule", angle_param.key)
             continue
 
         force_constants = []
@@ -428,6 +432,8 @@ def estimate_force_constants(
     # Zero torsions if requested
     if zero_torsions:
         for t in ff.torsions:
+            if getattr(t, "frozen", False):
+                continue
             t.force_constant = 0.0
 
     return ff

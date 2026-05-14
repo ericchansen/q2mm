@@ -503,7 +503,13 @@ def _collect_bond_assignments(
     """
     assignments: list[tuple[Any, BondParam]] = []
     for bond in molecule.bonds:
-        param = forcefield.match_bond(bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+        param = forcefield.match_bond(
+            bond.elements,
+            env_id=bond.env_id,
+            ff_row=bond.ff_row,
+            bond_order=getattr(bond, "bond_order", ""),
+            bond_length=bond.length,
+        )
         if param is not None:
             assignments.append((bond, param))
     return assignments
@@ -1301,7 +1307,13 @@ class OpenMMEngine(MMEngine):
 
         if handle.bond_force is not None:
             for term in handle.bond_terms:
-                param = forcefield.match_bond(term.elements, env_id=term.env_id, ff_row=term.ff_row)
+                param = forcefield.match_bond(
+                    term.elements,
+                    env_id=term.env_id,
+                    ff_row=term.ff_row,
+                    bond_order=getattr(term, "bond_order", ""),
+                    bond_length=getattr(term, "length", None),
+                )
                 if param is None:
                     raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
                 if use_harmonic:

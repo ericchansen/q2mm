@@ -641,7 +641,14 @@ class JaxMDEngine(MMEngine):
         bond_atom_indices = []
         bond_param_map = []
         for bond in molecule.bonds:
-            idx, param = _match_bond(forcefield, bond.elements, env_id=bond.env_id, ff_row=bond.ff_row)
+            idx, param = _match_bond(
+                forcefield,
+                bond.elements,
+                env_id=bond.env_id,
+                ff_row=bond.ff_row,
+                bond_order=getattr(bond, "bond_order", ""),
+                bond_length=bond.length,
+            )
             if param is not None:
                 bond_atom_indices.append((bond.atom_i, bond.atom_j))
                 bond_param_map.append(idx)

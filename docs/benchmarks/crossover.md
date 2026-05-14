@@ -1,10 +1,10 @@
-# When does the analytical path win?
+# Analytical vs Finite-Difference
 
 This page answers one question: when is the JAX analytical-gradient path
 worth its compile-time overhead, and when does single-shot scipy on
 OpenMM still win? It is interpretive — pulling from the
-[Small Molecules](small-molecules.md), [GPU Acceleration](gpu.md), and
-[Rh-Enamide](rh-enamide.md) result tables — and is intended as a
+[Small Molecules](../systems/small-molecules.md), [GPU Acceleration](gpu.md), and
+[Rh-Enamide](../systems/rh-enamide.md) result tables — and is intended as a
 decision aid, not a new benchmark.
 
 ## TL;DR
@@ -25,8 +25,8 @@ decision aid, not a new benchmark.
 ## What "analytical" means here
 
 The analytical path = JAX-traced loss with `jax.value_and_grad`, JIT
-compiled once, run inside a `jaxopt` solver (also JIT compiled). No
-finite-difference gradients. See
+compiled per-molecule, dispatched from Python via
+`JaxLoss.value_and_grad_jax()`. No finite-difference gradients. See
 [Architecture](../how-it-works/architecture.md) for the residual-kind ×
 analytical-gradient × in-JIT matrix.
 
@@ -37,7 +37,7 @@ function evaluator (no gradients propagated back).
 ## Crossover, in numbers
 
 These are the rows that bracket the question. For the full matrix see
-[Small Molecules](small-molecules.md).
+[Small Molecules](../systems/small-molecules.md).
 
 ### CH₃F (1 mol, 8 params, harmonic + MM3)
 
@@ -68,12 +68,19 @@ as the OpenMM sequential row (28.7). Two reasons it does not:
    landscape. Both are valid optima of the chosen loss; the basins
    they prefer differ. This is a parameterization issue, not a
    correctness gap.
-2. The JAX path now uses topology-grouped `vmap` for Hessian batching
-   (PR #264) — molecules sharing the same topology compute their
-   Hessians in a single vectorised call. This matters for training
-   sets with multiple geometries (e.g., Rh-enamide's 9 molecules).
+2. The JAX path now uses per-molecule JIT splitting — each molecule's
+   Hessian + eigenmatrix loss is compiled independently and dispatched
+   from Python. This prevents compilation OOM on multi-molecule systems
+   (e.g., Rh-enamide's 9 molecules across 4 topology groups).
 
-### Rh-enamide (9 mols, 182 params, organometallic, frequency-only)
+### Rh-enamide (9 mols, 182 params, organometallic)
+
+!!! note "Frequency-only historical data"
+    The timing data below used a **frequency-only** objective with the
+    old full-FF parameter scope. These numbers are valid for
+    CPU-vs-GPU comparison but do not represent the paper's multi-target
+    methodology. See [Rh-enamide](../systems/rh-enamide.md) for
+    multi-target results.
 
 | Path | Configuration | s / eval | Wall time |
 |------|--------------|---------:|----------:|
@@ -83,7 +90,7 @@ as the OpenMM sequential row (28.7). Two reasons it does not:
 | JAX (harmonic) | L-BFGS-B (FD), GPU | 12.6 | 391 s (1.4× faster) |
 | JAX MM3 grad-simp (analytical) | GPU | — | ~25 min |
 
-Source: [GPU Acceleration](gpu.md), [Rh-Enamide](rh-enamide.md).
+Source: [GPU Acceleration](gpu.md), [Rh-Enamide](../systems/rh-enamide.md).
 
 For the realistic case study, **GPU helps because the per-evaluation
 arithmetic is finally large enough to dominate kernel launch overhead.**
@@ -114,18 +121,18 @@ acceleration in the project.
 
 The "analytical path" today does not include:
 
-- **`vmap` over molecules.** ~~Deferred~~ — **Done** (PR #264).
-  `JaxLoss` now groups molecules by topology and uses `jax.vmap` for
-  Hessian batching within each group. 25% loss-eval speedup on
-  Rh-enamide (632 → 472 ms). Molecules with different topologies still
-  use a small outer loop (no padding, no eigendecomposition corruption).
+- **`vmap` over molecules.** Replaced by **per-molecule JIT splitting**
+  — each molecule's loss + gradient is compiled into its own small XLA
+  program, dispatched from Python, and summed.  This avoids compilation
+  OOM on multi-molecule systems (where the old monolithic graph exceeded
+  32 GB VRAM).  The per-molecule approach trades vmap parallelism for
+  compilation safety; each cached evaluation takes ~7 s for 9 molecules.
 - **Geometry references (bond_length, bond_angle, torsion_angle) via
-  implicit differentiation.** ~~Deferred~~ — **Done** (PR #249).
+  implicit differentiation.** **Done.**
   `jaxopt.LBFGS(implicit_diff=True)` relaxes coordinates at the current
   parameters; the outer `jax.grad` gets exact `∂x*/∂p` via the implicit
   function theorem.  Non-convergence fallback adds a penalty when the
-  inner solver fails to converge (PR #269).  Tested on CH₃F with mixed
-  frequency + geometry objectives.
+  inner solver fails to converge.
 - **Stretch-bend cross-term in OpenMM/Tinker.** The JAX engine now
   computes stretch-bend energy; OpenMM and Tinker do not yet.
   `StretchBendParam` is in `ForceField`, and the MM3 `.fld` loader
@@ -140,9 +147,9 @@ will be revisited when a real workflow makes them necessary.
 
 ## Where the numbers come from
 
-- CH₃F rows: [`benchmarks/ch3f/`](https://github.com/ericchansen/q2mm/tree/master/benchmarks/ch3f)
-  (golden fixtures committed to the repo).
-- Rh-enamide rows: [`benchmarks/rh-enamide/`](https://github.com/ericchansen/q2mm/tree/master/benchmarks/rh-enamide).
+- CH₃F rows: [`q2mm-data/benchmarks/ch3f/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f)
+  (golden fixtures archived in the data repo).
+- Rh-enamide rows: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `rh-enamide/`.
 - Architectural background: [Architecture](../how-it-works/architecture.md).
 - Theory of analytical-gradient observables:
   [Theory & Methods](../how-it-works/theory.md).

@@ -109,23 +109,27 @@ class GeometryEvaluator:
             needed_kinds = self.GEOMETRY_KINDS
 
         _energy, _atoms, opt_coords = engine.minimize(mol, ff)
-        opt_mol = Q2MMMolecule(
-            symbols=mol.symbols,
-            geometry=opt_coords,
-            name=mol.name,
-            atom_types=list(mol.atom_types),
-            bond_tolerance=mol.bond_tolerance,
-        )
 
+        # Use the ORIGINAL molecule's bond/angle/torsion topology —
+        # bonding is a user-level decision from the QM input, not
+        # something to re-detect from MM-optimized coordinates.
         result = GeometryResult()
 
         if "bond_length" in needed_kinds:
-            result.bond_lengths = [b.length for b in opt_mol.bonds]
-            result.bond_lengths_by_atoms = {tuple(sorted((b.atom_i, b.atom_j))): b.length for b in opt_mol.bonds}
+            for bond in mol.bonds:
+                length = float(np.linalg.norm(opt_coords[bond.atom_j] - opt_coords[bond.atom_i]))
+                result.bond_lengths.append(length)
+                key = tuple(sorted((bond.atom_i, bond.atom_j)))
+                result.bond_lengths_by_atoms[key] = length
 
         if "bond_angle" in needed_kinds:
-            result.bond_angles = [a.value for a in opt_mol.angles]
-            result.bond_angles_by_atoms = {(a.atom_i, a.atom_j, a.atom_k): a.value for a in opt_mol.angles}
+            for angle in mol.angles:
+                v1 = opt_coords[angle.atom_i] - opt_coords[angle.atom_j]
+                v2 = opt_coords[angle.atom_k] - opt_coords[angle.atom_j]
+                cos_val = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+                value = float(np.degrees(np.arccos(np.clip(cos_val, -1.0, 1.0))))
+                result.bond_angles.append(value)
+                result.bond_angles_by_atoms[(angle.atom_i, angle.atom_j, angle.atom_k)] = value
 
         if "torsion_angle" in needed_kinds:
             result.torsion_coords = opt_coords

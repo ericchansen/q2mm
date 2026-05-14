@@ -5,7 +5,7 @@ Usage::
     q2mm-benchmark                              # Run CH3F (default) across all backends
     q2mm-benchmark --system rh-enamide          # Run Rh-enamide (9 molecules)
     q2mm-benchmark --backend openmm             # Only OpenMM backend
-    q2mm-benchmark --optimizer L-BFGS-B         # Only L-BFGS-B optimizer
+    q2mm-benchmark --optimizer scipy-lbfgsb      # Only SciPy L-BFGS-B optimizer
     q2mm-benchmark --output results/            # Save to custom directory
     q2mm-benchmark --no-save                    # Run without saving results
     q2mm-benchmark --load results/              # Load saved results and print report
@@ -14,7 +14,7 @@ Usage::
     q2mm-benchmark --preflight                  # Check GPU/platform environment
 
 By default, results (JSON + force field files) are saved to
-``./benchmark_results/``.  Use ``--no-save`` to disable.
+``./results/``.  Use ``--no-save`` to disable.
 """
 
 from __future__ import annotations
@@ -56,38 +56,47 @@ def _discover_backends() -> list[tuple[str, type, str]]:
     return backends
 
 
-def _optimizer_configs() -> list[tuple[str, dict]]:
+def _optimizer_configs() -> list[tuple[str, str, dict]]:
     """Build the optimizer configuration list.
 
     Returns:
-        list[tuple[str, dict]]: List of ``(label, config_dict)`` tuples.
-            Each ``config_dict`` contains at minimum a ``'method'`` key.
-            Gradient-using optimizers carry ``jac`` or ``full_jac`` to
-            control gradient mode; derivative-free methods do not.
+        list[tuple[str, str, dict]]: ``(key, label, config_dict)`` tuples.
+            *key* is a unique kebab-case slug used for ``--optimizer``
+            matching.  *label* is a human-readable display name for
+            leaderboard output.  *config_dict* contains at minimum a
+            ``'method'`` key.
 
     """
-    configs: list[tuple[str, dict]] = [
-        ("L-BFGS-B", {"method": "L-BFGS-B"}),
-        ("L-BFGS-B", {"method": "L-BFGS-B", "jac": None}),
-        ("Nelder-Mead", {"method": "Nelder-Mead"}),
-        ("Powell", {"method": "Powell"}),
-        ("grad-simp", {"method": "cycling"}),
-        ("grad-simp", {"method": "cycling", "full_jac": "auto"}),
-        ("optax:adam", {"method": "optax:adam"}),
-        ("optax:adam+cosine", {"method": "optax:adam", "schedule": "cosine"}),
-        ("optax:adagrad", {"method": "optax:adagrad"}),
-        ("optax:sgd", {"method": "optax:sgd"}),
-        ("basinhopping (T=1.0)", {"method": "basinhopping", "niter": 25}),
-        ("basinhopping (T=0.5)", {"method": "basinhopping", "niter": 25, "T": 0.5}),
-        ("multi:L-BFGS-B (n=5)", {"method": "multi:L-BFGS-B", "n_starts": 5}),
-        ("multi:L-BFGS-B (n=10)", {"method": "multi:L-BFGS-B", "n_starts": 10}),
-        ("L-BFGS-B + L2(λ=0.01)", {"method": "L-BFGS-B", "regularization": 0.01}),
-        ("optax:adam + L2(λ=0.01)", {"method": "optax:adam", "regularization": 0.01}),
+    configs: list[tuple[str, str, dict]] = [
+        # SciPy optimizers
+        ("scipy-lbfgsb", "SciPy L-BFGS-B", {"method": "L-BFGS-B"}),
+        ("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX direct)", {"method": "L-BFGS-B", "jac": "auto", "ratio_tol": None}),
+        ("scipy-lbfgsb-fd", "SciPy L-BFGS-B (FD)", {"method": "L-BFGS-B", "jac": None}),
+        ("scipy-nm", "Nelder-Mead", {"method": "Nelder-Mead"}),
+        ("scipy-powell", "Powell", {"method": "Powell"}),
+        # --- Cycling ---
+        ("grad-simp", "Grad-Simp", {"method": "cycling"}),
+        ("grad-simp-auto", "Grad-Simp (auto jac)", {"method": "cycling", "full_jac": "auto"}),
+        # --- Optax ---
+        ("optax-adam", "Optax Adam", {"method": "optax:adam"}),
+        ("optax-adam-cosine", "Optax Adam+cosine", {"method": "optax:adam", "schedule": "cosine"}),
+        ("optax-adagrad", "Optax AdaGrad", {"method": "optax:adagrad"}),
+        ("optax-sgd", "Optax SGD", {"method": "optax:sgd"}),
+        # Global / multi-start
+        ("basinhopping", "Basin-hopping (T=1.0)", {"method": "basinhopping", "niter": 25}),
+        ("basinhopping-cold", "Basin-hopping (T=0.5)", {"method": "basinhopping", "niter": 25, "T": 0.5}),
+        ("multi-lbfgsb-5", "Multi-start n=5", {"method": "multi:L-BFGS-B", "n_starts": 5}),
+        ("multi-lbfgsb-10", "Multi-start n=10", {"method": "multi:L-BFGS-B", "n_starts": 10}),
+        # Regularized variants
+        ("scipy-lbfgsb-l2", "SciPy L-BFGS-B+L2", {"method": "L-BFGS-B", "regularization": 0.01}),
+        ("optax-adam-l2", "Optax Adam+L2", {"method": "optax:adam", "regularization": 0.01}),
         # JaxOpt (end-to-end differentiable pipeline)
-        ("jaxopt:lbfgs", {"method": "jaxopt:lbfgs"}),
-        ("jaxopt:lbfgsb", {"method": "jaxopt:lbfgsb"}),
+        # Note: run_combo auto-applies regularization=0.01 for jaxopt:lbfgs
+        # when not explicitly set, preventing unbounded parameter drift.
+        ("jaxopt-lbfgs", "JaxOpt L-BFGS", {"method": "jaxopt:lbfgs"}),
+        ("jaxopt-lbfgsb", "JaxOpt L-BFGS-B", {"method": "jaxopt:lbfgsb"}),
         # Composed workflows
-        ("grad-simp (multi:L-BFGS-B inner)", {"method": "cycling", "full_method": "multi:L-BFGS-B"}),
+        ("grad-simp-multi", "Grad-Simp (multi inner)", {"method": "cycling", "full_method": "multi:L-BFGS-B"}),
     ]
     return configs
 
@@ -131,7 +140,7 @@ def _resolve_system(system_key: str) -> BenchmarkSystem:
 
 def _run_matrix(
     backends: list[tuple[str, type, str]],
-    optimizers: list[tuple[str, dict]],
+    optimizers: list[tuple[str, str, dict]],
     forms: list[tuple[str, str]],
     output_dir: Path | None = None,
     *,
@@ -139,15 +148,16 @@ def _run_matrix(
     data_dir: Path | None = None,
     platform: str | None = None,
     system_key: str = "ch3f",
-    max_iter: int = 10_000,
+    max_iter: int | None = None,
 ) -> list:
     """Run the full backend × form × optimizer matrix.
 
     Args:
         backends (list[tuple[str, type, str]]): Backend entries from
             ``_discover_backends()``.
-        optimizers (list[tuple[str, dict]]): Optimizer entries from
-            ``_optimizer_configs()``.
+        optimizers (list[tuple[str, str, dict]]): Optimizer entries from
+            ``_optimizer_configs()``.  Each tuple is
+            ``(key, label, config_dict)``.
         forms (list[tuple[str, str]]): Form entries from
             ``_functional_form_configs()``, filtered by ``--form``.
         output_dir (Path | None): Directory to save JSON result files.
@@ -161,7 +171,8 @@ def _run_matrix(
             backends.  ``None`` triggers auto-detection.
         system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
             ``"rh-enamide"``).
-        max_iter (int): Maximum optimizer iterations.
+        max_iter (int | None): Maximum optimizer iterations.  ``None``
+            lets each optimizer use its own default.
 
     Returns:
         list[BenchmarkResult]: One result per (backend, form, optimizer)
@@ -174,6 +185,9 @@ def _run_matrix(
     system_cfg = _resolve_system(system_key)
 
     results: list[BenchmarkResult] = []
+    n_success = 0
+    n_failed = 0
+    n_skipped = 0
     idx = 0
 
     # Create output directories up front so results can be saved
@@ -197,7 +211,9 @@ def _run_matrix(
                 engine = engine_cls()
             backend_name = engine.name
         except Exception as e:
+            print(f"  Skipping {backend_name}: {e}")
             print(f"  Skipping {backend_name}: {e}", file=sys.stderr)
+            n_skipped += 1
             continue
 
         # Determine which forms this engine supports
@@ -207,7 +223,7 @@ def _run_matrix(
             if supported and form_value not in supported:
                 continue
 
-            # Reload system data per-form (freq_ref depends on form)
+            # Reload system data per-form (reference data depends on form)
             try:
                 loader_kwargs: dict[str, Any] = {"functional_form": form_value}
                 if system_key == "ch3f" and data_dir is not None:
@@ -219,13 +235,17 @@ def _run_matrix(
             except Exception as e:
                 print(
                     f"  Skipping {backend_name}/{form_label}: cannot load {system_key} data: {e}",
+                )
+                print(
+                    f"  Skipping {backend_name}/{form_label}: cannot load {system_key} data: {e}",
                     file=sys.stderr,
                 )
+                n_skipped += 1
                 continue
 
             molecule_name = sys_data.metadata.get("molecule_name", system_key)
 
-            for opt_label, opt_config in optimizers:
+            for opt_key, opt_label, opt_config in optimizers:
                 idx += 1
                 combo = f"{backend_name} + {form_label} + {opt_label}"
                 print(f"  [{idx}] {combo} ...", end=" ", flush=True)
@@ -247,10 +267,11 @@ def _run_matrix(
                     # Tag the result with display-facing labels
                     r.metadata["functional_form"] = form_value
                     r.metadata["optimizer"] = opt_label
+                    r.metadata["optimizer_key"] = opt_key
 
                     elapsed = time.perf_counter() - t0
                     results.append(r)
-
+                    n_success += 1
                     # Save immediately so kills don't lose completed work
                     if results_dir is not None and ff_dir is not None:
                         stem = benchmark_stem(r.metadata)
@@ -277,15 +298,38 @@ def _run_matrix(
                         print(f"RMSD={rmsd:.1f}  ({elapsed:.1f}s)")
 
                     if not leaderboard_only:
-                        for table in detailed_report(r, combo_label=combo):
-                            table.flush()
+                        detail_tables = detailed_report(r, combo_label=combo)
+                        # Write detailed tables (per-frequency, per-parameter)
+                        # to a log file to keep console output clean.
+                        if results_dir is not None:
+                            log_path = results_dir / f"{stem}_detail.txt"
+                            with open(log_path, "w") as f:
+                                for table in detail_tables:
+                                    f.write(table.to_string() + "\n")
+                        else:
+                            for table in detail_tables:
+                                table.flush()
 
                 except Exception as e:
+                    print(f"FAILED: {e}")
                     print(f"FAILED: {e}", file=sys.stderr)
+                    n_failed += 1
+
+                    # Best-effort GPU memory recovery after JAX OOM
+                    if "RESOURCE_EXHAUSTED" in str(e):
+                        try:
+                            import jax
+
+                            jax.clear_caches()
+                            print("  (cleared JAX caches — consider using --optimizer jaxopt-lbfgs for GPU)")
+                        except ImportError:
+                            pass
+
                     err_result = BenchmarkResult(
                         metadata={
                             "backend": backend_name,
                             "optimizer": opt_label,
+                            "optimizer_key": opt_key,
                             "functional_form": form_value,
                             "molecule": molecule_name,
                             "source": "q2mm",
@@ -303,6 +347,7 @@ def _run_matrix(
     if output_dir is not None:
         print(f"\n  Results saved to: {output_dir}/")
 
+    print(f"\nMatrix complete: {n_success} succeeded, {n_failed} failed, {n_skipped} skipped")
     return results
 
 
@@ -473,16 +518,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--optimizer",
         nargs="*",
-        metavar="NAME",
-        help="Run only these optimizers (e.g. L-BFGS-B Powell). Default: all.",
+        metavar="KEY",
+        help="Run only these optimizers by key (e.g. jaxopt-lbfgs optax-adam). "
+        "Use --list to see available keys. Default: all.",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
         metavar="DIR",
-        default=Path("benchmark_results"),
-        help="Save results to this directory (default: ./benchmark_results/). Use --no-save to disable.",
+        default=Path("results"),
+        help="Save results to this directory (default: ./results/). Use --no-save to disable.",
     )
     parser.add_argument(
         "--no-save",
@@ -523,8 +569,9 @@ def main(argv: list[str] | None = None) -> int:
         "--max-iter",
         type=int,
         metavar="N",
-        default=10_000,
-        help="Maximum optimizer iterations (default: 10000). Use a small value for quick benchmarks.",
+        default=None,
+        help="Override optimizer iteration limit. If not specified, each optimizer "
+        "uses its own default: JaxOpt 200, Optax 2000, SciPy 500, cycling 200/pass.",
     )
     parser.add_argument(
         "--preflight",
@@ -562,8 +609,8 @@ def main(argv: list[str] | None = None) -> int:
         "--learning-rate",
         type=float,
         metavar="FLOAT",
-        default=0.01,
-        help="Optax optimizer: learning rate (default: 0.01).",
+        default=0.001,
+        help="Optax optimizer: learning rate (default: 0.001).",
     )
     parser.add_argument(
         "--optax-max-steps",
@@ -614,8 +661,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {label:<12} ({value})")
 
         print("\nAvailable optimizers:")
-        for label, config in all_optimizers:
-            print(f"  {label:<24} {config}")
+        print(f"  {'KEY':<22} {'LABEL':<28} METHOD")
+        print(f"  {'---':<22} {'-----':<28} ------")
+        for key, label, config in all_optimizers:
+            print(f"  {key:<22} {label:<28} {config.get('method', '?')}")
 
         print()
         return 0
@@ -646,14 +695,14 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Available: {[m for _, _, m in all_backends]}", file=sys.stderr)
                 return 1
 
-        # Filter optimizers
+        # Filter optimizers by unique key (exact match only)
         optimizers = all_optimizers
         if args.optimizer:
-            filter_names = {o.lower() for o in args.optimizer}
-            optimizers = [(l, c) for l, c in all_optimizers if l.lower() in filter_names]
+            filter_keys = {o.lower() for o in args.optimizer}
+            optimizers = [(k, l, c) for k, l, c in all_optimizers if k in filter_keys]
             if not optimizers:
                 print(f"Error: no matching optimizers for {args.optimizer}", file=sys.stderr)
-                print(f"Available: {[l for l, _ in all_optimizers]}", file=sys.stderr)
+                print(f"Available keys: {', '.join(k for k, _, _ in all_optimizers)}", file=sys.stderr)
                 return 1
 
         # Inject cycling-specific CLI args into the cycling optimizer config
@@ -662,18 +711,22 @@ def main(argv: list[str] | None = None) -> int:
             "max_cycles": args.max_cycles,
             "convergence": args.convergence,
         }
-        optimizers = [(l, {**c, **cycling_kwargs}) if c.get("method") == "cycling" else (l, c) for l, c in optimizers]
+        optimizers = [
+            (k, l, {**c, **cycling_kwargs}) if c.get("method") == "cycling" else (k, l, c) for k, l, c in optimizers
+        ]
 
-        # Inject optax-specific CLI args into optax optimizer configs
+        # Inject optax-specific CLI args into optax optimizer configs.
+        # --max-iter takes precedence over --optax-max-steps when provided.
+        optax_max = args.max_iter if args.max_iter is not None else args.optax_max_steps
         optax_kwargs = {
             "learning_rate": args.learning_rate,
-            "max_steps": args.optax_max_steps,
+            "max_steps": optax_max,
         }
         optimizers = [
-            (l, {**c, **optax_kwargs})
+            (k, l, {**c, **optax_kwargs})
             if isinstance(c.get("method"), str) and c["method"].startswith("optax:")
-            else (l, c)
-            for l, c in optimizers
+            else (k, l, c)
+            for k, l, c in optimizers
         ]
 
         # Filter forms: --form overrides system defaults
@@ -692,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  System:     {args.system}")
         print(f"  Backends:   {', '.join(n for n, _, _ in backends)}")
         print(f"  Forms:      {', '.join(l for l, _ in forms)}")
-        print(f"  Optimizers: {', '.join(l for l, _ in optimizers)}")
+        print(f"  Optimizers: {', '.join(l for _, l, _ in optimizers)}")
         print(f"  Max combos: {len(backends) * len(forms) * len(optimizers)}")
         print("  (combos filtered by engine support)\n")
 
@@ -710,6 +763,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if not results:
         print("No results to report.", file=sys.stderr)
+        return 1
+
+    # Exit non-zero if every result was an error
+    has_success = any(r.optimized is not None for r in results)
+    if not has_success:
+        print("All benchmark combos failed.", file=sys.stderr)
         return 1
 
     # Print leaderboard summary at the end

@@ -6,15 +6,20 @@ By systematically minimizing the difference between QM-calculated and MM-calcula
 molecular properties — energies, geometries, and vibrational frequencies — Q2MM
 produces force fields with near-QM accuracy at a fraction of the computational cost.
 
+Use Q2MM when you need accurate force field parameters for molecular
+systems where standard parameters don't exist — especially
+**transition-state chemistry**, where no off-the-shelf force field
+captures the unusual bonding at the reaction's energy barrier.
+
 ---
 
 ## Why Q2MM?
 
 - **QM accuracy, MM speed** — Parameterize force fields that reproduce QM results
-  without the QM runtime cost.
+  with near-QM accuracy ([benchmarks](systems/small-molecules.md)) without the QM runtime cost.
 - **Hessian-informed starting points** — QFUERZA extracts bond and angle
-  force constants from the QM Hessian, giving the optimizer a physically motivated
-  initial guess.
+  force constants from the QM Hessian (the matrix of second derivatives of energy with respect
+  to atomic positions), giving the optimizer a physically motivated initial guess.
 - **Open-source backends** — First-class support for [OpenMM](https://openmm.org/),
   [JAX](https://jax.readthedocs.io/), [JAX-MD](https://jax-md.readthedocs.io/),
   [Tinker](https://dasher.wustl.edu/tinker/), and [Psi4](https://psicode.org/).
@@ -30,50 +35,75 @@ produces force fields with near-QM accuracy at a fraction of the computational c
 
 ## Architecture
 
+The diagram below shows how data flows through q2mm — from QM reference
+data through the model layer to optimized force field parameters.
+
 ```mermaid
-flowchart LR
-    subgraph IO["I/O"]
-        direction TB
-        G[Gaussian]
-        M[MOL2]
-        J[Jaguar]
-        MM[MacroModel]
-        FFio[MM3 / Tinker / AMBER]
+flowchart TD
+    %% ── Input sources ──
+    subgraph Inputs["📂 Input Data"]
+        direction LR
+        QM["🔬 QM Data<br/><small>Gaussian · Jaguar · Psi4</small>"]
+        STRUCT["🧬 Structures<br/><small>MOL2 · MacroModel</small>"]
+        FFIN["📄 Force Fields<br/><small>MM3 · Tinker · AMBER</small>"]
     end
 
-    subgraph Models["Model Layer"]
-        direction TB
-        MOL[Q2MMMolecule]
-        FF[ForceField]
-        RD[ReferenceData]
+    %% ── Models ──
+    subgraph Models["🧱 Data Models"]
+        direction LR
+        MOL["Q2MMMolecule<br/><small>geometry + topology</small>"]
+        RD["ReferenceData<br/><small>QM Hessians + freqs</small>"]
+        FF["ForceField<br/><small>bonds · angles · torsions · vdW</small>"]
     end
 
-    Q[QFUERZA]
-    OBJ[Objective]
-    OPT[Optimizer]
-
-    subgraph Backends["MM Backends"]
-        direction TB
-        OMM[OpenMM]
-        TK[Tinker]
-        JX[JAX]
+    %% ── Core pipeline ──
+    subgraph Pipeline["⚙️ Optimization Pipeline"]
+        direction LR
+        QFUERZA["QFUERZA<br/><small>initial estimate</small>"]
+        OBJ["Objective<br/><small>QM−MM residuals</small>"]
+        OPT["Optimizer<br/><small>SciPy · Optax · JaxOpt</small>"]
     end
 
-    IO --> Models
-    Models --> Q --> FF
-    FF --> OBJ
+    %% ── Backends ──
+    subgraph Backends["🖥️ MM Backends"]
+        direction LR
+        OMM["OpenMM"]
+        JX["JAX<br/><small>differentiable</small>"]
+        TK["Tinker"]
+    end
+
+    %% ── Output ──
+    FFOUT["✅ Optimized Force Field<br/><small>.fld · .prm · .frcmod · .xml</small>"]
+
+    %% ── Connections ──
+    QM --> RD
+    QM --> MOL
+    STRUCT --> MOL
+    FFIN --> FF
+
+    MOL --> QFUERZA
+    FF --> QFUERZA
+    QFUERZA -->|"initial params"| FF
+
     RD --> OBJ
+    FF --> OBJ
+    MOL --> OBJ
     OBJ --> OPT
-    OPT -->|evaluate| Backends
-    Backends -->|energies, gradients| OBJ
-    OPT -->|optimized| FF
+
+    OPT <-->|"energies · Hessians · gradients"| Backends
+    OPT -->|"updated params"| FF
+
+    OPT --> FFOUT
 ```
 
 **Pipeline overview:**
 
-1. **I/O modules** read QM output files (Gaussian, Jaguar), structure files (MOL2,
-   MacroModel), and force field files (MM3, Tinker, AMBER) into unified
-   `Q2MMMolecule`, `ReferenceData`, and `ForceField` objects.
+1. **I/O modules** read three kinds of external data into q2mm's unified models:
+    - **QM programs** (Gaussian `.log`/`.fchk`, Jaguar `.in`/`.out`, or Psi4 live calculations) → `ReferenceData` (Hessians, frequencies, energies) and `Q2MMMolecule` (geometry)
+    - **Molecular structures** (MOL2 `.mol2`, MacroModel `.mmo`) → `Q2MMMolecule` (atom coordinates, bond connectivity)
+    - **Force field parameters** (MM3 `.fld`, Tinker `.prm`, AMBER `.frcmod`) → `ForceField` (bonds, angles, torsions, vdW)
+
+    Optimized parameters are written back via the same force field modules, plus OpenMM `.xml` export.
 2. **QFUERZA estimation** projects the QM Hessian onto internal coordinates to extract
    physically motivated initial bond and angle force constants.
 3. **Objective function** computes weighted residuals between QM reference values and
@@ -82,3 +112,10 @@ flowchart LR
    to minimize the objective, iterating over parameter updates.
 5. **MM backends** (OpenMM, Tinker, or JAX) evaluate energies and gradients at each
    optimization step.
+
+---
+
+## Next steps
+
+New to Q2MM? Start with [Getting Started](getting-started.md) for installation,
+then follow the [Tutorial](tutorial.md) for a complete parameterization walkthrough.

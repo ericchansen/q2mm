@@ -8,7 +8,7 @@ non-trivial from a poor starting point. No single optimizer handles both
 cases well.
 
 This guide tells you **what to do** for your system. It recommends concrete
-workflows grounded in [CH₃F benchmark evidence](../benchmarks/small-molecules.md),
+workflows grounded in [CH₃F benchmark evidence](../systems/small-molecules.md),
 then links to source code for API details.
 
 ---
@@ -21,7 +21,7 @@ then links to source code for API details.
 | ≤ 10 params, MM3 form | [Workflow B](#workflow-b-small-rugged) | Multi-start finds basins single-start misses (28.7 vs 579 RMSD) |
 | 10–50 params, any form | [Workflow C](#workflow-c-medium-and-large-systems) | Grad-simp cycling combines gradient speed with simplex robustness |
 | 50+ params | [Workflow C](#workflow-c-medium-and-large-systems) + [L2](#l2-regularization) | Regularization prevents parameter drift in under-determined systems |
-| JAX engine, want JIT-compiled optimization | [Workflow D](#workflow-d-end-to-end-differentiable-jaxopt) | Entire loss+grad+step runs inside JAX — no Python overhead |
+| JAX engine, multi-molecule TS systems | [Workflow D](#workflow-d-end-to-end-differentiable-jax) | Per-molecule JaxLoss analytical gradients via scipy L-BFGS-B |
 
 Every workflow assumes **QFUERZA initialization** — run
 `estimate_force_constants()` before optimization. QFUERZA puts you in the
@@ -56,8 +56,7 @@ for.
 
 - **Optax Adam** (990–1001 RMSD) — adaptive learning rates can't exploit
   curvature the way L-BFGS-B can on a smooth surface
-- **L2 regularization** (993 RMSD) — the penalty prevents parameters from
-  reaching the deep basin. Don't regularize well-conditioned problems.
+- **L2 regularization** — can hurt well-conditioned problems (see [L2 Regularization](#l2-regularization)).
 - **FD-only gradients** (1048 RMSD) — finite-difference frequency gradients
   are too noisy to guide L-BFGS-B from the QFUERZA starting point
 
@@ -92,7 +91,7 @@ misses:
 | Strategy | CH₃F MM3 RMSD | Notes |
 |----------|-------------:|-------|
 | L-BFGS-B (single start) | 579.0 | Stuck in poor local minimum |
-| L-BFGS-B + L2(λ=0.01) | 133.5 | L2 steers away from the bad basin |
+| L-BFGS-B + L2(λ=0.01) | 133.5 | Stabilized with [L2 regularization](#l2-regularization) |
 | optax Adam | 56.3 | Momentum navigates rugged landscape |
 | **multi-start n=10 (OpenMM)** | **28.7–46.2** | **Best strategy — stochastic, varies by run** |
 
@@ -100,7 +99,7 @@ Multi-start is the recommended approach because it's simple and consistently
 finds the best basins on rugged landscapes.
 
 **Does Adam refinement help after multi-start?** In
-[composed benchmarks](../benchmarks/small-molecules.md#composed-workflows),
+[composed benchmarks](../systems/small-molecules.md#composed-workflows),
 running optax Adam from the multi-start winner barely changed the result:
 46.2 → 46.1 on OpenMM (FD gradients limit Adam), 563.8 → 563.8 on JAX
 (same local minimum). Multi-start alone finds the basin; refinement adds
@@ -113,9 +112,7 @@ diminishing returns.
   match multi-start n=10 (28.7). Basin-hopping is more sensitive to
   temperature tuning — T=1.0 produced the *worst* result (1105 RMSD) by
   accepting too many uphill moves.
-- **L2 regularization** (λ=0.01) improved single-start L-BFGS-B by 4×
-  (579 → 134) by preventing parameter drift into the bad basin. It's a
-  good safety net when you can't afford multi-start.
+- **L2 regularization** can stabilize rugged single-start fits when you cannot afford multi-start (see [L2 Regularization](#l2-regularization)).
 
 **What doesn't work here:**
 
@@ -153,23 +150,8 @@ result = loop.run()
 print(result.summary())
 ```
 
-**How it works:** Each cycle:
+**How it works:** Grad-simp cycling alternates between gradient-based full-space optimization and Nelder-Mead simplex refinement of the most sensitive parameters. See [Theory & Methods — Stage 4](theory.md#stage-4-optimization) for the full mechanics. In practice, this keeps fast global progress from L-BFGS-B while simplex focuses on the few parameters gradients handle poorly.
 
-1. **Full-space gradient pass** — L-BFGS-B on all N parameters
-2. **Sensitivity analysis** — rank every parameter by `simp_var = d2/d1²`
-   (high gradient response relative to curvature = best for simplex)
-3. **Subspace simplex** — Nelder-Mead on the top `max_params` parameters
-4. **Convergence check** — stop when improvement drops below threshold
-
-```mermaid
-flowchart LR
-    A[L-BFGS-B] --> B[Sensitivity]
-    B --> C[Select lowest simp_var]
-    C --> D[Nelder-Mead]
-    D --> E{Converged?}
-    E -->|No| A
-    E -->|Yes| F[Done]
-```
 
 **Why this works:** L-BFGS-B quickly converges most parameters, then
 Nelder-Mead polishes the stubborn ones that gradients can't handle.
@@ -203,7 +185,7 @@ result = loop.run()
 ```
 
 !!! warning "Evidence: this composition doesn't outperform plain cycling"
-    In [CH₃F benchmarks](../benchmarks/small-molecules.md#composed-workflows),
+    In [CH₃F benchmarks](../systems/small-molecules.md#composed-workflows),
     grad-simp with multi-start inner achieved **592 RMSD on OpenMM** and
     **527 RMSD on JAX** — comparable to or worse than plain grad-simp
     (586 / 579). The random restarts within each cycle disrupt inter-cycle
@@ -229,32 +211,34 @@ loop = OptimizationLoop(objective, max_params=3, max_cycles=10)
 result = loop.run()
 ```
 
-The L2 penalty flows through every evaluator automatically — no
-optimizer-specific code needed.
+L2 regularization can stabilize under-determined cycling runs (see [L2 Regularization](#l2-regularization)).
 
 ---
 
-## Workflow D: End-to-End Differentiable (JaxOpt)
+## Workflow D: End-to-End Differentiable (JAX)
 
-**When:** You want JIT-compiled loss *and* optimizer in a single JAX
-computation graph — no Python callbacks, no finite-difference overhead.
+**When:** JAX engine with multi-molecule TS systems, eigenmatrix or
+geometry references — you want analytical gradients without
+finite-difference overhead.
 
-**Recipe:** Use `JaxOptOptimizer` with `method="lbfgs"` or `"lbfgsb"`.
+**Recipe:** Use `ScipyOptimizer` with `jac="auto"` — it auto-detects
+JaxEngine and routes gradients through JaxLoss.
 
 ```python
-from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200)
+optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="auto")
 result = optimizer.optimize(objective)
 print(result.summary())
 ```
 
-**How it works:** `JaxOptOptimizer` converts the Python
-`ObjectiveFunction` into an `ObjectiveSpec` — a frozen data snapshot —
-and passes it to `JaxLoss`, a JIT-compiled JAX function that computes
-loss *and* gradients entirely on-device (CPU or GPU). The
-[jaxopt](https://jaxopt.github.io/) L-BFGS solver then runs inside JAX,
-eliminating the Python–JAX boundary on every iteration.
+**How it works:** When the engine is a JaxEngine and `jac="auto"`,
+ScipyOptimizer builds a `JaxLoss` — a collection of per-molecule
+JIT-compiled loss+gradient functions. Each molecule's Hessian +
+eigenmatrix + energy computation is compiled into its own small XLA
+program. Scipy calls this from Python at each iteration (treating it
+as a black-box function returning `(loss, grad)`), so no single XLA
+program needs to contain all molecules.
 
 **Supported reference types:**
 
@@ -263,18 +247,19 @@ eliminating the Python–JAX boundary on every iteration.
 | Energy | ✅ | Weighted residuals |
 | Frequency | ✅ | Closed-form sensitivity via eigenvalue derivatives |
 | Hessian elements | ✅ | Raw Cartesian Hessian entries |
-| Eigenmatrix (Q^T H Q) | ✅ | Diagonal projection terms |
-| Geometry | ❌ | Requires differentiable geometry optimization |
+| Eigenmatrix (Q^T H Q) | ✅ | Diagonal and off-diagonal projection terms |
+| Geometry | ✅ | Bond lengths, angles, torsions via `jaxopt.LBFGS(implicit_diff=True)` inner minimization |
 
-**When to use this vs SciPy L-BFGS-B:**
+**When to use this vs SciPy FD:**
 
-- JaxOpt is faster per-iteration because the entire loss+grad+step
-  happens inside JIT-compiled JAX — no Python overhead.
-- SciPy L-BFGS-B works with *any* engine (OpenMM, Tinker, etc.).
-  JaxOpt requires the JAX engine.
-- Both support bounds (L-BFGS-B variant).
+- JaxLoss provides analytical gradients for all reference types
+  including geometry — no finite-difference overhead.
+- First evaluation is slow (~5 min) due to per-molecule JIT
+  compilation. Subsequent evaluations are fast (~7 s for 9 molecules).
+- SciPy L-BFGS-B with FD gradients works with any engine but is
+  O(n_params) evaluations per step.
 
-**Benchmark results (CH₃F, see [Small Molecules](../benchmarks/small-molecules.md)):**
+**Benchmark results (CH₃F, see [Small Molecules](../systems/small-molecules.md)):**
 
 | Form | Device | Optimizer | RMSD (cm⁻¹) | Time | eval/s |
 |------|--------|-----------|:-----------:|-----:|-------:|
@@ -284,31 +269,11 @@ eliminating the Python–JAX boundary on every iteration.
 | mm3 | GPU | jaxopt:lbfgs | 578.7 | 16.2s | 18.3 |
 | mm3 | GPU | SciPy L-BFGS-B (A) | 579.0 | 2.2s | 31.4 |
 
-JaxOpt matches SciPy's solution quality on both functional forms. SciPy
-is faster wall-clock (no JIT compilation overhead) but JaxOpt uses fewer
-function evaluations due to exact gradients. On rugged landscapes (MM3),
-neither method escapes the 579 cm⁻¹ local minimum — use
-[multi-start](../benchmarks/small-molecules.md) or
-[optax Adam](../benchmarks/small-molecules.md) instead.
-
-**Using JaxOpt in grad-simp cycling:**
-
-```python
-from q2mm.optimizers.cycling import OptimizationLoop
-
-loop = OptimizationLoop(
-    objective,
-    full_method="jaxopt:lbfgs",   # or "jaxopt:lbfgsb"
-    simp_method="Nelder-Mead",
-    max_cycles=10,
-    full_maxiter=200,
-)
-result = loop.run()
-```
-
-The `jaxopt:` prefix tells the cycling loop to dispatch to
-`JaxOptOptimizer` instead of SciPy for the gradient phase. This
-combines JIT-compiled gradient passes with simplex polishing.
+!!! note "CH₃F is a single-molecule system"
+    On single-molecule systems, `JaxOptOptimizer` with monolithic JIT
+    compilation still works well (no OOM risk). For multi-molecule TS
+    systems, use `ScipyOptimizer(jac="auto")` which routes through the
+    per-molecule JaxLoss dispatch.
 
 ---
 
@@ -435,9 +400,31 @@ top harmonic results on CH₃F all use analytical or auto mode.
 
 ---
 
+## GPU Optimizer Recommendations
+
+For multi-molecule TS systems with the multi-target objective
+(eigenmatrix + geometry, frozen base-FF params):
+
+| Optimizer | Use case | Notes |
+|-----------|----------|-------|
+| **ScipyOptimizer L-BFGS-B** (`jac="auto"`) | Default for TS systems | Auto-routes through JaxLoss analytical gradients. ~8 s/eval on 9-molecule Rh-enamide (GPU). |
+| JaxOptOptimizer L-BFGS | Single-molecule systems | Monolithic JIT is fast for small systems; pathologically slow on multi-molecule due to internal line search compilation. |
+| OptaxOptimizer Adam | Exploration | First-order; useful for rugged landscapes where L-BFGS-B gets stuck. |
+
+!!! tip "Start with ScipyOptimizer"
+    Use `ScipyOptimizer(method="L-BFGS-B", jac="auto")` as the
+    default for JAX-engine workflows. It auto-detects JaxEngine,
+    builds per-molecule JaxLoss functions, and provides analytical
+    gradients to scipy's battle-tested L-BFGS-B implementation.
+
+See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
+detailed results and timing data.
+
+---
+
 ## Further Reading
 
 - [Tutorial: Step 6 — Optimize](../tutorial.md#step-6-optimise-the-force-field) — walkthrough of a single-shot optimization
-- [CH₃F Benchmarks](../benchmarks/small-molecules.md) — full 75-combo comparison matrix with RMSD, timing, and per-eval costs
-- [Rh-Enamide Benchmarks](../benchmarks/rh-enamide.md) — large-system case study (182 parameters)
+- [CH₃F Benchmarks](../systems/small-molecules.md) — full 75-combo comparison matrix with RMSD, timing, and per-eval costs
+- [Rh-Enamide Benchmarks](../systems/rh-enamide.md) — large-system case study (182 parameters)
 - [References](../references.md) — academic papers describing the Q2MM methodology

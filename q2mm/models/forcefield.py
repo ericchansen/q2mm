@@ -9,6 +9,7 @@ from __future__ import annotations
 
 
 import copy
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
@@ -60,6 +61,12 @@ class BondParam:
     env_id: str = ""  # Environment ID for disambiguating same-element params
     # (e.g., MM3 ff_row, atom type codes 'C1-F1' vs 'C2-F1')
     ff_row: int | None = None  # Source force-field row for exact legacy parity
+    bond_order: str = ""  # Bond order from .fld: "-" single, "=" double,
+    # "*" aromatic, "%" triple.  Empty = unknown.
+    context: str = ""  # MM3 context flags (e.g., "O200 0000"). Empty or
+    # "0000 0000" = generic (any context).
+    dipole_moment: float = 0.0  # Bond dipole in Debye (MM3 .fld P3 column)
+    frozen: bool = False
 
     @property
     def key(self) -> tuple[str, str]:
@@ -87,6 +94,7 @@ class AngleParam:
     ff_row: int | None = None  # Source force-field row for exact legacy parity
     ub_force_constant: float | None = None  # kcal/(mol·Å²), None = no UB term
     ub_equilibrium: float | None = None  # Å, None = no UB term
+    frozen: bool = False
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -112,6 +120,7 @@ class StretchBendParam:
     label: str = ""
     env_id: str = ""
     ff_row: int | None = None
+    frozen: bool = False
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -142,6 +151,7 @@ class TorsionParam:
     env_id: str = ""  # Environment ID for disambiguating same-element params
     ff_row: int | None = None  # Source force-field row for legacy parity
     is_improper: bool = False
+    frozen: bool = False
 
 
 @dataclass
@@ -155,6 +165,7 @@ class VdwParam:
     reduction: float = 0.0
     label: str = ""
     ff_row: int | None = None
+    frozen: bool = False
 
     def __post_init__(self) -> None:
         """Normalize atom_type and auto-extract element if not provided."""
@@ -270,15 +281,59 @@ class ForceField:
         base = sum(len(slots) * len(getattr(self, attr)) for attr, slots in self._PARAM_SLOTS)
         return base + 2 * len(self._ub_angles)
 
-    def get_bond(self, elem1: str, elem2: str, env_id: str = "") -> BondParam | None:
-        """Find bond parameter by element pair and optional environment ID."""
+    @property
+    def active_mask(self) -> np.ndarray:
+        """Boolean mask over get_param_vector() — True for active (non-frozen) params."""
+        mask: list[bool] = []
+        for attr, slots in self._PARAM_SLOTS:
+            for param in getattr(self, attr):
+                frozen = getattr(param, "frozen", False)
+                mask.extend([not frozen] * len(slots))
+        for angle in self._ub_angles:
+            frozen = getattr(angle, "frozen", False)
+            mask.extend([not frozen, not frozen])
+        return np.array(mask, dtype=bool)
+
+    @property
+    def n_active_params(self) -> int:
+        """Number of active (non-frozen) scalar parameters."""
+        return int(self.active_mask.sum())
+
+    def get_bond(
+        self,
+        elem1: str,
+        elem2: str,
+        env_id: str = "",
+        *,
+        bond_order: str = "",
+        prefer_generic_context: bool = False,
+    ) -> BondParam | None:
+        """Find bond parameter by element pair, env_id, and bond order.
+
+        When *prefer_generic_context* is True and multiple candidates
+        match, prefer the one with empty context (generic ``0000 0000``
+        fallback) over context-specific entries.
+        """
         key = tuple(sorted([elem1, elem2]))
+        candidates: list[BondParam] = []
         for b in self.bonds:
-            if b.key == key:
-                if env_id and b.env_id and b.env_id != env_id:
-                    continue
-                return b
-        return None
+            if b.key != key:
+                continue
+            if env_id and b.env_id and b.env_id != env_id:
+                continue
+            if bond_order and b.bond_order and b.bond_order != bond_order:
+                continue
+            candidates.append(b)
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+        # Multiple matches — prefer generic context if requested
+        if prefer_generic_context:
+            generic = [c for c in candidates if not c.context]
+            if generic:
+                return generic[0]
+        return candidates[0]
 
     def get_bonds(self, elem1: str, elem2: str) -> list[BondParam]:
         """Find ALL bond parameters matching an element pair."""
@@ -350,19 +405,138 @@ class ForceField:
             values.append(angle.ub_equilibrium)
         return np.array(values)
 
+    def get_param_names(self) -> list[str]:
+        """Build human-readable names for each parameter in get_param_vector() order."""
+        names: list[str] = []
+        for bond in self.bonds:
+            label = "-".join(bond.key) + (f"[{bond.env_id}]" if bond.env_id else "")
+            names.append(f"kb_{label}")
+            names.append(f"r0_{label}")
+        for angle in self.angles:
+            label = "-".join(angle.key) + (f"[{angle.env_id}]" if angle.env_id else "")
+            names.append(f"ka_{label}")
+            names.append(f"th0_{label}")
+        for torsion in self.torsions:
+            label = "-".join(torsion.elements) + f"_n{torsion.periodicity}"
+            if torsion.is_improper:
+                label += "_imp"
+            names.append(f"kt_{label}")
+        for stretch_bend in self.stretch_bends:
+            label = "-".join(stretch_bend.key) + (f"[{stretch_bend.env_id}]" if stretch_bend.env_id else "")
+            names.append(f"ksb_{label}")
+        for vdw in self.vdws:
+            label = vdw.atom_type or vdw.element
+            names.append(f"rvdw_{label}")
+            names.append(f"evdw_{label}")
+        for angle in self._ub_angles:
+            label = "-".join(angle.key) + (f"[{angle.env_id}]" if angle.env_id else "")
+            names.append(f"kub_{label}")
+            names.append(f"r13_{label}")
+        return names
+
+    def get_active_param_vector(self) -> np.ndarray:
+        """Get only the active (non-frozen) parameters as a flat vector."""
+        return self.get_param_vector()[self.active_mask]
+
+    def set_active_param_vector(self, vec: np.ndarray) -> None:
+        """Set only the active (non-frozen) parameters from a flat vector.
+
+        Frozen parameters are left unchanged.
+        """
+        if len(vec) != self.n_active_params:
+            raise ValueError(
+                f"Active parameter vector length {len(vec)} does not match "
+                f"expected {self.n_active_params} active parameters."
+            )
+        full = self.get_param_vector()
+        full[self.active_mask] = vec
+        self.set_param_vector(full)
+
+    def with_active_params(self, vec: np.ndarray) -> ForceField:
+        """Return a new ForceField with active parameters set from *vec*.
+
+        Frozen parameters retain their current values.
+        """
+        if len(vec) != self.n_active_params:
+            raise ValueError(
+                f"Active parameter vector length {len(vec)} does not match "
+                f"expected {self.n_active_params} active parameters."
+            )
+        full = self.get_param_vector()
+        full[self.active_mask] = vec
+        return self.with_params(full)
+
+    def get_active_param_names(self) -> list[str]:
+        """Get parameter names for active (non-frozen) parameters only."""
+        all_names = self.get_param_names()
+        mask = self.active_mask
+        return [name for name, is_active in zip(all_names, mask, strict=True) if is_active]
+
+    def get_active_step_sizes(self) -> np.ndarray:
+        """Get step sizes for active (non-frozen) parameters only."""
+        return self.get_step_sizes()[self.active_mask]
+
+    def get_active_bounds(self) -> np.ndarray:
+        """Get bounds for active (non-frozen) parameters only.
+
+        Returns array of shape (n_active_params, 2).
+        """
+        bounds = np.asarray(self.get_bounds(), dtype=float)
+        if bounds.size == 0:
+            return bounds.reshape(0, 2)
+        return bounds[self.active_mask]
+
     # --- Parameter matching with ff_row → env_id → element fallback ---
 
-    def match_bond(self, elements: tuple[str, str], env_id: str = "", ff_row: int | None = None) -> BondParam | None:
-        """Match a bond parameter using ff_row, then env_id, then elements."""
+    def match_bond(
+        self,
+        elements: tuple[str, str],
+        env_id: str = "",
+        ff_row: int | None = None,
+        *,
+        bond_order: str = "",
+        bond_length: float | None = None,
+    ) -> BondParam | None:
+        """Match a bond parameter using a priority chain.
+
+        Priority:
+        1. Exact ``ff_row`` match (highest — used by MacroModel path).
+        2. ``env_id`` + ``bond_order`` (typed atom pair + order).
+        3. ``env_id`` + closest ``equilibrium`` to ``bond_length``
+           (when bond_order is unknown but length is available).
+        4. ``env_id`` only, prefer generic context.
+        5. Element-only, prefer generic context (lowest).
+        """
+        # Tier 1: exact ff_row
         if ff_row is not None:
             for bond in self.bonds:
                 if bond.ff_row == ff_row:
                     return bond
-        if env_id:
-            matched = self.get_bond(elements[0], elements[1], env_id=env_id)
+
+        e0, e1 = elements[0], elements[1]
+
+        # Tier 2: env_id + bond_order
+        if env_id and bond_order:
+            matched = self.get_bond(e0, e1, env_id=env_id, bond_order=bond_order, prefer_generic_context=True)
             if matched is not None:
                 return matched
-        return self.get_bond(elements[0], elements[1])
+
+        # Tier 3: env_id + closest r₀ to bond_length
+        if env_id and bond_length is not None:
+            key = tuple(sorted([e0, e1]))
+            candidates = [b for b in self.bonds if b.key == key and (not b.env_id or b.env_id == env_id)]
+            if candidates:
+                best = min(candidates, key=lambda b: abs(b.equilibrium - bond_length))
+                return best
+
+        # Tier 4: env_id only, prefer generic context
+        if env_id:
+            matched = self.get_bond(e0, e1, env_id=env_id, prefer_generic_context=True)
+            if matched is not None:
+                return matched
+
+        # Tier 5: element-only, prefer generic context
+        return self.get_bond(e0, e1, prefer_generic_context=True)
 
     def match_angle(
         self, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
@@ -525,6 +699,73 @@ class ForceField:
             angle.ub_equilibrium = float(vec[idx + 1])
             idx += 2
         return replace(self, **new_collections)
+
+    @staticmethod
+    def _param_identity(
+        attr: str,
+        param: BondParam | AngleParam | StretchBendParam | TorsionParam | VdwParam,
+    ) -> tuple:
+        """Build a stable identity for matching parameters across FF variants."""
+        if attr == "vdws":
+            return (attr, param.atom_type, param.element)
+        if attr == "torsions":
+            elements = min(param.elements, tuple(reversed(param.elements)))
+            env_id = ""
+            if param.env_id:
+                env_id = canonicalize_torsion_env_id(param.env_id.split("-"))
+            return (attr, elements, param.periodicity, param.is_improper, env_id)
+        return (attr, param.key, getattr(param, "env_id", ""))
+
+    def freeze_all(self) -> None:
+        """Mark all parameters as frozen (not optimizable)."""
+        for attr, _ in self._PARAM_SLOTS:
+            for param in getattr(self, attr):
+                param.frozen = True
+        for angle in self._ub_angles:
+            angle.frozen = True
+
+    def freeze_standard_params(self, opt_ff: ForceField) -> None:
+        """Mark params as frozen unless they match an OPT-substructure param."""
+        self.freeze_all()
+
+        same_source = (
+            self.source_path is not None
+            and opt_ff.source_path is not None
+            and self.source_path.resolve() == opt_ff.source_path.resolve()
+        )
+        opt_rows = {
+            attr: Counter(param.ff_row for param in getattr(opt_ff, attr) if param.ff_row is not None)
+            for attr, _ in self._PARAM_SLOTS
+        }
+        opt_ids = {
+            attr: Counter(self._param_identity(attr, param) for param in getattr(opt_ff, attr))
+            for attr, _ in self._PARAM_SLOTS
+        }
+
+        for attr, _ in self._PARAM_SLOTS:
+            for param in getattr(self, attr):
+                if same_source and param.ff_row is not None:
+                    if opt_rows[attr][param.ff_row] > 0:
+                        param.frozen = False
+                        opt_rows[attr][param.ff_row] -= 1
+                    continue
+                ident = self._param_identity(attr, param)
+                if opt_ids[attr][ident] > 0:
+                    param.frozen = False
+                    opt_ids[attr][ident] -= 1
+
+        opt_ub_rows = Counter(angle.ff_row for angle in opt_ff._ub_angles if angle.ff_row is not None)
+        opt_ub_ids = Counter(self._param_identity("angles", angle) for angle in opt_ff._ub_angles)
+        for angle in self._ub_angles:
+            if same_source and angle.ff_row is not None:
+                if opt_ub_rows[angle.ff_row] > 0:
+                    angle.frozen = False
+                    opt_ub_rows[angle.ff_row] -= 1
+                continue
+            ident = self._param_identity("angles", angle)
+            if opt_ub_ids[ident] > 0:
+                angle.frozen = False
+                opt_ub_ids[ident] -= 1
 
     # Default bounds per parameter type (min, max) in canonical units.
     # bond_k allows negative values for transition-state force fields (TSFF),

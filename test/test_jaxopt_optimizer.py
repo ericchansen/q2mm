@@ -212,6 +212,28 @@ class TestJaxOptOptimizerConvergence:
         if result.final_score < result.initial_score:
             assert not np.allclose(final_params, initial_params)
 
+    def test_frozen_param_stays_fixed(self) -> None:
+        """Frozen parameters are held constant while active ones optimize."""
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_water(bond_length=0.96, angle_deg=104.5)
+        ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
+        ff.bonds[0].frozen = True
+        initial_params = ff.get_param_vector().copy()
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        result = optimizer.optimize(obj)
+
+        np.testing.assert_allclose(result.final_params[~ff.active_mask], initial_params[~ff.active_mask])
+        np.testing.assert_allclose(ff.get_param_vector(), result.final_params)
+        assert result.final_score <= result.initial_score
+
 
 class TestJaxOptFrequencyConvergence:
     """Frequency-based optimization convergence."""

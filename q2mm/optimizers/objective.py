@@ -543,6 +543,7 @@ class ReferenceData:
         molecule_idx: int = 0,
         frequencies: np.ndarray | list[float] | None = None,
         skip_imaginary: bool = False,
+        include_geometry: bool = True,
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
     ) -> ReferenceData:
@@ -568,6 +569,10 @@ class ReferenceData:
                 frequencies (cm⁻¹) to include.
             skip_imaginary (bool): If ``True``, negative frequencies are
                 skipped.
+            include_geometry (bool): If ``True`` (the default), add bond
+                length and bond angle reference data.  Set to ``False``
+                to build an eigenmatrix-only objective (useful for
+                QFUERZA validation where geometry terms dominate).
             include_eigenmatrix (bool): If ``True`` (the default) and the
                 molecule has a Hessian, add eigenmatrix training data
                 (diagonal and optionally off-diagonal elements).
@@ -585,23 +590,24 @@ class ReferenceData:
 
         ref = cls()
 
-        for bond in mol.bonds:
-            ref.add_bond_length(
-                bond.length,
-                atom_indices=(bond.atom_i, bond.atom_j),
-                weight=w["bond_length"],
-                molecule_idx=molecule_idx,
-                label=f"{bond.element_pair} bond",
-            )
+        if include_geometry:
+            for bond in mol.bonds:
+                ref.add_bond_length(
+                    bond.length,
+                    atom_indices=(bond.atom_i, bond.atom_j),
+                    weight=w["bond_length"],
+                    molecule_idx=molecule_idx,
+                    label=f"{bond.element_pair} bond",
+                )
 
-        for angle in mol.angles:
-            ref.add_bond_angle(
-                angle.value,
-                atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
-                weight=w["bond_angle"],
-                molecule_idx=molecule_idx,
-                label=f"{angle.elements} angle",
-            )
+            for angle in mol.angles:
+                ref.add_bond_angle(
+                    angle.value,
+                    atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+                    weight=w["bond_angle"],
+                    molecule_idx=molecule_idx,
+                    label=f"{angle.elements} angle",
+                )
 
         if frequencies is not None:
             ref.add_frequencies_from_array(
@@ -630,6 +636,7 @@ class ReferenceData:
         weights: dict[str, float] | None = None,
         frequencies_list: list[np.ndarray | list[float]] | None = None,
         skip_imaginary: bool = False,
+        include_geometry: bool = True,
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
     ) -> ReferenceData:
@@ -647,6 +654,9 @@ class ReferenceData:
                 *molecules* if provided.
             skip_imaginary (bool): If ``True``, negative frequencies are
                 skipped.
+            include_geometry (bool): If ``True`` (the default), add bond
+                length and bond angle reference data.  Set to ``False``
+                for eigenmatrix-only objectives.
             include_eigenmatrix (bool): If ``True`` (the default) and a
                 molecule has a Hessian, add eigenmatrix data.
             eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
@@ -673,6 +683,7 @@ class ReferenceData:
                 molecule_idx=idx,
                 frequencies=frequencies_list[idx] if frequencies_list is not None else None,
                 skip_imaginary=skip_imaginary,
+                include_geometry=include_geometry,
                 include_eigenmatrix=include_eigenmatrix,
                 eigenmatrix_diagonal_only=eigenmatrix_diagonal_only,
             )
