@@ -30,8 +30,6 @@ from q2mm.models.molecule import Q2MMMolecule
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from q2mm.optimizers.spec import ObjectiveSpec
 
 
@@ -1378,8 +1376,6 @@ class ObjectiveFunction:
 
     def to_jax_spec(
         self,
-        *,
-        ts_mol_indices: Iterable[int] | None = None,
     ) -> ObjectiveSpec:
         """Build a JAX-compatible objective specification.
 
@@ -1392,42 +1388,14 @@ class ObjectiveFunction:
         differentiation through an inner ``jaxopt.LBFGS`` geometry
         minimization.
 
-        Args:
-            ts_mol_indices: Optional iterable of molecule indices whose
-                MM Hessian should have its transition-state curvature
-                inverted (QFUERZA) before frequency / Hessian-element /
-                eigenmatrix residuals are computed.  Mirrors the
-                ``invert_ts_curvature`` flag on
-                :func:`~q2mm.models.seminario.estimate_force_constants`
-                but threaded through the analytical JAX loss path.
-
         Returns:
             ObjectiveSpec ready for JIT compilation.
 
         Raises:
-            ValueError: If the objective has no references, or if any
-                ``ts_mol_indices`` entry is not an integer or falls
-                outside ``[0, len(self.molecules))``.
+            ValueError: If the objective has no references.
 
         """
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
-
-        if ts_mol_indices is not None:
-            import numbers
-
-            ts_set: set[int] = set()
-            n_mols = len(self.molecules)
-            for i in ts_mol_indices:
-                if isinstance(i, bool) or not isinstance(i, (numbers.Integral, np.integer)):
-                    raise ValueError(f"ts_mol_indices entries must be integers; got {i!r} ({type(i).__name__}).")
-                idx = int(i)
-                if idx < 0 or idx >= n_mols:
-                    raise ValueError(
-                        f"ts_mol_indices contains out-of-range molecule index {idx}; valid range is [0, {n_mols})."
-                    )
-                ts_set.add(idx)
-        else:
-            ts_set = set()
 
         # Group references by molecule index
         refs_by_mol: dict[int, list[ReferenceValue]] = {}
@@ -1445,7 +1413,6 @@ class ObjectiveFunction:
                 symbols=tuple(mol.symbols),
                 refs=refs,
                 topology=mol,
-                invert_ts_curvature=(mol_idx in ts_set),
             )
             mol_specs.append(spec)
             # Track which categories are present

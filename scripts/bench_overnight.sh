@@ -1,7 +1,7 @@
 #!/bin/bash
 # Overnight benchmark: 5 systems × 3 optimizers (~6 hours on GPU)
 set -euo pipefail
-PYTHON=~/repos/q2mm/.venv/bin/python
+PYTHON=${PYTHON:-python3}
 CLI="$PYTHON -m q2mm.diagnostics.cli --backend jax"
 
 for sys in rh-enamide heck-relay pd-allyl pd-conjugate rh-conjugate; do

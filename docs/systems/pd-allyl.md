@@ -56,24 +56,26 @@ few molecules are slightly positive, the system as a whole performs
 worse than simply predicting the average.
 
 !!! warning "Negative overall R²"
-    The overall reproduction is still poor. A small number of molecules barely cross above zero, but the system as a whole remains negative. That is not paper-level behavior.
+    The overall reproduction is still poor. A small number of molecules barely cross above zero, but the system as a whole remains negative. The paper reports Hessian R² = 0.998; our reproduction yields R² = −0.93.
 
 ## Benchmark results
 
-Converged using SciPy L-BFGS-B with JaxLoss analytical gradients
-(ratio check bypassed) on RTX 5090 GPU.
+SciPy L-BFGS-B with JaxLoss analytical gradients on RTX 5090 GPU.
+The ratio check passed, confirming JaxLoss as a reliable surrogate
+despite the poor Seminario starting FF.
 
 | Metric | Value |
 |--------|:-----:|
-| Initial loss | 1.181 |
-| Final loss | 1.153 |
-| Reduction | 2.38% |
-| Iterations | 31 |
-| NaN rate | 0% |
-| Convergence | ✓ (L-BFGS-B termination) |
-| Bounds | ±20% |
-| JIT compile | 227 s |
-| Optimization | 13 s |
+| Ratio check | 1.092 (pass) |
+| Initial score | 7,998,071 |
+| Final score | 7,993,193 |
+| Reduction | 1.2% |
+| Iterations | 3 |
+| Gradient source | JaxLoss analytical |
+
+The modest 1.2% improvement reflects the poor Seminario starting
+point (negative eigenvalue R²) — the optimizer converges quickly to
+a nearby local minimum with only marginal improvement.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.
@@ -82,9 +84,9 @@ cross-system comparison and methodology details.
 
 ### Comparison
 
-The paper reports a near-ideal internal Hessian fit. Our reproduction does not preserve that quality.
+The paper reports Hessian R² = 0.998 under MacroModel MM3*. Our reproduction yields R² = −0.93 under the JAX engine.
 
-The most likely reason is not that the published chemistry is bad; it is that this TSFF is a **composed force field**. The published workflow layers an OPT substructure on top of an MM3 base field, and that composition does not transfer cleanly into our engine. When the base field and the overlay do not interact with the same semantics they had in MacroModel, the eigenvalue structure can collapse even if the original TSFF was good.
+This TSFF is a **composed force field**: the published workflow layers an OPT substructure on top of an MM3 base field. That composition does not transfer cleanly into our engine — when the base field and the overlay do not interact with the same semantics they had in MacroModel, the eigenvalue structure collapses.
 
 Frequency-only optimization still matters: the best Optax run lowers RMSD from **1068.7** to **214.0 cm⁻¹**, but the literature-transfer test remains negative overall. That means optimizer refinement can improve our benchmark metric without repairing the underlying engine-transfer gap.
 
@@ -96,7 +98,7 @@ To close the gap for Pd-allyl, we would need to:
 2. **Confirm that metal-specific nonbonded and cross-term behavior** is transferred with the same conventions.
 3. **Run a full Q2MM-style re-fit** only after the composed force field reproduces the intended starting eigenspectrum.
 
-So the current result should be read as **"composed-force-field transfer is not yet faithful"**, not **"the literature TSFF was poor."**
+The negative R² reflects incomplete composed-force-field transfer, not a problem with the original TSFF.
 
 ## Reproduce
 

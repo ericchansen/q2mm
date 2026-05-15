@@ -1,5 +1,12 @@
 {
   "rh-enamide": {
+    "system": "rh-enamide",
+    "n_molecules": 9,
+    "n_active_params": 182,
+    "initial_obj_score": 390962.2468649853,
+    "initial_jaxloss": 409179.12867925904,
+    "ratio": 1.0465949895683015,
+    "ratio_passes": true,
     "seminario": {
       "bond_angle": {
         "n_refs": 1050,
@@ -18,10 +25,15 @@
         "r2": 0.9584623922078044,
         "rmsd": 0.07729523110754771,
         "mae": 0.03560363683876418
-      },
-      "_objective_score": 390962.2468649853,
-      "_total_refs": 2954
+      }
     },
+    "final_obj_score": 279266.9077872104,
+    "improvement_pct": 28.69426930201586,
+    "n_iterations": 8,
+    "n_evaluations": 2,
+    "converged": true,
+    "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "jac_mode": "jax_loss",
     "optimized": {
       "bond_angle": {
         "n_refs": 1050,
@@ -40,12 +52,18 @@
         "r2": 0.9496446115768531,
         "rmsd": 0.0851049722678009,
         "mae": 0.039170819089690716
-      },
-      "_objective_score": 279266.9077872104,
-      "_total_refs": 2954
-    }
+      }
+    },
+    "opt_time_s": 640.6687207221985
   },
   "heck-relay": {
+    "system": "heck-relay",
+    "n_molecules": 23,
+    "n_active_params": 462,
+    "initial_obj_score": 139652914.52,
+    "initial_jaxloss": 2.7e+60,
+    "ratio": Infinity,
+    "ratio_passes": false,
     "seminario": {
       "bond_angle": {
         "n_refs": 2157,
@@ -64,12 +82,19 @@
         "r2": -4.7002,
         "rmsd": 0.29,
         "mae": 0.14
-      },
-      "_objective_score": 139652914.52,
-      "_total_refs": 6441
-    }
+      }
+    },
+    "skipped": true,
+    "skip_reason": "jaxloss_diverged"
   },
   "pd-allyl": {
+    "system": "pd-allyl",
+    "n_molecules": 21,
+    "n_active_params": 482,
+    "initial_obj_score": 7998070.758107552,
+    "initial_jaxloss": 8734696.363782566,
+    "ratio": 1.092100411205828,
+    "ratio_passes": true,
     "seminario": {
       "bond_angle": {
         "n_refs": 1582,
@@ -88,10 +113,15 @@
         "r2": -1.5242244253286699,
         "rmsd": 0.22620695781862335,
         "mae": 0.18567704737539206
-      },
-      "_objective_score": 7998070.758107552,
-      "_total_refs": 4864
+      }
     },
+    "final_obj_score": 7993193.114907807,
+    "improvement_pct": 1.1880656367720388,
+    "n_iterations": 3,
+    "n_evaluations": 2,
+    "converged": true,
+    "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "jac_mode": "jax_loss",
     "optimized": {
       "bond_angle": {
         "n_refs": 1582,
@@ -110,12 +140,18 @@
         "r2": -1.5242244253286699,
         "rmsd": 0.22620695781862335,
         "mae": 0.18567704737539206
-      },
-      "_objective_score": 7993193.114907807,
-      "_total_refs": 4864
-    }
+      }
+    },
+    "opt_time_s": 1340.238585472107
   },
   "pd-conjugate": {
+    "system": "pd-conjugate",
+    "n_molecules": 10,
+    "n_active_params": 340,
+    "initial_obj_score": 8257780.037127874,
+    "initial_jaxloss": 9912447.92720301,
+    "ratio": 1.2003768425213037,
+    "ratio_passes": false,
     "seminario": {
       "bond_angle": {
         "n_refs": 892,
@@ -134,12 +170,19 @@
         "r2": -4.456578367836552,
         "rmsd": 0.2943631361975594,
         "mae": 0.22993742496628966
-      },
-      "_objective_score": 8257780.037127874,
-      "_total_refs": 2661
-    }
+      }
+    },
+    "skipped": true,
+    "skip_reason": "ratio_check_failed"
   },
   "rh-conjugate": {
+    "system": "rh-conjugate",
+    "n_molecules": 10,
+    "n_active_params": 488,
+    "initial_obj_score": 22628083.169479474,
+    "initial_jaxloss": 10394244.735653406,
+    "ratio": 0.459351534895941,
+    "ratio_passes": false,
     "seminario": {
       "bond_angle": {
         "n_refs": 926,
@@ -158,9 +201,9 @@
         "r2": -4.905920214080357,
         "rmsd": 0.3023034147600308,
         "mae": 0.2208709508179219
-      },
-      "_objective_score": 22628083.169479474,
-      "_total_refs": 2637
-    }
+      }
+    },
+    "skipped": true,
+    "skip_reason": "ratio_check_failed"
   }
 }

@@ -57,20 +57,21 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-Converged using SciPy L-BFGS-B with JaxLoss analytical gradients
-(ratio check bypassed) on RTX 5090 GPU.
+!!! warning "Ratio check failed — optimization skipped"
+    The JaxLoss/ObjectiveFunction ratio (0.459) falls far outside the
+    [0.85, 1.15] tolerance, indicating JaxLoss is not a reliable
+    surrogate for this system.
 
 | Metric | Value |
 |--------|:-----:|
-| Initial loss | 1.130 |
-| Final loss | 0.993 |
-| Reduction | 12.09% |
-| Iterations | 63 |
-| NaN rate | 0% |
-| Convergence | ✓ (L-BFGS-B termination) |
-| Bounds | ±20% |
-| JIT compile | 122 s |
-| Optimization | 10 s |
+| Ratio check | 0.459 (fail) |
+| Initial ObjectiveFunction score | 22,628,083 |
+| Optimization | Skipped |
+
+**Why it fails:** The Seminario starting FF has deeply negative R² for
+all 10 molecules (R² = −3.90 overall, bond length R² = −45.0).
+Unconstrained geometry relaxation diverges significantly between
+JaxLoss and ObjectiveFunction.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.
@@ -81,7 +82,7 @@ cross-system comparison and methodology details.
 
 The thesis reports respectable-to-strong internal fits across both ligand classes. Our reproduction does not transfer that quality.
 
-As with the Pd systems, this looks most like a **composed-force-field problem** layered on top of the ordinary cross-engine gap. The Rh 1,4-conjugate TSFF depends on combining a base MM3 field with an OPT overlay, and that composition is sensitive to engine-specific semantics.
+As with the Pd systems, this is a **composed-force-field transfer problem**. The Rh 1,4-conjugate TSFF combines a base MM3 field with an OPT overlay, and that composition is sensitive to engine-specific semantics.
 
 The optimizer story is mixed but still informative: L-BFGS achieves **331.3 cm⁻¹**, and Optax Adam reaches **307.0 cm⁻¹**, yet the reproduced eigenspectrum remains negative across the entire training set. Better optimizer robustness helps the benchmark objective; it does not remove the transfer gap.
 
@@ -93,7 +94,7 @@ To close the gap for Rh 1,4-conjugate addition, we would need:
 2. **Closer parity for Rh-specific MM3* behavior** at the metal center.
 3. **A re-fit against the original multi-target Q2MM objective** only after the composed starting field behaves as intended.
 
-For now, the useful conclusion is that this is a real transfer gap, not a documentation artifact.
+The negative R² reflects a real transfer gap in the composed FF workflow.
 
 ## Reproduce
 

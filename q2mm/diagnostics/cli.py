@@ -70,7 +70,7 @@ def _optimizer_configs() -> list[tuple[str, str, dict]]:
     configs: list[tuple[str, str, dict]] = [
         # SciPy optimizers
         ("scipy-lbfgsb", "SciPy L-BFGS-B", {"method": "L-BFGS-B"}),
-        ("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX direct)", {"method": "L-BFGS-B", "jac": "auto", "ratio_tol": None}),
+        ("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX direct)", {"method": "L-BFGS-B", "jac": "auto"}),
         ("scipy-lbfgsb-fd", "SciPy L-BFGS-B (FD)", {"method": "L-BFGS-B", "jac": None}),
         ("scipy-nm", "Nelder-Mead", {"method": "Nelder-Mead"}),
         ("scipy-powell", "Powell", {"method": "Powell"}),
@@ -274,16 +274,19 @@ def _run_matrix(
                     n_success += 1
                     # Save immediately so kills don't lose completed work
                     if results_dir is not None and ff_dir is not None:
-                        stem = benchmark_stem(r.metadata)
-                        r.to_json(results_dir / f"{stem}.json")
-                        saved_ffs = r.save_forcefields(
-                            ff_dir,
-                            stem=stem,
-                            molecule=sys_data.molecules[0],
-                        )
-                        if saved_ffs:
-                            exts = ", ".join(p.suffix for p in saved_ffs)
-                            print(f"    FF saved: {stem} ({exts})")
+                        try:
+                            stem = benchmark_stem(r.metadata)
+                            r.to_json(results_dir / f"{stem}.json")
+                            saved_ffs = r.save_forcefields(
+                                ff_dir,
+                                stem=stem,
+                                molecule=sys_data.molecules[0],
+                            )
+                            if saved_ffs:
+                                exts = ", ".join(p.suffix for p in saved_ffs)
+                                print(f"    FF saved: {stem} ({exts})")
+                        except OSError as save_err:
+                            print(f"    Warning: save failed: {save_err}", file=sys.stderr)
 
                     opt = r.optimized or {}
                     rmsd = opt.get("rmsd", float("nan"))
@@ -303,7 +306,7 @@ def _run_matrix(
                         # to a log file to keep console output clean.
                         if results_dir is not None:
                             log_path = results_dir / f"{stem}_detail.txt"
-                            with open(log_path, "w") as f:
+                            with open(log_path, "w", encoding="utf-8") as f:
                                 for table in detail_tables:
                                     f.write(table.to_string() + "\n")
                         else:
@@ -699,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
         optimizers = all_optimizers
         if args.optimizer:
             filter_keys = {o.lower() for o in args.optimizer}
-            optimizers = [(k, l, c) for k, l, c in all_optimizers if k in filter_keys]
+            optimizers = [(k, l, c) for k, l, c in all_optimizers if k.lower() in filter_keys]
             if not optimizers:
                 print(f"Error: no matching optimizers for {args.optimizer}", file=sys.stderr)
                 print(f"Available keys: {', '.join(k for k, _, _ in all_optimizers)}", file=sys.stderr)

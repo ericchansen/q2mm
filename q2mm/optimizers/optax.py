@@ -256,7 +256,7 @@ class OptaxOptimizer:
         try:
             from q2mm.backends.mm.jax_engine import JaxEngine
 
-            if isinstance(objective.engine, JaxEngine):
+            if hasattr(objective, "engine") and isinstance(objective.engine, JaxEngine):
                 from q2mm.optimizers.jaxloss import JaxLoss
 
                 spec = objective.to_jax_spec()
@@ -264,8 +264,8 @@ class OptaxOptimizer:
                 use_jax_loss = True
                 jac_mode = "jax_loss"
                 logger.info("OptaxOptimizer: using JaxLoss gradient path (memory-efficient)")
-        except (ImportError, AttributeError):
-            pass  # JaxEngine not available or objective lacks .engine
+        except ImportError:
+            pass  # JaxEngine not available
 
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)

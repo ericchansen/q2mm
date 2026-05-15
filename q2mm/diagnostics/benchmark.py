@@ -182,7 +182,7 @@ def _resolve_gradients(
 
     result: dict[str, str] = {}
     for cat, has_analytical in support.items():
-        if jac_mode in ("auto", "analytical") and has_analytical:
+        if jac_mode in ("auto", "analytical", "jax_loss") and has_analytical:
             result[cat] = "analytical"
         else:
             result[cat] = "finite-diff"
@@ -296,7 +296,7 @@ def benchmark_stem(metadata: dict) -> str:
 
     # Gradient-using: jac_mode "auto" or "analytical" → _auto, else → _fd
     jac_mode = metadata.get("jac_mode")
-    jac_suffix = "auto" if jac_mode in ("auto", "analytical") else "fd"
+    jac_suffix = "auto" if jac_mode in ("auto", "analytical", "jax_loss") else "fd"
     return f"{system}_{engine}_{form}_{device}_{optimizer}_{jac_suffix}"
 
 

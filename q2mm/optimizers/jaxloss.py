@@ -62,15 +62,6 @@ _GEOM_INNER_MAXITER = 500
 #    the strict 1e-8 gradient-norm tolerance, making the optimizer report
 #    false divergence.
 _GEOM_NONCONV_PENALTY = 0.0
-# Harmonic restraint (kcal/(mol·Å²) per Cartesian coordinate) that keeps the
-# inner geometry relaxation near the initial QM structure.  For well-behaved
-# systems the minimum is very close to coords0, so a moderate restraint adds
-# negligible energy (<0.1 kcal/mol total).  For pathological TS systems with
-# negative force constants (up to −3753 kcal/(mol·rad²) in Pd benchmarks),
-# the restraint prevents the LBFGS solver from diverging to NaN.  The
-# restraint also improves conditioning of the implicit-differentiation
-# Hessian by adding k·I to ∂²E/∂x².
-_GEOM_RESTRAINT_K = 100.0
 
 
 def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
@@ -80,9 +71,12 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
     outer ``jax.grad`` sees the exact parameter-gradient of ``x*`` via the
     implicit function theorem, avoiding autodiff-through-iteration.
 
-    A harmonic restraint to the initial geometry prevents divergence for
-    transition-state systems where negative force constants produce an
-    unbounded PES.
+    For TS systems the QM Hessian is inverted (Limé & Norrby 2015) before
+    Seminario projection, producing a force field with all-positive force
+    constants.  The resulting PES has a proper minimum, so unconstrained
+    minimization is well-conditioned.  However, for systems with poor
+    Seminario starting FFs (deeply negative R²), the relaxation may
+    converge to wrong local minima, producing unreliable loss values.
 
     When the inner solver does not converge (gradient norm > tol after
     maxiter), the caller should add a penalty to the loss.
@@ -100,16 +94,8 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
     """
     import jaxopt
 
-    from q2mm.backends.mm._jax_common import jnp
-
     def energy_of_coords(coords, p):  # noqa: ANN001, ANN202
-        mm_energy = energy_fn(p, coords)
-        # Harmonic restraint to initial geometry — prevents divergence for
-        # TS systems with negative force constants while barely affecting
-        # well-behaved systems where coords ≈ coords0.
-        disp = coords - coords0
-        restraint = 0.5 * _GEOM_RESTRAINT_K * jnp.sum(disp * disp)
-        return mm_energy + restraint
+        return energy_fn(p, coords)
 
     solver = jaxopt.LBFGS(
         fun=energy_of_coords,
@@ -280,7 +266,6 @@ class JaxLoss:
         from q2mm.backends.mm._jax_common import jax, jnp
         from q2mm.models.hessian import (
             _jax_frequencies_from_hessian,
-            invert_ts_curvature_jax,
             symbols_to_masses_3n,
         )
         from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
@@ -403,9 +388,6 @@ class JaxLoss:
 
                 if ms.needs_hessian_computation:
                     hess_au = mol_hess_fn(flat_coords, params) * scale
-
-                    if ms.invert_ts_curvature:
-                        hess_au = invert_ts_curvature_jax(hess_au)
 
                     if ms.has_frequency:
                         freqs = _jax_frequencies_from_hessian(hess_au, entry_data["masses_3n"])
