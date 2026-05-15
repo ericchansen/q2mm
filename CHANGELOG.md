@@ -48,14 +48,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHANGELOG.md (this file)
 
 ### Changed
+- Per-molecule JIT compilation in `JaxLoss` — each molecule's loss and
+  gradient compiles independently, preventing GPU OOM on multi-molecule
+  systems
+- Benchmark data moved to `ericchansen/q2mm-data` repository
 - Overhauled `AGENTS.md` for better AI agent guidance
 - OpenMM-CUDA-12 platform gate: now excludes only macOS (was Linux-only)
 - JAX engine now supports both harmonic and MM3 functional forms
 
 ### Fixed
+- **JaxLoss harmonic restraint** — `_relax_coords()` previously added an
+  artificial harmonic restraint (k=100 kcal/mol·Å²) to geometry
+  relaxation, causing JaxLoss to optimize a different objective than
+  `ObjectiveFunction` and producing 0% real improvement. Removed the
+  restraint; systems with good Seminario starting FFs now show real
+  improvement (28.7% for Rh-enamide).
+- Re-enabled JaxLoss ratio check for `scipy-lbfgsb-jax` benchmark config
+  (was bypassed via `ratio_tol: None`)
 - Hessian unit conversion for Jaguar `.in` files (Hartree/Bohr² → kJ/mol/Å²)
 - Golden fixture tolerance tightened from 2e-3 to 5e-4
 - UTF-8 output encoding on Windows for benchmark CLI
+
+### Removed
+- `invert_ts_curvature` field from `MoleculeSpec` — curvature inversion
+  now happens only during Seminario projection, before JAX
+- `benchmarks/` directory — data moved to `q2mm-data` repository
 
 ## [5.0.0a3] - Pre-release
 

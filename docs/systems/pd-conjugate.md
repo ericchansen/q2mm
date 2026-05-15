@@ -1,6 +1,6 @@
 # Pd 1,4-Conjugate
 
-Pd 1,4-conjugate addition is another composed-force-field transfer case: the published TSFF combines a base MM3 field with an OPT overlay, and that composition does not carry over faithfully under our engine. The 10-structure, 3,081-parameter benchmark still shows how much frequency RMSD can improve under optimization even when paper-level internal fit is not preserved.
+Pd 1,4-conjugate addition is another composed-force-field transfer case: the published TSFF combines a base MM3 field with an OPT overlay, and that composition does not carry over faithfully under our engine. The paper reports internal R² > 0.99 under MacroModel MM3*; our reproduction yields R² = −4.94 under the JAX engine.
 
 ## Scope
 
@@ -58,20 +58,21 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-Converged using SciPy L-BFGS-B with JaxLoss analytical gradients
-(ratio check bypassed) on RTX 5090 GPU.
+!!! warning "Ratio check failed — optimization skipped"
+    The JaxLoss/ObjectiveFunction ratio (1.200) falls outside the
+    [0.85, 1.15] tolerance, indicating JaxLoss is not a reliable
+    surrogate for this system.
 
 | Metric | Value |
 |--------|:-----:|
-| Initial loss | 1.121 |
-| Final loss | 1.050 |
-| Reduction | 6.33% |
-| Iterations | 39 |
-| NaN rate | 0% |
-| Convergence | ✓ (L-BFGS-B termination) |
-| Bounds | ±20% |
-| JIT compile | 120 s |
-| Optimization | 9 s |
+| Ratio check | 1.200 (fail) |
+| Initial ObjectiveFunction score | 8,257,780 |
+| Optimization | Skipped |
+
+**Why it fails:** The Seminario starting FF has negative eigenvalue R²
+for all 10 molecules (R² = −4.94 overall). Unconstrained geometry
+relaxation finds different local minima in JaxLoss vs
+ObjectiveFunction, producing divergent loss values.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.
@@ -94,7 +95,7 @@ To close the gap for Pd 1,4-conjugate addition, we would need:
 2. **System-specific validation of Pd nonbonded and coupling behavior** after composition.
 3. **A full Q2MM re-fit under the original objective** once the composed starting field behaves correctly.
 
-At this stage, the result is best framed as identifying a transfer gap in the composed FF workflow.
+The negative R² reflects a transfer gap in the composed FF workflow.
 
 ## Reproduce
 

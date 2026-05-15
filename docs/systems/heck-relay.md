@@ -63,27 +63,26 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-Converged using SciPy L-BFGS-B with JaxLoss analytical gradients
-(ratio check bypassed) on RTX 5090 GPU. Requires ±5% parameter bounds
-due to fragile TS landscape (negative force constants up to −3753
-kcal/mol·Å²).
+!!! failure "JaxLoss diverges on this system"
+    JaxLoss geometry relaxation diverges (loss ~2.7×10⁶⁰), producing
+    an infinite ratio check. **No JaxLoss-guided optimization was
+    performed.**
 
 | Metric | Value |
 |--------|:-----:|
-| Initial loss | 2.957 |
-| Final loss | 2.820 |
-| Reduction | 4.62% |
-| Iterations | 15 |
-| NaN rate | 0% |
-| Convergence | ✓ (L-BFGS-B termination) |
-| Bounds | ±5% |
-| JIT compile | 249 s |
-| Optimization | 18 s |
+| Ratio check | ∞ (fail — JaxLoss diverged) |
+| Initial ObjectiveFunction score | 139,652,915 |
+| Optimization | Skipped |
 
-!!! note "Bounds sensitivity"
-    This system requires tighter bounds than the other 4 TS systems.
-    With ±20% bounds, the NaN rate is 92% (optimizer hits singularities).
-    With ±5% bounds, the optimizer converges cleanly.
+**Why it diverges:** The Seminario starting FF is deeply negative for
+every molecule (R² = −8.89 overall). With such a poor starting
+point, unconstrained geometry relaxation in JaxLoss wanders to
+completely wrong local minima, producing meaningless loss values.
+The ratio check correctly identifies this and blocks optimization.
+
+Finite-difference gradients would work in principle but are
+impractical for this system (462 active params × ~20 s per evaluation
+= hours per gradient step).
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.
@@ -92,11 +91,7 @@ cross-system comparison and methodology details.
 
 ### Comparison
 
-The paper-level message and the reproduction-level message point in opposite directions.
-
-- In the literature, this TSFF is an excellent internal fit and a strong selectivity model.
-- Under our engine, the same chemistry does not preserve that eigenspectrum at all.
-- The optimizer fixes dramatically improve frequency RMSD, but they do not change the fact that the published TSFF transfers with **R² < 0** across the full training set.
+The paper reports R² > 0.998 with slopes 1.000 ± 0.004 under MacroModel MM3*.[^jacs] Our reproduction yields R² = −8.89 under the JAX engine — a complete failure of cross-engine transfer.
 
 This is **not** a composed-force-field problem. The Heck relay FF is already a complete Rosales force field. That makes this case especially important: it points to a more fundamental **cross-engine gap** for this system's chemistry rather than a simple overlay/composition artifact.
 
@@ -108,7 +103,7 @@ To close this gap, we would need to do more than rerun optimization:
 2. **Audit the metal-center and torsional functional details** that may transfer differently across engines.
 3. **Re-fit under the original multi-target Q2MM objective** once engine parity is good enough to make that optimization meaningful.
 
-Until then, Heck relay should be treated as a useful negative result: it identifies a real cross-engine boundary for literature transfer, not a cosmetic miss.
+Heck relay identifies a cross-engine boundary for literature transfer that cannot be resolved by optimizer choice alone.
 
 ## Reproduce
 

@@ -299,7 +299,7 @@ Q2MM literature.
 
 | System | Paper | Paper R² (post-opt) | Our R² (starting point) | Status |
 |--------|-------|:-------------------:|:-----------------------:|--------|
-| [Rh-enamide](../systems/rh-enamide.md) | Donoghue *JCTC* 2008 | ~0.998 | 0.992 | ✅ Excellent starting point |
+| [Rh-enamide](../systems/rh-enamide.md) | Donoghue *JCTC* 2008 | — (not reported) | 0.992 | ✅ Excellent starting point |
 | [Heck relay](../systems/heck-relay.md) | Rosales *JACS* 2020 | >0.998 | 0.502 | ⚠️ Viable — needs optimization |
 | [Pd-allyl](../systems/pd-allyl.md) | Wahlers *Nat. Commun.* 2021 | 0.998 | 0.842 | ✅ Good starting point |
 | [Pd 1,4-conjugate](../systems/pd-conjugate.md) | Wahlers *J. Org. Chem.* 2021 | >0.99 | 0.492 | ⚠️ Viable — needs optimization |
@@ -308,10 +308,9 @@ Q2MM literature.
 ### Interpretation
 
 All five systems produce **positive mass-weighted R²** from QFUERZA alone
-(before any optimization). Rh-enamide is nearly publication-quality at
-0.992. The three softer TS systems (Heck, Pd-conjugate, Rh-conjugate)
-start at R² ≈ 0.4–0.5 — a viable starting point for the gradient
-optimizer to refine toward the paper's final quality (>0.99).
+(before any optimization). Rh-enamide reaches R² = 0.992. The three
+softer TS systems (Heck, Pd-conjugate, Rh-conjugate) start at
+R² ≈ 0.4–0.5 — a starting point for the gradient optimizer to refine.
 
 ### Eigenmatrix basis: Cartesian vs mass-weighted
 
@@ -363,10 +362,11 @@ The optimizer converges in 200 L-BFGS-B iterations for all systems.
 
     The [optimizer comparison](optimizer-comparison.md) page shows
     production convergence results using **eigenmatrix-diagonal only**
-    + **L2 λ=0.01** + **convergence-based termination** (0.72–12.09%).
+    + **convergence-based termination** with JaxLoss ratio checking.
+    Systems that pass the ratio check show 1.2–28.7% improvement;
+    systems with poor Seminario starting FFs are skipped.
     These are complementary views: this table validates raw optimizer
-    capability; the comparison page shows the regularized production
-    workflow.
+    capability; the comparison page shows the production workflow.
 
 ### Bug fixes reflected in these numbers
 

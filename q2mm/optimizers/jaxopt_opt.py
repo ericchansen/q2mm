@@ -237,7 +237,7 @@ class JaxOptOptimizer:
             message = (
                 f"Optimizer diverged after {n_iter} iterations "
                 "(gradient or loss became NaN). "
-                "Try reducing --max-iter or increasing --regularization."
+                "Try reducing --max-iter or tightening parameter bounds."
             )
         elif error_val < self.tol:
             converged = True

@@ -187,9 +187,7 @@ class ScipyOptimizer:
         ratio_tol (float | None): Tolerance for the JaxLoss vs
             ObjectiveFunction ratio check when ``jac='auto'``.
             Default 0.15 requires ratio within [0.85, 1.15].
-            Set to ``None`` to skip the check entirely — recommended
-            for TS systems where geometry relaxation divergence causes
-            ratios of 0.1–0.4.
+            Set to ``None`` to skip the check entirely.
 
     """
 
@@ -227,8 +225,7 @@ class ScipyOptimizer:
             ratio_tol (float | None): Tolerance for the JaxLoss vs
                 ObjectiveFunction ratio check when ``jac='auto'``.
                 Set to ``None`` to skip the check and always use
-                JaxLoss analytical gradients (recommended for TS
-                systems where the ratio check is known to fail).
+                JaxLoss analytical gradients.
 
         """
         self.method = method
@@ -420,15 +417,9 @@ class ScipyOptimizer:
                         return loss, grad_full[active_idx]
 
                     # Validate JaxLoss/ObjectiveFunction agreement at x0.
-                    # For pathological systems (negative FCs, unstable PES),
-                    # the geometry relaxation methods can diverge, making JaxLoss
-                    # an unreliable surrogate.  Fall back to FD gradients if the
-                    # ratio deviates more than 15% in either direction, or if
-                    # JaxLoss returns NaN/Inf.
-                    #
-                    # Set ratio_tol=None to skip this check entirely — recommended
-                    # for TS systems where the ratio is known to fail (0.1–0.4)
-                    # due to harmonic restraint vs full-minimize geometry divergence.
+                    # If the ratio deviates significantly, JaxLoss is an
+                    # unreliable surrogate — fall back to FD gradients.
+                    # Set ratio_tol=None to skip this check entirely.
                     jl_val, _ = _jax_loss_fun(x0)
                     ratio = jl_val / initial_score if initial_score > 0 else 1.0
                     tol = self.ratio_tol
@@ -514,9 +505,8 @@ class ScipyOptimizer:
         # same units — both from ObjectiveFunction.
         if use_jax_loss_fun is not None:
             final_score = float(objective(final_x))
-            # Safety guard: JaxLoss can mislead the optimizer for pathological
-            # systems (negative FCs, large geometry relaxation differences).
-            # If the ObjectiveFunction says the step worsened things, revert.
+            # Safety guard: if the JaxLoss-guided step worsened the
+            # ObjectiveFunction, revert to initial parameters.
             if final_score > initial_score:
                 logger.warning(
                     "JaxLoss-guided step worsened ObjectiveFunction: %.0f -> %.0f (%.1f%% worse). "
