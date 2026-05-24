@@ -80,3 +80,9 @@ uv.lock
 # ── Agent session artifacts ───────────────────────────────
 *-handoff.md
 copilot-session-*.md
+
+# ── Local benchmark / convergence outputs ─────────────────
+# Per AGENTS.md §6: developer-local benchmark outputs go to results/
+# and stay out of git. Canonical benchmark artifacts that documentation
+# references live in the separate ericchansen/q2mm-data repo.
+/results/
