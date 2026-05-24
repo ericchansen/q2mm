@@ -285,13 +285,13 @@ nvidia-smi
 # Run core tests (no backends)
 python -m pytest test/ -x -q -m "not (openmm or tinker or jax or jax_md or psi4)"
 
-# Run integration tests (backend contracts, parity)
+# Run integration tests (local only — too slow for GitHub-hosted CI)
 python -m pytest --run-integration -q
 
-# Run validation tests (Seminario parity, published FF eval)
+# Run validation tests (local only — not in CI)
 python -m pytest --run-validation -q
 
-# Run nightly tests (optimizer loops, full loops — slow)
+# Run nightly tests (local only — optimizer loops, full loops, slow)
 python -m pytest --run-nightly -q
 
 # Run lint + format checks
