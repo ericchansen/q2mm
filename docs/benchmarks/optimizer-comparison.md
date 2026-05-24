@@ -14,36 +14,65 @@ All multi-target benchmarks use:
 - **Optimizer**: SciPy L-BFGS-B with `ratio_tol=0.15` (validates
   JaxLoss agrees with ObjectiveFunction within ±15%)
 
-## Convergence results (GPU, RTX 5090)
+## Convergence results (GPU)
 
 The JaxLoss/ObjectiveFunction ratio check validates that JaxLoss is a
-reliable surrogate before using its analytical gradients. Systems where the
-ratio passes get fast JaxLoss-guided optimization; systems where it fails
-require finite-difference fallback (slow for 400+ active parameters).
+reliable surrogate before using its analytical gradients. Systems where
+the ratio passes get fast JaxLoss-guided optimization; systems where it
+fails fall back to finite-difference (impractical for 400+ active
+parameters) or are skipped entirely.
 
-| System | Mols | Active | Ratio | Check | Init score | Final score | Δ% | Iters | jac |
-|--------|:----:|:------:|:-----:|:-----:|:----------:|:-----------:|:---:|:-----:|:---:|
-| Rh-enamide | 9 | 182 | 1.047 | ✓ | 390,962 | 279,267 | 28.7% | 8 | jax_loss |
-| Pd-allyl | 21 | 482 | 1.092 | ✓ | 7,998,071 | 7,993,193 | 1.2% | 3 | jax_loss |
-| Heck relay | 23 | 462 | ∞ | ✗ | 139,652,915 | — | — | — | — |
-| Pd 1,4-conj | 10 | 340 | 1.200 | ✗ | 8,257,780 | — | — | — | — |
-| Rh 1,4-conj | 10 | 488 | 0.459 | ✗ | 22,628,083 | — | — | — | — |
+The numbers below come from the committed regeneration script
+`scripts/regenerate_convergence_results.py`; the raw JSON outputs (with
+provenance: git SHAs, device, ratio_tol, timestamp) live in
+[`ericchansen/q2mm-data/benchmarks/<system>/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks).
+
+| System | Mols | Active | Ratio | Check |
+|--------|:----:|:------:|:-----:|:-----:|
+| Rh-enamide | 9 | 182 | 1.05 | ✓ |
+| Pd-allyl | 21 | 482 | 1.11 | ✓ |
+| Heck relay | 23 | 462 | ~10²¹ | ✗ |
+| Pd 1,4-conj | 10 | 340 | 1.20 | ✗ |
+| Rh 1,4-conj | 10 | 488 | ~4 × 10³ | ✗ |
+
+**Optimization results** (only systems that pass the ratio gate; rows
+will be filled in as optimization runs are committed to q2mm-data):
+
+| System | Init score | Final score | Δ% | Iters | jac |
+|--------|:----------:|:-----------:|:--:|:-----:|:---:|
+| Rh-enamide | 3.90 × 10⁵ | TBD | TBD | TBD | jax_loss |
+| Pd-allyl | 8.00 × 10⁶ | TBD | TBD | TBD | jax_loss |
+
+> Optimization artefacts for Rh-enamide and Pd-allyl from earlier code
+> versions used to live in `q2mm/results/convergence/`.  They were
+> deleted in the same change that introduced this regeneration script
+> because no committed producer existed (violates AGENTS.md Rule 8 —
+> every claim must be grounded in evidence).  Fresh optimization runs
+> will populate the TBD cells above and write force fields to
+> `q2mm-data/benchmarks/<system>/convergence/<system>_optimized.fld`.
 
 **Notes:**
 
-- **Rh-enamide** achieves 28.7% real ObjectiveFunction improvement in
-  8 iterations (~11 min including JIT). This is validated improvement —
-  both JaxLoss and ObjectiveFunction agree.
-- **Pd-allyl** achieves 1.2% improvement but is limited by non-finite
-  values during optimization (only 3 iterations completed). The poor
-  Seminario starting point causes some parameter combinations to produce
-  unstable geometry minimizations.
-- **Heck relay, Pd 1,4-conj, Rh 1,4-conj** fail the ratio check because
-  their Seminario starting FFs are poor (deeply negative R²). The
-  unconstrained geometry minimization in JaxLoss wanders far from the
-  reference structure, making JaxLoss an unreliable surrogate.
-  Finite-difference fallback would work but is impractical (400+ params ×
-  ~20s per evaluation = hours per gradient step).
+- **Rh-enamide and Pd-allyl** pass the ratio gate cleanly and are the
+  two systems that can be optimized with JaxLoss analytical gradients
+  out of the box.
+- **Heck relay** has a catastrophically poor Seminario starting FF
+  (bond_length R² ≈ −48, bond_angle R² ≈ −5).  Inside JaxLoss the
+  inner geometry relaxation explodes, driving the surrogate ~21 orders
+  of magnitude above the real objective.  Optimization is impossible
+  without first fixing the starting FF (see [heck-relay
+  page](../systems/heck-relay.md)).
+- **Pd 1,4-conj** misses the band by ~4 %.  This is the natural
+  candidate for the experimental `ratio_tol=None` bypass — see
+  [pd-conjugate](../systems/pd-conjugate.md).  Until that experiment
+  has run and been validated against the real ObjectiveFunction, the
+  default `ratio_tol=0.15` correctly skips this system.
+- **Rh 1,4-conj** diverges by ~3 orders of magnitude.  Like Heck relay,
+  the JaxLoss surrogate is unusable here without first improving the
+  starting FF.  Previous sessions saw varying ratios (0.46–0.96) for
+  this system depending on uncommitted state; the current committed
+  baseline gives ~4 × 10³.  See [rh-conjugate](../systems/rh-conjugate.md)
+  for the per-category R² explaining why the surrogate diverges.
 
 ### Why some systems fail the ratio check
 
@@ -75,34 +104,29 @@ prediction is worse than predicting the QM mean.
 
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) |
 |--------|:------------:|:------------:|:------------:|
-| Rh-enamide (9 mol) | 0.959 | 0.976 | 0.934 |
-| Heck relay (23 mol) | −4.70 | −434.5 | −7.38 |
-| Pd-allyl (21 mol) | −1.52 | 0.02 | 0.34 |
-| Pd 1,4-conj (10 mol) | −4.46 | 0.45 | −0.11 |
-| Rh 1,4-conj (10 mol) | −4.91 | −45.0 | −0.44 |
+| Rh-enamide (9 mol) | 0.958 | 0.976 | 0.934 |
+| Heck relay (23 mol) | −4.66 | −48.1 | −5.47 |
+| Pd-allyl (21 mol) | −1.59 | 0.10 | 0.35 |
+| Pd 1,4-conj (10 mol) | −4.56 | 0.46 | −0.11 |
+| Rh 1,4-conj (10 mol) | −4.85 | −57.6 | −1.29 |
 
 Rh-enamide starts near-optimal (R² > 0.93 in all categories). The other
 four systems start far from optimal — the optimizer must close this gap.
+These numbers come from `q2mm-data/benchmarks/<system>/convergence/paper_metrics.json`
+and are reproducible via `scripts/regenerate_convergence_results.py`.
 
 ### Post-optimization R²
 
 Post-optimization R² is available for systems where JaxLoss optimization
-succeeded (ratio check passed).
+has been re-run against the regeneration script and committed to
+`q2mm-data/benchmarks/<system>/convergence/paper_metrics.json`.  Run
+`scripts/regenerate_convergence_results.py --system <name>` (no
+`--skip-optimization`) to populate these rows.
 
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) | Δ obj |
 |--------|:------------:|:------------:|:------------:|:-----:|
-| Rh-enamide (optimized) | 0.950 | 0.983 | 0.953 | −28.7% |
-| Pd-allyl (optimized) | −1.52 | 0.028 | 0.338 | −1.2% |
-
-**Rh-enamide** shows clear improvement in geometry reproduction
-(bond angles +0.019, bond lengths +0.008) with a small trade-off in
-eigenmatrix R² (−0.009). The 28.7% ObjectiveFunction reduction is real and
-validated.
-
-**Pd-allyl** shows marginal improvement (3 iterations before non-finite
-values halted progress). The deeply negative eig_diagonal R² indicates the
-Seminario starting FF is too far from optimal for the current optimization
-approach to fully converge.
+| Rh-enamide (optimized) | TBD | TBD | TBD | TBD |
+| Pd-allyl (optimized) | TBD | TBD | TBD | TBD |
 
 ### Paper-reported metrics for comparison
 

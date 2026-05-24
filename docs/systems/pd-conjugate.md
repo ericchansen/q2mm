@@ -59,23 +59,30 @@ complete failure of cross-engine transfer, not a small miss.
 ## Benchmark results
 
 !!! warning "Ratio check failed — optimization skipped"
-    The JaxLoss/ObjectiveFunction ratio (1.200) falls outside the
-    [0.85, 1.15] tolerance, indicating JaxLoss is not a reliable
-    surrogate for this system.
+    The JaxLoss/ObjectiveFunction ratio (most recent regeneration: 1.20)
+    is just outside the [0.85, 1.15] tolerance.  JaxLoss is not yet a
+    reliable surrogate for this system at the Seminario starting point.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.200 (fail) |
-| Initial ObjectiveFunction score | 8,257,780 |
-| Optimization | Skipped |
+| Ratio check | 1.20 (fail, 5% over band) |
+| Initial ObjectiveFunction score | 8.26 × 10⁶ |
+| Optimization | Skipped at default `ratio_tol=0.15` |
 
 **Why it fails:** The Seminario starting FF has negative eigenvalue R²
-for all 10 molecules (R² = −4.94 overall). Unconstrained geometry
-relaxation finds different local minima in JaxLoss vs
-ObjectiveFunction, producing divergent loss values.
+for all 10 molecules (eig_diagonal R² ≈ −4.5).  Unconstrained geometry
+relaxation finds different local minima in JaxLoss vs ObjectiveFunction,
+producing divergent loss values.  Because the ratio is only ~4 % over
+the band (vs orders of magnitude for [Rh 1,4-conjugate](rh-conjugate.md)
+and [Heck relay](heck-relay.md)), this system is a candidate for the
+`ratio_tol=None` bypass (see Optimizer Comparison for the experimental
+status).
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-cross-system comparison and methodology details.
+cross-system comparison and methodology details.  Raw numbers are in the
+[convergence baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/convergence)
+in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
+device, ratio_tol, timestamp).
 
 ## Comparison and gap analysis
 
