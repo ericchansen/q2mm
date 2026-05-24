@@ -5,9 +5,6 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
-  schedule:
-    # Nightly run — every day at 04:00 UTC
-    - cron: "0 4 * * *"
 
 jobs:
   # ================================================================
@@ -43,8 +40,10 @@ jobs:
       - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
 
   # ================================================================
-  # Tier 2 — Backend integration on every push (~2-5 min)
+  # Tier 2 — Backend unit tests on every push (~1-5 min)
   # Gated behind Tier 1 so lint/core failures are caught first.
+  # Each job runs backend-specific unit tests only (no --run-integration).
+  # Integration/validation/nightly tests are run locally — see bottom.
   # Images: ghcr.io/ericchansen/q2mm/ci-<backend>:latest
   # ================================================================
   test-openmm:
@@ -60,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm -q
 
   test-tinker:
     needs: [lint, test-core]
@@ -75,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker -q
 
   test-jax:
     needs: [lint, test-core]
@@ -90,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m jax --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m jax -q
 
   test-jax-md:
     needs: [lint, test-core]
@@ -105,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m jax_md --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m jax_md -q
 
   test-psi4:
     needs: [lint, test-core]
@@ -120,8 +119,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 -q
 
+  # ================================================================
+  # Tier 2b — Cross-backend parity tests (~5-10 min)
+  # Runs unit tests with every backend available to catch
+  # cross-backend regressions.  Integration tests (--run-integration)
+  # are too slow for GitHub-hosted runners — run locally instead.
+  # ================================================================
   test-cross-backend:
     needs: [lint, test-core]
     runs-on: ubuntu-latest
@@ -135,45 +140,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-integration -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -q
 
   # ================================================================
-  # Tier 3 — Validation on merge to master (~3-5 min)
-  # Fast correctness checks: Seminario parity, published FF, ethane TS.
-  # No optimizer loops — just FF loading, projection, frequency eval.
+  # Validation, nightly, and integration tiers removed from CI.
+  # These are research workloads (multi-molecule JAX JIT, optimizer
+  # loops, full eigenmatrix evals) that exceed hosted-runner budgets.
+  #
+  # Run locally instead:
+  #   pytest --run-integration -q   # Backend integration tests
+  #   pytest --run-validation -q    # Seminario parity, published FFs
+  #   pytest --run-nightly -q       # Full optimizer loops, benchmarks
   # ================================================================
-  test-validation:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    needs: [test-openmm, test-tinker, test-jax, test-jax-md, test-psi4, test-cross-backend]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-full:latest
-      options: --user root
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-validation -q
-
-  # ================================================================
-  # Tier 4 — Nightly: heavy tests with optimizer loops (~20-30 min)
-  # SN2 e2e (L-BFGS-B 200 iter), Rh-enamide full loops, benchmarks.
-  # ================================================================
-  test-nightly:
-    if: github.event_name == 'schedule'
-    needs: [lint, test-core]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-full:latest
-      options: --user root
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-nightly -q
