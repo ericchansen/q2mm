@@ -15,6 +15,30 @@ functions, and evaluation tools for force field development.
 
 > ⚠️ **This project is in alpha.** The rules below are non-negotiable.
 
+### TS Hessian Inversion — DO NOT GET THIS WRONG
+
+Q2MM handles **transition state (TS) systems** by inverting the QM Hessian's
+negative eigenvalues before Seminario projection (`invert_ts_curvature=True`).
+This produces a force field with **all-positive force constants** where the TS
+geometry is a **proper minimum** on the MM potential energy surface — not a
+saddle point.
+
+**Consequences that agents repeatedly get wrong:**
+
+1. **Unconstrained geometry relaxation IS correct for TS systems.**
+   `_relax_coords()` uses unconstrained L-BFGS to find the MM minimum.  After
+   Hessian inversion, that minimum should be near the QM saddle-point geometry.
+   Do NOT claim that "relaxation is wrong for TS" or "TS structures sit at
+   saddle points on the MM PES" — that is false after inversion.
+
+2. **When relaxation diverges, the problem is the starting FF, not the
+   method.**  If Seminario produces deeply negative R² (e.g., heck-relay
+   R²_bond = −434), the force constants are so wrong that the MM PES has its
+   minimum far from the QM geometry.  The fix is to improve the starting FF,
+   not to change the relaxation approach.
+
+3. **Reference:** Limé & Norrby, *J. Chem. Theory Comput.* **2015**, 11, 3696.
+
 ---
 
 ## 2. Alpha Discipline
