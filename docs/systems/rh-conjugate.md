@@ -58,23 +58,36 @@ complete failure of cross-engine transfer, not a small miss.
 ## Benchmark results
 
 !!! warning "Ratio check failed — optimization skipped"
-    The JaxLoss/ObjectiveFunction ratio (0.459) falls far outside the
-    [0.85, 1.15] tolerance, indicating JaxLoss is not a reliable
-    surrogate for this system.
+    The JaxLoss/ObjectiveFunction ratio diverges far outside the
+    [0.85, 1.15] tolerance (most recent regeneration: ratio ≈ 4.6 × 10³).
+    JaxLoss is not a reliable surrogate for this system at the Seminario
+    starting point.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 0.459 (fail) |
-| Initial ObjectiveFunction score | 22,628,083 |
+| Ratio check | diverged (out_of_band) |
+| Initial ObjectiveFunction score | 2.21 × 10⁷ |
 | Optimization | Skipped |
 
 **Why it fails:** The Seminario starting FF has deeply negative R² for
-all 10 molecules (R² = −3.90 overall, bond length R² = −45.0).
-Unconstrained geometry relaxation diverges significantly between
-JaxLoss and ObjectiveFunction.
+all 10 molecules (bond_length R² ≈ −58, bond_angle R² ≈ −1.3,
+eig_diagonal R² ≈ −4.8).  The MM PES that comes out of the
+inverted-Hessian Seminario projection is so far from the QM
+geometries that the inner geometry minimization inside JaxLoss lands
+in unphysical local minima — the resulting JaxLoss value is many
+orders of magnitude larger than the ObjectiveFunction.
+
+This is **not** a JaxLoss bug; the ratio gate is correctly identifying
+that the surrogate is unreliable for this parameter regime.  The root
+cause is the poor starting FF — the published Wahlers force field
+relies on a base MM3 layer that does not transfer cleanly under
+JaxEngine, and Seminario alone cannot recover from that.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-cross-system comparison and methodology details.
+the cross-system comparison.  Raw numbers are in the
+[convergence baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-1,4-conjugate-addition/convergence)
+in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
+device, ratio_tol, timestamp).
 
 ## Comparison and gap analysis
 

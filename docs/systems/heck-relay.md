@@ -1,12 +1,12 @@
 # Heck Relay
 
-Heck relay is a strong negative reproduction case: the published Pd-catalyzed asymmetric redox-relay Heck TSFF is reported as an excellent internal fit in MacroModel MM3*, but it does not transfer cleanly under our engine. It is also a useful optimizer benchmark because JaxOpt L-BFGS achieves the best frequency RMSD (106.0 cm⁻¹) on this 23-structure, 3,021-parameter system.
+Heck relay is a strong negative reproduction case: the published Pd-catalyzed asymmetric redox-relay Heck TSFF is reported as an excellent internal fit in MacroModel MM3*, but it does not transfer cleanly under our engine. It is also a useful optimizer benchmark — the published Rosales force field exposes **462 active OPT parameters** across 23 transition-state structures, but Seminario re-estimation of the standard MM3 backbone produces a catastrophically bad starting force field for our optimizer.
 
 ## Scope
 
 - Type: Transition state (Pd-catalyzed asymmetric Heck reaction)
-- Molecules: 23 TS structures (paper reports 24; one may be excluded from our training set)
-- Parameters: 182 (OPT substructure: 18 bonds, 35 angles, 74 torsions)
+- Molecules: 23 TS structures (paper reports 24; one is excluded from our training set)
+- Parameters: 462 active OPT parameters (overlay on a standard MM3 base of ~2,500 frozen parameters; total ~3,000)
 - QM reference: M06-GD3/LANL2DZ/6-31+G*
 
 ## Publication
@@ -64,25 +64,31 @@ complete failure of cross-engine transfer, not a small miss.
 ## Benchmark results
 
 !!! failure "JaxLoss diverges on this system"
-    JaxLoss geometry relaxation diverges (loss ~2.7×10⁶⁰), producing
-    an infinite ratio check. **No JaxLoss-guided optimization was
-    performed.**
+    JaxLoss geometry relaxation diverges by ~21 orders of magnitude on
+    the Seminario starting force field.  **No JaxLoss-guided
+    optimization was performed.**
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | ∞ (fail — JaxLoss diverged) |
-| Initial ObjectiveFunction score | 139,652,915 |
+| Ratio check | ~6.8 × 10²¹ (fail — JaxLoss diverged) |
+| Initial ObjectiveFunction score | 1.48 × 10⁸ |
 | Optimization | Skipped |
 
 **Why it diverges:** The Seminario starting FF is deeply negative for
-every molecule (R² = −8.89 overall). With such a poor starting
-point, unconstrained geometry relaxation in JaxLoss wanders to
-completely wrong local minima, producing meaningless loss values.
-The ratio check correctly identifies this and blocks optimization.
+every category — bond_length R² ≈ −48, bond_angle R² ≈ −5.5,
+eig_diagonal R² ≈ −4.7.  With such a poor starting point, the inner
+geometry minimization inside JaxLoss lands in completely unphysical
+local minima, producing meaningless loss values.  The ratio check
+correctly identifies this and blocks optimization.
 
 Finite-difference gradients would work in principle but are
-impractical for this system (462 active params × ~20 s per evaluation
-= hours per gradient step).
+impractical for this system (462 active parameters × ~20 s per
+evaluation = hours per gradient step).
+
+The numbers above come from the committed regeneration script
+`scripts/regenerate_convergence_results.py`; the raw JSON output (with
+provenance: git SHAs, device, ratio_tol, timestamp) lives at
+[`q2mm-data/benchmarks/heck-relay/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/convergence).
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.
