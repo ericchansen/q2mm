@@ -15,8 +15,13 @@ For each benchmark system this script:
 Outputs (per system, into ``<output-dir>/<system-data-dir>/convergence/``):
 
 - ``validation_results.json`` — summary numbers for the system (strict JSON,
-  no ``Infinity`` or ``NaN``; diverged/skipped cases use a structured
-  ``status`` field).
+  no ``Infinity`` or ``NaN``).  Ratio state is encoded across three keys:
+  ``ratio`` (the numeric value, or ``null`` when JaxLoss returned non-finite
+  values), ``ratio_status`` (one of ``"ok"``, ``"ok_bypassed"``,
+  ``"out_of_band"``, ``"diverged"``, ``"nan"``), and ``ratio_passes`` (bool).
+  When optimization was not attempted, ``skipped`` is ``true`` and
+  ``skip_reason`` describes why (e.g. ``"ratio_check_failed"``,
+  ``"jaxloss_diverged"``, ``"user_requested"``).
 - ``paper_metrics.json`` — per-category Seminario + optimized stats.
 - ``<system>_optimized.fld`` — optimized force field (only when optimization
   ran and succeeded).
@@ -35,6 +40,7 @@ import argparse
 import json
 import logging
 import math
+import shlex
 import subprocess
 import sys
 import time
@@ -68,7 +74,9 @@ DATA_DIR_FOR_SYSTEM: dict[str, str] = {
 
 def _git_info(repo: Path) -> dict[str, Any]:
     """Return ``{git_sha, git_dirty}`` for a git repo, or empty dict on failure."""
-    if not (repo / ".git").exists() and not (repo / ".git").is_file():
+    # ``.git`` can be either a directory (regular repo) or a file (worktrees /
+    # submodules), so a single ``exists()`` check covers both.
+    if not (repo / ".git").exists():
         return {}
     try:
         sha = subprocess.check_output(
@@ -109,13 +117,18 @@ def _device_info() -> dict[str, Any]:
 
 
 def _build_provenance(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
-    """Construct the provenance block embedded in every output file."""
+    """Construct the provenance block embedded in every output file.
+
+    *output_dir* is the user-supplied root for system convergence outputs
+    (e.g. ``../q2mm-data/benchmarks``); its parent is the q2mm-data repo
+    root we want to record git info for.
+    """
     q2mm_git = _git_info(REPO_ROOT)
-    data_git = _git_info(output_dir.parent.parent if output_dir.is_relative_to(DEFAULT_OUTPUT.parent) else output_dir)
+    data_git = _git_info(output_dir.parent)
     return {
         "generator": "scripts/regenerate_convergence_results.py",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "command_line": " ".join(sys.argv),
+        "command_line": shlex.join(sys.argv),
         "q2mm": q2mm_git,
         "q2mm_data": data_git,
         "ratio_tol": args.ratio_tol,
@@ -251,8 +264,12 @@ def _classify_ratio(ratio: float, tol: float | None) -> dict[str, Any]:
 def _initial_jaxloss(obj: Any) -> float:
     """Compute the JaxLoss surrogate value at the current parameters.
 
-    Returns +inf when JaxLoss is not applicable (non-JAX engine) — the
-    caller treats that as "diverged" for status purposes.
+    Returns +inf when JaxLoss is not applicable (non-JAX engine) or when
+    the underlying JaxLoss evaluation returns a non-finite value (NaN/Inf
+    from out-of-range parameters).  Uses :meth:`JaxLoss.value_and_grad_jax`
+    rather than :meth:`JaxLoss.loss_and_grad` to avoid the latter's
+    silent ``1e30`` penalty substitution, which would otherwise mask a
+    real divergence as a merely "out of band" finite ratio.
     """
     from q2mm.backends.mm.jax_engine import JaxEngine
     from q2mm.optimizers.jaxloss import JaxLoss
@@ -262,8 +279,11 @@ def _initial_jaxloss(obj: Any) -> float:
     spec = obj.to_jax_spec()
     jl = JaxLoss(spec, obj.engine, obj.molecules, obj.forcefield)
     x = obj.forcefield.get_param_vector()
-    val, _ = jl.loss_and_grad(x)
-    return float(val)
+    val_jax, _ = jl.value_and_grad_jax(x)
+    val = float(val_jax)
+    if not math.isfinite(val):
+        return float("inf")
+    return val
 
 
 def _run_optimization(
@@ -282,6 +302,7 @@ def _run_optimization(
         method="L-BFGS-B",
         maxiter=maxiter,
         verbose=True,
+        jac="auto",
         ratio_tol=ratio_tol,
     )
     t0 = time.perf_counter()
@@ -469,8 +490,10 @@ def main() -> int:
         "--combined-output",
         type=Path,
         default=None,
-        help="If set, also write a combined validation_results.json aggregating all systems "
-        "to this path (for backwards compatibility / cross-system review).",
+        help="If set, also write a combined JSON aggregating all systems to this "
+        "path. Schema is {provenance: ..., results: {<system>: summary}} — useful "
+        "for cross-system review, not a drop-in replacement for any historical "
+        "single-file schema.",
     )
     parser.add_argument(
         "--log-level",

@@ -33,9 +33,10 @@ saddle point.
 
 2. **When relaxation diverges, the problem is the starting FF, not the
    method.**  If Seminario produces deeply negative R² (e.g., heck-relay
-   R²_bond = −434), the force constants are so wrong that the MM PES has its
-   minimum far from the QM geometry.  The fix is to improve the starting FF,
-   not to change the relaxation approach.
+   bond_length R² in the tens of negatives), the force constants are so
+   wrong that the MM PES has its minimum far from the QM geometry.  The
+   fix is to improve the starting FF, not to change the relaxation
+   approach.
 
 3. **Reference:** Limé & Norrby, *J. Chem. Theory Comput.* **2015**, 11, 3696.
 

@@ -63,14 +63,19 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! failure "JaxLoss diverges on this system"
-    JaxLoss geometry relaxation diverges by ~21 orders of magnitude on
-    the Seminario starting force field.  **No JaxLoss-guided
-    optimization was performed.**
+!!! failure "JaxLoss surrogate is unusable on this starting FF"
+    JaxLoss returns a finite-but-astronomical value on the Seminario
+    starting force field (most recent regeneration:
+    `initial_jaxloss ≈ 5.6 × 10⁸⁹`, ratio ≈ 4.6 × 10⁸¹,
+    `ratio_status = "out_of_band"`).  The absolute magnitude is
+    non-deterministic across runs because the inner geometry
+    minimization wanders into very-high-energy regions, but the
+    surrogate is clearly unusable.  **No JaxLoss-guided optimization
+    was performed.**
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | ~6.8 × 10²¹ (fail — JaxLoss diverged) |
+| Ratio check | ≈ 4.6 × 10⁸¹ (out_of_band, non-deterministic across runs) |
 | Initial ObjectiveFunction score | 1.48 × 10⁸ |
 | Optimization | Skipped |
 

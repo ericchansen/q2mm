@@ -31,7 +31,7 @@ provenance: git SHAs, device, ratio_tol, timestamp) live in
 |--------|:----:|:------:|:-----:|:-----:|
 | Rh-enamide | 9 | 182 | 1.05 | ✓ |
 | Pd-allyl | 21 | 482 | 1.11 | ✓ |
-| Heck relay | 23 | 462 | ~10²¹ | ✗ |
+| Heck relay | 23 | 462 | ~10⁸¹ (out_of_band) | ✗ |
 | Pd 1,4-conj | 10 | 340 | 1.20 | ✗ |
 | Rh 1,4-conj | 10 | 488 | ~4 × 10³ | ✗ |
 
@@ -58,9 +58,11 @@ will be filled in as optimization runs are committed to q2mm-data):
   out of the box.
 - **Heck relay** has a catastrophically poor Seminario starting FF
   (bond_length R² ≈ −48, bond_angle R² ≈ −5).  Inside JaxLoss the
-  inner geometry relaxation explodes, driving the surrogate ~21 orders
-  of magnitude above the real objective.  Optimization is impossible
-  without first fixing the starting FF (see [heck-relay
+  inner geometry relaxation wanders into very-high-energy regions,
+  producing a finite-but-astronomical surrogate value (~10⁸¹) that
+  is classified `out_of_band`.  The absolute magnitude is
+  non-deterministic across runs.  Optimization is impossible without
+  first fixing the starting FF (see [heck-relay
   page](../systems/heck-relay.md)).
 - **Pd 1,4-conj** misses the band by ~4 %.  This is the natural
   candidate for the experimental `ratio_tol=None` bypass — see
@@ -104,11 +106,11 @@ prediction is worse than predicting the QM mean.
 
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) |
 |--------|:------------:|:------------:|:------------:|
-| Rh-enamide (9 mol) | 0.958 | 0.976 | 0.934 |
-| Heck relay (23 mol) | −4.66 | −48.1 | −5.47 |
-| Pd-allyl (21 mol) | −1.59 | 0.10 | 0.35 |
-| Pd 1,4-conj (10 mol) | −4.56 | 0.46 | −0.11 |
-| Rh 1,4-conj (10 mol) | −4.85 | −57.6 | −1.29 |
+| Rh-enamide (9 mol) | 0.972 | 0.976 | 0.934 |
+| Heck relay (23 mol) | −4.66 | −48.06 | −5.47 |
+| Pd-allyl (21 mol) | −1.41 | 0.026 | 0.337 |
+| Pd 1,4-conj (10 mol) | −4.47 | 0.435 | −0.118 |
+| Rh 1,4-conj (10 mol) | −4.85 | −57.65 | −1.29 |
 
 Rh-enamide starts near-optimal (R² > 0.93 in all categories). The other
 four systems start far from optimal — the optimizer must close this gap.
