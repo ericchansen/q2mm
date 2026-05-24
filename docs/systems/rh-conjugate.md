@@ -58,14 +58,14 @@ complete failure of cross-engine transfer, not a small miss.
 ## Benchmark results
 
 !!! warning "Ratio check failed — optimization skipped"
-    The JaxLoss/ObjectiveFunction ratio diverges far outside the
-    [0.85, 1.15] tolerance (most recent regeneration: ratio ≈ 4.6 × 10³).
-    JaxLoss is not a reliable surrogate for this system at the Seminario
-    starting point.
+    The JaxLoss/ObjectiveFunction ratio is out of the [0.85, 1.15]
+    tolerance (most recent regeneration: ratio ≈ 4.6 × 10³,
+    `ratio_status = "out_of_band"`).  JaxLoss is not a reliable
+    surrogate for this system at the Seminario starting point.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | diverged (out_of_band) |
+| Ratio check | ≈ 4.6 × 10³ (out_of_band) |
 | Initial ObjectiveFunction score | 2.21 × 10⁷ |
 | Optimization | Skipped |
 
