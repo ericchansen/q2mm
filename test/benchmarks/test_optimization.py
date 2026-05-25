@@ -19,9 +19,9 @@ pytestmark = [pytest.mark.benchmark, pytest.mark.nightly]
 def _run_and_validate(engine: object) -> None:
     """Run the benchmark pipeline and validate structure."""
     from q2mm.diagnostics.benchmark import run_combo
-    from q2mm.diagnostics.systems import load_ch3f
+    from q2mm.diagnostics.systems import load_system
 
-    sys_data = load_ch3f(engine)
+    sys_data = load_system("ch3f", engine=engine)
     result = run_combo(
         engine=engine,
         sys_data=sys_data,

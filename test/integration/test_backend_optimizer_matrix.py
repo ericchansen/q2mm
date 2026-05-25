@@ -186,10 +186,10 @@ class TestBenchmarkPipeline:
     def result(self) -> BenchmarkResult:
         from q2mm.backends.mm.openmm import OpenMMEngine
         from q2mm.diagnostics.benchmark import run_combo
-        from q2mm.diagnostics.systems import load_ch3f
+        from q2mm.diagnostics.systems import load_system
 
         engine = OpenMMEngine()
-        sys_data = load_ch3f(engine)
+        sys_data = load_system("ch3f", engine=engine)
 
         return run_combo(
             engine=engine,

@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from q2mm.diagnostics.benchmark import BenchmarkResult
-    from q2mm.diagnostics.systems import BenchmarkSystem
+    from q2mm.diagnostics.systems import SystemSpec
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
@@ -117,14 +117,14 @@ def _functional_form_configs() -> list[tuple[str, str]]:
     ]
 
 
-def _resolve_system(system_key: str) -> BenchmarkSystem:
+def _resolve_system(system_key: str) -> SystemSpec:
     """Look up a benchmark system by key.
 
     Args:
         system_key: System name (e.g. ``"ch3f"``, ``"rh-enamide"``).
 
     Returns:
-        BenchmarkSystem: The system configuration.
+        SystemSpec: The system configuration.
 
     Raises:
         SystemExit: If the system is not registered.
@@ -225,13 +225,17 @@ def _run_matrix(
 
             # Reload system data per-form (reference data depends on form)
             try:
-                loader_kwargs: dict[str, Any] = {"functional_form": form_value}
-                if system_key == "ch3f" and data_dir is not None:
-                    from q2mm.diagnostics.systems import load_ch3f
+                from q2mm.diagnostics.systems import load_system
 
-                    sys_data = load_ch3f(engine, data_dir=data_dir, **loader_kwargs)
-                else:
-                    sys_data = system_cfg.loader(engine, **loader_kwargs)
+                molecule_loader_kwargs: dict[str, Any] | None = None
+                if system_key == "ch3f" and data_dir is not None:
+                    molecule_loader_kwargs = {"data_dir": data_dir}
+                sys_data = load_system(
+                    system_key,
+                    engine=engine,
+                    functional_form=form_value,
+                    molecule_loader_kwargs=molecule_loader_kwargs,
+                )
             except Exception as e:
                 print(
                     f"  Skipping {backend_name}/{form_label}: cannot load {system_key} data: {e}",

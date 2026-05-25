@@ -389,7 +389,7 @@ def test_load_heck_relay_preserves_published_opt_values() -> None:
     if HECK_DIR is None:
         pytest.skip("Heck relay supporting data not found")
 
-    from q2mm.diagnostics.systems import load_heck_relay
+    from q2mm.diagnostics.systems import load_system
     from q2mm.models.forcefield import ForceField
 
     ff_path = HECK_DIR / "mm3.FF1.fld"
@@ -397,7 +397,7 @@ def test_load_heck_relay_preserves_published_opt_values() -> None:
         pytest.skip(f"mm3.FF1.fld not found: {ff_path}")
 
     # Loader output (what users get today).
-    sys_data = load_heck_relay(engine=None)
+    sys_data = load_system("heck-relay")
     loader_active = sys_data.forcefield.get_active_param_vector()
 
     # Same .fld file, same active-mask partition, but no Seminario.
