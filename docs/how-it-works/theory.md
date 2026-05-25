@@ -90,13 +90,13 @@ plain Seminario give identical results.
 QFUERZA is the default. To use plain Seminario projection instead:
 
 ```python
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 
 # Default — QFUERZA (recommended)
-ff = estimate_force_constants(molecule)
+ff = qfuerza_fresh(molecule)
 
 # Plain Seminario projection (no H-angle substitution)
-ff = estimate_force_constants(molecule, strategy="fuerza")
+ff = qfuerza_fresh(molecule, strategy="fuerza")
 ```
 
 The implementation lives in
@@ -165,8 +165,9 @@ eigenvalue replacement approach (J. Comput. Chem. 2015, 36, 244–250).
 | `invert_ts_curvature()` | `q2mm.models.hessian` | Decompose → replace negative eigenvalue → reconstruct |
 | `replace_neg_eigenvalue()` | `q2mm.models.hessian` | Low-level eigenvalue replacement |
 
-The `invert_ts_curvature` parameter in `estimate_force_constants()` controls
-whether curvature inversion is applied (default: `False`).
+The `invert_ts_curvature` parameter on both `qfuerza_fresh()` and
+`qfuerza_into()` controls whether curvature inversion is applied
+(default: `False`; published-FF system loaders pass `True` for TS systems).
 
 ---
 

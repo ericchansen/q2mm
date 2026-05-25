@@ -52,14 +52,14 @@ pip install -e ".[dev]"
 ```python
 from q2mm.optimizers.objective import ReferenceData, ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.backends.mm import OpenMMEngine
 
 # 1. Load QM reference data and molecule from a Gaussian checkpoint
 ref, mol = ReferenceData.from_fchk("ts-optimized.fchk", bond_tolerance=1.4)
 
-# 2. Estimate initial force field from the QM Hessian
-ff = estimate_force_constants(mol, au_hessian=True)
+# 2. Build the initial force field from the QM Hessian (QFUERZA)
+ff = qfuerza_fresh(mol, au_hessian=True)
 
 # 3. Set up the objective function and optimize
 engine = OpenMMEngine()

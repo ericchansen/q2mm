@@ -95,8 +95,8 @@ def _is_hydrogen_angle(elements):
     return elements[0] == "H" or elements[2] == "H"
 ```
 
-In `estimate_force_constants()`, after computing the Seminario-projected
-value for each angle:
+In `qfuerza_into()` (and indirectly `qfuerza_fresh()`), after computing
+the Seminario-projected value for each angle:
 
 ```python
 if strategy == "qfuerza" and _is_hydrogen_angle(angle_param.elements):

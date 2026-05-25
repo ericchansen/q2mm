@@ -64,9 +64,12 @@ complete failure of cross-engine transfer, not a small miss.
 ## Benchmark results
 
 !!! success "Loader bug fixed (ericchansen/q2mm#277) — Rosales FF now usable"
-    The previous loader silently re-ran `estimate_force_constants` on
-    the Rosales FF, which overwrote the published OPT parameters with
-    raw FUERZA projections.  In the three-baseline diagnostic
+    The previous loader silently re-ran QFUERZA (the old
+    ``estimate_force_constants(forcefield=ff)`` overload — since
+    deleted in favour of separate ``qfuerza_fresh`` / ``qfuerza_into``
+    APIs) on the Rosales FF, which overwrote the published OPT
+    parameters with raw FUERZA projections.  In the three-baseline
+    diagnostic
     (`q2mm-data/benchmarks/heck-relay/diagnostic/three_baseline_comparison.json`)
     the buggy combination collapsed bond_length R² to ≈ **−4787** for
     that run (the value is non-deterministic across runs because the
@@ -78,7 +81,7 @@ complete failure of cross-engine transfer, not a small miss.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.29 (out_of_band; upper bound 1.15) |
+| Ratio check | 1.30 (out_of_band; upper bound 1.15) |
 | Initial ObjectiveFunction score | 3.46 × 10⁶ |
 | Optimization | Skipped at default `ratio_tol=0.15` (borderline — candidate for `ratio_tol=None`) |
 

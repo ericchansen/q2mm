@@ -58,25 +58,32 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! warning "Ratio check failed — optimization skipped"
-    The JaxLoss/ObjectiveFunction ratio (most recent regeneration: 1.20)
-    is just outside the [0.85, 1.15] tolerance.  JaxLoss is not yet a
-    reliable surrogate for this system at the Seminario starting point.
+!!! success "Ratio gate now passes — loader API refactor"
+    After the loader API refactor that stopped overwriting Wahlers OPT
+    values with raw QFUERZA projections, the JaxLoss/ObjectiveFunction
+    ratio for pd-conjugate is 0.96 — comfortably inside the
+    [0.85, 1.15] band.  JaxLoss-guided optimization is now possible.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.20 (out_of_band; upper bound is 1.15) |
-| Initial ObjectiveFunction score | 8.26 × 10⁶ |
-| Optimization | Skipped at default `ratio_tol=0.15` |
+| Ratio check | 0.96 (in_band) |
+| Initial ObjectiveFunction score | 8.79 × 10⁶ |
+| Optimization | TBD pending end-to-end run against the refactored loader |
 
-**Why it fails:** The Seminario starting FF has negative eigenvalue R²
-for all 10 molecules (eig_diagonal R² ≈ −4.5).  Unconstrained geometry
-relaxation finds different local minima in JaxLoss vs ObjectiveFunction,
-producing divergent loss values.  Because the ratio (1.20) is only
-just outside the upper bound (1.15) — vs orders of magnitude for
-[Rh 1,4-conjugate](rh-conjugate.md) and [Heck relay](heck-relay.md) —
-this system is a candidate for the `ratio_tol=None` bypass (see
-Optimizer Comparison for the experimental status).
+Per-category fit of the published Wahlers force field against the QM
+training data (no QFUERZA — these are the published OPT values
+evaluated by the q2mm JAX engine):
+
+| Category | n_refs | R² | RMSD |
+|----------|-------:|----:|-----:|
+| bond_length | 473 | 0.939 | — |
+| bond_angle | 892 | −0.177 | — |
+| eig_diagonal | 1296 | −10.06 | — |
+
+Geometry reproduction is now strong (bond_length R² ≈ 0.94); the
+eigenmatrix R² is still negative, reflecting the same MM3* ↔ JAX-engine
+cross-engine gap that affects all Wahlers / Rosales systems but not
+rh-enamide.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.  Raw numbers are in the

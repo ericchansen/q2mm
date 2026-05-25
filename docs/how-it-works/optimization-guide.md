@@ -24,7 +24,8 @@ then links to source code for API details.
 | JAX engine, multi-molecule TS systems | [Workflow D](#workflow-d-end-to-end-differentiable-jax) | Per-molecule JaxLoss analytical gradients via scipy L-BFGS-B |
 
 Every workflow assumes **QFUERZA initialization** — run
-`estimate_force_constants()` before optimization. QFUERZA puts you in the
+`qfuerza_fresh()` (single molecule) or `qfuerza_into()` (template-based,
+multi-molecule averaging) before optimization. QFUERZA puts you in the
 right neighbourhood; the optimizer refines from there.
 
 ---
@@ -372,8 +373,8 @@ top harmonic results on CH₃F all use analytical or auto mode.
 
 !!! tip "QFUERZA initialization matters"
     Starting from QFUERZA-estimated parameters puts you close to the
-    optimum. Always run `estimate_force_constants()` before optimization
-    when QM data is available.
+    optimum. Run `qfuerza_fresh()` or `qfuerza_into()` before
+    optimization when QM data is available.
 
 !!! tip "Monitor convergence"
     Plot `result.history` (single-shot) or `result.cycle_scores` (cycling)

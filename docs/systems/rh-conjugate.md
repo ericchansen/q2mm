@@ -57,31 +57,37 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! warning "Ratio check failed — optimization skipped"
-    The JaxLoss/ObjectiveFunction ratio is out of the [0.85, 1.15]
-    tolerance (most recent regeneration: ratio ≈ 4.6 × 10³,
-    `ratio_status = "out_of_band"`).  JaxLoss is not a reliable
-    surrogate for this system at the Seminario starting point.
+!!! success "Ratio gate now passes — loader API refactor"
+    The pre-refactor loader silently overwrote the Wahlers OPT
+    parameters with raw QFUERZA projections, sending JaxLoss's inner
+    geometry minimization into pathological regions and producing
+    ratios that varied wildly across runs (0.46 / 0.96 / ~4 × 10³ in
+    successive sessions).  After the loader API refactor that
+    preserves the published OPT values as-is, the ratio is 1.04 —
+    comfortably inside the [0.85, 1.15] band.  JaxLoss-guided
+    optimization is now possible.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | ≈ 4.6 × 10³ (out_of_band) |
-| Initial ObjectiveFunction score | 2.21 × 10⁷ |
-| Optimization | Skipped |
+| Ratio check | 1.04 (in_band) |
+| Initial ObjectiveFunction score | 6.42 × 10⁶ |
+| Optimization | TBD pending end-to-end run against the refactored loader |
 
-**Why it fails:** The Seminario starting FF has deeply negative R² for
-all 10 molecules (bond_length R² ≈ −58, bond_angle R² ≈ −1.3,
-eig_diagonal R² ≈ −4.8).  The MM PES that comes out of the
-inverted-Hessian Seminario projection is so far from the QM
-geometries that the inner geometry minimization inside JaxLoss lands
-in unphysical local minima — the resulting JaxLoss value is many
-orders of magnitude larger than the ObjectiveFunction.
+Per-category fit of the published Wahlers force field against the QM
+training data (no QFUERZA — these are the published OPT values
+evaluated by the q2mm JAX engine):
 
-This is **not** a JaxLoss bug; the ratio gate is correctly identifying
-that the surrogate is unreliable for this parameter regime.  The root
-cause is the poor starting FF — the published Wahlers force field
-relies on a base MM3 layer that does not transfer cleanly under
-JaxEngine, and Seminario alone cannot recover from that.
+| Category | n_refs | R² |
+|----------|-------:|----:|
+| bond_length | 457 | 0.891 |
+| bond_angle | 926 | 0.454 |
+| eig_diagonal | 1254 | −7.86 |
+
+The dramatic improvement vs the pre-refactor numbers (where
+bond_length R² was −58) is the loss of the QFUERZA overwrite that
+was destroying the published Wahlers fit.  The eigenmatrix R² is
+still negative, reflecting the same MM3* ↔ JAX-engine cross-engine
+gap that affects all Wahlers systems.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 the cross-system comparison.  Raw numbers are in the

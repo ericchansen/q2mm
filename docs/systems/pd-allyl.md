@@ -60,33 +60,29 @@ worse than simply predicting the average.
 
 ## Benchmark results
 
-SciPy L-BFGS-B with JaxLoss analytical gradients on RTX 5090 GPU.
-The ratio check passed, confirming JaxLoss as a reliable surrogate
-despite the poor Seminario starting FF.
+SciPy L-BFGS-B with JaxLoss analytical gradients.  After the loader
+API refactor that preserves the published Wahlers OPT values
+as-published (no QFUERZA overwrite), the ratio gate passes for
+pd-allyl.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.09 (pass) |
-| Initial score | 8.02 × 10⁶ |
-| Final score | 8.00 × 10⁶ |
-| Reduction | 0.08 % |
-| Iterations / Evaluations | 2 / 2 |
+| Ratio check | 1.10 (pass) |
+| Initial score | 7.99 × 10⁶ |
+| Final score | TBD |
+| Reduction | TBD |
+| Iterations / Evaluations | TBD |
 | Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
-| Wall time | ~23 min (including per-molecule JIT) |
+| Wall time | TBD |
 
 These numbers are reproducible from `scripts/regenerate_convergence_results.py`
 (no `--skip-optimization`); raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/pd-allyl-amination/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence).
 
-The modest 0.08 % improvement reflects the poor Seminario starting
-point (eig_diagonal R² ≈ −1.4): SciPy reports convergence
-(`CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH`) after 2
-iterations / 2 evaluations, with a non-finite JaxLoss penalty observed
-during the run (a known limitation of the per-molecule JIT path at 482
-active parameters when the parameter step is too large).  Improving
-further would likely require a hybrid FD/JaxLoss strategy or tighter
-bounds; the modest gain still represents a real ObjectiveFunction
-reduction.
+The post-optimization rows are TBD pending an end-to-end run against
+the refactored loader.  A prior baseline reported a 0.08 % reduction
+on an FF whose OPT values had been QFUERZA-overwritten; that result
+is not reproducible against the current loader.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.

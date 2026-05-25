@@ -29,11 +29,25 @@ provenance: git SHAs, device, ratio_tol, timestamp) live in
 
 | System | Mols | Active | Ratio | Check |
 |--------|:----:|:------:|:-----:|:-----:|
-| Rh-enamide | 9 | 182 | 1.05 | ✓ |
-| Pd-allyl | 21 | 482 | 1.09 | ✓ |
-| Heck relay | 23 | 462 | 1.29 | ✗ |
-| Pd 1,4-conj | 10 | 340 | 1.20 | ✗ |
-| Rh 1,4-conj | 10 | 488 | ~4 × 10³ | ✗ |
+| Rh-enamide | 9 | 182 | 1.07 | ✓ |
+| Pd-allyl | 21 | 482 | 1.10 | ✓ |
+| Heck relay | 23 | 462 | 1.30 | ✗ |
+| Pd 1,4-conj | 10 | 340 | 0.96 | ✓ |
+| Rh 1,4-conj | 10 | 488 | 1.04 | ✓ |
+
+**Note on the gate behaviour after the loader API refactor.**  The
+loader API refactor (the same commit that introduces this update)
+stopped overwriting published OPT parameter values with raw QFUERZA
+projections — see :func:`q2mm.models.loaders.load_published_opt` and
+:func:`q2mm.models.loaders.load_published_opt_composed` and AGENTS.md
+"Key Papers" for the QFUERZA / Farrugia 2025 background.  Four of
+the five published-FF systems (rh-enamide, pd-allyl, pd-conjugate,
+rh-conjugate) now use the literature OPT values as-published and the
+ratio gate passes for four of them (heck-relay remains marginally
+out of band at 1.30).  Pre-refactor ratios for the two "Wahlers
+composed" systems were 1.20 (pd-conjugate) and ~4 × 10³
+(rh-conjugate); the dramatic change for rh-conjugate is the loss of
+the silent QFUERZA overwrite, not anything about JaxLoss itself.
 
 **Optimization results** (only systems that pass the ratio gate;
 ``jac_mode`` is the resolved gradient mode from the JSON output, after
@@ -44,8 +58,19 @@ of the run — that is why `Evals` can be much smaller than `Iters`:
 
 | System | Init score | Final score | Δ% | Iters (`nit`) | ObjFun evals | Wall time | jac_mode |
 |--------|:----------:|:-----------:|:--:|:-------------:|:------------:|:---------:|:--------:|
-| Rh-enamide | 3.92 × 10⁵ | 2.80 × 10⁵ | 28.68 % | 6 | 2 | ~11 min | `jax_loss` |
-| Pd-allyl | 8.02 × 10⁶ | 8.00 × 10⁶ | 0.08 % | 2 | 2 | ~23 min | `jax_loss` |
+| Rh-enamide | 4.87 × 10⁵ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
+| Pd-allyl | 7.99 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
+| Pd 1,4-conj | 8.79 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
+| Rh 1,4-conj | 6.42 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
+
+The post-optimization rows are TBD pending end-to-end optimization
+runs against the refactored loaders (tracked in
+[q2mm#275](https://github.com/ericchansen/q2mm/issues/275) and its
+follow-ups).  The earlier published 28.68 % rh-enamide improvement
+came from an FF whose OPT values were overwritten by QFUERZA — that
+result is no longer reproducible because the new loader preserves
+the Donoghue OPT values, which start closer to optimum so the
+absolute headroom is smaller.
 
 Each row is reproducible from
 [`scripts/regenerate_convergence_results.py`](https://github.com/ericchansen/q2mm/blob/master/scripts/regenerate_convergence_results.py)
@@ -59,26 +84,24 @@ name for the Wahlers systems — e.g. `pd-allyl` →
 
 **Notes:**
 
-- **Rh-enamide and Pd-allyl** pass the ratio gate cleanly and are the
-  two systems that can be optimized with JaxLoss analytical gradients
-  out of the box.
-- **Heck relay** misses the gate by ~12 % (ratio 1.29).  With the
-  loader bug fixed in [`q2mm#277`](https://github.com/ericchansen/q2mm/issues/277),
-  the Rosales OPT parameters are now used as-published: bond_length
-  R² ≈ 0.98, bond_angle R² ≈ 0.79.  Heck relay joins
-  [pd-conjugate](../systems/pd-conjugate.md) as a candidate for the
-  experimental `ratio_tol=None` bypass.
-- **Pd 1,4-conj** misses the band by ~4 %.  This is the natural
-  candidate for the experimental `ratio_tol=None` bypass — see
-  [pd-conjugate](../systems/pd-conjugate.md).  Until that experiment
-  has run and been validated against the real ObjectiveFunction, the
-  default `ratio_tol=0.15` correctly skips this system.
-- **Rh 1,4-conj** diverges by ~3 orders of magnitude.  The JaxLoss
-  surrogate is unusable here without first improving the starting FF.
-  Previous sessions saw varying ratios (0.46–0.96) for this system
-  depending on uncommitted state; the current committed baseline
-  gives ~4 × 10³.  See [rh-conjugate](../systems/rh-conjugate.md)
-  for the per-category R² explaining why the surrogate diverges.
+- **Rh-enamide, Pd-allyl, Pd 1,4-conj, and Rh 1,4-conj** pass the
+  ratio gate cleanly after the loader API refactor — the literature
+  OPT values reproduce QM geometry well and JaxLoss's inner
+  geometry minimization stays in a sensible basin.
+- **Heck relay** misses the gate by ~12 % (ratio 1.30).  The Rosales
+  OPT parameters are used as-published; bond_length R² ≈ 0.98 and
+  bond_angle R² ≈ 0.79 are healthy, but eig_diagonal R² ≈ −12.6
+  reflects a real MM3* ↔ JAX-engine cross-engine gap.  Heck relay
+  remains a candidate for the experimental `ratio_tol=None` bypass
+  ([q2mm#276](https://github.com/ericchansen/q2mm/issues/276)).
+- **Pd 1,4-conj** is now within the gate (0.96) — the pre-refactor
+  ratio of 1.20 came from QFUERZA overwriting the Wahlers OPT
+  values.  See [pd-conjugate](../systems/pd-conjugate.md).
+- **Rh 1,4-conj** is now within the gate (1.04) — the pre-refactor
+  ratio of ~4 × 10³ came from QFUERZA overwriting the Wahlers OPT
+  values, sending JaxLoss's inner geometry minimization into
+  pathological regions.  See [rh-conjugate](../systems/rh-conjugate.md)
+  for the per-category R² that explains the recovery.
 
 ### Why some systems fail the ratio check
 
@@ -102,26 +125,26 @@ Our eigenmatrix-diagonal R² is analogous to paper R²(hessian), though we
 use diagonal elements only while papers use the full lower-triangular
 eigenmatrix.
 
-### Seminario starting-point R² (pre-optimization)
+### Pre-optimization R² (published OPT values as-published)
 
-These R² values show how well the Seminario-estimated force constants
-reproduce QM data *before* any optimization. Negative R² means the MM
-prediction is worse than predicting the QM mean.
+These R² values show how well the published OPT values, evaluated by
+the q2mm JAX engine, reproduce QM data *before* any q2mm-side
+optimization.  All five systems use the literature OPT block as-is
+(no QFUERZA overwrite) after the loader API refactor.
 
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) |
 |--------|:------------:|:------------:|:------------:|
-| Rh-enamide (9 mol) | 0.972 | 0.976 | 0.934 |
-| Heck relay (23 mol) | −12.6 | 0.980 | 0.786 |
-| Pd-allyl (21 mol) | −1.41 | 0.026 | 0.337 |
-| Pd 1,4-conj (10 mol) | −4.47 | 0.435 | −0.118 |
-| Rh 1,4-conj (10 mol) | −4.85 | −57.65 | −1.29 |
+| Rh-enamide (9 mol) | 0.963 | 0.987 | 0.918 |
+| Heck relay (23 mol) | −12.6 | 0.980 | 0.781 |
+| Pd-allyl (21 mol) | −2.82 | 0.042 | 0.330 |
+| Pd 1,4-conj (10 mol) | −10.06 | 0.939 | −0.177 |
+| Rh 1,4-conj (10 mol) | −7.86 | 0.891 | 0.454 |
 
-(Heck relay is the only Wahlers/Rosales system that starts from the
-already-fitted published OPT parameters rather than a fresh Seminario
-projection — that is why its geometry R² is strong here.)
-
-Rh-enamide starts near-optimal (R² > 0.93 in all categories). The other
-four systems start far from optimal — the optimizer must close this gap.
+Geometry reproduction is healthy across all five systems
+(bond_length R² ≥ 0.89 for the published OPT systems; pd-allyl is
+weaker at 0.04 but not catastrophic).  The eigenmatrix R² is
+consistently negative — that is the real cross-engine gap (MM3*
+versus q2mm's JAX engine), not a loader artifact.
 These numbers come from `q2mm-data/benchmarks/<system>/convergence/paper_metrics.json`
 and are reproducible via `scripts/regenerate_convergence_results.py`.
 
