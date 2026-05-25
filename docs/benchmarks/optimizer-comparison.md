@@ -31,7 +31,7 @@ provenance: git SHAs, device, ratio_tol, timestamp) live in
 |--------|:----:|:------:|:-----:|:-----:|
 | Rh-enamide | 9 | 182 | 1.05 | ✓ |
 | Pd-allyl | 21 | 482 | 1.09 | ✓ |
-| Heck relay | 23 | 462 | ~10⁸¹ (out_of_band) | ✗ |
+| Heck relay | 23 | 462 | 1.29 | ✗ |
 | Pd 1,4-conj | 10 | 340 | 1.20 | ✗ |
 | Rh 1,4-conj | 10 | 488 | ~4 × 10³ | ✗ |
 
@@ -62,24 +62,22 @@ name for the Wahlers systems — e.g. `pd-allyl` →
 - **Rh-enamide and Pd-allyl** pass the ratio gate cleanly and are the
   two systems that can be optimized with JaxLoss analytical gradients
   out of the box.
-- **Heck relay** has a catastrophically poor Seminario starting FF
-  (bond_length R² ≈ −48, bond_angle R² ≈ −5).  Inside JaxLoss the
-  inner geometry relaxation wanders into very-high-energy regions,
-  producing a finite-but-astronomical surrogate value (~10⁸¹) that
-  is classified `out_of_band`.  The absolute magnitude is
-  non-deterministic across runs.  Optimization is impossible without
-  first fixing the starting FF (see [heck-relay
-  page](../systems/heck-relay.md)).
+- **Heck relay** misses the gate by ~12 % (ratio 1.29).  With the
+  loader bug fixed in [`q2mm#277`](https://github.com/ericchansen/q2mm/issues/277),
+  the Rosales OPT parameters are now used as-published: bond_length
+  R² ≈ 0.98, bond_angle R² ≈ 0.79.  Heck relay joins
+  [pd-conjugate](../systems/pd-conjugate.md) as a candidate for the
+  experimental `ratio_tol=None` bypass.
 - **Pd 1,4-conj** misses the band by ~4 %.  This is the natural
   candidate for the experimental `ratio_tol=None` bypass — see
   [pd-conjugate](../systems/pd-conjugate.md).  Until that experiment
   has run and been validated against the real ObjectiveFunction, the
   default `ratio_tol=0.15` correctly skips this system.
-- **Rh 1,4-conj** diverges by ~3 orders of magnitude.  Like Heck relay,
-  the JaxLoss surrogate is unusable here without first improving the
-  starting FF.  Previous sessions saw varying ratios (0.46–0.96) for
-  this system depending on uncommitted state; the current committed
-  baseline gives ~4 × 10³.  See [rh-conjugate](../systems/rh-conjugate.md)
+- **Rh 1,4-conj** diverges by ~3 orders of magnitude.  The JaxLoss
+  surrogate is unusable here without first improving the starting FF.
+  Previous sessions saw varying ratios (0.46–0.96) for this system
+  depending on uncommitted state; the current committed baseline
+  gives ~4 × 10³.  See [rh-conjugate](../systems/rh-conjugate.md)
   for the per-category R² explaining why the surrogate diverges.
 
 ### Why some systems fail the ratio check
@@ -113,10 +111,14 @@ prediction is worse than predicting the QM mean.
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) |
 |--------|:------------:|:------------:|:------------:|
 | Rh-enamide (9 mol) | 0.972 | 0.976 | 0.934 |
-| Heck relay (23 mol) | −4.66 | −48.06 | −5.47 |
+| Heck relay (23 mol) | −12.6 | 0.980 | 0.786 |
 | Pd-allyl (21 mol) | −1.41 | 0.026 | 0.337 |
 | Pd 1,4-conj (10 mol) | −4.47 | 0.435 | −0.118 |
 | Rh 1,4-conj (10 mol) | −4.85 | −57.65 | −1.29 |
+
+(Heck relay is the only Wahlers/Rosales system that starts from the
+already-fitted published OPT parameters rather than a fresh Seminario
+projection — that is why its geometry R² is strong here.)
 
 Rh-enamide starts near-optimal (R² > 0.93 in all categories). The other
 four systems start far from optimal — the optimizer must close this gap.

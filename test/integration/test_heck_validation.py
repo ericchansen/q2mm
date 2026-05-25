@@ -364,3 +364,60 @@ class TestHeckRelayPublishedFF:
                 f"    {m['name']:<12} R²={m['r_squared']:.3f}  RMSD={m['rmsd_cm1']:.0f} cm⁻¹  ({m['n_freq_refs']} refs)"
             )
         print("=" * 60)
+
+
+# ---------------------------------------------------------------------------
+# Regression: load_heck_relay() must preserve published OPT parameter values
+# (ericchansen/q2mm#277)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.validation
+@pytest.mark.external_data
+def test_load_heck_relay_preserves_published_opt_values() -> None:
+    """Regression: loader must NOT overwrite published Rosales OPT params.
+
+    Before #277, ``load_heck_relay()`` called ``estimate_force_constants``
+    after ``freeze_standard_params``, which silently re-projected the
+    OPT-substructure parameter values via FUERZA — discarding Rosales'
+    fitted values.  After the fix, the loader should keep those values
+    exactly as published.  This test compares the optimizable (non-frozen)
+    parameter values from ``load_heck_relay()`` against the same params
+    loaded directly from the .fld file with no Seminario step.
+    """
+    if HECK_DIR is None:
+        pytest.skip("Heck relay supporting data not found")
+
+    from q2mm.diagnostics.systems import load_heck_relay
+    from q2mm.models.forcefield import ForceField
+
+    ff_path = HECK_DIR / "mm3.FF1.fld"
+    if not ff_path.exists():
+        pytest.skip(f"mm3.FF1.fld not found: {ff_path}")
+
+    # Loader output (what users get today).
+    sys_data = load_heck_relay(engine=None)
+    loader_active = sys_data.forcefield.get_active_param_vector()
+
+    # Same .fld file, same active-mask partition, but no Seminario.
+    # This is the pre-fix "reference" we expect the loader to match.
+    expected_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
+    opt_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
+    expected_ff.freeze_standard_params(opt_ff)
+    expected_active = expected_ff.get_active_param_vector()
+
+    assert loader_active.shape == expected_active.shape, (
+        f"Active-mask shape mismatch: loader={loader_active.shape} vs expected={expected_active.shape}"
+    )
+    # Tight tolerance: these should match bit-for-bit (same file, no math).
+    np.testing.assert_allclose(
+        loader_active,
+        expected_active,
+        rtol=0.0,
+        atol=1e-12,
+        err_msg=(
+            "load_heck_relay() OPT parameter values differ from the "
+            "published .fld values.  This likely means a Seminario-style "
+            "re-estimation crept back into the loader (the #277 bug)."
+        ),
+    )
