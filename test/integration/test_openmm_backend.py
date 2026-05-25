@@ -23,7 +23,7 @@ from test._shared import SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_diatomi
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 
 try:
     from q2mm.backends.mm.tinker import TinkerEngine
@@ -120,7 +120,7 @@ class TestOpenMMEngine:
 
     def test_sn2_seminario_pipeline_energy_is_finite(self) -> None:
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        forcefield = estimate_force_constants(molecule)
+        forcefield = qfuerza_fresh(molecule)
 
         energy = self.engine.energy(molecule, forcefield)
         hessian = self.engine.hessian(molecule, forcefield)
@@ -131,7 +131,7 @@ class TestOpenMMEngine:
 
     def test_sn2_seminario_pipeline_has_imaginary_mode(self) -> None:
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        forcefield = estimate_force_constants(molecule)
+        forcefield = qfuerza_fresh(molecule)
 
         frequencies = self.engine.frequencies(molecule, forcefield)
 

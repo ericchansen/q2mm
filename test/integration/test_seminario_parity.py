@@ -33,7 +33,8 @@ from test._shared import REPO_ROOT, SN2_XYZ, SN2_HESSIAN
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import (
-    estimate_force_constants,
+    qfuerza_fresh,
+    qfuerza_into,
     seminario_bond_fc,
     QFUERZA_H_ANGLE_DEFAULT_MDYNA,
     _is_hydrogen_angle,
@@ -126,13 +127,8 @@ def rh_enamide_clean_results() -> dict[str, ForceField]:
         for index, (structure, hessian) in enumerate(zip(structures, hessians))
     ]
     clean_start = ForceField.from_mm3_fld(MM3_PATH, include_standard=False)
-    clean_estimated = estimate_force_constants(
-        molecules,
-        forcefield=clean_start,
-        zero_torsions=True,
-        au_hessian=True,
-        invalid_policy="skip",
-    )
+    clean_estimated = clean_start.copy()
+    qfuerza_into(clean_estimated, molecules, zero_torsions=True, au_hessian=True, invalid_policy="skip")
 
     return {
         "clean_start": clean_start,
@@ -257,11 +253,13 @@ def test_rh_enamide_forcefield_roundtrip() -> None:
     ]
 
     ff1 = ForceField.from_mm3_fld(MM3_PATH)
-    est1 = estimate_force_constants(molecules, forcefield=ff1, invalid_policy="skip")
+    est1 = ff1.copy()
+    qfuerza_into(est1, molecules, invalid_policy="skip")
 
     # Re-estimate from the same starting point — must be deterministic
     ff2 = ForceField.from_mm3_fld(MM3_PATH)
-    est2 = estimate_force_constants(molecules, forcefield=ff2, invalid_policy="skip")
+    est2 = ff2.copy()
+    qfuerza_into(est2, molecules, invalid_policy="skip")
 
     for b1, b2 in zip(est1.bonds, est2.bonds):
         assert b1.force_constant == pytest.approx(b2.force_constant, abs=1e-12)
@@ -346,7 +344,7 @@ def test_rh_enamide_seminario_benchmark(
     for _ in range(10):
         ff = ff_template.copy()
         t0 = time.perf_counter()
-        estimate_force_constants(molecules, forcefield=ff, invalid_policy="skip")
+        qfuerza_into(ff, molecules, invalid_policy="skip")
         times.append(time.perf_counter() - t0)
 
     t_est_mean = np.mean(times)
@@ -645,7 +643,7 @@ class TestCisplatinHessianParity:
         Tests self-consistency: our code produces stable values from the
         Gaussian log.  Uses default dft_scaling=0.963.
         """
-        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
 
         # Expected values from our pipeline (mdyne/Å, with default DFT scaling)
         expected = {
@@ -663,7 +661,7 @@ class TestCisplatinHessianParity:
 
     def test_fuerza_bond_equilibria(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """Bond equilibrium lengths must match the optimized QM geometry."""
-        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
 
         expected_eq = {
             ("Cl", "Pt"): 2.32,
@@ -681,7 +679,7 @@ class TestCisplatinHessianParity:
 
     def test_fuerza_angle_fcs_self_consistent(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """FUERZA angle FCs must be reproducible from the Hessian."""
-        ff = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
+        ff = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
 
         # Expected values (kcal/(mol·rad²), with default DFT scaling)
         expected = {
@@ -702,8 +700,8 @@ class TestCisplatinHessianParity:
 
     def test_qfuerza_bonds_same_as_fuerza(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """QFUERZA must not modify bond force constants."""
-        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
-        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+        ff_f = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
+        ff_q = qfuerza_fresh(cisplatin_molecule, strategy="qfuerza")
 
         ff_f_bonds = {bp.key: bp for bp in ff_f.bonds}
         ff_q_bonds = {bp.key: bp for bp in ff_q.bonds}
@@ -717,7 +715,7 @@ class TestCisplatinHessianParity:
 
         This matches the paper's QFUERZA definition exactly.
         """
-        ff = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+        ff = qfuerza_fresh(cisplatin_molecule, strategy="qfuerza")
 
         h_angle_keys = [("H", "N", "Pt"), ("H", "N", "H")]
         for ap in ff.angles:
@@ -729,8 +727,8 @@ class TestCisplatinHessianParity:
 
     def test_qfuerza_heavy_angles_unchanged(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """QFUERZA must not modify non-hydrogen angle FCs."""
-        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
-        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+        ff_f = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
+        ff_q = qfuerza_fresh(cisplatin_molecule, strategy="qfuerza")
 
         ff_f_angles = {ap.key: ap for ap in ff_f.angles}
         ff_q_angles = {ap.key: ap for ap in ff_q.angles}
@@ -745,8 +743,8 @@ class TestCisplatinHessianParity:
 
     def test_qfuerza_h_angles_reduced_from_fuerza(self, cisplatin_molecule: Q2MMMolecule) -> None:
         """QFUERZA H-angle FCs must be smaller than FUERZA (corrects overestimation)."""
-        ff_f = estimate_force_constants(cisplatin_molecule, strategy="fuerza")
-        ff_q = estimate_force_constants(cisplatin_molecule, strategy="qfuerza")
+        ff_f = qfuerza_fresh(cisplatin_molecule, strategy="fuerza")
+        ff_q = qfuerza_fresh(cisplatin_molecule, strategy="qfuerza")
 
         ff_f_angles = {ap.key: ap for ap in ff_f.angles}
         ff_q_angles = {ap.key: ap for ap in ff_q.angles}

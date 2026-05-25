@@ -145,7 +145,7 @@ def load_ch3f(
 
     """
     from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_fresh
 
     qm_dir = data_dir or _find_ch3f_data_dir()
     xyz = qm_dir / "ch3f-optimized.xyz"
@@ -158,7 +158,7 @@ def load_ch3f(
     qm_hessian = np.load(hess_path)
 
     mol_h = molecule.with_hessian(qm_hessian)
-    ff = estimate_force_constants(mol_h, invert_ts_curvature=True)
+    ff = qfuerza_fresh(mol_h, invert_ts_curvature=True)
 
     if functional_form is not None:
         from q2mm.models.forcefield import FunctionalForm
@@ -264,7 +264,7 @@ def load_rh_enamide(
 
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
     from q2mm.optimizers.objective import ReferenceData
 
     mm3_path = _RH_DIR / "mm3.fld"
@@ -275,7 +275,8 @@ def load_rh_enamide(
     ff_template = ForceField.from_mm3_fld(str(mm3_path), include_standard=True)
     ff_opt = ForceField.from_mm3_fld(str(mm3_path), include_standard=False)
     ff_template.freeze_standard_params(ff_opt)
-    ff = estimate_force_constants(molecules, forcefield=ff_template, invert_ts_curvature=True)
+    ff = ff_template.copy()
+    qfuerza_into(ff, molecules, invert_ts_curvature=True)
 
     # Set functional form: explicit override > default (mm3)
     if functional_form is not None:
@@ -339,7 +340,7 @@ def load_heck_relay(
     The published Rosales OPT parameters are used **as-is** — they are
     the result of the original MacroModel MM3* fit and reproduce the
     QM geometry well (bond_length R² ≈ 0.98 untouched).  Earlier
-    versions of this loader re-ran ``estimate_force_constants`` on the
+    versions of this loader re-ran `qfuerza_fresh` / `qfuerza_into` on the
     Rosales FF, which silently overwrote the OPT parameters with raw
     Seminario projections and dropped bond_length R² to ≈ −4787.  See
     ericchansen/q2mm#277 for the three-baseline diagnostic.
@@ -364,7 +365,7 @@ def load_heck_relay(
     ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
     # Mark only the OPT-substructure parameters as active for downstream
     # optimization; standard MM3 backbone params remain frozen.  Do NOT
-    # call estimate_force_constants here — see #277 (it would overwrite
+    # call qfuerza_into here — see #277 (it would overwrite
     # the Rosales-fitted OPT values with raw Seminario projections).
     ff_opt = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
     ff.freeze_standard_params(ff_opt)
@@ -559,7 +560,7 @@ def _load_wahlers_system(
     composes them with the standard MM3 base to produce a complete FF.
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
     from q2mm.optimizers.objective import ReferenceData
 
     si = _resolve_supporting_info_dir()
@@ -615,7 +616,8 @@ def _load_wahlers_system(
                 )
 
     composed.freeze_standard_params(opt_ff)
-    ff = estimate_force_constants(molecules, forcefield=composed, invert_ts_curvature=True)
+    ff = composed.copy()
+    qfuerza_into(ff, molecules, invert_ts_curvature=True)
 
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)

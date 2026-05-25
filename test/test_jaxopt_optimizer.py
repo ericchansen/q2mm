@@ -242,7 +242,7 @@ class TestJaxOptFrequencyConvergence:
         """L-BFGS converges on CH3F frequency optimization."""
         from q2mm.models.hessian import hessian_to_frequencies
         from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
@@ -253,7 +253,7 @@ class TestJaxOptFrequencyConvergence:
         mol = mol.with_hessian(hess_qm)
 
         # Build a real FF and perturb it
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         freqs_qm = hessian_to_frequencies(hess_qm, list(mol.symbols))
 
         # Perturb bond force constants by 20%

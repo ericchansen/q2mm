@@ -14,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from q2mm.models.hessian import decompose, reform_hessian
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_into
 
 QM_REF = Path(__file__).parent / "qm-reference"
 
@@ -132,13 +132,8 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n[4/5] Running QFUERZA estimation...")
 
-    estimated_ff = estimate_force_constants(
-        molecule,
-        forcefield=initial_ff,
-        zero_torsions=True,
-        au_hessian=True,
-        invalid_policy="skip",
-    )
+    estimated_ff = initial_ff.copy()
+    qfuerza_into(estimated_ff, molecule, zero_torsions=True, au_hessian=True, invalid_policy="skip")
 
     print("  QFUERZA estimation completed successfully.")
     print("  Negative or complex TS estimates are skipped to preserve legacy semantics.")

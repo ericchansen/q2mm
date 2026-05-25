@@ -60,7 +60,7 @@ def _coerce_molecules(
     if not molecules:
         raise ValueError("At least one molecule is required")
     if not all(isinstance(item, Q2MMMolecule) for item in molecules):
-        raise TypeError("estimate_force_constants expects Q2MMMolecule instances")
+        raise TypeError("qfuerza_fresh/qfuerza_into expects Q2MMMolecule instances")
     return molecules
 
 
@@ -183,7 +183,7 @@ def seminario_angle_fc(
     Computes the standard Seminario reciprocal-sum angle formula with
     |dot| projection and DFT scaling. Note that FUERZA overestimates
     H-angle FCs by ~2×; the QFUERZA substitution is applied downstream
-    in ``estimate_force_constants()``, not here.
+    in ``qfuerza_into()`` (or ``qfuerza_fresh()``), not here.
 
     Args:
         atom_i: outer atom (0-based)
@@ -256,7 +256,7 @@ def seminario_angle_fc(
     # Combine via reciprocal sum: 1/k = 1/(k_ij·r_ij²) + 1/(k_kj·r_kj²)
     # Standard Seminario angle formula. Note: FUERZA still overestimates
     # H-angle FCs by ~2× (Allen et al. 2018); QFUERZA addresses this via
-    # substitution in estimate_force_constants().
+    # substitution in qfuerza_into().
     denom_ij = k_ij * r_ij_len**2
     denom_kj = k_kj * r_kj_len**2
 
@@ -275,39 +275,119 @@ def seminario_angle_fc(
     return k_angle
 
 
-def estimate_force_constants(
+def qfuerza_fresh(
     molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
-    forcefield: ForceField | None = None,
+    *,
     zero_torsions: bool = True,
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     invert_ts_curvature: bool = False,
     strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> ForceField:
-    """Estimate force constants from one or more QM Hessians.
+    """Build a fresh force field from one molecule's QM Hessian.
 
-    Uses Seminario projection (FUERZA) to extract initial bond and angle
-    force constants, with QFUERZA post-processing by default.
+    Use this when you have no published FF to start from — e.g.
+    ``load_ch3f``.  All params come from the QFUERZA projection
+    (Farrugia et al. *J. Chem. Theory Comput.* **2025**, *22*, 469;
+    DOI 10.1021/acs.jctc.5c01751) and are returned unfrozen.
 
     Args:
-        molecule: Molecule with Hessian attached, or an iterable of molecules.
-        forcefield: Starting force field (if None, auto-creates from one molecule)
-        zero_torsions: Whether to zero out torsional parameters
-        au_hessian: Whether Hessian is in atomic units (Hartree/Bohr^2)
-        invalid_policy: Whether to keep negative force constants ("keep") or
-            mimic legacy MM3 Seminario averaging by skipping non-positive
-            estimates ("skip")
-        invert_ts_curvature: If ``True``, invert the reaction-coordinate
-            curvature before projection so that the transition-state Hessian
-            produces valid positive force constants (Limé & Norrby 2015).
-            ``False`` (default) uses the Hessian as-is.
-        strategy: ``"qfuerza"`` (default) substitutes empirical defaults
-            for hydrogen angle bends, where Seminario projection overestimates
-            by ~2× (Farrugia et al. JCTC 2025).  ``"fuerza"`` uses pure
-            Seminario projection without substitution.
+        molecule: A single molecule with a Hessian attached, or an
+            iterable containing exactly one such molecule.  Multi-molecule
+            averaging requires an explicit forcefield — use
+            :func:`qfuerza_into` for that case.
+        zero_torsions: Whether to zero out torsional parameters.  Per
+            Farrugia 2025, torsions are not well-suited for FUERZA-style
+            parametrization from vibrational data and are zeroed at
+            initial-parameter time to be fit in a later Q2MM optimization
+            stage.  Default ``True``; do not override unless you are
+            sure you know what that means for your downstream pipeline.
+        au_hessian: Whether the Hessian is in atomic units (Hartree/Bohr²).
+        invalid_policy: ``"keep"`` retains negative force constants
+            (TS reaction coordinates); ``"skip"`` mimics legacy MM3
+            Seminario averaging by dropping non-positive estimates.
+        invert_ts_curvature: When the molecule is a transition state,
+            inverts the reaction-coordinate eigenvalue before projection
+            so that the TS Hessian produces valid positive force
+            constants (Limé & Norrby 2015).
+        strategy: ``"qfuerza"`` (default) applies the H-angle substitution
+            for hydrogen angle bends where pure Seminario projection
+            overestimates by ~2× (Farrugia 2025).  ``"fuerza"`` uses
+            pure Seminario projection.
 
     Returns:
-        ForceField with estimated parameters
+        A new :class:`ForceField` whose every parameter is unfrozen and
+        populated from the QFUERZA projection.
+
+    Raises:
+        ValueError: If ``molecule`` is an iterable with anything other
+            than one element (use :func:`qfuerza_into` for the multi-
+            molecule averaging case), or if a Hessian is missing.
+
+    """
+    molecules = _coerce_molecules(molecule)
+    if len(molecules) != 1:
+        raise ValueError(
+            f"qfuerza_fresh expects exactly one molecule, got {len(molecules)}.  "
+            "Multi-molecule averaging requires an explicit forcefield — use "
+            "qfuerza_into(ff, molecules, ...) instead."
+        )
+    ff = ForceField.create_for_molecule(
+        molecules[0],
+        name=f"QFUERZA FF for {molecules[0].name}",
+    )
+    qfuerza_into(
+        ff,
+        molecules,
+        zero_torsions=zero_torsions,
+        au_hessian=au_hessian,
+        invalid_policy=invalid_policy,
+        invert_ts_curvature=invert_ts_curvature,
+        strategy=strategy,
+    )
+    return ff
+
+
+def qfuerza_into(
+    ff: ForceField,
+    molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
+    *,
+    zero_torsions: bool = True,
+    au_hessian: bool = True,
+    invalid_policy: Literal["keep", "skip"] = "keep",
+    invert_ts_curvature: bool = False,
+    strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
+) -> None:
+    """Overwrite *unfrozen* parameter values in *ff* using QFUERZA projection.
+
+    Iterates every parameter slot in *ff* and writes new values from
+    the QFUERZA projection (Farrugia et al. *J. Chem. Theory Comput.*
+    **2026**, *22*, 469).  **Frozen parameters are skipped** — they
+    represent caller commitments (e.g. published OPT values held fixed
+    via :meth:`ForceField.freeze_standard_params`) and silently
+    overwriting them was the q2mm#277 Heck-relay bug.
+
+    To deliberately re-estimate a frozen param, call ``.unfreeze()``
+    on it first.
+
+    Args:
+        ff: Force field to mutate in place.  The caller is responsible
+            for setting the active/frozen partition before calling.
+        molecule: Molecule(s) with Hessians; multi-molecule values are
+            averaged per param.
+        zero_torsions: See :func:`qfuerza_fresh` (default ``True`` per
+            Farrugia 2025).
+        au_hessian: Whether Hessians are in atomic units.
+        invalid_policy: ``"keep"`` or ``"skip"`` for non-positive
+            estimates.
+        invert_ts_curvature: TS Hessian inversion flag (Limé & Norrby
+            2015).
+        strategy: ``"qfuerza"`` (with H-angle substitution) or
+            ``"fuerza"`` (pure Seminario).
+
+    Raises:
+        ValueError: If ``strategy`` is not recognised or if any
+            molecule is missing a Hessian.
 
     """
     if strategy not in ("fuerza", "qfuerza"):
@@ -325,25 +405,34 @@ def estimate_force_constants(
     else:
         processed_hessians = None
 
-    # Create or copy force field
-    if forcefield is None:
-        if len(molecules) != 1:
-            raise ValueError("An explicit force field is required when averaging across multiple molecules")
-        ff = ForceField.create_for_molecule(
-            molecules[0],
-            name=f"Seminario FF for {molecules[0].name}",
-        )
-    else:
-        ff = forcefield.copy()
+    _estimate_into_ff(
+        ff,
+        molecules,
+        zero_torsions=zero_torsions,
+        au_hessian=au_hessian,
+        invalid_policy=invalid_policy,
+        processed_hessians=processed_hessians,
+        strategy=strategy,
+    )
 
+
+def _estimate_into_ff(
+    ff: ForceField,
+    molecules: list[Q2MMMolecule],
+    *,
+    zero_torsions: bool,
+    au_hessian: bool,
+    invalid_policy: Literal["keep", "skip"],
+    processed_hessians: dict[int, np.ndarray] | None,
+    strategy: Literal["fuerza", "qfuerza"],
+) -> None:
+    """Inner per-parameter QFUERZA estimation loop.  Skips frozen params."""
     # Estimate bond force constants.  Skip frozen params: their values
     # are caller-owned commitments (e.g. literature OPT params held
     # fixed via freeze_standard_params) and overwriting them silently
-    # was the load_heck_relay bug (q2mm#277).  This loop matches the
-    # skip-frozen convention in ForceField.set_param_vector /
-    # with_params; commit 3 will replace this function entirely with
-    # qfuerza_fresh / qfuerza_into which take an explicit target list
-    # and never iterate frozen params.
+    # was the load_heck_relay bug (q2mm#277).  The FrozenParamError
+    # guard on _FrozenAwareParam is the backstop; this check is the
+    # explicit fast-path.
     for bond_param in ff.bonds:
         if bond_param.frozen:
             continue
@@ -442,5 +531,3 @@ def estimate_force_constants(
             if t.frozen:
                 continue
             t.force_constant = 0.0
-
-    return ff
