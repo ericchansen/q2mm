@@ -66,16 +66,27 @@ despite the poor Seminario starting FF.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.092 (pass) |
-| Initial score | 7,998,071 |
-| Final score | 7,993,193 |
-| Reduction | 1.2% |
-| Iterations | 3 |
-| Gradient source | JaxLoss analytical |
+| Ratio check | 1.09 (pass) |
+| Initial score | 8.02 × 10⁶ |
+| Final score | 8.00 × 10⁶ |
+| Reduction | 0.08 % |
+| Iterations / Evaluations | 2 / 2 |
+| Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
+| Wall time | ~23 min (including per-molecule JIT) |
 
-The modest 1.2% improvement reflects the poor Seminario starting
-point (negative eigenvalue R²) — the optimizer converges quickly to
-a nearby local minimum with only marginal improvement.
+These numbers are reproducible from `scripts/regenerate_convergence_results.py`
+(no `--skip-optimization`); raw JSON output with provenance lives at
+[`q2mm-data/benchmarks/pd-allyl-amination/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence).
+
+The modest 0.08 % improvement reflects the poor Seminario starting
+point (eig_diagonal R² ≈ −1.4): SciPy reports convergence
+(`CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH`) after 2
+iterations / 2 evaluations, with a non-finite JaxLoss penalty observed
+during the run (a known limitation of the per-molecule JIT path at 482
+active parameters when the parameter step is too large).  Improving
+further would likely require a hybrid FD/JaxLoss strategy or tighter
+bounds; the modest gain still represents a real ObjectiveFunction
+reduction.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.

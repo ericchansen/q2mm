@@ -86,17 +86,23 @@ gradients on RTX 5090 GPU:
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.047 (pass) |
-| Initial score | 390,962 |
-| Final score | 279,267 |
-| Reduction | 28.7% |
-| Iterations | 8 |
-| Gradient source | JaxLoss analytical |
-| Wall time | ~11 min (including JIT) |
+| Ratio check | 1.05 (pass) |
+| Initial score | 3.92 × 10⁵ |
+| Final score | 2.80 × 10⁵ |
+| Reduction | 28.68 % |
+| Iterations (L-BFGS-B `nit`) | 6 |
+| ObjectiveFunction evaluations | 2 (initial + final re-evaluation; JaxLoss calls scipy via the surrogate, not via `ObjectiveFunction`) |
+| Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
+| Wall time | ~11 min (including per-molecule JIT) |
+
+These numbers are reproducible from `scripts/regenerate_convergence_results.py`
+(no `--skip-optimization`); raw JSON output with provenance lives at
+[`q2mm-data/benchmarks/rh-enamide/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/convergence).
 
 The ratio check confirms JaxLoss is a reliable surrogate for this
-system — the Seminario starting FF is good enough (R² = 0.991) that
-unconstrained geometry relaxation finds the correct local minima.
+system — the Seminario starting FF is good enough (R² > 0.93 in every
+category) that unconstrained geometry relaxation finds the correct
+local minima.
 
 ### Historical frequency-only results
 
@@ -129,7 +135,7 @@ MacroModel to reach its final fit.[^qfuerza]
 
 The multi-target optimization pipeline runs end-to-end on this
 9-molecule system (per-molecule JIT compilation, scipy L-BFGS-B with
-JaxLoss analytical gradients) and achieves 28.7% loss reduction.
+JaxLoss analytical gradients) and achieves 28.68 % loss reduction.
 
 ### Gap analysis
 

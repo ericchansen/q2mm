@@ -30,26 +30,32 @@ provenance: git SHAs, device, ratio_tol, timestamp) live in
 | System | Mols | Active | Ratio | Check |
 |--------|:----:|:------:|:-----:|:-----:|
 | Rh-enamide | 9 | 182 | 1.05 | ✓ |
-| Pd-allyl | 21 | 482 | 1.11 | ✓ |
+| Pd-allyl | 21 | 482 | 1.09 | ✓ |
 | Heck relay | 23 | 462 | ~10⁸¹ (out_of_band) | ✗ |
 | Pd 1,4-conj | 10 | 340 | 1.20 | ✗ |
 | Rh 1,4-conj | 10 | 488 | ~4 × 10³ | ✗ |
 
-**Optimization results** (only systems that pass the ratio gate; rows
-will be filled in as optimization runs are committed to q2mm-data):
+**Optimization results** (only systems that pass the ratio gate;
+``jac_mode`` is the resolved gradient mode from the JSON output, after
+the script's ``jac="auto"`` gate).  In the JaxLoss path, SciPy
+optimizes via the surrogate loss function, so the
+``ObjectiveFunction`` itself is only evaluated at the start and end
+of the run — that is why `Evals` can be much smaller than `Iters`:
 
-| System | Init score | Final score | Δ% | Iters | jac |
-|--------|:----------:|:-----------:|:--:|:-----:|:---:|
-| Rh-enamide | 3.90 × 10⁵ | TBD | TBD | TBD | jax_loss |
-| Pd-allyl | 8.00 × 10⁶ | TBD | TBD | TBD | jax_loss |
+| System | Init score | Final score | Δ% | Iters (`nit`) | ObjFun evals | Wall time | jac_mode |
+|--------|:----------:|:-----------:|:--:|:-------------:|:------------:|:---------:|:--------:|
+| Rh-enamide | 3.92 × 10⁵ | 2.80 × 10⁵ | 28.68 % | 6 | 2 | ~11 min | `jax_loss` |
+| Pd-allyl | 8.02 × 10⁶ | 8.00 × 10⁶ | 0.08 % | 2 | 2 | ~23 min | `jax_loss` |
 
-> Optimization artefacts for Rh-enamide and Pd-allyl from earlier code
-> versions used to live in `q2mm/results/convergence/`.  They were
-> deleted in the same change that introduced this regeneration script
-> because no committed producer existed (violates AGENTS.md Rule 8 —
-> every claim must be grounded in evidence).  Fresh optimization runs
-> will populate the TBD cells above and write force fields to
-> `q2mm-data/benchmarks/<system>/convergence/<system>_optimized.fld`.
+Each row is reproducible from
+[`scripts/regenerate_convergence_results.py`](https://github.com/ericchansen/q2mm/blob/master/scripts/regenerate_convergence_results.py)
+without `--skip-optimization`; the optimized force fields land in
+`q2mm-data/benchmarks/<system-data-dir>/convergence/<system>_optimized.fld`,
+where `<system-data-dir>` is the q2mm-data directory name for each
+system (note: the q2mm system key differs from the q2mm-data directory
+name for the Wahlers systems — e.g. `pd-allyl` →
+`pd-allyl-amination`, `pd-conjugate` → `pd-1,4-conjugate-addition`,
+`rh-conjugate` → `rh-1,4-conjugate-addition`).
 
 **Notes:**
 
@@ -119,16 +125,26 @@ and are reproducible via `scripts/regenerate_convergence_results.py`.
 
 ### Post-optimization R²
 
-Post-optimization R² is available for systems where JaxLoss optimization
-has been re-run against the regeneration script and committed to
-`q2mm-data/benchmarks/<system>/convergence/paper_metrics.json`.  Run
-`scripts/regenerate_convergence_results.py --system <name>` (no
-`--skip-optimization`) to populate these rows.
-
 | System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) | Δ obj |
 |--------|:------------:|:------------:|:------------:|:-----:|
-| Rh-enamide (optimized) | TBD | TBD | TBD | TBD |
-| Pd-allyl (optimized) | TBD | TBD | TBD | TBD |
+| Rh-enamide (optimized) | 0.970 | 0.983 | 0.953 | −28.68 % |
+| Pd-allyl (optimized) | −1.405 | 0.022 | 0.335 | −0.08 % |
+
+**Rh-enamide** improves bond_length R² 0.976 → 0.983 and bond_angle
+R² 0.934 → 0.953 with a small trade-off in eig_diagonal (0.972 →
+0.970).  The 28.68 % ObjectiveFunction reduction matches the
+historical Donoghue-style optimization improvement reported in earlier
+documentation; the key difference here is that the number is now
+reproducible from a single committed script (no orphaned data).
+
+**Pd-allyl** improves only marginally (0.08 %).  SciPy reports
+convergence (`CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH`)
+after 2 iterations / 2 evaluations; during the run JaxLoss also
+logged a non-finite penalty on an attempted step (a known limitation
+of the per-molecule JIT path at 482 active parameters when the step
+is too large).  The deeply negative eig_diagonal starting R² (−1.41)
+is essentially unchanged.  Improving Pd-allyl further would likely
+require a hybrid FD/JaxLoss strategy or tighter bounds.
 
 ### Paper-reported metrics for comparison
 
