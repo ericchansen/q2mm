@@ -350,10 +350,12 @@ without running a single MM calculation.
 ???+ example "Quick start — auto-create and estimate"
 
     ```python
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_fresh
 
-    # estimate_force_constants accepts a single molecule or a list
-    ff = estimate_force_constants(
+    # qfuerza_fresh accepts a single molecule and builds a fresh FF from
+    # its QM Hessian.  For multi-molecule averaging (with a template FF
+    # whose frozen partition is preserved), use qfuerza_into instead.
+    ff = qfuerza_fresh(
         mol,
         zero_torsions=True,    # set torsion barriers to zero (common for TS)
         au_hessian=True,       # Hessian is in Hartree/Bohr²
@@ -375,20 +377,25 @@ without running a single MM calculation.
 ???+ example "With an existing force field template"
 
     If you already have an MM3 `.fld` file with initial guesses (or placeholder
-    values), pass it so QFUERZA updates the force constants in place while
-    preserving atom types and row numbers:
+    values), use ``qfuerza_into`` to update the unfrozen parameters in place
+    while preserving atom types and row numbers.  Any parameters that the
+    caller has frozen (e.g. via ``ForceField.freeze_standard_params``) are
+    left untouched — see Farrugia 2025 for the "mixing literature + custom
+    params" workflow this enables.
 
     ```python
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
 
     # Load template with initial guesses (replace with your .fld path)
     initial_ff = ForceField.from_mm3_fld("my-system.fld")
 
-    # QFUERZA updates force constants, keeps equilibrium values and metadata
-    estimated_ff = estimate_force_constants(
+    # Make a working copy so the template isn't mutated, then overwrite
+    # every unfrozen parameter's value with the QFUERZA projection.
+    estimated_ff = initial_ff.copy()
+    qfuerza_into(
+        estimated_ff,
         mol,
-        forcefield=initial_ff,
         zero_torsions=True,
         au_hessian=True,
         invalid_policy="skip",
@@ -944,7 +951,7 @@ from pathlib import Path
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -964,7 +971,7 @@ print(f"Loaded: {mol.n_atoms} atoms, {len(mol.bonds)} bonds, "
       f"{len(mol.angles)} angles")
 
 # ── Step 2: QFUERZA estimation ──────────────────────────────────
-ff = estimate_force_constants(
+ff = qfuerza_fresh(
     mol,
     zero_torsions=True,
     au_hessian=True,
