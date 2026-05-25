@@ -21,7 +21,8 @@ from q2mm.models.forcefield import (
     _extract_element,
 )
 from q2mm.models.seminario import (
-    estimate_force_constants,
+    qfuerza_fresh,
+    qfuerza_into,
     _is_hydrogen_angle,
     QFUERZA_H_ANGLE_DEFAULT_CANONICAL,
 )
@@ -1565,18 +1566,18 @@ class TestSeminario:
         return mol.with_hessian(hess)
 
     def test_estimate_runs(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        ff = estimate_force_constants(ch3f_mol_with_hess)
+        ff = qfuerza_fresh(ch3f_mol_with_hess)
         assert len(ff.bonds) > 0
         assert len(ff.angles) > 0
 
     def test_fc_values_positive_ground_state(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        ff = estimate_force_constants(ch3f_mol_with_hess)
+        ff = qfuerza_fresh(ch3f_mol_with_hess)
         for b in ff.bonds:
             assert b.force_constant > 0, f"Bond {b.key} has non-positive FC"
 
     def test_negative_fc_included_for_ts(self, ts_mol_with_hess: Q2MMMolecule) -> None:
         """Negative FCs from TS reaction coordinates should be included, not dropped."""
-        ff = estimate_force_constants(ts_mol_with_hess)
+        ff = qfuerza_fresh(ts_mol_with_hess)
         bond_fcs = [b.force_constant for b in ff.bonds]
         # The C-F bond in the TS is partially breaking — may have negative FC
         # At minimum, verify the estimation completes and produces values
@@ -1595,7 +1596,8 @@ class TestSeminario:
             TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=8.0),
         ]
 
-        estimated = estimate_force_constants(ch3f_mol_with_hess, forcefield=ff)
+        estimated = ff.copy()
+        qfuerza_into(estimated, ch3f_mol_with_hess)
 
         assert estimated.bonds[0].force_constant == pytest.approx(123.0)
         assert estimated.bonds[0].equilibrium == pytest.approx(9.9)
@@ -1607,7 +1609,7 @@ class TestSeminario:
     def test_raises_without_hessian(self) -> None:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="Hessian"):
-            estimate_force_constants(mol)
+            qfuerza_fresh(mol)
 
 
 class TestQFUERZA:
@@ -1651,8 +1653,8 @@ class TestQFUERZA:
 
     def test_fuerza_strategy_deterministic(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """strategy='fuerza' is deterministic across repeated calls."""
-        ff_first = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
-        ff_second = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
+        ff_first = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
+        ff_second = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
 
         assert len(ff_first.bonds) == len(ff_second.bonds)
         for b1, b2 in zip(ff_first.bonds, ff_second.bonds):
@@ -1663,8 +1665,8 @@ class TestQFUERZA:
 
     def test_default_is_qfuerza(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """Default strategy is QFUERZA."""
-        ff_default = estimate_force_constants(ch3f_mol_with_hess)
-        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_default = qfuerza_fresh(ch3f_mol_with_hess)
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
 
         assert len(ff_default.bonds) == len(ff_qfuerza.bonds)
         for b_def, b_qf in zip(ff_default.bonds, ff_qfuerza.bonds):
@@ -1677,7 +1679,7 @@ class TestQFUERZA:
 
     def test_qfuerza_substitutes_h_angles(self, water_mol_with_hess: Q2MMMolecule) -> None:
         """QFUERZA replaces the H-O-H angle force constant with the empirical default."""
-        ff = estimate_force_constants(water_mol_with_hess, strategy="qfuerza")
+        ff = qfuerza_fresh(water_mol_with_hess, strategy="qfuerza")
         h_angles = [a for a in ff.angles if _is_hydrogen_angle(a.elements)]
         assert len(h_angles) > 0, "Expected at least one H-angle in water"
         for angle in h_angles:
@@ -1685,8 +1687,8 @@ class TestQFUERZA:
 
     def test_qfuerza_keeps_bonds_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """QFUERZA does not alter bond force constants."""
-        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
-        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
 
         for b_fur, b_qf in zip(ff_fuerza.bonds, ff_qfuerza.bonds):
             assert b_fur.force_constant == pytest.approx(b_qf.force_constant)
@@ -1698,8 +1700,8 @@ class TestQFUERZA:
         hess = np.load(TS_HESS)
         mol = mol.with_hessian(hess)
 
-        ff_fuerza = estimate_force_constants(mol, strategy="fuerza")
-        ff_qfuerza = estimate_force_constants(mol, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(mol, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(mol, strategy="qfuerza")
 
         non_h_angles = [
             (a_fur, a_qf)
@@ -1712,7 +1714,7 @@ class TestQFUERZA:
 
     def test_qfuerza_ch3f_all_h_angles_substituted(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """CH₃F has H-C-F and H-C-H angles — all have H outer atoms."""
-        ff = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+        ff = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
 
         for angle in ff.angles:
             if _is_hydrogen_angle(angle.elements):
@@ -1722,8 +1724,8 @@ class TestQFUERZA:
 
     def test_qfuerza_equilibria_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
         """QFUERZA only changes force constants, not equilibrium values."""
-        ff_fuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="fuerza")
-        ff_qfuerza = estimate_force_constants(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
 
         for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles):
             assert a_fur.equilibrium == pytest.approx(a_qf.equilibrium)
@@ -1884,12 +1886,12 @@ class TestFrozenParamInvariant:
         b.force_constant = 999.0
         assert b.force_constant == 999.0
 
-    def test_estimate_force_constants_does_not_overwrite_frozen_opt_block(self) -> None:
+    def test_qfuerza_into_does_not_overwrite_frozen_opt_block(self) -> None:
         """Regression for the q2mm#277 pattern at the unit level.
 
-        ``estimate_force_constants(forcefield=ff)`` must not overwrite
-        the values of any frozen param.  The Heck-relay loader bug fell
-        out of this contract being silently violated; now both the
+        ``qfuerza_into(ff, molecules)`` must not overwrite the values
+        of any frozen param.  The Heck-relay loader bug fell out of
+        this contract being silently violated; now both the
         skip-frozen shortcut in seminario.py and the FrozenParamError
         guard back it up.
         """
@@ -1897,7 +1899,7 @@ class TestFrozenParamInvariant:
 
         from q2mm.models.forcefield import BondParam, ForceField
         from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
 
         # Build a tiny FF whose only bond is frozen at a marker value.
         marker_k = 12345.67
@@ -1915,8 +1917,7 @@ class TestFrozenParamInvariant:
             hessian=np.eye(6),
         )
 
-        result = estimate_force_constants(mol, forcefield=ff)
-        assert result.bonds[0].force_constant == marker_k, (
-            "Frozen bond force constant was silently overwritten by estimate_force_constants — "
-            "this is the q2mm#277 bug pattern."
+        qfuerza_into(ff, mol)
+        assert ff.bonds[0].force_constant == marker_k, (
+            "Frozen bond force constant was silently overwritten by qfuerza_into — this is the q2mm#277 bug pattern."
         )

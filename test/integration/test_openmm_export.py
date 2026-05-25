@@ -131,10 +131,10 @@ class TestSystemXMLExport:
         assert loaded_energy == pytest.approx(original_energy, abs=1e-8)
 
     def test_sn2_system_xml_round_trip(self, tmp_path: Path) -> None:
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
 
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        ff = estimate_force_constants(molecule)
+        ff = qfuerza_fresh(molecule)
 
         original_energy = self.engine.energy(molecule, ff)
 
@@ -333,10 +333,10 @@ class TestForceFieldXMLExport:
 
     def test_sn2_forcefield_xml_export(self, tmp_path: Path) -> None:
         """Export Seminario-estimated SN2 force field to ForceField XML."""
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
 
         molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        ff = estimate_force_constants(molecule)
+        ff = qfuerza_fresh(molecule)
 
         out = ff.to_openmm_xml(tmp_path / "sn2_ff.xml", molecule=molecule)
 

@@ -40,7 +40,7 @@ Master files: `rh_enamide_training_set.mae`, `.mol2`, `.mmo`
 ```python
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_into
 
 # Load a structure with its QM Hessian
 mol = Q2MMMolecule.from_xyz("rh_enamide_training_set/raw_xyz/1_zdmp.xyz")
@@ -48,8 +48,10 @@ mol = Q2MMMolecule.from_xyz("rh_enamide_training_set/raw_xyz/1_zdmp.xyz")
 # Load the starting force field
 ff = ForceField.from_mm3_fld("mm3.fld")
 
-# Estimate force constants from the QM Hessian
-estimated_ff = estimate_force_constants(mol, forcefield=ff, au_hessian=True)
+# Overwrite all unfrozen params with QFUERZA-projected values.
+# Frozen params (the standard MM3 backbone if you call
+# ff.freeze_standard_params first) are preserved as-is.
+qfuerza_into(ff, mol, au_hessian=True)
 ```
 
 ## See also

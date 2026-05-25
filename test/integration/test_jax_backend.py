@@ -652,7 +652,7 @@ class TestCH3FAnalyticalGradients:
     """Validate analytical gradients on CH₃F (5 atoms, 8 params).
 
     Uses pinned QFUERZA force field parameters — does NOT depend on
-    ``estimate_force_constants()`` or Seminario defaults.  The frequency
+    ``qfuerza_fresh()`` or Seminario defaults.  The frequency
     gradient vs FD test is intentionally excluded: CH₃F's C₃v symmetry
     produces near-degenerate E-mode frequency pairs (57 cm⁻¹ gap with
     QFUERZA), and FD diverges at eigenvalue crossings.  Frequency gradient

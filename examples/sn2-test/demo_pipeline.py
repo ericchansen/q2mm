@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 
 QM_REF = Path(__file__).parent / "qm-reference"
 
@@ -37,7 +37,7 @@ for a in ff.angles:
 print("\n" + "=" * 60)
 print("Running QFUERZA estimation...")
 print("=" * 60)
-estimated_ff = estimate_force_constants(mol)
+estimated_ff = qfuerza_fresh(mol)
 
 print(f"\n{'=' * 60}")
 print("RESULTS: Estimated Force Constants from QM Hessian")

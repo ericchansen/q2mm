@@ -20,7 +20,8 @@ import pytest
 
 from q2mm.models.forcefield import ForceField
 from q2mm.models.seminario import (
-    estimate_force_constants,
+    qfuerza_fresh,
+    qfuerza_into,
     seminario_angle_fc,
     seminario_bond_fc,
 )
@@ -201,11 +202,11 @@ class TestIndividualAngles:
 # Full pipeline (averaged parameters)
 # ---------------------------------------------------------------------------
 class TestFullPipeline:
-    """End-to-end: .fchk → estimate_force_constants → ForceField."""
+    """End-to-end: .fchk → qfuerza_fresh → ForceField."""
 
     def test_gs_averaged_bond_force_constants(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_bond, param in zip(reference["GS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -216,7 +217,7 @@ class TestFullPipeline:
 
     def test_gs_averaged_bond_equilibria(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_bond, param in zip(reference["GS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.equilibrium,
@@ -227,7 +228,7 @@ class TestFullPipeline:
 
     def test_gs_averaged_angle_force_constants(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_angle, param in zip(reference["GS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -238,7 +239,7 @@ class TestFullPipeline:
 
     def test_gs_averaged_angle_equilibria(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_angle, param in zip(reference["GS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.equilibrium,
@@ -249,7 +250,7 @@ class TestFullPipeline:
 
     def test_ts_averaged_bond_force_constants(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_bond, param in zip(reference["TS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -260,7 +261,7 @@ class TestFullPipeline:
 
     def test_ts_averaged_angle_force_constants(self, reference: dict[str, object]) -> None:
         _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for ref_angle, param in zip(reference["TS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -271,12 +272,12 @@ class TestFullPipeline:
 
     def test_forcefield_returns_correct_type(self) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         assert isinstance(ff, ForceField)
 
     def test_torsions_zeroed_by_default(self) -> None:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = estimate_force_constants(mol)
+        ff = qfuerza_fresh(mol)
         for t in ff.torsions:
             assert t.force_constant == 0.0
 
@@ -290,12 +291,12 @@ class TestGSvsTSComparison:
     @pytest.fixture(scope="class")
     def gs_ff(self) -> ForceField:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        return estimate_force_constants(mol)
+        return qfuerza_fresh(mol)
 
     @pytest.fixture(scope="class")
     def ts_ff(self) -> ForceField:
         _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        return estimate_force_constants(mol)
+        return qfuerza_fresh(mol)
 
     def test_ts_cc_bond_longer(self, gs_ff: ForceField, ts_ff: ForceField) -> None:
         """Eclipsed TS has longer C-C bond due to steric repulsion."""
@@ -362,14 +363,15 @@ class TestMultiMoleculeAveraging:
         _, ts_mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
 
         # Get individual values
-        gs_ff = estimate_force_constants(gs_mol)
-        ts_ff = estimate_force_constants(ts_mol)
+        gs_ff = qfuerza_fresh(gs_mol)
+        ts_ff = qfuerza_fresh(ts_mol)
         gs_cc = next(b for b in gs_ff.bonds if b.elements == ("C", "C"))
         ts_cc = next(b for b in ts_ff.bonds if b.elements == ("C", "C"))
 
         # Create shared force field for averaging
         shared_ff = ForceField.create_for_molecule(gs_mol, name="shared")
-        avg_ff = estimate_force_constants([gs_mol, ts_mol], forcefield=shared_ff)
+        avg_ff = shared_ff.copy()
+        qfuerza_into(avg_ff, [gs_mol, ts_mol])
         avg_cc = next(b for b in avg_ff.bonds if b.elements == ("C", "C"))
 
         lo = min(gs_cc.force_constant, ts_cc.force_constant)
@@ -396,7 +398,7 @@ class TestLiteratureValidation:
     @pytest.fixture(scope="class")
     def gs_ff(self) -> ForceField:
         _, mol = ReferenceData.from_fchk(GS_FCHK)
-        return estimate_force_constants(mol)
+        return qfuerza_fresh(mol)
 
     def test_cc_fc_in_literature_range(self, gs_ff: ForceField) -> None:
         """C-C stretch FC should be ~180-468 kcal/(mol·Å²) (Seminario from DFT can be softer than MM3)."""

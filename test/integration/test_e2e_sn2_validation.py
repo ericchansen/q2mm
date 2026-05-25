@@ -45,7 +45,7 @@ from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, f
 from q2mm.diagnostics.benchmark import real_frequencies
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -129,7 +129,7 @@ class TestCH3FGroundState:
         hess = np.load(CH3F_HESS)
         mol_h = ch3f_mol.with_hessian(hess)
         t0 = time.perf_counter()
-        ff = estimate_force_constants(mol_h)
+        ff = qfuerza_fresh(mol_h)
         elapsed = time.perf_counter() - t0
         return ff, elapsed
 
@@ -538,7 +538,7 @@ class TestSN2TransitionState:
         hess = np.load(TS_HESS)
         mol_h = ts_mol.with_hessian(hess)
         t0 = time.perf_counter()
-        ff = estimate_force_constants(mol_h)
+        ff = qfuerza_fresh(mol_h)
         elapsed = time.perf_counter() - t0
         return ff, elapsed
 
@@ -734,14 +734,14 @@ class TestSN2ReactionProfile:
         """Seminario FF for CH3F ground state."""
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
         hess = np.load(CH3F_HESS)
-        return estimate_force_constants(mol.with_hessian(hess))
+        return qfuerza_fresh(mol.with_hessian(hess))
 
     @pytest.fixture(scope="class")
     def ts_ff(self) -> ForceField:
         """Seminario FF for SN2 TS."""
         mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
         hess = np.load(TS_HESS)
-        return estimate_force_constants(mol.with_hessian(hess))
+        return qfuerza_fresh(mol.with_hessian(hess))
 
     def test_qm_barrier_matches_literature(self, qm_energies: dict[str, float], ext_ref: dict[str, object]) -> None:
         """Our QM barrier should be in the ballpark of published values."""

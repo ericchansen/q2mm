@@ -31,7 +31,7 @@ from q2mm.backends.base import MMEngine
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData, ReferenceValue
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -161,7 +161,7 @@ class TestSeminarioOptimizePipeline:
         mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
         hess = np.load(CH3F_HESS)
         mol_h = mol.with_hessian(hess)
-        return estimate_force_constants(mol_h), mol
+        return qfuerza_fresh(mol_h), mol
 
     def test_seminario_ff_can_evaluate(self, ch3f_seminario_ff: tuple[ForceField, Q2MMMolecule]) -> None:
         """Seminario-derived FF can compute energy via OpenMM."""

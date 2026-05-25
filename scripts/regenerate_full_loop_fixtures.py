@@ -31,7 +31,7 @@ from q2mm.constants import (
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -65,7 +65,7 @@ def main() -> None:
 
     # Seminario
     t0 = time.perf_counter()
-    ff = estimate_force_constants(mol, au_hessian=True)
+    ff = qfuerza_fresh(mol, au_hessian=True)
     t_sem = time.perf_counter() - t0
     sem_vec = ff.get_param_vector().copy()
 

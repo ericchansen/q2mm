@@ -153,7 +153,7 @@ class TestRhEnamideSeminarioTiming:
     ) -> None:
         """Time the full Seminario pipeline on 9 rh-enamide structures."""
         from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
 
         mm3_path = RH_DIR / "mm3.fld"
         if not mm3_path.exists():
@@ -161,7 +161,8 @@ class TestRhEnamideSeminarioTiming:
         ff_template = ForceField.from_mm3_fld(str(mm3_path))
 
         t0 = time.perf_counter()
-        ff = estimate_force_constants(rh_molecules, forcefield=ff_template)
+        ff = ff_template.copy()
+        qfuerza_into(ff, rh_molecules)
         elapsed = time.perf_counter() - t0
 
         with capsys.disabled():
@@ -176,15 +177,17 @@ class TestRhEnamideSeminarioTiming:
     def test_seminario_is_deterministic(self, rh_molecules: list[Q2MMMolecule]) -> None:
         """Two consecutive Seminario runs produce identical results."""
         from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
 
         mm3_path = RH_DIR / "mm3.fld"
         if not mm3_path.exists():
             pytest.skip("mm3.fld not found")
         ff_template = ForceField.from_mm3_fld(str(mm3_path))
 
-        ff1 = estimate_force_constants(rh_molecules, forcefield=ff_template)
-        ff2 = estimate_force_constants(rh_molecules, forcefield=ff_template)
+        ff1 = ff_template.copy()
+        qfuerza_into(ff1, rh_molecules)
+        ff2 = ff_template.copy()
+        qfuerza_into(ff2, rh_molecules)
 
         np.testing.assert_array_equal(
             ff1.get_param_vector(),
@@ -224,7 +227,7 @@ class TestRhEnamideFullLoop:
         """Run the full rh-enamide pipeline."""
         from q2mm.backends.mm import OpenMMEngine
         from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
         from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -240,7 +243,8 @@ class TestRhEnamideFullLoop:
 
         # Seminario estimation
         t0 = time.perf_counter()
-        ff = estimate_force_constants(molecules, forcefield=ff_template)
+        ff = ff_template.copy()
+        qfuerza_into(ff, molecules)
         t_seminario = time.perf_counter() - t0
         seminario_params = ff.get_param_vector().copy()
 
@@ -368,7 +372,7 @@ class TestEthaneFullLoop:
     def pipeline_result(self) -> dict[str, object]:
         """Run the full pipeline and return all intermediate results."""
         from q2mm.backends.mm import OpenMMEngine
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -382,7 +386,7 @@ class TestEthaneFullLoop:
 
         # Seminario estimation
         t_sem_start = time.perf_counter()
-        ff = estimate_force_constants(mol, au_hessian=True)
+        ff = qfuerza_fresh(mol, au_hessian=True)
         t_sem = time.perf_counter() - t_sem_start
         seminario_params = ff.get_param_vector().copy()
 
@@ -541,14 +545,14 @@ class TestEthaneTSSeminario:
 
     @pytest.fixture(scope="class")
     def ts_result(self) -> dict[str, object]:
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.objective import ReferenceData
 
         if not TS_FCHK.exists():
             pytest.skip("Ethane TS.fchk not found")
 
         ref, mol = ReferenceData.from_fchk(str(TS_FCHK), bond_tolerance=1.4)
-        ff = estimate_force_constants(mol, au_hessian=True)
+        ff = qfuerza_fresh(mol, au_hessian=True)
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
         return {"mol": mol, "ff": ff, "qm_freqs": qm_freqs}
 
@@ -572,11 +576,11 @@ class TestEthaneTSSeminario:
 
     def test_ts_seminario_matches_gs_approximately(self, ts_result: dict[str, object]) -> None:
         """TS and GS Seminario parameters should be similar (same molecule)."""
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.objective import ReferenceData
 
         ref_gs, mol_gs = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-        ff_gs = estimate_force_constants(mol_gs, au_hessian=True)
+        ff_gs = qfuerza_fresh(mol_gs, au_hessian=True)
 
         ff_ts = ts_result["ff"]
         gs_params = ff_gs.get_param_vector()
@@ -606,7 +610,7 @@ class TestPipelineDeterminism:
     def test_full_pipeline_is_deterministic(self) -> None:
         """Two independent pipeline runs yield identical scores and params."""
         from q2mm.backends.mm import OpenMMEngine
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -616,7 +620,7 @@ class TestPipelineDeterminism:
         results = []
         for _ in range(2):
             ref, mol = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-            ff = estimate_force_constants(mol, au_hessian=True)
+            ff = qfuerza_fresh(mol, au_hessian=True)
             engine = OpenMMEngine()
 
             qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
@@ -653,7 +657,7 @@ def _rh_enamide_harmonic_pipeline(
     regardless of the template FF's functional form).
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -665,7 +669,8 @@ def _rh_enamide_harmonic_pipeline(
 
     # Seminario estimation produces harmonic force constants
     t0 = time.perf_counter()
-    ff = estimate_force_constants(molecules, forcefield=ff_template)
+    ff = ff_template.copy()
+    qfuerza_into(ff, molecules)
     t_seminario = time.perf_counter() - t0
 
     # Switch to harmonic functional form for JAX compatibility

@@ -35,7 +35,7 @@ from test._shared import (
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants
+from q2mm.models.seminario import qfuerza_fresh
 
 JaxEngine = None
 
@@ -151,7 +151,7 @@ class TestJaxOptCH3FValidation:
     def seminario_ff(self, ch3f_mol: Q2MMMolecule) -> ForceField:
         hess = np.load(CH3F_HESS)
         mol_h = ch3f_mol.with_hessian(hess)
-        return estimate_force_constants(mol_h)
+        return qfuerza_fresh(mol_h)
 
     def test_freq_only_convergence(
         self,
@@ -324,7 +324,7 @@ class TestJaxOptSN2TSValidation:
     def ts_seminario_ff(self, ts_mol: Q2MMMolecule) -> ForceField:
         hess = np.load(SN2_HESSIAN)
         mol_h = ts_mol.with_hessian(hess)
-        return estimate_force_constants(mol_h, invert_ts_curvature=True)
+        return qfuerza_fresh(mol_h, invert_ts_curvature=True)
 
     def test_sn2_ts_freq_convergence(
         self,

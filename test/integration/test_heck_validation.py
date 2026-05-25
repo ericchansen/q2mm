@@ -208,13 +208,14 @@ class TestHeckRelayPublishedFF:
     def seminario_ff(self, molecules: list[Any]) -> Any:
         """Build a Seminario-estimated FF as the unoptimized baseline."""
         from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
 
         if HECK_DIR is None:
             pytest.skip("Heck relay supporting data not found")
         ff_path = HECK_DIR / "mm3.FF1.fld"
         ff_template = ForceField.from_mm3_fld(str(ff_path))
-        return estimate_force_constants(molecules, forcefield=ff_template)
+        qfuerza_into(ff_template, molecules)
+        return ff_template
 
     @pytest.fixture(scope="class")
     def engine(self) -> Any:
@@ -377,7 +378,7 @@ class TestHeckRelayPublishedFF:
 def test_load_heck_relay_preserves_published_opt_values() -> None:
     """Regression: loader must NOT overwrite published Rosales OPT params.
 
-    Before #277, ``load_heck_relay()`` called ``estimate_force_constants``
+    Before #277, ``load_heck_relay()`` called `qfuerza_fresh` / `qfuerza_into`
     after ``freeze_standard_params``, which silently re-projected the
     OPT-substructure parameter values via FUERZA — discarding Rosales'
     fitted values.  After the fix, the loader should keep those values

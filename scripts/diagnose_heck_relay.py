@@ -6,9 +6,10 @@ evaluates each against the QM training set:
 A. Untouched Rosales FF — ForceField.from_mm3_fld(include_standard=True),
    no freeze_standard_params, no Seminario re-estimation.
 B. Pre-fix loader pattern — the BUGGY combination that load_heck_relay
-   used before #277 was fixed: ForceField.from_mm3_fld + freeze_standard_params
-   + estimate_force_constants(forcefield=ff).  Reconstructed inline (NOT
-   by calling the current loader), so this diagnostic stays valid as a
+   used before #277 was fixed: ForceField.from_mm3_fld +
+   freeze_standard_params + qfuerza_into(ff, molecules,
+   invert_ts_curvature=True).  Reconstructed inline (NOT by calling
+   the current loader), so this diagnostic stays valid as a
    regression-detection tool after the fix lands.
 C. Seminario-only — ForceField.from_mm3_fld(include_standard=False)
    (Rosales OPT block as the template), then Seminario re-estimates
@@ -222,20 +223,21 @@ def build_ff_b_prefix_loader_pattern(molecules: list[Any]) -> Any:
     """Build baseline B — explicit reconstruction of the PRE-FIX loader bug.
 
     Reproduces the pre-#277 ``load_heck_relay()`` exactly:
-    ``from_mm3_fld(include_standard=True)`` + ``freeze_standard_params`` +
-    ``estimate_force_constants(forcefield=ff)``.  This is the bug we are
-    diagnosing — we do **not** call the current loader, because the
-    current loader was fixed in #280 and no longer reproduces the bug.
-    Keeping the buggy pattern inline here means the diagnostic stays
-    valid as a regression-detection tool even after the fix lands.
+    ``from_mm3_fld(include_standard=True)`` + ``freeze_standard_params``
+    + ``qfuerza_into(ff, molecules, invert_ts_curvature=True)``.  This
+    is the bug we are diagnosing — we do **not** call the current
+    loader, because the current loader was fixed in #280 and no longer
+    reproduces the bug.  Keeping the buggy pattern inline here means
+    the diagnostic stays valid as a regression-detection tool even
+    after the fix lands.
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
 
     ff = ForceField.from_mm3_fld(str(_ff_path()), include_standard=True)
     opt_ff = ForceField.from_mm3_fld(str(_ff_path()), include_standard=False)
     ff.freeze_standard_params(opt_ff)
-    ff = estimate_force_constants(molecules, forcefield=ff, invert_ts_curvature=True)
+    qfuerza_into(ff, molecules, invert_ts_curvature=True)
     ff.functional_form = FunctionalForm.MM3
     return ff
 
@@ -243,10 +245,11 @@ def build_ff_b_prefix_loader_pattern(molecules: list[Any]) -> Any:
 def build_ff_c_seminario_only(molecules: list[Any]) -> Any:
     """Build baseline C — Seminario over the OPT block, no published values."""
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
+    from q2mm.models.seminario import qfuerza_into
 
     ff_template = ForceField.from_mm3_fld(str(_ff_path()), include_standard=False)
-    ff = estimate_force_constants(molecules, forcefield=ff_template, invert_ts_curvature=True)
+    ff = ff_template.copy()
+    qfuerza_into(ff, molecules, invert_ts_curvature=True)
     ff.functional_form = FunctionalForm.MM3
     return ff
 

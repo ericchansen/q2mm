@@ -326,12 +326,13 @@ class TestPublishedFFEvaluation:
     def seminario_ff(self, molecules: list[Any]) -> Any:
         """Build a Seminario-estimated FF as the unoptimized baseline."""
         from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import estimate_force_constants
+        from q2mm.models.seminario import qfuerza_into
 
         if not MM3_FLD_PATH.exists():
             pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
         ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH))
-        return estimate_force_constants(molecules, forcefield=ff_template)
+        qfuerza_into(ff_template, molecules)
+        return ff_template
 
     @pytest.fixture(scope="class")
     def engine(self) -> Any:

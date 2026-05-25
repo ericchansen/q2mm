@@ -17,7 +17,7 @@ except Exception:
 # Public API — the most commonly used classes at the top level
 from q2mm.models.molecule import Q2MMMolecule  # noqa: E402
 from q2mm.models.forcefield import ForceField, BondParam, AngleParam  # noqa: E402
-from q2mm.models.seminario import estimate_force_constants  # noqa: E402
+from q2mm.models.seminario import qfuerza_fresh, qfuerza_into  # noqa: E402
 from q2mm.optimizers.objective import ReferenceData, ObjectiveFunction  # noqa: E402
 
 __all__ = [
@@ -25,7 +25,8 @@ __all__ = [
     "ForceField",
     "BondParam",
     "AngleParam",
-    "estimate_force_constants",
+    "qfuerza_fresh",
+    "qfuerza_into",
     "ReferenceData",
     "ObjectiveFunction",
     "__version__",

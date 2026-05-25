@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.seminario import estimate_force_constants, seminario_bond_fc
+from q2mm.models.seminario import qfuerza_into, seminario_bond_fc
 from q2mm.io.jaguar import JaguarIn
 from q2mm.io.macromodel import MacroModel
 from q2mm.io.mol2 import Mol2
@@ -259,13 +259,8 @@ def _run_rh_pipeline_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     ]
     clean_start = ForceField.from_mm3_fld(MM3_PATH)
     with _DisableLogging():
-        clean_estimated = estimate_force_constants(
-            molecules,
-            forcefield=clean_start,
-            zero_torsions=True,
-            au_hessian=True,
-            invalid_policy="skip",
-        )
+        clean_estimated = clean_start.copy()
+        qfuerza_into(clean_estimated, molecules, zero_torsions=True, au_hessian=True, invalid_policy="skip")
 
     fixture_bf = _int_keyed_map(fixture["parameters"]["bond_force_constants_mdyn_a"])
     fixture_be = _int_keyed_map(fixture["parameters"]["bond_equilibria_angstrom"])
