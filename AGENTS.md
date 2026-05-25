@@ -15,6 +15,30 @@ functions, and evaluation tools for force field development.
 
 > ⚠️ **This project is in alpha.** The rules below are non-negotiable.
 
+### Key Papers — Read Before Touching Methodology
+
+Q2MM has a specific scientific lineage.  Before changing anything in
+`q2mm/models/seminario.py`, `q2mm/models/forcefield.py`, the
+parametrization loaders in `q2mm/diagnostics/systems.py`, or the
+optimizers in `q2mm/optimizers/`, look at the right paper.  Agents have
+repeatedly cited the wrong reference here.
+
+| Paper | DOI | What it governs |
+|-------|-----|-----------------|
+| **Farrugia, Helquist, Norrby & Wiest 2025** — "Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement", *J. Chem. Theory Comput.* **22**, 469. | [10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751) | **QFUERZA** — the methodology of record for `q2mm/models/seminario.py`. Defines the FUERZA + H-angle-substitution variant we ship; documents that torsions are intentionally zeroed at initial-parameter time; explains the "mixing literature + custom params" workflow our loaders implement. |
+| Seminario 1996 — "Calculation of intramolecular force fields from second-derivative tensors", *Int. J. Quantum Chem.* **60**, 1271. | [10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W) | Original **FUERZA** projection.  Background only; QFUERZA above supersedes it for us. |
+| Limé & Norrby 2015 — *J. Chem. Theory Comput.* **11**, 3696. | [10.1021/acs.jctc.5b00461](https://doi.org/10.1021/acs.jctc.5b00461) | TS Hessian inversion (`invert_ts_curvature=True`).  See the "TS Hessian Inversion" warning below. |
+| Donoghue, Helquist, Norrby & Wiest 2008 — *J. Chem. Theory Comput.* **4**, 1313. | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) | Rh-enamide TSFF reference paper.  Governs `examples/rh-enamide/`, `load_rh_enamide`, and the 9-molecule benchmark system. |
+| Rosales, Helquist, Norrby & Wiest 2020 — *J. Am. Chem. Soc.* **142**, 9700. | [10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979) | Heck-relay TSFF reference paper.  Governs `load_heck_relay` and the 23-molecule benchmark system. |
+| Wahlers, *Ph.D. Dissertation*, University of Notre Dame, 2022. | (dissertation, no DOI) | pd-allyl, pd 1,4-conjugate-addition, rh 1,4-conjugate-addition TSFFs.  Governs `load_pd_allyl`, `load_pd_conjugate`, `load_rh_conjugate`. |
+
+**If you propose changes to the parametrization or loader code without
+having consulted Farrugia 2025, stop and read it first.** Many of the
+loader-API decisions (frozen params, OPT-only re-estimation, the
+distinction between literature and custom parameter values) are
+deliberate implementations of the QFUERZA workflow and will not make
+sense otherwise.
+
 ### TS Hessian Inversion — DO NOT GET THIS WRONG
 
 Q2MM handles **transition state (TS) systems** by inverting the QM Hessian's
