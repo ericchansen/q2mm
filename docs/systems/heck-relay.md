@@ -63,37 +63,52 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! failure "JaxLoss surrogate is unusable on this starting FF"
-    JaxLoss returns a finite-but-astronomical value on the Seminario
-    starting force field (most recent regeneration:
-    `initial_jaxloss ≈ 5.6 × 10⁸⁹`, ratio ≈ 4.6 × 10⁸¹,
-    `ratio_status = "out_of_band"`).  The absolute magnitude is
-    non-deterministic across runs because the inner geometry
-    minimization wanders into very-high-energy regions, but the
-    surrogate is clearly unusable.  **No JaxLoss-guided optimization
-    was performed.**
+!!! success "Loader bug fixed (ericchansen/q2mm#277) — Rosales FF now usable"
+    The previous loader silently re-ran `estimate_force_constants` on
+    the Rosales FF, which overwrote the published OPT parameters with
+    raw FUERZA projections.  In the three-baseline diagnostic
+    (`q2mm-data/benchmarks/heck-relay/diagnostic/three_baseline_comparison.json`)
+    the buggy combination collapsed bond_length R² to ≈ **−4787** for
+    that run (the value is non-deterministic across runs because the
+    inner geometry minimization diverges chaotically; a prior committed
+    convergence baseline saw ≈ −48 for the same code).  Either way the
+    fit is catastrophic.  The loader now keeps the Rosales OPT values
+    as-is (it still calls `freeze_standard_params` so the active mask
+    is correct for optimization, but no QFUERZA re-estimation).
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | ≈ 4.6 × 10⁸¹ (out_of_band, non-deterministic across runs) |
-| Initial ObjectiveFunction score | 1.48 × 10⁸ |
-| Optimization | Skipped |
+| Ratio check | 1.29 (out_of_band; upper bound 1.15) |
+| Initial ObjectiveFunction score | 3.46 × 10⁶ |
+| Optimization | Skipped at default `ratio_tol=0.15` (borderline — candidate for `ratio_tol=None`) |
 
-**Why it diverges:** The Seminario starting FF is deeply negative for
-every category — bond_length R² ≈ −48, bond_angle R² ≈ −5.5,
-eig_diagonal R² ≈ −4.7.  With such a poor starting point, the inner
-geometry minimization inside JaxLoss lands in completely unphysical
-local minima, producing meaningless loss values.  The ratio check
-correctly identifies this and blocks optimization.
+Per-category fit of the published Rosales force field against the QM
+training data (no QFUERZA — these are the published OPT values
+evaluated by the q2mm JAX engine):
 
-Finite-difference gradients would work in principle but are
-impractical for this system (462 active parameters × ~20 s per
-evaluation = hours per gradient step).
+| Category | n_refs | R² | RMSD | MAE |
+|----------|-------:|----:|-----:|----:|
+| bond_length | 1140 | **0.980** | 0.046 Å | — |
+| bond_angle | 2157 | **0.786** | 7.96 ° | — |
+| eig_diagonal | 3121 | −12.6 | 0.48 | — |
+
+Geometry is now well-reproduced; the eigenmatrix remains the open
+problem (the published Rosales FF was MM3*-fit and the residual
+eigenmatrix gap reflects a real cross-engine MM3* ↔ JAX-engine
+divergence for this chemistry, not a loader bug).
+
+**Why optimization is still skipped:** The ratio (1.29) is just
+outside the [0.85, 1.15] gate.  Like
+[pd-conjugate](pd-conjugate.md), Heck relay is a candidate for the
+experimental `ratio_tol=None` bypass — see
+[`q2mm#276`](https://github.com/ericchansen/q2mm/issues/276) for the
+companion experiment on pd-conjugate.
 
 The numbers above come from the committed regeneration script
-`scripts/regenerate_convergence_results.py`; the raw JSON output (with
-provenance: git SHAs, device, ratio_tol, timestamp) lives at
-[`q2mm-data/benchmarks/heck-relay/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/convergence).
+`scripts/regenerate_convergence_results.py`; the raw JSON output and
+the three-baseline diagnostic that diagnosed the loader bug live at
+[`q2mm-data/benchmarks/heck-relay/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/convergence)
+and [`q2mm-data/benchmarks/heck-relay/diagnostic/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/diagnostic).
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.

@@ -336,6 +336,14 @@ def load_heck_relay(
     Uses the published FF from Rosales et al. *JACS* 2020, 142, 9700-9707.
     Training set: 23 Gaussian 09 logs with HPModes frequency data.
 
+    The published Rosales OPT parameters are used **as-is** — they are
+    the result of the original MacroModel MM3* fit and reproduce the
+    QM geometry well (bond_length R² ≈ 0.98 untouched).  Earlier
+    versions of this loader re-ran ``estimate_force_constants`` on the
+    Rosales FF, which silently overwrote the OPT parameters with raw
+    Seminario projections and dropped bond_length R² to ≈ −4787.  See
+    ericchansen/q2mm#277 for the three-baseline diagnostic.
+
     Args:
         engine: MM engine instance (accepted for loader interface compatibility).
         functional_form: Override functional form.  Defaults to ``"mm3"``.
@@ -345,7 +353,6 @@ def load_heck_relay(
 
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import estimate_force_constants
     from q2mm.optimizers.objective import ReferenceData
 
     si = _resolve_supporting_info_dir()
@@ -354,10 +361,13 @@ def load_heck_relay(
         raise FileNotFoundError(f"Heck relay FF not found: {ff_path}")
 
     molecules = load_heck_relay_molecules()
-    ff_template = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
+    ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
+    # Mark only the OPT-substructure parameters as active for downstream
+    # optimization; standard MM3 backbone params remain frozen.  Do NOT
+    # call estimate_force_constants here — see #277 (it would overwrite
+    # the Rosales-fitted OPT values with raw Seminario projections).
     ff_opt = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
-    ff_template.freeze_standard_params(ff_opt)
-    ff = estimate_force_constants(molecules, forcefield=ff_template, invert_ts_curvature=True)
+    ff.freeze_standard_params(ff_opt)
 
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)
