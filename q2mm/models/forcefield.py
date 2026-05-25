@@ -26,6 +26,67 @@ if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
 
 
+class FrozenParamError(ValueError):
+    """Raised when code attempts to mutate a value field of a frozen parameter.
+
+    A parameter is "frozen" when its ``frozen`` attribute is ``True``;
+    optimizers respect this by holding the parameter fixed, and so does
+    every method that writes to physical value fields (force constants,
+    equilibria, vdW radii, etc.).  Construction is unaffected — you may
+    instantiate a new dataclass with ``frozen=True`` directly, and the
+    initial values are stored without triggering the guard.
+
+    To intentionally overwrite a frozen parameter's value (e.g. when
+    rebuilding a force field from optimized parameters), call
+    :meth:`_FrozenAwareParam.unfreeze` first.
+    """
+
+
+class _FrozenAwareParam:
+    """Mixin enforcing the ``frozen`` invariant on value-field writes.
+
+    Subclasses declare which dataclass fields are *physical values*
+    (force constants, equilibria, etc.) via the ``_VALUE_FIELDS`` class
+    attribute.  ``__setattr__`` raises :class:`FrozenParamError` when
+    code tries to assign to one of those fields while ``self.frozen``
+    is ``True``.
+
+    Construction via ``__init__`` is exempt because the dataclass
+    generates an ``__init__`` that runs *before* ``self.frozen`` is
+    True (Python sets attributes in declaration order; ``frozen``
+    appears last in every Param dataclass).  Even when ``frozen=True``
+    is passed at construction time, the value fields are assigned
+    first, so the guard never trips.  Direct post-construction writes
+    via :meth:`set_value` or attribute assignment are guarded.
+
+    Use :meth:`freeze` / :meth:`unfreeze` for the explicit, named
+    state transitions rather than ``param.frozen = True/False``;
+    direct writes to ``frozen`` itself are allowed (the mixin only
+    guards value fields).
+    """
+
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset()
+
+    # mypy: the dataclass decorator adds these; declared here for type
+    frozen: bool
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in self._VALUE_FIELDS and getattr(self, "frozen", False):
+            raise FrozenParamError(
+                f"Cannot set {type(self).__name__}.{name} on a frozen parameter. "
+                "Call .unfreeze() first, or construct a fresh parameter."
+            )
+        object.__setattr__(self, name, value)
+
+    def freeze(self) -> None:
+        """Mark this parameter as frozen (forbids future value writes)."""
+        object.__setattr__(self, "frozen", True)
+
+    def unfreeze(self) -> None:
+        """Mark this parameter as unfrozen (allows value writes again)."""
+        object.__setattr__(self, "frozen", False)
+
+
 class FunctionalForm(str, Enum):
     """Physical functional form used by a force field.
 
@@ -47,7 +108,7 @@ class FunctionalForm(str, Enum):
 
 
 @dataclass
-class BondParam:
+class BondParam(_FrozenAwareParam):
     """A bond force field parameter.
 
     Units (canonical): ``force_constant`` in kcal/(mol·Å²),
@@ -68,6 +129,8 @@ class BondParam:
     dipole_moment: float = 0.0  # Bond dipole in Debye (MM3 .fld P3 column)
     frozen: bool = False
 
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"equilibrium", "force_constant", "dipole_moment"})
+
     @property
     def key(self) -> tuple[str, str]:
         """Sorted element pair for canonical matching (e.g., ``('C', 'F')``)."""
@@ -75,7 +138,7 @@ class BondParam:
 
 
 @dataclass
-class AngleParam:
+class AngleParam(_FrozenAwareParam):
     """An angle force field parameter.
 
     Units (canonical): ``force_constant`` in kcal/(mol·rad²),
@@ -96,6 +159,10 @@ class AngleParam:
     ub_equilibrium: float | None = None  # Å, None = no UB term
     frozen: bool = False
 
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"equilibrium", "force_constant", "ub_force_constant", "ub_equilibrium"}
+    )
+
     @property
     def key(self) -> tuple[str, str, str]:
         """Canonical key: center fixed, outers sorted."""
@@ -104,7 +171,7 @@ class AngleParam:
 
 
 @dataclass
-class StretchBendParam:
+class StretchBendParam(_FrozenAwareParam):
     """A stretch-bend cross-term parameter (MM3).
 
     Couples bond stretching with angle bending:
@@ -122,6 +189,8 @@ class StretchBendParam:
     ff_row: int | None = None
     frozen: bool = False
 
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"force_constant"})
+
     @property
     def key(self) -> tuple[str, str, str]:
         """Canonical key: center fixed, outers sorted."""
@@ -130,7 +199,7 @@ class StretchBendParam:
 
 
 @dataclass
-class TorsionParam:
+class TorsionParam(_FrozenAwareParam):
     """A torsion/dihedral force field parameter.
 
     Each object represents a single Fourier component (V_n).  An MM3
@@ -153,9 +222,11 @@ class TorsionParam:
     is_improper: bool = False
     frozen: bool = False
 
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"force_constant", "phase"})
+
 
 @dataclass
-class VdwParam:
+class VdwParam(_FrozenAwareParam):
     """An atom-type van der Waals parameter."""
 
     atom_type: str
@@ -167,11 +238,16 @@ class VdwParam:
     ff_row: int | None = None
     frozen: bool = False
 
+    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"radius", "epsilon", "reduction"})
+
     def __post_init__(self) -> None:
         """Normalize atom_type and auto-extract element if not provided."""
-        self.atom_type = str(self.atom_type).strip()
+        # Bypass the frozen guard here — atom_type and element are
+        # identity fields, not value fields, but assigning to them
+        # after construction is fine even on frozen params.
+        object.__setattr__(self, "atom_type", str(self.atom_type).strip())
         if not self.element:
-            self.element = _extract_element(self.atom_type)
+            object.__setattr__(self, "element", _extract_element(self.atom_type))
 
 
 @dataclass
@@ -287,11 +363,9 @@ class ForceField:
         mask: list[bool] = []
         for attr, slots in self._PARAM_SLOTS:
             for param in getattr(self, attr):
-                frozen = getattr(param, "frozen", False)
-                mask.extend([not frozen] * len(slots))
+                mask.extend([not param.frozen] * len(slots))
         for angle in self._ub_angles:
-            frozen = getattr(angle, "frozen", False)
-            mask.extend([not frozen, not frozen])
+            mask.extend([not angle.frozen, not angle.frozen])
         return np.array(mask, dtype=bool)
 
     @property
@@ -645,18 +719,26 @@ class ForceField:
         return self.get_vdw(atom_type=atom_type, element=element)
 
     def set_param_vector(self, vec: np.ndarray) -> None:
-        """Set parameters from a flat vector (inverse of get_param_vector)."""
+        """Set parameters from a flat vector (inverse of get_param_vector).
+
+        Iterates every slot of every param.  Frozen params are skipped:
+        their value is taken from *vec* but not written through, which
+        keeps the function callable with full-length vectors produced by
+        :meth:`get_param_vector` even when some params are frozen.
+        """
         if len(vec) != self.n_params:
             raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
         idx = 0
         for attr, slots in self._PARAM_SLOTS:
             for param in getattr(self, attr):
                 for s in slots:
-                    setattr(param, s, vec[idx])
+                    if not getattr(param, "frozen", False):
+                        setattr(param, s, vec[idx])
                     idx += 1
         for angle in self._ub_angles:
-            angle.ub_force_constant = vec[idx]
-            angle.ub_equilibrium = vec[idx + 1]
+            if not getattr(angle, "frozen", False):
+                angle.ub_force_constant = vec[idx]
+                angle.ub_equilibrium = vec[idx + 1]
             idx += 2
 
     def with_params(self, vec: np.ndarray) -> ForceField:
@@ -684,19 +766,27 @@ class ForceField:
         for attr, slots in self._PARAM_SLOTS:
             new_list = []
             for param in getattr(self, attr):
-                updates = {}
-                for s in slots:
-                    updates[s] = vec[idx]
-                    idx += 1
-                new_list.append(replace(param, **updates))
+                if getattr(param, "frozen", False):
+                    # Skip vec entries for frozen params — carry the
+                    # existing values forward unchanged.
+                    idx += len(slots)
+                    new_list.append(replace(param))
+                else:
+                    updates = {}
+                    for s in slots:
+                        updates[s] = vec[idx]
+                        idx += 1
+                    new_list.append(replace(param, **updates))
             new_collections[attr] = new_list
-        # Update UB params on the new angle list
+        # Update UB params on the new angle list (skip frozen, mirroring
+        # set_param_vector semantics — the optimizer never changes them).
         ub_angles = [
             a for a in new_collections["angles"] if a.ub_force_constant is not None and a.ub_equilibrium is not None
         ]
         for angle in ub_angles:
-            angle.ub_force_constant = float(vec[idx])
-            angle.ub_equilibrium = float(vec[idx + 1])
+            if not getattr(angle, "frozen", False):
+                angle.ub_force_constant = float(vec[idx])
+                angle.ub_equilibrium = float(vec[idx + 1])
             idx += 2
         return replace(self, **new_collections)
 
@@ -720,9 +810,9 @@ class ForceField:
         """Mark all parameters as frozen (not optimizable)."""
         for attr, _ in self._PARAM_SLOTS:
             for param in getattr(self, attr):
-                param.frozen = True
+                param.freeze()
         for angle in self._ub_angles:
-            angle.frozen = True
+            angle.freeze()
 
     def freeze_standard_params(self, opt_ff: ForceField) -> None:
         """Mark params as frozen unless they match an OPT-substructure param."""
@@ -746,12 +836,12 @@ class ForceField:
             for param in getattr(self, attr):
                 if same_source and param.ff_row is not None:
                     if opt_rows[attr][param.ff_row] > 0:
-                        param.frozen = False
+                        param.unfreeze()
                         opt_rows[attr][param.ff_row] -= 1
                     continue
                 ident = self._param_identity(attr, param)
                 if opt_ids[attr][ident] > 0:
-                    param.frozen = False
+                    param.unfreeze()
                     opt_ids[attr][ident] -= 1
 
         opt_ub_rows = Counter(angle.ff_row for angle in opt_ff._ub_angles if angle.ff_row is not None)
@@ -759,12 +849,12 @@ class ForceField:
         for angle in self._ub_angles:
             if same_source and angle.ff_row is not None:
                 if opt_ub_rows[angle.ff_row] > 0:
-                    angle.frozen = False
+                    angle.unfreeze()
                     opt_ub_rows[angle.ff_row] -= 1
                 continue
             ident = self._param_identity("angles", angle)
             if opt_ub_ids[ident] > 0:
-                angle.frozen = False
+                angle.unfreeze()
                 opt_ub_ids[ident] -= 1
 
     # Default bounds per parameter type (min, max) in canonical units.

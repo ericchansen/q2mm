@@ -746,8 +746,14 @@ class TestForceField:
     def test_mm3_export_updates_template(self, tmp_path: Path) -> None:
         ff = ForceField.from_mm3_fld(RH_MM3)
         first_bond = ff.bonds[0]
+        # Mutating a value field on a frozen param now raises FrozenParamError
+        # (q2mm#277 follow-up). The test's intent is roundtrip fidelity, not
+        # frozenness, so unfreeze for the edit and re-freeze for parity with
+        # the original FF state.
+        first_bond.unfreeze()
         first_bond.force_constant += 1.234
         first_bond.equilibrium += 0.123
+        first_bond.freeze()
 
         out_path = tmp_path / "updated_mm3.fld"
         ff.to_mm3_fld(out_path)
@@ -1783,3 +1789,134 @@ class TestSaverFormValidation:
         assert ff.functional_form is None
         result = save_amber_frcmod(ff, tmp_path / "out.frcmod")
         assert result.exists()
+
+
+class TestFrozenParamInvariant:
+    """Frozen params raise FrozenParamError when value fields are mutated.
+
+    The invariant exists to prevent silent overwriting of literature /
+    held-fixed parameter values (the q2mm#277 bug).  See the docstring
+    of :class:`q2mm.models.forcefield.FrozenParamError` for the user
+    workflow (``.unfreeze()`` to opt in to the override).
+    """
+
+    def test_setting_value_on_frozen_bond_raises(self) -> None:
+        from q2mm.models.forcefield import BondParam, FrozenParamError
+
+        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
+        with pytest.raises(FrozenParamError, match="BondParam.force_constant"):
+            b.force_constant = 500.0
+        with pytest.raises(FrozenParamError, match="BondParam.equilibrium"):
+            b.equilibrium = 1.5
+
+    def test_setting_value_on_frozen_angle_raises(self) -> None:
+        from q2mm.models.forcefield import AngleParam, FrozenParamError
+
+        a = AngleParam(("H", "C", "F"), 109.5, 50.0, frozen=True)
+        with pytest.raises(FrozenParamError, match="AngleParam.force_constant"):
+            a.force_constant = 80.0
+        with pytest.raises(FrozenParamError, match="AngleParam.ub_force_constant"):
+            a.ub_force_constant = 10.0
+
+    def test_setting_value_on_frozen_torsion_raises(self) -> None:
+        from q2mm.models.forcefield import FrozenParamError, TorsionParam
+
+        t = TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.16, frozen=True)
+        with pytest.raises(FrozenParamError, match="TorsionParam.force_constant"):
+            t.force_constant = 0.5
+
+    def test_setting_value_on_frozen_vdw_raises(self) -> None:
+        from q2mm.models.forcefield import FrozenParamError, VdwParam
+
+        v = VdwParam("C1", 1.96, 0.044, frozen=True)
+        with pytest.raises(FrozenParamError, match="VdwParam.radius"):
+            v.radius = 2.0
+
+    def test_setting_value_on_frozen_stretch_bend_raises(self) -> None:
+        from q2mm.models.forcefield import FrozenParamError, StretchBendParam
+
+        sb = StretchBendParam(("H", "C", "F"), force_constant=0.75, frozen=True)
+        with pytest.raises(FrozenParamError, match="StretchBendParam.force_constant"):
+            sb.force_constant = 1.0
+
+    def test_setting_value_on_unfrozen_param_works(self) -> None:
+        from q2mm.models.forcefield import BondParam
+
+        b = BondParam(("C", "F"), 1.38, 359.7, frozen=False)
+        b.force_constant = 500.0
+        assert b.force_constant == 500.0
+
+    def test_freeze_unfreeze_methods_toggle_invariant(self) -> None:
+        from q2mm.models.forcefield import BondParam, FrozenParamError
+
+        b = BondParam(("C", "F"), 1.38, 359.7)
+        assert not b.frozen
+
+        b.freeze()
+        assert b.frozen
+        with pytest.raises(FrozenParamError):
+            b.force_constant = 999.0
+
+        b.unfreeze()
+        assert not b.frozen
+        b.force_constant = 999.0
+        assert b.force_constant == 999.0
+
+    def test_construction_with_frozen_true_assigns_initial_values(self) -> None:
+        """Bypass the guard during __init__ so ``frozen=True`` constructs work."""
+        from q2mm.models.forcefield import BondParam
+
+        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
+        assert b.frozen
+        assert b.force_constant == 359.7
+        assert b.equilibrium == 1.38
+
+    def test_assigning_frozen_directly_is_not_guarded(self) -> None:
+        """``frozen`` itself is not a value field; direct assignment works.
+
+        This is the documented escape hatch for code that prefers
+        ``param.frozen = False`` over ``param.unfreeze()``.
+        """
+        from q2mm.models.forcefield import BondParam
+
+        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
+        b.frozen = False
+        b.force_constant = 999.0
+        assert b.force_constant == 999.0
+
+    def test_estimate_force_constants_does_not_overwrite_frozen_opt_block(self) -> None:
+        """Regression for the q2mm#277 pattern at the unit level.
+
+        ``estimate_force_constants(forcefield=ff)`` must not overwrite
+        the values of any frozen param.  The Heck-relay loader bug fell
+        out of this contract being silently violated; now both the
+        skip-frozen shortcut in seminario.py and the FrozenParamError
+        guard back it up.
+        """
+        import numpy as np
+
+        from q2mm.models.forcefield import BondParam, ForceField
+        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.seminario import estimate_force_constants
+
+        # Build a tiny FF whose only bond is frozen at a marker value.
+        marker_k = 12345.67
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, marker_k, frozen=True)],
+        )
+
+        # Minimal two-atom molecule with a dummy Hessian — Seminario's
+        # bond loop will iterate ff.bonds; the skip-frozen branch must
+        # bypass it without touching the value.
+        mol = Q2MMMolecule(
+            symbols=["C", "F"],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.38, 0.0, 0.0]]),
+            bond_tolerance=1.5,
+            hessian=np.eye(6),
+        )
+
+        result = estimate_force_constants(mol, forcefield=ff)
+        assert result.bonds[0].force_constant == marker_k, (
+            "Frozen bond force constant was silently overwritten by estimate_force_constants — "
+            "this is the q2mm#277 bug pattern."
+        )
