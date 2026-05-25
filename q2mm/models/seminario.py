@@ -336,9 +336,16 @@ def estimate_force_constants(
     else:
         ff = forcefield.copy()
 
-    # Estimate bond force constants
+    # Estimate bond force constants.  Skip frozen params: their values
+    # are caller-owned commitments (e.g. literature OPT params held
+    # fixed via freeze_standard_params) and overwriting them silently
+    # was the load_heck_relay bug (q2mm#277).  This loop matches the
+    # skip-frozen convention in ForceField.set_param_vector /
+    # with_params; commit 3 will replace this function entirely with
+    # qfuerza_fresh / qfuerza_into which take an explicit target list
+    # and never iterate frozen params.
     for bond_param in ff.bonds:
-        if getattr(bond_param, "frozen", False):
+        if bond_param.frozen:
             continue
         matching_bonds = _collect_matching(molecules, bond_param, "bonds", "element_pair")
 
@@ -377,9 +384,9 @@ def estimate_force_constants(
         else:
             logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")
 
-    # Estimate angle force constants
+    # Estimate angle force constants.  Skip frozen params (see bond loop above).
     for angle_param in ff.angles:
-        if getattr(angle_param, "frozen", False):
+        if angle_param.frozen:
             continue
         matching_angles = _collect_matching(molecules, angle_param, "angles", "element_triple")
 
@@ -429,10 +436,10 @@ def estimate_force_constants(
                 f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant"
             )
 
-    # Zero torsions if requested
+    # Zero torsions if requested.  Skip frozen torsions (see bond loop above).
     if zero_torsions:
         for t in ff.torsions:
-            if getattr(t, "frozen", False):
+            if t.frozen:
                 continue
             t.force_constant = 0.0
 
