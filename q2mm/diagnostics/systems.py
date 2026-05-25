@@ -1,15 +1,23 @@
 """Benchmark system configurations.
 
-Each :class:`BenchmarkSystem` describes a molecular system with its reference
-data, force field template, and metadata.  The :data:`SYSTEMS` registry maps
-system names to their configs, making it easy to add new benchmark targets.
+Each :class:`SystemSpec` declaratively describes one benchmark system —
+its molecule source, FF-assembly strategy, and metadata — and the
+:data:`SYSTEMS` registry maps a CLI key to that spec.  The single
+public entry point is :func:`load_system`, which dispatches to the
+right molecule loader and the right FF strategy based on the spec.
+
+Adding a new system = appending a :class:`SystemSpec` entry to
+:data:`SYSTEMS`; no new module-level function is required.
 
 Usage::
 
-    from q2mm.diagnostics.systems import SYSTEMS, BenchmarkSystem
+    from q2mm.diagnostics.systems import load_system, SYSTEMS
 
-    system = SYSTEMS["rh-enamide"]
-    sys_data = system.loader(engine)
+    sys_data = load_system("rh-enamide", engine=engine)
+
+The FF-assembly strategies live in :mod:`q2mm.models.loaders` and
+correspond to the published-FF workflows in Farrugia, Helquist, Norrby
+& Wiest 2025 (the QFUERZA paper — see AGENTS.md "Key Papers").
 """
 
 from __future__ import annotations
@@ -17,8 +25,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
+from collections.abc import Callable, Mapping
 
 import numpy as np
 
@@ -100,17 +108,6 @@ def _build_frequency_reference(
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-# Published metal vdW parameters for systems where the base FF lacks them.
-# Source: Rosales Heck FF (mm3.FF1.fld:1063) for PD.
-def _metal_vdw_registry() -> dict[str, Any]:
-    """Lazy-import VdwParam to avoid circular imports at module level."""
-    from q2mm.models.forcefield import VdwParam
-
-    return {
-        "PD": VdwParam(atom_type="PD", radius=1.70, epsilon=0.414, element="Pd"),
-    }
-
-
 def _find_ch3f_data_dir() -> Path:
     """Locate CH3F reference data directory."""
     candidates = [
@@ -122,76 +119,6 @@ def _find_ch3f_data_dir() -> Path:
             return d
     raise FileNotFoundError(
         "Cannot find CH3F reference data (ch3f-optimized.xyz). Run from the repo root or use --data-dir."
-    )
-
-
-def load_ch3f(
-    engine: Any,
-    *,
-    data_dir: Path | None = None,
-    functional_form: str | None = None,
-) -> SystemData:
-    """Load the CH3F benchmark system.
-
-    Args:
-        engine: MM engine instance (used for frequency computation).
-        data_dir: Override for the QM reference data directory.
-        functional_form: Override functional form (e.g. ``"harmonic"``,
-            ``"mm3"``).  When ``None``, the form is left unset and the
-            engine uses its native default.
-
-    Returns:
-        SystemData with a single CH3F molecule.
-
-    """
-    from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.models.seminario import qfuerza_fresh
-
-    qm_dir = data_dir or _find_ch3f_data_dir()
-    xyz = qm_dir / "ch3f-optimized.xyz"
-    hess_path = qm_dir / "ch3f-hessian.npy"
-    freqs_path = qm_dir / "ch3f-frequencies.txt"
-    modes_path = qm_dir / "ch3f-normal-modes.npz"
-
-    molecule = Q2MMMolecule.from_xyz(xyz, bond_tolerance=1.5)
-    qm_freqs_all = np.loadtxt(freqs_path)
-    qm_hessian = np.load(hess_path)
-
-    mol_h = molecule.with_hessian(qm_hessian)
-    ff = qfuerza_fresh(mol_h, invert_ts_curvature=True)
-
-    if functional_form is not None:
-        from q2mm.models.forcefield import FunctionalForm
-
-        ff.functional_form = FunctionalForm(functional_form)
-
-    mm_all = engine.frequencies(molecule, ff)
-    freq_ref, qm_real = _build_frequency_reference(qm_freqs_all, mm_all)
-
-    # Load normal modes for PES distortion analysis (optional)
-    normal_modes = None
-    if modes_path.exists():
-        from q2mm.diagnostics.pes_distortion import load_normal_modes
-
-        normal_modes = load_normal_modes(modes_path)
-
-    # Resolve functional form for metadata: explicit override > ff value
-    resolved_form = functional_form
-    if resolved_form is None and ff.functional_form is not None:
-        resolved_form = ff.functional_form.value
-
-    return SystemData(
-        molecules=[molecule],
-        forcefield=ff,
-        reference=freq_ref,
-        qm_freqs_per_mol=[qm_real],
-        metadata={
-            "molecule_name": "CH3F",
-            "level_of_theory": "B3LYP/6-31+G(d)",
-            "n_atoms": len(molecule.symbols),
-            **({"functional_form": resolved_form} if resolved_form else {}),
-        },
-        normal_modes=normal_modes,
     )
 
 
@@ -247,66 +174,6 @@ def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
     return molecules
 
 
-def load_rh_enamide(
-    engine: Any,
-    *,
-    functional_form: str | None = None,
-) -> SystemData:
-    """Load the Rh-enamide benchmark system (9 molecules).
-
-    Args:
-        engine: MM engine instance (accepted for loader interface compatibility).
-        functional_form: Override functional form (e.g. ``"harmonic"``,
-            ``"mm3"``).  Defaults to ``"mm3"`` since the template is MM3.
-
-    Returns:
-        SystemData with 9 Rh-enamide molecules and multi-target references.
-
-    """
-    from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import qfuerza_into
-    from q2mm.optimizers.objective import ReferenceData
-
-    mm3_path = _RH_DIR / "mm3.fld"
-    if not mm3_path.exists():
-        raise FileNotFoundError(f"Rh-enamide force field not found: {mm3_path}")
-
-    molecules = load_rh_enamide_molecules()
-    ff_template = ForceField.from_mm3_fld(str(mm3_path), include_standard=True)
-    ff_opt = ForceField.from_mm3_fld(str(mm3_path), include_standard=False)
-    ff_template.freeze_standard_params(ff_opt)
-    ff = ff_template.copy()
-    qfuerza_into(ff, molecules, invert_ts_curvature=True)
-
-    # Set functional form: explicit override > default (mm3)
-    if functional_form is not None:
-        ff.functional_form = FunctionalForm(functional_form)
-    else:
-        ff.functional_form = FunctionalForm.MM3
-
-    qm_freqs_per_mol = []
-    for mol in molecules:
-        qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
-        qm_freqs_per_mol.append(qm_real)
-
-    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
-
-    return SystemData(
-        molecules=molecules,
-        forcefield=ff,
-        reference=reference,
-        qm_freqs_per_mol=qm_freqs_per_mol,
-        metadata={
-            "molecule_name": "Rh-enamide",
-            "level_of_theory": "B3LYP/LACVP**",
-            "n_molecules": len(molecules),
-            "n_atoms_per_mol": [len(m.symbols) for m in molecules],
-            "functional_form": functional_form or "mm3",
-        },
-    )
-
-
 # ---------------------------------------------------------------------------
 # Heck relay (Rosales 2020, JACS 142, 9700)
 # ---------------------------------------------------------------------------
@@ -325,79 +192,6 @@ def load_heck_relay_molecules() -> list[Q2MMMolecule]:
     si = _resolve_supporting_info_dir()
     ts_dir = si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "TrainingSet"
     return _load_gaussian_molecules(ts_dir)
-
-
-def load_heck_relay(
-    engine: Any,
-    *,
-    functional_form: str | None = None,
-) -> SystemData:
-    """Load the Heck relay benchmark system (23 TS molecules).
-
-    Uses the published FF from Rosales et al. *JACS* 2020, 142, 9700-9707.
-    Training set: 23 Gaussian 09 logs with HPModes frequency data.
-
-    The published Rosales OPT parameters are used **as-is** — they are
-    the result of the original MacroModel MM3* fit and reproduce the
-    QM geometry well (bond_length R² ≈ 0.98 untouched).  Earlier
-    versions of this loader re-ran `qfuerza_fresh` / `qfuerza_into` on the
-    Rosales FF, which silently overwrote the OPT parameters with raw
-    Seminario projections and dropped bond_length R² to ≈ −4787.  See
-    ericchansen/q2mm#277 for the three-baseline diagnostic.
-
-    Args:
-        engine: MM engine instance (accepted for loader interface compatibility).
-        functional_form: Override functional form.  Defaults to ``"mm3"``.
-
-    Returns:
-        SystemData with 23 Heck TS molecules and multi-target references.
-
-    """
-    from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.optimizers.objective import ReferenceData
-
-    si = _resolve_supporting_info_dir()
-    ff_path = si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
-    if not ff_path.exists():
-        raise FileNotFoundError(f"Heck relay FF not found: {ff_path}")
-
-    molecules = load_heck_relay_molecules()
-    ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
-    # Mark only the OPT-substructure parameters as active for downstream
-    # optimization; standard MM3 backbone params remain frozen.  Do NOT
-    # call qfuerza_into here — see #277 (it would overwrite
-    # the Rosales-fitted OPT values with raw Seminario projections).
-    ff_opt = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
-    ff.freeze_standard_params(ff_opt)
-
-    if functional_form is not None:
-        ff.functional_form = FunctionalForm(functional_form)
-    else:
-        ff.functional_form = FunctionalForm.MM3
-
-    qm_freqs_per_mol = []
-    for mol in molecules:
-        qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
-        qm_freqs_per_mol.append(qm_real)
-
-    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
-
-    return SystemData(
-        molecules=molecules,
-        forcefield=ff,
-        reference=reference,
-        qm_freqs_per_mol=qm_freqs_per_mol,
-        metadata={
-            "molecule_name": "Heck relay",
-            "level_of_theory": "M06/gen+pseudo (GD3)",
-            "n_molecules": len(molecules),
-            "n_atoms_per_mol": [len(m.symbols) for m in molecules],
-            "functional_form": functional_form or "mm3",
-            "publication": "Rosales et al. JACS 2020, 142, 9700",
-            "doi": "10.1021/jacs.0c01979",
-        },
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -542,153 +336,271 @@ def _assign_mm3_atom_types(mol: Any) -> None:
         mol.atom_types[i] = mm3_type
 
 
-def _load_wahlers_system(
-    chapter_dir: str,
-    ff_filename: str,
-    engine: Any,
-    *,
-    system_name: str,
-    level_of_theory: str = "M06/gen+pseudo (GD3)",
-    publication: str = "",
-    doi: str = "",
-    functional_form: str | None = None,
-    metal: str | None = None,
-) -> SystemData:
-    """Load a Wahlers dissertation system with FF composition.
+# ---------------------------------------------------------------------------
+# Wahlers-system molecule loaders
+# ---------------------------------------------------------------------------
 
-    Wahlers FFs are standalone OPT-substructure-only files.  This loader
-    composes them with the standard MM3 base to produce a complete FF.
-    """
-    from q2mm.models.forcefield import ForceField, FunctionalForm
-    from q2mm.models.seminario import qfuerza_into
-    from q2mm.optimizers.objective import ReferenceData
 
+def _load_wahlers_molecules(chapter_subdir: str) -> list[Q2MMMolecule]:
+    """Load Wahlers-dissertation Gaussian molecules from a chapter subdirectory."""
     si = _resolve_supporting_info_dir()
-    wahlers_base = si / "wahlers" / "Wahlers_Jessica_Supporting_information"
-    chapter = wahlers_base / chapter_dir
-
-    # Load training set
+    chapter = si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir
     ts_dir = chapter / "Training Set Structures"
     if not ts_dir.exists():
         ts_dir = chapter / "DFT-optmized training set structures"
-    molecules = _load_gaussian_molecules(ts_dir)
+    return _load_gaussian_molecules(ts_dir)
 
-    # Compose FF: standard base + Wahlers OPT overlay.
-    # The base file (mm3_base.fld) is not committed due to copyright.
-    # Fall back to the rh-enamide mm3.fld which includes the same base section.
-    mm3_base_path = _REPO_ROOT / "validation" / "published_ffs" / "mm3_base.fld"
-    if not mm3_base_path.exists():
-        mm3_base_path = _REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
-    if not mm3_base_path.exists():
-        raise FileNotFoundError(
-            "MM3 base force field not found. Place mm3_base.fld in "
-            "validation/published_ffs/ (download from atlas-nano/ATLAS_toolkit) "
-            "or ensure examples/rh-enamide/mm3.fld exists."
-        )
-    base_ff = ForceField.from_mm3_fld(str(mm3_base_path))
-    opt_ff = ForceField.from_mm3_fld(str(chapter / ff_filename), include_standard=False)
 
-    composed = ForceField(
-        bonds=list(opt_ff.bonds) + list(base_ff.bonds),
-        angles=list(opt_ff.angles) + list(base_ff.angles),
-        torsions=list(opt_ff.torsions) + list(base_ff.torsions),
-        vdws=list(opt_ff.vdws) + list(base_ff.vdws),
-        stretch_bends=list(opt_ff.stretch_bends) + list(base_ff.stretch_bends),
-        functional_form=FunctionalForm.MM3,
+def load_pd_allyl_molecules() -> list[Q2MMMolecule]:
+    """Load the 21 Pd-allyl amination TS molecules (Wahlers Ch 3)."""
+    return _load_wahlers_molecules("Chapter 3")
+
+
+def load_pd_conjugate_molecules() -> list[Q2MMMolecule]:
+    """Load the 10 Pd 1,4-conjugate addition TS molecules (Wahlers Ch 5)."""
+    return _load_wahlers_molecules("Chapter 5")
+
+
+def load_rh_conjugate_molecules() -> list[Q2MMMolecule]:
+    """Load the 10 Rh 1,4-conjugate addition TS molecules (Wahlers Ch 6)."""
+    return _load_wahlers_molecules("Chapter 6")
+
+
+def _load_ch3f_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
+    """Load the single CH3F molecule + its QM Hessian (B3LYP/6-31+G(d))."""
+    from q2mm.models.molecule import Q2MMMolecule
+
+    qm_dir = data_dir or _find_ch3f_data_dir()
+    xyz = qm_dir / "ch3f-optimized.xyz"
+    hess_path = qm_dir / "ch3f-hessian.npy"
+    molecule = Q2MMMolecule.from_xyz(xyz, bond_tolerance=1.5)
+    return [molecule.with_hessian(np.load(hess_path))]
+
+
+# ---------------------------------------------------------------------------
+# Wahlers-system FF paths
+# ---------------------------------------------------------------------------
+
+
+def _wahlers_opt_path(chapter_subdir: str, ff_filename: str) -> Path:
+    """Resolve the path to a Wahlers chapter's standalone OPT .fld file."""
+    si = _resolve_supporting_info_dir()
+    return si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir / ff_filename
+
+
+def _mm3_base_path() -> Path:
+    """Resolve the standard MM3 base .fld file.
+
+    The base file (mm3_base.fld) is not committed due to copyright;
+    fall back to examples/rh-enamide/mm3.fld which includes the same
+    base section.
+    """
+    p = _REPO_ROOT / "validation" / "published_ffs" / "mm3_base.fld"
+    if p.exists():
+        return p
+    p = _REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
+    if p.exists():
+        return p
+    raise FileNotFoundError(
+        "MM3 base force field not found. Place mm3_base.fld in "
+        "validation/published_ffs/ (download from atlas-nano/ATLAS_toolkit) "
+        "or ensure examples/rh-enamide/mm3.fld exists."
     )
 
-    # Inject metal-specific vdW if missing from the base FF
-    if metal:
-        registry = _metal_vdw_registry()
-        metal_key = metal.upper()
-        if metal_key in registry:
-            has_metal_vdw = any(
-                v.atom_type == metal_key or (v.element or "").capitalize() == metal.capitalize() for v in composed.vdws
+
+# ---------------------------------------------------------------------------
+# SystemSpec and load_system dispatch
+# ---------------------------------------------------------------------------
+
+
+FFStrategy = Literal[
+    "qfuerza_fresh",
+    "published_opt",
+    "published_opt_composed",
+]
+"""Names of the FF-assembly strategies in :mod:`q2mm.models.loaders`."""
+
+
+@dataclass(frozen=True)
+class SystemSpec:
+    """Declarative spec for one benchmark system.
+
+    The :func:`load_system` dispatcher reads this spec to build a
+    :class:`SystemData` for the system.  Add new systems by appending
+    to :data:`SYSTEMS`; do not write per-system loader functions.
+
+    Attributes:
+        key: CLI key (e.g. ``"ch3f"``, ``"rh-enamide"``).
+        name: Human-readable system name.
+        molecule_loader: Zero-argument callable returning the training-
+            set molecules (with QM Hessians for the published-FF
+            systems).
+        ff_strategy: Name of the FF-assembly strategy in
+            :mod:`q2mm.models.loaders`.  One of
+            ``"qfuerza_fresh"``, ``"published_opt"``,
+            ``"published_opt_composed"``.
+        ff_paths: Mapping of strategy-specific path keys to zero-arg
+            callables returning a :class:`Path`.  Required keys per
+            strategy:
+
+            - ``qfuerza_fresh``: no keys.
+            - ``published_opt``: ``"ff_path"`` → published .fld.
+            - ``published_opt_composed``: ``"opt_path"`` → standalone
+              Wahlers OPT-only .fld; ``"base_path"`` → MM3 base .fld.
+        normal_modes_path: Optional callable returning a path to a
+            ``.npz`` file with pre-computed normal-mode eigendecomposition
+            (used by PES distortion analysis).  Accepts the same
+            ``data_dir`` override the CLI may pass via
+            :func:`load_system`'s ``molecule_loader_kwargs`` so molecule,
+            Hessian, and normal modes stay co-located.  Return ``None``
+            (or a non-existent path) to signal "no modes available".
+        metadata: Static metadata merged into the returned
+            :class:`SystemData.metadata` (level of theory, publication,
+            etc.).
+        metal: Optional element symbol for vdW injection during
+            ``published_opt_composed`` (e.g. ``"PD"``).
+        description: One-line CLI description.
+        default_forms: Functional forms to benchmark by default.
+
+    """
+
+    key: str
+    name: str
+    molecule_loader: Callable[..., list[Q2MMMolecule]]
+    ff_strategy: FFStrategy
+    ff_paths: Mapping[str, Callable[[], Path]] = field(default_factory=dict)
+    normal_modes_path: Callable[[Path | None], Path | None] | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    metal: str | None = None
+    description: str = ""
+    default_forms: tuple[str, ...] = ("mm3",)
+
+
+def load_system(
+    key: str,
+    *,
+    engine: Any | None = None,
+    functional_form: str | None = None,
+    molecule_loader_kwargs: dict[str, Any] | None = None,
+) -> SystemData:
+    """Build a :class:`SystemData` for one benchmark system.
+
+    The single loader entry point.  Dispatches on the system's
+    :class:`SystemSpec` to build the molecule list and the force
+    field, then constructs the reference data and metadata.
+
+    Reference construction depends on the FF strategy:
+
+    - ``qfuerza_fresh`` (single-molecule, e.g. CH3F): a frequency-only
+      reference is built from ``engine.frequencies(molecule, ff)``
+      compared against the QM frequencies derived from the Hessian.
+      The *engine* must be provided in this case.
+    - ``published_opt`` / ``published_opt_composed`` (multi-molecule
+      published-FF systems): an eigenmatrix-diagonal reference is built
+      via :meth:`ReferenceData.from_molecules`.  The engine is unused.
+
+    Args:
+        key: System key from :data:`SYSTEMS`.
+        engine: MM engine instance; required for ``qfuerza_fresh``
+            systems (CH3F-style).  Unused for other strategies.
+        functional_form: Override the FF's functional form
+            (``"harmonic"`` or ``"mm3"``).
+        molecule_loader_kwargs: Optional kwargs forwarded to the
+            system's molecule loader (e.g. ``data_dir`` for CH3F).
+
+    Returns:
+        A fully-populated :class:`SystemData`.
+
+    Raises:
+        KeyError: If *key* is not in :data:`SYSTEMS`.
+        TypeError: If *engine* is required but not provided.
+
+    """
+    from q2mm.models import loaders
+    from q2mm.models.forcefield import FunctionalForm
+    from q2mm.optimizers.objective import ReferenceData
+
+    if key not in SYSTEMS:
+        raise KeyError(f"Unknown system {key!r}; available: {sorted(SYSTEMS)}")
+    spec = SYSTEMS[key]
+
+    # 1. Molecules ---------------------------------------------------------
+    molecules = spec.molecule_loader(**(molecule_loader_kwargs or {}))
+
+    # 2. Force field via the named strategy --------------------------------
+    if spec.ff_strategy == "qfuerza_fresh":
+        if len(molecules) != 1:
+            raise ValueError(
+                f"qfuerza_fresh strategy requires exactly 1 molecule, got {len(molecules)} for system {key!r}"
             )
-            if not has_metal_vdw:
-                composed = ForceField(
-                    bonds=composed.bonds,
-                    angles=composed.angles,
-                    torsions=composed.torsions,
-                    vdws=list(composed.vdws) + [registry[metal_key]],
-                    stretch_bends=composed.stretch_bends,
-                    functional_form=composed.functional_form,
-                )
+        ff = loaders.load_qfuerza_fresh(molecules[0])
+    elif spec.ff_strategy == "published_opt":
+        ff = loaders.load_published_opt(spec.ff_paths["ff_path"]())
+    elif spec.ff_strategy == "published_opt_composed":
+        ff = loaders.load_published_opt_composed(
+            spec.ff_paths["opt_path"](),
+            spec.ff_paths["base_path"](),
+            metal=spec.metal,
+        )
+    else:  # pragma: no cover — unreachable per FFStrategy literal
+        raise ValueError(f"Unknown ff_strategy {spec.ff_strategy!r} for system {key!r}")
 
-    composed.freeze_standard_params(opt_ff)
-    ff = composed.copy()
-    qfuerza_into(ff, molecules, invert_ts_curvature=True)
-
+    # Functional form: explicit override > strategy default (MM3)
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)
 
-    qm_freqs_per_mol = []
-    for mol in molecules:
-        qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-        qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
-        qm_freqs_per_mol.append(qm_real)
+    # 3. Reference data ----------------------------------------------------
+    if spec.ff_strategy == "qfuerza_fresh":
+        # Frequency-only reference: requires the engine to compute MM
+        # frequencies against the QM ones derived from the Hessian.
+        if engine is None:
+            raise TypeError(
+                f"System {key!r} uses ff_strategy='qfuerza_fresh' which requires "
+                "engine= to build the frequency-only reference."
+            )
+        molecule = molecules[0]
+        qm_freqs_all = _qm_frequencies_from_hessian(molecule.hessian, molecule.symbols)
+        mm_all = engine.frequencies(molecule, ff)
+        reference, qm_real = _build_frequency_reference(qm_freqs_all, mm_all)
+        qm_freqs_per_mol = [qm_real]
+    else:
+        reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
+        qm_freqs_per_mol = []
+        for mol in molecules:
+            qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
+            qm_real = np.array(sorted(f for f in qm_freqs if f > 50.0))
+            qm_freqs_per_mol.append(qm_real)
 
-    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
+    # 4. Optional normal-modes side-load (declared per-spec).  Pass the
+    #    CLI's data_dir override (if any) through so molecule, Hessian,
+    #    and normal modes stay co-located.
+    normal_modes: dict[str, np.ndarray] | None = None
+    if spec.normal_modes_path is not None:
+        data_dir_override = (molecule_loader_kwargs or {}).get("data_dir")
+        modes_path = spec.normal_modes_path(data_dir_override)
+        if modes_path is not None and modes_path.exists():
+            from q2mm.diagnostics.pes_distortion import load_normal_modes
 
+            normal_modes = load_normal_modes(modes_path)
+
+    # 5. Wrap in SystemData ------------------------------------------------
+    resolved_form = functional_form
+    if resolved_form is None and ff.functional_form is not None:
+        resolved_form = ff.functional_form.value
+    metadata = {
+        "molecule_name": spec.name,
+        "n_molecules": len(molecules),
+        "n_atoms_per_mol": [len(m.symbols) for m in molecules],
+        **dict(spec.metadata),
+        **({"functional_form": resolved_form} if resolved_form else {}),
+    }
     return SystemData(
         molecules=molecules,
         forcefield=ff,
         reference=reference,
         qm_freqs_per_mol=qm_freqs_per_mol,
-        metadata={
-            "molecule_name": system_name,
-            "level_of_theory": level_of_theory,
-            "n_molecules": len(molecules),
-            "n_atoms_per_mol": [len(m.symbols) for m in molecules],
-            "functional_form": functional_form or "mm3",
-            "publication": publication,
-            "doi": doi,
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Wahlers systems
-# ---------------------------------------------------------------------------
-
-
-def load_pd_allyl(engine: Any, *, functional_form: str | None = None) -> SystemData:
-    """Load the Pd-allyl amination system (Wahlers Ch 3, 21 TS structures)."""
-    return _load_wahlers_system(
-        "Chapter 3",
-        "mm3.Pd-allyl.fld",
-        engine,
-        system_name="Pd-allyl amination",
-        publication="Wahlers et al. Nat. Commun. 2021, 12, 6508",
-        doi="10.1038/s41467-021-27065-2",
-        functional_form=functional_form,
-        metal="PD",
-    )
-
-
-def load_pd_conjugate(engine: Any, *, functional_form: str | None = None) -> SystemData:
-    """Load the Pd 1,4-conjugate addition system (Wahlers Ch 5, 10 TS structures)."""
-    return _load_wahlers_system(
-        "Chapter 5",
-        "mm3.Pd-1,4.fld",
-        engine,
-        system_name="Pd 1,4-conjugate addition",
-        publication="Wahlers et al. J. Org. Chem. 2021, 86, 5660",
-        doi="10.1021/acs.joc.1c00136",
-        functional_form=functional_form,
-        metal="PD",
-    )
-
-
-def load_rh_conjugate(engine: Any, *, functional_form: str | None = None) -> SystemData:
-    """Load the Rh 1,4-conjugate addition system (Wahlers Ch 6, 10 TS structures)."""
-    return _load_wahlers_system(
-        "Chapter 6",
-        "mm3.Rh-1,4.fld",
-        engine,
-        system_name="Rh 1,4-conjugate addition",
-        functional_form=functional_form,
-        metal="RH",
+        metadata=metadata,
+        normal_modes=normal_modes,
     )
 
 
@@ -697,67 +609,103 @@ def load_rh_conjugate(engine: Any, *, functional_form: str | None = None) -> Sys
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class BenchmarkSystem:
-    """Configuration for a benchmark molecular system.
-
-    Attributes:
-        name: Human-readable system name.
-        key: CLI key (e.g. ``"ch3f"``, ``"rh-enamide"``).
-        loader: Callable that takes an engine and returns :class:`SystemData`.
-        description: One-line description for ``--list`` output.
-        default_forms: Functional forms to benchmark by default.
-
-    """
-
-    name: str
-    key: str
-    loader: Callable
-    description: str = ""
-    default_forms: tuple[str, ...] = ("harmonic", "mm3")
+def _heck_relay_ff_path() -> Path:
+    """Resolve the Heck-relay Rosales FF file path lazily."""
+    si = _resolve_supporting_info_dir()
+    return si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
 
 
-SYSTEMS: dict[str, BenchmarkSystem] = {
-    "ch3f": BenchmarkSystem(
-        name="CH3F",
+def _ch3f_normal_modes_path(data_dir_override: Path | None) -> Path:
+    """Resolve the CH3F normal-modes ``.npz`` path, honouring a CLI override."""
+    base = data_dir_override or _find_ch3f_data_dir()
+    return base / "ch3f-normal-modes.npz"
+
+
+SYSTEMS: dict[str, SystemSpec] = {
+    "ch3f": SystemSpec(
         key="ch3f",
-        loader=load_ch3f,
+        name="CH3F",
+        molecule_loader=_load_ch3f_molecules,
+        ff_strategy="qfuerza_fresh",
+        normal_modes_path=_ch3f_normal_modes_path,
+        metadata={"level_of_theory": "B3LYP/6-31+G(d)"},
         description="Single CH3F molecule (SN2 test, B3LYP/6-31+G(d))",
         default_forms=("harmonic", "mm3"),
     ),
-    "rh-enamide": BenchmarkSystem(
-        name="Rh-enamide",
+    "rh-enamide": SystemSpec(
         key="rh-enamide",
-        loader=load_rh_enamide,
+        name="Rh-enamide",
+        molecule_loader=load_rh_enamide_molecules,
+        ff_strategy="published_opt",
+        ff_paths={"ff_path": lambda: _RH_DIR / "mm3.fld"},
+        metadata={
+            "level_of_theory": "B3LYP/LACVP**",
+            "publication": "Donoghue et al. JCTC 2008, 4, 1313",
+            "doi": "10.1021/ct800132a",
+        },
         description="9 Rh-diphosphine structures (Jaguar B3LYP/LACVP**)",
-        default_forms=("mm3",),
     ),
-    "heck-relay": BenchmarkSystem(
-        name="Heck relay",
+    "heck-relay": SystemSpec(
         key="heck-relay",
-        loader=load_heck_relay,
+        name="Heck relay",
+        molecule_loader=load_heck_relay_molecules,
+        ff_strategy="published_opt",
+        ff_paths={"ff_path": _heck_relay_ff_path},
+        metadata={
+            "level_of_theory": "M06/gen+pseudo (GD3)",
+            "publication": "Rosales et al. JACS 2020, 142, 9700",
+            "doi": "10.1021/jacs.0c01979",
+        },
         description="23 Pd-catalyzed redox-relay Heck TS structures (Gaussian M06/HPModes)",
-        default_forms=("mm3",),
     ),
-    "pd-allyl": BenchmarkSystem(
-        name="Pd-allyl amination",
+    "pd-allyl": SystemSpec(
         key="pd-allyl",
-        loader=load_pd_allyl,
+        name="Pd-allyl amination",
+        molecule_loader=load_pd_allyl_molecules,
+        ff_strategy="published_opt_composed",
+        ff_paths={
+            "opt_path": lambda: _wahlers_opt_path("Chapter 3", "mm3.Pd-allyl.fld"),
+            "base_path": _mm3_base_path,
+        },
+        metadata={
+            "level_of_theory": "M06/gen+pseudo (GD3)",
+            "publication": "Wahlers et al. Nat. Commun. 2021, 12, 6508",
+            "doi": "10.1038/s41467-021-27065-2",
+        },
+        metal="PD",
         description="21 Pd-allyl TS structures (Wahlers, Nat. Commun. 2021)",
-        default_forms=("mm3",),
     ),
-    "pd-conjugate": BenchmarkSystem(
-        name="Pd 1,4-conjugate addition",
+    "pd-conjugate": SystemSpec(
         key="pd-conjugate",
-        loader=load_pd_conjugate,
+        name="Pd 1,4-conjugate addition",
+        molecule_loader=load_pd_conjugate_molecules,
+        ff_strategy="published_opt_composed",
+        ff_paths={
+            "opt_path": lambda: _wahlers_opt_path("Chapter 5", "mm3.Pd-1,4.fld"),
+            "base_path": _mm3_base_path,
+        },
+        metadata={
+            "level_of_theory": "M06/gen+pseudo (GD3)",
+            "publication": "Wahlers et al. J. Org. Chem. 2021, 86, 5660",
+            "doi": "10.1021/acs.joc.1c00136",
+        },
+        metal="PD",
         description="10 Pd 1,4-conjugate TS structures (Wahlers, J. Org. Chem. 2021)",
-        default_forms=("mm3",),
     ),
-    "rh-conjugate": BenchmarkSystem(
-        name="Rh 1,4-conjugate addition",
+    "rh-conjugate": SystemSpec(
         key="rh-conjugate",
-        loader=load_rh_conjugate,
+        name="Rh 1,4-conjugate addition",
+        molecule_loader=load_rh_conjugate_molecules,
+        ff_strategy="published_opt_composed",
+        ff_paths={
+            "opt_path": lambda: _wahlers_opt_path("Chapter 6", "mm3.Rh-1,4.fld"),
+            "base_path": _mm3_base_path,
+        },
+        metadata={
+            "level_of_theory": "M06/gen+pseudo (GD3)",
+            "publication": "Wahlers, J. Ph.D. Dissertation, U. Notre Dame, 2022, Ch. 6",
+        },
+        metal="RH",
         description="10 Rh 1,4-conjugate TS structures (Wahlers thesis)",
-        default_forms=("mm3",),
     ),
 }

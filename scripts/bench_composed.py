@@ -215,7 +215,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from q2mm.diagnostics.systems import load_ch3f
+    from q2mm.diagnostics.systems import load_system
 
     output_dir = args.output
     all_results: list[dict] = []
@@ -259,7 +259,7 @@ def main() -> None:
 
     for backend_name, engine in backends_to_run:
         try:
-            sys_data = load_ch3f(engine, functional_form=form)
+            sys_data = load_system("ch3f", engine=engine, functional_form=form)
         except Exception as e:
             print(f"  Cannot load CH3F {form} for {backend_name}: {e}")
             continue

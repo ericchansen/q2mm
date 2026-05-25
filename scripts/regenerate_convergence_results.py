@@ -341,7 +341,7 @@ def process_system(
 ) -> dict[str, Any]:
     """Process one system end-to-end and write its artifacts."""
     from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.diagnostics.systems import SYSTEMS
+    from q2mm.diagnostics.systems import SYSTEMS, load_system
     from q2mm.optimizers.objective import ObjectiveFunction
 
     if system_key not in SYSTEMS:
@@ -349,7 +349,7 @@ def process_system(
 
     logger.info("[%s] loading", system_key)
     engine = JaxEngine()
-    sys_data = SYSTEMS[system_key].loader(engine)
+    sys_data = load_system(system_key, engine=engine)
     ff = sys_data.forcefield
 
     # ---- Seminario fit quality ------------------------------------------
