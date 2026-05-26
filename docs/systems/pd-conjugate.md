@@ -61,29 +61,55 @@ complete failure of cross-engine transfer, not a small miss.
 !!! success "Ratio gate now passes — loader API refactor"
     After the loader API refactor that stopped overwriting Wahlers OPT
     values with raw QFUERZA projections, the JaxLoss/ObjectiveFunction
-    ratio for pd-conjugate is 0.96 — comfortably inside the
-    [0.85, 1.15] band.  JaxLoss-guided optimization is now possible.
+    ratio for pd-conjugate is 0.985 — comfortably inside the
+    [0.85, 1.15] band.  JaxLoss-guided optimization improves the
+    real ObjectiveFunction by 16.1 % (see "End-to-end optimization"
+    below).
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 0.96 (in_band) |
-| Initial ObjectiveFunction score | 8.79 × 10⁶ |
-| Optimization | TBD pending end-to-end run against the refactored loader |
+| Ratio check | 0.985 (in_band) |
+| Initial ObjectiveFunction score | 8.61 × 10⁶ |
+| Final ObjectiveFunction score | 7.23 × 10⁶ |
+| Improvement | **16.1 %** |
+| Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
+| Wall time | 700 s |
+| n_iterations / n_evaluations | 3 / 2 |
 
-Per-category fit of the published Wahlers force field against the QM
-training data (no QFUERZA — these are the published OPT values
-evaluated by the q2mm JAX engine):
+`n_evaluations` counts real `ObjectiveFunction` calls (initial baseline +
+final validation = 2); the JaxLoss surrogate calls L-BFGS-B makes
+internally are not tracked in this field.  Both values are reported
+verbatim from `validation_results.json`.
 
-| Category | n_refs | R² | RMSD |
-|----------|-------:|----:|-----:|
-| bond_length | 473 | 0.939 | — |
-| bond_angle | 892 | −0.177 | — |
-| eig_diagonal | 1296 | −10.06 | — |
+Per-category fit before and after optimization, evaluated by the q2mm
+JAX engine against the QM training data (the "published" column uses
+the literature OPT values directly — no QFUERZA — and the "optimized"
+column uses the FF produced by the L-BFGS-B + JaxLoss run above):
 
-Geometry reproduction is now strong (bond_length R² ≈ 0.94); the
+| Category | n_refs | R² (published) | R² (optimized) |
+|----------|-------:|---------------:|---------------:|
+| bond_length | 473 | 0.939 | 0.950 |
+| bond_angle | 892 | −0.182 | 0.037 |
+| eig_diagonal | 1286 | −10.056 | −9.642 |
+
+Geometry reproduction is now strong (bond_length R² ≈ 0.95); the
 eigenmatrix R² is still negative, reflecting the same MM3* ↔ JAX-engine
 cross-engine gap that affects all Wahlers / Rosales systems but not
 rh-enamide.
+
+### End-to-end optimization (issue #276 follow-up)
+
+Issue [#276](https://github.com/ericchansen/q2mm/issues/276) asked
+whether bypassing the ratio gate (`--ratio-tol none`) would unlock
+useful optimization for pd-conjugate, which historically sat at
+ratio = 1.20 in the pre-refactor baseline.  The loader refactor
+itself resolved the surrogate mismatch: ratio is now 0.985 and the
+default gate passes without intervention.  Running the experiment
+with `--ratio-tol none` (a no-op in this regime) confirms a real
+16.1 % ObjectiveFunction improvement, well past the 5 % decision
+threshold set in the issue.  No change to the default `ratio_tol`
+is recommended — the gate was diagnosing a real problem (the
+overwritten OPT values), and the fix lived in the loader.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.  Raw numbers are in the
