@@ -37,7 +37,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
+      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q --cov=q2mm --cov-report=term-missing --cov-report=xml:coverage.xml
+      - name: Upload coverage
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
 
   # ================================================================
   # Tier 2 — Backend unit tests on every push (~1-5 min)
