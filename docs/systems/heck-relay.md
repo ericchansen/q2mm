@@ -81,9 +81,17 @@ complete failure of cross-engine transfer, not a small miss.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.30 (out_of_band; upper bound 1.15) |
-| Initial ObjectiveFunction score | 3.46 × 10⁶ |
-| Optimization | Skipped at default `ratio_tol=0.15` (borderline — candidate for `ratio_tol=None`) |
+| Ratio check | 1.255 (out_of_band; upper bound 1.15) |
+| Initial ObjectiveFunction score | 3.53 × 10⁶ (single GPU eval — see noise caveat below) |
+| Final ObjectiveFunction score | 3.39 × 10⁶ (single GPU eval at *reverted* params; the difference vs initial is GPU noise, not optimization) |
+| End-to-end optimization (`--ratio-tol none`) | 0.00 % (reverted, see below) |
+
+The reverted parameters are bit-identical to the initial parameters —
+the 3.53 × 10⁶ → 3.39 × 10⁶ apparent change in the table reflects
+that two separate GPU evaluations of `ObjectiveFunction(x0)` differ
+by ~4 % due to engine non-determinism, not actual optimization.  See
+the noise caveat in "End-to-end optimization with `--ratio-tol none`"
+below.
 
 Per-category fit of the published Rosales force field against the QM
 training data (no QFUERZA — these are the published OPT values
@@ -100,12 +108,40 @@ problem (the published Rosales FF was MM3*-fit and the residual
 eigenmatrix gap reflects a real cross-engine MM3* ↔ JAX-engine
 divergence for this chemistry, not a loader bug).
 
-**Why optimization is still skipped:** The ratio (1.29) is just
-outside the [0.85, 1.15] gate.  Like
-[pd-conjugate](pd-conjugate.md), Heck relay is a candidate for the
-experimental `ratio_tol=None` bypass — see
-[`q2mm#276`](https://github.com/ericchansen/q2mm/issues/276) for the
-companion experiment on pd-conjugate.
+### End-to-end optimization with `--ratio-tol none`
+
+Following the [pd-conjugate experiment in #276](https://github.com/ericchansen/q2mm/issues/276),
+heck-relay was also run with `--ratio-tol none` to bypass the gate
+and see whether JaxLoss-guided optimization would still produce a
+useful descent step.  Unlike pd-conjugate (which post-refactor had
+ratio = 0.985 and the bypass was a no-op), heck-relay's ratio is
+genuinely outside band at 1.255.  L-BFGS-B took 4 iterations against
+JaxLoss; the surrogate produced non-finite values 3 times during the
+line search; the proposed parameter step was evaluated against the
+real `ObjectiveFunction` and was 3.3 % *worse* than the starting
+point (3,392,860 → 3,503,130); `ScipyOptimizer` reverted to the
+initial parameters and the run reports 0.00 % improvement.
+
+!!! warning "Noise floor caveat — the 3.3 % apparent worsening is within noise"
+    Repeated GPU `ObjectiveFunction(x0)` calls on heck-relay vary by
+    **~4.9 %** (5-call IQR/median; min 3.36e6, max 3.53e6).  This is
+    the worst noise floor of any system in the published-FF suite.
+    The "3.3 % worse" step that triggered the revert is **inside the
+    noise floor**, so we cannot reliably say the JaxLoss-guided step
+    was actually a bad direction; the comparison itself is noise-limited.
+    What we **can** say is that the surrogate produced 3 non-finite
+    values mid-optimization, indicating real numerical instability
+    rather than just measurement noise.  Root cause traced to scipy
+    `L-BFGS-B` Fortran state in the geometry minimizer plus MM3
+    non-smooth points; see [#284](https://github.com/ericchansen/q2mm/issues/284) for the
+    full diagnosis.
+
+**Recommendation:** keep the default `ratio_tol=0.15`.  Heck relay
+remains a case where the gate provides useful protection — the
+non-finite values during line search are a genuine surrogate
+breakdown signal, distinct from the noise floor.  Closing this gap
+requires the engine-parity work in the gap analysis below plus the
+engine non-determinism fix, not a relaxed tolerance.
 
 The numbers above come from the committed regeneration script
 `scripts/regenerate_convergence_results.py`; the raw JSON output and

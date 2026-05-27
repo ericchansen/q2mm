@@ -63,30 +63,57 @@ complete failure of cross-engine transfer, not a small miss.
     geometry minimization into pathological regions and producing
     ratios that varied wildly across runs (0.46 / 0.96 / ~4 × 10³ in
     successive sessions).  After the loader API refactor that
-    preserves the published OPT values as-is, the ratio is 1.04 —
-    comfortably inside the [0.85, 1.15] band.  JaxLoss-guided
-    optimization is now possible.
+    preserves the published OPT values as-is, the ratio is in the
+    1.02–1.07 range (run-to-run variation reflects the ~2 % per-call
+    GPU noise documented below) — comfortably inside the
+    [0.85, 1.15] band.  JaxLoss-guided optimization is now possible.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.04 (in_band) |
-| Initial ObjectiveFunction score | 6.42 × 10⁶ |
-| Optimization | TBD pending end-to-end run against the refactored loader |
+| Ratio check | 1.02 (in_band) |
+| Initial ObjectiveFunction score | 6.48 × 10⁶ |
+| Final ObjectiveFunction score | 6.38 × 10⁶ |
+| Improvement | 0.00 % (reverted after surrogate-guided step worsened real OF by 1.0 %) — **within ~2.1 % per-call noise floor** |
+| Iterations / Evaluations | 2 / 2 |
+| Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
+| Wall time | 624 s (10 min) |
 
-Per-category fit of the published Wahlers force field against the QM
-training data (no QFUERZA — these are the published OPT values
-evaluated by the q2mm JAX engine):
+!!! warning "Noise floor caveat — both the proposed worsening and the result are within noise"
+    Repeated GPU `ObjectiveFunction(x0)` calls on rh-conjugate vary
+    by **~2.1 %** (5-call IQR/median; min 6.35e6, max 6.49e6).  The
+    JaxLoss-guided step's 1.0 % "worsening" that triggered the
+    revert is **smaller than the noise floor**, so we cannot say
+    whether the optimizer actually moved in the wrong direction or
+    whether the surrogate just landed on a different point in the
+    noise cloud.  The 4602-ratio non-determinism reported in an
+    earlier session is partially the same phenomenon — the post-refactor
+    ratio is more stable around 1.02–1.07 across runs (closes
+    [#278](https://github.com/ericchansen/q2mm/issues/278)).  Root cause
+    traced to scipy `L-BFGS-B` Fortran internal state in the geometry
+    minimizer plus MM3 non-smooth points; see the engine
+    non-determinism issue for the full diagnosis.
 
-| Category | n_refs | R² |
-|----------|-------:|----:|
-| bond_length | 457 | 0.891 |
-| bond_angle | 926 | 0.454 |
-| eig_diagonal | 1254 | −7.86 |
+Per-category fit before and after optimization, evaluated by the q2mm
+JAX engine against the QM training data (single GPU calls; per-category
+R² varies by ~1–2 % across calls):
 
-The dramatic improvement vs the pre-refactor numbers (where
-bond_length R² was −58) is the loss of the QFUERZA overwrite that
-was destroying the published Wahlers fit.  The eigenmatrix R² is
-still negative, reflecting the same MM3* ↔ JAX-engine cross-engine
+| Category | n_refs | R² (published) | R² (optimized) |
+|----------|-------:|---------------:|---------------:|
+| bond_length | 457 | 0.891 | 0.888 |
+| bond_angle | 926 | 0.454 | 0.443 |
+| eig_diagonal | 1,254 | −7.86 | −7.86 |
+
+The take-away for rh-conjugate: in this noise regime we cannot
+distinguish "the optimizer found a true descent direction" from
+"the optimizer ran a step inside the noise cloud and got lucky/unlucky".
+Reliable optimization for this system requires either fixing the
+engine non-determinism first or using a noise-robust optimization
+strategy (median-of-N evaluations, larger trust region, etc.).
+
+The dramatic improvement vs the pre-refactor per-category numbers
+(where bond_length R² was −58) is the loss of the QFUERZA overwrite
+that was destroying the published Wahlers fit.  The eigenmatrix R²
+is still negative, reflecting the same MM3* ↔ JAX-engine cross-engine
 gap that affects all Wahlers systems.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
