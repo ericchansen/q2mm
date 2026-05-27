@@ -506,7 +506,11 @@ class ScipyOptimizer:
         if use_jax_loss_fun is not None:
             final_score = float(objective(final_x))
             # Safety guard: if the JaxLoss-guided step worsened the
-            # ObjectiveFunction, revert to initial parameters.
+            # ObjectiveFunction, revert to initial parameters.  Note that
+            # for systems with appreciable engine non-determinism (q2mm#284)
+            # this comparison can be dominated by per-call noise; downstream
+            # consumers should treat single-call apparent improvements/worsenings
+            # smaller than the per-system noise floor as inconclusive.
             if final_score > initial_score:
                 logger.warning(
                     "JaxLoss-guided step worsened ObjectiveFunction: %.0f -> %.0f (%.1f%% worse). "

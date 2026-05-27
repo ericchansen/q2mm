@@ -67,22 +67,49 @@ pd-allyl.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.10 (pass) |
-| Initial score | 7.99 × 10⁶ |
-| Final score | TBD |
-| Reduction | TBD |
-| Iterations / Evaluations | TBD |
+| Ratio check | 1.08 (pass) |
+| Initial score | 8.04 × 10⁶ |
+| Final score | 8.03 × 10⁶ |
+| Reduction | 0.13 % (real OF) — **within ~0.65 % per-call noise floor; no statistically meaningful improvement** |
+| Iterations / Evaluations | 1 / 2 |
 | Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
-| Wall time | TBD |
+| Wall time | 1,172 s (20 min) |
+
+Per-category fit of the optimized force field (post-L-BFGS-B):
+
+| Category | n_refs | R² |
+|----------|-------:|----:|
+| bond_length | 849 | 0.043 |
+| bond_angle | 1,582 | 0.335 |
+| eig_diagonal | 2,412 | −2.82 |
 
 These numbers are reproducible from `scripts/regenerate_convergence_results.py`
 (no `--skip-optimization`); raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/pd-allyl-amination/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence).
 
-The post-optimization rows are TBD pending an end-to-end run against
-the refactored loader.  A prior baseline reported a 0.08 % reduction
-on an FF whose OPT values had been QFUERZA-overwritten; that result
-is not reproducible against the current loader.
+L-BFGS-B converges after a single iteration: the published Wahlers
+OPT values are already at (or extremely close to) a JaxLoss local
+minimum, so there is no descent direction.
+
+!!! warning "Noise floor caveat — this result is within measurement noise"
+    Repeated GPU `ObjectiveFunction(x0)` calls on pd-allyl vary by
+    ~0.65 % (5-call IQR/median: 8.026e6 ± 5.2e4, range 8.00e6–8.05e6).
+    The reported 0.13 % "improvement" sits well inside this band, so
+    we **cannot** scientifically claim any improvement vs the published
+    starting point.  Root cause traced to scipy `L-BFGS-B` Fortran
+    internal state combined with MM3 non-smooth points in the energy
+    surface; see [#284](https://github.com/ericchansen/q2mm/issues/284) for the full
+    diagnosis.
+
+The take-away is the same regardless: the published Wahlers FF is
+either at a JaxLoss local minimum or so close to one that L-BFGS-B
+can't find a descent direction within the noise.  Improving on
+pd-allyl requires either (a) closing the MM3* ↔ JAX-engine
+functional-form gap (so JaxLoss's local minimum aligns with the real
+ObjectiveFunction's), or (b) using a different optimizer / objective
+that doesn't rely on the geometry-relaxation surrogate, and (c)
+addressing the engine non-determinism so smaller improvements can be
+measured at all.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.

@@ -309,16 +309,24 @@ def _run_optimization(
     result = opt.optimize(obj)
     elapsed = time.perf_counter() - t0
 
-    # Re-evaluate optimized force field for category metrics.
+    # Re-evaluate optimized force field for category metrics and the
+    # *real* ObjectiveFunction at the final parameters.  ``result.final_score``
+    # is whatever the optimizer was internally minimizing — for
+    # ``jac="auto"`` on the JaxEngine this is JaxLoss (surrogate), not
+    # the real ObjectiveFunction.  Storing JaxLoss as ``final_obj_score``
+    # was misleading and produced bogus ``improvement_pct`` values when
+    # the surrogate disagreed with the real objective (a key failure
+    # mode for the Wahlers/Rosales metal-TS systems where JaxLoss can
+    # diverge while the real objective is well-behaved).
     optimized_ff = sys_data.forcefield.with_params(result.final_params)
     obj_opt = ObjectiveFunction(optimized_ff, engine, sys_data.molecules, sys_data.reference)
+    final_obj_score = float(obj_opt(optimized_ff.get_param_vector()))
     optimized_categories = _per_category_metrics(obj_opt, optimized_ff)
 
     return {
-        "final_obj_score": float(result.final_score),
-        "improvement_pct": 100.0 * (1.0 - float(result.final_score) / float(result.initial_score))
-        if result.initial_score > 0
-        else 0.0,
+        "final_obj_score": final_obj_score,
+        "final_optimizer_score": float(result.final_score),
+        "initial_optimizer_score": float(result.initial_score),
         "n_iterations": int(result.n_iterations),
         "n_evaluations": int(result.n_evaluations),
         "converged": bool(result.success),
@@ -403,18 +411,29 @@ def process_system(
         optimized_ff = opt_result.pop("optimized_ff")
         optimized_categories = opt_result.pop("optimized_categories")
         summary.update(opt_result)
+        # Real ObjectiveFunction improvement (initial_score and
+        # opt_result["final_obj_score"] are both real OF, even when the
+        # optimizer was internally driven by a JaxLoss surrogate).
+        final_obj = float(opt_result["final_obj_score"])
+        summary["improvement_pct"] = 100.0 * (1.0 - final_obj / initial_score) if initial_score > 0 else 0.0
+        # Surrogate-only improvement, for diagnosing JaxLoss vs OF
+        # mismatch.  Only meaningful when jac_mode == "jax_loss".
+        if opt_result.get("jac_mode") == "jax_loss":
+            init_surr = float(opt_result["initial_optimizer_score"])
+            final_surr = float(opt_result["final_optimizer_score"])
+            summary["surrogate_improvement_pct"] = 100.0 * (1.0 - final_surr / init_surr) if init_surr > 0 else 0.0
         summary["optimized"] = optimized_categories
         paper["optimized"] = {
             **optimized_categories,
-            "_objective_score": opt_result["final_obj_score"],
+            "_objective_score": final_obj,
             "_total_refs": sum(cat["n_refs"] for cat in optimized_categories.values()),
         }
         logger.info(
-            "[%s] optimized: %.3f → %.3f (%.2f%% improvement, %.1fs)",
+            "[%s] optimized: %.3f → %.3f (%.2f%% real OF improvement, %.1fs)",
             system_key,
             initial_score,
-            opt_result["final_obj_score"],
-            opt_result["improvement_pct"],
+            final_obj,
+            summary["improvement_pct"],
             opt_result["opt_time_s"],
         )
 

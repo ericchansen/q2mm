@@ -87,21 +87,21 @@ gradients on RTX 5090 GPU:
 | Metric | Value |
 |--------|:-----:|
 | Ratio check | 1.07 (pass) |
-| Initial score | 4.87 × 10⁵ |
-| Final score | TBD |
-| Reduction | TBD |
-| Iterations (L-BFGS-B `nit`) | TBD |
-| ObjectiveFunction evaluations | TBD |
+| Initial score | 4.86 × 10⁵ |
+| Final score | 2.71 × 10⁵ |
+| Reduction | **44.66 %** (vs ~0.6 % per-call ObjectiveFunction noise floor — 77× above noise) |
+| Iterations (L-BFGS-B `nit`) | 15 |
+| ObjectiveFunction evaluations | 2 |
 | Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
-| Wall time | TBD |
+| Wall time | 739 s (12 min) |
 
-The post-optimization rows are pending a fresh end-to-end run
-against the refactored loader.  The earlier "28.68 % reduction"
-number that appeared here came from a force field whose Donoghue
-OPT values had been overwritten by QFUERZA — the loader API
-refactor preserves those values as-published, so the absolute
-optimization headroom is smaller (the starting point is closer to
-the optimum).
+Per-category fit of the optimized force field (post-L-BFGS-B):
+
+| Category | n_refs | R² |
+|----------|-------:|----:|
+| bond_length | 500 | 0.989 |
+| bond_angle | 1,050 | 0.954 |
+| eig_diagonal | 1,395 | 0.968 |
 
 These numbers are reproducible from `scripts/regenerate_convergence_results.py`
 (no `--skip-optimization`); raw JSON output with provenance lives at
@@ -109,8 +109,23 @@ These numbers are reproducible from `scripts/regenerate_convergence_results.py`
 
 The ratio check confirms JaxLoss is a reliable surrogate for this
 system — the published Donoghue OPT values reproduce QM geometry well
-(R² > 0.96 across categories) so unconstrained geometry relaxation
-finds the correct local minima.
+so unconstrained geometry relaxation finds the correct local minima.
+A 44.66 % real-objective improvement against the published starting
+point — a 77× ratio over the per-call ObjectiveFunction noise floor
+of ~0.6 % (see "Noise floor caveat" below) — is the largest reduction
+of any published-FF system in the suite (the published values are good
+but leave meaningful headroom under the q2mm JAX engine's
+eigenmatrix-diagonal objective).
+
+!!! warning "Noise floor caveat"
+    Repeated GPU `ObjectiveFunction(x0)` calls on rh-enamide vary by
+    ~0.6 % across calls (5-call IQR / median).  Root cause traced to a
+    combination of scipy `L-BFGS-B` Fortran internal state and MM3
+    non-smooth points; see
+    [#284](https://github.com/ericchansen/q2mm/issues/284)
+    for the full diagnosis.  The 44.66 % reduction reported here is
+    77× the per-call noise band and therefore robust — single-call
+    measurements at this magnitude are scientifically reliable.
 
 ### Historical frequency-only results
 
@@ -143,12 +158,14 @@ MacroModel to reach its final fit.[^qfuerza]
 
 The multi-target optimization pipeline runs end-to-end on this
 9-molecule system (per-molecule JIT compilation, scipy L-BFGS-B with
-JaxLoss analytical gradients).  An earlier baseline reported a
-28.68 % loss reduction; that result depended on an FF whose Donoghue
-OPT values had been overwritten by QFUERZA.  The current loader API
-preserves the published OPT values, so optimization headroom is
-smaller and the post-optimization Δ% will be lower (TBD pending the
-next end-to-end run).
+JaxLoss analytical gradients) and lowers the real ObjectiveFunction
+by 44.66 % against the published Donoghue OPT starting point
+(4.86 × 10⁵ → 2.71 × 10⁵ in 15 L-BFGS-B iterations).  An earlier
+baseline reported a 28.68 % reduction; that result depended on an FF
+whose Donoghue OPT values had been overwritten by QFUERZA.  The
+current loader API preserves the published OPT values, so the
+optimizer starts from a better point and still finds meaningful
+headroom.
 
 ### Gap analysis
 
