@@ -701,11 +701,21 @@ class TestJaxLossGeometryParity:
         assert loss < 10.0
         np.testing.assert_allclose(loss, 4.0, atol=1e-6)
 
-    def test_nonconvergence_penalty_is_finite(self) -> None:
-        """When inner solver cannot converge, loss includes a finite penalty."""
+    def test_nonconvergence_yields_finite_loss(self) -> None:
+        """When inner solver cannot converge, loss must still be finite.
+
+        Historically (before commit 8c56fe9) a ``_GEOM_NONCONV_PENALTY``
+        constant added a fixed penalty per geometry ref when the inner
+        geometry solver hit max-iter without reaching its gradient
+        tolerance.  That penalty was zeroed out and then removed (PR #285)
+        because it inflated scores for nearly-converged geometries by
+        ~40×.  This test still guards the underlying invariant: even
+        when the inner solver does not strictly converge, the outer
+        loss must be finite (not NaN, not Inf).
+        """
         import jax.numpy as jnp
 
-        from q2mm.optimizers.jaxloss import JaxLoss, _GEOM_NONCONV_PENALTY
+        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 
         # Use a very stretched geometry far from equilibrium — the inner
@@ -724,10 +734,7 @@ class TestJaxLossGeometryParity:
         params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
         loss, _grad = jax_loss.loss_and_grad(params)
         loss = float(loss)
-        # Loss must be finite regardless of convergence
         assert np.isfinite(loss), f"Loss is not finite: {loss}"
-        # The _GEOM_NONCONV_PENALTY constant must be accessible and non-negative
-        assert _GEOM_NONCONV_PENALTY >= 0
 
 
 class TestJaxLossTopologyBatching:

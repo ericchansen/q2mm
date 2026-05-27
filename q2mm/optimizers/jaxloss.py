@@ -53,19 +53,10 @@ if TYPE_CHECKING:
 # implicit-function theorem applies.
 _GEOM_INNER_TOL = 1e-8
 _GEOM_INNER_MAXITER = 500
-# Penalty added per geometry reference when the inner solver does not
-# converge.  Set to 0.0 because:
-# 1. The actual geometry residuals (bonds/angles) naturally penalize poor
-#    convergence — wrong structures yield large residuals.
-# 2. A large binary penalty (the original 1e4) caused 40× score inflation
-#    for nearly-converged geometries where jaxopt's L-BFGS didn't reach
-#    the strict 1e-8 gradient-norm tolerance, making the optimizer report
-#    false divergence.
-_GEOM_NONCONV_PENALTY = 0.0
 
 
 def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
-    """Return the relaxed geometry and convergence flag for a molecule.
+    """Return the relaxed geometry for a molecule.
 
     Uses ``jaxopt.LBFGS(fun=energy_of_coords, implicit_diff=True)`` so the
     outer ``jax.grad`` sees the exact parameter-gradient of ``x*`` via the
@@ -78,8 +69,14 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
     Seminario starting FFs (deeply negative R²), the relaxation may
     converge to wrong local minima, producing unreliable loss values.
 
-    When the inner solver does not converge (gradient norm > tol after
-    maxiter), the caller should add a penalty to the loss.
+    A previous version of this function also returned a ``converged``
+    boolean so the caller could add a fixed-magnitude penalty per
+    non-converged geometry ref.  That penalty was zeroed in commit
+    ``8c56fe9`` (it inflated nearly-converged scores by ~40×) and the
+    dead branch was removed in PR #285.  Callers that need
+    convergence diagnostics should inspect ``solver.state.error``
+    directly rather than relying on a returned flag — see q2mm#284 for
+    the broader engine-non-determinism discussion.
 
     Args:
         energy_fn: ``(params, coords) -> scalar`` energy function
@@ -88,8 +85,7 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
         coords0: Initial coordinates, shape ``(N, 3)``.
 
     Returns:
-        tuple: ``(relaxed_coords, converged)`` where ``converged`` is a
-        scalar boolean (JAX array).
+        Relaxed coordinates, shape ``(N, 3)`` (JAX array).
 
     """
     import jaxopt
@@ -104,8 +100,7 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
         implicit_diff=True,
     )
     sol = solver.run(coords0, params)
-    converged = sol.state.error <= _GEOM_INNER_TOL
-    return sol.params, converged
+    return sol.params
 
 
 def _bond_lengths(coords, atoms):  # noqa: ANN001, ANN202
@@ -340,9 +335,6 @@ class JaxLoss:
                 entry["torsion_atoms"] = jnp.array(mol_spec.torsion_atoms, dtype=jnp.int32)
                 entry["torsion_refs"] = jnp.array(mol_spec.torsion_refs)
                 entry["torsion_weights"] = jnp.array(mol_spec.torsion_weights)
-            if mol_spec.has_geometry:
-                entry["n_geom_refs"] = len(mol_spec.bond_refs) + len(mol_spec.angle_refs) + len(mol_spec.torsion_refs)
-
             mol_data.append(entry)
 
         # ---- Per-molecule Hessian functions ----
@@ -449,12 +441,7 @@ class JaxLoss:
             mol_spec = entry["mol_spec"]
             energy_fn = handle._energy_fn
 
-            relaxed, geom_converged = _relax_coords(energy_fn, params, coords)
-            total = total + jnp.where(
-                geom_converged,
-                0.0,
-                _GEOM_NONCONV_PENALTY * entry["n_geom_refs"],
-            )
+            relaxed = _relax_coords(energy_fn, params, coords)
 
             if mol_spec.has_bond_length:
                 calc = _bond_lengths(relaxed, entry["bond_atoms"])

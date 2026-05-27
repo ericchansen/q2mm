@@ -278,6 +278,20 @@ _METAL_ELEMENTS: frozenset[str] = frozenset(
 )
 
 # MM3 atom-type assignment from element + bond count.
+#
+# Keys are element symbols; values map the number of *organic* bonds
+# (i.e. bonds to non-metal atoms) to an MM3 type string.  Metal atoms
+# always use bond-count 0 because ``_assign_mm3_atom_types`` excludes
+# metal-metal and metal-organic bonds from the count.
+#
+# Examples:
+#   C with 4 organic bonds → C3 (sp3)
+#   C with 3 organic bonds → C2 (sp2)
+#   N with 2 organic bonds → N2
+#   Pd (any)               → PD  (0-bond fallback)
+#
+# Source: standard MM3 atom-type conventions; see Allinger, Yuh & Lii,
+# J. Am. Chem. Soc. 1989, 111, 8551.
 _MM3_TYPE_MAP: dict[str, dict[int, str]] = {
     "C": {4: "C3", 3: "C2", 2: "C1", 1: "C1"},
     "H": {1: "H1", 0: "H1"},

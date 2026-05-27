@@ -84,6 +84,7 @@ qcel = [
 dev = [
     "pytest",
     "pytest-benchmark",
+    "pytest-cov",
     "ruff",
     "scipy",
     "parmed",
