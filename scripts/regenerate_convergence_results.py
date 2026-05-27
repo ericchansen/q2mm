@@ -11,6 +11,11 @@ For each benchmark system this script:
    been disabled with ``--ratio-tol -1``) it runs a scipy L-BFGS-B
    optimization using JaxLoss analytical gradients and writes the optimized
    force field as a ``.fld`` file.
+5. With ``--n-evals N``, repeats post-hoc ObjectiveFunction evaluations at
+   both the initial and optimized parameter vectors to report sample-mean
+   scores, t-distribution 95% confidence-interval half-widths, mean
+   improvement percentage, and whether the mean change exceeds the summed
+   confidence intervals.
 
 Outputs (per system, into ``<output-dir>/<system-data-dir>/convergence/``):
 
@@ -19,6 +24,12 @@ Outputs (per system, into ``<output-dir>/<system-data-dir>/convergence/``):
   ``ratio`` (the numeric value, or ``null`` when JaxLoss returned non-finite
   values), ``ratio_status`` (one of ``"ok"``, ``"ok_bypassed"``,
   ``"out_of_band"``, ``"diverged"``, ``"nan"``), and ``ratio_passes`` (bool).
+  The legacy single-call ``initial_obj_score``, ``final_obj_score``, and
+  ``improvement_pct`` fields are preserved; optimized runs also include
+  ``initial_obj_score_mean``, ``initial_obj_score_ci95``,
+  ``final_obj_score_mean``, ``final_obj_score_ci95``,
+  ``improvement_pct_mean``, and ``improvement_significant`` (the mean
+  and t-distribution 95% CI half-width over ``--n-evals`` samples).
   When optimization was not attempted, ``skipped`` is ``true`` and
   ``skip_reason`` describes why (e.g. ``"ratio_check_failed"``,
   ``"jaxloss_diverged"``, ``"user_requested"``).
@@ -133,6 +144,7 @@ def _build_provenance(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         "q2mm_data": data_git,
         "ratio_tol": args.ratio_tol,
         "maxiter": args.maxiter,
+        "n_evals": args.n_evals,
         "skip_optimization": args.skip_optimization,
         "devices": _device_info(),
     }
@@ -261,6 +273,69 @@ def _classify_ratio(ratio: float, tol: float | None) -> dict[str, Any]:
     return {"ratio": ratio, "ratio_status": "ok" if passes else "out_of_band", "ratio_passes": passes}
 
 
+def _mean_ci95(samples: list[float]) -> tuple[float, float]:
+    """Return sample mean and t-distribution 95% CI half-width.
+
+    Uses the standard Student-t CI for the mean: ``t_{0.975, n-1} * s / sqrt(n)``.
+    A previous revision of this code reported the sample *median* with this
+    same CI half-width; that was statistically inconsistent (the t-CI
+    describes the sampling distribution of the mean, not the median).
+    For the per-call engine noise we measure here (n ≤ 10, distributions
+    are not pathologically skewed), the sample mean and median differ
+    negligibly, and the mean is the right center to pair with a t-CI.
+    """
+    arr = np.asarray(samples, dtype=float)
+    if arr.size == 0:
+        raise ValueError("at least one objective sample is required")
+    mean = float(np.mean(arr))
+    if arr.size == 1:
+        return mean, 0.0
+    std = float(np.std(arr, ddof=1))
+    if not math.isfinite(std) or std == 0.0:
+        return mean, 0.0
+
+    from scipy.stats import t
+
+    ci95 = float(t.ppf(0.975, arr.size - 1) * std / math.sqrt(arr.size))
+    return mean, ci95
+
+
+def _evaluate_objective_samples(obj: Any, params: np.ndarray, n_evals: int) -> list[float]:
+    """Evaluate objective repeatedly without polluting its counters/history."""
+    n_eval_before = obj.n_eval
+    history_len_before = len(obj.history)
+    scores: list[float] = []
+    # Repeat real ObjectiveFunction calls to quantify per-call engine noise;
+    # see q2mm#284 §2.  Keep cached handles intact so this measures the same
+    # evaluator instance used by the optimizer.  Truncate history (which
+    # ObjectiveFunction.__call__ only appends to) rather than copying it —
+    # O(1) vs O(len(history)) per sample, which matters when the optimizer
+    # has accumulated thousands of evaluations.
+    for _ in range(n_evals):
+        try:
+            score = float(obj(params))
+        finally:
+            obj.n_eval = n_eval_before
+            del obj.history[history_len_before:]
+        scores.append(score)
+    return scores
+
+
+def _score_interval_summary(initial_samples: list[float], final_samples: list[float]) -> dict[str, Any]:
+    """Build mean/CI improvement fields from repeated objective samples."""
+    initial_mean, initial_ci95 = _mean_ci95(initial_samples)
+    final_mean, final_ci95 = _mean_ci95(final_samples)
+    improvement_pct_mean = 100.0 * (1.0 - final_mean / initial_mean) if initial_mean > 0 else 0.0
+    return {
+        "initial_obj_score_mean": initial_mean,
+        "initial_obj_score_ci95": initial_ci95,
+        "final_obj_score_mean": final_mean,
+        "final_obj_score_ci95": final_ci95,
+        "improvement_pct_mean": improvement_pct_mean,
+        "improvement_significant": bool(abs(final_mean - initial_mean) > (initial_ci95 + final_ci95)),
+    }
+
+
 def _initial_jaxloss(obj: Any) -> float:
     """Compute the JaxLoss surrogate value at the current parameters.
 
@@ -292,6 +367,7 @@ def _run_optimization(
     *,
     ratio_tol: float | None,
     maxiter: int,
+    n_evals: int,
 ) -> dict[str, Any]:
     """Run scipy L-BFGS-B with JaxLoss gradients; return summary dict."""
     from q2mm.optimizers.objective import ObjectiveFunction
@@ -319,12 +395,15 @@ def _run_optimization(
     # mode for the Wahlers/Rosales metal-TS systems where JaxLoss can
     # diverge while the real objective is well-behaved).
     optimized_ff = sys_data.forcefield.with_params(result.final_params)
-    obj_opt = ObjectiveFunction(optimized_ff, engine, sys_data.molecules, sys_data.reference)
-    final_obj_score = float(obj_opt(optimized_ff.get_param_vector()))
-    optimized_categories = _per_category_metrics(obj_opt, optimized_ff)
+    initial_samples = _evaluate_objective_samples(obj, result.initial_params, n_evals)
+    final_samples = _evaluate_objective_samples(obj, result.final_params, n_evals)
+    score_summary = _score_interval_summary(initial_samples, final_samples)
+    final_obj_score = float(final_samples[0])
+    optimized_categories = _per_category_metrics(obj, optimized_ff)
 
     return {
         "final_obj_score": final_obj_score,
+        **score_summary,
         "final_optimizer_score": float(result.final_score),
         "initial_optimizer_score": float(result.initial_score),
         "n_iterations": int(result.n_iterations),
@@ -344,6 +423,7 @@ def process_system(
     output_dir: Path,
     ratio_tol: float | None,
     maxiter: int,
+    n_evals: int,
     skip_optimization: bool,
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
@@ -407,6 +487,7 @@ def process_system(
             engine,
             ratio_tol=ratio_tol,
             maxiter=maxiter,
+            n_evals=n_evals,
         )
         optimized_ff = opt_result.pop("optimized_ff")
         optimized_categories = opt_result.pop("optimized_categories")
@@ -428,14 +509,32 @@ def process_system(
             "_objective_score": final_obj,
             "_total_refs": sum(cat["n_refs"] for cat in optimized_categories.values()),
         }
-        logger.info(
-            "[%s] optimized: %.3f → %.3f (%.2f%% real OF improvement, %.1fs)",
-            system_key,
-            initial_score,
-            final_obj,
-            summary["improvement_pct"],
-            opt_result["opt_time_s"],
-        )
+        if n_evals > 1:
+            init_mean = float(summary["initial_obj_score_mean"])
+            init_ci = float(summary["initial_obj_score_ci95"])
+            final_mean = float(summary["final_obj_score_mean"])
+            final_ci = float(summary["final_obj_score_ci95"])
+            ci_pct = 100.0 * (init_ci + final_ci) / init_mean if init_mean > 0 else 0.0
+            significance = "SIGNIFICANT" if summary["improvement_significant"] else "NOT SIGNIFICANT"
+            logger.info(
+                "[%s] optimized: %.3g → %.3g (%.2f%% mean ± %.2f%% CI, %s, %.1fs)",
+                system_key,
+                init_mean,
+                final_mean,
+                summary["improvement_pct_mean"],
+                ci_pct,
+                significance,
+                opt_result["opt_time_s"],
+            )
+        else:
+            logger.info(
+                "[%s] optimized: %.3f → %.3f (%.2f%% real OF improvement, %.1fs)",
+                system_key,
+                initial_score,
+                final_obj,
+                summary["improvement_pct"],
+                opt_result["opt_time_s"],
+            )
 
     # ---- Write artifacts -------------------------------------------------
     data_dir_name = DATA_DIR_FOR_SYSTEM.get(system_key, system_key)
@@ -473,6 +572,14 @@ def _parse_ratio_tol(value: str) -> float | None:
     return parsed
 
 
+def _parse_positive_int(value: str) -> int:
+    """Parse a positive integer CLI value."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
+
+
 def main() -> int:
     """Entry point."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
@@ -499,6 +606,12 @@ def main() -> int:
         type=int,
         default=500,
         help="Maximum L-BFGS-B iterations per optimization.",
+    )
+    parser.add_argument(
+        "--n-evals",
+        type=_parse_positive_int,
+        default=1,
+        help="Number of post-hoc ObjectiveFunction evaluations at x0 and x_final for median/CI reporting.",
     )
     parser.add_argument(
         "--skip-optimization",
@@ -538,7 +651,7 @@ def main() -> int:
     provenance = _build_provenance(args, output_dir)
     logger.info("Output directory: %s", output_dir)
     logger.info("Systems: %s", systems)
-    logger.info("ratio_tol=%s, maxiter=%d", args.ratio_tol, args.maxiter)
+    logger.info("ratio_tol=%s, maxiter=%d, n_evals=%d", args.ratio_tol, args.maxiter, args.n_evals)
 
     combined: dict[str, Any] = {}
     failures: list[str] = []
@@ -549,6 +662,7 @@ def main() -> int:
                 output_dir=output_dir,
                 ratio_tol=args.ratio_tol,
                 maxiter=args.maxiter,
+                n_evals=args.n_evals,
                 skip_optimization=args.skip_optimization,
                 provenance=provenance,
             )
