@@ -81,11 +81,21 @@ now transfers to the real objective.
 
 | System | Initial score | Final score | Mean Δ | 95% CI on Δ | L-BFGS-B iters | Real OF evals | Wall time |
 |--------|--------------:|------------:|-------:|------------:|---------------:|--------------:|----------:|
-| [Rh-enamide](../systems/rh-enamide.md) | 4.86 × 10⁵ | 2.71 × 10⁵ | **−44.66%** | single-call, 77× above noise floor | 15 | 2 | 739 s |
-| [Heck relay](../systems/heck-relay.md) | 3.098 × 10⁶ | 1.461 × 10⁶ | **−52.82%** | ±1.54% | 2 | 2 | 1,825 s opt + post-evals |
+| [Rh-enamide](../systems/rh-enamide.md) | 4.885 × 10⁵ | 2.700 × 10⁵ | **−44.73%** | ±0.29% | 13 | 2 | 710 s opt + post-evals |
+| [Heck relay](../systems/heck-relay.md) | 3.098 × 10⁶ | 1.461 × 10⁶ | **−52.82%** | ±1.54% | 7 | 2 | 1,825 s opt + post-evals |
 | [Pd-allyl](../systems/pd-allyl.md) | 8.036 × 10⁶ | 8.037 × 10⁶ | **−0.010%** | ±0.40% | 2 | 2 | 1,289 s opt + post-evals |
-| [Pd 1,4-conj](../systems/pd-conjugate.md) | 8.61 × 10⁶ | 7.23 × 10⁶ | **−16.1%** | not sampled | 3 | 2 | 700 s |
-| [Rh 1,4-conj](../systems/rh-conjugate.md) | 6.293 × 10⁶ | 5.160 × 10⁶ | **−18.00%** | ±4.17% | 2 | 2 | 691 s opt + post-evals |
+| [Pd 1,4-conj](../systems/pd-conjugate.md) | 8.608 × 10⁶ | 7.235 × 10⁶ | **−15.96%** | not sampled | 3 | 2 | 700 s |
+| [Rh 1,4-conj](../systems/rh-conjugate.md) | 6.293 × 10⁶ | 5.160 × 10⁶ | **−18.00%** | ±4.17% | 4 | 2 | 691 s opt + post-evals |
+
+Score and CI values come from `benchmarks/<system>/convergence/validation_results.json`
+in [ericchansen/q2mm-data](https://github.com/ericchansen/q2mm-data) (refreshed
+under [#288](https://github.com/ericchansen/q2mm/pull/288) /
+[q2mm-data#10](https://github.com/ericchansen/q2mm-data/pull/10) after the MM3
+angle-gradient fix).  `95% CI on Δ` is the conservative bound
+`(initial_obj_score_ci95 + final_obj_score_ci95) / initial_obj_score_mean × 100`
+— the same combination used by the JSON's `improvement_significant` flag.
+Rh-enamide and ch3f were re-evaluated with `--n-evals 5`; the others with
+`--n-evals 10`.  Pd 1,4-conj is a single-call run (no CI sampled).
 
 Interpretation:
 
