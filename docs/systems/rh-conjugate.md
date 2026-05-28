@@ -63,52 +63,58 @@ complete failure of cross-engine transfer, not a small miss.
     geometry minimization into pathological regions and producing
     ratios that varied wildly across runs (0.46 / 0.96 / ~4 × 10³ in
     successive sessions).  After the loader API refactor that
-    preserves the published OPT values as-is, the ratio is in the
-    1.02–1.07 range (run-to-run variation reflects the ~2 % per-call
-    GPU noise documented below) — comfortably inside the
-    [0.85, 1.15] band.  JaxLoss-guided optimization is now possible.
+    preserves the published OPT values as-is, the ratio is 1.01 —
+    comfortably inside the [0.85, 1.15] band.  JaxLoss-guided
+    optimization is now possible.
+
+Run with `--n-evals 10` so the verdict is statistically defensible
+against the per-call engine noise documented in
+[#284](https://github.com/ericchansen/q2mm/issues/284).
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.02 (in_band) |
-| Initial ObjectiveFunction score | 6.48 × 10⁶ |
-| Final ObjectiveFunction score | 6.38 × 10⁶ |
-| Improvement | 0.00 % (reverted after surrogate-guided step worsened real OF by 1.0 %) — **within ~2.1 % per-call noise floor** |
-| Iterations / Evaluations | 2 / 2 |
+| Ratio check | 1.009 (in_band) |
+| Initial ObjectiveFunction (n=10 mean) | 6.430 × 10⁶ ± 0.406 % CI₉₅ |
+| Final ObjectiveFunction (n=10 mean) | 6.435 × 10⁶ ± 0.772 % CI₉₅ |
+| Improvement (mean Δ%) | **−0.080 % (NOT SIGNIFICANT — CI₉₅ ± 1.18 %)** |
+| L-BFGS-B iterations / OF evaluations | 1 / 2 |
 | Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
-| Wall time | 624 s (10 min) |
+| Wall time | 628 s opt + ~13 min for 20 post-eval samples |
 
-!!! warning "Noise floor caveat — both the proposed worsening and the result are within noise"
-    Repeated GPU `ObjectiveFunction(x0)` calls on rh-conjugate vary
-    by **~2.1 %** (5-call IQR/median; min 6.35e6, max 6.49e6).  The
-    JaxLoss-guided step's 1.0 % "worsening" that triggered the
-    revert is **smaller than the noise floor**, so we cannot say
-    whether the optimizer actually moved in the wrong direction or
-    whether the surrogate just landed on a different point in the
-    noise cloud.  The 4602-ratio non-determinism reported in an
-    earlier session is partially the same phenomenon — the post-refactor
-    ratio is more stable around 1.02–1.07 across runs (closes
-    [#278](https://github.com/ericchansen/q2mm/issues/278)).  Root cause
-    traced to scipy `L-BFGS-B` Fortran internal state in the geometry
-    minimizer plus MM3 non-smooth points; see the engine
-    non-determinism issue for the full diagnosis.
-
-Per-category fit before and after optimization, evaluated by the q2mm
-JAX engine against the QM training data (single GPU calls; per-category
-R² varies by ~1–2 % across calls):
+Per-category fit before and after optimization (single GPU calls;
+per-category R² varies by ~1–2 % across calls — see the noise
+context below):
 
 | Category | n_refs | R² (published) | R² (optimized) |
 |----------|-------:|---------------:|---------------:|
-| bond_length | 457 | 0.891 | 0.888 |
-| bond_angle | 926 | 0.454 | 0.443 |
-| eig_diagonal | 1,254 | −7.86 | −7.86 |
+| bond_length | 457 | 0.891 | 0.890 |
+| bond_angle | 926 | 0.454 | 0.453 |
+| eig_diagonal | 1,244 | −7.86 | −7.86 |
 
-The take-away for rh-conjugate: in this noise regime we cannot
-distinguish "the optimizer found a true descent direction" from
-"the optimizer ran a step inside the noise cloud and got lucky/unlucky".
-Reliable optimization for this system requires either fixing the
-engine non-determinism first or using a noise-robust optimization
-strategy (median-of-N evaluations, larger trust region, etc.).
+!!! success "Confirmed: surrogate descent does not transfer to real-OF improvement"
+    With n=10 samples the 95 % CI on the real-OF improvement is
+    **±1.18 %**.  The 4602-ratio non-determinism reported in an earlier
+    session is also resolved — the post-refactor ratio is stable across
+    runs at 1.01 with this many samples (closes
+    [#278](https://github.com/ericchansen/q2mm/issues/278)).
+
+    The interesting wrinkle for rh-conjugate: L-BFGS-B **does** find a
+    descent direction in the JaxLoss surrogate, reporting a 4.48 %
+    surrogate reduction during optimization (6.35 × 10⁶ → 6.07 × 10⁶
+    in the optimizer's internal score).  But when those parameters are
+    evaluated against the real `ObjectiveFunction` with n=10 samples,
+    the difference is **−0.080 % ± 1.18 % CI₉₅** — i.e. zero within
+    noise.  In other words: this run did **not** find a real-OF
+    improvement, but unlike pd-allyl it's because **JaxLoss disagrees
+    with the real objective in the direction the optimizer was pushing**,
+    not because there's no descent direction to find.
+
+    This is a sharper instance of the MM3 non-smooth-gradient bug
+    documented in [#284](https://github.com/ericchansen/q2mm/issues/284).
+    Without that engine fix, the surrogate is misleading the optimizer
+    for rh-conjugate, so a real-OF-direct optimization (or a fixed
+    surrogate) is needed to determine whether actual improvement is
+    available here.
 
 The dramatic improvement vs the pre-refactor per-category numbers
 (where bond_length R² was −58) is the loss of the QFUERZA overwrite
