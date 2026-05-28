@@ -490,12 +490,110 @@ class SystemSpec:
     default_forms: tuple[str, ...] = ("mm3",)
 
 
+StartingPoint = Literal["published", "qfuerza"]
+"""Choice of starting-parameter values for the optimizer.
+
+- ``"published"`` (default): use the literature OPT values from the
+  published .fld file(s) as-is.  This is the historical Q2MM workflow
+  for all published-FF benchmark systems.
+- ``"qfuerza"``: take the published OPT *topology* (which atom-type
+  rows exist, the frozen/active partition) but overwrite OPT bond and
+  angle values with QFUERZA Hessian-derived estimates averaged across
+  the training molecules (Farrugia 2025 protocol).  Frozen MM3
+  backbone parameters are untouched; torsions are zeroed; OPT
+  parameters that :func:`qfuerza_into` does not estimate (stretch-bends,
+  vdW, Urey-Bradley) retain their published values — the audit in
+  :func:`load_system` records this explicitly.
+
+For ``qfuerza_fresh`` strategy (CH3F), ``"qfuerza"`` is a no-op
+because the FF is already QFUERZA-derived; the audit records this.
+"""
+
+
+def _audit_starting_point(
+    ff: ForceField,
+    *,
+    before_vec: np.ndarray | None,
+    starting_point: StartingPoint,
+) -> dict[str, Any]:
+    """Classify every scalar param as qfuerza/retained_published/frozen.
+
+    Honest accounting of where the starting values come from.  For
+    ``starting_point="published"`` everything active is
+    ``retained_published``.  For ``"qfuerza"`` we diff the parameter
+    vector before vs after :func:`qfuerza_into` and call any active
+    scalar whose value changed ``qfuerza_overwritten``; any active
+    scalar whose value did not change is ``retained_published``
+    (e.g. an OPT stretch-bend, an active bond/angle that QFUERZA could
+    not match to any training molecule).
+
+    Args:
+        ff: Force field *after* any QFUERZA overwrite.
+        before_vec: Param vector snapshot from before the overwrite,
+            or ``None`` for the published case.
+        starting_point: The starting-point choice.
+
+    Returns:
+        A nested dict ``{starting_point, n_active, n_frozen, by_type:
+        {bond_fc: {qfuerza_overwritten, retained_published, frozen}, …}}``.
+
+    """
+    after_vec = ff.get_param_vector()
+    active = ff.active_mask
+
+    type_labels: list[str] = []
+    for bond in ff.bonds:
+        type_labels.extend(["bond_fc", "bond_eq"])
+        del bond
+    for angle in ff.angles:
+        type_labels.extend(["angle_fc", "angle_eq"])
+        del angle
+    type_labels.extend(["torsion_fc"] * len(ff.torsions))
+    type_labels.extend(["stretch_bend_fc"] * len(ff.stretch_bends))
+    for vdw in ff.vdws:
+        type_labels.extend(["vdw_radius", "vdw_epsilon"])
+        del vdw
+    for ub in ff._ub_angles:  # noqa: SLF001 — diagnostic
+        type_labels.extend(["ub_fc", "ub_eq"])
+        del ub
+
+    if len(type_labels) != len(after_vec):
+        raise AssertionError(f"type label / param vector length mismatch: {len(type_labels)} vs {len(after_vec)}")
+
+    by_type: dict[str, dict[str, int]] = {}
+    for label, is_active, after_val, before_val in zip(
+        type_labels,
+        active,
+        after_vec,
+        before_vec if before_vec is not None else after_vec,
+        strict=True,
+    ):
+        bucket = by_type.setdefault(
+            label,
+            {"qfuerza_overwritten": 0, "retained_published": 0, "frozen": 0},
+        )
+        if not is_active:
+            bucket["frozen"] += 1
+        elif before_vec is not None and not np.isclose(before_val, after_val, rtol=0.0, atol=1e-12):
+            bucket["qfuerza_overwritten"] += 1
+        else:
+            bucket["retained_published"] += 1
+
+    return {
+        "starting_point": starting_point,
+        "n_active": int(active.sum()),
+        "n_frozen": int((~active).sum()),
+        "by_type": by_type,
+    }
+
+
 def load_system(
     key: str,
     *,
     engine: Any | None = None,
     functional_form: str | None = None,
     molecule_loader_kwargs: dict[str, Any] | None = None,
+    starting_point: StartingPoint = "published",
 ) -> SystemData:
     """Build a :class:`SystemData` for one benchmark system.
 
@@ -521,9 +619,21 @@ def load_system(
             (``"harmonic"`` or ``"mm3"``).
         molecule_loader_kwargs: Optional kwargs forwarded to the
             system's molecule loader (e.g. ``data_dir`` for CH3F).
+        starting_point: Where the starting OPT parameter values come
+            from.  See :data:`StartingPoint`.  ``"published"`` is the
+            historical default and preserves backward compatibility.
+            ``"qfuerza"`` overwrites OPT bond/angle values with
+            multi-molecule QFUERZA estimates after FF assembly (per
+            Farrugia 2025).  CH3F (``qfuerza_fresh`` strategy) treats
+            ``"qfuerza"`` as a no-op since the FF is already QFUERZA-
+            derived.
 
     Returns:
-        A fully-populated :class:`SystemData`.
+        A fully-populated :class:`SystemData`.  The
+        ``metadata["starting_point_audit"]`` block reports, for each
+        parameter type, how many active scalars were QFUERZA-overwritten
+        vs retained from the published FF vs frozen — see
+        :func:`_audit_starting_point`.
 
     Raises:
         KeyError: If *key* is not in :data:`SYSTEMS`.
@@ -562,6 +672,23 @@ def load_system(
     # Functional form: explicit override > strategy default (MM3)
     if functional_form is not None:
         ff.functional_form = FunctionalForm(functional_form)
+
+    # 2b. Optional QFUERZA overwrite of OPT parameter values --------------
+    # For ``starting_point="qfuerza"`` we keep the published FF
+    # topology + frozen/active partition but replace the active
+    # OPT bond/angle values with multi-molecule QFUERZA estimates
+    # (Farrugia 2025 §"Methods", per-molecule mean averaging).
+    # ``qfuerza_into`` honours the frozen partition, so MM3 backbone
+    # rows are never touched.  Active rows that QFUERZA cannot match
+    # to any training molecule retain their published values — the
+    # audit captures this so the leak is visible downstream.
+    from q2mm.models.seminario import qfuerza_into
+
+    before_vec: np.ndarray | None = None
+    if starting_point == "qfuerza" and spec.ff_strategy != "qfuerza_fresh":
+        before_vec = ff.get_param_vector().copy()
+        qfuerza_into(ff, molecules, invert_ts_curvature=True)
+    starting_point_audit = _audit_starting_point(ff, before_vec=before_vec, starting_point=starting_point)
 
     # 3. Reference data ----------------------------------------------------
     if spec.ff_strategy == "qfuerza_fresh":
@@ -605,6 +732,8 @@ def load_system(
         "molecule_name": spec.name,
         "n_molecules": len(molecules),
         "n_atoms_per_mol": [len(m.symbols) for m in molecules],
+        "starting_point": starting_point,
+        "starting_point_audit": starting_point_audit,
         **dict(spec.metadata),
         **({"functional_form": resolved_form} if resolved_form else {}),
     }
