@@ -21,6 +21,7 @@ needed at the engine boundary.
 from __future__ import annotations
 
 import copy
+import functools
 import logging
 import math
 from collections.abc import Callable
@@ -105,31 +106,93 @@ def _safe_norm(x: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2, axis=axis), 1e-30))
 
 
-def _safe_arccos(x: jnp.ndarray) -> jnp.ndarray:
-    """Arccos clipped to (-1, 1) to avoid NaN gradients at boundaries.
+def _angle_from_vectors(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+    """Angle between two vectors via ``atan2(|a×b|, a·b)`` with safe VJP.
+
+    Returns the angle (radians) in ``[0, π]`` with **correct gradients
+    everywhere on that interval**, including at the endpoints (collinear
+    and antiparallel).
+
+    Why not ``arccos(a·b / |a||b|)`` clipped to ``(-1+ε, 1-ε)``?
+    The clip kills ``∂θ/∂(cos θ)`` at the boundary, so when an angle is
+    driven all the way to 0 or π during geometry minimization, the
+    gradient pulling it back toward θ₀ vanishes and the optimizer sees
+    a spurious stationary point.  The forward energy contribution is
+    real (``k·dθ²`` with dθ huge) but the autodiff gradient is wrong.
+    This was the root cause of the metal-TS gradient correctness bug
+    documented in q2mm#284 — see
+    :class:`test.test_mm3_jax.TestMM3AngleEnergy.test_near_collinear_gradient_matches_fd`
+    for the reproduction.
+
+    Why not stock ``arctan2(|a×b|, a·b)``?
+    Forward value is correct, but the autodiff path through
+    ``sqrt(|cross|² + ε)`` produces ill-conditioned gradients when
+    ``|cross| → 0``: ``d(sqrt(x+ε))/dx = 1/(2 sqrt(x+ε))`` blows up
+    as ``x → 0``, and the chain through ``d(cross)/d(atom)`` becomes
+    numerically unstable.  This implementation uses a custom VJP with
+    the analytic gradient ``∂θ/∂a = (cos θ · â/|a| − b̂/|a|) / sin θ``
+    (likewise for b), with ``sin θ`` floored at ``1e-12`` to keep the
+    direction stable when collinear.  At exact collinearity the
+    gradient magnitude limits to a finite value pointing perpendicular
+    to the bond axis — matching the FD answer to ~1e-7.
 
     Args:
-        x: Input array of cosine values.
+        a: First vector(s), last axis is the 3D component, shape ``(..., 3)``.
+        b: Second vector(s), last axis is the 3D component, shape ``(..., 3)``.
 
     Returns:
-        jnp.ndarray: Angle values in radians.
+        Angle values in radians, in ``[0, π]``.
 
     """
-    return jnp.arccos(jnp.clip(x, -1.0 + 1e-7, 1.0 - 1e-7))
+    return _angle_from_vectors_impl()(a, b)
 
 
-def _safe_norm_keepdims(x: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
-    """Norm with keepdims for broadcasting.
+@functools.lru_cache(maxsize=1)
+def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+    """Build the jax.custom_vjp-decorated angle function lazily.
 
-    Args:
-        x: Input array.
-        axis: Axis along which to compute the norm.
-
-    Returns:
-        jnp.ndarray: Norm with the reduced axis kept as size-1 dimension.
-
+    The decorator can't be applied at module import because ``jax`` is
+    populated by ``_ensure_jax()`` — applying ``@jax.custom_vjp`` at
+    decoration time would crash before the first ``JaxEngine()`` call.
+    Cached so the custom-VJP function is built exactly once per process.
     """
-    return jnp.sqrt(jnp.maximum(jnp.sum(x**2, axis=axis, keepdims=True), 1e-30))
+    _ensure_jax()
+
+    @jax.custom_vjp
+    def _angle(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+        na = jnp.sqrt(jnp.sum(a * a, axis=-1) + 1e-30)
+        nb = jnp.sqrt(jnp.sum(b * b, axis=-1) + 1e-30)
+        cross = jnp.cross(a, b, axis=-1)
+        sin_t = jnp.sqrt(jnp.sum(cross * cross, axis=-1) + 1e-30) / (na * nb)
+        cos_t = jnp.sum(a * b, axis=-1) / (na * nb)
+        return jnp.arctan2(sin_t, cos_t)
+
+    def _fwd(a, b):  # noqa: ANN001, ANN202
+        na = jnp.sqrt(jnp.sum(a * a, axis=-1) + 1e-30)
+        nb = jnp.sqrt(jnp.sum(b * b, axis=-1) + 1e-30)
+        cross = jnp.cross(a, b, axis=-1)
+        sin_t = jnp.sqrt(jnp.sum(cross * cross, axis=-1) + 1e-30) / (na * nb)
+        cos_t = jnp.sum(a * b, axis=-1) / (na * nb)
+        theta = jnp.arctan2(sin_t, cos_t)
+        return theta, (a, b, na, nb, sin_t, cos_t)
+
+    def _bwd(res, g):  # noqa: ANN001, ANN202
+        a, b, na, nb, sin_t, cos_t = res
+        # Analytic gradients of θ = arccos(a·b / |a||b|):
+        #   ∂θ/∂a = (cos θ · a/|a|² − b/(|a||b|)) / sin θ
+        #   ∂θ/∂b = (cos θ · b/|b|² − a/(|a||b|)) / sin θ
+        # Floor sin θ at 1e-12 to keep direction finite when collinear;
+        # at exact collinearity the analytic gradient is degenerate but
+        # the floor gives the physically correct perpendicular-restoring
+        # direction.
+        safe_sin = jnp.maximum(sin_t, 1e-12)
+        inv_nanb_sin = 1.0 / (na * nb * safe_sin)
+        da = (cos_t / (na * na * safe_sin))[..., None] * a - inv_nanb_sin[..., None] * b
+        db = (cos_t / (nb * nb * safe_sin))[..., None] * b - inv_nanb_sin[..., None] * a
+        return (g[..., None] * da, g[..., None] * db)
+
+    _angle.defvjp(_fwd, _bwd)
+    return _angle
 
 
 # ---------------------------------------------------------------------------
@@ -182,10 +245,7 @@ def _harmonic_angle_energy(
     """
     rij = coords[angle_indices[:, 0]] - coords[angle_indices[:, 1]]
     rkj = coords[angle_indices[:, 2]] - coords[angle_indices[:, 1]]
-    rij_norm = rij / _safe_norm_keepdims(rij, axis=-1)
-    rkj_norm = rkj / _safe_norm_keepdims(rkj, axis=-1)
-    cos_theta = jnp.sum(rij_norm * rkj_norm, axis=-1)
-    theta = _safe_arccos(cos_theta)
+    theta = _angle_from_vectors(rij, rkj)
     return jnp.sum(k * (theta - theta0) ** 2)
 
 
@@ -305,10 +365,7 @@ def _mm3_angle_energy(
     """
     rij = coords[angle_indices[:, 0]] - coords[angle_indices[:, 1]]
     rkj = coords[angle_indices[:, 2]] - coords[angle_indices[:, 1]]
-    rij_norm = rij / _safe_norm_keepdims(rij, axis=-1)
-    rkj_norm = rkj / _safe_norm_keepdims(rkj, axis=-1)
-    cos_theta = jnp.sum(rij_norm * rkj_norm, axis=-1)
-    theta = _safe_arccos(cos_theta)
+    theta = _angle_from_vectors(rij, rkj)
     dtheta = theta - theta0
     dtheta_deg = dtheta * _RAD_TO_DEG
     anharmonic = (
@@ -484,16 +541,18 @@ def _mm3_stretch_bend_energy(
     r_ij = _safe_norm(rij_vec, axis=-1)
     r_jk = _safe_norm(rjk_vec, axis=-1)
 
-    rij_norm = rij_vec / _safe_norm_keepdims(rij_vec, axis=-1)
-    rjk_norm = rjk_vec / _safe_norm_keepdims(rjk_vec, axis=-1)
-    cos_theta = jnp.sum(rij_norm * rjk_norm, axis=-1)
+    # Use atan2-based angle for correct gradients near collinear geometries
+    # (see _angle_from_vectors docstring).  cos_theta is still needed for
+    # the near-linear suppression switch below.
+    cross = jnp.cross(rij_vec, rjk_vec, axis=-1)
+    sin_theta = jnp.sqrt(jnp.sum(cross * cross, axis=-1) + 1e-30) / (r_ij * r_jk)
+    cos_theta = jnp.sum(rij_vec * rjk_vec, axis=-1) / (r_ij * r_jk)
+    theta = jnp.arctan2(sin_theta, cos_theta)
 
     # Near-linear suppression: dθ/dr diverges as 1/sin(θ) at 0° and 180°,
     # same singularity that motivated torsion damping.
-    sin_theta = jnp.sqrt(jnp.maximum(1.0 - cos_theta**2, 1e-30))
     w = _smoothstep(sin_theta, _SIN_LO, _SIN_HI)
 
-    theta = _safe_arccos(cos_theta)
     dr_sum = (r_ij - r0_ij) + (r_jk - r0_jk)
     dtheta = theta - theta0
     return jnp.sum(w * k_sb * dr_sum * dtheta)

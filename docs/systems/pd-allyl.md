@@ -69,19 +69,19 @@ defensible against the per-call engine noise documented in
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.087 (pass) |
-| Initial ObjectiveFunction (n=10 mean) | 8.032 × 10⁶ ± 0.127 % CI₉₅ |
-| Final ObjectiveFunction (n=10 mean) | 8.034 × 10⁶ ± 0.210 % CI₉₅ |
-| Improvement (mean Δ%) | **−0.029 % (NOT SIGNIFICANT — CI₉₅ ± 0.34 %)** |
+| Ratio check | 1.091 (pass) |
+| Initial ObjectiveFunction (n=10 mean) | 8.036 × 10⁶ ± 0.173 % CI₉₅ |
+| Final ObjectiveFunction (n=10 mean) | 8.037 × 10⁶ ± 0.229 % CI₉₅ |
+| Improvement (mean Δ%) | **−0.010 % (NOT SIGNIFICANT — CI₉₅ ± 0.40 %)** |
 | L-BFGS-B iterations / OF evaluations | 2 / 2 |
 | Gradient source | `jac="auto"` → `jac_mode="jax_loss"` (JaxLoss analytical) |
-| Wall time | 1,243 s opt + ~16 min for 20 post-eval samples |
+| Wall time | 1,289 s opt + ~16 min for 20 post-eval samples |
 
 Per-category fit of the optimized force field (post-L-BFGS-B):
 
 | Category | n_refs | R² |
 |----------|-------:|----:|
-| bond_length | 849 | 0.037 |
+| bond_length | 849 | 0.046 |
 | bond_angle | 1,582 | 0.331 |
 | eig_diagonal | 2,412 | −2.82 |
 
@@ -89,19 +89,21 @@ These numbers are reproducible from `scripts/regenerate_convergence_results.py`
 with `--system pd-allyl --n-evals 10`; raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/pd-allyl-amination/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence).
 
-!!! success "Confirmed: published Wahlers FF sits at a JaxLoss local minimum"
-    With n=10 samples the 95 % CI on the improvement is **±0.34 %**,
-    which excludes any improvement larger than ~0.3 %.  The L-BFGS-B
-    optimizer converges after 2 iterations from the published OPT
-    values without finding any descent direction — and the post-hoc
-    statistical re-evaluation confirms that's a real "no improvement
-    available", not a noise artifact.
+!!! success "Confirmed: published Wahlers FF sits at a JaxLoss local minimum (post angle-grad fix)"
+    With n=10 samples the 95 % CI on the improvement is **±0.40 %**,
+    which excludes any improvement larger than ~0.4 %.  Unlike
+    [rh-conjugate](rh-conjugate.md) and [heck-relay](heck-relay.md)
+    — which were "newly unlocked" by the MM3 angle gradient
+    correctness fix ([#284](https://github.com/ericchansen/q2mm/issues/284))
+    — pd-allyl's verdict did not change after the fix: a true
+    JaxLoss local minimum is exactly where the published OPT values
+    already sit, so the fix had no descent direction to expose.
 
     The published FF was fit by a different objective (MacroModel MM3*
     multi-target).  The q2mm JAX engine's eigenmatrix-diagonal
     objective places its local minimum in the same location, but
     that location is not a *good* fit by either objective's full
-    metric (bond_length R² ≈ 0.04, eig_diagonal R² ≈ −2.8 —
+    metric (bond_length R² ≈ 0.05, eig_diagonal R² ≈ −2.8 —
     see "Comparison and gap analysis" below).
 
 Improving on pd-allyl requires either (a) closing the MM3* ↔

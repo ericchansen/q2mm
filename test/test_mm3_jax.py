@@ -217,6 +217,53 @@ class TestMM3AngleEnergy:
         g = float(grad_fn(jnp.deg2rad(115.0)))
         assert abs(g) > 0.0
 
+    def test_near_collinear_gradient_matches_fd(self) -> None:
+        """JAX-grad agrees with finite-difference even when θ→π (q2mm#284).
+
+        Regression test for the gradient-correctness bug fixed by
+        replacing ``arccos(clip(cos_θ, …))`` with the ``atan2``-based
+        ``_angle_from_vectors``.  At near-collinear geometries the clip
+        zeroed out ``∂θ/∂(cos θ)`` at the boundary, so the autodiff
+        gradient went to zero while the FD gradient (and the physical
+        force) stayed finite — letting the geometry minimizer drift
+        through unphysical θ ≈ π configurations without resistance.
+
+        This test fails on the pre-fix implementation (``∂E/∂atom_k =
+        [0, 0, 0]``) and passes on the atan2-based implementation
+        (``∂E/∂atom_k ≈ [−1.47e-4, −4.92e-1, 0]``).
+        """
+        # θ₀ = 109.5°; place atom k near antiparallel to atom i wrt central j
+        # so cos θ ≈ -0.99999990 (the old clip boundary -1+1e-7).
+        # sin θ ≈ sqrt(1 - 0.99999990²) ≈ 4.47e-4, i.e. perpendicular
+        # component / bond length.
+        k = jnp.array([0.3])
+        theta0 = jnp.array([np.deg2rad(109.5)])
+        angle_idx = jnp.array([[0, 1, 2]])
+        coords = jnp.array(
+            [[1.5, 0.0, 0.0], [0.0, 0.0, 0.0], [-1.5, 4.47e-4, 0.0]],
+        )
+
+        def energy_of_coords(c: jnp.ndarray) -> jnp.ndarray:
+            return _mm3_angle_energy(k, theta0, c, angle_idx)
+
+        g_jax = np.asarray(jax.grad(energy_of_coords)(coords))
+
+        # FD on atom k (index 2) y-component — the perpendicular axis
+        # is where the angle's restoring force should act.
+        eps = 1e-7
+        cp = coords.at[2, 1].add(eps)
+        cm = coords.at[2, 1].add(-eps)
+        g_fd_y = (float(energy_of_coords(cp)) - float(energy_of_coords(cm))) / (2 * eps)
+
+        assert abs(g_jax[2, 1]) > 0.1, (
+            f"JAX gradient on atom k y-component is suspiciously small at near-collinear "
+            f"({g_jax[2, 1]:.3e}); the clip-arccos bug would zero this out."
+        )
+        assert g_jax[2, 1] == pytest.approx(g_fd_y, rel=1e-3), (
+            f"JAX gradient {g_jax[2, 1]:.6e} disagrees with FD {g_fd_y:.6e} on atom k y-component "
+            f"at near-collinear geometry (q2mm#284 regression)."
+        )
+
 
 class TestMM3VdwEnergy:
     """Test _mm3_vdw_energy against known values."""

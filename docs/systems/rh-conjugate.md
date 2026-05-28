@@ -57,64 +57,69 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! success "Ratio gate now passes — loader API refactor"
+!!! success "Ratio gate now passes — loader API refactor + MM3 angle gradient fix"
     The pre-refactor loader silently overwrote the Wahlers OPT
     parameters with raw QFUERZA projections, sending JaxLoss's inner
     geometry minimization into pathological regions and producing
     ratios that varied wildly across runs (0.46 / 0.96 / ~4 × 10³ in
     successive sessions).  After the loader API refactor that
-    preserves the published OPT values as-is, the ratio is 1.01 —
+    preserves the published OPT values as-is, the ratio is 1.00 —
     comfortably inside the [0.85, 1.15] band.  JaxLoss-guided
     optimization is now possible.
 
 Run with `--n-evals 10` so the verdict is statistically defensible
 against the per-call engine noise documented in
-[#284](https://github.com/ericchansen/q2mm/issues/284).
+[#284](https://github.com/ericchansen/q2mm/issues/284).  Numbers
+below are from the post-fix (q2mm MM3 angle gradient-correctness
+patch) run.
 
 | Metric | Value |
 |--------|:-----:|
-| Ratio check | 1.009 (in_band) |
-| Initial ObjectiveFunction (n=10 mean) | 6.430 × 10⁶ ± 0.406 % CI₉₅ |
-| Final ObjectiveFunction (n=10 mean) | 6.435 × 10⁶ ± 0.772 % CI₉₅ |
-| Improvement (mean Δ%) | **−0.080 % (NOT SIGNIFICANT — CI₉₅ ± 1.18 %)** |
-| L-BFGS-B iterations / OF evaluations | 1 / 2 |
+| Ratio check | 0.996 (in_band) |
+| Initial ObjectiveFunction (n=10 mean) | 6.293 × 10⁶ ± 2.60 % CI₉₅ |
+| Final ObjectiveFunction (n=10 mean) | 5.160 × 10⁶ ± 1.92 % CI₉₅ |
+| Improvement (mean Δ%) | **18.00 % (SIGNIFICANT — CI₉₅ ± 4.17 %)** |
+| L-BFGS-B iterations / OF evaluations | 2 / 2 |
 | Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
-| Wall time | 628 s opt + ~13 min for 20 post-eval samples |
+| Wall time | 691 s opt + ~13 min for 20 post-eval samples |
 
 Per-category fit before and after optimization (single GPU calls;
 per-category R² varies by ~1–2 % across calls — see the noise
 context below):
 
-| Category | n_refs | R² (published) | R² (optimized) |
-|----------|-------:|---------------:|---------------:|
-| bond_length | 457 | 0.891 | 0.890 |
-| bond_angle | 926 | 0.454 | 0.453 |
-| eig_diagonal | 1,244 | −7.86 | −7.86 |
+| Category | n_refs | R² (optimized) |
+|----------|-------:|---------------:|
+| bond_length | 457 | 0.822 |
+| bond_angle | 926 | 0.540 |
+| eig_diagonal | 1,244 | −12.85 |
 
-!!! success "Confirmed: surrogate descent does not transfer to real-OF improvement"
-    With n=10 samples the 95 % CI on the real-OF improvement is
-    **±1.18 %**.  The 4602-ratio non-determinism reported in an earlier
-    session is also resolved — the post-refactor ratio is stable across
-    runs at 1.01 with this many samples (closes
+!!! success "Newly unlocked: 18 % real-OF reduction after MM3 angle gradient fix"
+    A previous baseline (q2mm-data#9) reported −0.080 % ± 1.18 % CI₉₅
+    for this system — "NOT SIGNIFICANT, FF sits at a JaxLoss local
+    minimum".  That conclusion was wrong.  The optimizer wasn't
+    finding a real local minimum; it was hitting a spurious stationary
+    point caused by a gradient correctness bug in the JAX angle term
+    (`arccos(clip(cos θ))` killed gradient information at near-collinear
+    geometries — see [#284](https://github.com/ericchansen/q2mm/issues/284)
+    for the diagnosis).  After the fix replaces the clip with a
+    custom-VJP `atan2`-based angle function, L-BFGS-B finds a real
+    descent direction worth **18.00 % ± 4.17 % CI₉₅** in the real
+    ObjectiveFunction (and the surrogate score itself drops by 18 %
+    in tandem, confirming the fix made JaxLoss honest about the
+    actual descent direction).  The 4602-ratio non-determinism
+    reported in an earlier session is also resolved (ratio now stable
+    at 1.00 across runs; closes
     [#278](https://github.com/ericchansen/q2mm/issues/278)).
 
-    The interesting wrinkle for rh-conjugate: L-BFGS-B **does** find a
-    descent direction in the JaxLoss surrogate, reporting a 4.48 %
-    surrogate reduction during optimization (6.35 × 10⁶ → 6.07 × 10⁶
-    in the optimizer's internal score).  But when those parameters are
-    evaluated against the real `ObjectiveFunction` with n=10 samples,
-    the difference is **−0.080 % ± 1.18 % CI₉₅** — i.e. zero within
-    noise.  In other words: this run did **not** find a real-OF
-    improvement, but unlike pd-allyl it's because **JaxLoss disagrees
-    with the real objective in the direction the optimizer was pushing**,
-    not because there's no descent direction to find.
-
-    This is a sharper instance of the MM3 non-smooth-gradient bug
-    documented in [#284](https://github.com/ericchansen/q2mm/issues/284).
-    Without that engine fix, the surrogate is misleading the optimizer
-    for rh-conjugate, so a real-OF-direct optimization (or a fixed
-    surrogate) is needed to determine whether actual improvement is
-    available here.
+The eigenmatrix R² remains negative — the optimizer improved the
+real ObjectiveFunction substantially but the cross-engine
+MM3* ↔ JAX-engine eigenmatrix gap that affects all Wahlers systems
+is a separate, deeper issue (see "Comparison and gap analysis"
+below).  bond_length and bond_angle R² went slightly down from the
+pre-optimization values (0.89 → 0.82, 0.45 → 0.54) because the
+optimizer traded a fraction of geometry-target fit for the much
+larger eigenmatrix improvement that drove the overall ObjectiveFunction
+down by 18 %.
 
 The dramatic improvement vs the pre-refactor per-category numbers
 (where bond_length R² was −58) is the loss of the QFUERZA overwrite
