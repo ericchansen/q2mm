@@ -69,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literature-scale TS systems back into the JaxLoss ratio gate and unlocked
   substantial real-objective improvements for Heck relay and Rh 1,4-conjugate.
 - **Heck relay optimization** — after the MM3 angle-gradient fix, the
-  JaxLoss/ObjectFunction ratio is 1.085 and SciPy L-BFGS-B over JaxLoss
+  JaxLoss/ObjectiveFunction ratio is 1.085 and SciPy L-BFGS-B over JaxLoss
   reduces the sampled real objective by 52.82% ± 1.54% CI95.
 - **Rh 1,4-conjugate optimization** — the same gradient fix resolves the
   spurious stationary point seen in earlier runs; sampled real-objective
