@@ -17,7 +17,9 @@ For each benchmark system this script:
    improvement percentage, and whether the mean change exceeds the summed
    confidence intervals.
 
-Outputs (per system, into ``<output-dir>/<system-data-dir>/convergence/``):
+Outputs (per system, into ``<output-dir>/<system-data-dir>/<subdir>/``,
+where ``<subdir>`` is ``convergence`` for the default ``--starting-point
+published`` and ``from-qfuerza`` for ``--starting-point qfuerza``):
 
 - ``validation_results.json`` — summary numbers for the system (strict JSON,
   no ``Infinity`` or ``NaN``).  Ratio state is encoded across three keys:
@@ -146,6 +148,7 @@ def _build_provenance(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         "maxiter": args.maxiter,
         "n_evals": args.n_evals,
         "skip_optimization": args.skip_optimization,
+        "starting_point": args.starting_point,
         "devices": _device_info(),
     }
 
@@ -425,6 +428,7 @@ def process_system(
     maxiter: int,
     n_evals: int,
     skip_optimization: bool,
+    starting_point: str,
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
     """Process one system end-to-end and write its artifacts."""
@@ -435,9 +439,9 @@ def process_system(
     if system_key not in SYSTEMS:
         raise ValueError(f"Unknown system: {system_key}")
 
-    logger.info("[%s] loading", system_key)
+    logger.info("[%s] loading (starting_point=%s)", system_key, starting_point)
     engine = JaxEngine()
-    sys_data = load_system(system_key, engine=engine)
+    sys_data = load_system(system_key, engine=engine, starting_point=starting_point)
     ff = sys_data.forcefield
 
     # ---- Seminario fit quality ------------------------------------------
@@ -455,6 +459,8 @@ def process_system(
         "system": system_key,
         "n_molecules": len(sys_data.molecules),
         "n_active_params": n_active,
+        "starting_point": starting_point,
+        "starting_point_audit": sys_data.metadata.get("starting_point_audit"),
         "initial_obj_score": initial_score,
         "initial_jaxloss": initial_jaxloss,
         **ratio_info,
@@ -538,7 +544,8 @@ def process_system(
 
     # ---- Write artifacts -------------------------------------------------
     data_dir_name = DATA_DIR_FOR_SYSTEM.get(system_key, system_key)
-    sys_out = output_dir / data_dir_name / "convergence"
+    subdir = "convergence" if starting_point == "published" else f"from-{starting_point}"
+    sys_out = output_dir / data_dir_name / subdir
     sys_out.mkdir(parents=True, exist_ok=True)
 
     _write_strict_json(
@@ -619,6 +626,17 @@ def main() -> int:
         help="Compute baseline metrics only; do not optimize any system.",
     )
     parser.add_argument(
+        "--starting-point",
+        choices=("published", "qfuerza"),
+        default="published",
+        help="Starting force-field parameters. 'published' uses the literature OPT values "
+        "(default, backward compatible). 'qfuerza' overwrites the OPT bond/angle scalars "
+        "with QFUERZA (Farrugia 2025) Hessian-derived values while keeping the published "
+        "topology and frozen MM3 backbone — used for QFUERZA-recovery validation runs. "
+        "Output subdirectory becomes 'from-qfuerza' instead of 'convergence' to avoid "
+        "overwriting baselines.",
+    )
+    parser.add_argument(
         "--combined-output",
         type=Path,
         default=None,
@@ -651,7 +669,13 @@ def main() -> int:
     provenance = _build_provenance(args, output_dir)
     logger.info("Output directory: %s", output_dir)
     logger.info("Systems: %s", systems)
-    logger.info("ratio_tol=%s, maxiter=%d, n_evals=%d", args.ratio_tol, args.maxiter, args.n_evals)
+    logger.info(
+        "ratio_tol=%s, maxiter=%d, n_evals=%d, starting_point=%s",
+        args.ratio_tol,
+        args.maxiter,
+        args.n_evals,
+        args.starting_point,
+    )
 
     combined: dict[str, Any] = {}
     failures: list[str] = []
@@ -664,6 +688,7 @@ def main() -> int:
                 maxiter=args.maxiter,
                 n_evals=args.n_evals,
                 skip_optimization=args.skip_optimization,
+                starting_point=args.starting_point,
                 provenance=provenance,
             )
             combined[sys_key] = summary
