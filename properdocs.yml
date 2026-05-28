@@ -50,6 +50,7 @@ nav:
     - When Analytical Wins: benchmarks/crossover.md
     - Published FF Validation: benchmarks/published-ff-validation.md
     - QFUERZA Validation: benchmarks/qfuerza-validation.md
+    - QFUERZA Recovery: benchmarks/qfuerza-recovery.md
   - Systems:
     - Small Molecules: systems/small-molecules.md
     - Rh-Enamide: systems/rh-enamide.md
