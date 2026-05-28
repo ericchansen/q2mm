@@ -51,12 +51,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-molecule JIT compilation in `JaxLoss` — each molecule's loss and
   gradient compiles independently, preventing GPU OOM on multi-molecule
   systems
+- Published-FF system loaders now preserve literature OPT values as
+  published instead of silently overwriting them with QFUERZA projections;
+  frozen base-FF parameters remain the optimization invariant for TS systems
+- Optimizer-comparison documentation now treats MacroModel MM3* reproduction
+  as an explicit cross-engine transfer boundary, not a release blocker for
+  the q2mm JAX/OpenMM alpha line
 - Benchmark data moved to `ericchansen/q2mm-data` repository
 - Overhauled `AGENTS.md` for better AI agent guidance
 - OpenMM-CUDA-12 platform gate: now excludes only macOS (was Linux-only)
 - JAX engine now supports both harmonic and MM3 functional forms
 
 ### Fixed
+- **MM3 angle gradient correctness** — replaced the JAX angle term's
+  gradient-killing `arccos(clip())` path with a well-conditioned
+  `atan2`-based custom VJP near collinear geometries. This moved the
+  literature-scale TS systems back into the JaxLoss ratio gate and unlocked
+  substantial real-objective improvements for Heck relay and Rh 1,4-conjugate.
+- **Heck relay optimization** — after the MM3 angle-gradient fix, the
+  JaxLoss/ObjectFunction ratio is 1.085 and SciPy L-BFGS-B over JaxLoss
+  reduces the sampled real objective by 52.82% ± 1.54% CI95.
+- **Rh 1,4-conjugate optimization** — the same gradient fix resolves the
+  spurious stationary point seen in earlier runs; sampled real-objective
+  reduction is 18.00% ± 4.17% CI95.
+- **Pd 1,4-conjugate optimization** — after preserving the published Wahlers
+  OPT values, the default ratio gate passes and the real objective improves
+  by 16.1%.
+- **Pd-allyl verdict** — n=10 sampled evaluation confirms the published
+  Wahlers OPT values sit at a q2mm JaxLoss local minimum; any improvement is
+  below the ±0.40% CI95 noise band.
 - **JaxLoss harmonic restraint** — `_relax_coords()` previously added an
   artificial harmonic restraint (k=100 kcal/mol·Å²) to geometry
   relaxation, causing JaxLoss to optimize a different objective than

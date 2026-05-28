@@ -829,7 +829,7 @@ L-BFGS and L-BFGS-B with exact gradients.
     JaxOpt is most useful when you want the same algorithms as SciPy (L-BFGS-B)
     but with **exact analytical gradients** instead of finite differences. The
     gradient quality is identical to optax, but the optimiser itself is
-    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jaxopt)
+    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax)
     in the Optimization Guide for details.
 
 ---
