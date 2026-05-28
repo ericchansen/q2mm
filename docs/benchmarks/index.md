@@ -22,9 +22,9 @@ q2mm's benchmark program answers three questions:
 
 | Section | What it covers | Key result |
 |---------|---------------|------------|
-| [Published FF Validation](published-ff-validation.md) | Load published FFs and reproduce their eigenvalue fit | Rh-enamide Check 1 passes (R² = 0.60) |
-| [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly; Rh-enamide R² = 0.961; 4 other systems limited by parameter quality |
-| [Optimizer Comparison](optimizer-comparison.md) | Compare SciPy, JaxOpt, and Optax optimizers on penalty reduction | All optimizers converge; L-BFGS-B fastest for TS systems |
+| [Published FF Validation](published-ff-validation.md) | Load published FFs and document the MacroModel MM3* transfer boundary | Rh-enamide Check 1 reaches R² = 0.60 under q2mm; beating QFUERZA is out of scope without MacroModel parity |
+| [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly for QFUERZA angles; all five TS systems have positive mass-weighted starting-point R² |
+| [Optimizer Comparison](optimizer-comparison.md) | Compare the production SciPy L-BFGS-B + JaxLoss path on literature-scale TS systems | 4 of 5 systems show significant q2mm-objective improvement; pd-allyl is a confirmed local minimum |
 | [GPU Acceleration](gpu.md) | CPU-vs-GPU wall-clock comparisons | JAX GPU ~5.6× faster on Rh-enamide |
 | [When Analytical Wins](crossover.md) | System-size crossover for analytical vs finite-difference gradients | Analytical gradients dominate above ~50 parameters |
 

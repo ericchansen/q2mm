@@ -1,202 +1,183 @@
 # Optimizer Comparison
 
+## What this page answers
+
+This page compares q2mm's current production optimizer path on five
+transition-state force-field systems from the Q2MM literature.  The question is
+not "can we reproduce MacroModel MM3* exactly?"  The answer to that is no: the
+published TSFFs were optimized under MacroModel-specific MM3* semantics, and
+q2mm does not include a licensed MacroModel compatibility layer.  The question
+here is narrower and testable:
+
+> Given the published OPT-substructure parameters as a starting point, can
+> q2mm's JAX engine and analytical-gradient optimizer reduce q2mm's own
+> multi-target objective without corrupting the force field?
+
+For four of the five systems the answer is yes.  Pd-allyl is the exception: it
+passes the surrogate-ratio gate, but the published Wahlers parameters already
+sit at a local minimum for the current q2mm objective.
+
+---
+
 ## Methodology
 
-All multi-target benchmarks use:
+All multi-target benchmarks use the same production setup:
 
-- **Objective**: eigenmatrix-diagonal + geometry refs via
-  `ReferenceData.from_molecules()` with `invert_ts_curvature=True`
-- **Parameters**: frozen base-FF, only OPT-substructure params active
-  (matching the published parameter scope per system)
-- **Gradients**: JaxLoss analytical gradients via implicit differentiation
-  (per-molecule JIT, dispatched from Python). Falls back to finite-difference
-  if the JaxLoss/ObjectiveFunction ratio check fails.
-- **Optimizer**: SciPy L-BFGS-B with `ratio_tol=0.15` (validates
-  JaxLoss agrees with ObjectiveFunction within ±15%)
+- **Objective:** eigenmatrix-diagonal + geometry references built by
+  `ReferenceData.from_molecules()` with `invert_ts_curvature=True`.
+- **Parameter scope:** frozen base force field; only OPT-substructure
+  parameters are active, matching the published Q2MM workflow.
+- **Starting force field:** the literature OPT values are preserved as
+  published.  The loader does not overwrite them with QFUERZA projections.
+- **Optimizer:** SciPy L-BFGS-B with `jac="auto"`.
+- **Gradient source:** `jac="auto"` resolves to JaxLoss analytical gradients
+  when the JaxLoss/ObjectiveFunction ratio check is within the default
+  ±15% band.
+- **Validation:** the real Python `ObjectiveFunction` is evaluated before and
+  after the JaxLoss-guided optimization.  For noisy systems, the reported
+  improvement is the mean over 10 initial and 10 final evaluations with a
+  95% confidence interval.
 
-## Convergence results (GPU)
-
-The JaxLoss/ObjectiveFunction ratio check validates that JaxLoss is a
-reliable surrogate before using its analytical gradients. Systems where
-the ratio passes get fast JaxLoss-guided optimization; systems where it
-fails fall back to finite-difference (impractical for 400+ active
-parameters) or are skipped entirely.
-
-The numbers below come from the committed regeneration script
-`scripts/regenerate_convergence_results.py`; the raw JSON outputs (with
-provenance: git SHAs, device, ratio_tol, timestamp) live in
+The raw JSON outputs and optimized force fields live in
 [`ericchansen/q2mm-data/benchmarks/<system>/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks).
+They include provenance such as q2mm git SHA, device, ratio tolerance, and
+run timestamp.
 
-| System | Mols | Active | Ratio | Check |
-|--------|:----:|:------:|:-----:|:-----:|
-| Rh-enamide | 9 | 182 | 1.07 | ✓ |
-| Pd-allyl | 21 | 482 | 1.10 | ✓ |
-| Heck relay | 23 | 462 | 1.30 | ✗ |
-| Pd 1,4-conj | 10 | 340 | 0.96 | ✓ |
-| Rh 1,4-conj | 10 | 488 | 1.04 | ✓ |
+---
 
-**Note on the gate behaviour after the loader API refactor.**  The
-loader API refactor (the same commit that introduces this update)
-stopped overwriting published OPT parameter values with raw QFUERZA
-projections — see :func:`q2mm.models.loaders.load_published_opt` and
-:func:`q2mm.models.loaders.load_published_opt_composed` and AGENTS.md
-"Key Papers" for the QFUERZA / Farrugia 2025 background.  Four of
-the five published-FF systems (rh-enamide, pd-allyl, pd-conjugate,
-rh-conjugate) now use the literature OPT values as-published and the
-ratio gate passes for four of them (heck-relay remains marginally
-out of band at 1.30).  Pre-refactor ratios for the two "Wahlers
-composed" systems were 1.20 (pd-conjugate) and ~4 × 10³
-(rh-conjugate); the dramatic change for rh-conjugate is the loss of
-the silent QFUERZA overwrite, not anything about JaxLoss itself.
+## Surrogate ratio gate
 
-**Optimization results** (only systems that pass the ratio gate;
-``jac_mode`` is the resolved gradient mode from the JSON output, after
-the script's ``jac="auto"`` gate).  In the JaxLoss path, SciPy
-optimizes via the surrogate loss function, so the
-``ObjectiveFunction`` itself is only evaluated at the start and end
-of the run — that is why `Evals` can be much smaller than `Iters`:
+Before using JaxLoss gradients, q2mm compares the JaxLoss value with the real
+`ObjectiveFunction` value.  Ratios inside the default `[0.85, 1.15]` band are
+accepted; outside the band, the analytical surrogate is considered unreliable
+for that parameter regime.
 
-| System | Init score | Final score | Δ% | Iters (`nit`) | ObjFun evals | Wall time | jac_mode |
-|--------|:----------:|:-----------:|:--:|:-------------:|:------------:|:---------:|:--------:|
-| Rh-enamide | 4.87 × 10⁵ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
-| Pd-allyl | 7.99 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
-| Pd 1,4-conj | 8.79 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
-| Rh 1,4-conj | 6.42 × 10⁶ | TBD | TBD | TBD | TBD | TBD | `jax_loss` |
+After the loader API refactor and the MM3 angle-gradient fix, every system in
+this table is inside the default band.
 
-The post-optimization rows are TBD pending end-to-end optimization
-runs against the refactored loaders (tracked in
-[q2mm#275](https://github.com/ericchansen/q2mm/issues/275) and its
-follow-ups).  The earlier published 28.68 % rh-enamide improvement
-came from an FF whose OPT values were overwritten by QFUERZA — that
-result is no longer reproducible because the new loader preserves
-the Donoghue OPT values, which start closer to optimum so the
-absolute headroom is smaller.
+| System | Mols | Active params | Ratio | Gate |
+|--------|:----:|:-------------:|:-----:|:----:|
+| [Rh-enamide](../systems/rh-enamide.md) | 9 | 182 | 1.07 | ✓ |
+| [Heck relay](../systems/heck-relay.md) | 23 | 462 | 1.085 | ✓ |
+| [Pd-allyl](../systems/pd-allyl.md) | 21 | 482 | 1.091 | ✓ |
+| [Pd 1,4-conj](../systems/pd-conjugate.md) | 10 | 340 | 0.985 | ✓ |
+| [Rh 1,4-conj](../systems/rh-conjugate.md) | 10 | 488 | 0.996 | ✓ |
 
-Each row is reproducible from
-[`scripts/regenerate_convergence_results.py`](https://github.com/ericchansen/q2mm/blob/master/scripts/regenerate_convergence_results.py)
-without `--skip-optimization`; the optimized force fields land in
-`q2mm-data/benchmarks/<system-data-dir>/convergence/<system>_optimized.fld`,
-where `<system-data-dir>` is the q2mm-data directory name for each
-system (note: the q2mm system key differs from the q2mm-data directory
-name for the Wahlers systems — e.g. `pd-allyl` →
-`pd-allyl-amination`, `pd-conjugate` → `pd-1,4-conjugate-addition`,
-`rh-conjugate` → `rh-1,4-conjugate-addition`).
+Two fixes changed the interpretation of this table:
 
-**Notes:**
+1. **Loader API refactor:** published OPT values are now used as published;
+   QFUERZA no longer silently overwrites them during system loading.
+2. **MM3 angle-gradient fix:** the JAX angle term now uses a custom-VJP
+   `atan2`-based angle function instead of gradient-killing `arccos(clip())`
+   near collinear geometries.
 
-- **Rh-enamide, Pd-allyl, Pd 1,4-conj, and Rh 1,4-conj** pass the
-  ratio gate cleanly after the loader API refactor — the literature
-  OPT values reproduce QM geometry well and JaxLoss's inner
-  geometry minimization stays in a sensible basin.
-- **Heck relay** misses the gate by ~12 % (ratio 1.30).  The Rosales
-  OPT parameters are used as-published; bond_length R² ≈ 0.98 and
-  bond_angle R² ≈ 0.79 are healthy, but eig_diagonal R² ≈ −12.6
-  reflects a real MM3* ↔ JAX-engine cross-engine gap.  Heck relay
-  remains a candidate for the experimental `ratio_tol=None` bypass
-  ([q2mm#276](https://github.com/ericchansen/q2mm/issues/276)).
-- **Pd 1,4-conj** is now within the gate (0.96) — the pre-refactor
-  ratio of 1.20 came from QFUERZA overwriting the Wahlers OPT
-  values.  See [pd-conjugate](../systems/pd-conjugate.md).
-- **Rh 1,4-conj** is now within the gate (1.04) — the pre-refactor
-  ratio of ~4 × 10³ came from QFUERZA overwriting the Wahlers OPT
-  values, sending JaxLoss's inner geometry minimization into
-  pathological regions.  See [rh-conjugate](../systems/rh-conjugate.md)
-  for the per-category R² that explains the recovery.
+Heck relay is the clearest example: its ratio moved from outside the default
+band to 1.085 after the angle-gradient fix, and JaxLoss-guided optimization
+now transfers to the real objective.
 
-### Why some systems fail the ratio check
+---
 
-JaxLoss and ObjectiveFunction both minimize molecular geometry to evaluate
-bond lengths/angles. When the starting FF is good (R² > 0.9), both find
-similar minima near the QM reference → ratio ≈ 1.0. When the starting FF
-is poor (negative R²), unconstrained minimization can find different local
-minima → ratio diverges.
+## Optimization results
 
-This is not a bug — it is the ratio check correctly identifying that
-JaxLoss is unreliable for the current parameter regime. As optimization
-improves the FF, the ratio may converge toward 1.0 and JaxLoss may become
-usable at later stages.
+| System | Initial score | Final score | Mean Δ | 95% CI on Δ | L-BFGS-B iters | Real OF evals | Wall time |
+|--------|--------------:|------------:|-------:|------------:|---------------:|--------------:|----------:|
+| [Rh-enamide](../systems/rh-enamide.md) | 4.86 × 10⁵ | 2.71 × 10⁵ | **−44.66%** | single-call, 77× above noise floor | 15 | 2 | 739 s |
+| [Heck relay](../systems/heck-relay.md) | 3.098 × 10⁶ | 1.461 × 10⁶ | **−52.82%** | ±1.54% | 2 | 2 | 1,825 s opt + post-evals |
+| [Pd-allyl](../systems/pd-allyl.md) | 8.036 × 10⁶ | 8.037 × 10⁶ | **−0.010%** | ±0.40% | 2 | 2 | 1,289 s opt + post-evals |
+| [Pd 1,4-conj](../systems/pd-conjugate.md) | 8.61 × 10⁶ | 7.23 × 10⁶ | **−16.1%** | not sampled | 3 | 2 | 700 s |
+| [Rh 1,4-conj](../systems/rh-conjugate.md) | 6.293 × 10⁶ | 5.160 × 10⁶ | **−18.00%** | ±4.17% | 2 | 2 | 691 s opt + post-evals |
 
-## Reference-data R² (per category)
+Interpretation:
 
-We optimize eigenmatrix-diagonal and geometry references. R² is reported
-per category to match what each paper uses. Published papers (e.g. Wahlers
-2021) report **R²(hessian)** and **R²(geometry)** — not frequency R².
-Our eigenmatrix-diagonal R² is analogous to paper R²(hessian), though we
-use diagonal elements only while papers use the full lower-triangular
-eigenmatrix.
+- **Rh-enamide, Heck relay, Pd 1,4-conj, and Rh 1,4-conj improve
+  substantially** under the q2mm JAX objective.
+- **Pd-allyl does not improve in a statistically meaningful way.**  The
+  optimizer converges quickly, the ratio gate is healthy, and the 10-sample
+  confidence interval excludes any hidden >0.4% improvement.  This is a local
+  minimum of the current objective, not a failed run.
+- **Small L-BFGS-B iteration counts are expected.**  In the JaxLoss path,
+  SciPy evaluates the surrogate many times internally; the real
+  `ObjectiveFunction` is called only for the initial baseline and final
+  validation.
 
-### Pre-optimization R² (published OPT values as-published)
+---
 
-These R² values show how well the published OPT values, evaluated by
-the q2mm JAX engine, reproduce QM data *before* any q2mm-side
-optimization.  All five systems use the literature OPT block as-is
-(no QFUERZA overwrite) after the loader API refactor.
+## Per-category fit after optimization
 
-| System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) |
-|--------|:------------:|:------------:|:------------:|
-| Rh-enamide (9 mol) | 0.963 | 0.987 | 0.918 |
-| Heck relay (23 mol) | −12.6 | 0.980 | 0.781 |
-| Pd-allyl (21 mol) | −2.82 | 0.042 | 0.330 |
-| Pd 1,4-conj (10 mol) | −10.06 | 0.939 | −0.177 |
-| Rh 1,4-conj (10 mol) | −7.86 | 0.891 | 0.454 |
+The objective combines geometry references and eigenmatrix-diagonal references.
+R² is reported by category so geometry improvements are not hidden by the much
+larger eigenmatrix term.
 
-Geometry reproduction is healthy across all five systems
-(bond_length R² ≥ 0.89 for the published OPT systems; pd-allyl is
-weaker at 0.04 but not catastrophic).  The eigenmatrix R² is
-consistently negative — that is the real cross-engine gap (MM3*
-versus q2mm's JAX engine), not a loader artifact.
-These numbers come from `q2mm-data/benchmarks/<system>/convergence/paper_metrics.json`
-and are reproducible via `scripts/regenerate_convergence_results.py`.
+| System | R²(bond_length) | R²(bond_angle) | R²(eig_diag) | Takeaway |
+|--------|----------------:|---------------:|-------------:|----------|
+| [Rh-enamide](../systems/rh-enamide.md) | 0.989 | 0.954 | 0.968 | Strong fit across all target classes |
+| [Heck relay](../systems/heck-relay.md) | 0.983 | 0.909 | −14.28 | Geometry excellent; eigenmatrix gap remains |
+| [Pd-allyl](../systems/pd-allyl.md) | 0.046 | 0.331 | −2.82 | Published values are a q2mm local minimum but not a good transfer fit |
+| [Pd 1,4-conj](../systems/pd-conjugate.md) | 0.950 | 0.037 | −9.642 | Bond geometry strong; eigenmatrix gap remains |
+| [Rh 1,4-conj](../systems/rh-conjugate.md) | 0.822 | 0.540 | −12.85 | Real objective improves; eigenmatrix gap remains |
 
-### Post-optimization R²
+These R² values should not be read as claims about the original papers'
+performance.  The papers used MacroModel MM3* and often the full lower-triangle
+eigenmatrix, charges, and/or selectivity validation.  The table reports how the
+same published OPT values and q2mm-optimized descendants behave under q2mm's
+current JAX engine and objective.
 
-| System | R²(eig_diag) | R²(bond_len) | R²(bond_ang) | Δ obj |
-|--------|:------------:|:------------:|:------------:|:-----:|
-| Rh-enamide (optimized) | 0.970 | 0.983 | 0.953 | −28.68 % |
-| Pd-allyl (optimized) | −1.405 | 0.022 | 0.335 | −0.08 % |
+---
 
-**Rh-enamide** improves bond_length R² 0.976 → 0.983 and bond_angle
-R² 0.934 → 0.953 with a small trade-off in eig_diagonal (0.972 →
-0.970).  The 28.68 % ObjectiveFunction reduction matches the
-historical Donoghue-style optimization improvement reported in earlier
-documentation; the key difference here is that the number is now
-reproducible from a single committed script (no orphaned data).
+## MacroModel MM3* transfer boundary
 
-**Pd-allyl** improves only marginally (0.08 %).  SciPy reports
-convergence (`CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH`)
-after 2 iterations / 2 evaluations; during the run JaxLoss also
-logged a non-finite penalty on an attempted step (a known limitation
-of the per-molecule JIT path at 482 active parameters when the step
-is too large).  The deeply negative eig_diagonal starting R² (−1.41)
-is essentially unchanged.  Improving Pd-allyl further would likely
-require a hybrid FD/JaxLoss strategy or tighter bounds.
+The published TSFFs remain scientifically valid in their original setting, but
+several do not transfer their internal Hessian/eigenmatrix quality into q2mm's
+JAX engine.  This is not a release blocker for q2mm because exact MacroModel
+MM3* reproduction is outside the current alpha scope.
 
-### Paper-reported metrics for comparison
+Known transfer gaps include:
 
-| Paper | System | Metric | Value |
-|-------|--------|--------|:-----:|
-| Wahlers 2021 | Pd-allyl | R²(hessian) | 0.998 |
-| Wahlers 2021 | Pd-allyl | R²(geometry) | 0.988 |
-| Wahlers 2021 | Pd-allyl | R²(charges) | 0.822 |
-| Wahlers 2021 | Pd-allyl | External MUE | 4.4 kJ/mol |
-| Donoghue 2008 | Rh-enamide | Full eigenmatrix opt. | (MacroModel, no R² reported) |
+- metal-center torsion behavior that may be suppressed or attenuated by
+  MacroModel-specific rules,
+- wildcard MM3 atom-type matching such as `00`,
+- cross terms beyond the currently implemented JAX stretch-bend term,
+- composed-force-field semantics for base MM3 + OPT overlays,
+- the absence of a licensed MacroModel validation loop for confirming any
+  compatibility-layer guesses.
 
-Wahlers metrics were computed in MacroModel with the full eigenmatrix
-(diagonal + off-diagonal) — a harder optimization target with more
-reference data. Our current Pd-allyl R² is far below the published 0.998
-because the Seminario starting point is poor and optimization was limited.
-Rosales 2020 reports selectivity predictions rather than internal R².
-Direct comparison requires matching reference-data scope.
+q2mm's supported path is therefore:
+
+1. load the published or QFUERZA starting force field without corrupting it,
+2. freeze non-OPT parameters when reproducing literature-scale TS systems,
+3. optimize under the q2mm engine/objective being used,
+4. report the remaining cross-engine gap honestly.
+
+---
 
 ## Recommendations
 
-- Use `scipy-lbfgsb-jax` (CLI) or `ScipyOptimizer(method='L-BFGS-B',
-  jac='auto')` with default `ratio_tol=0.15`. The ratio check validates
-  JaxLoss reliability and falls back to FD if needed.
-- **Do NOT use jaxopt L-BFGS** — its zoom linesearch triggers 30–60 min
-  of extra XLA compilation post-JIT, making it impractical.
-- For systems with poor Seminario starting points (negative R²), consider:
-    - Running a short FD-gradient optimization first to improve the FF
-      enough that JaxLoss geometry relaxation stabilizes
-    - Tighter parameter bounds (±5%) to prevent geometry divergence
-    - Using a restraint-based JaxLoss geometry relaxation (future work)
+- Use `scipy-lbfgsb-jax` on the CLI or
+  `ScipyOptimizer(method="L-BFGS-B", jac="auto")` in Python for
+  multi-molecule TS systems.
+- Keep the default ratio gate enabled.  It now admits all five benchmark
+  systems after the loader and angle-gradient fixes, and it remains useful as
+  a guard against future surrogate/objective divergence.
+- Do not use `JaxOptOptimizer` as the default for multi-molecule TS systems.
+  Its monolithic optimization path is useful on small systems, but the
+  per-molecule JaxLoss + SciPy L-BFGS-B path is the production route for the
+  literature-scale benchmarks.
+- Do not treat failure to beat a MacroModel-published FF under q2mm as a bug by
+  itself.  Treat it as evidence of the documented MM3* transfer boundary unless
+  a q2mm-native invariant or parity test fails.
+
+---
+
+## Reproduce
+
+```bash
+# Full convergence regeneration for all systems; writes results under results/
+python scripts/regenerate_convergence_results.py
+
+# Example: statistically sampled pd-allyl verdict
+python scripts/regenerate_convergence_results.py --system pd-allyl --n-evals 10
+```
+
+Archive any result JSON or optimized force field used in documentation in the
+separate [`q2mm-data`](https://github.com/ericchansen/q2mm-data) repository;
+local `results/` output is intentionally gitignored in this code repo.
