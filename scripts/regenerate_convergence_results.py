@@ -146,6 +146,9 @@ def _build_provenance(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         "q2mm_data": data_git,
         "ratio_tol": args.ratio_tol,
         "maxiter": args.maxiter,
+        "ftol": args.ftol,
+        "fc_fraction": args.fc_fraction,
+        "eq_fraction": args.eq_fraction,
         "n_evals": args.n_evals,
         "skip_optimization": args.skip_optimization,
         "starting_point": args.starting_point,
@@ -371,6 +374,9 @@ def _run_optimization(
     ratio_tol: float | None,
     maxiter: int,
     n_evals: int,
+    ftol: float = 1e-8,
+    fc_fraction: float | None = None,
+    eq_fraction: float | None = None,
 ) -> dict[str, Any]:
     """Run scipy L-BFGS-B with JaxLoss gradients; return summary dict."""
     from q2mm.optimizers.objective import ObjectiveFunction
@@ -380,9 +386,12 @@ def _run_optimization(
     opt = ScipyOptimizer(
         method="L-BFGS-B",
         maxiter=maxiter,
+        ftol=ftol,
         verbose=True,
         jac="auto",
         ratio_tol=ratio_tol,
+        fc_fraction=fc_fraction,
+        eq_fraction=eq_fraction,
     )
     t0 = time.perf_counter()
     result = opt.optimize(obj)
@@ -430,6 +439,9 @@ def process_system(
     skip_optimization: bool,
     starting_point: str,
     provenance: dict[str, Any],
+    ftol: float = 1e-8,
+    fc_fraction: float | None = None,
+    eq_fraction: float | None = None,
 ) -> dict[str, Any]:
     """Process one system end-to-end and write its artifacts."""
     from q2mm.backends.mm.jax_engine import JaxEngine
@@ -494,6 +506,9 @@ def process_system(
             ratio_tol=ratio_tol,
             maxiter=maxiter,
             n_evals=n_evals,
+            ftol=ftol,
+            fc_fraction=fc_fraction,
+            eq_fraction=eq_fraction,
         )
         optimized_ff = opt_result.pop("optimized_ff")
         optimized_categories = opt_result.pop("optimized_categories")
@@ -615,6 +630,30 @@ def main() -> int:
         help="Maximum L-BFGS-B iterations per optimization.",
     )
     parser.add_argument(
+        "--ftol",
+        type=float,
+        default=1e-8,
+        help="L-BFGS-B function-value tolerance. Tighten (e.g. 1e-12) "
+        "for from-poor-start runs where the default exits too soon.",
+    )
+    parser.add_argument(
+        "--fc-fraction",
+        type=float,
+        default=None,
+        help="Fractional bounds for force-constant parameters: each FC is "
+        "clamped to (val ± fc_fraction*|val|). Use for from-poor-start runs "
+        "(e.g. --starting-point qfuerza) to keep the optimizer in the "
+        "starting basin. Recommended: 0.20 (i.e. ±20%%). Omit for sanity bounds.",
+    )
+    parser.add_argument(
+        "--eq-fraction",
+        type=float,
+        default=None,
+        help="Fractional bounds for equilibrium parameters (bond_eq, angle_eq, "
+        "vdw_radius, ub_eq): each is clamped to (val ± eq_fraction*|val|). "
+        "Recommended: 0.05 (i.e. ±5%%). Omit for sanity bounds.",
+    )
+    parser.add_argument(
         "--n-evals",
         type=_parse_positive_int,
         default=1,
@@ -670,9 +709,12 @@ def main() -> int:
     logger.info("Output directory: %s", output_dir)
     logger.info("Systems: %s", systems)
     logger.info(
-        "ratio_tol=%s, maxiter=%d, n_evals=%d, starting_point=%s",
+        "ratio_tol=%s, maxiter=%d, ftol=%.2e, fc_fraction=%s, eq_fraction=%s, n_evals=%d, starting_point=%s",
         args.ratio_tol,
         args.maxiter,
+        args.ftol,
+        args.fc_fraction,
+        args.eq_fraction,
         args.n_evals,
         args.starting_point,
     )
@@ -690,6 +732,9 @@ def main() -> int:
                 skip_optimization=args.skip_optimization,
                 starting_point=args.starting_point,
                 provenance=provenance,
+                ftol=args.ftol,
+                fc_fraction=args.fc_fraction,
+                eq_fraction=args.eq_fraction,
             )
             combined[sys_key] = summary
         except Exception:
@@ -702,6 +747,29 @@ def main() -> int:
             {"provenance": provenance, "results": combined},
         )
         logger.info("Wrote combined output: %s", args.combined_output)
+
+    # Batch-level silent-failure detection.  If we optimized any system
+    # but every one of them exited at n_iterations <= 2 with negligible
+    # change in the real ObjectiveFunction, the batch did not optimize.
+    # See AGENTS.md §11 (Benchmark Pre-Flight Checklist).
+    optimized = [s for s in combined.values() if not s.get("skipped") and s.get("n_iterations") is not None]
+    if optimized and not args.skip_optimization:
+        no_progress = [
+            s
+            for s in optimized
+            if int(s.get("n_iterations", 0)) <= 2 and abs(float(s.get("improvement_pct", 0.0))) < 1.0
+        ]
+        if len(no_progress) == len(optimized):
+            logger.error(
+                "BATCH FAILURE: all %d optimized system(s) exited at "
+                "n_iterations<=2 with |improvement_pct|<1%%. The optimizer "
+                "did NOT optimize. Inspect ratio_tol, ftol, bounds, and "
+                "starting force field. Systems: %s",
+                len(optimized),
+                [s.get("system") for s in no_progress],
+            )
+            if not failures:
+                failures.append("batch_no_progress")
 
     if failures:
         logger.error("Failed systems: %s", failures)

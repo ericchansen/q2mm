@@ -435,6 +435,58 @@ class TestForceField:
         assert ff2.bonds[0].force_constant == pytest.approx(-49.6)
         assert ff2.angles[0].force_constant == pytest.approx(-10.8)
 
+    def test_fractional_bounds_around_current_values(self) -> None:
+        """get_fractional_bounds wraps each param in a (val ± frac*|val|) box."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+        )
+        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        # Layout: bond_k, bond_eq, angle_k, angle_eq
+        assert bounds[0] == pytest.approx((359.7 * 0.8, 359.7 * 1.2), rel=1e-6)
+        assert bounds[1] == pytest.approx((1.38 * 0.95, 1.38 * 1.05), rel=1e-6)
+        assert bounds[2] == pytest.approx((36.0 * 0.8, 36.0 * 1.2), rel=1e-6)
+        assert bounds[3] == pytest.approx((109.5 * 0.95, 109.5 * 1.05), rel=1e-6)
+
+    def test_fractional_bounds_sign_aware_for_negative_fc(self) -> None:
+        """Negative force constants (TSFF) must produce valid (lo < hi) bounds."""
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, -49.6)])
+        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        bond_k_lo, bond_k_hi = bounds[0]
+        # |val|=49.6, window=9.92; box = (-49.6-9.92, -49.6+9.92) = (-59.52, -39.68)
+        assert bond_k_lo == pytest.approx(-59.52)
+        assert bond_k_hi == pytest.approx(-39.68)
+        assert bond_k_lo < bond_k_hi
+
+    def test_fractional_bounds_intersect_sanity_bounds(self) -> None:
+        """Fractional bounds are clipped to the DEFAULT_BOUNDS sanity envelope."""
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 3000.0)])
+        bounds = ff.get_fractional_bounds(fc_fraction=0.50, eq_fraction=None)
+        bond_k_lo, bond_k_hi = bounds[0]
+        # |val|*0.5 = 1500 → box (1500, 4500); sanity hi = 3600 → clipped
+        assert bond_k_lo == pytest.approx(1500.0)
+        assert bond_k_hi == pytest.approx(3600.0)  # sanity envelope
+
+    def test_fractional_bounds_zero_value_falls_back_to_sanity(self) -> None:
+        """Frozen-at-zero parameters (e.g. torsion_k) get sanity bounds, not (0, 0)."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 100.0)],
+            torsions=[TorsionParam(("H", "C", "F", "H"), periodicity=1, force_constant=0.0)],
+        )
+        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        # Layout: bond_k, bond_eq, torsion_k
+        assert bounds[0] == pytest.approx((80.0, 120.0))
+        # Torsion_k (val=0): falls back to DEFAULT_BOUNDS["torsion_k"]
+        assert bounds[2] == pytest.approx((-20.0, 20.0))
+
+    def test_fractional_bounds_none_is_get_bounds(self) -> None:
+        """When both fractions are None, get_fractional_bounds is get_bounds."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 300.0)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+        )
+        assert ff.get_fractional_bounds(None, None) == ff.get_bounds()
+
     def test_torsion_in_param_vector(self) -> None:
         """Torsion force constants appear in param vector after bonds/angles."""
         ff = ForceField(

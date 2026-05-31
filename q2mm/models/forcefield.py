@@ -560,6 +560,79 @@ class ForceField:
             return bounds.reshape(0, 2)
         return bounds[self.active_mask]
 
+    def get_fractional_bounds(
+        self,
+        fc_fraction: float | None = None,
+        eq_fraction: float | None = None,
+    ) -> list[tuple[float, float]]:
+        """Get bounds as a fractional box around each parameter's current value.
+
+        Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
+        ``bond_k ∈ (-3600, 3600)``), this returns ``(val * (1 - frac), val *
+        (1 + frac))`` for each parameter, with sign-aware handling. This is the
+        appropriate strategy for **from-poor-start** runs (e.g.
+        ``starting_point="qfuerza"``) where you want the optimizer to refine
+        the starting FF locally instead of escaping the starting basin.
+
+        Force-constant types (``bond_k``, ``angle_k``, ``torsion_k``, ``sb_k``,
+        ``vdw_epsilon``, ``ub_k``) use ``fc_fraction``.
+        Equilibrium types (``bond_eq``, ``angle_eq``, ``vdw_radius``,
+        ``ub_eq``) use ``eq_fraction``.
+
+        Parameters
+        ----------
+        fc_fraction : float, optional
+            Fractional box width for force-constant parameters. ``None``
+            means use the corresponding sanity bound from
+            :attr:`DEFAULT_BOUNDS`.
+        eq_fraction : float, optional
+            Fractional box width for equilibrium parameters. ``None``
+            means use the corresponding sanity bound.
+
+        Returns
+        -------
+        list[tuple[float, float]]
+            Bounds list in the same layout as :meth:`get_param_vector`.
+
+        Notes
+        -----
+        - For parameters with ``|value| < 1e-6`` (effectively zero, e.g.
+          frozen torsions), falls back to sanity bounds because a
+          ``±0%`` window would collapse to a single point.
+        - The returned box is intersected with the sanity bounds from
+          :attr:`DEFAULT_BOUNDS` so the optimizer never explores
+          unphysical regions.
+
+        """
+        if fc_fraction is None and eq_fraction is None:
+            return self.get_bounds()
+
+        FC_TYPES = {"bond_k", "angle_k", "torsion_k", "sb_k", "vdw_epsilon", "ub_k"}
+        EQ_TYPES = {"bond_eq", "angle_eq", "vdw_radius", "ub_eq"}
+
+        vec = self.get_param_vector()
+        labels = self.get_param_type_labels()
+        bounds: list[tuple[float, float]] = []
+        for val, lbl in zip(vec, labels, strict=True):
+            sanity_lo, sanity_hi = self.DEFAULT_BOUNDS[lbl]
+            frac: float | None
+            if lbl in FC_TYPES:
+                frac = fc_fraction
+            elif lbl in EQ_TYPES:
+                frac = eq_fraction
+            else:  # pragma: no cover — defensive
+                frac = None
+
+            if frac is None or abs(val) < 1e-6:
+                bounds.append((sanity_lo, sanity_hi))
+                continue
+
+            window = frac * abs(val)
+            lo = max(sanity_lo, val - window)
+            hi = min(sanity_hi, val + window)
+            bounds.append((lo, hi))
+        return bounds
+
     # --- Parameter matching with ff_row → env_id → element fallback ---
 
     def match_bond(

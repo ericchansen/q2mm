@@ -388,6 +388,9 @@ metadata in this project.
 | **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
 | **TS ratio check fallback** | `ScipyOptimizer(jac='auto')` ratio check fails for ALL TS systems (0.1–0.4), silently falls back to slow FD gradients | Set `ratio_tol=None` to bypass. CLI key: `scipy-lbfgsb-jax` |
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
+| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible OF change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check JaxLoss/OF ratio. The new diagnostic warning in `scipy_opt._run_minimize` flags this. |
+| **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
+| **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner now emits ERROR + non-zero exit code (`scripts/regenerate_convergence_results.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
 ---
 
@@ -448,3 +451,44 @@ See `validation/published_ffs/README.md` for the full table. As of April 2026:
 - **4 systems ready to implement** (Heck, Pd-allyl, Pd 1,4-conj, Ferrocene)
   — QM data available from dissertation supporting info
 - **3 systems blocked** (OsO₄, Ru ketone, Sulfone) — no QM training data
+
+---
+
+## 11. Benchmark Pre-Flight Checklist
+
+> **Before launching any q2mm batch >30 min (e.g. `regenerate_convergence_results.py` on >1 system, or any from-scratch FF generation), walk through every step below.**
+
+Many hours of GPU time have been wasted on batches where the optimizer never actually optimized. The pattern is silent — scipy reports `success=True`, the runner writes its JSON, and the misleading result is only caught during post-hoc analysis. This checklist prevents that.
+
+1. **Write a measurable success spec** in your plan/PR description before launching:
+   - What metric defines "the optimizer worked"? (e.g. `n_iterations > 5 AND real-OF improvement > 10%`)
+   - What does the comparison table look like? Mock the rows/columns now.
+   - If the user asked a specific scientific question (e.g. "do params end up near published?"), restate it verbatim and map each metric back to the question.
+
+2. **Sanity-check optimizer config** for the starting point:
+   - From published FF baseline: `ftol=1e-8`, sanity bounds → fine.
+   - From poor start (QFUERZA, random defaults): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
+   - Always pass `--ratio-tol none` for TS systems (ratios are 0.1–0.4).
+
+3. **Verify GPU + device** (§4 + §7): `python -c "import jax; print(jax.devices())"` → must show `CudaDevice`.
+
+4. **Run the FIRST system alone.** Do NOT launch all systems sequentially in one call.
+
+5. **AUDIT GATE — read the first system's JSON before launching the rest:**
+   - `n_iterations > 5` (not just `n_evaluations`; that counter is misleading on the JaxLoss path — see `scipy_opt._run_minimize`).
+   - `|improvement_pct| > 1%` on the real ObjectiveFunction (the `improvement_pct` field, not `final_optimizer_score`).
+   - JaxLoss `initial_jaxloss / initial_obj_score` ratio in `[0.1, 10]` (or document why it's outside).
+   - Per-category R² (`seminario` → `optimized_categories`) improves on at least one of bond_length, bond_angle, eigenmatrix.
+   - If ANY of these fail, **STOP**. Re-tune and re-run the single system. Do not launch the batch.
+
+6. **Launch remaining systems.** Check `nvidia-smi` periodically (>50% utilization expected).
+
+7. **Post-batch validation** — read every JSON, not just the combined output. The runner emits a batch-level ERROR + non-zero exit code if all optimized systems failed the no-progress check; treat that as a hard failure even if individual files exist.
+
+### Source-code safety nets
+
+These exist to back up the checklist; do not rely on them alone:
+- `q2mm/optimizers/scipy_opt.py::_run_minimize` — WARNING when `n_iterations<=2` and `|delta|/init<0.01`
+- `scripts/regenerate_convergence_results.py::main` — ERROR + non-zero exit when the whole batch failed the no-progress test
+- `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch
+- `.copilot/skills/q2mm-analysis-design/SKILL.md` — agent skill that forces design-first analysis methodology before writing comparison docs
