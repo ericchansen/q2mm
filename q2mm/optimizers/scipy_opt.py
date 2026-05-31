@@ -208,6 +208,8 @@ class ScipyOptimizer:
         divergence_factor: float | None = 3.0,
         divergence_patience: int = 5,
         ratio_tol: float | None = 0.15,
+        fc_fraction: float | None = None,
+        eq_fraction: float | None = None,
     ) -> None:
         """Initialize the optimizer.
 
@@ -226,6 +228,14 @@ class ScipyOptimizer:
                 ObjectiveFunction ratio check when ``jac='auto'``.
                 Set to ``None`` to skip the check and always use
                 JaxLoss analytical gradients.
+            fc_fraction (float | None): Fractional bounds for
+                force-constant parameters. When set, bounds are
+                ``(val ± fc_fraction * |val|)`` instead of sanity bounds.
+                Use this for **from-poor-start** runs (e.g. starting
+                from QFUERZA) to prevent the optimizer from escaping the
+                starting basin. ``None`` means use sanity bounds.
+            eq_fraction (float | None): Same as ``fc_fraction`` but
+                applied to equilibrium parameters.
 
         """
         self.method = method
@@ -238,6 +248,8 @@ class ScipyOptimizer:
         self.divergence_factor = divergence_factor
         self.divergence_patience = divergence_patience
         self.ratio_tol = ratio_tol
+        self.fc_fraction = fc_fraction
+        self.eq_fraction = eq_fraction
 
     def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
         """Run the optimization.
@@ -263,14 +275,34 @@ class ScipyOptimizer:
         has_frozen = ff.n_active_params < ff.n_params
         wrapped_objective: ObjectiveFunction | _ActiveObjectiveWrapper = objective
 
+        use_fractional = self.fc_fraction is not None or self.eq_fraction is not None
+        if use_fractional and not self.use_bounds:
+            logger.warning("fc_fraction/eq_fraction set but use_bounds=False — ignoring fractional bounds.")
+
         if has_frozen:
             wrapped_objective = _ActiveObjectiveWrapper(objective, ff.active_mask, initial_full)
             x0 = ff.get_active_param_vector().copy()
-            bounds = ff.get_active_bounds().tolist() if self.use_bounds else None
+            if self.use_bounds:
+                if use_fractional:
+                    full_bounds = np.asarray(
+                        ff.get_fractional_bounds(self.fc_fraction, self.eq_fraction),
+                        dtype=float,
+                    )
+                    bounds = full_bounds[ff.active_mask].tolist()
+                else:
+                    bounds = ff.get_active_bounds().tolist()
+            else:
+                bounds = None
             expand = wrapped_objective.expand
         else:
             x0 = initial_full.copy()
-            bounds = ff.get_bounds() if self.use_bounds else None
+            if self.use_bounds:
+                if use_fractional:
+                    bounds = ff.get_fractional_bounds(self.fc_fraction, self.eq_fraction)
+                else:
+                    bounds = ff.get_bounds()
+            else:
+                bounds = None
 
             def expand(x: np.ndarray) -> np.ndarray:
                 return np.asarray(x, dtype=float).copy()
@@ -529,12 +561,34 @@ class ScipyOptimizer:
         else:
             message = str(scipy_result.message)
 
+        # Diagnostic: silent-failure detection.  L-BFGS-B can return
+        # "convergence" after 0-2 iterations when the line search can't
+        # find a descent direction (e.g. JaxLoss-vs-OF mismatch, or
+        # ftol is too loose).  Surface this so the next run isn't
+        # mistaken for "the optimizer did its best".
+        nit = int(scipy_result.get("nit", 0))
+        if initial_score > 0 and nit <= 2 and abs(final_score - initial_score) / initial_score < 0.01:
+            logger.warning(
+                "%s exited after %d iteration(s) with negligible change "
+                "(initial=%.4g, final=%.4g, |Δ|/init=%.2e). The optimizer "
+                "likely did NOT optimize. Common causes: (a) ftol too loose "
+                "for this scale of objective, (b) JaxLoss/ObjectiveFunction "
+                "ratio is far from 1 (surrogate gradients unreliable), "
+                "(c) bounds clamp the starting point. Last scipy message: %r",
+                self.method,
+                nit,
+                initial_score,
+                final_score,
+                abs(final_score - initial_score) / initial_score,
+                message,
+            )
+
         return OptimizationResult(
             success=bool(scipy_result.success),
             message=message,
             initial_score=objective.history[0] if objective.history else 0.0,
             final_score=final_score,
-            n_iterations=int(scipy_result.get("nit", 0)),
+            n_iterations=nit,
             n_evaluations=objective.n_eval - n_eval_before,
             initial_params=x0,
             final_params=final_x,
