@@ -77,7 +77,7 @@ full MM3 FFs already include the base section and do not need composition.
 | Property | Value |
 |----------|-------|
 | **Paper** | Wahlers, J. et al. *J. Org. Chem.* **2021**, *86*, 5660–5667 |
-| **DOI** | [10.1021/acs.joc.0c02918](https://doi.org/10.1021/acs.joc.0c02918) |
+| **DOI** | [10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136) |
 | **System** | Pd-catalyzed 1,4-conjugate addition |
 | **FF type** | OPT-only substructure file (157 lines, 6 OPT blocks) — needs `mm3_base.fld` |
 | **Source** | Wahlers dissertation Ch 5 (supporting information) |
