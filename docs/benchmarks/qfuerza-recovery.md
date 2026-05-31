@@ -392,13 +392,16 @@ The `--ratio-tol -1` flag bypasses the JaxLoss/ObjectiveFunction ratio
 gate (which would otherwise reject all 5 TS systems at the QFUERZA
 start because the surrogate is poorly aligned).
 
-The `--ftol 1e-12` flag overrides the loose default SciPy
-`factr=1e7 × eps_mch ≈ 2 × 10⁻⁹` that previously let the optimizer
-exit after one line search step on most TS systems.
+The `--ftol 1e-12` flag overrides the script's default `ftol=1e-8` that
+previously let the optimizer exit after one line search step on most
+TS systems.
 
-The `--fc-fraction`/`--eq-fraction` flags set fractional bounds
-(`fc ∈ [fc₀·(1−f), fc₀·(1+f)]`) instead of the default physical-sanity
-bounds. Without them, L-BFGS-B will escape the QFUERZA basin entirely.
+The `--fc-fraction`/`--eq-fraction` flags set sign-aware fractional
+bounds — each parameter `v` is clamped to
+`[v − f·|v|, v + f·|v|]` (intersected with the physical-sanity
+`DEFAULT_BOUNDS`), so TSFF negative force constants are bounded
+symmetrically around their actual sign. Without them, L-BFGS-B will
+escape the QFUERZA basin entirely.
 
 The output `validation_results.json` includes a `starting_point_audit`
 block enumerating which OPT rows were overwritten by QFUERZA vs

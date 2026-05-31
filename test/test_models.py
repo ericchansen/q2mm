@@ -487,6 +487,18 @@ class TestForceField:
         )
         assert ff.get_fractional_bounds(None, None) == ff.get_bounds()
 
+    def test_fractional_bounds_value_outside_sanity_falls_back(self) -> None:
+        """Param values outside DEFAULT_BOUNDS get sanity bounds, not degenerate (lo >= hi)."""
+        # bond_k sanity = (-3600, 3600); val = 5000 is outside the envelope.
+        # Naive: window = 0.20 * 5000 = 1000 → lo = max(-3600, 4000) = 4000,
+        # hi = min(3600, 6000) = 3600 → lo > hi (degenerate). Guard must catch this.
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 5000.0)])
+        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        bond_k_lo, bond_k_hi = bounds[0]
+        assert bond_k_lo < bond_k_hi, "bounds must not be degenerate"
+        assert bond_k_lo == pytest.approx(-3600.0)
+        assert bond_k_hi == pytest.approx(3600.0)
+
     def test_torsion_in_param_vector(self) -> None:
         """Torsion force constants appear in param vector after bonds/angles."""
         ff = ForceField(

@@ -568,11 +568,16 @@ class ForceField:
         """Get bounds as a fractional box around each parameter's current value.
 
         Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
-        ``bond_k ∈ (-3600, 3600)``), this returns ``(val * (1 - frac), val *
-        (1 + frac))`` for each parameter, with sign-aware handling. This is the
-        appropriate strategy for **from-poor-start** runs (e.g.
-        ``starting_point="qfuerza"``) where you want the optimizer to refine
-        the starting FF locally instead of escaping the starting basin.
+        Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
+        ``bond_k ∈ (-3600, 3600)``), this returns a *sign-aware* fractional
+        box ``(val - frac * abs(val), val + frac * abs(val))`` for each
+        parameter.  The sign-aware formulation matters because TSFF force
+        constants can be negative; a naive ``(val * (1 - frac), val * (1 +
+        frac))`` would invert ``lo`` and ``hi`` for ``val < 0`` and produce
+        an invalid bound.  This is the appropriate strategy for
+        **from-poor-start** runs (e.g. ``starting_point="qfuerza"``) where
+        you want the optimizer to refine the starting FF locally instead of
+        escaping the starting basin.
 
         Force-constant types (``bond_k``, ``angle_k``, ``torsion_k``, ``sb_k``,
         ``vdw_epsilon``, ``ub_k``) use ``fc_fraction``.
@@ -630,7 +635,16 @@ class ForceField:
             window = frac * abs(val)
             lo = max(sanity_lo, val - window)
             hi = min(sanity_hi, val + window)
-            bounds.append((lo, hi))
+            if lo >= hi:
+                # Intersection is empty/degenerate: the current value lies
+                # outside the sanity envelope (or against an edge), so a
+                # symmetric ±frac window around it doesn't fit inside
+                # DEFAULT_BOUNDS. Fall back to sanity bounds — keeps L-BFGS-B
+                # well-defined and lets it pull the value back into a
+                # physical region.
+                bounds.append((sanity_lo, sanity_hi))
+            else:
+                bounds.append((lo, hi))
         return bounds
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
