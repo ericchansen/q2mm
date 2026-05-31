@@ -510,6 +510,41 @@ because the FF is already QFUERZA-derived; the audit records this.
 """
 
 
+def _build_param_type_labels(ff: ForceField) -> list[str]:
+    """Generate per-scalar type labels matching :meth:`ForceField.get_param_vector` layout.
+
+    Derived from :data:`ForceField._PARAM_SLOTS` (plus the Urey-Bradley tail)
+    so that any future change to the parameter vector layout will be reflected
+    here automatically.  Unknown collection or slot attribute names raise
+    ``KeyError`` rather than silently producing wrong labels.
+
+    Labels follow the convention ``{singular_collection}_{short_attr}``
+    (e.g. ``"bond_fc"``, ``"vdw_radius"``, ``"ub_eq"``).
+    """
+    collection_prefix = {
+        "bonds": "bond",
+        "angles": "angle",
+        "torsions": "torsion",
+        "stretch_bends": "stretch_bend",
+        "vdws": "vdw",
+    }
+    attr_short = {
+        "force_constant": "fc",
+        "equilibrium": "eq",
+        "radius": "radius",
+        "epsilon": "epsilon",
+    }
+    labels: list[str] = []
+    for collection_attr, slot_attrs in ff._PARAM_SLOTS:  # noqa: SLF001 — schema is the source of truth
+        prefix = collection_prefix[collection_attr]
+        per_item = [f"{prefix}_{attr_short[slot]}" for slot in slot_attrs]
+        for _ in getattr(ff, collection_attr):
+            labels.extend(per_item)
+    # Urey-Bradley tail mirrors the ordering inside ForceField.get_param_vector().
+    labels.extend(["ub_fc", "ub_eq"] * len(ff._ub_angles))  # noqa: SLF001 — schema is the source of truth
+    return labels
+
+
 def _audit_starting_point(
     ff: ForceField,
     *,
@@ -541,21 +576,7 @@ def _audit_starting_point(
     after_vec = ff.get_param_vector()
     active = ff.active_mask
 
-    type_labels: list[str] = []
-    for bond in ff.bonds:
-        type_labels.extend(["bond_fc", "bond_eq"])
-        del bond
-    for angle in ff.angles:
-        type_labels.extend(["angle_fc", "angle_eq"])
-        del angle
-    type_labels.extend(["torsion_fc"] * len(ff.torsions))
-    type_labels.extend(["stretch_bend_fc"] * len(ff.stretch_bends))
-    for vdw in ff.vdws:
-        type_labels.extend(["vdw_radius", "vdw_epsilon"])
-        del vdw
-    for ub in ff._ub_angles:  # noqa: SLF001 — diagnostic
-        type_labels.extend(["ub_fc", "ub_eq"])
-        del ub
+    type_labels = _build_param_type_labels(ff)
 
     if len(type_labels) != len(after_vec):
         raise AssertionError(f"type label / param vector length mismatch: {len(type_labels)} vs {len(after_vec)}")
@@ -638,6 +659,7 @@ def load_system(
     Raises:
         KeyError: If *key* is not in :data:`SYSTEMS`.
         TypeError: If *engine* is required but not provided.
+        ValueError: If *starting_point* is not one of ``"published"`` or ``"qfuerza"``.
 
     """
     from q2mm.models import loaders
@@ -646,6 +668,8 @@ def load_system(
 
     if key not in SYSTEMS:
         raise KeyError(f"Unknown system {key!r}; available: {sorted(SYSTEMS)}")
+    if starting_point not in ("published", "qfuerza"):
+        raise ValueError(f"Unknown starting_point {starting_point!r}; must be one of: 'published', 'qfuerza'")
     spec = SYSTEMS[key]
 
     # 1. Molecules ---------------------------------------------------------
