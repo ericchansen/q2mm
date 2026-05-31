@@ -40,11 +40,11 @@ For **from-QFUERZA** or any **from-poor-start** runs, sanity bounds let L-BFGS-B
 - Typical: `bounds_fraction_fc=0.20`, `bounds_fraction_eq=0.05`
 - Fragile systems (heck-relay): `bounds_fraction_fc=0.05`, `bounds_fraction_eq=0.02`
 
-Pass via `--bounds-fraction-fc` / `--bounds-fraction-eq` CLI flags on `scripts/regenerate_convergence_results.py`.
+Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/regenerate_convergence_results.py`.
 
 ### Convergence tolerance (`scipy_opt.py` → `_run_minimize`)
 
-Default L-BFGS-B `factr=1e7` is very loose — `nfev` will often be ≤ 5 with no real optimization. Override with `--factr 1e2` (or tighter) for any run where you actually want the optimizer to work.
+The script default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
 
 ### Ratio gate (`scipy_opt.py` → ratio check)
 
@@ -58,7 +58,7 @@ Walk through this LITERALLY before running. Each item must be checked.
 
 - [ ] Goal restated as a success spec (Step 1)
 - [ ] Bounds strategy chosen and matches starting-point quality (Step 2)
-- [ ] `factr` / `gtol` tight enough for real optimization
+- [ ] `ftol` / `gtol` tight enough for real optimization
 - [ ] Per-system overrides documented if any system needs special handling
 - [ ] GPU verified: `python -c "import jax; print(jax.devices())"` shows CudaDevice
 - [ ] Output directory chosen (e.g., `q2mm-data/benchmarks/<system>/from-qfuerza/`)
@@ -72,9 +72,9 @@ Do NOT launch all systems in a batch. Run **only the first system**:
 PYTHONPATH=/path/to/worktree python scripts/regenerate_convergence_results.py \
     --system <first-system> \
     --starting-point <published|qfuerza> \
-    --factr 1e2 \
-    --bounds-fraction-fc 0.20 \
-    --bounds-fraction-eq 0.05 \
+    --ftol 1e-12 \
+    --fc-fraction 0.20 \
+    --eq-fraction 0.05 \
     --ratio-tol <value> \
     --output-dir /path/to/q2mm-data/benchmarks
 ```
@@ -103,7 +103,7 @@ print("Optimized R²: ", r["optimized"])
 - Optimized R² ≥ Seminario R² on each metric (the run didn't make things worse)
 
 **Fail criteria** (stop immediately if any holds):
-- `n_evaluations ≤ 2` AND `|improvement_pct| < 1` → **optimizer did not optimize**. Likely `factr` too loose or bounds too wide. Do NOT launch the remaining systems. Diagnose and re-run.
+- `n_evaluations ≤ 2` AND `|improvement_pct| < 1` → **optimizer did not optimize**. Likely `ftol` too loose or bounds too wide. Do NOT launch the remaining systems. Diagnose and re-run.
 - `ratio > 100` AND `improvement_pct < 0` → JaxLoss surrogate diverged AND the optimizer made the FF worse. Diagnose: tighter bounds, FC clamping, different starting point.
 - Optimized R² < Seminario R² → the run degraded the FF. Diagnose before continuing.
 
@@ -124,7 +124,7 @@ If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a
 
 - "How do I know if the optimizer actually optimized?" → check `n_evaluations` and real OF delta
 - "Should I use sanity bounds or fractional bounds?" → sanity for from-published, fractional for from-QFUERZA
-- "Why does `nfev=2` happen on every system?" → default `factr` is 1e7, way too loose; use `--factr 1e2`
+- "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--ftol 1e-12`
 - "Heck-relay's ratio is 1e74, is that OK?" → no, the JaxLoss surrogate exploded; document honestly and consider tighter bounds or FF pre-conditioning
 - "Should I just bypass the ratio gate with `--ratio-tol -1`?" → only if you understand why it's failing; ratio gate exists for a reason
 
