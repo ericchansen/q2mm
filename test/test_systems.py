@@ -128,7 +128,7 @@ class TestStartingPoint:
         # Frozen partition is identical
         assert np.array_equal(mask, sd_q.forcefield.active_mask)
         # Frozen scalars are bit-identical (no QFUERZA leakage into backbone)
-        assert np.allclose(vec_pub[~mask], vec_q[~mask], atol=0.0)
+        np.testing.assert_array_equal(vec_pub[~mask], vec_q[~mask])
         # At least some active scalars changed (QFUERZA did something)
         assert np.any(vec_pub[mask] != vec_q[mask])
 
@@ -162,6 +162,7 @@ class TestStartingPoint:
                 f"{ptype}: frozen={bucket['frozen']} <= overwritten={bucket['qfuerza_overwritten']}"
             )
 
+    @pytest.mark.jax
     def test_qfuerza_is_noop_for_qfuerza_fresh_strategy(self) -> None:
         """For CH3F (qfuerza_fresh), starting_point='qfuerza' is a no-op."""
         from q2mm.backends.mm.jax_engine import JaxEngine
@@ -180,3 +181,8 @@ class TestStartingPoint:
         assert audit["starting_point"] == "qfuerza"
         for bucket in audit["by_type"].values():
             assert bucket["qfuerza_overwritten"] == 0
+
+    def test_unknown_starting_point_raises(self) -> None:
+        """Typos in ``starting_point`` must raise rather than silently passing through."""
+        with pytest.raises(ValueError, match="Unknown starting_point"):
+            systems.load_system("ch3f", starting_point="qferza")  # type: ignore[arg-type]

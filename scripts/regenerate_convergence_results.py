@@ -17,9 +17,13 @@ For each benchmark system this script:
    improvement percentage, and whether the mean change exceeds the summed
    confidence intervals.
 
-Outputs (per system, into ``<output-dir>/<system-data-dir>/<subdir>/``,
-where ``<subdir>`` is ``convergence`` for the default ``--starting-point
-published`` and ``from-qfuerza`` for ``--starting-point qfuerza``):
+Outputs (per system) live under
+``<output-dir>/<system-data-dir>/<subdir>/`` where ``<subdir>`` is:
+
+- ``convergence`` (default, for ``--starting-point published``)
+- ``from-qfuerza`` (for ``--starting-point qfuerza``)
+
+Per-system files:
 
 - ``validation_results.json`` — summary numbers for the system (strict JSON,
   no ``Infinity`` or ``NaN``).  Ratio state is encoded across three keys:
