@@ -20,8 +20,8 @@ For each benchmark system this script:
 Outputs (per system) live under
 ``<output-dir>/<system-data-dir>/<subdir>/`` where ``<subdir>`` is:
 
-- ``convergence`` (default, for ``--starting-point published``)
-- ``from-qfuerza`` (for ``--starting-point qfuerza``)
+- ``convergence`` (canonical default, for ``--starting-point qfuerza``)
+- ``from-published`` (for ``--starting-point published``)
 
 Per-system files:
 
@@ -563,7 +563,7 @@ def process_system(
 
     # ---- Write artifacts -------------------------------------------------
     data_dir_name = DATA_DIR_FOR_SYSTEM.get(system_key, system_key)
-    subdir = "convergence" if starting_point == "published" else f"from-{starting_point}"
+    subdir = "convergence" if starting_point == "qfuerza" else f"from-{starting_point}"
     sys_out = output_dir / data_dir_name / subdir
     sys_out.mkdir(parents=True, exist_ok=True)
 
@@ -645,9 +645,10 @@ def main() -> int:
         type=float,
         default=None,
         help="Fractional bounds for force-constant parameters: each FC is "
-        "clamped to (val ± fc_fraction*|val|). Use for from-poor-start runs "
-        "(e.g. --starting-point qfuerza) to keep the optimizer in the "
-        "starting basin. Recommended: 0.20 (i.e. ±20%%). Omit for sanity bounds.",
+        "clamped to (val ± fc_fraction*|val|). Use for the canonical "
+        "QFUERZA-start runs (the default) to keep the optimizer in the "
+        "QFUERZA starting basin. Recommended: 0.20 (i.e. ±20%%). Omit for "
+        "sanity bounds (appropriate when --starting-point published).",
     )
     parser.add_argument(
         "--eq-fraction",
@@ -671,13 +672,14 @@ def main() -> int:
     parser.add_argument(
         "--starting-point",
         choices=("published", "qfuerza"),
-        default="published",
-        help="Starting force-field parameters. 'published' uses the literature OPT values "
-        "(default, backward compatible). 'qfuerza' overwrites the OPT bond/angle scalars "
-        "with QFUERZA (Farrugia 2025) Hessian-derived values while keeping the published "
-        "topology and frozen MM3 backbone — used for QFUERZA-recovery validation runs. "
-        "Output subdirectory becomes 'from-qfuerza' instead of 'convergence' to avoid "
-        "overwriting baselines.",
+        default="qfuerza",
+        help="Starting force-field parameters. 'qfuerza' (canonical default) "
+        "uses QFUERZA (Farrugia 2025) Hessian-derived bond/angle values on top "
+        "of the published FF skeleton (atom types, OPT topology, frozen MM3 "
+        "backbone, vdW, stretch-bend). 'published' retains the literature OPT "
+        "values verbatim — pass this to reproduce historical publication-baseline "
+        "convergence runs. Output subdirectory is 'convergence' for the "
+        "canonical default and 'from-published' for the publication-baseline path.",
     )
     parser.add_argument(
         "--combined-output",

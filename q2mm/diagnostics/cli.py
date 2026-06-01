@@ -149,6 +149,7 @@ def _run_matrix(
     platform: str | None = None,
     system_key: str = "ch3f",
     max_iter: int | None = None,
+    starting_point: str = "qfuerza",
 ) -> list:
     """Run the full backend × form × optimizer matrix.
 
@@ -173,6 +174,10 @@ def _run_matrix(
             ``"rh-enamide"``).
         max_iter (int | None): Maximum optimizer iterations.  ``None``
             lets each optimizer use its own default.
+        starting_point (str): Starting FF parameter values; one of
+            ``"qfuerza"`` (canonical default, Farrugia 2025) or
+            ``"published"`` (literature OPT values verbatim).  No-op for
+            ``ch3f`` (qfuerza_fresh strategy).
 
     Returns:
         list[BenchmarkResult]: One result per (backend, form, optimizer)
@@ -235,6 +240,7 @@ def _run_matrix(
                     engine=engine,
                     functional_form=form_value,
                     molecule_loader_kwargs=molecule_loader_kwargs,
+                    starting_point=starting_point,
                 )
             except Exception as e:
                 print(
@@ -626,6 +632,17 @@ def main(argv: list[str] | None = None) -> int:
         default=2000,
         help="Optax optimizer: maximum gradient steps (default: 2000).",
     )
+    parser.add_argument(
+        "--starting-point",
+        choices=("published", "qfuerza"),
+        default="qfuerza",
+        help="Starting force-field parameters for TS systems. 'qfuerza' "
+        "(canonical default) overwrites OPT bond/angle scalars with QFUERZA "
+        "(Farrugia 2025) Hessian-derived values; 'published' retains the "
+        "literature OPT values verbatim — pass this to reproduce historical "
+        "publication-baseline benchmarks. No-op for ch3f (qfuerza_fresh "
+        "strategy, which is already QFUERZA-derived).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -766,6 +783,7 @@ def main(argv: list[str] | None = None) -> int:
             platform=args.platform,
             system_key=args.system,
             max_iter=args.max_iter,
+            starting_point=args.starting_point,
         )
 
     if not results:

@@ -493,17 +493,23 @@ class SystemSpec:
 StartingPoint = Literal["published", "qfuerza"]
 """Choice of starting-parameter values for the optimizer.
 
-- ``"published"`` (default): use the literature OPT values from the
-  published .fld file(s) as-is.  This is the historical Q2MM workflow
-  for all published-FF benchmark systems.
-- ``"qfuerza"``: take the published OPT *topology* (which atom-type
-  rows exist, the frozen/active partition) but overwrite OPT bond and
-  angle values with QFUERZA Hessian-derived estimates averaged across
-  the training molecules (Farrugia 2025 protocol).  Frozen MM3
-  backbone parameters are untouched; torsions are zeroed; OPT
-  parameters that :func:`qfuerza_into` does not estimate (stretch-bends,
-  vdW, Urey-Bradley) retain their published values — the audit in
-  :func:`load_system` records this explicitly.
+- ``"qfuerza"`` (default, canonical): take the FF skeleton from the
+  ``.fld`` file (atom-type rows, OPT-substructure topology, frozen/
+  active partition, vdW, stretch-bend, Urey-Bradley) and overwrite the
+  OPT bond and angle scalars with QFUERZA Hessian-derived estimates
+  averaged across the training molecules (Farrugia 2025 protocol).
+  This is the standard QFUERZA workflow as defined in the literature:
+  the chemist provides the FF skeleton (no tool can automate the
+  decisions of which atom types to use or which substructure rows
+  need OPT parameters); QFUERZA fills in the Hessian-derivable
+  scalars.  Frozen MM3 backbone parameters are untouched; torsions
+  are zeroed; OPT parameters that :func:`qfuerza_into` does not
+  estimate (stretch-bends, vdW, Urey-Bradley) retain their literature
+  values — the audit in :func:`load_system` records this explicitly.
+- ``"published"``: use the literature OPT values from the ``.fld``
+  file(s) as-is, with no QFUERZA overwrite.  This is the
+  publication-baseline path used to reproduce historical convergence
+  runs.
 
 For ``qfuerza_fresh`` strategy (CH3F), ``"qfuerza"`` is a no-op
 because the FF is already QFUERZA-derived; the audit records this.
@@ -554,13 +560,14 @@ def _audit_starting_point(
     """Classify every scalar param as qfuerza/retained_published/frozen.
 
     Honest accounting of where the starting values come from.  For
-    ``starting_point="published"`` everything active is
-    ``retained_published``.  For ``"qfuerza"`` we diff the parameter
-    vector before vs after :func:`qfuerza_into` and call any active
-    scalar whose value changed ``qfuerza_overwritten``; any active
-    scalar whose value did not change is ``retained_published``
+    ``starting_point="qfuerza"`` (canonical default) we diff the
+    parameter vector before vs after :func:`qfuerza_into` and call any
+    active scalar whose value changed ``qfuerza_overwritten``; any
+    active scalar whose value did not change is ``retained_published``
     (e.g. an OPT stretch-bend, an active bond/angle that QFUERZA could
-    not match to any training molecule).
+    not match to any training molecule).  For
+    ``starting_point="published"`` everything active is
+    ``retained_published``.
 
     Args:
         ff: Force field *after* any QFUERZA overwrite.
@@ -614,7 +621,7 @@ def load_system(
     engine: Any | None = None,
     functional_form: str | None = None,
     molecule_loader_kwargs: dict[str, Any] | None = None,
-    starting_point: StartingPoint = "published",
+    starting_point: StartingPoint = "qfuerza",
 ) -> SystemData:
     """Build a :class:`SystemData` for one benchmark system.
 
@@ -641,13 +648,14 @@ def load_system(
         molecule_loader_kwargs: Optional kwargs forwarded to the
             system's molecule loader (e.g. ``data_dir`` for CH3F).
         starting_point: Where the starting OPT parameter values come
-            from.  See :data:`StartingPoint`.  ``"published"`` is the
-            historical default and preserves backward compatibility.
-            ``"qfuerza"`` overwrites OPT bond/angle values with
+            from.  See :data:`StartingPoint`.  ``"qfuerza"`` is the
+            canonical default: it overwrites OPT bond/angle values with
             multi-molecule QFUERZA estimates after FF assembly (per
-            Farrugia 2025).  CH3F (``qfuerza_fresh`` strategy) treats
-            ``"qfuerza"`` as a no-op since the FF is already QFUERZA-
-            derived.
+            Farrugia 2025).  ``"published"`` retains the literature OPT
+            values verbatim — pass this to reproduce the historical
+            publication-baseline runs.  CH3F (``qfuerza_fresh``
+            strategy) treats ``"qfuerza"`` as a no-op since the FF is
+            already QFUERZA-derived.
 
     Returns:
         A fully-populated :class:`SystemData`.  The

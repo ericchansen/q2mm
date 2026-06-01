@@ -2,9 +2,9 @@ r"""Generate the R²/RMSD comparison tables for docs/benchmarks/qfuerza-recovery
 
 For each TS system, emits a markdown table comparing:
 
-- q2mm starting from QFUERZA (`from-qfuerza/`)
-- q2mm starting from published OPT (`convergence/`)
-- published-paper goodness-of-fit (from `paper_r2.json`, optional)
+- q2mm starting from QFUERZA (canonical default, ``convergence/`` subdir)
+- q2mm starting from published OPT (opt-in, ``from-published/`` subdir)
+- published-paper goodness-of-fit (from ``paper_r2.json``, optional)
 
 Per-system tables cover three metrics: bond_length, bond_angle, eig_diagonal.
 
@@ -140,8 +140,8 @@ def main() -> int:
         "",
     ]
     for sys_dir, sys_short in SYSTEM_ORDER:
-        pub_run = _load_run(args.data_dir, sys_dir, "convergence")
-        qf_run = _load_run(args.data_dir, sys_dir, "from-qfuerza")
+        pub_run = _load_run(args.data_dir, sys_dir, "from-published")
+        qf_run = _load_run(args.data_dir, sys_dir, "convergence")
         paper_r2 = paper_r2_all.get(sys_short)
         parts.append(_system_table(sys_short, pub_run, qf_run, paper_r2))
         parts.append("")

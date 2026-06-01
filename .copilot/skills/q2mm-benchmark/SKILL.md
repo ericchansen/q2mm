@@ -34,11 +34,11 @@ The defaults are **physical sanity bounds**, not "stay near starting FF":
 - `bond_eq: (0.5, 3.0)` Å
 - `angle_eq: (30, 180)` deg
 
-For **from-published-OPT** runs, sanity bounds are usually fine (starting FF is already good).
-
-For **from-QFUERZA** or any **from-poor-start** runs, sanity bounds let L-BFGS-B escape the QFUERZA basin into a worse local minimum. Use fractional bounds around the starting value:
+For **canonical-default QFUERZA-start** runs (the default; or any from-poor-start run), sanity bounds let L-BFGS-B escape the QFUERZA basin into a worse local minimum. Use fractional bounds around the starting value:
 - Typical: `bounds_fraction_fc=0.20`, `bounds_fraction_eq=0.05`
 - Fragile systems (heck-relay): `bounds_fraction_fc=0.05`, `bounds_fraction_eq=0.02`
+
+For **publication-baseline (`--starting-point published`)** runs, sanity bounds are usually fine — the starting FF is already in the published basin.
 
 Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/regenerate_convergence_results.py`.
 
@@ -61,7 +61,7 @@ Walk through this LITERALLY before running. Each item must be checked.
 - [ ] `ftol` / `gtol` tight enough for real optimization
 - [ ] Per-system overrides documented if any system needs special handling
 - [ ] GPU verified: `python -c "import jax; print(jax.devices())"` shows CudaDevice
-- [ ] Output directory chosen (e.g., `q2mm-data/benchmarks/<system>/from-qfuerza/`)
+- [ ] Output directory chosen (`q2mm-data/benchmarks/<system>/convergence/` for the canonical QFUERZA-start default; `q2mm-data/benchmarks/<system>/from-published/` for opt-in publication-baseline runs)
 - [ ] PYTHONPATH set if running from a worktree (editable install points to master)
 
 ## Step 4 — Run the FIRST system in isolation
@@ -69,9 +69,10 @@ Walk through this LITERALLY before running. Each item must be checked.
 Do NOT launch all systems in a batch. Run **only the first system**:
 
 ```bash
+# Canonical default is --starting-point qfuerza; pass --starting-point
+# published only when reproducing publication-baseline benchmarks.
 PYTHONPATH=/path/to/worktree python scripts/regenerate_convergence_results.py \
     --system <first-system> \
-    --starting-point <published|qfuerza> \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
     --eq-fraction 0.05 \
@@ -85,7 +86,7 @@ After the first system completes, inspect `<output-dir>/validation_results.json`
 
 ```python
 import json
-with open("<first-system>/from-qfuerza/validation_results.json") as f:
+with open("<first-system>/convergence/validation_results.json") as f:
     r = json.load(f)["result"]
 print("n_evaluations:", r["n_evaluations"])
 print("n_iterations:", r["n_iterations"])
@@ -123,7 +124,7 @@ If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a
 ## Quick reference: things that should make you stop and ask
 
 - "How do I know if the optimizer actually optimized?" → check `n_evaluations` and real OF delta
-- "Should I use sanity bounds or fractional bounds?" → sanity for from-published, fractional for from-QFUERZA
+- "Should I use sanity bounds or fractional bounds?" → fractional for the canonical QFUERZA-start default; sanity is fine for `--starting-point published` runs
 - "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--ftol 1e-12`
 - "Heck-relay's ratio is 1e74, is that OK?" → no, the JaxLoss surrogate exploded; document honestly and consider tighter bounds or FF pre-conditioning
 - "Should I just bypass the ratio gate with `--ratio-tol -1`?" → only if you understand why it's failing; ratio gate exists for a reason

@@ -25,7 +25,7 @@ Enumerate what will exist when the doc is done. For each artifact, write:
 - **Source**: where the data comes from (JSON path, paper DOI, computed from FFs, etc.)
 
 Example:
-- *Table 3.1*: per-system R² comparison. Columns: published-paper R², q2mm-from-published R², q2mm-from-QFUERZA R². Rows: bond length, bond angle, eigenvalue diagonal. Source: `q2mm-data/benchmarks/<system>/{convergence,from-qfuerza}/validation_results.json` for q2mm; published-paper PDFs for paper R².
+- *Table 3.1*: per-system R² comparison. Columns: published-paper R², q2mm-from-published R², q2mm-from-QFUERZA R². Rows: bond length, bond angle, eigenvalue diagonal. Source: `q2mm-data/benchmarks/<system>/{convergence,from-published}/validation_results.json` for q2mm (`convergence/` = canonical QFUERZA-start default; `from-published/` = opt-in publication-baseline); published-paper PDFs for paper R².
 - *Table 3.2*: per-parameter abs deviation. Columns: param-id, published value, QFUERZA-optimized value, abs deviation, % deviation, chemical motif. Source: parsed from `<system>_optimized.fld` files.
 - *Paragraph 4.1*: physical-chemistry walkthrough of the 5 largest bond-length deviations in rh-enamide. Source: synthesis from Table 3.2 + chemistry knowledge.
 

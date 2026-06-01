@@ -568,15 +568,15 @@ class ForceField:
         """Get bounds as a fractional box around each parameter's current value.
 
         Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
-        Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
         ``bond_k ∈ (-3600, 3600)``), this returns a *sign-aware* fractional
         box ``(val - frac * abs(val), val + frac * abs(val))`` for each
         parameter.  The sign-aware formulation matters because TSFF force
         constants can be negative; a naive ``(val * (1 - frac), val * (1 +
         frac))`` would invert ``lo`` and ``hi`` for ``val < 0`` and produce
-        an invalid bound.  This is the appropriate strategy for
-        **from-poor-start** runs (e.g. ``starting_point="qfuerza"``) where
-        you want the optimizer to refine the starting FF locally instead of
+        an invalid bound.  This is the appropriate strategy for the
+        canonical QFUERZA-start runs (``starting_point="qfuerza"``, the
+        default) where you want the optimizer to refine the QFUERZA-derived
+        starting FF locally instead of
         escaping the starting basin.
 
         Force-constant types (``bond_k``, ``angle_k``, ``torsion_k``, ``sb_k``,
