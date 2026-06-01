@@ -252,7 +252,10 @@ def main() -> int:
         _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
         from q2mm.diagnostics.systems import load_system
 
-        sd = load_system(args.system)
+        # ``compare_opt_rows.py`` exists to diff the published baseline FF
+        # against an optimizer's output, so we must load the literature OPT
+        # values verbatim — not the QFUERZA-derived default.
+        sd = load_system(args.system, starting_point="published")
         fd, published_path_str = _tempfile.mkstemp(prefix=f"pub-{args.system}-", suffix=".fld")
         _os.close(fd)
         published_path = Path(published_path_str)

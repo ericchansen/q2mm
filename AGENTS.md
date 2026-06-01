@@ -252,6 +252,28 @@ fields, but **not** for TS publication reproduction. The papers use a
 multi-target penalty (geometry + Hessian + charges + energies), not
 frequency RMSD.
 
+### Starting Point (`starting_point` kwarg / `--starting-point` CLI flag)
+
+`load_system()` and `regenerate_convergence_results.py` accept a
+`starting_point` of either `"qfuerza"` (canonical default) or
+`"published"`:
+
+- **`"qfuerza"` (default, Farrugia 2025)** — the FF skeleton (atom types,
+  OPT-substructure topology, frozen/active partition, vdW, stretch-bend)
+  comes from the literature `.fld` file; QFUERZA fills in the bond and
+  angle force constants and equilibria from the QM Hessian. This is the
+  standard QFUERZA workflow: the chemist provides the skeleton (no tool
+  can automate the decisions of which atom types to use or which
+  substructure rows need OPT parameters); QFUERZA fills in the
+  Hessian-derivable scalars.
+- **`"published"`** — the literature OPT values are retained verbatim;
+  no QFUERZA overwrite. Pass this to reproduce historical
+  publication-baseline runs.
+
+Output subdirectory of the CLI follows the same naming:
+`convergence/` for the canonical default (qfuerza); `from-published/`
+for the publication-baseline path.
+
 ### TS Curvature Inversion
 
 All TS system loaders **must** pass `invert_ts_curvature=True` to
@@ -466,8 +488,8 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
    - If the user asked a specific scientific question (e.g. "do params end up near published?"), restate it verbatim and map each metric back to the question.
 
 2. **Sanity-check optimizer config** for the starting point:
-   - From published FF baseline: `ftol=1e-8`, sanity bounds → fine.
-   - From poor start (QFUERZA, random defaults): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
+   - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
+   - Publication-baseline (`--starting-point published`): `ftol=1e-8`, sanity bounds → fine (starting FF is already in the published basin).
    - Always pass `--ratio-tol none` for TS systems (ratios are 0.1–0.4).
 
 3. **Verify GPU + device** (§4 + §7): `python -c "import jax; print(jax.devices())"` → must show `CudaDevice`.

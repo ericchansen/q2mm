@@ -397,7 +397,11 @@ def test_load_heck_relay_preserves_published_opt_values() -> None:
         pytest.skip(f"mm3.FF1.fld not found: {ff_path}")
 
     # Loader output (what users get today).
-    sys_data = load_system("heck-relay")
+    # Pin to ``starting_point="published"`` so this test asserts what it was
+    # written to assert: that the loader returns the literature OPT values
+    # bit-for-bit (no Seminario re-projection).  The default starting point
+    # is ``"qfuerza"``, which intentionally overwrites OPT bond/angle scalars.
+    sys_data = load_system("heck-relay", starting_point="published")
     loader_active = sys_data.forcefield.get_active_param_vector()
 
     # Same .fld file, same active-mask partition, but no Seminario.

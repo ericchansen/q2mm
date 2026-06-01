@@ -90,30 +90,47 @@ class TestStartingPoint:
     """Regression tests for the ``starting_point`` kwarg on load_system.
 
     Validates the Farrugia 2025 "QFUERZA Hessian-derived values on
-    published topology" workflow:
+    published FF skeleton" workflow:
 
-    1. Published path is unchanged (backward compatibility).
-    2. QFUERZA path overwrites OPT bond/angle values but never touches
+    1. Default path is QFUERZA (the canonical Farrugia 2025 workflow).
+    2. Published path (opt-in via ``starting_point="published"``)
+       retains the literature OPT values verbatim — used to reproduce
+       historical publication-baseline runs.
+    3. QFUERZA path overwrites OPT bond/angle values but never touches
        the frozen MM3 backbone.
-    3. Reference data is identical between the two paths — the
+    4. Reference data is identical between the two paths — the
        starting point should only change the starting parameter values,
        not the optimization target.
-    4. The audit dict honestly reports which scalars came from QFUERZA
+    5. The audit dict honestly reports which scalars came from QFUERZA
        vs which retained their published values (e.g. vdW, unmatched
        bond/angle rows).
 
     """
 
     @pytest.mark.external_data
-    def test_published_path_unchanged(self) -> None:
-        """Default ``starting_point="published"`` preserves the historical FF."""
+    def test_default_starting_point_is_qfuerza(self) -> None:
+        """Default ``starting_point="qfuerza"`` matches the explicit kwarg."""
         sd_default = systems.load_system("rh-enamide")
-        sd_explicit = systems.load_system("rh-enamide", starting_point="published")
+        sd_explicit = systems.load_system("rh-enamide", starting_point="qfuerza")
         assert np.allclose(
             sd_default.forcefield.get_param_vector(),
             sd_explicit.forcefield.get_param_vector(),
         )
-        assert sd_default.metadata["starting_point"] == "published"
+        assert sd_default.metadata["starting_point"] == "qfuerza"
+
+    @pytest.mark.external_data
+    def test_published_path_preserves_literature_values(self) -> None:
+        """``starting_point="published"`` retains literature OPT values verbatim."""
+        sd_pub = systems.load_system("rh-enamide", starting_point="published")
+        # Audit should classify every active scalar as retained_published
+        # (no QFUERZA overwrite was performed).
+        audit = sd_pub.metadata["starting_point_audit"]
+        assert audit["starting_point"] == "published"
+        for ptype, bucket in audit["by_type"].items():
+            assert bucket["qfuerza_overwritten"] == 0, (
+                f"published path must not overwrite any scalars, "
+                f"but {ptype} has {bucket['qfuerza_overwritten']} overwrites"
+            )
 
     @pytest.mark.external_data
     def test_qfuerza_overwrites_opt_but_not_frozen(self) -> None:
