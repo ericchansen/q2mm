@@ -85,9 +85,14 @@ Per-category fit of the optimized force field (post-L-BFGS-B):
 | bond_angle | 1,582 | 0.331 |
 | eig_diagonal | 2,412 | −2.82 |
 
-These numbers are reproducible from `scripts/regenerate_convergence_results.py`
-with `--system pd-allyl --n-evals 10`; raw JSON output with provenance lives at
-[`q2mm-data/benchmarks/pd-allyl-amination/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence).
+These numbers are from the published-start baseline. Reproduce with
+`scripts/regenerate_convergence_results.py --starting-point published --system pd-allyl --n-evals 10`;
+raw JSON output with provenance lives at
+[`q2mm-data/benchmarks/pd-allyl-amination/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/from-published).
+The canonical QFUERZA-start results (current default since q2mm#290)
+live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence)
+and are summarized in the
+[QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
 !!! success "Confirmed: published Wahlers FF sits at a JaxLoss local minimum (post angle-grad fix)"
     With n=10 samples the 95 % CI on the improvement is **±0.40 %**,

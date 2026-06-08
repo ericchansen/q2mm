@@ -145,11 +145,16 @@ situation transforms:
 `--ratio-tol none`.  Default `ratio_tol=0.15` would now admit this
 system into the standard optimization pipeline.
 
-The numbers above come from the committed regeneration script
-`scripts/regenerate_convergence_results.py`; the raw JSON output and
-the three-baseline diagnostic that diagnosed the loader bug live at
-[`q2mm-data/benchmarks/heck-relay/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/convergence)
-and [`q2mm-data/benchmarks/heck-relay/diagnostic/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/diagnostic).
+The numbers above are from the published-start baseline. Reproduce with
+`scripts/regenerate_convergence_results.py --starting-point published --system heck-relay`;
+raw JSON output with provenance lives at
+[`q2mm-data/benchmarks/heck-relay/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/from-published)
+and the three-baseline diagnostic that diagnosed the loader bug lives at
+[`q2mm-data/benchmarks/heck-relay/diagnostic/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/diagnostic).
+The canonical QFUERZA-start results (current default since q2mm#290)
+live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/convergence)
+and are summarized in the
+[QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 cross-system comparison and methodology details.

@@ -112,10 +112,14 @@ is recommended — the gate was diagnosing a real problem (the
 overwritten OPT values), and the fix lived in the loader.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-cross-system comparison and methodology details.  Raw numbers are in the
-[convergence baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/convergence)
+cross-system comparison and methodology details.  Raw numbers (published-start
+baseline) are in the
+[`from-published/` baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/from-published)
 in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
-device, ratio_tol, timestamp).
+device, ratio_tol, timestamp).  Canonical QFUERZA-start results
+(default since q2mm#290) live at
+[`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/convergence)
+and are summarized in the [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
 ## Comparison and gap analysis
 
