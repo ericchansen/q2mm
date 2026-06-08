@@ -128,10 +128,13 @@ is still negative, reflecting the same MM3* ↔ JAX-engine cross-engine
 gap that affects all Wahlers systems.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-the cross-system comparison.  Raw numbers are in the
-[convergence baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-1,4-conjugate-addition/convergence)
+the cross-system comparison.  Raw numbers (published-start baseline) are in the
+[`from-published/` baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-1,4-conjugate-addition/from-published)
 in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
-device, ratio_tol, timestamp).
+device, ratio_tol, timestamp).  Canonical QFUERZA-start results
+(default since q2mm#290) live at
+[`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-1,4-conjugate-addition/convergence)
+and are summarized in the [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
 ## Comparison and gap analysis
 

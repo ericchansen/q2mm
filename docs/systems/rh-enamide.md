@@ -103,9 +103,14 @@ Per-category fit of the optimized force field (post-L-BFGS-B):
 | bond_angle | 1,050 | 0.954 |
 | eig_diagonal | 1,395 | 0.968 |
 
-These numbers are reproducible from `scripts/regenerate_convergence_results.py`
-(no `--skip-optimization`); raw JSON output with provenance lives at
-[`q2mm-data/benchmarks/rh-enamide/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/convergence).
+These numbers are from the published-start baseline. Reproduce with
+`scripts/regenerate_convergence_results.py --starting-point published`;
+raw JSON output with provenance lives at
+[`q2mm-data/benchmarks/rh-enamide/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/from-published).
+The canonical QFUERZA-start results (current default since q2mm#290)
+live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/convergence)
+and are summarized in the
+[QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
 The ratio check confirms JaxLoss is a reliable surrogate for this
 system — the published Donoghue OPT values reproduce QM geometry well

@@ -28,7 +28,11 @@ All multi-target benchmarks use the same production setup:
 - **Parameter scope:** frozen base force field; only OPT-substructure
   parameters are active, matching the published Q2MM workflow.
 - **Starting force field:** the literature OPT values are preserved as
-  published.  The loader does not overwrite them with QFUERZA projections.
+  published (`starting_point="published"`).  The loader does not
+  overwrite them with QFUERZA projections.  This page is the
+  published-start baseline; for the canonical QFUERZA-start results
+  (default since q2mm#290) see the
+  [QFUERZA-recovery doc](qfuerza-recovery.md).
 - **Optimizer:** SciPy L-BFGS-B with `jac="auto"`.
 - **Gradient source:** `jac="auto"` resolves to JaxLoss analytical gradients
   when the JaxLoss/ObjectiveFunction ratio check is within the default
@@ -38,10 +42,12 @@ All multi-target benchmarks use the same production setup:
   improvement is the mean over 10 initial and 10 final evaluations with a
   95% confidence interval.
 
-The raw JSON outputs and optimized force fields live in
-[`ericchansen/q2mm-data/benchmarks/<system>/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks).
+The raw JSON outputs and optimized force fields for these published-start
+runs live in
+[`ericchansen/q2mm-data/benchmarks/<system>/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks).
 They include provenance such as q2mm git SHA, device, ratio tolerance, and
-run timestamp.
+run timestamp.  (Sibling `convergence/` directories hold the canonical
+QFUERZA-start runs covered by the QFUERZA-recovery doc.)
 
 ---
 
