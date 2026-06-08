@@ -93,11 +93,13 @@ now transfers to the real objective.
 | [Pd 1,4-conj](../systems/pd-conjugate.md) | 8.608 × 10⁶ | 7.235 × 10⁶ | **−15.96%** | not sampled | 3 | 2 | 700 s |
 | [Rh 1,4-conj](../systems/rh-conjugate.md) | 6.293 × 10⁶ | 5.160 × 10⁶ | **−18.00%** | ±4.17% | 4 | 2 | 691 s opt + post-evals |
 
-Score and CI values come from `benchmarks/<system>/convergence/validation_results.json`
+Score and CI values come from `benchmarks/<system>/from-published/validation_results.json`
 in [ericchansen/q2mm-data](https://github.com/ericchansen/q2mm-data) (refreshed
 under [#288](https://github.com/ericchansen/q2mm/pull/288) /
 [q2mm-data#10](https://github.com/ericchansen/q2mm-data/pull/10) after the MM3
-angle-gradient fix).  `95% CI on Δ` is the conservative bound
+angle-gradient fix; the canonical/opt-out subdir rename in
+[q2mm-data#11](https://github.com/ericchansen/q2mm-data/pull/11) moved
+these published-start files from `convergence/` to `from-published/`).  `95% CI on Δ` is the conservative bound
 `(initial_obj_score_ci95 + final_obj_score_ci95) / initial_obj_score_mean × 100`
 — the same combination used by the JSON's `improvement_significant` flag.
 Rh-enamide and ch3f were re-evaluated with `--n-evals 5`; the others with
