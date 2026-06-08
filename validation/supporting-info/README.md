@@ -44,7 +44,7 @@ validation/supporting-info/
 |---------|----------------|---------|---------------|-----------|-------------|
 | Ch 3 | Pd-allyl amination | `mm3.Pd-allyl.fld` (OPT-only, 238 lines) | 21 | 21/21 | Wahlers et al. *Nat. Commun.* **2021**, 12, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2) |
 | Ch 4 | Ferrocene scaffold | `mm3.ferrocene.fld` (OPT-only, 71 lines) | 178 | 99/178 | Wahlers et al. *J. Org. Chem.* **2022**, 87, 12334. [DOI: 10.1021/acs.joc.2c01553](https://doi.org/10.1021/acs.joc.2c01553) |
-| Ch 5 | Pd 1,4-conjugate addition | `mm3.Pd-1,4.fld` (OPT-only, 157 lines) | 318 | 216/318 | Wahlers et al. *J. Org. Chem.* **2021**, 86, 5660. [DOI: 10.1021/acs.joc.0c02918](https://doi.org/10.1021/acs.joc.0c02918) |
+| Ch 5 | Pd 1,4-conjugate addition | `mm3.Pd-1,4.fld` (OPT-only, 157 lines) | 318 | 216/318 | Wahlers et al. *J. Org. Chem.* **2021**, 86, 5660. [DOI: 10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136) |
 | Ch 6 | Rh 1,4-conjugate addition | `mm3.Rh-1,4.fld` (OPT-only, 209 lines) | 10 | 10/10 | Thesis only |
 | Ch 7 | Ir-imine hydrogenation | `mm3.Ir-imine.fld` (OPT-only, 174 lines) | 24 | 24/24 | Thesis only |
 
