@@ -115,6 +115,63 @@ class TestLinearAlgebra(unittest.TestCase):
         reformed_sq3 = hessian.reform_hessian(evals, evecs)
         np.testing.assert_allclose(example_sq3, reformed_sq3, err_msg="Hessian is not reformed properly.")
 
+
+def _ts_like_hessian(seed: int = 0) -> np.ndarray:
+    """Symmetric 6x6 matrix with one negative eigenvalue at -0.3.
+
+    Used by ``TestInvertTsCurvatureNumpy`` below to exercise the
+    NumPy-side ``invert_ts_curvature`` API.
+    """
+    rng = np.random.default_rng(seed)
+    a = rng.standard_normal((6, 6))
+    sym = 0.5 * (a + a.T)
+    _, evecs = np.linalg.eigh(sym)
+    evals = np.array([-0.3, 0.1, 0.5, 0.9, 1.4, 2.0])
+    return (evecs * evals) @ evecs.T
+
+
+class TestInvertTsCurvatureNumpy(unittest.TestCase):
+    """NumPy-side tests for ``invert_ts_curvature`` and its ``replace_with`` kwarg.
+
+    Lives here (not in ``test_invert_ts_curvature_jax.py``) so it doesn't
+    get skipped when JAX isn't installed — the function under test has
+    no JAX dependency.
+    """
+
+    def test_default_replace_with_is_one(self) -> None:
+        """Default ``replace_with=1.0`` preserves historical behavior."""
+        hess = _ts_like_hessian()
+        out = hessian.invert_ts_curvature(hess)
+        evals = np.sort(np.linalg.eigvalsh(out))
+        # Most-negative eigenvalue (-0.3) was replaced with 1.0; verify it appears.
+        self.assertTrue(np.any(np.isclose(evals, 1.0, atol=1e-5)))
+        # No negatives remain.
+        self.assertGreaterEqual(evals.min(), -1e-5)
+
+    def test_custom_replace_value(self) -> None:
+        """Smaller ``replace_with`` (Limé & Norrby Method D 'natural' value)."""
+        hess = _ts_like_hessian()
+        out = hessian.invert_ts_curvature(hess, replace_with=0.03)
+        evals = np.sort(np.linalg.eigvalsh(out))
+        self.assertTrue(np.any(np.isclose(evals, 0.03, atol=1e-5)))
+
+    def test_replace_with_affects_reconstruction(self) -> None:
+        """Different ``replace_with`` produces different reconstructed Hessians."""
+        hess = _ts_like_hessian()
+        out_small = hessian.invert_ts_curvature(hess, replace_with=0.03)
+        out_large = hessian.invert_ts_curvature(hess, replace_with=1.0)
+        diff = np.linalg.norm(out_large - out_small)
+        self.assertGreater(
+            diff, 0.1, f"Different replace_with should change the reconstructed Hessian, got diff={diff}"
+        )
+
+    def test_replace_with_must_be_finite_and_positive(self) -> None:
+        """Non-finite or non-positive ``replace_with`` is rejected at the boundary."""
+        hess = _ts_like_hessian()
+        for bad in (0.0, -1.0, -1e-12, float("inf"), float("-inf"), float("nan")):
+            with self.assertRaises(ValueError, msg=f"replace_with={bad} should raise"):
+                hessian.invert_ts_curvature(hess, replace_with=bad)
+
     def test_hessian_to_frequencies_diatomic(self) -> None:
         """Deterministic H₂ stretch: k=0.5 Hartree/Bohr² → 5120.49 cm⁻¹."""
         k = 0.5  # Hartree/Bohr²

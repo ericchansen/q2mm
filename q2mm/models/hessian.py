@@ -651,23 +651,55 @@ def invert_ts_curvature_jax(
 
 def invert_ts_curvature(
     hessian_matrix: np.ndarray,
+    *,
+    replace_with: float = 1.0,
 ) -> np.ndarray:
     """Invert the curvature of a transition-state Hessian.
 
     Decomposes the Hessian, replaces the negative reaction-coordinate
-    eigenvalue with a large positive value, and reconstructs.  This
-    converts a saddle-point Hessian into one that Seminario projection
-    can safely use to produce positive force constants.
+    eigenvalue with a positive value, and reconstructs.  This converts a
+    saddle-point Hessian into one that Seminario projection can safely
+    use to produce (generally) positive force constants.
 
-    Based on Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250).
+    Based on Limé & Norrby (J. Comput. Chem. 2015, 36, 244–250),
+    Method C: ``replace_with=1.0`` Hartree/Bohr² ≈ 5140 cm⁻¹ is the
+    paper's recommended value.  Smaller values (e.g. ``0.03``, the
+    "natural" eigenvalue Method D produced for their CH3F+F⁻ test
+    case) reduce the chance that Seminario's angle projection produces
+    negative bend force constants, but at the cost of an artificially
+    soft reaction-coordinate mode that gives incorrect response to
+    steric demand (Limé & Norrby ¶98).  A planned ``MethodE2Workflow``
+    (forthcoming in ``q2mm.workflows``, Limé & Norrby 2015 Method E2)
+    will combine both regimes: lock problematic force constants at
+    small-``replace_with`` values, then optimize the rest with the
+    standard large value.
 
     Args:
         hessian_matrix: Hessian matrix to process.
+        replace_with: Replacement value for the most negative eigenvalue
+            (Hartree/Bohr²).  Must be a finite, strictly positive
+            number — a non-positive or non-finite replacement would
+            leave the modified Hessian with a negative or undefined
+            eigenvalue, defeating the purpose of the inversion and
+            producing nonsensical force constants downstream.  Default
+            ``1.0`` matches Limé & Norrby Method C.
 
     Returns:
-        Modified Hessian with inverted TS curvature.
+        Modified Hessian with the reaction-coordinate eigenvalue
+        replaced.
+
+    Raises:
+        ValueError: If ``replace_with`` is not finite or not strictly
+            positive.
 
     """
+    if not np.isfinite(replace_with) or replace_with <= 0:
+        raise ValueError(f"replace_with must be a finite, strictly positive number; got {replace_with!r}")
     eigenvalues, eigenvectors = decompose(hessian_matrix)
-    modified_evals = replace_neg_eigenvalue(eigenvalues, zer_out_neg=True, strict=False)
+    modified_evals = replace_neg_eigenvalue(
+        eigenvalues,
+        replace_with=replace_with,
+        zer_out_neg=True,
+        strict=False,
+    )
     return reform_hessian(modified_evals, eigenvectors)

@@ -622,6 +622,7 @@ def load_system(
     functional_form: str | None = None,
     molecule_loader_kwargs: dict[str, Any] | None = None,
     starting_point: StartingPoint = "qfuerza",
+    qfuerza_replace_with: float = 1.0,
 ) -> SystemData:
     """Build a :class:`SystemData` for one benchmark system.
 
@@ -656,6 +657,21 @@ def load_system(
             publication-baseline runs.  CH3F (``qfuerza_fresh``
             strategy) treats ``"qfuerza"`` as a no-op since the FF is
             already QFUERZA-derived.
+        qfuerza_replace_with: Replacement value (Hartree/Bohr²) for the
+            most negative TS-Hessian eigenvalue during QFUERZA
+            projection.  Default ``1.0`` matches Limé & Norrby Method C
+            and preserves historical numbers.  Smaller values (e.g.
+            ``0.03``, Method D's "natural" value) reduce the chance of
+            negative angle force constants in the starting FF but
+            produce a softer reaction-coordinate mode.  Applied
+            whenever QFUERZA invokes ``invert_ts_curvature`` — i.e.
+            for the ``qfuerza_fresh`` strategy regardless of
+            ``starting_point``, and for the published-FF strategies
+            only when ``starting_point="qfuerza"`` triggers a QFUERZA
+            overwrite.  Has no effect for published-FF strategies with
+            ``starting_point="published"`` (no QFUERZA invocation
+            occurs) or for any ground-state Hessian (no negative
+            eigenvalue to replace).
 
     Returns:
         A fully-populated :class:`SystemData`.  The
@@ -689,7 +705,7 @@ def load_system(
             raise ValueError(
                 f"qfuerza_fresh strategy requires exactly 1 molecule, got {len(molecules)} for system {key!r}"
             )
-        ff = loaders.load_qfuerza_fresh(molecules[0])
+        ff = loaders.load_qfuerza_fresh(molecules[0], replace_with=qfuerza_replace_with)
     elif spec.ff_strategy == "published_opt":
         ff = loaders.load_published_opt(spec.ff_paths["ff_path"]())
     elif spec.ff_strategy == "published_opt_composed":
@@ -719,7 +735,12 @@ def load_system(
     before_vec: np.ndarray | None = None
     if starting_point == "qfuerza" and spec.ff_strategy != "qfuerza_fresh":
         before_vec = ff.get_param_vector().copy()
-        qfuerza_into(ff, molecules, invert_ts_curvature=True)
+        qfuerza_into(
+            ff,
+            molecules,
+            invert_ts_curvature=True,
+            replace_with=qfuerza_replace_with,
+        )
     starting_point_audit = _audit_starting_point(ff, before_vec=before_vec, starting_point=starting_point)
 
     # 3. Reference data ----------------------------------------------------
