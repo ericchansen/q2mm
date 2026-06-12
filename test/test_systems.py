@@ -203,3 +203,41 @@ class TestStartingPoint:
         """Typos in ``starting_point`` must raise rather than silently passing through."""
         with pytest.raises(ValueError, match="Unknown starting_point"):
             systems.load_system("ch3f", starting_point="qferza")  # type: ignore[arg-type]
+
+    @pytest.mark.external_data
+    def test_qfuerza_replace_with_default_preserves_behavior(self) -> None:
+        """Default ``qfuerza_replace_with=1.0`` must produce bit-identical FFs."""
+        sd_default = systems.load_system("rh-enamide")
+        sd_explicit = systems.load_system("rh-enamide", qfuerza_replace_with=1.0)
+        np.testing.assert_array_equal(
+            sd_default.forcefield.get_param_vector(),
+            sd_explicit.forcefield.get_param_vector(),
+        )
+
+    @pytest.mark.external_data
+    def test_qfuerza_replace_with_smaller_value_changes_starting_ff(self) -> None:
+        """``qfuerza_replace_with=0.03`` (Method D 'natural' value) changes the QFUERZA-overwritten params.
+
+        Guards the plumbing rather than specific physics: ensures the kwarg
+        actually reaches ``invert_ts_curvature`` by asserting that several
+        active force-constant params change measurably between the two
+        settings.  Phase 9.1 empirical findings on rh-enamide show ~19
+        params shift, with the reaction-coordinate bond (C2-HX, Hp.Ch in
+        Farrugia 2025 notation) changing by ~270 internal units (kcal mol⁻¹ Å⁻²) ≈ ~1.9 mdyn/Å.
+        """
+        sd_default = systems.load_system("rh-enamide", qfuerza_replace_with=1.0)
+        sd_alt = systems.load_system("rh-enamide", qfuerza_replace_with=0.03)
+        vec_default = sd_default.forcefield.get_param_vector()
+        vec_alt = sd_alt.forcefield.get_param_vector()
+        labels = sd_default.forcefield.get_param_type_labels()
+        diff = np.abs(vec_default - vec_alt)
+        # At least one force-constant param must shift by > 10 internal units
+        # (≈0.07 mdyn for bond_k, ≈0.07 mdyn·Å/rad² for angle_k) — a magnitude
+        # large enough to rule out roundoff and verify the kwarg propagated.
+        fc_indices = [i for i, lbl in enumerate(labels) if lbl in {"bond_k", "angle_k", "ub_k"}]
+        assert fc_indices, "Expected at least one force-constant param in active set"
+        max_fc_diff = float(np.max(diff[fc_indices]))
+        assert max_fc_diff > 10.0, (
+            f"Expected at least one force constant to shift by >10 internal units between "
+            f"replace_with=1.0 and =0.03; got max FC diff = {max_fc_diff:.4f}"
+        )

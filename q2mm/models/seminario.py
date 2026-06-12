@@ -282,6 +282,7 @@ def qfuerza_fresh(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     invert_ts_curvature: bool = False,
+    replace_with: float = 1.0,
     strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> ForceField:
     """Build a fresh force field from one molecule's QM Hessian.
@@ -310,6 +311,10 @@ def qfuerza_fresh(
             inverts the reaction-coordinate eigenvalue before projection
             so that the TS Hessian produces valid positive force
             constants (Limé & Norrby 2015).
+        replace_with: Replacement value (Hartree/Bohr²) for the most
+            negative eigenvalue when ``invert_ts_curvature=True``.
+            Default ``1.0`` matches Limé & Norrby Method C.  Ignored
+            when ``invert_ts_curvature=False``.
         strategy: ``"qfuerza"`` (default) applies the H-angle substitution
             for hydrogen angle bends where pure Seminario projection
             overestimates by ~2× (Farrugia 2025).  ``"fuerza"`` uses
@@ -343,6 +348,7 @@ def qfuerza_fresh(
         au_hessian=au_hessian,
         invalid_policy=invalid_policy,
         invert_ts_curvature=invert_ts_curvature,
+        replace_with=replace_with,
         strategy=strategy,
     )
     return ff
@@ -356,6 +362,7 @@ def qfuerza_into(
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     invert_ts_curvature: bool = False,
+    replace_with: float = 1.0,
     strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
 ) -> None:
     """Overwrite *unfrozen* parameter values in *ff* using QFUERZA projection.
@@ -382,6 +389,13 @@ def qfuerza_into(
             estimates.
         invert_ts_curvature: TS Hessian inversion flag (Limé & Norrby
             2015).
+        replace_with: Replacement value (Hartree/Bohr²) for the most
+            negative eigenvalue when ``invert_ts_curvature=True``.
+            Default ``1.0`` matches Limé & Norrby Method C; smaller
+            values reduce the chance of negative angle force constants
+            in the QFUERZA projection but produce a softer
+            reaction-coordinate mode.  Ignored when
+            ``invert_ts_curvature=False``.
         strategy: ``"qfuerza"`` (with H-angle substitution) or
             ``"fuerza"`` (pure Seminario).
 
@@ -401,7 +415,7 @@ def qfuerza_into(
     if invert_ts_curvature:
         processed_hessians: dict[int, np.ndarray] = {}
         for mol in molecules:
-            processed_hessians[id(mol)] = _invert_ts_curvature(mol.hessian)
+            processed_hessians[id(mol)] = _invert_ts_curvature(mol.hessian, replace_with=replace_with)
     else:
         processed_hessians = None
 

@@ -100,6 +100,7 @@ def load_qfuerza_fresh(
     molecule: Q2MMMolecule,
     *,
     invert_ts_curvature: bool = True,
+    replace_with: float = 1.0,
 ) -> ForceField:
     """Build a brand-new FF from one molecule's QM Hessian via QFUERZA.
 
@@ -113,12 +114,20 @@ def load_qfuerza_fresh(
             coordinate before projection (Limé & Norrby 2015).  Default
             ``True`` because the only system using this strategy today
             is the CH3F SN2 transition state.
+        replace_with: Replacement value (Hartree/Bohr²) for the most
+            negative eigenvalue when ``invert_ts_curvature=True``.
+            Default ``1.0`` matches Limé & Norrby Method C.  Ignored
+            when ``invert_ts_curvature=False``.
 
     Returns:
         Fresh force field; every parameter unfrozen.
 
     """
-    return qfuerza_fresh(molecule, invert_ts_curvature=invert_ts_curvature)
+    return qfuerza_fresh(
+        molecule,
+        invert_ts_curvature=invert_ts_curvature,
+        replace_with=replace_with,
+    )
 
 
 def compose_opt_with_mm3_base(
