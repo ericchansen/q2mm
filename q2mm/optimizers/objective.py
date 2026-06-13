@@ -544,6 +544,7 @@ class ReferenceData:
         include_geometry: bool = True,
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
+        eigenmatrix_hessian: np.ndarray | None = None,
     ) -> ReferenceData:
         """Auto-populate reference data from a molecule's detected geometry.
 
@@ -576,6 +577,16 @@ class ReferenceData:
                 (diagonal and optionally off-diagonal elements).
             eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
                 eigenmatrix elements are added.
+            eigenmatrix_hessian (np.ndarray | None): Optional override for
+                the Hessian used to build eigenmatrix references.  When
+                ``None`` (default), uses ``mol.hessian`` directly (Limé
+                & Norrby Method D — unmodified Hessian).  When provided,
+                this Hessian is used instead — a true override, so it
+                takes effect even when ``mol.hessian is None`` (Limé &
+                Norrby Method C — pass an inverted Hessian here for
+                Round 2 of the Method E2 protocol; geometry references
+                and any explicit ``frequencies`` still use the
+                unmodified ``mol.hessian`` / passed values).
 
         Returns:
             ReferenceData: Populated with bond lengths, angles, and
@@ -615,14 +626,20 @@ class ReferenceData:
                 skip_imaginary=skip_imaginary,
             )
 
-        if include_eigenmatrix and mol.hessian is not None:
-            eig_weights = {k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w}
-            ref.add_eigenmatrix_from_hessian(
-                mol.hessian,
-                diagonal_only=eigenmatrix_diagonal_only,
-                molecule_idx=molecule_idx,
-                weights=eig_weights or None,
-            )
+        if include_eigenmatrix:
+            # ``eigenmatrix_hessian`` is a *true* override — it stands in
+            # for ``mol.hessian`` for eigenmatrix construction even when
+            # the base ``mol.hessian`` is ``None``.  If neither is
+            # available, no eigenmatrix block is built.
+            hess_for_eigenmatrix = eigenmatrix_hessian if eigenmatrix_hessian is not None else mol.hessian
+            if hess_for_eigenmatrix is not None:
+                eig_weights = {k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w}
+                ref.add_eigenmatrix_from_hessian(
+                    hess_for_eigenmatrix,
+                    diagonal_only=eigenmatrix_diagonal_only,
+                    molecule_idx=molecule_idx,
+                    weights=eig_weights or None,
+                )
 
         return ref
 
@@ -637,6 +654,7 @@ class ReferenceData:
         include_geometry: bool = True,
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
+        eigenmatrix_hessians: list[np.ndarray] | None = None,
     ) -> ReferenceData:
         """Auto-populate reference data from multiple molecules.
 
@@ -659,18 +677,31 @@ class ReferenceData:
                 molecule has a Hessian, add eigenmatrix data.
             eigenmatrix_diagonal_only (bool): If ``True``, only diagonal
                 eigenmatrix elements are added.
+            eigenmatrix_hessians (list[np.ndarray] | None): Optional
+                per-molecule Hessian override for eigenmatrix
+                construction.  When ``None`` (default), each molecule's
+                ``mol.hessian`` is used (Limé & Norrby Method D).  When
+                provided, must have the same length as *molecules*; the
+                override Hessian is used per molecule (Limé & Norrby
+                Method C — pass inverted Hessians here for Round 2 of
+                the Method E2 protocol).
 
         Returns:
             ReferenceData: Combined reference data for all molecules.
 
         Raises:
-            ValueError: If ``frequencies_list`` length does not match
-                ``molecules`` length.
+            ValueError: If ``frequencies_list`` or ``eigenmatrix_hessians``
+                length does not match ``molecules`` length.
 
         """
         if frequencies_list is not None and len(frequencies_list) != len(molecules):
             raise ValueError(
                 f"frequencies_list length ({len(frequencies_list)}) must match molecules length ({len(molecules)})."
+            )
+        if eigenmatrix_hessians is not None and len(eigenmatrix_hessians) != len(molecules):
+            raise ValueError(
+                f"eigenmatrix_hessians length ({len(eigenmatrix_hessians)}) must match "
+                f"molecules length ({len(molecules)})."
             )
 
         ref = cls()
@@ -684,6 +715,7 @@ class ReferenceData:
                 include_geometry=include_geometry,
                 include_eigenmatrix=include_eigenmatrix,
                 eigenmatrix_diagonal_only=eigenmatrix_diagonal_only,
+                eigenmatrix_hessian=eigenmatrix_hessians[idx] if eigenmatrix_hessians is not None else None,
             )
             ref.values.extend(single.values)
 

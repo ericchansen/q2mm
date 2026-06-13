@@ -113,6 +113,28 @@ class TestFromMolecule:
         bond_labels = [v.label for v in ref.values if v.kind == "bond_length"]
         assert any("F" in lbl for lbl in bond_labels)
 
+    def test_eigenmatrix_hessian_override_used_when_mol_hessian_missing(self) -> None:
+        """``eigenmatrix_hessian`` is a true override even when ``mol.hessian is None``.
+
+        Regression test for a silent-failure path where the override
+        was accepted by the API but the eigenmatrix block was gated on
+        ``mol.hessian is not None`` — callers passing an override
+        without a base Hessian would get no eigenmatrix references.
+        """
+        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        assert mol.hessian is None  # bare XYZ load — no Hessian
+
+        n_atoms = mol.n_atoms
+        synthetic_hessian = np.eye(3 * n_atoms) * 0.1  # plausible PSD shape
+
+        ref_with_override = ReferenceData.from_molecule(mol, eigenmatrix_hessian=synthetic_hessian)
+        eig_refs = [v for v in ref_with_override.values if v.kind.startswith("eig")]
+        assert len(eig_refs) > 0, "override Hessian should produce eigenmatrix references"
+
+        # Sanity: without the override, no eigenmatrix block is built.
+        ref_no_override = ReferenceData.from_molecule(mol)
+        assert not any(v.kind.startswith("eig") for v in ref_no_override.values)
+
 
 # ---- from_molecules ----
 

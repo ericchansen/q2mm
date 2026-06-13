@@ -14,10 +14,12 @@ Implementations:
   ``SystemData.reference``.  Equivalent to the current default
   behavior used throughout the codebase; this class makes the pattern
   composable and substitutable.
-- (Planned) ``MethodE2Workflow`` — Limé & Norrby 2015 two-stage TSFF
-  protocol: Method D Round 1, lock force-constants that decay to
-  zero/negative, Method C Round 2 on the remainder.  Forthcoming
-  per Phase 9.D of the QFUERZA-recovery work.
+- :class:`q2mm.workflows.MethodE2Workflow` — Limé & Norrby 2015's
+  two-stage TSFF protocol: Method D Round 1 against the unmodified
+  Hessian eigenmatrix, identify bond/angle force constants that
+  drifted to zero or negative, lock those at their Round 1 values,
+  then Method C Round 2 against the modified Hessian eigenmatrix on
+  the remaining active parameters.
 
 References
 ----------
@@ -31,9 +33,11 @@ References
 from __future__ import annotations
 
 from q2mm.workflows.base import StageResult, Workflow, WorkflowResult
+from q2mm.workflows.method_e2 import MethodE2Workflow
 from q2mm.workflows.single_stage import SingleStageWorkflow
 
 __all__ = [
+    "MethodE2Workflow",
     "SingleStageWorkflow",
     "StageResult",
     "Workflow",
