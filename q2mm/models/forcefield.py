@@ -568,16 +568,16 @@ class ForceField:
         """Get bounds as a fractional box around each parameter's current value.
 
         Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
-        ``bond_k ∈ (-3600, 3600)``), this returns a *sign-aware* fractional
+        ``bond_k ∈ (0, 3600)``), this returns a *sign-aware* fractional
         box ``(val - frac * abs(val), val + frac * abs(val))`` for each
-        parameter.  The sign-aware formulation matters because TSFF force
-        constants can be negative; a naive ``(val * (1 - frac), val * (1 +
-        frac))`` would invert ``lo`` and ``hi`` for ``val < 0`` and produce
-        an invalid bound.  This is the appropriate strategy for the
-        canonical QFUERZA-start runs (``starting_point="qfuerza"``, the
-        default) where you want the optimizer to refine the QFUERZA-derived
-        starting FF locally instead of
-        escaping the starting basin.
+        parameter.  The sign-aware formulation matters for parameters that
+        legitimately span both signs (``torsion_k``, ``sb_k``); a naive
+        ``(val * (1 - frac), val * (1 + frac))`` would invert ``lo`` and
+        ``hi`` for ``val < 0`` and produce an invalid bound.  This is the
+        appropriate strategy for the canonical QFUERZA-start runs
+        (``starting_point="qfuerza"``, the default) where you want the
+        optimizer to refine the QFUERZA-derived starting FF locally
+        instead of escaping the starting basin.
 
         Force-constant types (``bond_k``, ``angle_k``, ``torsion_k``, ``sb_k``,
         ``vdw_epsilon``, ``ub_k``) use ``fc_fraction``.
@@ -606,7 +606,12 @@ class ForceField:
           ``±0%`` window would collapse to a single point.
         - The returned box is intersected with the sanity bounds from
           :attr:`DEFAULT_BOUNDS` so the optimizer never explores
-          unphysical regions.
+          unphysical regions.  If the fractional window lies entirely
+          outside the sanity envelope (e.g. a negative ``bond_k``
+          starting value, which can occur if Hessian inversion was
+          accidentally skipped), the method falls back to the full
+          sanity envelope so L-BFGS-B can pull the value into a
+          physical region.
 
         """
         if fc_fraction is None and eq_fraction is None:
@@ -945,13 +950,22 @@ class ForceField:
                 opt_ub_ids[ident] -= 1
 
     # Default bounds per parameter type (min, max) in canonical units.
-    # bond_k allows negative values for transition-state force fields (TSFF),
-    # where reaction-coordinate bonds have negative force constants.
+    # ``bond_k``, ``angle_k``, and ``ub_k`` are constrained to be
+    # non-negative.  TSFFs handle the negative reaction-coordinate
+    # eigenvalue by *Hessian inversion* prior to Seminario projection
+    # (Limé & Norrby 2015 method C; see :func:`q2mm.models.hessian.
+    # invert_ts_curvature`), so the resulting starting force field
+    # has only positive bond/angle force constants.  Round-1 of
+    # :class:`~q2mm.workflows.MethodE2Workflow` identifies any force
+    # constant that drifts toward zero/negative during optimization
+    # and locks it at a physical value for Round-2.  L-BFGS-B does
+    # not enforce non-negativity implicitly the way MacroModel did
+    # in the original Q2MM pipeline, so we encode it here.
     # Bond/angle k in kcal/(mol·Å²) and kcal/(mol·rad²) respectively.
     DEFAULT_BOUNDS: ClassVar[dict[str, tuple[float, float]]] = {
-        "bond_k": (-3600.0, 3600.0),
+        "bond_k": (0.0, 3600.0),
         "bond_eq": (0.5, 3.0),
-        "angle_k": (-720.0, 720.0),
+        "angle_k": (0.0, 720.0),
         "angle_eq": (30.0, 180.0),
         "torsion_k": (-20.0, 20.0),
         "sb_k": (-50.0, 50.0),
