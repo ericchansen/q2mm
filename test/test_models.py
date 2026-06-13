@@ -400,29 +400,57 @@ class TestForceField:
         with pytest.raises(ValueError, match="does not match"):
             ff.with_active_params(np.array([1.0]))
 
-    def test_default_bounds_allow_negative_bond_k(self) -> None:
-        """TSFF requires negative bond force constants for reaction coordinates."""
+    def test_default_bounds_enforce_nonnegative_bond_k(self) -> None:
+        """``bond_k`` is non-negative per Phase 9.E.0 methodology shift.
+
+        Reaction-coordinate negative eigenvalues are handled by Hessian
+        inversion *before* Seminario projection (Limé & Norrby 2015,
+        method C), so QFUERZA-derived starting FFs have only positive
+        bond force constants.  L-BFGS-B does not enforce non-negativity
+        the way MacroModel did, so we encode it in
+        :attr:`ForceField.DEFAULT_BOUNDS`.
+        """
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, -49.6)],
+            bonds=[BondParam(("C", "F"), 1.38, 49.6)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
         )
         bounds = ff.get_bounds()
         bond_k_lower, bond_k_upper = bounds[0]
-        assert bond_k_lower < 0, "Bond k lower bound must allow negative values for TSFF"
-        assert bond_k_upper > 0
+        assert bond_k_lower == pytest.approx(0.0)
+        assert bond_k_upper == pytest.approx(3600.0)
 
-    def test_default_bounds_allow_negative_angle_k(self) -> None:
-        """Angle force constants may also be negative in TSFF."""
+    def test_default_bounds_enforce_nonnegative_angle_k(self) -> None:
+        """``angle_k`` is non-negative for the same reason as ``bond_k``."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
-            angles=[AngleParam(("H", "C", "F"), 109.5, -21.6)],
+            angles=[AngleParam(("H", "C", "F"), 109.5, 21.6)],
         )
         bounds = ff.get_bounds()
         angle_k_lower, angle_k_upper = bounds[2]
-        assert angle_k_lower < 0, "Angle k lower bound must allow negative values for TSFF"
+        assert angle_k_lower == pytest.approx(0.0)
+        assert angle_k_upper == pytest.approx(720.0)
+
+    def test_default_bounds_torsion_k_remains_signed(self) -> None:
+        """``torsion_k`` legitimately spans both signs (Fourier coefficient)."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 300.0)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-1.0)],
+        )
+        bounds = ff.get_bounds()
+        # Layout: bond_k, bond_eq, torsion_k
+        torsion_k_lower, torsion_k_upper = bounds[2]
+        assert torsion_k_lower < 0, "Torsion k retains signed bounds"
+        assert torsion_k_upper > 0
 
     def test_negative_fc_in_param_vector_roundtrip(self) -> None:
-        """Negative force constants must survive get/set param vector roundtrip."""
+        """Negative force constants survive get/set param vector roundtrip.
+
+        The bounds are an optimizer-time guard, not a data-model invariant.
+        Loading a force field with a negative ``bond_k`` (e.g. from a
+        literature ``.fld`` file with a TSFF defined under the old
+        convention) must still round-trip through the param vector
+        cleanly.  The bounds only kick in when an optimizer queries them.
+        """
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, -49.6)],
             angles=[AngleParam(("H", "C", "F"), 109.5, -10.8)],
@@ -448,15 +476,38 @@ class TestForceField:
         assert bounds[2] == pytest.approx((36.0 * 0.8, 36.0 * 1.2), rel=1e-6)
         assert bounds[3] == pytest.approx((109.5 * 0.95, 109.5 * 1.05), rel=1e-6)
 
-    def test_fractional_bounds_sign_aware_for_negative_fc(self) -> None:
-        """Negative force constants (TSFF) must produce valid (lo < hi) bounds."""
+    def test_fractional_bounds_negative_fc_falls_back_to_sanity(self) -> None:
+        """A negative bond_k starting value falls back to the (0, 3600) sanity envelope.
+
+        After the Phase 9.E.0 methodology shift, ``bond_k`` and
+        ``angle_k`` are non-negative by sanity bound (see
+        :attr:`ForceField.DEFAULT_BOUNDS` docstring).  Negative values
+        can only appear if Hessian inversion was accidentally skipped
+        during QFUERZA setup; the fractional-bounds path detects the
+        degenerate intersection and falls back to the full sanity
+        envelope so L-BFGS-B can pull the value into a physical region.
+        """
         ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, -49.6)])
         bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
         bond_k_lo, bond_k_hi = bounds[0]
-        # |val|=49.6, window=9.92; box = (-49.6-9.92, -49.6+9.92) = (-59.52, -39.68)
-        assert bond_k_lo == pytest.approx(-59.52)
-        assert bond_k_hi == pytest.approx(-39.68)
+        # |val|=49.6, window=9.92; naive box = (-59.52, -39.68) ∩ (0, 3600) = empty.
+        # Guard catches this and falls back to sanity envelope.
+        assert bond_k_lo == pytest.approx(0.0)
+        assert bond_k_hi == pytest.approx(3600.0)
         assert bond_k_lo < bond_k_hi
+
+    def test_fractional_bounds_negative_torsion_k_sign_aware(self) -> None:
+        """Negative torsion_k uses sign-aware fractional window (torsions can be negative)."""
+        ff = ForceField(
+            bonds=[BondParam(("C", "F"), 1.38, 100.0)],
+            torsions=[TorsionParam(("H", "C", "F", "H"), periodicity=2, force_constant=-2.0)],
+        )
+        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        # Layout: bond_k, bond_eq, torsion_k. |val|=2.0, window=0.4 → (-2.4, -1.6)
+        torsion_k_lo, torsion_k_hi = bounds[2]
+        assert torsion_k_lo == pytest.approx(-2.4)
+        assert torsion_k_hi == pytest.approx(-1.6)
+        assert torsion_k_lo < torsion_k_hi
 
     def test_fractional_bounds_intersect_sanity_bounds(self) -> None:
         """Fractional bounds are clipped to the DEFAULT_BOUNDS sanity envelope."""
@@ -489,14 +540,14 @@ class TestForceField:
 
     def test_fractional_bounds_value_outside_sanity_falls_back(self) -> None:
         """Param values outside DEFAULT_BOUNDS get sanity bounds, not degenerate (lo >= hi)."""
-        # bond_k sanity = (-3600, 3600); val = 5000 is outside the envelope.
-        # Naive: window = 0.20 * 5000 = 1000 → lo = max(-3600, 4000) = 4000,
+        # bond_k sanity = (0, 3600); val = 5000 is outside the envelope.
+        # Naive: window = 0.20 * 5000 = 1000 → lo = max(0, 4000) = 4000,
         # hi = min(3600, 6000) = 3600 → lo > hi (degenerate). Guard must catch this.
         ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 5000.0)])
         bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
         bond_k_lo, bond_k_hi = bounds[0]
         assert bond_k_lo < bond_k_hi, "bounds must not be degenerate"
-        assert bond_k_lo == pytest.approx(-3600.0)
+        assert bond_k_lo == pytest.approx(0.0)
         assert bond_k_hi == pytest.approx(3600.0)
 
     def test_torsion_in_param_vector(self) -> None:
