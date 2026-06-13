@@ -391,6 +391,47 @@ def _load_ch3f_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
     return [molecule.with_hessian(np.load(hess_path))]
 
 
+def _load_ch3f_sn2_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
+    """Load the F⁻ + CH3F SN2 transition state + its QM Hessian.
+
+    The D3h-symmetric TS of the identity SN2 reaction
+    F⁻ + CH3F → FCH3 + F⁻ at B3LYP/6-31+G(d) (one imaginary mode
+    at ≈ −462 cm⁻¹, corresponding to the asymmetric C-F stretch
+    along the reaction coordinate).  Bond tolerance is set to ``1.5``
+    (a unitless multiplier on the sum of covalent radii — see
+    :meth:`Q2MMMolecule.from_xyz`) to include the partially-formed
+    C-F bonds at the TS geometry (~1.85 Å each); the default ``1.3``
+    misses them.  Charge is set to −1 to match the anionic complex
+    on which the QM Hessian was computed (see
+    ``examples/sn2-test/generate_qm_data.py``).
+
+    This is the test case Limé & Norrby 2015 (J. Comput. Chem. 36,
+    244) used to demonstrate the FACAF bend force constant going
+    negative under naive Method C fitting and to motivate the
+    Method E2 hybrid protocol — see ``MethodE2Workflow`` (planned).
+    """
+    from q2mm.models.molecule import Q2MMMolecule
+
+    qm_dir = data_dir or _find_ch3f_data_dir()
+    xyz = qm_dir / "sn2-ts-optimized.xyz"
+    hess_path = qm_dir / "sn2-ts-hessian.npy"
+    # ``_find_ch3f_data_dir`` only checks for the GS ``ch3f-optimized.xyz``;
+    # the SN2 TS files (computed by ``generate_qm_data.py`` after the
+    # GS calc) may be absent in partial checkouts.  Surface a targeted
+    # error rather than let ``from_xyz`` or ``np.load`` emit a less
+    # actionable message downstream.
+    missing = [p.name for p in (xyz, hess_path) if not p.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"SN2 TS reference data missing in {qm_dir}: {missing}. "
+            "Run ``examples/sn2-test/generate_qm_data.py`` to compute the TS "
+            "Hessian + frequencies, or pass ``data_dir=`` pointing at a "
+            "complete reference directory."
+        )
+    molecule = Q2MMMolecule.from_xyz(xyz, charge=-1, bond_tolerance=1.5)
+    return [molecule.with_hessian(np.load(hess_path))]
+
+
 # ---------------------------------------------------------------------------
 # Wahlers-system FF paths
 # ---------------------------------------------------------------------------
@@ -817,6 +858,12 @@ def _ch3f_normal_modes_path(data_dir_override: Path | None) -> Path:
     return base / "ch3f-normal-modes.npz"
 
 
+def _ch3f_sn2_normal_modes_path(data_dir_override: Path | None) -> Path:
+    """Resolve the F⁻ + CH3F SN2 TS normal-modes ``.npz`` path."""
+    base = data_dir_override or _find_ch3f_data_dir()
+    return base / "sn2-ts-normal-modes.npz"
+
+
 SYSTEMS: dict[str, SystemSpec] = {
     "ch3f": SystemSpec(
         key="ch3f",
@@ -826,6 +873,28 @@ SYSTEMS: dict[str, SystemSpec] = {
         normal_modes_path=_ch3f_normal_modes_path,
         metadata={"level_of_theory": "B3LYP/6-31+G(d)"},
         description="Single CH3F molecule (SN2 test, B3LYP/6-31+G(d))",
+        default_forms=("harmonic", "mm3"),
+    ),
+    "ch3f-sn2": SystemSpec(
+        key="ch3f-sn2",
+        name="F⁻ + CH3F SN2 TS",
+        molecule_loader=_load_ch3f_sn2_molecules,
+        ff_strategy="qfuerza_fresh",
+        normal_modes_path=_ch3f_sn2_normal_modes_path,
+        metadata={
+            "level_of_theory": "B3LYP/6-31+G(d)",
+            "publication": "Limé & Norrby, J. Comput. Chem. 2015, 36, 244",
+            "doi": "10.1002/jcc.23797",
+            "is_transition_state": True,
+            "imaginary_mode_freq_cm": -461.7,
+        },
+        description=(
+            "F⁻ + CH3F → FCH3 + F⁻ identity SN2 transition state "
+            "(D3h, B3LYP/6-31+G(d)). Limé & Norrby 2015's canonical "
+            "test case for Method E2 (FACAF bend force constant goes "
+            "to zero/negative under naive Method C fitting). One "
+            "imaginary mode ≈ −462 cm⁻¹ along the asymmetric C-F stretch."
+        ),
         default_forms=("harmonic", "mm3"),
     ),
     "rh-enamide": SystemSpec(
