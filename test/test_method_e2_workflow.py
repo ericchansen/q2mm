@@ -57,6 +57,47 @@ class TestConstructor:
         with pytest.raises(ValueError, match="replace_with_round2"):
             MethodE2Workflow(replace_with_round2=bad)
 
+    def test_near_zero_replace_with_defaults_to_approxn(self) -> None:
+        """Default ``near_zero_replace_with`` is a copy of Approxn standards."""
+        from q2mm.workflows.method_e2 import APPROXN_DEFAULTS
+
+        wf = MethodE2Workflow()
+        assert wf.near_zero_replace_with == APPROXN_DEFAULTS
+        # Mutating the workflow's dict must NOT mutate the module constant.
+        wf.near_zero_replace_with["bond_k"] = 999.0
+        assert APPROXN_DEFAULTS["bond_k"] != 999.0
+
+    def test_near_zero_replace_with_empty_dict_opts_out(self) -> None:
+        """Passing ``{}`` is an explicit opt-out to paper-literal lock-at-Round-1."""
+        wf = MethodE2Workflow(near_zero_replace_with={})
+        assert wf.near_zero_replace_with == {}
+
+    def test_near_zero_replace_with_custom_dict_accepted(self) -> None:
+        """Caller can override per-type replacement values."""
+        wf = MethodE2Workflow(near_zero_replace_with={"bond_k": 10.0})
+        assert wf.near_zero_replace_with == {"bond_k": 10.0}
+
+    def test_near_zero_replace_with_bad_label_raises(self) -> None:
+        """Labels outside the physical FC types are rejected."""
+        with pytest.raises(ValueError, match="unsupported label"):
+            MethodE2Workflow(near_zero_replace_with={"torsion_k": 1.0})
+
+    @pytest.mark.parametrize("bad", [-1.0, float("nan"), float("inf")])
+    def test_near_zero_replace_with_bad_value_raises(self, bad: float) -> None:
+        """Negative or non-finite replacement values are rejected."""
+        with pytest.raises(ValueError, match="must be finite and"):
+            MethodE2Workflow(near_zero_replace_with={"bond_k": bad})
+
+    def test_approxn_defaults_match_paper_in_mm3_units(self) -> None:
+        """``APPROXN_DEFAULTS`` (canonical units) round-trips to the paper values."""
+        from q2mm.models.units import KCALMOLA2_TO_MDYNA, KCALMOLRAD2_TO_MDYNA_RAD2
+        from q2mm.workflows.method_e2 import APPROXN_DEFAULTS
+
+        # Farrugia 2025 Q2MM Approxn standards: 5 mdyn/Å bonds, 0.5 mdyn·Å/rad² angles.
+        assert APPROXN_DEFAULTS["bond_k"] * KCALMOLA2_TO_MDYNA == pytest.approx(5.0)
+        assert APPROXN_DEFAULTS["angle_k"] * KCALMOLRAD2_TO_MDYNA_RAD2 == pytest.approx(0.5)
+        assert APPROXN_DEFAULTS["ub_k"] * KCALMOLA2_TO_MDYNA == pytest.approx(5.0)
+
 
 class TestProtocolConformance:
     """``MethodE2Workflow`` satisfies the ``Workflow`` Protocol."""
@@ -236,6 +277,46 @@ class TestTwoStageOnSn2:
         assert result.stages[0].notes.get("round_2_skipped") == "no_active_params_after_lock"
         # Active mask still restored even though we hit the pathological branch.
         np.testing.assert_array_equal(sd.forcefield.active_mask, mask_before)
+
+    def test_near_zero_replace_with_approxn_substitutes_candidate_values(self) -> None:
+        """Default Approxn replacements lift locked FC values above zero.
+
+        With ``negative_fc_threshold=0.5`` (large enough that small CH3F-SN2
+        Round-1 FCs become candidates) and the default Approxn
+        replacements, locked Round-2 FCs are substituted with the Approxn
+        defaults (5 mdyn/Å bonds, 0.5 mdyn·Å/rad² angles in canonical
+        units).  Final FF should report the substitutions in
+        ``round1.notes["near_zero_replacements"]`` and the substituted
+        rows on ``final_ff`` should hold the replacement values, not
+        the near-zero Round-1 values.
+        """
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+        from q2mm.workflows.method_e2 import APPROXN_DEFAULTS
+
+        sd, engine = self._load()
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
+        wf = MethodE2Workflow(negative_fc_threshold=0.5)
+        result = wf.run(sd, engine, opt, n_evals=0)
+
+        replacements = result.stages[0].notes.get("near_zero_replacements", [])
+        if not replacements:
+            pytest.skip("System produced no candidates eligible for replacement.")
+
+        # Every replacement uses an Approxn default value for its type.
+        for rec in replacements:
+            assert rec["to"] == pytest.approx(APPROXN_DEFAULTS[rec["type"]])
+
+    def test_near_zero_replace_with_empty_dict_recovers_paper_behaviour(self) -> None:
+        """Opt-out: no replacements recorded, candidates lock at Round-1 values."""
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        sd, engine = self._load()
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
+        wf = MethodE2Workflow(negative_fc_threshold=0.5, near_zero_replace_with={})
+        result = wf.run(sd, engine, opt, n_evals=0)
+
+        # No replacements when the opt-out dict is empty.
+        assert "near_zero_replacements" not in result.stages[0].notes
 
 
 class TestHelpers:

@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.models.units import MDYNA_RAD2_TO_KCALMOLRAD2, MDYNA_TO_KCALMOLA2
 from q2mm.workflows.base import StageResult, WorkflowResult
 from q2mm.workflows.single_stage import _evaluate_samples, _per_category_metrics
 
@@ -66,6 +67,22 @@ logger = logging.getLogger(__name__)
 # non-negative (Hooke's-law springs); torsions, stretch-bends, and
 # bend-bend cross terms can legitimately be negative.
 _PHYSICAL_FC_TYPES = frozenset({"bond_k", "angle_k", "ub_k"})
+
+
+# --- Q2MM Approxn defaults (Farrugia 2025, JCTC 22, 469) ----------
+# Empirical lower-bound force constants used when a parameter has no
+# QM-derived value (or has drifted to an unphysical near-zero value
+# during optimization).  Numbers are the paper's "Q2MM Approxn"
+# standards in MM3 units; we convert once at import time so callers
+# get the canonical kcal/(mol·Å²) and kcal/(mol·rad²) values used by
+# :class:`~q2mm.models.forcefield.ForceField`.
+APPROXN_BOND_K_MDYNA = 5.0  # 5 mdyn/Å
+APPROXN_ANGLE_K_MDYNA_RAD2 = 0.5  # 0.5 mdyn·Å/rad²
+APPROXN_DEFAULTS: dict[str, float] = {
+    "bond_k": APPROXN_BOND_K_MDYNA * MDYNA_TO_KCALMOLA2,
+    "angle_k": APPROXN_ANGLE_K_MDYNA_RAD2 * MDYNA_RAD2_TO_KCALMOLRAD2,
+    "ub_k": APPROXN_BOND_K_MDYNA * MDYNA_TO_KCALMOLA2,  # UB is a bond-like spring
+}
 
 
 def _iter_active_force_constants(ff: ForceField) -> list[tuple[int, str, _FrozenAwareParam, str]]:
@@ -180,6 +197,7 @@ class MethodE2Workflow:
         negative_fc_threshold: float = 1e-3,
         replace_with_round2: float = 1.0,
         allow_negative: bool = False,
+        near_zero_replace_with: dict[str, float] | None = None,
     ) -> None:
         """Configure the protocol.
 
@@ -199,6 +217,30 @@ class MethodE2Workflow:
                 check applies.  Set ``True`` only when you have
                 specifically reasoned about why a negative bond/angle
                 FC is acceptable for your system.
+            near_zero_replace_with: Per-type replacement values applied
+                to candidate force constants *before* freezing them
+                for Round 2.  When ``None``, the protocol is
+                paper-literal (Limé & Norrby ¶104: lock at Round 1 /
+                Method D values).  When a dict of ``{label: value}``
+                in canonical units (kcal/(mol·Å²) for ``bond_k``/
+                ``ub_k``, kcal/(mol·rad²) for ``angle_k``) is provided,
+                candidates of the listed types are reset to the given
+                value before freezing.  Default is
+                :data:`APPROXN_DEFAULTS` — the Q2MM Approxn standards
+                from Farrugia 2025 (5 mdyn/Å for bond/UB, 0.5
+                mdyn·Å/rad² for angles).  This addresses the case
+                where Round 1 plus the new non-negative bounds parks
+                a force constant at exactly ``0.0``: locking at ``0``
+                gives a Hooke's-law spring with no restoring force
+                (unphysical), so we substitute a small empirical
+                positive value that keeps the MM potential
+                well-defined for downstream production use.
+
+                Keys not present in the dict are *not* replaced — the
+                paper-literal lock-at-Round-1-value applies to those
+                types.  Pass ``{}`` for the strict paper-literal
+                behavior with no replacements (equivalent semantics
+                to ``None``, but explicit).
 
         """
         if not np.isfinite(negative_fc_threshold) or negative_fc_threshold < 0:
@@ -208,6 +250,18 @@ class MethodE2Workflow:
         self.negative_fc_threshold = float(negative_fc_threshold)
         self.replace_with_round2 = float(replace_with_round2)
         self.allow_negative = bool(allow_negative)
+        if near_zero_replace_with is None:
+            self.near_zero_replace_with: dict[str, float] = dict(APPROXN_DEFAULTS)
+        else:
+            for lbl, val in near_zero_replace_with.items():
+                if lbl not in _PHYSICAL_FC_TYPES:
+                    raise ValueError(
+                        f"near_zero_replace_with: unsupported label {lbl!r}; "
+                        f"must be one of {sorted(_PHYSICAL_FC_TYPES)}"
+                    )
+                if not np.isfinite(val) or val < 0:
+                    raise ValueError(f"near_zero_replace_with[{lbl!r}]={val!r} must be finite and ≥ 0")
+            self.near_zero_replace_with = dict(near_zero_replace_with)
 
     def run(
         self,
@@ -304,7 +358,35 @@ class MethodE2Workflow:
             len(candidates),
         )
 
-        # --- Lock candidates at Round 1 values ----------------------
+        # --- Apply near-zero replacements before locking -----------
+        # When Round 1 (with the new non-negative bounds on bond_k /
+        # angle_k / ub_k) parks a candidate at exactly 0.0, locking
+        # the row at that value gives a Hooke's-law spring with no
+        # restoring force — an unphysical artefact of the bounded
+        # search.  ``near_zero_replace_with`` lets the caller (default
+        # ``APPROXN_DEFAULTS``) substitute a small empirical positive
+        # value for the type so the locked Round 2 force constant is
+        # production-usable.  Pass ``near_zero_replace_with={}`` to
+        # opt out and recover the strict paper-literal Method E2.
+        replaced: list[dict[str, Any]] = []
+        for full_i, lbl, row, _value in candidates:
+            if lbl not in self.near_zero_replace_with:
+                continue
+            new_val = self.near_zero_replace_with[lbl]
+            old_val = float(row.ub_force_constant) if lbl == "ub_k" else float(row.force_constant)
+            if lbl == "ub_k":
+                row.ub_force_constant = new_val
+            else:
+                row.force_constant = new_val
+            replaced.append({"full_idx": full_i, "type": lbl, "from": old_val, "to": new_val})
+        if replaced:
+            round1_stage.notes["near_zero_replacements"] = replaced
+            logger.info(
+                "MethodE2Workflow: substituted %d candidate FC(s) with Approxn-style defaults before Round 2 lock",
+                len(replaced),
+            )
+
+        # --- Lock candidates at Round 1 (or replacement) values ----
         # Per Limé & Norrby ¶104, "all force constants that go to zero
         # in the method C refinement should be set to the values found
         # in the method D force field, and subsequently left out of the

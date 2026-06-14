@@ -33,10 +33,11 @@ References
 from __future__ import annotations
 
 from q2mm.workflows.base import StageResult, Workflow, WorkflowResult
-from q2mm.workflows.method_e2 import MethodE2Workflow
+from q2mm.workflows.method_e2 import APPROXN_DEFAULTS, MethodE2Workflow
 from q2mm.workflows.single_stage import SingleStageWorkflow
 
 __all__ = [
+    "APPROXN_DEFAULTS",
     "MethodE2Workflow",
     "SingleStageWorkflow",
     "StageResult",
