@@ -27,7 +27,7 @@ Output: strict JSON at
 with embedded provenance, plus a human-readable summary on stdout.
 
 Time-boxed per #277; not a benchmark — won't replace
-``regenerate_convergence_results.py``.
+``scripts/benchmark.py``.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Provenance + JSON helpers (deliberately small re-implementations so the
-# script has no dependency on regenerate_convergence_results.py internals).
+# script has no dependency on scripts/benchmark.py internals).
 # ---------------------------------------------------------------------------
 
 

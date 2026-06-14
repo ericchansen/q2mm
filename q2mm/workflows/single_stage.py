@@ -27,9 +27,8 @@ if TYPE_CHECKING:
 def _r2(ref: np.ndarray, calc: np.ndarray) -> float:
     """Q2MM coefficient of determination; NaN when undefined.
 
-    Mirrors ``scripts/regenerate_convergence_results.py::_r2`` so this
-    workflow produces the same numbers when used as a drop-in
-    replacement for the script's inline orchestration.
+    Mirrors :func:`q2mm.benchmark_runner._r2` so this workflow produces
+    the same numbers as the canonical convergence-runner module.
     """
     if ref.size < 2:
         return float("nan")
@@ -93,7 +92,7 @@ def _evaluate_samples(obj: ObjectiveFunction, params: np.ndarray, n_evals: int) 
     ``obj.history`` rather than copying it — O(1) vs O(len(history))
     per sample, which matters when the optimizer has accumulated
     thousands of evaluations.  Mirrors
-    ``scripts/regenerate_convergence_results.py::_evaluate_objective_samples``.
+    :func:`q2mm.benchmark_runner._evaluate_objective_samples`.
     """
     n_eval_before = obj.n_eval
     history_len_before = len(obj.history)

@@ -1,6 +1,6 @@
 ---
 name: q2mm-benchmark
-description: 'MANDATORY before launching any q2mm batch optimization run >30 minutes (regenerate_convergence_results.py, multi-system convergence runs, from-QFUERZA runs, etc.). Forces success-spec write, optimizer config sanity check, FIRST-system audit gate before launching the rest, and post-batch validation. Use when user says "run benchmarks", "regenerate convergence results", "run all systems", "QFUERZA recovery", or any variant of launching a multi-system q2mm optimization batch.'
+description: 'MANDATORY before launching any q2mm batch optimization run >30 minutes (benchmark.py, multi-system convergence runs, from-QFUERZA runs, etc.). Forces success-spec write, optimizer config sanity check, FIRST-system audit gate before launching the rest, and post-batch validation. Use when user says "run benchmarks", "regenerate convergence results", "run all systems", "QFUERZA recovery", or any variant of launching a multi-system q2mm optimization batch.'
 license: MIT
 allowed-tools: Bash, Read, Edit, Grep, Glob
 ---
@@ -40,7 +40,7 @@ For **canonical-default QFUERZA-start** runs (the default; or any from-poor-star
 
 For **publication-baseline (`--starting-point published`)** runs, sanity bounds are usually fine — the starting FF is already in the published basin.
 
-Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/regenerate_convergence_results.py`.
+Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/benchmark.py`.
 
 ### Convergence tolerance (`scipy_opt.py` → `_run_minimize`)
 
@@ -71,7 +71,7 @@ Do NOT launch all systems in a batch. Run **only the first system**:
 ```bash
 # Canonical default is --starting-point qfuerza; pass --starting-point
 # published only when reproducing publication-baseline benchmarks.
-PYTHONPATH=/path/to/worktree python scripts/regenerate_convergence_results.py \
+PYTHONPATH=/path/to/worktree python scripts/benchmark.py \
     --system <first-system> \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
