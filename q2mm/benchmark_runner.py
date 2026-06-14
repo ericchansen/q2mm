@@ -6,9 +6,9 @@ choose a :class:`~q2mm.workflows.Workflow` (single-stage or Method E2),
 run it with a :class:`~q2mm.optimizers.scipy_opt.ScipyOptimizer`, and
 report the result.
 
-It replaces the per-script duplication that existed in earlier alpha
-revisions of ``scripts/regenerate_convergence_results.py``: ratio
-gating, per-category metrics, post-hoc objective sampling, strict-JSON
+It Replaces the ad-hoc per-script duplication that existed in earlier alpha
+revisions of ``scripts/regenerate_convergence_results.py`` (now
+``scripts/benchmark.py``): ratio gating, per-category metrics, post-hoc objective sampling, strict-JSON
 output, and provenance embedding all live here.
 
 Two callers:

@@ -254,7 +254,7 @@ frequency RMSD.
 
 ### Starting Point (`starting_point` kwarg / `--starting-point` CLI flag)
 
-`load_system()` and `regenerate_convergence_results.py` accept a
+`load_system()` and `benchmark.py` accept a
 `starting_point` of either `"qfuerza"` (canonical default) or
 `"published"`:
 
@@ -412,7 +412,7 @@ metadata in this project.
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
 | **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible OF change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check JaxLoss/OF ratio. The new diagnostic warning in `scipy_opt._run_minimize` flags this. |
 | **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
-| **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner now emits ERROR + non-zero exit code (`scripts/regenerate_convergence_results.py`). Re-tune `ftol` or bounds and re-run. See §11. |
+| **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner now emits ERROR + non-zero exit code (`scripts/benchmark.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
 ---
 
@@ -478,7 +478,7 @@ See `validation/published_ffs/README.md` for the full table. As of April 2026:
 
 ## 11. Benchmark Pre-Flight Checklist
 
-> **Before launching any q2mm batch >30 min (e.g. `regenerate_convergence_results.py` on >1 system, or any from-scratch FF generation), walk through every step below.**
+> **Before launching any q2mm batch >30 min (e.g. `benchmark.py` on >1 system, or any from-scratch FF generation), walk through every step below.**
 
 Many hours of GPU time have been wasted on batches where the optimizer never actually optimized. The pattern is silent — scipy reports `success=True`, the runner writes its JSON, and the misleading result is only caught during post-hoc analysis. This checklist prevents that.
 
@@ -511,6 +511,6 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
 
 These exist to back up the checklist; do not rely on them alone:
 - `q2mm/optimizers/scipy_opt.py::_run_minimize` — WARNING when `n_iterations<=2` and `|delta|/init<0.01`
-- `scripts/regenerate_convergence_results.py::main` — ERROR + non-zero exit when the whole batch failed the no-progress test
+- `scripts/benchmark.py::main` — ERROR + non-zero exit when the whole batch failed the no-progress test
 - `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch
 - `.copilot/skills/q2mm-analysis-design/SKILL.md` — agent skill that forces design-first analysis methodology before writing comparison docs
