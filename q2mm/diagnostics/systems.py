@@ -793,7 +793,7 @@ def load_system(
         reference, qm_real = _build_frequency_reference(qm_freqs_all, mm_all)
         qm_freqs_per_mol = [qm_real]
     else:
-        reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
+        reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=False)
         qm_freqs_per_mol = []
         for mol in molecules:
             qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)

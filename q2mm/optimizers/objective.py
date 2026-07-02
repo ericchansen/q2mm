@@ -16,6 +16,7 @@ by ``scipy.optimize.least_squares`` and gradient-based minimizers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -313,22 +314,34 @@ class ReferenceData:
         self,
         hessian: np.ndarray,
         *,
+        symbols: Sequence[str] | None = None,
         diagonal_only: bool = False,
         molecule_idx: int = 0,
         weights: dict[str, float] | None = None,
         skip_first: bool = True,
         eigenvalue_threshold: float = 0.1173,
+        rigid_body_tol: float = 1e-4,
     ) -> int:
         """Bulk-load eigenmatrix training data from a QM Hessian.
 
-        Decomposes the Hessian, computes the eigenmatrix, and adds all
-        elements as reference values with the legacy weight scheme.
+        Builds the reference eigenmatrix by projecting the Hessian onto the
+        molecule's **normal modes** (the eigenvectors of the mass-weighted
+        Hessian) in the mass-weighted metric, following the Q2MM eigenmatrix
+        protocol (Farrugia, Helquist, Norrby & Wiest 2025, *J. Chem. Theory
+        Comput.* **22**, 469).  The diagonal elements are the mass-weighted
+        reference eigenvalues; the off-diagonal elements are zero for a
+        perfectly fit force field.
 
         The Hessian should be in canonical units (Hartree/Bohr²).
 
         Args:
             hessian (np.ndarray): QM Hessian matrix ``(3N, 3N)`` in
                 Hartree/Bohr².
+            symbols (Sequence[str] | None): Element symbols (length *N*)
+                used to mass-weight the Hessian.  Required for the
+                normal-mode projection; if ``None``, the raw (non
+                mass-weighted) Cartesian eigenbasis is used as a fallback
+                (legacy behaviour).
             diagonal_only (bool): If ``True``, add only diagonal elements
                 (eigenvalues). If ``False``, add all lower-triangular
                 elements.
@@ -343,23 +356,37 @@ class ReferenceData:
                 weight ``eig_i`` (default 0.0, effectively skipping it).
                 This is standard for TS fitting where the first mode is
                 imaginary.
-            eigenvalue_threshold (float): Eigenvalue threshold
-                (Hartree/Bohr²) separating low/high frequency modes for
-                weight assignment. The default 0.1173 corresponds to the
-                legacy threshold of 1100 kJ/(mol·Å²).
+            eigenvalue_threshold (float): Mass-weighted eigenvalue
+                threshold separating low/high frequency modes for weight
+                assignment.  (Numerically inert while ``eig_d_low`` equals
+                ``eig_d_high``.)
+            rigid_body_tol (float): Modes whose mass-weighted eigenvalue
+                has magnitude below this tolerance are treated as
+                rigid-body (translation/rotation) modes and given weight
+                ``eig_i`` (0.0), excluding all six from the fit.
 
         Returns:
             int: Number of entries added.
 
         """
-        from q2mm.models.hessian import decompose, transform_to_eigenmatrix, extract_eigenmatrix_data
+        from q2mm.models.hessian import (
+            decompose,
+            extract_eigenmatrix_data,
+            mass_weighted_eigenmatrix,
+            mass_weighted_normal_modes,
+            transform_to_eigenmatrix,
+        )
 
         w = {"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.05}
         if weights:
             w.update(weights)
 
-        eigenvalues, eigenvectors = decompose(hessian)
-        eigenmatrix = transform_to_eigenmatrix(hessian, eigenvectors)
+        if symbols is not None:
+            eigenvalues, eigenvectors = mass_weighted_normal_modes(hessian, symbols)
+            eigenmatrix = mass_weighted_eigenmatrix(hessian, eigenvectors, symbols)
+        else:
+            eigenvalues, eigenvectors = decompose(hessian)
+            eigenmatrix = transform_to_eigenmatrix(hessian, eigenvectors)
         elements = extract_eigenmatrix_data(eigenmatrix, diagonal_only=diagonal_only)
 
         added = 0
@@ -367,6 +394,10 @@ class ReferenceData:
             if row == col:
                 # Diagonal element
                 if row == 0 and skip_first:
+                    weight = w["eig_i"]
+                elif abs(eigenvalues[row]) < rigid_body_tol:
+                    # Rigid-body (translation/rotation) mode — no force-constant
+                    # information; excluded from the fit.
                     weight = w["eig_i"]
                 elif value < eigenvalue_threshold:
                     weight = w["eig_d_low"]
@@ -636,6 +667,7 @@ class ReferenceData:
                 eig_weights = {k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w}
                 ref.add_eigenmatrix_from_hessian(
                     hess_for_eigenmatrix,
+                    symbols=list(mol.symbols),
                     diagonal_only=eigenmatrix_diagonal_only,
                     molecule_idx=molecule_idx,
                     weights=eig_weights or None,

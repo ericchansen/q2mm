@@ -73,7 +73,7 @@ class EigenmatrixEvaluator:
             ValueError: If the molecule has no QM Hessian.
 
         """
-        from q2mm.models.hessian import decompose, transform_to_eigenmatrix
+        from q2mm.models.hessian import mass_weighted_eigenmatrix, mass_weighted_normal_modes
 
         target = structure if structure is not None else mol
         mm_hess = engine.hessian(target, ff)
@@ -85,11 +85,11 @@ class EigenmatrixEvaluator:
                     "Eigenmatrix training requires a QM Hessian for the "
                     "eigenvector basis."
                 )
-            _, qm_evecs = decompose(mol.hessian)
+            _, qm_evecs = mass_weighted_normal_modes(mol.hessian, mol.symbols)
             self._qm_eigenvectors[mol_idx] = qm_evecs
 
         qm_evecs = self._qm_eigenvectors[mol_idx]
-        eigenmatrix = transform_to_eigenmatrix(mm_hess, qm_evecs)
+        eigenmatrix = mass_weighted_eigenmatrix(mm_hess, qm_evecs, mol.symbols)
 
         return EigenmatrixResult(eigenmatrix=eigenmatrix)
 
@@ -181,7 +181,7 @@ class EigenmatrixEvaluator:
             Gradient vector of shape ``(n_params,)``.
 
         """
-        from q2mm.models.hessian import decompose
+        from q2mm.models.hessian import mass_weight_scale_3n, mass_weighted_normal_modes
 
         if not engine.supports_analytical_hessian_gradients():
             raise TypeError(
@@ -192,7 +192,7 @@ class EigenmatrixEvaluator:
         target = structure if structure is not None else mol
         hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
 
-        # Get cached QM eigenvectors (or compute and cache)
+        # Get cached QM normal modes (or compute and cache)
         if mol_idx not in self._qm_eigenvectors:
             if mol.hessian is None:
                 raise ValueError(
@@ -200,15 +200,21 @@ class EigenmatrixEvaluator:
                     "Eigenmatrix training requires a QM Hessian for the "
                     "eigenvector basis."
                 )
-            _, qm_evecs = decompose(mol.hessian)
+            _, qm_evecs = mass_weighted_normal_modes(mol.hessian, mol.symbols)
             self._qm_eigenvectors[mol_idx] = qm_evecs
 
         qm_evecs = self._qm_eigenvectors[mol_idx]
 
-        # d(eigenmatrix)/dp_j = Q^T @ dH_dp[:,:,j] @ Q
-        d_eigmat_dp = np.einsum("ir,ijp,jc->rcp", qm_evecs, dH_dp, qm_evecs)
+        # Mass-weighting is linear (H_mw = S ⊙ H), so it carries through to
+        # the parameter Jacobian: d(Q^T H_mw Q)/dp = Q^T (S ⊙ dH/dp) Q.
+        scale = mass_weight_scale_3n(mol.symbols)
+        hess_mw = hess * scale
+        dH_dp_mw = dH_dp * scale[:, :, None]
 
-        eigmat = qm_evecs.T @ hess @ qm_evecs
+        # d(eigenmatrix)/dp_j = Q^T @ (S ⊙ dH_dp)[:,:,j] @ Q
+        d_eigmat_dp = np.einsum("ir,ijp,jc->rcp", qm_evecs, dH_dp_mw, qm_evecs)
+
+        eigmat = qm_evecs.T @ hess_mw @ qm_evecs
         n = eigmat.shape[0]
 
         grad = np.zeros(n_params)

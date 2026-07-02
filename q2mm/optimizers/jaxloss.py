@@ -297,10 +297,11 @@ class JaxLoss:
                         f"Molecule {mol_spec.mol_idx} ({mol.name}) has no QM Hessian. "
                         "Eigenmatrix training requires a QM Hessian."
                     )
-                from q2mm.models.hessian import decompose
+                from q2mm.models.hessian import mass_weight_scale_3n, mass_weighted_normal_modes
 
-                _, qm_evecs = decompose(mol.hessian)
+                _, qm_evecs = mass_weighted_normal_modes(mol.hessian, mol_spec.symbols)
                 entry["qm_evecs"] = jnp.array(qm_evecs, dtype=jnp.float64)
+                entry["mw_scale"] = jnp.array(mass_weight_scale_3n(mol_spec.symbols), dtype=jnp.float64)
 
             # Convert reference arrays to JAX
             if mol_spec.has_energy:
@@ -398,7 +399,11 @@ class JaxLoss:
 
                     if ms.has_eigenmatrix:
                         qm_evecs = entry_data["qm_evecs"]
-                        eigmat = qm_evecs.T @ hess_au @ qm_evecs
+                        # Project the mass-weighted MM Hessian onto the QM
+                        # normal modes (mass-weighted metric) — matches the
+                        # reference eigenmatrix built in objective.py.
+                        hess_mw = hess_au * entry_data["mw_scale"]
+                        eigmat = qm_evecs.T @ hess_mw @ qm_evecs
 
                         if "ediag_indices" in entry_data:
                             idx = entry_data["ediag_indices"]

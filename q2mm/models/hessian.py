@@ -94,6 +94,27 @@ def mass_weight_hessian(
         hess *= scale
 
 
+def mass_weight_scale_3n(atoms: Sequence[str] | object) -> np.ndarray:
+    """Return the ``(3N, 3N)`` mass-weighting scale matrix ``1/√(mᵢmⱼ)``.
+
+    Multiplying a Cartesian Hessian element-wise by this matrix mass-weights
+    it (the same operation :func:`mass_weight_hessian` performs in place).
+    Exposed separately so callers that must keep the original Hessian (and
+    propagate mass-weighting through a parameter Jacobian) can reuse the
+    exact same factor.
+
+    Args:
+        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
+
+    Returns:
+        ``(3N, 3N)`` array of ``1/√(mᵢmⱼ)`` factors.
+
+    """
+    symbols = _resolve_symbols(atoms)
+    inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols for _ in range(3)])
+    return np.outer(inv_sqrt, inv_sqrt)
+
+
 # ---- Frequency pipeline ----
 
 
@@ -600,6 +621,65 @@ def extract_eigenmatrix_data(
             for j in range(i + 1):
                 data.append((i, j, float(eigenmatrix[i, j])))
     return data
+
+
+def mass_weighted_normal_modes(
+    hessian_au: np.ndarray,
+    atoms: Sequence[str] | object,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the eigenvalues and normal modes of a mass-weighted Hessian.
+
+    The eigenvectors of the mass-weighted Hessian are the *normal modes*
+    of the molecule — the basis onto which the Q2MM eigenmatrix protocol
+    projects both the reference (QM) and candidate (MM) Hessians (Farrugia,
+    Helquist, Norrby & Wiest 2025, *J. Chem. Theory Comput.* **22**, 469;
+    projecting "the reference eigenvectors (electronic structure normal
+    modes) across both the reference Hessian and the MM Hessian").
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Cartesian Hessian in Hartree/Bohr².  Not
+            modified (a copy is mass-weighted internally).
+        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
+
+    Returns:
+        ``(eigenvalues, eigenvectors)`` of the mass-weighted Hessian, with
+        eigenvectors stored as **columns** (the ``np.linalg.eigh``
+        convention).  Eigenvalues are the mass-weighted force constants in
+        ascending order.
+
+    """
+    hess_mw = np.array(hessian_au, dtype=float, copy=True)
+    mass_weight_hessian(hess_mw, atoms)
+    return decompose(hess_mw)
+
+
+def mass_weighted_eigenmatrix(
+    hessian_au: np.ndarray,
+    modes: np.ndarray,
+    atoms: Sequence[str] | object,
+) -> np.ndarray:
+    """Project a Cartesian Hessian onto normal modes in the mass-weighted metric.
+
+    Mass-weights *hessian_au* and projects it onto *modes* (the normal
+    modes from :func:`mass_weighted_normal_modes`).  When *modes* are the
+    reference molecule's own normal modes and *hessian_au* is the reference
+    Hessian, the result is diagonal (the mass-weighted reference
+    eigenvalues); when *hessian_au* is an MM Hessian, the off-diagonal
+    elements measure how well the MM force field reproduces the QM mode
+    structure.
+
+    Args:
+        hessian_au: ``(3N, 3N)`` Cartesian Hessian in Hartree/Bohr².
+        modes: ``(3N, 3N)`` normal-mode matrix (eigenvectors as columns).
+        atoms: Element symbols or a ``Q2MMMolecule`` (for mass-weighting).
+
+    Returns:
+        ``(3N, 3N)`` mass-weighted eigenmatrix.
+
+    """
+    hess_mw = np.array(hessian_au, dtype=float, copy=True)
+    mass_weight_hessian(hess_mw, atoms)
+    return transform_to_eigenmatrix(hess_mw, modes)
 
 
 def invert_ts_curvature_jax(

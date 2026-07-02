@@ -16,6 +16,8 @@ from q2mm.models.hessian import (
     decompose,
     frequency_param_jacobian,
     hessian_to_frequencies,
+    mass_weighted_eigenmatrix,
+    mass_weighted_normal_modes,
     transform_to_eigenmatrix,
 )
 from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
@@ -384,8 +386,8 @@ class TestEigenmatrixEvaluatorGradient:
         qm_hess = _make_symmetric(n3, rng)
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
-        _, qm_evecs = decompose(qm_hess)
-        eigmat = transform_to_eigenmatrix(hess, qm_evecs)
+        _, qm_evecs = mass_weighted_normal_modes(qm_hess, ["C", "H"])
+        eigmat = mass_weighted_eigenmatrix(hess, qm_evecs, ["C", "H"])
         idx = 3
         ref_val = eigmat[idx, idx] + 0.005
         w = 1.5
@@ -412,8 +414,8 @@ class TestEigenmatrixEvaluatorGradient:
         for j in range(n_params):
             h_p = hess + delta * dH_dp[:, :, j]
             h_m = hess - delta * dH_dp[:, :, j]
-            em_p = transform_to_eigenmatrix(h_p, qm_evecs)
-            em_m = transform_to_eigenmatrix(h_m, qm_evecs)
+            em_p = mass_weighted_eigenmatrix(h_p, qm_evecs, ["C", "H"])
+            em_m = mass_weighted_eigenmatrix(h_m, qm_evecs, ["C", "H"])
             score_p = (w * (ref_val - em_p[idx, idx])) ** 2
             score_m = (w * (ref_val - em_m[idx, idx])) ** 2
             fd_grad[j] = (score_p - score_m) / (2 * delta)
@@ -429,8 +431,8 @@ class TestEigenmatrixEvaluatorGradient:
         qm_hess = _make_symmetric(n3, rng)
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
-        _, qm_evecs = decompose(qm_hess)
-        eigmat = transform_to_eigenmatrix(hess, qm_evecs)
+        _, qm_evecs = mass_weighted_normal_modes(qm_hess, ["C", "H"])
+        eigmat = mass_weighted_eigenmatrix(hess, qm_evecs, ["C", "H"])
         row, col = 1, 4
         ref_val = eigmat[row, col] + 0.003
         w = 1.0
@@ -458,8 +460,8 @@ class TestEigenmatrixEvaluatorGradient:
         for j in range(n_params):
             h_p = hess + delta * dH_dp[:, :, j]
             h_m = hess - delta * dH_dp[:, :, j]
-            em_p = transform_to_eigenmatrix(h_p, qm_evecs)
-            em_m = transform_to_eigenmatrix(h_m, qm_evecs)
+            em_p = mass_weighted_eigenmatrix(h_p, qm_evecs, ["C", "H"])
+            em_m = mass_weighted_eigenmatrix(h_m, qm_evecs, ["C", "H"])
             score_p = (w * (ref_val - em_p[row, col])) ** 2
             score_m = (w * (ref_val - em_m[row, col])) ** 2
             fd_grad[j] = (score_p - score_m) / (2 * delta)
@@ -475,8 +477,8 @@ class TestEigenmatrixEvaluatorGradient:
         qm_hess = _make_symmetric(n3, rng)
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
-        _, qm_evecs = decompose(qm_hess)
-        eigmat = transform_to_eigenmatrix(hess, qm_evecs)
+        _, qm_evecs = mass_weighted_normal_modes(qm_hess, ["C", "H"])
+        eigmat = mass_weighted_eigenmatrix(hess, qm_evecs, ["C", "H"])
         refs = [
             ReferenceValue(kind="eig_diagonal", value=eigmat[0, 0], weight=1.0, data_idx=0, molecule_idx=0),
         ]
