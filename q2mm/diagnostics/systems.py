@@ -212,12 +212,11 @@ def _resolve_supporting_info_dir() -> Path:
 def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> list[Q2MMMolecule]:
     """Load molecules from all Gaussian .log files in a directory.
 
-    Reconstructs Hessians from eigenvalues/eigenvectors, handling the
-    (3N-6, 3N) → (3N, 3N-6) transpose that Gaussian logs require.
+    Reads the archive **Cartesian** Hessian (Hartree/Bohr², full rank 3N,
+    imaginary mode intact) in a frame consistent with the geometry.
     Assigns MM3 atom types from element + connectivity (bond count).
     """
     from q2mm.io.gaussian import GaussLog
-    from q2mm.models.hessian import reform_hessian
 
     if not log_dir.exists():
         raise FileNotFoundError(
@@ -232,13 +231,8 @@ def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> l
 
     molecules = []
     for log_path in log_files:
-        log = GaussLog(str(log_path))
+        log = GaussLog(str(log_path), au_hessian=True)
         mol = log.molecules[-1]
-        if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
-            evecs = log.evecs
-            if evecs.shape[0] < evecs.shape[1]:
-                evecs = evecs.T
-            mol.hessian = reform_hessian(log.evals, evecs)
         mol.name = log_path.stem
 
         # Detect bonds and assign MM3 atom types from connectivity.

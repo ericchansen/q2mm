@@ -36,6 +36,37 @@ class TestGaussLogParsing(unittest.TestCase):
         log = GaussLog(str(ETHANE_DIR / "TS.log"))
         self.assertGreater(len(log.structures), 0, "No structures parsed from TS.log")
 
+    def test_archive_hessian_reproduces_gaussian_frequencies(self) -> None:
+        """The archive Cartesian Hessian must reproduce Gaussian's frequencies.
+
+        Regression guard for the mass-weighting ingestion bug: both loaders
+        used to override ``mol.hessian`` with ``reform_hessian(evals, evecs)``
+        reconstructed from Gaussian's *mass-weighted* frequency analysis,
+        corrupting every heavy-atom force constant by ~√(mᵢmⱼ).  The archive
+        Hessian (``au_hessian=True``) is plain Cartesian (Hartree/Bohr²) and
+        must round-trip to the Gaussian-reported vibrational frequencies to
+        well under 1 cm⁻¹.
+        """
+        from q2mm.models.hessian import hessian_to_frequencies
+
+        log = GaussLog(str(ETHANE_DIR / "GS.log"), au_hessian=True)
+        mol = log.molecules[-1]
+        self.assertIsNotNone(mol.hessian, "Archive Hessian not attached to molecule")
+
+        reported = np.sort(np.asarray(log.frequencies, dtype=float))
+        all_freqs = np.asarray(hessian_to_frequencies(mol.hessian, list(mol.symbols), sort=True))
+        # Drop the 6 lowest-magnitude (rigid-body) modes before comparing.
+        vibrational = np.sort(all_freqs[np.argsort(np.abs(all_freqs))[6:]])
+        n = min(len(reported), len(vibrational))
+        max_dev = float(np.abs(vibrational[:n] - reported[:n]).max())
+        self.assertLess(
+            max_dev,
+            1.0,
+            f"Archive Hessian frequencies deviate {max_dev:.3f} cm⁻¹ from "
+            "Gaussian's reported values — mass-weighting override may have "
+            "returned.",
+        )
+
 
 @unittest.skipUnless((ETHANE_DIR / "GS.mol2").exists(), "Ethane mol2 fixture not found")
 class TestMol2Parsing(unittest.TestCase):
