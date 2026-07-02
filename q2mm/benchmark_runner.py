@@ -17,7 +17,8 @@ Two callers:
   REPL use.  One line: ``q2mm.benchmark("rh-enamide")``.
 - :mod:`scripts.benchmark` — batch CLI that iterates :func:`run_benchmark`
   across many systems and writes the canonical artifacts under
-  ``q2mm-data/benchmarks/<system>/convergence/``.
+  ``q2mm-data/benchmarks/<system>/convergence/`` (QFUERZA-start) or
+  ``q2mm-data/benchmarks/<system>/from-published/`` (publication baseline).
 
 The legacy ``q2mm-benchmark`` matrix CLI in
 :mod:`q2mm.diagnostics.cli` is a different shape of tool (multi-backend
@@ -387,7 +388,7 @@ def run_benchmark(
     workflow: str | Workflow = "method-e2",
     starting_point: str = "qfuerza",
     qfuerza_replace_with: float = 1.0,
-    ratio_tol: float | None = 0.15,
+    ratio_tol: float | None = None,
     maxiter: int = 500,
     ftol: float = 1e-8,
     fc_fraction: float | None = None,
@@ -671,7 +672,12 @@ def run_benchmark_batch(
         try:
             result = run_benchmark(system_key, **kwargs)
             outcome.results[system_key] = result
-            _write_artifacts(output_dir, result, provenance)
+            _write_artifacts(
+                output_dir,
+                result,
+                provenance,
+                starting_point=kwargs.get("starting_point", "qfuerza"),
+            )
         except Exception:
             logger.exception("[%s] FAILED", system_key)
             outcome.failed_systems.append(system_key)
@@ -707,10 +713,17 @@ def _provenance_safe(value: Any) -> Any:
     return repr(value)
 
 
-def _write_artifacts(output_dir: Path, result: BenchmarkRunResult, provenance: dict[str, Any]) -> None:
+def _write_artifacts(
+    output_dir: Path,
+    result: BenchmarkRunResult,
+    provenance: dict[str, Any],
+    *,
+    starting_point: str = "qfuerza",
+) -> None:
     """Persist one :class:`BenchmarkRunResult` to disk."""
     data_dir = DATA_DIR_FOR_SYSTEM.get(result.system_key, result.system_key)
-    sys_out = output_dir / data_dir / "convergence"
+    subdir = "from-published" if starting_point == "published" else "convergence"
+    sys_out = output_dir / data_dir / subdir
     sys_out.mkdir(parents=True, exist_ok=True)
 
     write_strict_json(

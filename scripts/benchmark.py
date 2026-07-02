@@ -19,7 +19,8 @@ For each requested system this script:
    confidence intervals.
 
 Outputs (per system) live under
-``<output-dir>/<system-data-dir>/convergence/``:
+``<output-dir>/<system-data-dir>/convergence/`` (QFUERZA-start, default) or
+``<output-dir>/<system-data-dir>/from-published/`` (``--starting-point published``):
 
 - ``validation_results.json`` — summary numbers (strict JSON,
   no ``Infinity`` or ``NaN``).  Ratio state is encoded across three keys:
