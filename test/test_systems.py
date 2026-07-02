@@ -48,11 +48,20 @@ class TestSystemReferenceConstruction:
             },
         )
 
+        # Custom weights propagate. With rigid-body exclusion, the first mode
+        # (skip_first) and the six smallest-|eigenvalue| rigid modes get eig_i
+        # (0.1); surviving diagonal modes get eig_d_low/eig_d_high (0.2/0.3).
         diag_weights = [value.weight for value in ref.values if value.kind == "eig_diagonal"]
         assert diag_weights[0] == 0.1
-        assert 0.2 in diag_weights
-        assert 0.3 in diag_weights
-        assert {value.weight for value in ref.values if value.kind == "eig_offdiagonal"} == {0.4}
+        assert set(diag_weights) <= {0.1, 0.2, 0.3}
+        assert 0.1 in diag_weights  # excluded (rigid-body / reaction-coordinate) modes
+        assert any(w in (0.2, 0.3) for w in diag_weights)  # at least one real mode kept
+
+        # Off-diagonal couplings use eig_o (0.4), except those touching an
+        # excluded mode, which are zero-weighted.
+        offdiag_weights = {value.weight for value in ref.values if value.kind == "eig_offdiagonal"}
+        assert offdiag_weights <= {0.0, 0.4}
+        assert 0.4 in offdiag_weights
 
     def test_from_molecules_include_geometry_false(self) -> None:
         """include_geometry=False omits bond and angle references."""
