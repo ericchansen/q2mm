@@ -101,7 +101,7 @@ def _iter_active_force_constants(ff: ForceField) -> list[tuple[int, str, _Frozen
         "angles": list(ff.angles),
         "torsions": list(getattr(ff, "torsions", [])),
         "stretch_bends": list(getattr(ff, "stretch_bends", [])),
-        "vdw": list(getattr(ff, "vdw", [])),
+        "vdw": list(getattr(ff, "vdws", [])),
         "ub_angles": list(getattr(ff, "_ub_angles", [])),
     }
     type_to_collection = {
@@ -219,13 +219,7 @@ class MethodE2Workflow:
                 FC is acceptable for your system.
             near_zero_replace_with: Per-type replacement values applied
                 to candidate force constants *before* freezing them
-                for Round 2.  When ``None``, the protocol is
-                paper-literal (Limé & Norrby ¶104: lock at Round 1 /
-                Method D values).  When a dict of ``{label: value}``
-                in canonical units (kcal/(mol·Å²) for ``bond_k``/
-                ``ub_k``, kcal/(mol·rad²) for ``angle_k``) is provided,
-                candidates of the listed types are reset to the given
-                value before freezing.  Default is
+                for Round 2.  When ``None`` (default), uses
                 :data:`APPROXN_DEFAULTS` — the Q2MM Approxn standards
                 from Farrugia 2025 (5 mdyn/Å for bond/UB, 0.5
                 mdyn·Å/rad² for angles).  This addresses the case
@@ -236,11 +230,16 @@ class MethodE2Workflow:
                 positive value that keeps the MM potential
                 well-defined for downstream production use.
 
-                Keys not present in the dict are *not* replaced — the
-                paper-literal lock-at-Round-1-value applies to those
-                types.  Pass ``{}`` for the strict paper-literal
-                behavior with no replacements (equivalent semantics
-                to ``None``, but explicit).
+                When a dict of ``{label: value}`` in canonical units
+                (kcal/(mol·Å²) for ``bond_k``/``ub_k``,
+                kcal/(mol·rad²) for ``angle_k``) is provided,
+                candidates of the listed types are reset to the given
+                value before freezing.  Keys not present in the dict
+                are *not* replaced — the paper-literal
+                lock-at-Round-1-value applies to those types.  Pass
+                ``{}`` for the strict paper-literal behavior with no
+                replacements (Limé & Norrby ¶104: lock at Round 1 /
+                Method D values).
 
         """
         if not np.isfinite(negative_fc_threshold) or negative_fc_threshold < 0:
