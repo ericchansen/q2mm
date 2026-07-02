@@ -1,36 +1,64 @@
-"""Published force field validation — Check 1.
+"""Published force field validation — Check 1 (all systems).
 
-Validates that the published Rh-enamide force field (Donoghue et al. 2008 JCTC)
-produces physically reasonable MM frequencies when evaluated with the new q2mm
-engines. This is the critical "Check 1" test: load the FF the authors actually
-published, evaluate it against the same QM reference data, and pin the results.
+"Check 1" is the foundational Q2MM validation: take the force field the
+authors actually *published*, evaluate it against the same QM reference data
+with our engines, and pin the result as a golden fixture so future engine
+changes can't silently move it.
 
-The ``mm3.fld`` file contains both standard MM3 parameters and the published
-optimized parameters in its Rh-enamide substructure section.
-``ForceField.from_mm3_fld`` loads both sections by default
-(``include_standard=True``), mirroring how MacroModel resolves parameters.
-No Seminario estimation is needed. We evaluate with OpenMM and compare
-against the QM (Jaguar B3LYP/LACVP**) harmonic frequencies.
+This module runs Check 1 for every registered publication TS system through a
+single, uniform pipeline:
 
-The Seminario-estimated FF serves as the "unoptimized" baseline. The published
-FF should produce a meaningfully lower objective score since it was further
-optimized by Q2MM.
+* molecules + published force field come from
+  ``load_system(key, starting_point="published")`` (one loader path for all
+  systems — see :mod:`q2mm.diagnostics.systems`);
+* frequencies come from :func:`q2mm.models.hessian.hessian_to_frequencies`
+  (QM) and ``JaxEngine.frequencies`` (MM);
+* the objective score is the real :class:`~q2mm.optimizers.objective.
+  ObjectiveFunction` frequency penalty;
+* R² is the coefficient of determination (``1 - SSres/SStot``).
+
+The per-system parameters (expected molecule count, citation metadata, golden
+filename) live in :data:`CHECK1_SPECS`.  Everything else is derived, so adding
+a sixth system is a single dict entry plus a regenerated golden.
+
+Regression, not quality gate
+----------------------------
+The published force fields were optimized for MacroModel's MM3* engine, which
+has physics ours does not yet reproduce (stretch-bend cross terms, metal-center
+torsion rules — ericchansen/q2mm#255, tracked for the backend-parity audit).
+Under ``JaxEngine`` the cross-engine agreement ranges from good
+(rh-enamide R² ≈ 0.80) to poor (pd-allyl R² < 0).  This module therefore does
+**not** assert an absolute R² floor — it pins each system's score and R² to a
+committed golden and fails only on *regression* from that pinned value.  The
+absolute quality of the cross-engine reproduction is the subject of #255, not
+of this test.
+
+Regenerating goldens
+--------------------
+Run locally on GPU with::
+
+    Q2MM_UPDATE_GOLDEN=1 python -m pytest \
+        test/integration/test_published_ff_validation.py --run-validation
+
+then commit the updated JSON files under ``test/fixtures/published_ff/``.
 
 References
 ----------
-- Donoghue, P. J. et al. J. Chem. Theory Comput. 2008, 4, 1313–1323.
-  DOI: 10.1021/ct800132a
-- Old repo: https://github.com/Q2MM/q2mm (commit b26404b8)
-- Training set: 9 Rh-diphosphine TS structures, B3LYP/LACVP** (Jaguar)
+- Donoghue, P. J. et al. J. Chem. Theory Comput. 2008, 4, 1313. (rh-enamide)
+- Rosales, A. R. et al. J. Am. Chem. Soc. 2020, 142, 9700. (heck-relay)
+- Wahlers, J. et al. Nat. Commun. 2021, 12, 6508. (pd-allyl)
+- Wahlers, J. et al. J. Org. Chem. 2021, 86, 5660. (pd-conjugate)
+- Wahlers, J. Ph.D. Dissertation, Univ. of Notre Dame, 2022, Ch. 6. (rh-conjugate)
 
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -40,70 +68,127 @@ import pytest
 from test._shared import REPO_ROOT
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths / environment
 # ---------------------------------------------------------------------------
-
-RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
-TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
-MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
-JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
-
-# mm3.fld contains the published final params in its substructure section
-MM3_FLD_PATH = RH_DIR / "mm3.fld"
 
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "published_ff"
-GOLDEN_PATH = FIXTURE_DIR / "rh_enamide_donoghue2008.json"
 UPDATE_GOLDEN = os.getenv("Q2MM_UPDATE_GOLDEN") == "1"
 
-_HAS_OPENMM = True
-try:
-    import openmm  # noqa: F401
-except ImportError:
-    _HAS_OPENMM = False
+_HAS_JAX = importlib.util.find_spec("jax") is not None
 
-_HAS_JAX = True
-try:
-    import importlib.util
-
-    if importlib.util.find_spec("jax") is None:
-        _HAS_JAX = False
-except Exception:
-    _HAS_JAX = False
-
-requires_openmm = pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed")
-requires_any_engine = pytest.mark.skipif(
-    not _HAS_JAX and not _HAS_OPENMM,
-    reason="Neither JAX nor OpenMM installed",
-)
+# Score regression tolerance.  Windows vs Linux OpenMM/JAX yields ~0.01%
+# relative difference; 0.05% gives ~4× headroom while still catching real
+# regressions.
+_SCORE_RTOL = 5e-4
+# R² is a derived, bounded quantity; an absolute tolerance is more meaningful
+# than a relative one (relative is meaningless near R² = 0).
+_R2_ATOL = 1e-3
 
 
 # ---------------------------------------------------------------------------
-# Helpers (shared with test_full_loop_parity.py)
+# Per-system specification
 # ---------------------------------------------------------------------------
 
 
-def _qm_frequencies_from_hessian(
-    hessian_au: np.ndarray,
-    symbols: list[str],
-) -> np.ndarray:
-    """Compute harmonic frequencies (cm⁻¹) from a Cartesian Hessian in AU."""
-    from q2mm.constants import (
-        AMU_TO_KG,
-        BOHR_TO_ANG,
-        HARTREE_TO_J,
-        MASSES,
-        SPEED_OF_LIGHT_MS,
-    )
+@dataclass(frozen=True)
+class Check1Spec:
+    """Everything Check 1 needs to know about one publication system."""
 
-    bohr_to_m = BOHR_TO_ANG * 1e-10
-    hessian_si = hessian_au * HARTREE_TO_J / (bohr_to_m**2)
-    masses = np.array([MASSES[s] * AMU_TO_KG for s in symbols], dtype=float)
-    mass_vec = np.repeat(masses, 3)
-    mw = hessian_si / np.sqrt(np.outer(mass_vec, mass_vec))
-    eigenvalues = np.linalg.eigvalsh(mw)
-    freqs = np.sign(eigenvalues) * np.sqrt(np.abs(eigenvalues))
-    freqs /= 2.0 * np.pi * SPEED_OF_LIGHT_MS * 100.0
-    return freqs
+    key: str
+    """``load_system`` registry key."""
+    golden_name: str
+    """Golden fixture filename under :data:`FIXTURE_DIR`."""
+    n_molecules: int
+    """Expected training-set size (independent sanity check)."""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    """Citation / provenance block copied verbatim into the golden."""
+
+    @property
+    def golden_path(self) -> Path:
+        return FIXTURE_DIR / self.golden_name
+
+
+# Citation metadata is sourced from the previously committed golden fixtures
+# (traceable provenance — AGENTS.md §2).  ``qm_level`` documents the QM method
+# behind each training set.
+CHECK1_SPECS: dict[str, Check1Spec] = {
+    "rh-enamide": Check1Spec(
+        key="rh-enamide",
+        golden_name="rh_enamide_donoghue2008.json",
+        n_molecules=9,
+        metadata={
+            "paper": "Donoghue et al. J. Chem. Theory Comput. 2008, 4, 1313-1323",
+            "doi": "10.1021/ct800132a",
+            "system": "Rh-diphosphine enamide hydrogenation TS",
+            "qm_level": "B3LYP/LACVP** (Jaguar)",
+        },
+    ),
+    "heck-relay": Check1Spec(
+        key="heck-relay",
+        golden_name="heck_relay_rosales2020.json",
+        n_molecules=23,
+        metadata={
+            "paper": "Rosales et al. J. Am. Chem. Soc. 2020, 142, 9700-9707",
+            "doi": "10.1021/jacs.0c01979",
+            "system": "Heck-relay Pd migratory-insertion TS",
+            "qm_level": "M06/gen GD3, pseudo=read (Gaussian 09)",
+        },
+    ),
+    "pd-allyl": Check1Spec(
+        key="pd-allyl",
+        golden_name="pd_allyl_wahlers2021.json",
+        n_molecules=21,
+        metadata={
+            "paper": "Wahlers, J. et al. Nat. Commun. 2021, 12, 6508",
+            "doi": "10.1038/s41467-021-27065-2",
+            "system": "Pd-catalyzed enantioselective allylic amination",
+            "qm_level": "Wahlers dissertation Ch. 3 (Gaussian)",
+            "paper_internal_r2_hessian": 0.998,
+            "paper_internal_r2_geometry": 0.988,
+            "paper_internal_r2_charges": 0.822,
+            "paper_external_n_predictions": 77,
+            "paper_external_mue_kjmol": 4.4,
+            "paper_external_r2_selectivity": 0.41,
+        },
+    ),
+    "pd-conjugate": Check1Spec(
+        key="pd-conjugate",
+        golden_name="pd_conjugate_wahlers2021.json",
+        n_molecules=10,
+        metadata={
+            "paper": "Wahlers, J. et al. J. Org. Chem. 2021, 86, 5660",
+            "doi": "10.1021/acs.joc.1c00136",
+            "system": "Pd-catalyzed 1,4-conjugate addition",
+            "qm_level": "Wahlers dissertation Ch. 5 (Gaussian)",
+        },
+    ),
+    "rh-conjugate": Check1Spec(
+        key="rh-conjugate",
+        golden_name="rh_conjugate_wahlers2022.json",
+        n_molecules=10,
+        metadata={
+            "paper": "Wahlers, J. Ph.D. Dissertation, University of Notre Dame, 2022, Ch. 6",
+            "doi": None,
+            "system": "Rh-catalyzed 1,4-conjugate addition",
+            "qm_level": "Wahlers dissertation Ch. 6 (Gaussian)",
+        },
+    ),
+}
+
+_SYSTEM_IDS = list(CHECK1_SPECS)
+_SPEC_PARAMS = list(CHECK1_SPECS.values())
+
+
+# ---------------------------------------------------------------------------
+# Canonical evaluation helpers
+# ---------------------------------------------------------------------------
+
+
+def _qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> np.ndarray:
+    """Harmonic frequencies (cm⁻¹) from a Cartesian Hessian in Hartree/Bohr²."""
+    from q2mm.models.hessian import hessian_to_frequencies
+
+    return np.asarray(hessian_to_frequencies(hessian_au, symbols), dtype=float)
 
 
 def _build_frequency_reference(
@@ -118,18 +203,11 @@ def _build_frequency_reference(
 ) -> tuple[Any, list[float]]:
     """Build (or extend) a ReferenceData with frequency observations.
 
-    Frequencies below *threshold* are excluded (near-zero rigid-body
-    modes and QM imaginary modes).  MM frequencies above
-    *upper_threshold* are excluded — these correspond to the
-    reaction-coordinate mode whose QM counterpart is imaginary and thus
-    already excluded.
-
-    The 4000 cm⁻¹ default assumes that exactly one MM mode per TS
-    molecule exceeds this value (the reaction-coordinate mode from the
-    deliberately stiffened TS bond), corresponding to the single QM
-    imaginary mode already filtered by the lower threshold.  For systems
-    with multiple stiff modes or multiple imaginary modes, this
-    threshold should be reviewed.
+    Frequencies below *threshold* are excluded (near-zero rigid-body modes and
+    QM imaginary modes).  MM frequencies above *upper_threshold* are excluded —
+    these correspond to the reaction-coordinate mode whose QM counterpart is
+    imaginary and thus already excluded, matching the Q2MM eig_i = 0.00 weight
+    convention.
     """
     from q2mm.optimizers.objective import ReferenceData
 
@@ -149,31 +227,6 @@ def _build_frequency_reference(
     return ref, qm_real[:n]
 
 
-def _load_rh_enamide_molecules() -> list[Any]:
-    """Load 9 rh-enamide structures with Jaguar Hessians."""
-    from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.io import JaguarIn, MacroModel
-
-    mm = MacroModel(str(MMO_PATH))
-    jag_files = sorted(
-        JAG_DIR.glob("*.in"),
-        key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
-    )
-    n_structures = len(mm.structures)
-    n_jag = len(jag_files)
-    if n_structures != n_jag:
-        pytest.skip(
-            f"rh-enamide dataset inconsistent: {n_structures} MacroModel structures "
-            f"but {n_jag} Jaguar .in files in {JAG_DIR}"
-        )
-    molecules = []
-    for struct, jag_path in zip(mm.structures, jag_files):
-        jag = JaguarIn(str(jag_path))
-        hess = jag.get_hessian(len(struct.atoms))
-        molecules.append(Q2MMMolecule.from_structure(struct, hessian=hess))
-    return molecules
-
-
 def _evaluate_ff_on_training_set(
     ff: Any,
     molecules: list[Any],
@@ -183,22 +236,17 @@ def _evaluate_ff_on_training_set(
 ) -> dict[str, Any]:
     """Evaluate a force field against QM reference frequencies.
 
-    MM frequencies above *upper_threshold* are excluded from comparison
-    — they correspond to the reaction-coordinate mode whose QM
-    counterpart is imaginary (and already excluded by the >50 cm⁻¹
-    floor).  This matches the Q2MM convention of weight 0.00 for the
-    first eigenvalue.
-
-    Returns a dict with per-molecule and overall statistics.
+    Returns a dict with per-molecule and overall statistics.  R² is the
+    coefficient of determination; the objective score is the real
+    :class:`ObjectiveFunction` frequency penalty.
     """
     freq_ref = None
-    per_molecule = []
+    per_molecule: list[dict[str, Any]] = []
 
     for mol_idx, mol in enumerate(molecules):
         mm_freqs = engine.frequencies(mol, ff)
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
 
-        # Build reference for objective scoring
         freq_ref, qm_real = _build_frequency_reference(
             qm_freqs,
             mm_freqs,
@@ -207,23 +255,21 @@ def _evaluate_ff_on_training_set(
             ref=freq_ref,
         )
 
-        # Per-molecule statistics (same RC exclusion)
         mm_real = sorted(f for f in mm_freqs if 50.0 < f <= upper_threshold)
         n = min(len(qm_real), len(mm_real))
         qm_matched = np.array(qm_real[:n])
         mm_matched = np.array(mm_real[:n])
         residuals = qm_matched - mm_matched
-        rmsd = float(np.sqrt(np.mean(residuals**2)))
-        mae = float(np.mean(np.abs(residuals)))
+        rmsd = float(np.sqrt(np.mean(residuals**2))) if n else float("inf")
+        mae = float(np.mean(np.abs(residuals))) if n else float("inf")
 
-        # R² (coefficient of determination)
         ss_res = float(np.sum(residuals**2))
         ss_tot = float(np.sum((qm_matched - np.mean(qm_matched)) ** 2))
         r_squared = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
         per_molecule.append(
             {
-                "name": f"{mol.name or 'mol'}_{mol_idx + 1}",
+                "name": f"{getattr(mol, 'name', None) or 'mol'}_{mol_idx + 1}",
                 "n_atoms": len(mol.symbols),
                 "n_freq_refs": n,
                 "qm_frequencies": qm_matched.tolist(),
@@ -234,290 +280,244 @@ def _evaluate_ff_on_training_set(
             }
         )
 
-    # Overall objective score
     from q2mm.optimizers.objective import ObjectiveFunction
 
     obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
     params = ff.get_param_vector()
-    score = obj(params)
+    score = float(obj(params))
 
     return {
         "per_molecule": per_molecule,
         "total_freq_refs": sum(m["n_freq_refs"] for m in per_molecule),
-        "objective_score": float(score),
-        "n_params": ff.n_params,
+        "objective_score": score,
+        "overall_rmsd_cm1": float(np.mean([m["rmsd_cm1"] for m in per_molecule])),
+        "overall_mae_cm1": float(np.mean([m["mae_cm1"] for m in per_molecule])),
+        "overall_r_squared": float(np.mean([m["r_squared"] for m in per_molecule])),
+        "n_params": ff.n_params if hasattr(ff, "n_params") else len(params),
         "n_molecules": len(molecules),
         "param_vector": params.tolist(),
     }
 
 
-def _save_golden_fixture(results: dict, path: Path) -> None:
-    """Save results as a golden fixture JSON file."""
-    fixture = {
-        "metadata": {
-            "paper": "Donoghue et al. J. Chem. Theory Comput. 2008, 4, 1313-1323",
-            "doi": "10.1021/ct800132a",
-            "system": "Rh-diphosphine enamide hydrogenation TS",
-            "ff_source": "examples/rh-enamide/ff/rh_hyd_enamide_final.fld",
-            "ff_provenance": "Q2MM/q2mm commit b26404b8 (forcefields/rh-hydrogenation-enamide.fld)",
-            "engine": "JAX (preferred) or OpenMM",
-            "qm_level": "B3LYP/LACVP** (Jaguar)",
-            "description": (
-                "Check 1: Published FF evaluated with q2mm engines. "
-                "JAX engine includes near-linear torsion damping. "
-                "Reaction-coordinate frequencies (>4000 cm⁻¹) excluded "
-                "from comparison, matching eig_i=0.00 weight convention. "
-                "The published FF was optimized with MacroModel/MM3*; "
-                "engine-specific differences are expected."
-            ),
-        },
+def _golden_payload(spec: Check1Spec, results: dict[str, Any]) -> dict[str, Any]:
+    """Assemble the on-disk golden fixture from an evaluation result."""
+    metadata = dict(spec.metadata)
+    metadata.setdefault("engine", "JaxEngine")
+    metadata["description"] = (
+        "Check 1: published FF evaluated with q2mm JaxEngine. "
+        "Reaction-coordinate frequencies (>4000 cm⁻¹) excluded from comparison, "
+        "matching the eig_i = 0.00 weight convention. The published FF was "
+        "optimized for MacroModel/MM3*; cross-engine differences are expected "
+        "and tracked by ericchansen/q2mm#255."
+    )
+    return {
+        "metadata": metadata,
         "summary": {
             "n_molecules": results["n_molecules"],
             "n_params": results["n_params"],
             "total_freq_refs": results["total_freq_refs"],
             "objective_score": results["objective_score"],
-            "overall_rmsd_cm1": float(np.mean([m["rmsd_cm1"] for m in results["per_molecule"]])),
-            "overall_mae_cm1": float(np.mean([m["mae_cm1"] for m in results["per_molecule"]])),
-            "overall_r_squared": float(np.mean([m["r_squared"] for m in results["per_molecule"]])),
+            "overall_rmsd_cm1": results["overall_rmsd_cm1"],
+            "overall_mae_cm1": results["overall_mae_cm1"],
+            "overall_r_squared": results["overall_r_squared"],
         },
         "per_molecule": results["per_molecule"],
         "param_vector": results["param_vector"],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(fixture, indent=2))
 
 
-# ===========================================================================
-# Check 1: Published FF evaluation
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# Memoized per-system evaluation (one GPU pass per system)
+# ---------------------------------------------------------------------------
+
+_ENGINE: Any = None
+_RESULTS_CACHE: dict[str, dict[str, Any]] = {}
 
 
-@pytest.mark.skipif(not _HAS_JAX, reason="JAX required for torsion damping and stretch-bend support")
-@pytest.mark.validation
-class TestPublishedFFEvaluation:
-    """Check 1: Evaluate the Donoghue 2008 published Rh-enamide FF.
-
-    The ``mm3.fld`` file contains the published optimized parameters in its
-    Rh-enamide substructure section. We load these directly (no Seminario),
-    evaluate with the JAX engine (which provides near-linear torsion damping
-    and stretch-bend support), and compare against QM frequencies.
-
-    The Seminario-estimated FF serves as the "unoptimized" baseline — the
-    published FF should produce a meaningfully lower objective score.
-    """
-
-    @pytest.fixture(scope="class")
-    def molecules(self) -> list[Any]:
-        """Load all 9 rh-enamide structures + Jaguar Hessians."""
-        if not MMO_PATH.exists():
-            pytest.skip("rh-enamide dataset not found")
-        return _load_rh_enamide_molecules()
-
-    @pytest.fixture(scope="class")
-    def published_ff(self) -> Any:
-        """Load the published FF with standard MM3 parameters included."""
-        from q2mm.models.forcefield import ForceField
-
-        if not MM3_FLD_PATH.exists():
-            pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        return ForceField.from_mm3_fld(str(MM3_FLD_PATH))
-
-    @pytest.fixture(scope="class")
-    def seminario_ff(self, molecules: list[Any]) -> Any:
-        """Build a Seminario-estimated FF as the unoptimized baseline."""
-        from q2mm.models.forcefield import ForceField
-        from q2mm.models.seminario import qfuerza_into
-
-        if not MM3_FLD_PATH.exists():
-            pytest.skip(f"mm3.fld not found: {MM3_FLD_PATH}")
-        ff_template = ForceField.from_mm3_fld(str(MM3_FLD_PATH))
-        qfuerza_into(ff_template, molecules)
-        return ff_template
-
-    @pytest.fixture(scope="class")
-    def engine(self) -> Any:
-        """Return JaxEngine (required for torsion damping + stretch-bend)."""
+def _get_engine() -> Any:
+    global _ENGINE
+    if _ENGINE is None:
         from q2mm.backends.mm.jax_engine import JaxEngine
 
-        return JaxEngine()
+        _ENGINE = JaxEngine()
+    return _ENGINE
 
-    @pytest.fixture(scope="class")
-    def published_results(self, published_ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
-        """Evaluate the published FF on the full training set."""
-        t0 = time.perf_counter()
-        results = _evaluate_ff_on_training_set(published_ff, molecules, engine)
-        results["wall_time"] = time.perf_counter() - t0
-        return results
 
-    @pytest.fixture(scope="class")
-    def seminario_results(self, seminario_ff: Any, molecules: list[Any], engine: Any) -> dict[str, Any]:
-        """Evaluate the Seminario-estimated FF for comparison."""
-        return _evaluate_ff_on_training_set(seminario_ff, molecules, engine)
+def _results_for(spec: Check1Spec) -> dict[str, Any]:
+    """Load + evaluate a system once, caching across the module's tests.
+
+    Skips gracefully when the (gitignored) training data is absent.
+    """
+    if spec.key in _RESULTS_CACHE:
+        return _RESULTS_CACHE[spec.key]
+
+    from q2mm.diagnostics.systems import load_system
+
+    try:
+        sd = load_system(spec.key, starting_point="published")
+    except FileNotFoundError as exc:
+        pytest.skip(f"{spec.key}: training data not found ({exc})")
+
+    t0 = time.perf_counter()
+    results = _evaluate_ff_on_training_set(sd.forcefield, sd.molecules, _get_engine())
+    results["wall_time"] = time.perf_counter() - t0
+
+    if UPDATE_GOLDEN:
+        spec.golden_path.parent.mkdir(parents=True, exist_ok=True)
+        spec.golden_path.write_text(json.dumps(_golden_payload(spec, results), indent=2) + "\n")
+
+    _RESULTS_CACHE[spec.key] = results
+    return results
+
+
+# ===========================================================================
+# Check 1: parametrized over every publication system
+# ===========================================================================
+
+
+@pytest.mark.skipif(not _HAS_JAX, reason="JAX required for torsion damping + stretch-bend")
+@pytest.mark.validation
+@pytest.mark.external_data
+@pytest.mark.jax
+@pytest.mark.parametrize("spec", _SPEC_PARAMS, ids=_SYSTEM_IDS)
+class TestPublishedFFCheck1:
+    """Evaluate each published TSFF and pin its behavior to a golden fixture."""
 
     # --- Structural assertions ---
 
-    def test_loads_9_molecules(self, published_results: dict[str, Any]) -> None:
-        """All 9 rh-enamide TS structures are loaded."""
-        assert published_results["n_molecules"] == 9
+    def test_loads_expected_molecules(self, spec: Check1Spec) -> None:
+        """The training set has the expected number of structures."""
+        results = _results_for(spec)
+        assert results["n_molecules"] == spec.n_molecules
 
-    def test_includes_standard_parameters(self, published_results: dict[str, Any]) -> None:
-        """Published FF includes standard MM3 params (>182 substructure-only)."""
-        assert published_results["n_params"] > 182
+    def test_includes_standard_parameters(self, spec: Check1Spec) -> None:
+        """The composed FF carries the full MM3 backbone, not just substructure."""
+        results = _results_for(spec)
+        assert results["n_params"] > 182
 
-    def test_all_molecules_have_frequencies(self, published_results: dict[str, Any]) -> None:
-        """Every molecule contributes QM/MM frequency comparisons."""
-        for m in published_results["per_molecule"]:
+    def test_all_molecules_have_frequencies(self, spec: Check1Spec) -> None:
+        """Every molecule contributes at least one QM/MM frequency pair."""
+        results = _results_for(spec)
+        for m in results["per_molecule"]:
             assert m["n_freq_refs"] > 0, f"{m['name']} has 0 frequency refs"
 
-    def test_over_700_frequency_refs(self, published_results: dict[str, Any]) -> None:
-        """Sufficient frequency reference points across all molecules."""
-        assert published_results["total_freq_refs"] >= 700
+    def test_score_is_finite(self, spec: Check1Spec) -> None:
+        """The objective score is a finite number."""
+        results = _results_for(spec)
+        score = results["objective_score"]
+        assert np.isfinite(score), f"{spec.key}: score is not finite ({score})"
 
-    # --- Score assertions ---
+    # --- Golden regression gate ---
 
-    def test_published_score_is_finite(self, published_results: dict[str, Any]) -> None:
-        """Published FF produces a finite objective score."""
-        score = published_results["objective_score"]
-        assert np.isfinite(score), f"Published FF score is not finite: {score}"
+    def test_matches_golden(self, spec: Check1Spec) -> None:
+        """Score, R², and structural counts match the committed golden.
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known engine gap (#255): the published MacroModel/MM3* force "
-            "field was optimized for a different engine with features our "
-            "MM3 implementation lacks (stretch-bend cross terms, metal-center "
-            "torsion rules).  The Seminario method is engine-independent and "
-            "will always outperform a cross-engine evaluation."
-        ),
-        strict=True,
-    )
-    def test_published_ff_beats_seminario(
-        self, published_results: dict[str, Any], seminario_results: dict[str, Any]
-    ) -> None:
-        """Promotion gate: published FF should eventually beat the Seminario baseline.
-
-        This remains an expected-fail gate because the published FF was
-        optimized for MacroModel's MM3* engine, not ours.  The Seminario
-        method projects QM Hessian eigenvalues directly (engine-independent),
-        so it naturally outperforms a cross-engine FF evaluation.
+        This is the real gate: it detects *regression* from the pinned
+        cross-engine behavior.  It does not judge whether that behavior is
+        good (see the module docstring and #255).
         """
-        pub_score = published_results["objective_score"]
-        sem_score = seminario_results["objective_score"]
-        improvement = (sem_score - pub_score) / sem_score
-        assert pub_score < sem_score, f"Published FF ({pub_score:.1f}) should beat Seminario ({sem_score:.1f})"
-        # Published FF should improve substantially over Seminario
-        assert improvement > 0.10, (
-            f"Published FF improvement ({improvement * 100:.1f}%) over Seminario is unexpectedly low"
-        )
-
-    # --- Quality assertions ---
-
-    def test_per_molecule_r_squared_positive(self, published_results: dict[str, Any]) -> None:
-        """Each molecule shows positive correlation between QM and MM frequencies.
-
-        With near-linear torsion damping and reaction-coordinate frequency
-        exclusion, all 9 molecules achieve R² > 0.  Resolves #256.
-        """
-        for m in published_results["per_molecule"]:
-            assert m["r_squared"] > 0.0, f"{m['name']}: R² = {m['r_squared']:.3f} (should be positive)"
-
-    def test_overall_r_squared_above_threshold(self, published_results: dict[str, Any]) -> None:
-        """Average R² exceeds threshold for a cross-engine FF evaluation.
-
-        The published FF was optimized for MacroModel's MM3* engine, so
-        perfect reproduction under our engine is not expected.  With
-        near-linear torsion damping and reaction-coordinate exclusion,
-        average R² ≈ 0.60.  The threshold of 0.40 allows headroom for
-        engine differences while ensuring meaningful correlation.
-        Resolves #257.
-        """
-        r2_values = [m["r_squared"] for m in published_results["per_molecule"]]
-        avg_r2 = np.mean(r2_values)
-        assert avg_r2 > 0.40, f"Average R² = {avg_r2:.3f} (expected > 0.40 for cross-engine evaluation)"
-
-    # --- Golden fixture pinning ---
-
-    def test_pin_golden_fixture(
-        self,
-        published_results: dict[str, Any],
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Validate reproducibility against the committed golden fixture.
-
-        Set ``Q2MM_UPDATE_GOLDEN=1`` when running this test locally with OpenMM to
-        regenerate the fixture, then commit the resulting JSON separately.
-        """
+        results = _results_for(spec)
         if UPDATE_GOLDEN:
-            _save_golden_fixture(published_results, GOLDEN_PATH)
-            pytest.skip(f"Golden fixture updated at {GOLDEN_PATH}; commit the JSON separately.")
-        if not GOLDEN_PATH.exists():
+            pytest.skip(f"Golden updated at {spec.golden_path}; commit the JSON separately.")
+        if not spec.golden_path.exists():
             pytest.skip(
-                f"Golden fixture not found at {GOLDEN_PATH}. "
-                "Run this test locally with OpenMM and Q2MM_UPDATE_GOLDEN=1 to "
-                "generate the golden JSON, then commit it to the repository."
+                f"Golden fixture not found at {spec.golden_path}. "
+                "Run locally on GPU with Q2MM_UPDATE_GOLDEN=1 to generate it, then commit."
             )
 
-        golden = json.loads(GOLDEN_PATH.read_text())
-        golden_score = golden["summary"]["objective_score"]
-        actual_score = published_results["objective_score"]
-        # Windows vs Linux OpenMM yields ~0.012% relative difference;
-        # rtol=5e-4 (0.05%) gives ~4x headroom while still catching regressions.
+        golden = json.loads(spec.golden_path.read_text())
+        gsum = golden["summary"]
+
+        # Deterministic integer structural fields must match exactly.
+        assert results["n_molecules"] == gsum["n_molecules"]
+        assert results["n_params"] == gsum["n_params"]
+        assert results["total_freq_refs"] == gsum["total_freq_refs"]
+
         np.testing.assert_allclose(
-            actual_score,
-            golden_score,
-            rtol=5e-4,
-            err_msg=(f"Published FF score {actual_score:.4f} doesn't match golden {golden_score:.4f} (rtol=5e-4)"),
+            results["objective_score"],
+            gsum["objective_score"],
+            rtol=_SCORE_RTOL,
+            err_msg=(
+                f"{spec.key}: score {results['objective_score']:.6g} regressed from "
+                f"golden {gsum['objective_score']:.6g} (rtol={_SCORE_RTOL})"
+            ),
+        )
+        np.testing.assert_allclose(
+            results["overall_r_squared"],
+            gsum["overall_r_squared"],
+            atol=_R2_ATOL,
+            err_msg=(
+                f"{spec.key}: R² {results['overall_r_squared']:.4f} regressed from "
+                f"golden {gsum['overall_r_squared']:.4f} (atol={_R2_ATOL})"
+            ),
         )
 
     # --- Reporting ---
 
-    def test_summary_report(
-        self,
-        published_results: dict[str, Any],
-        seminario_results: dict[str, Any],
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """Print a summary report (informational, never fails)."""
-        pub = published_results
-        sem = seminario_results
-        improvement = (sem["objective_score"] - pub["objective_score"]) / sem["objective_score"]
-
+    def test_summary_report(self, spec: Check1Spec, capsys: pytest.CaptureFixture[str]) -> None:
+        """Print a per-system summary (informational, never fails)."""
+        results = _results_for(spec)
         with capsys.disabled():
             print("\n" + "=" * 72)
-            print("  CHECK 1: Published FF Evaluation (Donoghue 2008)")
-            print("  Rh-enamide hydrogenation TS — OpenMM engine")
+            print(f"  CHECK 1: {spec.key} — {spec.metadata.get('paper', '')}")
             print("=" * 72)
-            print(f"  Molecules:       {pub['n_molecules']}")
-            print(f"  Parameters:      {pub['n_params']}")
-            print(f"  Freq refs:       {pub['total_freq_refs']}")
-            print(f"  Seminario score: {sem['objective_score']:.2f}")
-            print(f"  Published score: {pub['objective_score']:.2f}")
-            print(f"  Improvement:     {improvement * 100:.1f}%")
-            print(f"  Wall time:       {pub.get('wall_time', 0):.1f}s")
-            print("-" * 72)
-            print(f"  {'Molecule':<50} {'RMSD':>8} {'MAE':>8} {'R2':>8} {'Nref':>5}")
-            print("-" * 72)
-            for m in pub["per_molecule"]:
-                print(
-                    f"  {m['name']:<50} "
-                    f"{m['rmsd_cm1']:8.1f} "
-                    f"{m['mae_cm1']:8.1f} "
-                    f"{m['r_squared']:8.3f} "
-                    f"{m['n_freq_refs']:5d}"
-                )
-            avg_rmsd = np.mean([m["rmsd_cm1"] for m in pub["per_molecule"]])
-            avg_mae = np.mean([m["mae_cm1"] for m in pub["per_molecule"]])
-            avg_r2 = np.mean([m["r_squared"] for m in pub["per_molecule"]])
-            print("-" * 72)
-            print(f"  {'AVERAGE':<50} {avg_rmsd:8.1f} {avg_mae:8.1f} {avg_r2:8.3f} {pub['total_freq_refs']:5d}")
-            print("=" * 72)
+            print(f"  Molecules:   {results['n_molecules']}")
+            print(f"  Parameters:  {results['n_params']}")
+            print(f"  Freq refs:   {results['total_freq_refs']}")
+            print(f"  Score:       {results['objective_score']:.4f}")
+            print(f"  Overall R²:  {results['overall_r_squared']:.4f}")
+            print(f"  Overall RMSD:{results['overall_rmsd_cm1']:8.1f} cm⁻¹")
+            print(f"  Wall time:   {results.get('wall_time', 0):.1f}s")
+        assert results["per_molecule"], "summary should contain at least one molecule"
 
-        assert len(pub["per_molecule"]) > 0, "Summary report should contain at least one molecule"
-        # Informational: published FF *should* beat Seminario, but this test
-        # is a reporting helper — don't gate CI on it.
-        if improvement < 0:
-            import warnings
 
-            warnings.warn(
-                f"Published FF did NOT improve over Seminario baseline (improvement={improvement * 100:.1f}%)",
-                stacklevel=1,
-            )
+# ---------------------------------------------------------------------------
+# Regression: load_heck_relay() must preserve published OPT parameter values
+# (ericchansen/q2mm#277) — system-specific, not part of the parametrized sweep.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.validation
+@pytest.mark.external_data
+def test_load_heck_relay_preserves_published_opt_values() -> None:
+    """Regression: loader must NOT overwrite published Rosales OPT params.
+
+    Before #277, ``load_heck_relay()`` re-projected the OPT-substructure
+    parameters via FUERZA after ``freeze_standard_params``, discarding Rosales'
+    fitted values.  After the fix, the loader keeps them exactly.  This test
+    compares the optimizable (non-frozen) parameter values from
+    ``load_system("heck-relay", starting_point="published")`` against the same
+    params loaded directly from the .fld file with no Seminario step.
+    """
+    from q2mm.diagnostics.systems import _heck_relay_ff_path, load_system
+    from q2mm.models.forcefield import ForceField
+
+    ff_path = _heck_relay_ff_path()
+    if not ff_path.exists():
+        pytest.skip(f"Heck relay FF not found: {ff_path}")
+
+    # Loader output, pinned to the published starting point (the default
+    # "qfuerza" start intentionally overwrites OPT bond/angle scalars).
+    sys_data = load_system("heck-relay", starting_point="published")
+    loader_active = sys_data.forcefield.get_active_param_vector()
+
+    # Same .fld, same active-mask partition, but no Seminario re-projection.
+    expected_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
+    opt_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
+    expected_ff.freeze_standard_params(opt_ff)
+    expected_active = expected_ff.get_active_param_vector()
+
+    assert loader_active.shape == expected_active.shape, (
+        f"Active-mask shape mismatch: loader={loader_active.shape} vs expected={expected_active.shape}"
+    )
+    np.testing.assert_allclose(
+        loader_active,
+        expected_active,
+        rtol=0.0,
+        atol=1e-12,
+        err_msg=(
+            "load_heck_relay() OPT parameter values differ from the published "
+            ".fld values.  This likely means a Seminario-style re-estimation "
+            "crept back into the loader (the #277 bug)."
+        ),
+    )
