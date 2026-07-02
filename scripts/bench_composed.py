@@ -107,7 +107,7 @@ def run_workflow_b(
     sys_data_p2 = SystemData(
         molecules=sys_data.molecules,
         forcefield=p1_result.optimized_ff.copy(),
-        freq_ref=sys_data.freq_ref,
+        reference=sys_data.reference,
         qm_freqs_per_mol=sys_data.qm_freqs_per_mol,
         metadata=sys_data.metadata,
         normal_modes=sys_data.normal_modes,
