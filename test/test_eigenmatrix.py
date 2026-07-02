@@ -345,3 +345,68 @@ class TestObjectiveFunctionEigenmatrix:
         # Diagonal should scale by 2
         assert np.allclose(np.diag(eigmat2), 2.0 * np.diag(eigmat), atol=1e-8)
         assert engine2.hessian_calls == 1
+
+
+class TestMassWeightedEigenmatrixParity:
+    """Mass-weighted normal-mode eigenmatrix parity across all three pipelines.
+
+    The reference-generation, numpy-evaluator, and JaxLoss projection
+    formulas must agree in the mass-weighted metric (Farrugia et al. 2025 —
+    project reference normal modes across both the reference and MM
+    Hessians).
+    """
+
+    @staticmethod
+    def _random_hessian(n3: int, seed: int) -> np.ndarray:
+        rng = np.random.default_rng(seed)
+        a = rng.standard_normal((n3, n3))
+        return a @ a.T + np.eye(n3)
+
+    def test_reference_diagonal_is_mass_weighted_eigenvalues(self) -> None:
+        """QM self-projection diagonal == mass-weighted eigenvalues; off-diag ~ 0."""
+        from q2mm.models.hessian import mass_weighted_eigenmatrix, mass_weighted_normal_modes
+
+        symbols = ["C", "H", "H"]  # 3 atoms -> 9 DOF
+        qm_hess = self._random_hessian(9, seed=11)
+
+        evals, modes = mass_weighted_normal_modes(qm_hess, symbols)
+        eigmat = mass_weighted_eigenmatrix(qm_hess, modes, symbols)
+
+        np.testing.assert_allclose(np.diag(eigmat), evals, atol=1e-10)
+        off = eigmat - np.diag(np.diag(eigmat))
+        assert np.allclose(off, 0.0, atol=1e-10)
+
+    def test_jaxloss_projection_matches_numpy_helper(self) -> None:
+        """JaxLoss's ``Qᵀ (H⊙scale) Q`` equals ``mass_weighted_eigenmatrix``."""
+        from q2mm.models.hessian import (
+            mass_weight_scale_3n,
+            mass_weighted_eigenmatrix,
+            mass_weighted_normal_modes,
+        )
+
+        symbols = ["O", "C", "H"]  # distinct masses -> non-trivial weighting
+        qm_hess = self._random_hessian(9, seed=22)
+        mm_hess = self._random_hessian(9, seed=23)
+
+        _, modes = mass_weighted_normal_modes(qm_hess, symbols)
+
+        # JaxLoss formula (numpy stand-in): mass-weight then project.
+        scale = mass_weight_scale_3n(symbols)
+        jaxloss_eigmat = modes.T @ (mm_hess * scale) @ modes
+
+        helper_eigmat = mass_weighted_eigenmatrix(mm_hess, modes, symbols)
+        np.testing.assert_allclose(jaxloss_eigmat, helper_eigmat, atol=1e-12)
+
+    def test_reference_generation_uses_mass_weighted_basis(self) -> None:
+        """ReferenceData eig_diagonal values equal mass-weighted eigenvalues."""
+        from q2mm.models.hessian import mass_weighted_normal_modes
+
+        symbols = ["C", "H", "H"]
+        qm_hess = self._random_hessian(9, seed=33)
+
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(qm_hess, symbols=symbols, diagonal_only=True)
+
+        evals, _ = mass_weighted_normal_modes(qm_hess, symbols)
+        diag_vals = np.array([rv.value for rv in ref.values if rv.kind == "eig_diagonal"])
+        np.testing.assert_allclose(diag_vals, evals, atol=1e-10)

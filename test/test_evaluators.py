@@ -397,10 +397,12 @@ class TestEigenmatrixEvaluator:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
         from q2mm.models.molecule import Q2MMMolecule
 
-        hess = np.array([[4.0, 1.0], [1.0, 3.0]])
+        _rng = np.random.default_rng(42)
+        _a = _rng.standard_normal((6, 6))
+        hess = _a @ _a.T + np.eye(6)
         mol = Q2MMMolecule(
-            symbols=["H"],
-            geometry=np.array([[0.0, 0.0, 0.0]]),
+            symbols=["H", "H"],
+            geometry=np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]]),
             name="stub",
             hessian=hess,
         )
