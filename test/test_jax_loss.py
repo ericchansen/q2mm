@@ -364,9 +364,38 @@ class TestJaxLossEigenmatrixParity:
         ref = ReferenceData()
         ref.add_eigenmatrix_from_hessian(
             hess_qm,
+            symbols=list(mol.symbols),
             diagonal_only=True,
             molecule_idx=0,
             weights={"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.0},
+        )
+
+        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        spec = obj.to_jax_spec()
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+
+        params = ff_pert.get_param_vector()
+        python_score = obj(params)
+        jax_score = jax_loss(params)
+
+        assert python_score > 0, "Loss should be nonzero with perturbed params"
+        np.testing.assert_allclose(jax_score, python_score, atol=1e-6)
+
+    def test_eigenmatrix_offdiagonal_loss_parity(self) -> None:
+        """JaxLoss and ObjectiveFunction agree on the full (off-diagonal) eigenmatrix."""
+        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
+
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(
+            hess_qm,
+            symbols=list(mol.symbols),
+            diagonal_only=False,
+            molecule_idx=0,
+            weights={"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.05},
         )
 
         obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
