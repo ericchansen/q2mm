@@ -771,7 +771,6 @@ class ReferenceData:
 
         """
         from q2mm.io.gaussian import GaussLog
-        from q2mm.models.hessian import reform_hessian
 
         log = GaussLog(str(path), au_hessian=au_hessian)
 
@@ -781,14 +780,12 @@ class ReferenceData:
         mol.multiplicity = multiplicity
         mol.bond_tolerance = bond_tolerance
 
-        # Override hessian with eigenvalue-reconstructed version if available
-        if log.evals is not None and log.evecs is not None and log.evals.size and log.evecs.size:
-            evecs = log.evecs
-            # Gaussian logs store eigenvectors as (3N-6, 3N) — rows are modes.
-            # reform_hessian expects (3N, 3N-6) — columns are modes.
-            if evecs.shape[0] < evecs.shape[1]:
-                evecs = evecs.T
-            mol.hessian = reform_hessian(log.evals, evecs)
+        # ``mol.hessian`` carries the archive Cartesian Hessian (Hartree/Bohr²,
+        # full rank 3N, imaginary mode intact) in a frame consistent with the
+        # geometry.  Do NOT override it with a reconstruction from
+        # ``log.evals``/``log.evecs`` — those come from Gaussian's mass-weighted
+        # frequency analysis and would reintroduce a ~√(mᵢmⱼ) error into every
+        # heavy-atom force constant.
 
         # Frequencies in cm⁻¹ from the Gaussian log
         # Note: log.evals are eigenvalues (mass-weighted force constants in
