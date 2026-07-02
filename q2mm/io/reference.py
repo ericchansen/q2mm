@@ -423,6 +423,7 @@ def _load_molecule(
             temp_ref = ReferenceData()
             temp_ref.add_eigenmatrix_from_hessian(
                 mol.hessian,
+                symbols=list(mol.symbols),
                 diagonal_only=diagonal_only,
                 molecule_idx=molecule_idx,
                 weights={

@@ -369,10 +369,53 @@ class TestObjectiveFunctionIntegration:
 
         assert score_batched == pytest.approx(score_sequential, rel=1e-10)
 
+    def test_batched_vs_sequential_eigenmatrix_parity(self) -> None:
+        """Eigenmatrix score matches whether batched or sequential.
 
-# ---------------------------------------------------------------------------
-# Fallback tests
-# ---------------------------------------------------------------------------
+        Regression guard for the batched ``precomputed_hessian`` eigenmatrix
+        path: it must use the same mass-weighted normal-mode basis as the
+        per-molecule ``EigenmatrixEvaluator`` (sequential) path.
+        """
+        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        engine = JaxEngine()
+        ff_ref = _water_ff()
+        mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
+
+        # Use each molecule's MM Hessian at ff_ref as its 'QM' Hessian.
+        mols = [mol.with_hessian(engine.hessian(mol, ff_ref)) for mol in mols]
+
+        # Perturbed FF so the eigenmatrix residuals are non-zero.
+        ff = ForceField(
+            bonds=[BondParam(elements=("H", "O"), force_constant=6.0, equilibrium=1.02)],
+            angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.5, equilibrium=110.0)],
+            functional_form=FunctionalForm.MM3,
+        )
+        params = ff.get_param_vector()
+
+        ref = ReferenceData()
+        for mol_idx, mol in enumerate(mols):
+            ref.add_eigenmatrix_from_hessian(
+                mol.hessian,
+                symbols=list(mol.symbols),
+                diagonal_only=False,
+                molecule_idx=mol_idx,
+            )
+        obj_batched = ObjectiveFunction(ff, engine, mols, ref)
+        score_batched = obj_batched(params)
+
+        score_sequential = 0.0
+        for mol in mols:
+            ref_single = ReferenceData()
+            ref_single.add_eigenmatrix_from_hessian(
+                mol.hessian, symbols=list(mol.symbols), diagonal_only=False, molecule_idx=0
+            )
+            obj_single = ObjectiveFunction(ff, engine, [mol], ref_single)
+            score_sequential += obj_single(params)
+
+        assert score_batched > 0.0
+        assert score_batched == pytest.approx(score_sequential, rel=1e-8)
 
 
 class TestFallback:

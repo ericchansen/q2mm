@@ -320,7 +320,7 @@ class ReferenceData:
         weights: dict[str, float] | None = None,
         skip_first: bool = True,
         eigenvalue_threshold: float = 0.1173,
-        rigid_body_tol: float = 1e-4,
+        n_rigid_modes: int = 6,
     ) -> int:
         """Bulk-load eigenmatrix training data from a QM Hessian.
 
@@ -360,10 +360,19 @@ class ReferenceData:
                 threshold separating low/high frequency modes for weight
                 assignment.  (Numerically inert while ``eig_d_low`` equals
                 ``eig_d_high``.)
-            rigid_body_tol (float): Modes whose mass-weighted eigenvalue
-                has magnitude below this tolerance are treated as
-                rigid-body (translation/rotation) modes and given weight
-                ``eig_i`` (0.0), excluding all six from the fit.
+            n_rigid_modes (int): Number of rigid-body (translation +
+                rotation) modes to exclude from the fit, **in addition to**
+                the ``skip_first`` reaction-coordinate mode.  The
+                ``n_rigid_modes`` smallest mass-weighted eigenvalue-magnitude
+                modes (chosen after the reaction-coordinate mode is set aside)
+                are given weight ``eig_i`` (0.0), and any off-diagonal element
+                touching one of them (or the skipped reaction-coordinate mode)
+                is likewise zero-weighted.  Defaults to 6 (non-linear
+                molecules; use 5 for linear).  A count-based criterion is used
+                rather than a magnitude tolerance because genuine
+                low-frequency vibrations (tens of cm⁻¹) can have eigenvalue
+                magnitudes comparable to a loose tolerance, whereas the true
+                rigid-body modes are always the few smallest.
 
         Returns:
             int: Number of entries added.
@@ -389,15 +398,32 @@ class ReferenceData:
             eigenmatrix = transform_to_eigenmatrix(hessian, eigenvectors)
         elements = extract_eigenmatrix_data(eigenmatrix, diagonal_only=diagonal_only)
 
+        # Modes carrying no force-constant information, excluded (weight
+        # ``eig_i``) from both the diagonal and any off-diagonal target:
+        #   * the reaction-coordinate mode (``skip_first`` — the most-negative
+        #     eigenvalue, i.e. index 0 after the ascending eigh sort), and
+        #   * the ``n_rigid_modes`` rigid-body (translation/rotation) modes,
+        #     the smallest mass-weighted eigenvalue magnitude.
+        # The reaction-coordinate mode is removed from the rigid-mode candidate
+        # pool first, so a *soft* imaginary mode (whose |eigenvalue| may itself
+        # be among the smallest) cannot displace a genuine rigid-body mode.
+        # The number of excluded modes is therefore a consistent
+        # ``skip_first + n_rigid_modes`` regardless of the imaginary-mode
+        # magnitude.
+        excluded_modes: set[int] = set()
+        rigid_candidates = list(np.argsort(np.abs(eigenvalues)))
+        if skip_first and len(eigenvalues):
+            excluded_modes.add(0)
+            rigid_candidates = [m for m in rigid_candidates if m != 0]
+        if n_rigid_modes > 0 and rigid_candidates:
+            n_rigid = min(n_rigid_modes, len(rigid_candidates))
+            excluded_modes.update(int(m) for m in rigid_candidates[:n_rigid])
+
         added = 0
         for row, col, value in elements:
             if row == col:
                 # Diagonal element
-                if row == 0 and skip_first:
-                    weight = w["eig_i"]
-                elif abs(eigenvalues[row]) < rigid_body_tol:
-                    # Rigid-body (translation/rotation) mode — no force-constant
-                    # information; excluded from the fit.
+                if row in excluded_modes:
                     weight = w["eig_i"]
                 elif value < eigenvalue_threshold:
                     weight = w["eig_d_low"]
@@ -411,12 +437,14 @@ class ReferenceData:
                     label=f"eig[{row}]",
                 )
             else:
-                # Off-diagonal element
+                # Off-diagonal element — zero-weighted if it couples an
+                # excluded (rigid-body / reaction-coordinate) mode.
+                weight = 0.0 if (row in excluded_modes or col in excluded_modes) else w["eig_o"]
                 self.add_hessian_offdiagonal(
                     value,
                     row=row,
                     col=col,
-                    weight=w["eig_o"],
+                    weight=weight,
                     molecule_idx=molecule_idx,
                     label=f"eig[{row},{col}]",
                 )
@@ -1776,9 +1804,11 @@ class ObjectiveFunction:
 
         if eigm_ev is not None and needed & eigm_ev.HANDLED_KINDS:
             if precomputed_hessian is not None:
-                from q2mm.models.hessian import decompose, transform_to_eigenmatrix
+                from q2mm.models.hessian import mass_weighted_eigenmatrix, mass_weighted_normal_modes
 
-                # Use precomputed Hessian to build eigenmatrix directly
+                # Use precomputed Hessian to build eigenmatrix directly, in the
+                # same mass-weighted normal-mode basis as reference generation
+                # and EigenmatrixEvaluator / JaxLoss.
                 eigm_evaluator = eigm_ev
                 if mol_idx not in eigm_evaluator._qm_eigenvectors:
                     if mol.hessian is None:
@@ -1787,13 +1817,14 @@ class ObjectiveFunction:
                             "Eigenmatrix training requires a QM Hessian for the "
                             "eigenvector basis."
                         )
-                    _, qm_evecs = decompose(mol.hessian)
+                    _, qm_evecs = mass_weighted_normal_modes(mol.hessian, mol.symbols)
                     eigm_evaluator._qm_eigenvectors[mol_idx] = qm_evecs
 
                 qm_evecs = eigm_evaluator._qm_eigenvectors[mol_idx]
-                result["eigenmatrix"] = transform_to_eigenmatrix(
+                result["eigenmatrix"] = mass_weighted_eigenmatrix(
                     precomputed_hessian,
                     qm_evecs,
+                    mol.symbols,
                 )
             else:
                 emr = eigm_ev.compute(

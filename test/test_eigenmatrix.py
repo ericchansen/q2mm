@@ -189,7 +189,7 @@ class TestReferenceDataEigenvalues:
         """First eigenvalue gets eig_i weight (default 0.0) when skip_first=True."""
         hess = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
         ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True)
+        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=0)
 
         # First entry should have weight 0.0 (eig_i)
         assert ref.values[0].weight == 0.0
@@ -204,6 +204,7 @@ class TestReferenceDataEigenvalues:
             hess,
             diagonal_only=True,
             skip_first=False,
+            n_rigid_modes=0,
             weights={"eig_d_low": 0.5, "eig_d_high": 0.8},
         )
 
@@ -219,6 +220,7 @@ class TestReferenceDataEigenvalues:
             hess,
             diagonal_only=True,
             skip_first=False,
+            n_rigid_modes=0,
             eigenvalue_threshold=3.5,  # splits: 2.38 < 3.5, 4.62 ≥ 3.5
             weights={"eig_d_low": 0.2, "eig_d_high": 0.9},
         )
@@ -410,3 +412,79 @@ class TestMassWeightedEigenmatrixParity:
         evals, _ = mass_weighted_normal_modes(qm_hess, symbols)
         diag_vals = np.array([rv.value for rv in ref.values if rv.kind == "eig_diagonal"])
         np.testing.assert_allclose(diag_vals, evals, atol=1e-10)
+
+
+class TestRigidBodyModeExclusion:
+    """Count-based rigid-body mode exclusion in add_eigenmatrix_from_hessian."""
+
+    def test_excludes_six_smallest_magnitude_modes(self) -> None:
+        """The 6 smallest |eigenvalue| modes are zero-weighted; real modes kept."""
+        # Diagonal Hessian; eigh re-sorts eigenvalues ascending internally.
+        # Six near-zero "rigid-body" magnitudes (incl. two negatives) plus three
+        # genuine low-frequency modes whose magnitude (2.4e-5 .. 1.3e-4) mirrors
+        # real 25-60 cm-1 vibrations that a loose magnitude tolerance would
+        # wrongly drop.
+        evals = np.array([3.6e-10, -3.8e-10, 1.1e-9, 3.1e-7, -1.4e-6, 3.4e-6, 2.4e-5, 5.3e-5, 1.3e-4])
+        hess = np.diag(evals)
+
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=False, n_rigid_modes=6)
+
+        by_mode = {rv.data_idx: rv.weight for rv in ref.values if rv.kind == "eig_diagonal"}
+        # Exclusion is by smallest |eigenvalue| (magnitude), NOT by index
+        # position — the two negative entries have tiny magnitude and are
+        # excluded, while the three largest-|eigenvalue| modes must retain
+        # weight regardless of where they land in the ascending sort.
+        zero_modes = sorted(m for m, w in by_mode.items() if w == 0.0)
+        kept_modes = sorted(m for m, w in by_mode.items() if w > 0.0)
+        assert len(zero_modes) == 6
+        assert len(kept_modes) == 3
+        # The kept modes correspond to the three largest eigenvalues.
+        evals_sorted = np.sort(evals)
+        for m in kept_modes:
+            assert evals_sorted[m] >= 2.4e-5
+
+    def test_offdiagonal_touching_rigid_mode_is_zero_weighted(self) -> None:
+        """Off-diagonal targets coupling an excluded mode get weight 0."""
+        evals = np.array([1e-10, 2e-10, 3e-10, 4e-10, 5e-10, 6e-10, 0.5, 1.0, 2.0])
+        hess = np.diag(evals)
+
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(
+            hess, diagonal_only=False, skip_first=False, n_rigid_modes=6, weights={"eig_o": 0.05}
+        )
+
+        excluded = set(range(6))  # the 6 smallest-|eval| modes
+        for rv in ref.values:
+            if rv.kind != "eig_offdiagonal":
+                continue
+            row, col = rv.atom_indices[:2]
+            if row in excluded or col in excluded:
+                assert rv.weight == 0.0
+            else:
+                assert rv.weight == 0.05
+
+    def test_soft_imaginary_does_not_displace_rigid_mode(self) -> None:
+        """skip_first reaction mode is reserved before rigid modes are chosen.
+
+        Regression for the "under-exclude by 1" edge case: when the imaginary
+        reaction-coordinate mode's |eigenvalue| is itself among the smallest,
+        it must not consume a rigid-mode slot.  With ``skip_first=True`` and
+        ``n_rigid_modes=6`` exactly ``1 + 6 = 7`` distinct modes are excluded,
+        and all six genuine rigid-body modes retain weight 0.
+        """
+        # Ascending-sorted internal order: idx0 is a soft imaginary mode whose
+        # magnitude (1e-8) exceeds one genuine rigid mode (idx6 at 5e-8 would be
+        # left in with the old smallest-6 logic).
+        evals = np.array([-1e-8, 1e-10, 2e-10, 3e-10, 4e-10, 5e-10, 5e-8, 1e-3, 2e-3, 3e-3])
+        hess = np.diag(evals)
+
+        ref = ReferenceData()
+        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=6)
+
+        by_mode = {rv.data_idx: rv.weight for rv in ref.values if rv.kind == "eig_diagonal"}
+        zero_modes = sorted(m for m, w in by_mode.items() if w == 0.0)
+        # Reaction coordinate (idx0) + the six genuine rigid modes (idx1..6).
+        assert zero_modes == [0, 1, 2, 3, 4, 5, 6]
+        # The three real vibrations (idx7..9) keep weight.
+        assert all(by_mode[m] > 0.0 for m in (7, 8, 9))
