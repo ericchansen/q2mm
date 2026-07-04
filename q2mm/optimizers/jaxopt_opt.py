@@ -269,25 +269,32 @@ class JaxOptOptimizer:
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(final_params)
 
+        # ``initial_score``/``final_score`` above are JaxLoss-unit surrogate
+        # values used for the internal revert guard.  Report scores in true
+        # ObjectiveFunction units so cross-stage comparisons in cycling.py
+        # compare like-for-like (mirror scipy_opt / optax).
+        report_initial = float(objective(initial_full))
+        report_final = float(objective(final_params))
+
         if self.verbose:
             logger.info(
                 "Optimization %s: score %.6f → %.6f (%d iterations)",
                 "converged" if converged else "stopped",
-                initial_score,
-                final_score,
+                report_initial,
+                report_final,
                 n_iter,
             )
 
         return OptimizationResult(
             success=converged,
             message=message,
-            initial_score=initial_score,
-            final_score=final_score,
+            initial_score=report_initial,
+            final_score=report_final,
             n_iterations=n_iter,
             n_evaluations=n_iter,
             initial_params=initial_full if has_frozen else x0,
             final_params=final_params,
-            history=[initial_score, final_score],
+            history=[report_initial, report_final],
             method=method_str,
             jac_mode="analytical",
             eps=None,

@@ -714,6 +714,74 @@ def _find_dihedral_atoms(
     return results
 
 
+def _build_cmap_force(molecule: Q2MMMolecule, forcefield: ForceField) -> tuple[object | None, list[_CmapTerm]]:
+    """Build a ``CMAPTorsionForce`` for the molecule's matching phi/psi pairs.
+
+    Shared by ``create_context`` (scalar energy) and ``_create_diff_handle``
+    (analytical-gradient) so both include identical CMAP energy.  CMAP grids
+    carry no tunable parameters, so this contributes to the potential energy
+    only — not to the parameter-gradient vector.
+
+    Args:
+        molecule: Molecular structure.
+        forcefield: Force field, possibly carrying CMAP grids.
+
+    Returns:
+        ``(cmap_force, cmap_terms)``.  ``cmap_force`` is ``None`` when the
+        force field has no CMAP grids or none of them match the molecule.
+
+    """
+    if not forcefield.has_cmap:
+        return None, []
+
+    cmap_force = mm.CMAPTorsionForce()
+    type_to_indices = _build_atom_type_index(molecule)
+    cmap_terms: list[_CmapTerm] = []
+
+    for grid in forcefield.cmaps:
+        # Add the 2D energy grid (convert kcal/mol → kJ/mol for OpenMM)
+        energy_kj = [e * KCAL_TO_KJ for e in grid.energy]
+        map_index = cmap_force.addMap(grid.resolution, energy_kj)
+
+        phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
+        psi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_psi, molecule)
+
+        # Pair phi/psi dihedrals sharing 3 overlapping atoms.
+        psi_index: dict[tuple[int, ...], list[tuple[int, int, int, int]]] = {}
+        for psi_atoms in psi_matches:
+            key = tuple(psi_atoms[:3])
+            psi_index.setdefault(key, []).append(psi_atoms)
+
+        for phi_atoms in phi_matches:
+            key = tuple(phi_atoms[1:])
+            for psi_atoms in psi_index.get(key, ()):
+                torsion_index = cmap_force.addTorsion(
+                    map_index,
+                    phi_atoms[0],
+                    phi_atoms[1],
+                    phi_atoms[2],
+                    phi_atoms[3],
+                    psi_atoms[0],
+                    psi_atoms[1],
+                    psi_atoms[2],
+                    psi_atoms[3],
+                )
+                cmap_terms.append(
+                    _CmapTerm(
+                        torsion_index=torsion_index,
+                        map_index=map_index,
+                        phi_atoms=phi_atoms,
+                        psi_atoms=psi_atoms,
+                        phi_types=grid.atom_types_phi,
+                        psi_types=grid.atom_types_psi,
+                    )
+                )
+
+    if not cmap_terms:
+        return None, []
+    return cmap_force, cmap_terms
+
+
 @register_mm("openmm")
 class OpenMMEngine(MMEngine):
     """Molecular mechanics backend powered by OpenMM.
@@ -1166,59 +1234,12 @@ class OpenMMEngine(MMEngine):
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
 
         # --- Assign CMAP correction terms (CHARMM backbone corrections) ---
-        cmap_force = None
-        cmap_terms: list[_CmapTerm] = []
+        cmap_force, cmap_terms = _build_cmap_force(molecule, forcefield)
         if forcefield.has_cmap:
-            cmap_force = mm.CMAPTorsionForce()
-            # Build atom-type-to-index mapping for the molecule
-            type_to_indices = _build_atom_type_index(molecule)
-
-            for grid in forcefield.cmaps:
-                # Add the 2D energy grid (convert kcal/mol → kJ/mol for OpenMM)
-                energy_kj = [e * KCAL_TO_KJ for e in grid.energy]
-                map_index = cmap_force.addMap(grid.resolution, energy_kj)
-
-                # Find atom index quadruples matching the phi/psi types
-                phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
-                psi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_psi, molecule)
-
-                # Pair phi/psi dihedrals sharing 3 overlapping atoms.
-                # Index psi by first 3 atoms for O(n_phi + n_psi) lookup.
-                psi_index: dict[tuple[int, ...], list[tuple[int, int, int, int]]] = {}
-                for psi_atoms in psi_matches:
-                    key = tuple(psi_atoms[:3])
-                    psi_index.setdefault(key, []).append(psi_atoms)
-
-                for phi_atoms in phi_matches:
-                    key = tuple(phi_atoms[1:])
-                    for psi_atoms in psi_index.get(key, ()):
-                        torsion_index = cmap_force.addTorsion(
-                            map_index,
-                            phi_atoms[0],
-                            phi_atoms[1],
-                            phi_atoms[2],
-                            phi_atoms[3],
-                            psi_atoms[0],
-                            psi_atoms[1],
-                            psi_atoms[2],
-                            psi_atoms[3],
-                        )
-                        cmap_terms.append(
-                            _CmapTerm(
-                                torsion_index=torsion_index,
-                                map_index=map_index,
-                                phi_atoms=phi_atoms,
-                                psi_atoms=psi_atoms,
-                                phi_types=grid.atom_types_phi,
-                                psi_types=grid.atom_types_psi,
-                            )
-                        )
-
             if cmap_terms:
                 logger.info("Created %d CMAP correction term(s).", len(cmap_terms))
             else:
                 logger.warning("CMAP grids present but no matching atom pairs found.")
-                cmap_force = None
 
         if not bond_terms and not angle_terms and not torsion_terms and not vdw_terms and not cmap_terms:
             raise ValueError(
@@ -1713,6 +1734,42 @@ class OpenMMEngine(MMEngine):
                 vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
 
             system.addForce(vdw_force)
+
+        # --- Urey-Bradley: each UB angle contributes (ub_k, ub_r0) on the
+        # 1-3 pair (atom_i, atom_k).  These live at the tail of the param
+        # vector (after vdW), mirroring get_param_vector().  Modeled as a
+        # harmonic bond so the energy and derivatives match energy()'s
+        # HarmonicBondForce term. ---
+        ub_k_factor = canonical_to_openmm_bond_k_nm(1.0)
+        for ub_idx, ap in enumerate(forcefield._ub_angles):
+            k_name = f"ub_k_{ub_idx}"
+            r0_name = f"ub_r0_{ub_idx}"
+            param_names.extend([k_name, r0_name])
+            param_vector_indices.extend([pv_idx, pv_idx + 1])
+            grad_unit_factors.extend(
+                [
+                    ub_k_factor,  # dk_openmm/dk_canonical
+                    0.1,  # dr0_openmm/dr0_canonical (Å → nm)
+                ]
+            )
+            pv_idx += 2
+
+            ubf = mm.CustomBondForce(f"{k_name}*(r-{r0_name})^2")
+            ubf.setForceGroup(0)
+            ubf.addGlobalParameter(k_name, canonical_to_openmm_bond_k_nm(ap.ub_force_constant))
+            ubf.addGlobalParameter(r0_name, ang_to_nm(ap.ub_equilibrium))
+            ubf.addEnergyParameterDerivative(k_name)
+            ubf.addEnergyParameterDerivative(r0_name)
+            for angle in angles_by_param.get(id(ap), []):
+                ubf.addBond(angle.atom_i, angle.atom_k)
+            system.addForce(ubf)
+
+        # --- CMAP: correction grids carry no tunable parameters, so they
+        # contribute to the scalar energy only.  Add them here so that
+        # energy_and_param_grad's energy agrees with energy(). ---
+        cmap_force, _cmap_terms = _build_cmap_force(molecule, forcefield)
+        if cmap_force is not None:
+            system.addForce(cmap_force)
 
         # Use double precision on GPU so that analytical derivatives
         # (getParameterDerivatives) are computed in float64.

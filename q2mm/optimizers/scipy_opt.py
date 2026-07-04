@@ -407,7 +407,14 @@ class ScipyOptimizer:
         # Only pass bounds for methods that support them
         effective_bounds = bounds if (bounds and self.method in self.BOUNDED_METHODS) else None
 
-        callback = self._make_callback(objective, initial_score)
+        # Telemetry for the JaxLoss path: scipy is driven by
+        # ``use_jax_loss_fun`` which never calls ``objective.__call__``, so
+        # ``objective.n_eval`` / ``objective.history`` stay frozen. Track the
+        # surrogate call count and latest surrogate score here so the
+        # divergence callback and reported n_evaluations reflect real work.
+        jax_telemetry: dict[str, Any] = {"n_eval": 0, "last_score": None, "initial": None}
+
+        callback = self._make_callback(objective, initial_score, jax_telemetry)
 
         # Resolve Jacobian strategy:
         #   - jac="analytical" → always use objective.gradient
@@ -446,6 +453,8 @@ class ScipyOptimizer:
                         full = frozen_full.copy()
                         full[active_idx] = np.asarray(x_active, dtype=float)
                         loss, grad_full = jax_loss.loss_and_grad(full)
+                        jax_telemetry["n_eval"] += 1
+                        jax_telemetry["last_score"] = float(loss)
                         return loss, grad_full[active_idx]
 
                     # Validate JaxLoss/ObjectiveFunction agreement at x0.
@@ -453,6 +462,7 @@ class ScipyOptimizer:
                     # unreliable surrogate — fall back to FD gradients.
                     # Set ratio_tol=None to skip this check entirely.
                     jl_val, _ = _jax_loss_fun(x0)
+                    jax_telemetry["initial"] = float(jl_val)
                     ratio = jl_val / initial_score if initial_score > 0 else 1.0
                     tol = self.ratio_tol
                     if tol is None:
@@ -589,7 +599,9 @@ class ScipyOptimizer:
             initial_score=objective.history[0] if objective.history else 0.0,
             final_score=final_score,
             n_iterations=nit,
-            n_evaluations=objective.n_eval - n_eval_before,
+            n_evaluations=(
+                jax_telemetry["n_eval"] if use_jax_loss_fun is not None else objective.n_eval - n_eval_before
+            ),
             initial_params=x0,
             final_params=final_x,
             history=list(objective.history),
@@ -656,7 +668,12 @@ class ScipyOptimizer:
             eps=self.eps,
         )
 
-    def _make_callback(self, objective: ObjectiveFunction, initial_score: float) -> Callable:
+    def _make_callback(
+        self,
+        objective: ObjectiveFunction,
+        initial_score: float,
+        telemetry: dict[str, Any] | None = None,
+    ) -> Callable:
         """Create a callback for minimize with optional early stopping.
 
         Scipy calls this after each iteration.  If the callback returns
@@ -670,6 +687,13 @@ class ScipyOptimizer:
             objective (ObjectiveFunction): The objective function (used
                 to read evaluation history).
             initial_score (float): Objective value before optimization.
+            telemetry (dict | None): Live JaxLoss telemetry
+                (``n_eval`` / ``last_score`` / ``initial``).  When the
+                optimizer is driven by the JaxLoss surrogate,
+                ``objective.history`` stays frozen, so the callback reads
+                the surrogate score and its own baseline from here instead
+                — keeping the score and the divergence threshold in the
+                same (JaxLoss) units.
 
         Returns:
             Callable: Callback function for :func:`scipy.optimize.minimize`.
@@ -685,16 +709,22 @@ class ScipyOptimizer:
         def callback(_xk: Any, *args: Any, **kwargs: Any) -> bool:
             """Log progress and trigger early stopping on sustained divergence."""
             nonlocal diverge_count
-            score = objective.history[-1] if objective.history else float("nan")
+            if telemetry is not None and telemetry.get("last_score") is not None:
+                score = telemetry["last_score"]
+                n = telemetry["n_eval"]
+                baseline = telemetry["initial"] if telemetry.get("initial") is not None else initial_score
+            else:
+                score = objective.history[-1] if objective.history else float("nan")
+                n = objective.n_eval
+                baseline = initial_score
 
             if verbose:
-                n = objective.n_eval
                 if n % 10 == 0:
                     logger.info("  eval %4d  score %.6f", n, score)
 
             # Early stopping on sustained divergence
-            if factor is not None and initial_score > 0:
-                threshold = initial_score * factor
+            if factor is not None and baseline > 0:
+                threshold = baseline * factor
                 if score > threshold:
                     diverge_count += 1
                     if diverge_count >= patience:

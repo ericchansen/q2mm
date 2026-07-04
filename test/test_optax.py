@@ -366,6 +366,34 @@ class TestOptaxDivergence:
         assert result.n_iterations < 1000
 
 
+class TestOptaxFinalScoreUnits:
+    """F6: the reported final_score must be in ObjectiveFunction units.
+
+    On the JaxLoss surrogate path the in-loop ``best_score`` is a
+    surrogate value; the optimizer now re-evaluates the returned point
+    with the true objective before reporting so ``final_score`` and
+    ``initial_score`` (and therefore ``improvement``) share the same
+    scale.  This mock (no JaxLoss) pins the contract at the unit level:
+    the reported ``final_score`` equals ``objective(final_params)``.
+    """
+
+    def test_final_score_matches_true_objective(self) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        target = np.array([1.0, 2.0, 3.0])
+        obj = MockObjective(target)
+        opt = OptaxOptimizer(
+            optimizer="adam",
+            learning_rate=0.1,
+            max_steps=200,
+            verbose=False,
+        )
+        result = opt.optimize(obj)
+
+        true_score = float(np.sum((result.final_params - target) ** 2))
+        assert result.final_score == pytest.approx(true_score, rel=1e-9, abs=1e-9)
+
+
 class TestOptaxSchedules:
     """Test learning rate schedules."""
 

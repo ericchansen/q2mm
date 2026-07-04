@@ -775,6 +775,10 @@ def invert_ts_curvature(
     """
     if not np.isfinite(replace_with) or replace_with <= 0:
         raise ValueError(f"replace_with must be a finite, strictly positive number; got {replace_with!r}")
+    # Symmetrize before decompose (mirrors invert_ts_curvature_jax): eigh
+    # reads only the lower triangle, so an asymmetric input would silently
+    # ignore upper-triangle content and diverge from the JAX twin.
+    hessian_matrix = 0.5 * (np.asarray(hessian_matrix, dtype=float) + np.asarray(hessian_matrix, dtype=float).T)
     eigenvalues, eigenvectors = decompose(hessian_matrix)
     modified_evals = replace_neg_eigenvalue(
         eigenvalues,

@@ -430,6 +430,23 @@ class TestCmapOpenMM:
 
         assert abs(e_cmap - e_none) < 1e-10
 
+    def test_energy_and_param_grad_includes_cmap(
+        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule
+    ) -> None:
+        """Analytical-gradient handle must include CMAP energy (F2).
+
+        Regression: ``_create_diff_handle`` previously omitted the
+        ``CMAPTorsionForce``, so ``energy_and_param_grad`` returned an energy
+        that disagreed with ``energy()`` by the CMAP contribution.  CMAP has
+        no tunable parameters, so only the scalar energy must agree.
+        """
+        from q2mm.backends.mm.openmm import OpenMMEngine
+
+        engine = OpenMMEngine(platform_name="CPU")
+        e_scalar = engine.energy(_linear_chain_molecule, _alanine_dipeptide_ff)
+        e_grad, _grad = engine.energy_and_param_grad(_linear_chain_molecule, _alanine_dipeptide_ff)
+        np.testing.assert_allclose(e_grad, e_scalar, atol=1e-6)
+
 
 # ---------------------------------------------------------------------------
 # Edge case tests
