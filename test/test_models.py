@@ -2036,3 +2036,194 @@ class TestFrozenParamInvariant:
         assert ff.bonds[0].force_constant == marker_k, (
             "Frozen bond force constant was silently overwritten by qfuerza_into — this is the q2mm#277 bug pattern."
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug-audit 2026-07-02 regression tests (F3, F4, F7, F9, F10, F11)
+# ---------------------------------------------------------------------------
+
+
+class TestMm3VdwRoundTrip:
+    """F3: saving MM3 vdW parameters must not corrupt the fixed-width columns."""
+
+    def test_vdw_write_back_is_byte_stable(self, tmp_path: Path) -> None:
+        """Writing parsed vdW values straight back is a byte-for-byte no-op.
+
+        Regression for F3: ``_update_mm3_vdw_lines`` used to reflow the whole
+        vdW line, clobbering the atom-type / context / opt-descriptor bytes on
+        every save.  It now splices only the numeric sub-columns in place.
+        """
+        from q2mm.io.mm3 import _parse_mm3_vdw_params, _update_mm3_vdw_lines
+
+        original = RH_MM3.read_text(encoding="utf-8")
+        vdws = _parse_mm3_vdw_params(RH_MM3)
+        assert vdws, "expected vdW params in rh-enamide mm3.fld"
+
+        tmp = tmp_path / "mm3.fld"
+        tmp.write_text(original, encoding="utf-8")
+        _update_mm3_vdw_lines(tmp, vdws)
+
+        assert tmp.read_text(encoding="utf-8").splitlines() == original.splitlines()
+
+
+class TestMm3HigherOrderTorsion:
+    """F4: 4th–6th order MM3 torsions must get periodicity 4/5/6 and correct phase."""
+
+    def test_54_line_yields_v4_v5_v6(self, tmp_path: Path) -> None:
+        from q2mm.io.mm3 import _mm3_import_ff, load_mm3_fld
+
+        # A "4" line (V1/V2/V3) followed by a "54" line (V4/V5/V6). The higher
+        # order branch only fires when the previous param is a torsion ("df").
+        lines = [
+            " 4  C3 - C3 - C3 - C3       0.1850     0.3000     0.4500  0000 0000 0000 0000",
+            "54  C3 - C3 - C3 - C3       0.1000     0.2000     0.3000  0000 0000 0000 0000",
+        ]
+        fld = tmp_path / "higher_torsion.fld"
+        fld.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        df_params = [p for p in params if p.ptype == "df"]
+        assert len(df_params) == 6, "expected V1..V6 (three from each line)"
+
+        ff = load_mm3_fld(str(fld))
+        proper = [t for t in ff.torsions if not t.is_improper]
+        assert len(proper) == 6
+
+        by_n = {t.periodicity: t for t in proper}
+        assert set(by_n) == {1, 2, 3, 4, 5, 6}
+
+        # MM3 alternates sign by order: even n -> phase 180 deg, odd n -> 0 deg.
+        assert by_n[1].phase == pytest.approx(0.0)
+        assert by_n[2].phase == pytest.approx(180.0)
+        assert by_n[3].phase == pytest.approx(0.0)
+        assert by_n[4].phase == pytest.approx(180.0)
+        assert by_n[5].phase == pytest.approx(0.0)
+        assert by_n[6].phase == pytest.approx(180.0)
+
+        # Force constant is V_n / 2; the 54-line stored 0.1 / 0.2 / 0.3.
+        assert by_n[4].force_constant == pytest.approx(0.1000 / 2)
+        assert by_n[5].force_constant == pytest.approx(0.2000 / 2)
+        assert by_n[6].force_constant == pytest.approx(0.3000 / 2)
+
+
+class TestStructureElementResolution:
+    """F7: element resolution must trust ``atom.element``, not the type label."""
+
+    def test_two_letter_carbon_type_is_not_mislabeled(self) -> None:
+        """A carbon atom typed ``CO``/``CA`` resolves to C, not cobalt/calcium."""
+        from q2mm.models.structure import Atom, Structure
+
+        struct = Structure("test")
+        # "CO" is a carbonyl carbon *type* whose element is carbon (atomic_num 6).
+        struct.atoms.append(Atom(atom_type_name="CO", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
+        # A genuine cobalt atom (atomic_num 27) must still resolve to "Co".
+        struct.atoms.append(Atom(atom_type_name="Co", atomic_num=27, index=2, coords=[1.9, 0.0, 0.0]))
+
+        mol = Q2MMMolecule.from_structure(struct)
+        assert mol.symbols == ["C", "Co"]
+        # The type label is preserved separately from the element.
+        assert mol.atom_types[0] == "CO"
+
+    def test_dummy_atom_without_element_does_not_crash_import(self) -> None:
+        """A dummy atom (no type name, no valid atomic_num) imports safely.
+
+        ``Atom.element`` raises ``ValueError`` for such atoms; the label and
+        env-id construction in ``from_structure`` must fall back to an empty
+        label rather than propagating that error and aborting the load.
+        """
+        from q2mm.models.structure import Atom, Bond, Structure
+
+        struct = Structure("test")
+        # Atom 1 is a real carbon; atom 2 is a dummy with no derivable element.
+        struct.atoms.append(Atom(atom_type_name="C3", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
+        struct.atoms.append(Atom(index=2, coords=[1.5, 0.0, 0.0]))
+        struct.bonds.append(Bond(atom_nums=[1, 2], value=1.5))
+
+        # Must not raise despite the dummy atom's element being underivable.
+        mol = Q2MMMolecule.from_structure(struct)
+        assert mol.symbols[0] == "C"
+        # The dummy atom resolves to an empty element rather than crashing.
+        assert mol.symbols[1] == ""
+
+
+class TestMm3VdwOptLineTolerated:
+    """F9: a non-numeric ``OPT`` line in the vdW section must not raise on load."""
+
+    def test_opt_line_in_vdw_section_loads(self, tmp_path: Path) -> None:
+        from q2mm.io.mm3 import load_mm3_fld
+
+        lines = [
+            "-6",
+            "  C0   OPT   custom",
+            "-2",
+        ]
+        fld = tmp_path / "opt_vdw.fld"
+        fld.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        # Must not raise (the old dead float() branch would have crashed here).
+        ff = load_mm3_fld(str(fld))
+        assert ff is not None
+
+
+class TestStructureFormatCoords:
+    """F10: format_coords uses ``atom.element`` directly (dead None-fallback removed)."""
+
+    def test_all_formats_render_element(self) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        struct = Structure("test")
+        struct.atoms.append(Atom(atom_type_name="C3", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
+        struct.atoms.append(Atom(atom_type_name="O", atomic_num=8, index=2, coords=[1.0, 0.0, 0.0]))
+
+        latex = struct.format_coords("latex")
+        assert latex[1].startswith("C1 &")
+        assert latex[2].startswith("O2 &")
+
+        gauss = struct.format_coords("gauss")
+        assert gauss[0].split()[0] == "C"
+        assert gauss[1].split()[0] == "O"
+
+        jaguar = struct.format_coords("jaguar")
+        assert jaguar[0].split()[0] == "C1"
+        assert jaguar[1].split()[0] == "O2"
+
+
+class TestMoleculeWithHessianCarriesTorsions:
+    """F11: ``with_hessian`` must preserve cached torsion / improper metadata."""
+
+    def test_torsion_metadata_survives(self) -> None:
+        from q2mm.models.molecule import DetectedTorsion
+
+        mol = make_ethane()
+        # Attach explicit torsion metadata carrying a distinctive ff_row.
+        mol._torsions = [
+            DetectedTorsion(
+                atom_i=0,
+                atom_j=1,
+                atom_k=2,
+                atom_l=3,
+                elements=("H", "C", "C", "H"),
+                value=60.0,
+                ff_row=4242,
+            )
+        ]
+        mol._improper_torsions = [
+            DetectedTorsion(
+                atom_i=0,
+                atom_j=1,
+                atom_k=2,
+                atom_l=3,
+                elements=("C", "C", "C", "H"),
+                value=0.0,
+                ff_row=99,
+            )
+        ]
+
+        new = mol.with_hessian(np.eye(3 * mol.n_atoms))
+
+        assert new._torsions is not None
+        assert new.torsions[0].ff_row == 4242
+        assert new._improper_torsions is not None
+        assert new.improper_torsions[0].ff_row == 99
+        # Deep-copied, not aliased to the source lists.
+        assert new._torsions is not mol._torsions

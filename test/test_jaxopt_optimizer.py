@@ -141,6 +141,35 @@ class TestJaxOptOptimizerConvergence:
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgsb"
 
+    def test_reported_scores_in_objective_units(self) -> None:
+        """F6: reported initial/final scores are in ObjectiveFunction units.
+
+        The internal revert guard uses JaxLoss-unit surrogate scores, but the
+        returned ``OptimizationResult`` must report true ObjectiveFunction
+        units so cross-stage comparisons in cycling.py compare like-for-like.
+        Regression: ``final_score``/``initial_score`` used to leak the
+        surrogate scale.
+        """
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+
+        mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+
+        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        result = optimizer.optimize(obj)
+
+        true_initial = float(obj(np.asarray(result.initial_params)))
+        true_final = float(obj(np.asarray(result.final_params)))
+        assert result.initial_score == pytest.approx(true_initial, rel=1e-6, abs=1e-9)
+        assert result.final_score == pytest.approx(true_final, rel=1e-6, abs=1e-9)
+
     def test_result_format(self) -> None:
         """OptimizationResult has all expected fields."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -349,3 +378,34 @@ class TestJaxOptBoundsActive:
         np.testing.assert_allclose(
             bond_r0_final, 0.90, atol=0.01, err_msg=(f"bond_r0 ({bond_r0_final:.4f}) should be near upper bound 0.90")
         )
+
+
+class TestScipyJaxLossTelemetry:
+    """F5: JaxLoss-path scipy runs must report real evaluation counts.
+
+    On the ``jac="auto"`` JaxLoss surrogate path scipy is driven by an
+    internal loss/grad function and never calls ``objective.__call__``, so
+    ``objective.n_eval`` stays frozen.  The optimizer now tracks the surrogate
+    call count via telemetry and reports it as ``n_evaluations``.  Regression:
+    ``n_evaluations`` used to be stuck near zero on this path.
+    """
+
+    def test_n_evaluations_reflects_jaxloss_calls(self) -> None:
+        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
+        engine = JaxEngine()
+
+        ref = ReferenceData()
+        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+
+        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, jac="auto", ratio_tol=None, verbose=False)
+        result = optimizer.optimize(obj)
+
+        assert result.jac_mode == "jax_loss"
+        # Telemetry counts the initial ratio probe plus every optimizer eval.
+        assert result.n_evaluations > 2

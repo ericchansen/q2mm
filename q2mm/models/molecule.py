@@ -38,6 +38,47 @@ except ImportError:
 from q2mm.elements import COVALENT_RADII  # noqa: E402
 
 
+def _structure_atom_element(atom: Any) -> str:
+    """Return an atom's authoritative element symbol.
+
+    Prefers the :class:`~q2mm.models.structure.Atom` element (derived from
+    ``atomic_num`` or an explicitly-set symbol) over guessing from the
+    atom-type label.  ``_extract_element`` alone would misread two-letter
+    labels that title-case to a real element — ``"CO"`` (a carbon type) →
+    cobalt, ``"CA"`` → calcium — which corrupts every element-keyed match
+    downstream.  Falls back to ``_extract_element`` on the type name only
+    when the atom carries no derivable element (e.g. type-only FF atoms).
+    """
+    try:
+        element = atom.element
+    except (ValueError, AttributeError):
+        element = None
+    if element:
+        # Normalise casing/aliases to the canonical element table form
+        # (e.g. a raw ``"RH"`` label becomes ``"Rh"``).  ``_extract_element``
+        # is safe here because ``element`` is the authoritative symbol, not
+        # the ambiguous atom-type name.
+        return _extract_element(element)
+    return _extract_element(atom.atom_type_name or "")
+
+
+def _structure_atom_label(atom: Any) -> str:
+    """Return an atom's type-name label, tolerantly falling back to its element.
+
+    Prefers the explicit atom-type name; only when that is absent does it
+    consult ``atom.element``, accessed through a guard so dummy / type-only
+    atoms (no ``atomic_num`` and no explicit element) yield an empty label
+    instead of raising ``ValueError`` — mirroring the tolerant resolution in
+    :func:`_structure_atom_element`.
+    """
+    if atom.atom_type_name:
+        return atom.atom_type_name
+    try:
+        return atom.element or ""
+    except (ValueError, AttributeError):
+        return ""
+
+
 def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
     """Compute signed dihedral angle (degrees) for four points using atan2.
 
@@ -426,16 +467,16 @@ class Q2MMMolecule:
         atom_types = []
         coords = []
         for atom in structure.atoms:
-            atom_label = atom.atom_type_name or atom.element or ""
-            symbols.append(_extract_element(atom_label))
+            atom_label = _structure_atom_label(atom)
+            symbols.append(_structure_atom_element(atom))
             atom_types.append(atom_label.strip() or _extract_element(atom_label))
             coords.append(atom.coords)
 
         bonds = []
         for bond in structure.bonds:
             atoms = structure.get_atoms_in_DOF(bond)
-            dof_atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
-            elements = tuple(_extract_element(atom_type) for atom_type in dof_atom_types[:2])
+            dof_atom_types = [_structure_atom_label(a) for a in atoms]
+            elements = tuple(_structure_atom_element(atom) for atom in atoms[:2])
             length = bond.value
             if length is None:
                 length = np.linalg.norm(atoms[0].coords - atoms[1].coords)
@@ -453,8 +494,8 @@ class Q2MMMolecule:
         angles = []
         for angle in structure.angles:
             atoms = structure.get_atoms_in_DOF(angle)
-            dof_atom_types = [atom.atom_type_name or atom.element or "" for atom in atoms]
-            elements = tuple(_extract_element(atom_type) for atom_type in dof_atom_types[:3])
+            dof_atom_types = [_structure_atom_label(a) for a in atoms]
+            elements = tuple(_structure_atom_element(atom) for atom in atoms[:3])
             angle_value = angle.value
             if angle_value is None:
                 v1 = atoms[0].coords - atoms[1].coords
@@ -555,6 +596,10 @@ class Q2MMMolecule:
             hessian=_strip_pint(hessian),
             _bonds=copy.deepcopy(self._bonds) if self._bonds is not None else None,
             _angles=copy.deepcopy(self._angles) if self._angles is not None else None,
+            _torsions=copy.deepcopy(self._torsions) if self._torsions is not None else None,
+            _improper_torsions=(
+                copy.deepcopy(self._improper_torsions) if self._improper_torsions is not None else None
+            ),
         )
 
     def __repr__(self) -> str:

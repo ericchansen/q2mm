@@ -340,13 +340,20 @@ class OptaxOptimizer:
                 eps=None,
             )
 
-        best_score = initial_score
+        # On the JaxLoss path the in-loop score is a surrogate value in
+        # JaxLoss units, whereas ``initial_score`` is in ObjectiveFunction
+        # units.  Use a JaxLoss-unit baseline for the loop's best/plateau/
+        # divergence comparisons so they are self-consistent; the returned
+        # score is re-evaluated with the true objective below.
+        loop_initial = float(jax_loss_eval(params)) if use_jax_loss else initial_score
+
+        best_score = loop_initial
         best_params = x0.copy()
         converged = False
         message = f"Max steps ({self.max_steps}) reached"
         stall_count = 0
         diverge_count = 0
-        prev_score = initial_score
+        prev_score = loop_initial
 
         for step in range(self.max_steps):
             params_np = np.asarray(params, dtype=np.float64)
@@ -417,8 +424,8 @@ class OptaxOptimizer:
                     stall_count = 0
 
             # Divergence detection
-            if self.divergence_factor is not None and initial_score > 0:
-                threshold = initial_score * self.divergence_factor
+            if self.divergence_factor is not None and loop_initial > 0:
+                threshold = loop_initial * self.divergence_factor
                 if score > threshold:
                     diverge_count += 1
                     if diverge_count >= self.divergence_patience:
@@ -437,8 +444,14 @@ class OptaxOptimizer:
 
         # Use best params found during the run
         final_active = best_params
-        final_score = best_score
         final_params = expand_np(final_active)
+
+        # best_score may be a JaxLoss-unit surrogate (use_jax_loss path).
+        # Re-evaluate the returned point with the true ObjectiveFunction so
+        # final_score is in the same units as initial_score (mirror
+        # scipy_opt) — otherwise ``improvement`` compares mismatched scales
+        # and cross-stage acceptance tests in cycling.py are corrupted.
+        final_score = float(objective(final_params))
 
         # Apply final parameters to the forcefield
         objective.forcefield.set_param_vector(final_params)

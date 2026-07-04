@@ -495,10 +495,7 @@ class Structure:
         if format == "latex":
             output = ["\\begin{tabular}{l S[table-format=3.6] S[table-format=3.6] S[table-format=3.6]}"]
             for i, atom in enumerate(self.atoms):
-                if atom.element is None:
-                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
-                else:
-                    ele = atom.element
+                ele = atom.element
                 output.append(f"{ele}{i + 1} & {atom.x:3.6f} & {atom.y:3.6f} & {atom.z:3.6f}\\\\")
             output.append("\\end{tabular}")
             return output
@@ -506,10 +503,7 @@ class Structure:
         elif format == "gauss":
             output = []
             for i, atom in enumerate(self.atoms):
-                if atom.element is None:
-                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
-                else:
-                    ele = atom.element
+                ele = atom.element
                 if indices_use_charge:
                     if atom.index in indices_use_charge:
                         output.append(f" {ele:s}--{atom.partial_charge:.5f}{atom.x:>16.6f}{atom.y:16.6f}{atom.z:16.6f}")
@@ -522,10 +516,7 @@ class Structure:
         elif format == "jaguar":
             output = []
             for i, atom in enumerate(self.atoms):
-                if atom.element is None:
-                    ele = list(co.MASSES.keys())[atom.atomic_num - 1]
-                else:
-                    ele = atom.element
+                ele = atom.element
                 label = f"{ele}{atom.index}"
                 output.append(f" {label:<8s}{atom.x:>16.6f}{atom.y:>16.6f}{atom.z:>16.6f}")
             return output

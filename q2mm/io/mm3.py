@@ -156,6 +156,39 @@ def _parse_mm3_vdw_params(path: Path) -> list[VdwParam]:
     return vdws
 
 
+def _splice_fixed(line: str, start: int, width: int, value: float) -> str:
+    """Overwrite one fixed-width numeric column, preserving all other bytes.
+
+    Returns *line* unchanged if the column falls outside the existing line
+    length (the field was not present in fixed position), so trailing MM3
+    columns — formal charge, context flag, opt descriptor — are never
+    disturbed.
+    """
+    if len(line) < start + width:
+        return line
+    field = f"{value:{width}.4f}"
+    if len(field) > width:
+        # The value is too wide for the fixed column.  ``f"{v:{width}.4f}"``
+        # treats *width* as a minimum, so writing it anyway would push every
+        # trailing byte to the right and break the byte-stability guarantee.
+        # Leave the line untouched instead.
+        logger.warning(
+            "Value %.4f does not fit MM3 column width %d; leaving line unchanged.",
+            value,
+            width,
+        )
+        return line
+    return line[:start] + field + line[start + width :]
+
+
+# Fixed MM3 vdW numeric columns (0-based start, field width). These match
+# the columns the loader reads (``line[5:15]`` / ``line[16:26]``) so a
+# save→load round-trip is byte-stable.
+_VDW_RADIUS_COL = (5, 10)
+_VDW_EPSILON_COL = (16, 10)
+_VDW_REDUCTION_COL = (27, 10)
+
+
 def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     by_row, by_type = _build_vdw_maps(vdws)
@@ -167,10 +200,10 @@ def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
             match = by_type.get(parts[0].strip())
         if match is None:
             continue
-        tail = " ".join(parts[4:]) if len(parts) > 4 else ""
-        lines[index] = f"  {match.atom_type:<3} {match.radius:10.4f} {match.epsilon:10.4f} {match.reduction:10.4f}" + (
-            f" {tail}" if tail else ""
-        )
+        updated = _splice_fixed(line, *_VDW_RADIUS_COL, match.radius)
+        updated = _splice_fixed(updated, *_VDW_EPSILON_COL, match.epsilon)
+        updated = _splice_fixed(updated, *_VDW_REDUCTION_COL, match.reduction)
+        lines[index] = updated
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -357,7 +390,6 @@ def _mm3_import_ff(
     logger.log(15, f"READING: {path}")
     section_sub = False
     section_smiles = False
-    section_vdw = False
     section_atm_eqv = False
 
     for i, line in enumerate(all_lines):
@@ -395,20 +427,6 @@ def _mm3_import_ff(
         elif section_sub and line.startswith("-3"):
             logger.log(15, f"[L{i}] End of substructure: {sub_names[-1]}")
             section_sub = False
-            continue
-
-        # Van der Waals in the -6 section
-        if "OPT" in line and section_vdw:
-            logger.log(5, "[L{}] Found Van der Waals:\n{}".format(i + 1, line.strip("\n")))
-            atm = line[2:5]
-            rad = line[5:15]
-            eps = line[16:26]
-            params.extend(
-                (
-                    Param(atom_types=atm, ptype="vdwr", ff_col=1, ff_row=i + 1, value=float(rad)),
-                    Param(atom_types=atm, ptype="vdwe", ff_col=2, ff_row=i + 1, value=float(eps)),
-                )
-            )
             continue
 
         if sub_search in line or section_sub or include_standard:
@@ -627,7 +645,7 @@ def _mm3_import_ff(
                             atom_labels=atm_lbls,
                             atom_types=atm_typs,
                             ptype="df",
-                            ff_col=1,
+                            ff_col=4,
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[0],
@@ -636,7 +654,7 @@ def _mm3_import_ff(
                             atom_labels=atm_lbls,
                             atom_types=atm_typs,
                             ptype="df",
-                            ff_col=2,
+                            ff_col=5,
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[1],
@@ -645,7 +663,7 @@ def _mm3_import_ff(
                             atom_labels=atm_lbls,
                             atom_types=atm_typs,
                             ptype="df",
-                            ff_col=3,
+                            ff_col=6,
                             ff_row=i + 1,
                             label=line[:2],
                             value=parm_cols[2],
@@ -734,7 +752,6 @@ def _mm3_import_ff(
 
         # -6 marks start of Van der Waals section
         if line.startswith("-6"):
-            section_vdw = True
             continue
         if "New Atom Type Equivalencies" in line:
             section_atm_eqv = True
@@ -751,11 +768,15 @@ def _mm3_export_ff(path: str | Path, params: list[Param], lines: list[str]) -> N
         line = lines[param.ff_row - 1]
         if abs(param.value) > 999.0:
             logger.warning(f"Value of {param} is too high! Skipping write.")
-        elif param.ff_col == 1:
+        # Higher-order torsion amplitudes V4/V5/V6 (ff_col 4/5/6) live in the
+        # same three physical parameter columns as V1/V2/V3 but on the "54"
+        # continuation line, which is addressed by their own ``ff_row``.  Map
+        # them onto the same columns so higher-order torsions round-trip.
+        elif param.ff_col in (1, 4):
             lines[param.ff_row - 1] = line[:P_1_START] + f"{param.value:10.4f}" + line[P_1_END:]
-        elif param.ff_col == 2:
+        elif param.ff_col in (2, 5):
             lines[param.ff_row - 1] = line[:P_2_START] + f"{param.value:10.4f}" + line[P_2_END:]
-        elif param.ff_col == 3:
+        elif param.ff_col in (3, 6):
             lines[param.ff_row - 1] = line[:P_3_START] + f"{param.value:10.4f}" + line[P_3_END:]
     with open(path, "w") as f:
         f.writelines(lines)
@@ -841,11 +862,13 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
             elems = tuple(_extract_element(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
             periodicity = getattr(param, "ff_col", 1)
-            # MM3 torsion: (V1/2)(1+cos ω) + (V2/2)(1−cos 2ω) + (V3/2)(1+cos 3ω)
-            # The .fld stores V_n (full amplitude). Our energy formula uses
-            # k*(1+cos(nφ−γ)), so k = V_n/2.
-            # V2 needs γ=180° for the minus sign: (1+cos(2ω−π)) = (1−cos 2ω).
-            phase = 180.0 if periodicity == 2 else 0.0
+            # MM3 torsion alternates signs by order:
+            #   (V1/2)(1+cos ω) + (V2/2)(1−cos 2ω) + (V3/2)(1+cos 3ω)
+            #   + (V4/2)(1−cos 4ω) + (V5/2)(1+cos 5ω) + (V6/2)(1−cos 6ω)
+            # The .fld stores V_n (full amplitude); our energy formula uses
+            # k*(1+cos(nφ−γ)) with k = V_n/2.  Even orders need γ=180° for
+            # the minus sign: (1+cos(nω−π)) = (1−cos nω).
+            phase = 180.0 if periodicity % 2 == 0 else 0.0
             torsions.append(
                 TorsionParam(
                     elements=elems,

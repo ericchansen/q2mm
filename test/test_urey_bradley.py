@@ -352,6 +352,65 @@ class TestOpenMMUreyBradley:
         # Doubling k should change the energy
         assert e1 != e2
 
+    def test_energy_and_param_grad_includes_ub(self) -> None:
+        """Analytical-gradient handle must include UB energy + UB gradients (F1).
+
+        Regression: ``_create_diff_handle`` previously dropped the
+        Urey-Bradley term entirely, so ``energy_and_param_grad`` returned an
+        energy missing the UB contribution and a zero gradient for the UB
+        parameters (which live at the tail of the param vector).
+        """
+        from q2mm.backends.mm.openmm import OpenMMEngine
+
+        mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
+        ff = _water_ff_with_ub(
+            bond_k=5.0,
+            bond_eq=1.0,
+            angle_k=0.5,
+            angle_eq=120.0,
+            ub_k=10.0,
+            ub_eq=1.0,  # mismatched → nonzero UB strain and gradient
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        engine = OpenMMEngine()
+        e_scalar = engine.energy(mol, ff)
+        e_grad, grad = engine.energy_and_param_grad(mol, ff)
+
+        # Diff-handle energy must match the scalar-energy path (UB included).
+        np.testing.assert_allclose(e_grad, e_scalar, atol=1e-6)
+        # UB params are the tail two entries: index 4 = ub_k, 5 = ub_eq.
+        assert grad[4] != 0.0
+        assert grad[5] != 0.0
+
+    def test_energy_and_param_grad_ub_matches_finite_difference(self) -> None:
+        """UB analytical gradients agree with central finite differences (F1)."""
+        from q2mm.backends.mm.openmm import OpenMMEngine
+
+        mol = _water_molecule(angle_deg=118.0, bond_length=1.02)
+        ff = _water_ff_with_ub(
+            bond_k=5.0,
+            bond_eq=1.0,
+            angle_k=0.5,
+            angle_eq=120.0,
+            ub_k=12.0,
+            ub_eq=1.1,
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        engine = OpenMMEngine()
+        _e, grad = engine.energy_and_param_grad(mol, ff)
+
+        pv = ff.get_param_vector()
+        step = 1e-5
+        for i in (4, 5):  # ub_k, ub_eq
+            pv_plus = pv.copy()
+            pv_plus[i] += step
+            pv_minus = pv.copy()
+            pv_minus[i] -= step
+            e_plus = engine.energy(mol, ff.with_params(pv_plus))
+            e_minus = engine.energy(mol, ff.with_params(pv_minus))
+            fd = (e_plus - e_minus) / (2.0 * step)
+            np.testing.assert_allclose(grad[i], fd, rtol=1e-4, atol=1e-6)
+
 
 # ---------------------------------------------------------------------------
 # JAX engine tests

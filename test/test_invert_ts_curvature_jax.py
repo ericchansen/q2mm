@@ -94,3 +94,24 @@ class TestInvertTsCurvatureJax:
         out = np.asarray(invert_ts_curvature_jax(jnp.asarray(hess), replace_with=2.5))
         evals = np.sort(np.linalg.eigvalsh(out))
         assert np.any(np.isclose(evals, 2.5, atol=1e-5))
+
+    def test_parity_asymmetric_input(self) -> None:
+        """F8: NumPy version symmetrizes its input like the JAX twin.
+
+        Regression: the NumPy ``invert_ts_curvature`` fed the raw matrix to
+        ``eigh`` (which reads a single triangle), so an asymmetric input
+        silently diverged from ``invert_ts_curvature_jax`` (which symmetrizes
+        first).  Both must now agree, and both must equal the result of
+        explicitly symmetrizing before inversion.
+        """
+        hess = _ts_like_hessian()
+        asym = hess.copy()
+        asym[0, 1] += 0.2
+        asym[1, 0] -= 0.2
+
+        np_out = invert_ts_curvature(asym)
+        jax_out = np.asarray(invert_ts_curvature_jax(jnp.asarray(asym)))
+        np.testing.assert_allclose(np_out, jax_out, atol=1e-5)
+
+        sym = 0.5 * (asym + asym.T)
+        np.testing.assert_allclose(np_out, invert_ts_curvature(sym), atol=1e-5)

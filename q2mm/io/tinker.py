@@ -118,11 +118,36 @@ def _parse_tinker_vdw_params(path: Path) -> list[VdwParam]:
     return vdws
 
 
+def _parse_tinker_atom_elements(path: Path) -> dict[str, str]:
+    """Map Tinker atom-type numbers to element symbols from ``atom`` records.
+
+    The element comes from each ``atom`` record's symbol column, which is
+    authoritative — unlike guessing from downstream atom-type *labels*,
+    where ``_extract_element`` would misread a two-letter label that
+    title-cases to a real element (``"CO"``/``"CA"`` → cobalt/calcium).
+    """
+    atom_elements: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = raw_line.split()
+        # Standard Tinker: atom <type> <symbol> "desc" <anum> <mass> <val>
+        # AMOEBA-style:    atom <type> <class> <symbol> "desc" ...
+        # Distinguish: if parts[2] is purely numeric, it's a class field.
+        if parts[0].lower() == "atom" and len(parts) >= 3:
+            symbol_col = 2
+            if parts[2].isdigit() and len(parts) >= 4:
+                symbol_col = 3
+            atom_elements[parts[1]] = _extract_element(parts[symbol_col])
+    return atom_elements
+
+
 def _parse_generic_tinker_prm(path: Path) -> tuple[list[BondParam], list[AngleParam], list[VdwParam]]:
     bonds: list[BondParam] = []
     angles: list[AngleParam] = []
     vdws: list[VdwParam] = []
-    atom_elements: dict[str, str] = {}
+    atom_elements = _parse_tinker_atom_elements(path)
 
     for row, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = raw_line.strip()
@@ -130,16 +155,6 @@ def _parse_generic_tinker_prm(path: Path) -> tuple[list[BondParam], list[AnglePa
             continue
         parts = raw_line.split()
         record = parts[0].lower()
-
-        if record == "atom" and len(parts) >= 3:
-            # Standard Tinker: atom <type> <symbol> "desc" <anum> <mass> <val>
-            # AMOEBA-style:    atom <type> <class> <symbol> "desc" ...
-            # Distinguish: if parts[2] is purely numeric, it's a class field.
-            symbol_col = 2
-            if parts[2].isdigit() and len(parts) >= 4:
-                symbol_col = 3
-            atom_elements[parts[1]] = _extract_element(parts[symbol_col])
-            continue
 
         if record.startswith("bond") and len(parts) >= 5:
             atom_types = parts[1:3]
@@ -380,6 +395,10 @@ def load_tinker_prm(path: str | Path) -> ForceField:
     angles = []
     torsions = []
     vdws = _parse_tinker_vdw_params(Path(path))
+    atom_elements = _parse_tinker_atom_elements(Path(path))
+
+    def _elem(atom_type: str) -> str:
+        return atom_elements.get(atom_type.strip(), _extract_element(atom_type))
 
     eq_lookup: dict[tuple[str, int], float] = {}
     for param in params:
@@ -390,7 +409,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
         atom_types = _clean_atom_types(getattr(param, "atom_types", None), 4)
 
         if param.ptype == "bf" and len(atom_types) >= 2:
-            elems = tuple(_extract_element(t) for t in atom_types[:2])
+            elems = tuple(_elem(t) for t in atom_types[:2])
             env_id = canonicalize_bond_env_id(atom_types[:2])
             eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
             bonds.append(
@@ -404,7 +423,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 )
             )
         elif param.ptype == "af" and len(atom_types) >= 3:
-            elems = tuple(_extract_element(t) for t in atom_types[:3])
+            elems = tuple(_elem(t) for t in atom_types[:3])
             env_id = canonicalize_angle_env_id(atom_types[:3])
             eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
             angles.append(
@@ -418,7 +437,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 )
             )
         elif param.ptype == "df" and len(atom_types) >= 4:
-            elems = tuple(_extract_element(t) for t in atom_types[:4])
+            elems = tuple(_elem(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
             periodicity = getattr(param, "ff_col", 1)
             torsions.append(
