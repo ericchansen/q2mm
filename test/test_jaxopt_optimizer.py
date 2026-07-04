@@ -141,6 +141,7 @@ class TestJaxOptOptimizerConvergence:
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgsb"
 
+    @pytest.mark.nightly
     def test_reported_scores_in_objective_units(self) -> None:
         """F6: reported initial/final scores are in ObjectiveFunction units.
 
@@ -380,6 +381,7 @@ class TestJaxOptBoundsActive:
         )
 
 
+@pytest.mark.nightly
 class TestScipyJaxLossTelemetry:
     """F5: JaxLoss-path scipy runs must report real evaluation counts.
 
