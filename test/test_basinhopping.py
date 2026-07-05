@@ -5,6 +5,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
+
+pytest.importorskip("scipy")
 
 from q2mm.optimizers.basinhopping import BasinHoppingOptimizer, _BoundedStep
 
