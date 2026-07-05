@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")
+
 from q2mm.optimizers.multistart import MultiStartOptimizer
 from q2mm.optimizers.scipy_opt import OptimizationResult
 

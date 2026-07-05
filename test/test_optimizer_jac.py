@@ -12,6 +12,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")
+
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from q2mm.diagnostics.benchmark import _resolve_gradients
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
