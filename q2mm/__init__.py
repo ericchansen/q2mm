@@ -1,10 +1,10 @@
 """Q2MM: Quantum-guided molecular mechanics force field optimization.
 
 Subpackages:
-    backends: QM and MM engine integrations (OpenMM, Tinker).
+    backends: QM and MM engine integrations (OpenMM, Tinker, JAX, JAX-MD, Psi4).
     models: Clean domain objects (molecules, force fields, parameters).
-    optimizers: Objective functions and scipy-based optimizers.
-    parsers: File format parsers (Gaussian, Jaguar, Mol2, MM3, AMBER, Tinker).
+    optimizers: Objective functions and optimizers (SciPy, Optax, JaxOpt).
+    io: File format readers/writers (Gaussian, Jaguar, Mol2, MM3, AMBER, Tinker).
     workflows: Multi-stage parameterisation protocols (single-stage, Method E2).
 
 Quick start

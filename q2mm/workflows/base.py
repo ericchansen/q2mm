@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from q2mm.optimizers.protocols import _Optimizer
+
 if TYPE_CHECKING:
     from q2mm.diagnostics.systems import SystemData
     from q2mm.models.forcefield import ForceField
@@ -106,20 +108,6 @@ class WorkflowResult:
     initial_obj_samples: list[float] = field(default_factory=list)
     final_obj_samples: list[float] = field(default_factory=list)
     optimized_categories: dict[str, dict[str, float]] = field(default_factory=dict)
-
-
-@runtime_checkable
-class _Optimizer(Protocol):
-    """Minimal optimizer interface shared by ScipyOptimizer / multistart / etc.
-
-    Mirrors the existing ``_Optimizer`` protocol in
-    :mod:`q2mm.optimizers.multistart`.  Defined here so workflows
-    don't pull a hard dependency on a specific concrete optimizer.
-    """
-
-    def optimize(self, objective: Any) -> Any:  # noqa: ANN401
-        """Run the optimization; return an ``OptimizationResult``-shaped object."""
-        ...
 
 
 @runtime_checkable
