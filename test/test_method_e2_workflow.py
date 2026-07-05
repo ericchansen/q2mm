@@ -164,6 +164,7 @@ class TestActiveMaskRestoration:
 
 
 @pytest.mark.jax
+@pytest.mark.nightly
 class TestTwoStageOnSn2:
     """Two-stage Method E2 on the canonical Limé & Norrby SN2 TS.
 
@@ -171,6 +172,16 @@ class TestTwoStageOnSn2:
     Round 2 when candidates emerge, must preserve the active mask,
     and must produce a final FF with the candidates' values locked at
     their Round 1 (Method D) values.
+
+    Marked ``nightly``: each test builds a fresh ``JaxEngine`` and drives
+    a full two-stage optimizer loop on the ch3f-sn2 TS, paying ~9s of
+    per-molecule JIT compilation apiece (~2 min for the class).  Per repo
+    policy heavy optimizer-loop tests run under ``--run-nightly`` rather
+    than on every push, matching the ``TestScipyJaxLossTelemetry`` /
+    ``test_reported_scores_in_objective_units`` precedent; keeping them in
+    per-PR CI pushed the already-borderline ``test-jax`` job past its
+    10-minute cap.  The lightweight candidate-identification contracts
+    stay in per-PR CI via ``TestHelpers`` below.
     """
 
     @staticmethod
