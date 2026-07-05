@@ -13,20 +13,14 @@ interface can be wrapped: :class:`ScipyOptimizer`,
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol
 
 import numpy as np
 
 from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.optimizers.protocols import _Optimizer
 from q2mm.optimizers.scipy_opt import OptimizationResult
 
 logger = logging.getLogger(__name__)
-
-
-class _Optimizer(Protocol):
-    """Minimal protocol for any optimizer that can be wrapped."""
-
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult: ...
 
 
 class MultiStartOptimizer:
@@ -45,7 +39,7 @@ class MultiStartOptimizer:
 
     def __init__(
         self,
-        optimizer: Any,
+        optimizer: _Optimizer,
         n_starts: int = 5,
         perturbation_pct: float = 0.1,
         seed: int | None = None,

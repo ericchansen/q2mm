@@ -189,35 +189,54 @@ uses kcal/mol).
 
 ```
 q2mm/
+├── constants.py          # Physical constants
+├── elements.py           # Periodic table data
+├── geometry.py           # Geometry helpers (distances, angles, alignment)
+├── benchmark_runner.py   # Canonical convergence benchmark runner (backs q2mm.benchmark)
+│
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
 │   ├── molecule.py       # Q2MMMolecule, DetectedBond, DetectedTorsion
+│   ├── structure.py      # Legacy Structure/Atom/Bond DTO emitted by the parsers
+│   ├── loaders.py        # Molecule + force-field convenience loaders
 │   ├── datum.py          # Datum data container
-│   ├── seminario.py      # Hessian → initial force constants
+│   ├── seminario.py      # Hessian → initial force constants (QFUERZA)
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
 │   ├── units.py          # Conversion constants and helpers
 │   └── identifiers.py    # Atom type matching utilities
 │
 ├── backends/             # MM and QM engine integrations
 │   ├── base.py           # MMEngine and QMEngine ABCs
+│   ├── registry.py       # Decorator + lazy-discovery backend registry
 │   ├── mm/
-│   │   ├── openmm.py     # OpenMM engine (harmonic + MM3 dual-mode)
+│   │   ├── openmm.py        # OpenMM engine (harmonic + MM3 dual-mode)
 │   │   ├── tinker.py        # Tinker engine (subprocess-based)
-│   │   ├── jax_engine.py   # JAX engine (differentiable, analytical gradients)
-│   │   └── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
+│   │   ├── jax_engine.py    # JAX engine (differentiable, analytical gradients)
+│   │   ├── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
+│   │   ├── batched.py       # Batched multi-molecule energy helpers
+│   │   └── _jax_common.py   # Shared JAX match/assignment helpers
 │   └── qm/
 │       └── psi4.py       # Psi4 engine (QM single-points, Hessians)
 │
 ├── optimizers/           # Parameter fitting machinery
 │   ├── objective.py      # ObjectiveFunction, ReferenceData
+│   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
 │   ├── jaxopt_opt.py     # JaxOptOptimizer (L-BFGS, L-BFGS-B — end-to-end differentiable)
-│   ├── jaxloss.py        # JaxLoss — JIT-compiled loss for JaxOpt
+│   ├── basinhopping.py   # BasinHoppingOptimizer (stochastic global search)
+│   ├── multistart.py     # MultiStartOptimizer (best-of-N perturbed starts)
+│   ├── jax_multistart.py # JaxMultiStartOptimizer (JAX multi-start)
+│   ├── jaxloss.py        # JaxLoss — JIT-compiled loss for JaxOpt/Optax
 │   ├── spec.py           # ObjectiveSpec — frozen JAX-compatible objective description
-│   ├── cycling.py        # grad-simp parameter cycling
-│   ├── scoring.py        # Legacy scoring functions
-│   └── defaults.py       # Default step sizes and bounds
+│   ├── cycling.py        # grad-simp parameter cycling (OptimizationLoop)
+│   ├── defaults.py       # Default step sizes and bounds
+│   └── evaluators/       # Per-category residual evaluators
+│       ├── energy.py          # Relative energy residuals
+│       ├── frequency.py       # Vibrational frequency residuals
+│       ├── geometry.py        # Bond / angle / torsion geometry residuals
+│       ├── hessian_element.py # Hessian-element residuals
+│       └── eigenmatrix.py     # Eigenmatrix (diagonal / off-diagonal) residuals
 │
 ├── io/                   # File format I/O
 │   ├── __init__.py       # Re-exports public functions
@@ -234,14 +253,18 @@ q2mm/
 │   ├── cmap.py           # parse_cmap_section, load_cmap_from_prm
 │   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
-├── diagnostics/          # Analysis and reporting
-│   ├── benchmark.py      # Timing and accuracy benchmarks
-│   ├── pes_distortion.py # PES distortion analysis
-│   ├── report.py         # Summary report generation
-│   └── tables.py         # Formatted table output
+├── workflows/            # Multi-stage parameterization protocols
+│   ├── base.py           # Workflow Protocol, WorkflowResult, StageResult
+│   ├── single_stage.py   # SingleStageWorkflow
+│   └── method_e2.py      # MethodE2Workflow (two-stage)
 │
-├── constants.py          # Physical constants
-└── elements.py           # Periodic table data
+└── diagnostics/          # Benchmark systems, analysis, and reporting
+    ├── systems.py        # Benchmark system registry (SYSTEMS, SystemData, load_system)
+    ├── cli.py            # q2mm-benchmark console entry point
+    ├── benchmark.py      # Multi-backend leaderboard benchmarks (run_combo)
+    ├── pes_distortion.py # PES distortion analysis
+    ├── report.py         # Summary report generation
+    └── tables.py         # Formatted table output
 ```
 
 ### Dependency flow
