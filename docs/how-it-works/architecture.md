@@ -210,6 +210,8 @@ q2mm/
 │   ├── registry.py       # Decorator + lazy-discovery backend registry
 │   ├── mm/
 │   │   ├── openmm.py        # OpenMM engine (harmonic + MM3 dual-mode)
+│   │   ├── _openmm_terms.py # OpenMM internal term records
+│   │   ├── _openmm_units.py # OpenMM scalar unit converters
 │   │   ├── tinker.py        # Tinker engine (subprocess-based)
 │   │   ├── jax_engine.py    # JAX engine (differentiable, analytical gradients)
 │   │   ├── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
