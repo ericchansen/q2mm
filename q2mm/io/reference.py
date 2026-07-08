@@ -36,7 +36,7 @@ import yaml
 
 from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
+from q2mm.optimizers.reference import ReferenceData, ReferenceValue
 
 # Reference-value kinds accepted by the schema.
 # Note: ``eigenmatrix`` is also supported as a special bulk-loading directive

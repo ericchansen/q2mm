@@ -35,7 +35,8 @@ import importlib
 import logging
 from typing import Any
 
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.optimizers.reference import ReferenceData
 
 logger = logging.getLogger(__name__)
 

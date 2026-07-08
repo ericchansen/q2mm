@@ -221,7 +221,8 @@ q2mm/
 │       └── psi4.py       # Psi4 engine (QM single-points, Hessians)
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── objective.py      # ObjectiveFunction, ReferenceData
+│   ├── objective.py      # ObjectiveFunction (+ ReferenceData/Value re-export)
+│   ├── reference.py      # ReferenceValue, ReferenceData builders
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
