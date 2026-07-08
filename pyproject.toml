@@ -86,6 +86,7 @@ dev = [
     "pytest-benchmark",
     "pytest-cov",
     "ruff",
+    "mypy",
     "scipy",
     "parmed",
     "qcelemental",
@@ -180,10 +181,70 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+# Target 3.12 (the CI Lint job's Python) as a single source of truth so plain
+# `python -m mypy q2mm/` matches CI locally. numpy>=2.5 ships PEP 695 `type`
+# aliases in its stubs that mypy rejects under python_version=3.10 (a fatal
+# stub parse error that halts all checking), so 3.10 is not a usable target
+# here. The >=3.10 runtime floor is still enforced by ruff (target-version=
+# py310) and the 3.10 test-core matrix.
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # too strict for existing codebase
 check_untyped_defs = true
 ignore_missing_imports = true
+
+# Grandfathered modules: mypy is enforced repo-wide via the CI Lint job, but
+# the modules listed below carry pre-existing type errors. They are still
+# followed for type info, but their own errors are not reported — so any NEW
+# module, or any module removed from this list, must be mypy-clean.
+# Un-grandfather modules one at a time as their errors are fixed.
+# See https://mypy.readthedocs.io/en/stable/existing_code.html
+[[tool.mypy.overrides]]
+ignore_errors = true
+module = [
+  "q2mm.backends.mm",
+  "q2mm.backends.mm._jax_common",
+  "q2mm.backends.mm.batched",
+  "q2mm.backends.mm.jax_engine",
+  "q2mm.backends.mm.jax_md_engine",
+  "q2mm.backends.mm.openmm",
+  "q2mm.backends.mm.tinker",
+  "q2mm.backends.qm.psi4",
+  "q2mm.backends.registry",
+  "q2mm.benchmark_runner",
+  "q2mm.diagnostics.benchmark",
+  "q2mm.diagnostics.cli",
+  "q2mm.diagnostics.systems",
+  "q2mm.diagnostics.tables",
+  "q2mm.io._helpers",
+  "q2mm.io.amber",
+  "q2mm.io.cmap",
+  "q2mm.io.gaussian",
+  "q2mm.io.jaguar",
+  "q2mm.io.macromodel",
+  "q2mm.io.mm3",
+  "q2mm.io.mol2",
+  "q2mm.io.openmm",
+  "q2mm.io.reference",
+  "q2mm.io.tinker",
+  "q2mm.models.forcefield",
+  "q2mm.models.hessian",
+  "q2mm.models.molecule",
+  "q2mm.models.seminario",
+  "q2mm.models.structure",
+  "q2mm.optimizers.cycling",
+  "q2mm.optimizers.evaluators.eigenmatrix",
+  "q2mm.optimizers.evaluators.energy",
+  "q2mm.optimizers.evaluators.frequency",
+  "q2mm.optimizers.jax_multistart",
+  "q2mm.optimizers.jaxloss",
+  "q2mm.optimizers.jaxopt_opt",
+  "q2mm.optimizers.objective",
+  "q2mm.optimizers.optax",
+  "q2mm.optimizers.reference",
+  "q2mm.optimizers.scipy_opt",
+  "q2mm.optimizers.spec",
+  "q2mm.workflows.method_e2",
+]
 

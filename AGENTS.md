@@ -124,6 +124,22 @@ python -m ruff check q2mm/ test/ scripts/
 python -m ruff format --check q2mm test scripts examples
 ```
 
+### Types (mypy)
+
+```bash
+python -m mypy q2mm/
+```
+
+mypy is enforced repo-wide in the CI Lint job via a grandfathered ratchet
+(see the `[[tool.mypy.overrides]]` block in `pyproject.toml`): the modules
+listed there with pre-existing type errors are exempt, so any **new** module —
+or any module removed from that grandfather list — must be mypy-clean.
+`[tool.mypy]` pins `python_version = "3.12"` (the CI Lint job's Python) as a
+single source of truth, so the command above matches CI with no extra flags.
+3.12 is required because numpy ≥2.5 ships PEP 695 `type` aliases in its stubs
+that mypy cannot parse under a 3.10 target; the ≥3.10 runtime floor is still
+enforced by ruff (`target-version=py310`) and the 3.10 test-core matrix.
+
 ### Core Tests (no backends required)
 
 ```bash

@@ -22,6 +22,9 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check q2mm/ test/ scripts/
       - run: python -m ruff format --check q2mm test scripts examples
+      # mypy target (python_version=3.12) is set in [tool.mypy]; see the note
+      # there on why 3.12 rather than the 3.10 runtime floor.
+      - run: python -m mypy q2mm/
       - run: python scripts/check_env_dep_parity.py
 
   test-core:
