@@ -440,7 +440,7 @@ from the literature `.fld`.
 
 ## 7. Anchors
 
-- Code: [`q2mm/diagnostics/systems.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/diagnostics/systems.py) (`starting_point` parameter on `load_system`)
+- Code: [`q2mm/systems.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/systems.py) (`starting_point` parameter on `load_system`)
 - Bounds: [`q2mm/models/forcefield.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/models/forcefield.py) (`get_fractional_bounds`)
 - CLI: [`scripts/regenerate_convergence_results.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/regenerate_convergence_results.py) (`--starting-point`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
 - Analysis scripts:

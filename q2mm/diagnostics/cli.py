@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from q2mm.diagnostics.benchmark import BenchmarkResult
-    from q2mm.diagnostics.systems import SystemSpec
+    from q2mm.systems import SystemSpec
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
@@ -130,7 +130,7 @@ def _resolve_system(system_key: str) -> SystemSpec:
         SystemExit: If the system is not registered.
 
     """
-    from q2mm.diagnostics.systems import SYSTEMS
+    from q2mm.systems import SYSTEMS
 
     if system_key not in SYSTEMS:
         available = ", ".join(sorted(SYSTEMS))
@@ -230,7 +230,7 @@ def _run_matrix(
 
             # Reload system data per-form (reference data depends on form)
             try:
-                from q2mm.diagnostics.systems import load_system
+                from q2mm.systems import load_system
 
                 molecule_loader_kwargs: dict[str, Any] | None = None
                 if system_key == "ch3f" and data_dir is not None:
@@ -660,7 +660,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # --list: show what's available
     if args.list:
-        from q2mm.diagnostics.systems import SYSTEMS
+        from q2mm.systems import SYSTEMS
 
         print("\nAvailable systems:")
         for key, sys_cfg in SYSTEMS.items():

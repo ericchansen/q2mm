@@ -204,7 +204,7 @@ def _per_molecule_r2(obj: Any, ff: Any) -> list[dict[str, float]]:
 
 def _ff_path() -> Path:
     """Resolve the Rosales Heck-relay FF file path."""
-    from q2mm.diagnostics.systems import _resolve_supporting_info_dir
+    from q2mm.systems import _resolve_supporting_info_dir
 
     si = _resolve_supporting_info_dir()
     return si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
@@ -345,7 +345,7 @@ def main() -> int:
     )
 
     from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.diagnostics.systems import load_heck_relay_molecules
+    from q2mm.systems import load_heck_relay_molecules
     from q2mm.optimizers.objective import ReferenceData
 
     logger.info("Loading 23 Heck-relay molecules + QM Hessians")

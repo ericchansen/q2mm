@@ -19,7 +19,7 @@ functions, and evaluation tools for force field development.
 
 Q2MM has a specific scientific lineage.  Before changing anything in
 `q2mm/models/seminario.py`, `q2mm/models/forcefield.py`, the
-parametrization loaders in `q2mm/diagnostics/systems.py`, or the
+parametrization loaders in `q2mm/systems.py`, or the
 optimizers in `q2mm/optimizers/`, look at the right paper.  Agents have
 repeatedly cited the wrong reference here.
 
@@ -470,7 +470,7 @@ file, ~2,000 lines) and do not need composition.
 
 ### Adding a new benchmark system
 
-1. Write a `load_*()` function in `q2mm/diagnostics/systems.py` following the
+1. Write a `load_*()` function in `q2mm/systems.py` following the
    pattern of `load_rh_enamide()` — load molecules, build `ReferenceData`,
    return `SystemData`.
 2. Register in the `SYSTEMS` dict at the bottom of `systems.py`.

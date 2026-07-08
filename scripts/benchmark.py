@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%H:%M:%S",
     )
 
-    from q2mm.diagnostics.systems import SYSTEMS
+    from q2mm.systems import SYSTEMS
 
     systems = args.system or list(SYSTEMS.keys())
     unknown = [s for s in systems if s not in SYSTEMS]

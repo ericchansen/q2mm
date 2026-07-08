@@ -405,7 +405,7 @@ def run_benchmark(
 
     Args:
         system_key: Registered system identifier.  Must be present in
-            ``q2mm.diagnostics.systems.SYSTEMS``.
+            ``q2mm.systems.SYSTEMS``.
         workflow: ``"method-e2"`` (default), ``"single-stage"``, or a
             pre-configured :class:`~q2mm.workflows.base.Workflow`
             instance.
@@ -440,7 +440,7 @@ def run_benchmark(
 
     """
     from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.diagnostics.systems import SYSTEMS, load_system
+    from q2mm.systems import SYSTEMS, load_system
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
 

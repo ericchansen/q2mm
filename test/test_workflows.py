@@ -54,7 +54,7 @@ class TestStageResultDataclass:
     def test_workflow_result_default_lists(self) -> None:
         """Default lists/dicts are per-instance (not shared)."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         sd = load_system("ch3f", engine=JaxEngine())
         wr1 = WorkflowResult(
@@ -86,7 +86,7 @@ class TestSingleStageWorkflowParity:
     def _load() -> tuple:
         """Fresh ``(SystemData, engine)`` per test."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         engine = JaxEngine()
         return load_system("ch3f", engine=engine), engine

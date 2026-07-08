@@ -215,7 +215,6 @@ module = [
   "q2mm.benchmark_runner",
   "q2mm.diagnostics.benchmark",
   "q2mm.diagnostics.cli",
-  "q2mm.diagnostics.systems",
   "q2mm.diagnostics.tables",
   "q2mm.io._helpers",
   "q2mm.io.amber",
@@ -245,6 +244,7 @@ module = [
   "q2mm.optimizers.reference",
   "q2mm.optimizers.scipy_opt",
   "q2mm.optimizers.spec",
+  "q2mm.systems",
   "q2mm.workflows.method_e2",
 ]
 

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from q2mm.optimizers.protocols import _Optimizer
 
 if TYPE_CHECKING:
-    from q2mm.diagnostics.systems import SystemData
+    from q2mm.systems import SystemData
     from q2mm.models.forcefield import ForceField
 
 

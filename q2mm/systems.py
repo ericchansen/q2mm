@@ -11,7 +11,7 @@ Adding a new system = appending a :class:`SystemSpec` entry to
 
 Usage::
 
-    from q2mm.diagnostics.systems import load_system, SYSTEMS
+    from q2mm.systems import load_system, SYSTEMS
 
     sys_data = load_system("rh-enamide", engine=engine)
 
@@ -105,7 +105,7 @@ def _build_frequency_reference(
 # Loader: CH3F (single molecule, SN2 test reference data)
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _find_ch3f_data_dir() -> Path:
@@ -206,7 +206,7 @@ def _resolve_supporting_info_dir() -> Path:
     si_env = os.environ.get("Q2MM_SUPPORTING_INFO")
     if si_env:
         return Path(si_env)
-    return Path(__file__).resolve().parent.parent.parent / "validation" / "supporting-info"
+    return Path(__file__).resolve().parent.parent / "validation" / "supporting-info"
 
 
 def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> list[Q2MMMolecule]:

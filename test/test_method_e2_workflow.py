@@ -114,7 +114,7 @@ class TestShortCircuit:
     @staticmethod
     def _load() -> tuple:
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         engine = JaxEngine()
         return load_system("ch3f", engine=engine), engine
@@ -150,7 +150,7 @@ class TestActiveMaskRestoration:
     def test_active_mask_unchanged_on_short_circuit(self) -> None:
         """Single-stage path: no freezes applied, no unfreezes needed."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         engine = JaxEngine()
@@ -187,7 +187,7 @@ class TestTwoStageOnSn2:
     @staticmethod
     def _load() -> tuple:
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         engine = JaxEngine()
         # Use a small replace_with to push FACAF (and similar fragile
@@ -340,7 +340,7 @@ class TestHelpers:
     def test_iter_active_force_constants_covers_bonds_and_angles(self) -> None:
         """The walker yields one entry per active bond_k + angle_k + ub_k."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         sd = load_system("ch3f", engine=JaxEngine())
         items = _iter_active_force_constants(sd.forcefield)
@@ -356,7 +356,7 @@ class TestHelpers:
     def test_identify_candidates_threshold_inclusive(self) -> None:
         """With threshold above all FC magnitudes, every active FC is a candidate."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         sd = load_system("ch3f", engine=JaxEngine())
         all_fcs = _iter_active_force_constants(sd.forcefield)
@@ -367,7 +367,7 @@ class TestHelpers:
     def test_identify_candidates_threshold_zero(self) -> None:
         """With threshold=0 and allow_negative=True, no candidates emerge."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         sd = load_system("ch3f", engine=JaxEngine())
         candidates = _identify_method_e2_candidates(sd.forcefield, threshold=0.0, allow_negative=True)

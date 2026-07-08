@@ -56,7 +56,7 @@ from q2mm.workflows.base import StageResult, WorkflowResult
 from q2mm.workflows.single_stage import _evaluate_samples, _per_category_metrics
 
 if TYPE_CHECKING:
-    from q2mm.diagnostics.systems import SystemData
+    from q2mm.systems import SystemData
     from q2mm.models.forcefield import ForceField, _FrozenAwareParam
     from q2mm.workflows.base import _Optimizer
 

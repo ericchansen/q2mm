@@ -204,9 +204,9 @@ class TestRhEnamideSeminarioTiming:
 def _load_rh_enamide_molecules() -> list[Q2MMMolecule]:
     """Load 9 rh-enamide structures with Jaguar Hessians.
 
-    Delegates to the shared loader in :mod:`q2mm.diagnostics.systems`.
+    Delegates to the shared loader in :mod:`q2mm.systems`.
     """
-    from q2mm.diagnostics.systems import load_rh_enamide_molecules
+    from q2mm.systems import load_rh_enamide_molecules
 
     return load_rh_enamide_molecules()
 

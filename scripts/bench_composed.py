@@ -59,7 +59,7 @@ def run_workflow_b(
 
     """
     from q2mm.diagnostics.benchmark import run_combo
-    from q2mm.diagnostics.systems import SystemData
+    from q2mm.systems import SystemData
 
     results_dir = output_dir / "results"
     ff_dir = output_dir / "forcefields"
@@ -215,7 +215,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from q2mm.diagnostics.systems import load_system
+    from q2mm.systems import load_system
 
     output_dir = args.output
     all_results: list[dict] = []
