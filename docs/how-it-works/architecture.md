@@ -193,6 +193,7 @@ q2mm/
 ├── elements.py           # Periodic table data
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
 ├── benchmark_runner.py   # Canonical convergence benchmark runner (backs q2mm.benchmark)
+├── systems.py            # Benchmark system registry (SYSTEMS, SystemData, load_system)
 │
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
@@ -261,8 +262,7 @@ q2mm/
 │   ├── single_stage.py   # SingleStageWorkflow
 │   └── method_e2.py      # MethodE2Workflow (two-stage)
 │
-└── diagnostics/          # Benchmark systems, analysis, and reporting
-    ├── systems.py        # Benchmark system registry (SYSTEMS, SystemData, load_system)
+└── diagnostics/          # Analysis and reporting
     ├── cli.py            # q2mm-benchmark console entry point
     ├── benchmark.py      # Multi-backend leaderboard benchmarks (run_combo)
     ├── pes_distortion.py # PES distortion analysis

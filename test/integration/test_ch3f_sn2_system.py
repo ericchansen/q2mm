@@ -30,7 +30,7 @@ class TestCh3fSn2System:
 
     def test_system_is_registered(self) -> None:
         """``ch3f-sn2`` appears in the SYSTEMS registry with TS metadata."""
-        from q2mm.diagnostics.systems import SYSTEMS
+        from q2mm.systems import SYSTEMS
 
         assert "ch3f-sn2" in SYSTEMS
         spec = SYSTEMS["ch3f-sn2"]
@@ -48,7 +48,7 @@ class TestCh3fSn2System:
         molecule must match or downstream electrostatic / charge-
         sensitive code paths would silently disagree with the QM.
         """
-        from q2mm.diagnostics.systems import _load_ch3f_sn2_molecules
+        from q2mm.systems import _load_ch3f_sn2_molecules
 
         mols = _load_ch3f_sn2_molecules()
         assert len(mols) == 1
@@ -67,7 +67,7 @@ class TestCh3fSn2System:
         ``1.5`` (the canonical TS value documented on
         ``Q2MMMolecule.from_xyz``).
         """
-        from q2mm.diagnostics.systems import _load_ch3f_sn2_molecules
+        from q2mm.systems import _load_ch3f_sn2_molecules
 
         mol = _load_ch3f_sn2_molecules()[0]
         cf_bonds = [b for b in mol.bonds if set(b.elements) == {"C", "F"}]
@@ -87,7 +87,7 @@ class TestCh3fSn2System:
         ``< -1e-3`` distinguishes those from the genuine
         reaction-coordinate mode.
         """
-        from q2mm.diagnostics.systems import _load_ch3f_sn2_molecules
+        from q2mm.systems import _load_ch3f_sn2_molecules
 
         mol = _load_ch3f_sn2_molecules()[0]
         evals = np.linalg.eigvalsh(mol.hessian)
@@ -106,7 +106,7 @@ class TestCh3fSn2System:
         Seminario projection.
         """
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         sd = load_system("ch3f-sn2", engine=JaxEngine())
         # 6-atom TS → 18 Cartesian DOFs → 12 vibrational modes → 11 real
@@ -129,7 +129,7 @@ class TestCh3fSn2System:
         actionable error inside ``Q2MMMolecule.from_xyz`` or
         ``np.load``.
         """
-        from q2mm.diagnostics.systems import _load_ch3f_sn2_molecules
+        from q2mm.systems import _load_ch3f_sn2_molecules
 
         # Empty data dir → no SN2 TS files
         with pytest.raises(FileNotFoundError, match="SN2 TS reference data missing"):
@@ -147,7 +147,7 @@ class TestCh3fSn2System:
         on rh-conjugate's C-C-O angle is present here.
         """
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         engine = JaxEngine()
         sd_large = load_system("ch3f-sn2", engine=engine, qfuerza_replace_with=1.0)

@@ -17,7 +17,7 @@ import ast
 import dataclasses
 from pathlib import Path
 
-from q2mm.diagnostics.systems import SystemData
+from q2mm.systems import SystemData
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCH_COMPOSED = REPO_ROOT / "scripts" / "bench_composed.py"

@@ -23,7 +23,7 @@ from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
-    from q2mm.diagnostics.systems import SystemData
+    from q2mm.systems import SystemData
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.optimizers.objective import ObjectiveFunction

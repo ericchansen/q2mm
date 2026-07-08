@@ -9,7 +9,7 @@ import pytest
 
 from test._shared import make_water
 
-from q2mm.diagnostics import systems
+from q2mm import systems
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.optimizers.objective import ReferenceData
 

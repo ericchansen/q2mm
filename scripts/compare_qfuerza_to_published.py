@@ -29,7 +29,7 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-from q2mm.diagnostics.systems import SYSTEMS  # noqa: E402
+from q2mm.systems import SYSTEMS  # noqa: E402
 from q2mm.models.forcefield import ForceField  # noqa: E402
 
 

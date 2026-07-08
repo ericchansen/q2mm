@@ -19,7 +19,7 @@ import numpy as np
 from q2mm.workflows.base import StageResult, WorkflowResult
 
 if TYPE_CHECKING:
-    from q2mm.diagnostics.systems import SystemData
+    from q2mm.systems import SystemData
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.workflows.base import _Optimizer
 

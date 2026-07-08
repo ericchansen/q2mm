@@ -250,7 +250,7 @@ def main() -> int:
         import tempfile as _tempfile
 
         _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from q2mm.diagnostics.systems import load_system
+        from q2mm.systems import load_system
 
         # ``compare_opt_rows.py`` exists to diff the published baseline FF
         # against an optimizer's output, so we must load the literature OPT

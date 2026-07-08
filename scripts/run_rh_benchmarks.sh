@@ -124,7 +124,7 @@ sys.path.insert(0, '.')
 # JAX_PLATFORMS left unset — let JAX auto-detect GPU
 
 from q2mm.backends.mm.jax_engine import JaxEngine
-from q2mm.diagnostics.systems import load_system
+from q2mm.systems import load_system
 from q2mm.io.mm3 import _mm3_import_ff
 from q2mm.optimizers.objective import ObjectiveFunction
 

@@ -10,7 +10,7 @@ single, uniform pipeline:
 
 * molecules + published force field come from
   ``load_system(key, starting_point="published")`` (one loader path for all
-  systems — see :mod:`q2mm.diagnostics.systems`);
+  systems — see :mod:`q2mm.systems`);
 * frequencies come from :func:`q2mm.models.hessian.hessian_to_frequencies`
   (QM) and ``JaxEngine.frequencies`` (MM);
 * the objective score is the real :class:`~q2mm.optimizers.objective.
@@ -351,7 +351,7 @@ def _results_for(spec: Check1Spec) -> dict[str, Any]:
     if spec.key in _RESULTS_CACHE:
         return _RESULTS_CACHE[spec.key]
 
-    from q2mm.diagnostics.systems import load_system
+    from q2mm.systems import load_system
 
     try:
         sd = load_system(spec.key, starting_point="published")
@@ -489,7 +489,7 @@ def test_load_heck_relay_preserves_published_opt_values() -> None:
     ``load_system("heck-relay", starting_point="published")`` against the same
     params loaded directly from the .fld file with no Seminario step.
     """
-    from q2mm.diagnostics.systems import _heck_relay_ff_path, load_system
+    from q2mm.systems import _heck_relay_ff_path, load_system
     from q2mm.models.forcefield import ForceField
 
     ff_path = _heck_relay_ff_path()
