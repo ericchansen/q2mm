@@ -23,7 +23,7 @@ from q2mm.models.hessian import (
 from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 from q2mm.optimizers.evaluators.hessian_element import HessianElementEvaluator
-from q2mm.optimizers.objective import ReferenceValue
+from q2mm.optimizers.reference import ReferenceValue
 
 
 def _make_symmetric(n: int, rng: np.random.Generator) -> np.ndarray:

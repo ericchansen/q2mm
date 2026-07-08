@@ -10,7 +10,7 @@ import numpy as np
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ReferenceValue
+from q2mm.optimizers.reference import ReferenceValue
 
 
 @dataclass
