@@ -35,6 +35,7 @@ from typing import Literal
 
 import numpy as np
 
+from q2mm.optimizers._metrics import fractional_improvement
 from q2mm.optimizers.objective import ObjectiveFunction
 
 logger = logging.getLogger(__name__)
@@ -109,9 +110,7 @@ class LoopResult:
                 is zero.
 
         """
-        if self.initial_score == 0:
-            return 0.0
-        return (self.initial_score - self.final_score) / self.initial_score
+        return fractional_improvement(self.initial_score, self.final_score)
 
     def summary(self) -> str:
         """Human-readable summary string.
