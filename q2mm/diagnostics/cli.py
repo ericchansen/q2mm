@@ -233,7 +233,7 @@ def _run_matrix(
                 from q2mm.systems import load_system
 
                 molecule_loader_kwargs: dict[str, Any] | None = None
-                if system_key == "ch3f" and data_dir is not None:
+                if system_key in {"ch3f", "ch3f-sn2"} and data_dir is not None:
                     molecule_loader_kwargs = {"data_dir": data_dir}
                 sys_data = load_system(
                     system_key,

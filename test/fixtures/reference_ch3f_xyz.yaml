@@ -3,7 +3,7 @@
 
 molecules:
   - name: ch3f
-    xyz: ../../examples/sn2-test/qm-reference/ch3f-optimized.xyz
+    xyz: ../../q2mm/data/sn2/ch3f-optimized.xyz
     charge: 0
     multiplicity: 1
     data:

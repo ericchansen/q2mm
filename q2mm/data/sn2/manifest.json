@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "resource_id": "q2mm.sn2-reference.b3lyp-6-31+g(d)",
+  "description": "Pre-computed CH3F and identity-SN2 reference outputs used by the built-in q2mm systems.",
+  "provenance": {
+    "generator": "examples/sn2-test/generate_qm_data.py",
+    "software": "Psi4",
+    "method": "B3LYP",
+    "basis": "6-31+G(d)",
+    "generated_by_project_code": true
+  },
+  "license": {
+    "spdx": "MIT",
+    "source_file": "LICENSE",
+    "wheel_location": "distribution metadata licenses/LICENSE",
+    "scope": "The generated files listed in this manifest."
+  },
+  "files": [
+    {
+      "name": "ch3f-energy.txt",
+      "size": 51,
+      "sha256": "4b8a95c60b164dfbb92594be3f2472f3cead80179ef98c4fb16d5138e8f146d4"
+    },
+    {
+      "name": "ch3f-frequencies.txt",
+      "size": 271,
+      "sha256": "830ab254f59564b144fe374a993f188ac5e8d04d7b88fac0dce31c2b00186084"
+    },
+    {
+      "name": "ch3f-hessian.npy",
+      "size": 1928,
+      "sha256": "629371d8caa46162c831c5818a08abc016742c3562d6b7ee0691f2538cf41d5d"
+    },
+    {
+      "name": "ch3f-normal-modes.npz",
+      "size": 3010,
+      "sha256": "e742845cdeee4875d457ca7574ed44c79c8e38b9f7c56f3e1f4b043b45772438"
+    },
+    {
+      "name": "ch3f-optimized.xyz",
+      "size": 288,
+      "sha256": "658539579548fd2eb39af83ac749efaaa12a09b9bfe4c5a37240d25bec1260c6"
+    },
+    {
+      "name": "complex-optimized.xyz",
+      "size": 345,
+      "sha256": "4dcc9f50952b251be9315d81a9a834311daeebf57205fd32721ff156f752233b"
+    },
+    {
+      "name": "sn2-ts-energy.txt",
+      "size": 53,
+      "sha256": "84164492dc433040a6bb51c5d67df5d41944daaa694cc4453f0fec2b5e9c5faa"
+    },
+    {
+      "name": "sn2-ts-frequencies.txt",
+      "size": 349,
+      "sha256": "c20a30da7c129be13bc2a40069bba1a45297dd9abdc742ae9c0bfb5916111af4"
+    },
+    {
+      "name": "sn2-ts-hessian.npy",
+      "size": 2720,
+      "sha256": "86bca843c1ba725ea72317baee1645c80ba017950b938d4afbbee61c49d7edf3"
+    },
+    {
+      "name": "sn2-ts-normal-modes.npz",
+      "size": 3838,
+      "sha256": "1fe294ea0f69afdabd9b46c2fe623908ab5c46ea7e4418dc364072a75ff6e506"
+    },
+    {
+      "name": "sn2-ts-optimized.xyz",
+      "size": 345,
+      "sha256": "25135d6789a51dcb249f52d65c5592170eb099560e95f2b7f53ba07c63193280"
+    },
+    {
+      "name": "summary.txt",
+      "size": 541,
+      "sha256": "0d3217df4d49fbb31ec374c65ebeb07e33ca1cd54e8591c3629ecc477625664a"
+    }
+  ]
+}

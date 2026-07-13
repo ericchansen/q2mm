@@ -182,6 +182,10 @@ To improve further:
 
 ## Reproduce
 
+Configure `Q2MM_RH_ENAMIDE` as described in
+[External data for published systems](../getting-started.md#external-data-for-published-systems)
+before running this command.
+
 ```bash
 # Multi-target (correct methodology)
 python -m q2mm.diagnostics.cli --system rh-enamide --backend jax --optimizer scipy-lbfgsb

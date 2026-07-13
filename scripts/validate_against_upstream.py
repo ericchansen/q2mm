@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import qfuerza_into, seminario_bond_fc
+from q2mm.resources import sn2_reference_dir
 from q2mm.io.jaguar import JaguarIn
 from q2mm.io.macromodel import MacroModel
 from q2mm.io.mol2 import Mol2
@@ -45,7 +46,7 @@ JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
 MOL2_PATH = TRAINING_SET_DIR / "mol2" / "1_zdmp.mol2"
 RH_DIRECT_HESSIAN_PATH = JAG_DIR / "1ZDMPfromJCTCSI_loner1.01.in"
 
-SN2_QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
+SN2_QM_REF = sn2_reference_dir()
 SN2_XYZ_PATH = SN2_QM_REF / "sn2-ts-optimized.xyz"
 SN2_HESSIAN_PATH = SN2_QM_REF / "sn2-ts-hessian.npy"
 

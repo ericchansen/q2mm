@@ -8,9 +8,11 @@ import os
 import subprocess
 import numpy as np
 
+from q2mm.resources import sn2_reference_dir
+
 TINKER_BIN = os.environ.get("TINKER_BIN", os.path.join(os.path.expanduser("~"), "tinker", "bin-windows"))
 TINKER_PARAMS = os.environ.get("TINKER_PARAMS", os.path.join(os.path.expanduser("~"), "tinker", "params", "mm3.prm"))
-QM_DIR = os.path.join(os.path.dirname(__file__), "qm-reference")
+QM_DIR = str(sn2_reference_dir())
 MM_DIR = os.path.join(os.path.dirname(__file__), "mm-reference")
 os.makedirs(MM_DIR, exist_ok=True)
 

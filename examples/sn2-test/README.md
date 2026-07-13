@@ -12,8 +12,9 @@ parameterisation.
 | **Psi4** | QM data generation | `conda install psi4 -c conda-forge` |
 | **Tinker** | MM reference data | [dasher.wustl.edu/tinker](https://dasher.wustl.edu/tinker/) |
 
-Pre-computed QM and MM reference data are included, so Psi4 and Tinker are
-only needed if you want to regenerate from scratch.
+Pre-computed QM reference data is installed with Q2MM under
+`q2mm/data/sn2/`. MM reference outputs remain in this repository. Psi4 and
+Tinker are only needed if you want to regenerate either dataset.
 
 ## Files
 
@@ -33,7 +34,7 @@ only needed if you want to regenerate from scratch.
 
 ### Reference data
 
-- **`qm-reference/`** — Pre-computed Psi4 results (geometries, Hessians, frequencies)
+- **`../../q2mm/data/sn2/`** — Packaged Psi4 results with checksum/provenance metadata
 - **`mm-reference/`** — Pre-computed Tinker MM3 results (energies, frequencies)
 - **`sn2-ts-guess.xyz`** — Initial transition state geometry guess
 
@@ -52,6 +53,13 @@ python run_tsff_pipeline.py
 # 4. Validate against pinned fixtures
 python compare_direct.py
 ```
+
+`generate_qm_data.py` is repository-only: it always writes to this checkout's
+canonical `q2mm/data/sn2/` directory, derives both `*-normal-modes.npz`
+archives from the generated Hessians, normalizes text output, and refreshes
+every size and SHA-256 in `manifest.json`. Its verbose Psi4 log is written to
+the ignored `examples/sn2-test/psi4-output.dat`; it never writes into an
+installed package.
 
 ## See also
 

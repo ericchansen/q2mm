@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from q2mm.resources import sn2_reference_dir
+
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
 
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
-SN2_QM_REF = EXAMPLES_DIR / "sn2-test" / "qm-reference"
+SN2_QM_REF = sn2_reference_dir()
 ETHANE_DIR = EXAMPLES_DIR / "ethane"
 
 # SN2 test data paths

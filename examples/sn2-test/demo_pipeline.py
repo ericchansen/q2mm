@@ -11,8 +11,9 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField
 from q2mm.models.seminario import qfuerza_fresh
+from q2mm.resources import sn2_reference_dir
 
-QM_REF = Path(__file__).parent / "qm-reference"
+QM_REF = sn2_reference_dir()
 
 # Load SN2 TS (use 1.4x tolerance for partially broken C-F bonds at TS)
 mol = Q2MMMolecule.from_xyz(QM_REF / "sn2-ts-optimized.xyz", charge=-1, name="SN2_TS", bond_tolerance=1.4)

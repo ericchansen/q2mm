@@ -192,6 +192,8 @@ q2mm/
 ├── constants.py          # Physical constants
 ├── elements.py           # Periodic table data
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
+├── resources.py          # Installed scientific-resource lookup and integrity checks
+├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── benchmark_runner.py   # Canonical convergence benchmark runner (backs q2mm.benchmark)
 ├── systems.py            # Benchmark system registry (SYSTEMS, SystemData, load_system)
 │
@@ -269,6 +271,30 @@ q2mm/
     ├── report.py         # Summary report generation
     └── tables.py         # Formatted table output
 ```
+
+### Release and scientific-data boundary
+
+Q2MM's release artifacts use an explicit data contract:
+
+- Wheels contain Python modules, `py.typed`, distribution metadata, and only
+  the generated CH3F/SN2 resource in `q2mm/data/sn2/`.
+- Source distributions contain only the inputs needed to build that wheel.
+  Tests, examples, documentation, workflows, validation data, and raw
+  third-party outputs are repository-only.
+- `q2mm.resources.sn2_reference_dir()` resolves the built-in data through
+  `importlib.resources`, so source checkouts and installed wheels use the same
+  canonical files. `manifest.json` records provenance, license, size, and
+  SHA-256 for every scientific payload file.
+- Rh-enamide, dissertation supporting information, and the licensed MM3 base
+  force field are not distributed. Pass `ExternalDataRoots` to
+  `load_system(data_roots=...)`, or configure `Q2MM_RH_ENAMIDE`,
+  `Q2MM_SUPPORTING_INFO`, and `Q2MM_MM3_BASE`. Loaders never search above the
+  installed package or substitute a tracked force field.
+
+The publish workflow runs `scripts/check_release_artifacts.py` before upload.
+It validates both manifests, rebuilds the wheel from the sdist, compares wheel
+payloads, installs the rebuilt wheel into a clean environment, and exercises
+the import, CLI, resource integrity, and built-in CH3F system.
 
 ### Dependency flow
 

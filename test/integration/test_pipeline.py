@@ -11,7 +11,9 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
+from q2mm.resources import sn2_reference_dir
+
+QM_REF = sn2_reference_dir()
 
 
 @unittest.skipUnless((QM_REF / "sn2-ts-hessian.npy").exists(), "SN2 TS fixtures not found")

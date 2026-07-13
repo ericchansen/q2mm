@@ -14,6 +14,8 @@ from typing import Any
 
 import numpy as np
 
+from q2mm.resources import sn2_reference_dir
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_WORKTREE = REPO_ROOT.parent / f"{REPO_ROOT.name}-upstream-worktree"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
@@ -82,7 +84,7 @@ def _build_sn2_atoms(atom_cls: type, symbols: list[str], coords: np.ndarray) -> 
 
 
 def _generate_sn2_fixture(modules: dict[str, Any], upstream_commit: str) -> dict[str, Any]:
-    qm_ref = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
+    qm_ref = sn2_reference_dir()
     xyz_path = qm_ref / "sn2-ts-optimized.xyz"
     hessian_path = qm_ref / "sn2-ts-hessian.npy"
 
