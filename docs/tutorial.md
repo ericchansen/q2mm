@@ -23,18 +23,18 @@ reaction barriers and selectivity predictions.
     - **Python 3.10+** with Q2MM installed (`pip install q2mm`)
     - **[NumPy](https://numpy.org/)** and **[SciPy](https://scipy.org/)** (installed automatically with Q2MM)
     - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`), [JAX](https://jax.readthedocs.io/) (`pip install "q2mm[jax]"`), [JAX-MD](https://github.com/jax-md/jax-md) (`pip install "q2mm[jax-md]"`), or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
-    - The SN2 example files in `examples/sn2-test/`
+    - The installed SN2 reference files from `q2mm.resources`
 
-    !!! warning "Example files require a git clone"
-        The example files are not included in the PyPI package. Clone the
-        repository to get them:
+    !!! note "Regeneration scripts require a git clone"
+        The pre-computed SN2 data is included in the PyPI package. Clone the
+        repository only if you want the example and regeneration scripts:
         ```bash
         git clone https://github.com/ericchansen/q2mm.git
         cd q2mm
         ```
 
-    **QM engine optional:** This tutorial includes pre-computed QM reference
-    data in `examples/sn2-test/qm-reference/`, so you can complete the full
+    **QM engine optional:** Q2MM includes pre-computed QM reference data as
+    installed package resources, so you can complete the full
     workflow without a QM engine. If you want to generate your own QM data,
     you'll need [Psi4](https://psicode.org/) or [Gaussian](https://gaussian.com/).
 
@@ -66,14 +66,14 @@ the transition state: an **optimized geometry** and the **Hessian matrix**
 
 ???+ example "Using pre-computed data (fastest)"
 
-    The `examples/sn2-test/qm-reference/` directory contains ready-to-use QM
-    data for the SN2 tutorial. **No QM engine needed:**
+    The installed `q2mm/data/sn2/` resource contains ready-to-use QM data for
+    the SN2 tutorial. **No QM engine needed:**
 
     ```python
     import numpy as np
-    from pathlib import Path
+    from q2mm.resources import sn2_reference_dir
 
-    QM_REF = Path("examples/sn2-test/qm-reference")
+    QM_REF = sn2_reference_dir()
 
     hessian     = np.load(str(QM_REF / "sn2-ts-hessian.npy"))       # (18, 18)
     frequencies = np.loadtxt(QM_REF / "sn2-ts-frequencies.txt")     # cm⁻¹
@@ -96,10 +96,13 @@ molecule), expand the section for your QM engine:
     ```python
     import numpy as np
     import psi4
+    from pathlib import Path
 
+    QM_OUTPUT = Path("my-sn2-reference")
+    QM_OUTPUT.mkdir(exist_ok=True)
     psi4.set_memory("2 GB")
     psi4.set_num_threads(4)
-    psi4.core.set_output_file("psi4-output.dat", False)
+    psi4.core.set_output_file(str(QM_OUTPUT / "psi4-output.dat"), False)
 
     # Define the SN2 transition-state geometry (charge −1, singlet)
     ts_mol = psi4.geometry("""
@@ -133,9 +136,9 @@ molecule), expand the section for your QM engine:
     assert n_imaginary == 1, f"Expected 1 imaginary freq, got {n_imaginary}"
 
     # Save for later steps
-    ts_mol.save_xyz_file("qm-reference/sn2-ts-optimized.xyz", True)
-    np.save("qm-reference/sn2-ts-hessian.npy", hessian)
-    np.savetxt("qm-reference/sn2-ts-frequencies.txt", frequencies)
+    ts_mol.save_xyz_file(str(QM_OUTPUT / "sn2-ts-optimized.xyz"), True)
+    np.save(QM_OUTPUT / "sn2-ts-hessian.npy", hessian)
+    np.savetxt(QM_OUTPUT / "sn2-ts-frequencies.txt", frequencies)
     ```
 
     Install: `conda install psi4 -c conda-forge`
@@ -222,15 +225,16 @@ geometry.
 
     The XYZ and Hessian files here were saved by Psi4 in Step 1
     (`ts_mol.save_xyz_file(...)` and `np.save(..., hessian)`). If you
-    skipped that step, the pre-computed files in `examples/sn2-test/qm-reference/`
-    are identical.
+    skipped that step, the packaged files returned by
+    `sn2_reference_dir()` are identical. If you generated your own data, set
+    `QM_REF = Path("my-sn2-reference")` instead.
 
     ```python
     import numpy as np
-    from pathlib import Path
     from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.resources import sn2_reference_dir
 
-    QM_REF = Path("examples/sn2-test/qm-reference")
+    QM_REF = sn2_reference_dir()
 
     # Load the optimised TS geometry saved by Psi4
     mol = Q2MMMolecule.from_xyz(
@@ -432,9 +436,10 @@ controls its importance in the fit.
     ```python
     import numpy as np
     from q2mm.optimizers.objective import ReferenceData
+    from q2mm.resources import sn2_reference_dir
 
     # Load frequencies from QM output
-    ts_freqs = np.loadtxt("examples/sn2-test/qm-reference/sn2-ts-frequencies.txt")
+    ts_freqs = np.loadtxt(sn2_reference_dir() / "sn2-ts-frequencies.txt")
 
     # One call populates everything
     ref = ReferenceData.from_molecule(
@@ -939,23 +944,23 @@ Expand each format below for details and template-based export options:
 
 ## Complete script
 
-Here is the full pipeline in one script. The SN2 example files in
-`examples/sn2-test/` contain pre-computed QM data so you can run the
-QFUERZA + analysis steps immediately.
+Here is the full pipeline in one script. The installed `q2mm/data/sn2/`
+resource contains the pre-computed QM data, so you can run the QFUERZA +
+analysis steps immediately without a source checkout.
 
 ```python
 """Full TSFF pipeline — SN2 F⁻ + CH₃F transition state."""
 
 import numpy as np
-from pathlib import Path
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.forcefield import ForceField
 from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.resources import sn2_reference_dir
 
-QM_REF = Path("examples/sn2-test/qm-reference")
+QM_REF = sn2_reference_dir()
 
 # ── Step 1: Load QM data ──────────────────────────────────────────
 mol = Q2MMMolecule.from_xyz(
@@ -1025,8 +1030,9 @@ ff.to_mm3_fld("sn2-ts-qfuerza.fld")
 Once you have completed this tutorial, consider:
 
 - **Multiple conformers** — add ground-state CH₃F alongside the TS to train
-  a force field that reproduces both minima and the saddle point.  Load
-  `qm-reference/ch3f-optimized.xyz` and its Hessian as a second molecule.
+  a force field that reproduces both minima and the saddle point. Load
+  `sn2_reference_dir() / "ch3f-optimized.xyz"` and
+  `sn2_reference_dir() / "ch3f-hessian.npy"` as a second molecule.
 
 - **Frequency matching** — add QM vibrational frequencies to the reference
   data (Step 4) for a tighter fit of force constants.

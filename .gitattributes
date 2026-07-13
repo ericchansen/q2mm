@@ -1,0 +1,5 @@
+q2mm/data/sn2/*.json text eol=lf
+q2mm/data/sn2/*.txt text eol=lf
+q2mm/data/sn2/*.xyz text eol=lf
+q2mm/data/sn2/*.npy -text
+q2mm/data/sn2/*.npz -text

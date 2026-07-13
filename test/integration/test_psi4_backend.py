@@ -11,8 +11,10 @@ import numpy as np
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+from q2mm.resources import sn2_reference_dir
+
 FIXTURE_DIR = REPO_ROOT / "examples" / "sn2-test"
-QM_REF = FIXTURE_DIR / "qm-reference"
+QM_REF = sn2_reference_dir()
 
 try:
     from q2mm.backends.qm.psi4 import Psi4Engine

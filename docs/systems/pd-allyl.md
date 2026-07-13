@@ -144,6 +144,10 @@ The negative R² reflects incomplete composed-force-field transfer, not a proble
 
 ## Reproduce
 
+Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
+[External data for published systems](../getting-started.md#external-data-for-published-systems)
+before running this command.
+
 ```bash
 python -m q2mm.diagnostics.cli --system pd-allyl --backend jax --optimizer optax-adam-cosine
 ```

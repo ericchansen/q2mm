@@ -179,6 +179,10 @@ Heck relay identifies a cross-engine boundary for literature transfer that canno
 
 ## Reproduce
 
+Configure `Q2MM_SUPPORTING_INFO` as described in
+[External data for published systems](../getting-started.md#external-data-for-published-systems)
+before running this command.
+
 ```bash
 python -m q2mm.diagnostics.cli --system heck-relay --backend jax --optimizer optax-adam-cosine
 ```

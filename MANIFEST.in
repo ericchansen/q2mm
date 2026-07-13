@@ -1,0 +1,24 @@
+include LICENSE
+include README.md
+include pyproject.toml
+graft q2mm
+
+prune .copilot
+prune .github
+prune .vscode
+prune docs
+prune examples
+prune scripts
+prune test
+prune validation
+
+exclude .gitignore
+exclude .gitattributes
+exclude .pre-commit-config.yaml
+exclude AGENTS.md
+exclude CHANGELOG.md
+exclude CONTRIBUTING.md
+exclude properdocs.yml
+
+global-exclude *.py[cod]
+global-exclude __pycache__

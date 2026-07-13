@@ -16,7 +16,9 @@ import numpy as np
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-QM_REF = REPO_ROOT / "examples" / "sn2-test" / "qm-reference"
+from q2mm.resources import sn2_reference_dir
+
+QM_REF = sn2_reference_dir()
 
 try:
     from q2mm.backends.mm.tinker import TinkerEngine

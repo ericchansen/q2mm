@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -93,6 +94,92 @@ class TestSystemReferenceConstruction:
         counts = Counter(value.kind for value in ref.values)
         assert counts["bond_length"] > 0
         assert counts["bond_angle"] > 0
+
+
+class TestExternalDataRoots:
+    def test_missing_rh_enamide_root_has_configuration_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("Q2MM_RH_ENAMIDE", raising=False)
+        with pytest.raises(FileNotFoundError, match="ExternalDataRoots\\(rh_enamide"):
+            systems.load_rh_enamide_molecules()
+
+    def test_environment_roots_are_typed_paths(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        rh_dir = tmp_path / "rh"
+        supporting_info = tmp_path / "supporting-info"
+        mm3_base = tmp_path / "mm3_base.fld"
+        rh_dir.mkdir()
+        supporting_info.mkdir()
+        mm3_base.write_text("licensed fixture", encoding="utf-8")
+        monkeypatch.setenv("Q2MM_RH_ENAMIDE", str(rh_dir))
+        monkeypatch.setenv("Q2MM_SUPPORTING_INFO", str(supporting_info))
+        monkeypatch.setenv("Q2MM_MM3_BASE", str(mm3_base))
+
+        roots = systems.ExternalDataRoots.from_environment()
+
+        assert roots == systems.ExternalDataRoots(
+            rh_enamide=rh_dir,
+            supporting_info=supporting_info,
+            mm3_base=mm3_base,
+        )
+
+    def test_explicit_supporting_info_root_overrides_environment(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        explicit = tmp_path / "explicit"
+        environment = tmp_path / "environment"
+        explicit.mkdir()
+        environment.mkdir()
+        mm3_base = tmp_path / "mm3_base.fld"
+        mm3_base.write_text("licensed fixture", encoding="utf-8")
+        monkeypatch.setenv("Q2MM_SUPPORTING_INFO", str(environment))
+        monkeypatch.setenv("Q2MM_MM3_BASE", str(mm3_base))
+        roots = systems.ExternalDataRoots(supporting_info=explicit)
+        assert systems._resolve_supporting_info_dir(roots) == explicit
+        assert systems._mm3_base_path(roots) == mm3_base
+
+    def test_mm3_base_never_falls_back_to_repository_file(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("Q2MM_MM3_BASE", raising=False)
+        with pytest.raises(FileNotFoundError, match="not distributed with q2mm"):
+            systems._mm3_base_path()
+
+    def test_heck_relay_path_uses_environment_without_explicit_roots(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.setenv("Q2MM_SUPPORTING_INFO", str(tmp_path))
+        expected = tmp_path / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
+        assert systems._heck_relay_ff_path() == expected
+
+
+def test_custom_zero_argument_system_loader_remains_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    molecule = _make_water_with_hessian()
+    spec = systems.SystemSpec(
+        key="custom",
+        name="Custom",
+        molecule_loader=lambda: [molecule],
+        ff_strategy="published_opt",
+        ff_paths={"ff_path": lambda: Path("custom.fld")},
+    )
+    monkeypatch.setitem(systems.SYSTEMS, "custom", spec)
+
+    class FakeLoaders:
+        @staticmethod
+        def load_published_opt(path: Path) -> object:
+            assert path == Path("custom.fld")
+            raise RuntimeError("loader reached")
+
+    from q2mm.models import loaders
+
+    monkeypatch.setattr(loaders, "load_published_opt", FakeLoaders.load_published_opt)
+    with pytest.raises(RuntimeError, match="loader reached"):
+        systems.load_system("custom")
 
 
 class TestStartingPoint:

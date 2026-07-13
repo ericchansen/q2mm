@@ -125,6 +125,20 @@ Changelog = "https://github.com/ericchansen/q2mm/releases"
 
 [tool.setuptools.packages.find]
 include = ["q2mm*"]
+namespaces = false
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.package-data]
+q2mm = [
+    "py.typed",
+    "data/sn2/manifest.json",
+    "data/sn2/*.npy",
+    "data/sn2/*.npz",
+    "data/sn2/*.txt",
+    "data/sn2/*.xyz",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
@@ -247,4 +261,3 @@ module = [
   "q2mm.systems",
   "q2mm.workflows.method_e2",
 ]
-

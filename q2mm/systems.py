@@ -22,6 +22,7 @@ correspond to the published-FF workflows in Farrugia, Helquist, Norrby
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -105,38 +106,89 @@ def _build_frequency_reference(
 # Loader: CH3F (single molecule, SN2 test reference data)
 # ---------------------------------------------------------------------------
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-
 
 def _find_ch3f_data_dir() -> Path:
-    """Locate CH3F reference data directory."""
-    candidates = [
-        _REPO_ROOT / "examples" / "sn2-test" / "qm-reference",
-        Path.cwd() / "examples" / "sn2-test" / "qm-reference",
-    ]
-    for d in candidates:
-        if (d / "ch3f-optimized.xyz").exists():
-            return d
-    raise FileNotFoundError(
-        "Cannot find CH3F reference data (ch3f-optimized.xyz). Run from the repo root or use --data-dir."
-    )
+    """Return the installed CH3F/SN2 package-resource directory."""
+    from q2mm.resources import sn2_reference_dir
+
+    data_dir = sn2_reference_dir()
+    if not (data_dir / "ch3f-optimized.xyz").is_file():
+        raise FileNotFoundError(f"Packaged CH3F reference data is incomplete: {data_dir}")
+    return data_dir
 
 
 # ---------------------------------------------------------------------------
 # Loader: Rh-enamide (9 molecules, Jaguar reference data)
 # ---------------------------------------------------------------------------
 
-_RH_DIR = _REPO_ROOT / "examples" / "rh-enamide"
-_TRAINING_SET_DIR = _RH_DIR / "rh_enamide_training_set"
-_MMO_PATH = _TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
-_JAG_DIR = _TRAINING_SET_DIR / "jaguar_spe_freq_in_out"
+
+@dataclass(frozen=True)
+class ExternalDataRoots:
+    """Explicit locations for scientific data that Q2MM does not distribute.
+
+    Attributes:
+        rh_enamide: Directory containing ``mm3.fld`` and the
+            ``rh_enamide_training_set`` directory. Environment fallback:
+            ``Q2MM_RH_ENAMIDE``.
+        supporting_info: Root of the extracted Wahlers/Rosales dissertation
+            supporting information. Environment fallback:
+            ``Q2MM_SUPPORTING_INFO``.
+        mm3_base: Path to the licensed MM3 base ``.fld`` file. Environment
+            fallback: ``Q2MM_MM3_BASE``.
+
+    """
+
+    rh_enamide: Path | None = None
+    supporting_info: Path | None = None
+    mm3_base: Path | None = None
+
+    @classmethod
+    def from_environment(cls) -> ExternalDataRoots:
+        """Build roots from Q2MM's documented environment variables."""
+
+        def optional_path(name: str) -> Path | None:
+            value = os.environ.get(name)
+            return Path(value).expanduser() if value else None
+
+        return cls(
+            rh_enamide=optional_path("Q2MM_RH_ENAMIDE"),
+            supporting_info=optional_path("Q2MM_SUPPORTING_INFO"),
+            mm3_base=optional_path("Q2MM_MM3_BASE"),
+        )
+
+
+def _external_roots(roots: ExternalDataRoots | None) -> ExternalDataRoots:
+    """Merge explicit roots with per-field environment fallbacks."""
+    environment = ExternalDataRoots.from_environment()
+    if roots is None:
+        return environment
+    return ExternalDataRoots(
+        rh_enamide=roots.rh_enamide if roots.rh_enamide is not None else environment.rh_enamide,
+        supporting_info=roots.supporting_info if roots.supporting_info is not None else environment.supporting_info,
+        mm3_base=roots.mm3_base if roots.mm3_base is not None else environment.mm3_base,
+    )
+
+
+def _resolve_rh_enamide_dir(roots: ExternalDataRoots | None = None) -> Path:
+    """Resolve the externally supplied Rh-enamide dataset root."""
+    path = _external_roots(roots).rh_enamide
+    if path is None:
+        raise FileNotFoundError(
+            "Rh-enamide data is not distributed with q2mm. Configure "
+            "ExternalDataRoots(rh_enamide=Path(...)) via load_system(data_roots=...), "
+            "or set Q2MM_RH_ENAMIDE to the directory containing mm3.fld and "
+            "rh_enamide_training_set/."
+        )
+    if not path.is_dir():
+        raise FileNotFoundError(f"Configured Rh-enamide data root is not a directory: {path}")
+    return path
 
 
 def _natural_sort_key(p: Path) -> list:
     return [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)]
 
 
-def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
+def load_rh_enamide_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Q2MMMolecule]:
     """Load 9 rh-enamide structures with Jaguar Hessians.
 
     This is the shared loader used by both the benchmark CLI and tests.
@@ -153,17 +205,23 @@ def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
     from q2mm.models.molecule import Q2MMMolecule
     from q2mm.io import JaguarIn, MacroModel
 
-    if not _MMO_PATH.exists():
-        raise FileNotFoundError(f"Rh-enamide dataset not found: {_MMO_PATH}")
+    rh_dir = _resolve_rh_enamide_dir(data_roots)
+    training_set_dir = rh_dir / "rh_enamide_training_set"
+    mmo_path = training_set_dir / "rh_enamide_training_set.mmo"
+    jag_dir = training_set_dir / "jaguar_spe_freq_in_out"
+    if not mmo_path.is_file():
+        raise FileNotFoundError(f"Rh-enamide MacroModel training set not found: {mmo_path}")
+    if not jag_dir.is_dir():
+        raise FileNotFoundError(f"Rh-enamide Jaguar training set not found: {jag_dir}")
 
-    mm = MacroModel(str(_MMO_PATH))
-    jag_files = sorted(_JAG_DIR.glob("*.in"), key=_natural_sort_key)
+    mm = MacroModel(str(mmo_path))
+    jag_files = sorted(jag_dir.glob("*.in"), key=_natural_sort_key)
     n_structures = len(mm.structures)
     n_jag = len(jag_files)
     if n_structures != n_jag:
         raise ValueError(
             f"Rh-enamide dataset inconsistent: {n_structures} MacroModel structures "
-            f"but {n_jag} Jaguar .in files in {_JAG_DIR}"
+            f"but {n_jag} Jaguar .in files in {jag_dir}"
         )
 
     molecules = []
@@ -179,7 +237,7 @@ def load_rh_enamide_molecules() -> list[Q2MMMolecule]:
 # ---------------------------------------------------------------------------
 
 
-def load_heck_relay_molecules() -> list[Q2MMMolecule]:
+def load_heck_relay_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Q2MMMolecule]:
     """Load the 23 Heck relay TS molecules from Gaussian logs.
 
     Returns:
@@ -189,7 +247,7 @@ def load_heck_relay_molecules() -> list[Q2MMMolecule]:
         FileNotFoundError: If the training set directory is absent.
 
     """
-    si = _resolve_supporting_info_dir()
+    si = _resolve_supporting_info_dir(data_roots)
     ts_dir = si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "TrainingSet"
     return _load_gaussian_molecules(ts_dir)
 
@@ -199,14 +257,18 @@ def load_heck_relay_molecules() -> list[Q2MMMolecule]:
 # ---------------------------------------------------------------------------
 
 
-def _resolve_supporting_info_dir() -> Path:
-    """Return the root of the supporting-info directory."""
-    import os
-
-    si_env = os.environ.get("Q2MM_SUPPORTING_INFO")
-    if si_env:
-        return Path(si_env)
-    return Path(__file__).resolve().parent.parent / "validation" / "supporting-info"
+def _resolve_supporting_info_dir(roots: ExternalDataRoots | None = None) -> Path:
+    """Return the explicitly configured supporting-information root."""
+    path = _external_roots(roots).supporting_info
+    if path is None:
+        raise FileNotFoundError(
+            "Dissertation supporting information is not distributed with q2mm. "
+            "Configure ExternalDataRoots(supporting_info=Path(...)) via "
+            "load_system(data_roots=...), or set Q2MM_SUPPORTING_INFO."
+        )
+    if not path.is_dir():
+        raise FileNotFoundError(f"Configured supporting-information root is not a directory: {path}")
+    return path
 
 
 def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> list[Q2MMMolecule]:
@@ -221,8 +283,8 @@ def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> l
     if not log_dir.exists():
         raise FileNotFoundError(
             f"Training set not found: {log_dir}\n"
-            "Extract dissertation supporting info into "
-            "validation/supporting-info/ or set Q2MM_SUPPORTING_INFO."
+            "Check the configured ExternalDataRoots.supporting_info path or "
+            "Q2MM_SUPPORTING_INFO."
         )
 
     log_files = sorted(log_dir.glob("*.log"))
@@ -348,9 +410,13 @@ def _assign_mm3_atom_types(mol: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _load_wahlers_molecules(chapter_subdir: str) -> list[Q2MMMolecule]:
+def _load_wahlers_molecules(
+    chapter_subdir: str,
+    *,
+    data_roots: ExternalDataRoots | None = None,
+) -> list[Q2MMMolecule]:
     """Load Wahlers-dissertation Gaussian molecules from a chapter subdirectory."""
-    si = _resolve_supporting_info_dir()
+    si = _resolve_supporting_info_dir(data_roots)
     chapter = si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir
     ts_dir = chapter / "Training Set Structures"
     if not ts_dir.exists():
@@ -358,25 +424,30 @@ def _load_wahlers_molecules(chapter_subdir: str) -> list[Q2MMMolecule]:
     return _load_gaussian_molecules(ts_dir)
 
 
-def load_pd_allyl_molecules() -> list[Q2MMMolecule]:
+def load_pd_allyl_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Q2MMMolecule]:
     """Load the 21 Pd-allyl amination TS molecules (Wahlers Ch 3)."""
-    return _load_wahlers_molecules("Chapter 3")
+    return _load_wahlers_molecules("Chapter 3", data_roots=data_roots)
 
 
-def load_pd_conjugate_molecules() -> list[Q2MMMolecule]:
+def load_pd_conjugate_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Q2MMMolecule]:
     """Load the 10 Pd 1,4-conjugate addition TS molecules (Wahlers Ch 5)."""
-    return _load_wahlers_molecules("Chapter 5")
+    return _load_wahlers_molecules("Chapter 5", data_roots=data_roots)
 
 
-def load_rh_conjugate_molecules() -> list[Q2MMMolecule]:
+def load_rh_conjugate_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Q2MMMolecule]:
     """Load the 10 Rh 1,4-conjugate addition TS molecules (Wahlers Ch 6)."""
-    return _load_wahlers_molecules("Chapter 6")
+    return _load_wahlers_molecules("Chapter 6", data_roots=data_roots)
 
 
-def _load_ch3f_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
+def _load_ch3f_molecules(
+    *,
+    data_dir: Path | None = None,
+    data_roots: ExternalDataRoots | None = None,
+) -> list[Q2MMMolecule]:
     """Load the single CH3F molecule + its QM Hessian (B3LYP/6-31+G(d))."""
     from q2mm.models.molecule import Q2MMMolecule
 
+    del data_roots
     qm_dir = data_dir or _find_ch3f_data_dir()
     xyz = qm_dir / "ch3f-optimized.xyz"
     hess_path = qm_dir / "ch3f-hessian.npy"
@@ -384,7 +455,11 @@ def _load_ch3f_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
     return [molecule.with_hessian(np.load(hess_path))]
 
 
-def _load_ch3f_sn2_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecule]:
+def _load_ch3f_sn2_molecules(
+    *,
+    data_dir: Path | None = None,
+    data_roots: ExternalDataRoots | None = None,
+) -> list[Q2MMMolecule]:
     """Load the F⁻ + CH3F SN2 transition state + its QM Hessian.
 
     The D3h-symmetric TS of the identity SN2 reaction
@@ -405,6 +480,7 @@ def _load_ch3f_sn2_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecu
     """
     from q2mm.models.molecule import Q2MMMolecule
 
+    del data_roots
     qm_dir = data_dir or _find_ch3f_data_dir()
     xyz = qm_dir / "sn2-ts-optimized.xyz"
     hess_path = qm_dir / "sn2-ts-hessian.npy"
@@ -417,7 +493,7 @@ def _load_ch3f_sn2_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecu
     if missing:
         raise FileNotFoundError(
             f"SN2 TS reference data missing in {qm_dir}: {missing}. "
-            "Run ``examples/sn2-test/generate_qm_data.py`` to compute the TS "
+            "Run ``examples/sn2-test/generate_qm_data.py`` to regenerate the packaged TS "
             "Hessian + frequencies, or pass ``data_dir=`` pointing at a "
             "complete reference directory."
         )
@@ -430,30 +506,28 @@ def _load_ch3f_sn2_molecules(*, data_dir: Path | None = None) -> list[Q2MMMolecu
 # ---------------------------------------------------------------------------
 
 
-def _wahlers_opt_path(chapter_subdir: str, ff_filename: str) -> Path:
+def _wahlers_opt_path(
+    chapter_subdir: str,
+    ff_filename: str,
+    roots: ExternalDataRoots | None = None,
+) -> Path:
     """Resolve the path to a Wahlers chapter's standalone OPT .fld file."""
-    si = _resolve_supporting_info_dir()
+    si = _resolve_supporting_info_dir(roots)
     return si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir / ff_filename
 
 
-def _mm3_base_path() -> Path:
-    """Resolve the standard MM3 base .fld file.
-
-    The base file (mm3_base.fld) is not committed due to copyright;
-    fall back to examples/rh-enamide/mm3.fld which includes the same
-    base section.
-    """
-    p = _REPO_ROOT / "validation" / "published_ffs" / "mm3_base.fld"
-    if p.exists():
-        return p
-    p = _REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
-    if p.exists():
-        return p
-    raise FileNotFoundError(
-        "MM3 base force field not found. Place mm3_base.fld in "
-        "validation/published_ffs/ (download from atlas-nano/ATLAS_toolkit) "
-        "or ensure examples/rh-enamide/mm3.fld exists."
-    )
+def _mm3_base_path(roots: ExternalDataRoots | None = None) -> Path:
+    """Resolve the explicitly supplied licensed MM3 base force field."""
+    path = _external_roots(roots).mm3_base
+    if path is None:
+        raise FileNotFoundError(
+            "The MM3 base force field is not distributed with q2mm. Configure "
+            "ExternalDataRoots(mm3_base=Path(...)) via load_system(data_roots=...), "
+            "or set Q2MM_MM3_BASE to a licensed mm3_base.fld file."
+        )
+    if not path.is_file():
+        raise FileNotFoundError(f"Configured MM3 base force field is not a file: {path}")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -483,12 +557,18 @@ class SystemSpec:
         molecule_loader: Zero-argument callable returning the training-
             set molecules (with QM Hessians for the published-FF
             systems).
+        uses_external_data_roots: Whether :func:`load_system` passes the
+            resolved :class:`ExternalDataRoots` to ``molecule_loader``.
+            Defaults to ``False`` so custom zero-argument loaders remain
+            compatible.
         ff_strategy: Name of the FF-assembly strategy in
             :mod:`q2mm.models.loaders`.  One of
             ``"qfuerza_fresh"``, ``"published_opt"``,
             ``"published_opt_composed"``.
-        ff_paths: Mapping of strategy-specific path keys to zero-arg
-            callables returning a :class:`Path`.  Required keys per
+        ff_paths: Mapping of strategy-specific path keys to callables that
+            return a :class:`Path`. When ``uses_external_data_roots`` is true,
+            they receive :class:`ExternalDataRoots`; otherwise they remain
+            zero-argument callbacks. Required keys per
             strategy:
 
             - ``qfuerza_fresh``: no keys.
@@ -516,7 +596,8 @@ class SystemSpec:
     name: str
     molecule_loader: Callable[..., list[Q2MMMolecule]]
     ff_strategy: FFStrategy
-    ff_paths: Mapping[str, Callable[[], Path]] = field(default_factory=dict)
+    uses_external_data_roots: bool = False
+    ff_paths: Mapping[str, Callable[..., Path]] = field(default_factory=dict)
     normal_modes_path: Callable[[Path | None], Path | None] | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
     metal: str | None = None
@@ -655,6 +736,7 @@ def load_system(
     engine: Any | None = None,
     functional_form: str | None = None,
     molecule_loader_kwargs: dict[str, Any] | None = None,
+    data_roots: ExternalDataRoots | None = None,
     starting_point: StartingPoint = "qfuerza",
     qfuerza_replace_with: float = 1.0,
 ) -> SystemData:
@@ -682,6 +764,10 @@ def load_system(
             (``"harmonic"`` or ``"mm3"``).
         molecule_loader_kwargs: Optional kwargs forwarded to the
             system's molecule loader (e.g. ``data_dir`` for CH3F).
+        data_roots: Explicit locations for non-distributed scientific data.
+            When omitted, the named ``Q2MM_*`` environment variables described
+            by :class:`ExternalDataRoots` are used. Built-in CH3F/SN2 resources
+            do not require external roots.
         starting_point: Where the starting OPT parameter values come
             from.  See :data:`StartingPoint`.  ``"qfuerza"`` is the
             canonical default: it overwrites OPT bond/angle values with
@@ -729,11 +815,21 @@ def load_system(
     if starting_point not in ("published", "qfuerza"):
         raise ValueError(f"Unknown starting_point {starting_point!r}; must be one of: 'published', 'qfuerza'")
     spec = SYSTEMS[key]
+    resolved_data_roots = _external_roots(data_roots)
 
     # 1. Molecules ---------------------------------------------------------
-    molecules = spec.molecule_loader(**(molecule_loader_kwargs or {}))
+    loader_kwargs = dict(molecule_loader_kwargs or {})
+    if spec.uses_external_data_roots:
+        loader_kwargs["data_roots"] = resolved_data_roots
+    molecules = spec.molecule_loader(**loader_kwargs)
 
     # 2. Force field via the named strategy --------------------------------
+    def ff_path(name: str) -> Path:
+        callback = spec.ff_paths[name]
+        if spec.uses_external_data_roots:
+            return callback(resolved_data_roots)
+        return callback()
+
     if spec.ff_strategy == "qfuerza_fresh":
         if len(molecules) != 1:
             raise ValueError(
@@ -741,11 +837,11 @@ def load_system(
             )
         ff = loaders.load_qfuerza_fresh(molecules[0], replace_with=qfuerza_replace_with)
     elif spec.ff_strategy == "published_opt":
-        ff = loaders.load_published_opt(spec.ff_paths["ff_path"]())
+        ff = loaders.load_published_opt(ff_path("ff_path"))
     elif spec.ff_strategy == "published_opt_composed":
         ff = loaders.load_published_opt_composed(
-            spec.ff_paths["opt_path"](),
-            spec.ff_paths["base_path"](),
+            ff_path("opt_path"),
+            ff_path("base_path"),
             metal=spec.metal,
         )
     else:  # pragma: no cover — unreachable per FFStrategy literal
@@ -839,9 +935,9 @@ def load_system(
 # ---------------------------------------------------------------------------
 
 
-def _heck_relay_ff_path() -> Path:
+def _heck_relay_ff_path(roots: ExternalDataRoots | None = None) -> Path:
     """Resolve the Heck-relay Rosales FF file path lazily."""
-    si = _resolve_supporting_info_dir()
+    si = _resolve_supporting_info_dir(roots)
     return si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
 
 
@@ -895,7 +991,8 @@ SYSTEMS: dict[str, SystemSpec] = {
         name="Rh-enamide",
         molecule_loader=load_rh_enamide_molecules,
         ff_strategy="published_opt",
-        ff_paths={"ff_path": lambda: _RH_DIR / "mm3.fld"},
+        uses_external_data_roots=True,
+        ff_paths={"ff_path": lambda roots: _resolve_rh_enamide_dir(roots) / "mm3.fld"},
         metadata={
             "level_of_theory": "B3LYP/LACVP**",
             "publication": "Donoghue et al. JCTC 2008, 4, 1313",
@@ -908,6 +1005,7 @@ SYSTEMS: dict[str, SystemSpec] = {
         name="Heck relay",
         molecule_loader=load_heck_relay_molecules,
         ff_strategy="published_opt",
+        uses_external_data_roots=True,
         ff_paths={"ff_path": _heck_relay_ff_path},
         metadata={
             "level_of_theory": "M06/gen+pseudo (GD3)",
@@ -921,8 +1019,9 @@ SYSTEMS: dict[str, SystemSpec] = {
         name="Pd-allyl amination",
         molecule_loader=load_pd_allyl_molecules,
         ff_strategy="published_opt_composed",
+        uses_external_data_roots=True,
         ff_paths={
-            "opt_path": lambda: _wahlers_opt_path("Chapter 3", "mm3.Pd-allyl.fld"),
+            "opt_path": lambda roots: _wahlers_opt_path("Chapter 3", "mm3.Pd-allyl.fld", roots),
             "base_path": _mm3_base_path,
         },
         metadata={
@@ -938,8 +1037,9 @@ SYSTEMS: dict[str, SystemSpec] = {
         name="Pd 1,4-conjugate addition",
         molecule_loader=load_pd_conjugate_molecules,
         ff_strategy="published_opt_composed",
+        uses_external_data_roots=True,
         ff_paths={
-            "opt_path": lambda: _wahlers_opt_path("Chapter 5", "mm3.Pd-1,4.fld"),
+            "opt_path": lambda roots: _wahlers_opt_path("Chapter 5", "mm3.Pd-1,4.fld", roots),
             "base_path": _mm3_base_path,
         },
         metadata={
@@ -955,8 +1055,9 @@ SYSTEMS: dict[str, SystemSpec] = {
         name="Rh 1,4-conjugate addition",
         molecule_loader=load_rh_conjugate_molecules,
         ff_strategy="published_opt_composed",
+        uses_external_data_roots=True,
         ff_paths={
-            "opt_path": lambda: _wahlers_opt_path("Chapter 6", "mm3.Rh-1,4.fld"),
+            "opt_path": lambda roots: _wahlers_opt_path("Chapter 6", "mm3.Rh-1,4.fld", roots),
             "base_path": _mm3_base_path,
         },
         metadata={

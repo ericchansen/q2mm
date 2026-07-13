@@ -154,6 +154,15 @@ def pytest_configure(config: pytest.Config) -> None:
         os.environ.setdefault("JAX_PLATFORMS", "cpu")
         os.environ.setdefault("OPENMM_DEFAULT_PLATFORM", "CPU")
 
+    rh_enamide = REPO_ROOT / "examples" / "rh-enamide"
+    if rh_enamide.is_dir():
+        os.environ.setdefault("Q2MM_RH_ENAMIDE", str(rh_enamide))
+    if SUPPORTING_INFO_DIR is not None:
+        os.environ.setdefault("Q2MM_SUPPORTING_INFO", str(SUPPORTING_INFO_DIR))
+    mm3_base = REPO_ROOT / "validation" / "published_ffs" / "mm3_base.fld"
+    if mm3_base.is_file():
+        os.environ.setdefault("Q2MM_MM3_BASE", str(mm3_base))
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     run_nightly = config.getoption("--run-nightly")

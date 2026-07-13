@@ -295,7 +295,7 @@ essentially all of it in 92 iterations.  Raw artifacts at
 ## Artifacts and provenance
 
 - Inputs:
-  [QM reference data](https://github.com/ericchansen/q2mm/tree/master/examples/sn2-test/qm-reference)
+  [packaged QM reference data](https://github.com/ericchansen/q2mm/tree/master/q2mm/data/sn2)
 - Outputs:
   [Benchmark results (JSON)](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/ch3f/results)
   and

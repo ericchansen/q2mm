@@ -143,6 +143,10 @@ The negative R² reflects a transfer gap in the composed FF workflow.
 
 ## Reproduce
 
+Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
+[External data for published systems](../getting-started.md#external-data-for-published-systems)
+before running this command.
+
 ```bash
 python -m q2mm.diagnostics.cli --system pd-conjugate --backend jax --optimizer optax-adam-cosine
 ```

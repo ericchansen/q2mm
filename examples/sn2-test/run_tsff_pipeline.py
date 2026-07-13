@@ -15,8 +15,9 @@ from q2mm.models.hessian import decompose, reform_hessian
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import qfuerza_into
+from q2mm.resources import sn2_reference_dir
 
-QM_REF = Path(__file__).parent / "qm-reference"
+QM_REF = sn2_reference_dir()
 
 
 def create_sn2_ff(path: str | Path) -> str | Path:

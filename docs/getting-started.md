@@ -37,6 +37,31 @@ cd q2mm
 pip install -e ".[dev]"            # editable install with dev tools
 ```
 
+### External data for published systems
+
+Q2MM does not distribute the licensed or third-party datasets used by the
+published transition-state systems. Configure their locations before running
+those systems:
+
+| Variable | Required by | Value |
+|----------|-------------|-------|
+| `Q2MM_RH_ENAMIDE` | Rh-enamide | Directory containing `mm3.fld` and `rh_enamide_training_set/` |
+| `Q2MM_SUPPORTING_INFO` | Heck relay; Pd/Rh conjugate; Pd-allyl | Root of the extracted Wahlers/Rosales supporting information |
+| `Q2MM_MM3_BASE` | Pd-allyl; Pd/Rh conjugate | Licensed `mm3_base.fld` file |
+
+For example, in Bash:
+
+```bash
+export Q2MM_RH_ENAMIDE=/path/to/q2mm/examples/rh-enamide
+export Q2MM_SUPPORTING_INFO=/path/to/q2mm/validation/supporting-info
+export Q2MM_MM3_BASE=/path/to/mm3_base.fld
+```
+
+In PowerShell, use `$env:Q2MM_RH_ENAMIDE = "..."` (and likewise for the
+other variables). Missing or invalid roots raise an error naming the exact
+variable or `ExternalDataRoots` field to configure; Q2MM never searches above
+the installed package.
+
 ---
 
 ## QM/MM backends
@@ -72,6 +97,7 @@ cd q2mm
 ```python
 from q2mm.io import GaussLog, load_mm3_fld
 from q2mm.models import Q2MMMolecule
+from q2mm.resources import sn2_reference_dir
 
 # Parse a Gaussian log for the QM Hessian (matrix of energy second derivatives)
 log = GaussLog("examples/ethane/TS.log")
@@ -79,7 +105,7 @@ structure = log.structures[0]
 print(f"Atoms: {structure.num_atoms}, Hessian shape: {structure.hess.shape}")
 
 # Load an XYZ geometry into the unified molecule model
-mol = Q2MMMolecule.from_xyz("examples/sn2-test/qm-reference/ch3f-optimized.xyz")
+mol = Q2MMMolecule.from_xyz(sn2_reference_dir() / "ch3f-optimized.xyz")
 print(f"Q2MMMolecule atoms: {mol.n_atoms}")
 
 # Load an MM3 force field
@@ -105,4 +131,3 @@ q2mm/
 1. Follow the [Tutorial](tutorial.md) for a complete parameterization walkthrough
 2. Read [Theory & Methods](how-it-works/theory.md) to understand the pipeline
 3. See [Platform Support](platform-support.md) for GPU and backend setup
-

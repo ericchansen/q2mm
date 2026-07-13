@@ -13,9 +13,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import seminario_bond_fc
+from q2mm.resources import sn2_reference_dir
 
 FIXTURE_PATH = REPO_ROOT / "test" / "fixtures" / "seminario_parity" / "sn2_reference.json"
-QM_REF = Path(__file__).parent / "qm-reference"
+QM_REF = sn2_reference_dir()
 XYZ_PATH = QM_REF / "sn2-ts-optimized.xyz"
 HESSIAN_PATH = QM_REF / "sn2-ts-hessian.npy"
 
