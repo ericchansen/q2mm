@@ -126,17 +126,14 @@ class MacroModel:
                             section = None
                             # Sort the bonds, angles, and torsions before the start
                             # of a new structure
-                            if bonds:
-                                bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
-                                current_structure.bonds.extend(bonds)
-                            if angles:
-                                angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
-                                current_structure.angles.extend(angles)
-                            if torsions:
-                                torsions.sort(
-                                    key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3])
-                                )
-                                current_structure.torsions.extend(torsions)
+                            bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
+                            angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
+                            torsions.sort(
+                                key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3])
+                            )
+                            current_structure.bonds = bonds
+                            current_structure.angles = angles
+                            current_structure.torsions = torsions
                             if atoms:
                                 atoms.sort(key=lambda x: x.index)
                                 current_structure.atoms.extend(atoms)
@@ -478,17 +475,12 @@ class MacroModelLog:
                     if "Connection Table" in line:
                         # Sort the bonds, angles, and torsions before the start
                         # of a new structure
-                        if bonds:
-                            bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
-                            current_structure.bonds.extend(bonds)
-                        if angles:
-                            angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
-                            current_structure.angles.extend(angles)
-                        if torsions:
-                            torsions.sort(
-                                key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3])
-                            )
-                            current_structure.torsions.extend(torsions)
+                        bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
+                        angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
+                        torsions.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
+                        current_structure.bonds = bonds
+                        current_structure.angles = angles
+                        current_structure.torsions = torsions
             logger.log(5, f"  -- Imported {len(self._structures)} structure(s).")
         return self._structures
 

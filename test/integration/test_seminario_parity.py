@@ -527,21 +527,9 @@ class TestCisplatinZenodoQFUERZARules:
 
 @pytest.fixture(scope="module")
 def cisplatin_molecule() -> Q2MMMolecule:
-    """Parse the cisplatin Gaussian log and build a Q2MMMolecule.
-
-    Uses direct Q2MMMolecule construction (not GaussLog.molecules) because
-    GaussLog.molecules passes ``_bonds=[]`` via ``from_structure``, which
-    bypasses auto-detection.  Direct construction leaves ``_bonds=None``,
-    triggering covalent-radii bond detection.
-    """
+    """Parse the cisplatin Gaussian log and build a Q2MMMolecule."""
     log = GaussLog(str(CISPLATIN_GAUSSIAN_LOG), au_hessian=True)
-    s = log.structures[-1]
-    return Q2MMMolecule(
-        symbols=[a.element for a in s.atoms],
-        geometry=[a.coords for a in s.atoms],
-        hessian=s.hess,
-        bond_tolerance=1.3,
-    )
+    return log.molecules[-1]
 
 
 @pytest.mark.integration

@@ -239,7 +239,6 @@ def _load_gaussian_molecules(log_dir: Path, *, bond_tolerance: float = 1.3) -> l
         # Gaussian logs only carry element symbols; MM3 engines need
         # typed atoms (C2/C3, H1, N2, etc.) for parameter matching.
         mol.bond_tolerance = bond_tolerance
-        mol._bonds = None  # force re-detection with new tolerance
         _assign_mm3_atom_types(mol)
         # Invalidate topology caches so that bonds/angles/torsions are
         # re-detected with the updated MM3 atom_types (env_id depends

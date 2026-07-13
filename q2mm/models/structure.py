@@ -15,7 +15,9 @@ as the adapter layer between file-format parsers (``q2mm.io``) and
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Iterable
+from enum import Enum
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 import numpy as np
 
@@ -25,6 +27,76 @@ if TYPE_CHECKING:
     from q2mm.models.datum import Datum
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+class HessianUnits(str, Enum):
+    """Supported units for bare Hessian arrays stored on :class:`Structure`."""
+
+    ATOMIC = "hartree/bohr**2"
+    KJ_MOL_ANGSTROM2 = "kilojoule/(mole*angstrom**2)"
+
+
+class _TopologyList(list[_T], Generic[_T]):
+    """List that records topology-supply intent on successful mutation."""
+
+    __slots__ = ("_on_mutate",)
+
+    def __init__(self, values: Iterable[_T] = (), *, on_mutate: Callable[[], None]) -> None:
+        super().__init__(values)
+        self._on_mutate = on_mutate
+
+    def append(self, item: _T) -> None:
+        super().append(item)
+        self._on_mutate()
+
+    def extend(self, values: Iterable[_T]) -> None:
+        super().extend(values)
+        self._on_mutate()
+
+    def insert(self, index: int, item: _T) -> None:
+        super().insert(index, item)
+        self._on_mutate()
+
+    def clear(self) -> None:
+        super().clear()
+        self._on_mutate()
+
+    def pop(self, index: int = -1) -> _T:
+        item = super().pop(index)
+        self._on_mutate()
+        return item
+
+    def remove(self, item: _T) -> None:
+        super().remove(item)
+        self._on_mutate()
+
+    def reverse(self) -> None:
+        super().reverse()
+        self._on_mutate()
+
+    def sort(self, *, key: Callable[[_T], object] | None = None, reverse: bool = False) -> None:
+        super().sort(key=key, reverse=reverse)
+        self._on_mutate()
+
+    def __setitem__(self, index: int | slice, value: _T | Iterable[_T]) -> None:
+        super().__setitem__(index, value)
+        self._on_mutate()
+
+    def __delitem__(self, index: int | slice) -> None:
+        super().__delitem__(index)
+        self._on_mutate()
+
+    def __iadd__(self, values: Iterable[_T]) -> _TopologyList[_T]:
+        super().__iadd__(values)
+        self._on_mutate()
+        return self
+
+    def __imul__(self, count: int) -> _TopologyList[_T]:
+        super().__imul__(count)
+        self._on_mutate()
+        return self
 
 
 class Atom:
@@ -370,7 +442,19 @@ class Torsion(DOF):
 class Structure:
     """Data class for a single structure, conformer, or snapshot."""
 
-    __slots__ = ["_atoms", "_bonds", "_angles", "_torsions", "hess", "props", "origin_name"]
+    __slots__ = [
+        "_atoms",
+        "_bonds",
+        "_angles",
+        "_torsions",
+        "_bonds_explicit",
+        "_angles_explicit",
+        "_torsions_explicit",
+        "hess",
+        "hessian_units",
+        "props",
+        "origin_name",
+    ]
 
     def __init__(self, origin_name: str) -> None:
         """Initialise a Structure.
@@ -380,11 +464,15 @@ class Structure:
                 structure originates.
 
         """
+        object.__setattr__(self, "_bonds_explicit", False)
+        object.__setattr__(self, "_angles_explicit", False)
+        object.__setattr__(self, "_torsions_explicit", False)
         self._atoms: list[Atom] = None
         self._bonds: list[Bond] = None
         self._angles: list[Angle] = None
         self._torsions: list[Torsion] = None
         self.hess = None
+        self.hessian_units: HessianUnits | None = None
         self.props = {}
         self.origin_name: str = origin_name
 
@@ -433,8 +521,22 @@ class Structure:
 
         """
         if self._bonds is None:
-            self._bonds: list[Bond] = []
+            object.__setattr__(self, "_bonds", _TopologyList(on_mutate=self._mark_bonds_explicit))
         return self._bonds
+
+    @bonds.setter
+    def bonds(self, value: list[Bond]) -> None:
+        """Replace bonds with an authoritative parser- or caller-supplied list."""
+        self._bonds = _TopologyList(value, on_mutate=self._mark_bonds_explicit)
+        self._bonds_explicit = True
+
+    def _mark_bonds_explicit(self) -> None:
+        self._bonds_explicit = True
+
+    @property
+    def has_explicit_bonds(self) -> bool:
+        """Whether the parser supplied a bond list, including an empty one."""
+        return self._bonds_explicit
 
     @property
     def angles(self) -> list[Angle]:
@@ -445,8 +547,22 @@ class Structure:
 
         """
         if self._angles is None:
-            self._angles: list[Angle] = []
+            object.__setattr__(self, "_angles", _TopologyList(on_mutate=self._mark_angles_explicit))
         return self._angles
+
+    @angles.setter
+    def angles(self, value: list[Angle]) -> None:
+        """Replace angles with an authoritative parser- or caller-supplied list."""
+        self._angles = _TopologyList(value, on_mutate=self._mark_angles_explicit)
+        self._angles_explicit = True
+
+    def _mark_angles_explicit(self) -> None:
+        self._angles_explicit = True
+
+    @property
+    def has_explicit_angles(self) -> bool:
+        """Whether the parser supplied an angle list, including an empty one."""
+        return self._angles_explicit
 
     @property
     def torsions(self) -> list[Torsion]:
@@ -457,8 +573,22 @@ class Structure:
 
         """
         if self._torsions is None:
-            self._torsions: list[Torsion] = []
+            object.__setattr__(self, "_torsions", _TopologyList(on_mutate=self._mark_torsions_explicit))
         return self._torsions
+
+    @torsions.setter
+    def torsions(self, value: list[Torsion]) -> None:
+        """Replace torsions with an authoritative parser- or caller-supplied list."""
+        self._torsions = _TopologyList(value, on_mutate=self._mark_torsions_explicit)
+        self._torsions_explicit = True
+
+    def _mark_torsions_explicit(self) -> None:
+        self._torsions_explicit = True
+
+    @property
+    def has_explicit_torsions(self) -> bool:
+        """Whether the parser supplied a torsion list, including an empty one."""
+        return self._torsions_explicit
 
     def guess_atoms(self) -> int:
         """Estimate the number of atoms from bond indices.

@@ -11,6 +11,7 @@ from test._shared import (
 )
 
 from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ReferenceData
 from q2mm.io.fchk import parse_fchk as _parse_fchk
 
@@ -291,3 +292,26 @@ class TestFromFchk:
         # Not all angles will be identical
         diffs = [abs(a - b) for a, b in zip(gs_angles, ts_angles)]
         assert max(diffs) > 0.1, "GS and TS angles should differ"
+
+
+class TestFromGaussian:
+    def test_ethane_log_builds_geometry_references_and_force_field(self) -> None:
+        ref, molecule = ReferenceData.from_gaussian(GS_FCHK.with_suffix(".log"), au_hessian=True)
+        force_field = qfuerza_fresh(molecule)
+
+        assert molecule.n_atoms == 8
+        assert len(molecule.bonds) == 7
+        assert len(molecule.angles) == 12
+        assert any(value.kind == "bond_length" for value in ref.values)
+        assert any(value.kind == "bond_angle" for value in ref.values)
+        assert force_field.n_params > 0
+
+    def test_explicit_charge_and_multiplicity_override_archive(self) -> None:
+        _, molecule = ReferenceData.from_gaussian(
+            GS_FCHK.with_suffix(".log"),
+            charge=-2,
+            multiplicity=3,
+        )
+
+        assert molecule.charge == -2
+        assert molecule.multiplicity == 3

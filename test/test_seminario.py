@@ -3,12 +3,19 @@ from pathlib import Path
 import numpy as np
 
 from q2mm.io.mm3 import _mm3_import_ff
-from q2mm.io import GaussLog, Mol2
+from q2mm.io import GaussLog, JaguarIn, JaguarOut, MacroModel, Mol2
 from q2mm.models.hessian import mass_weight_hessian
+from q2mm.models.forcefield import BondParam, ForceField
+from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.structure import Atom, HessianUnits, Structure
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ETHANE_DIR = REPO_ROOT / "examples" / "ethane"
 RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "rh-enamide"
+RH_TRAINING_DIR = RH_SEMINARIO_DIR / "rh_enamide_training_set"
+RH_MMO = RH_TRAINING_DIR / "rh_enamide_training_set.mmo"
+RH_JAGUAR_IN = RH_TRAINING_DIR / "jaguar_spe_freq_in_out" / "1ZDMPfromJCTCSI_loner1.01.in"
+RH_JAGUAR_OUT = RH_TRAINING_DIR / "jaguar_spe_freq_in_out" / "1ZDMPfromJCTCSI_loner1.out"
 
 
 @unittest.skipUnless(
@@ -31,6 +38,32 @@ class TestGaussLogParsing(unittest.TestCase):
         log = GaussLog(str(ETHANE_DIR / "GS.log"))
         struct = log.structures[0]
         self.assertIsNotNone(struct.hess, "No Hessian parsed from GS.log")
+
+    def test_gaussian_molecule_preserves_archive_fields_and_infers_topology(self) -> None:
+        molecule = GaussLog(str(ETHANE_DIR / "GS.log"), au_hessian=True).molecules[-1]
+
+        self.assertEqual(molecule.charge, 0)
+        self.assertEqual(molecule.multiplicity, 1)
+        self.assertIsNotNone(molecule.hessian)
+        self.assertEqual(len(molecule.bonds), 7)
+        self.assertEqual(len(molecule.angles), 12)
+        self.assertIsNone(molecule.partial_charges)
+
+    def test_gaussian_hessian_units_normalize_at_domain_boundary(self) -> None:
+        default_log = GaussLog(str(ETHANE_DIR / "GS.log"))
+        atomic_log = GaussLog(str(ETHANE_DIR / "GS.log"), au_hessian=True)
+
+        default_structure = default_log.structures[-1]
+        atomic_structure = atomic_log.structures[-1]
+        self.assertEqual(default_structure.hessian_units, HessianUnits.KJ_MOL_ANGSTROM2)
+        self.assertEqual(atomic_structure.hessian_units, HessianUnits.ATOMIC)
+
+        direct_default = Q2MMMolecule.from_structure(default_structure)
+        direct_atomic = Q2MMMolecule.from_structure(atomic_structure)
+        np.testing.assert_allclose(direct_default.hessian, direct_atomic.hessian, rtol=1e-12, atol=1e-12)
+        np.testing.assert_allclose(
+            default_log.molecules[-1].hessian, atomic_log.molecules[-1].hessian, rtol=1e-12, atol=1e-12
+        )
 
     def test_parse_ts_log(self) -> None:
         log = GaussLog(str(ETHANE_DIR / "TS.log"))
@@ -87,6 +120,114 @@ class TestMol2Parsing(unittest.TestCase):
         struct = mol2.structures[0]
         # Ethane: 7 bonds (1 C-C + 6 C-H)
         self.assertEqual(len(struct.bonds), 7, "Ethane should have 7 bonds")
+
+    def test_mol2_molecule_preserves_bonds_and_infers_higher_topology(self) -> None:
+        molecule = Mol2(str(ETHANE_DIR / "GS.mol2")).molecules[0]
+
+        self.assertEqual(len(molecule.bonds), 7)
+        self.assertEqual(len(molecule.angles), 12)
+        self.assertEqual(len(molecule.torsions), 9)
+        self.assertEqual(molecule.bonds[0].bond_order, "-")
+        self.assertEqual(molecule.bonds[0].source_bond_order, "1")
+        self.assertEqual(molecule.partial_charges[0], 0.0227)
+        self.assertIsNone(molecule.hessian)
+
+    def test_mol2_bond_orders_use_canonical_force_field_symbols(self) -> None:
+        parser = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        for source_order, canonical_order in (("2", "="), ("ar", "*"), ("3", "%")):
+            with self.subTest(source_order=source_order):
+                structure = Structure("bond-order")
+                structure.atoms.extend(
+                    [
+                        Atom(element="C", atom_type_name="C.2", coords=[0.0, 0.0, 0.0]),
+                        Atom(element="C", atom_type_name="C.2", coords=[1.3, 0.0, 0.0]),
+                    ]
+                )
+                structure.bonds = parser.parse_bonds([f"1 1 2 {source_order}"], structure)
+                molecule = Q2MMMolecule.from_structure(structure)
+                bond = molecule.bonds[0]
+
+                self.assertEqual(bond.bond_order, canonical_order)
+                self.assertEqual(bond.source_bond_order, source_order)
+
+                forcefield = ForceField(
+                    bonds=[
+                        BondParam(("C", "C"), 1.54, 300.0, env_id=bond.env_id, bond_order="-", label="single"),
+                        BondParam(
+                            ("C", "C"),
+                            1.30,
+                            500.0,
+                            env_id=bond.env_id,
+                            bond_order=canonical_order,
+                            label=source_order,
+                        ),
+                    ]
+                )
+                matched = forcefield.match_bond(
+                    bond.elements,
+                    env_id=bond.env_id,
+                    bond_order=bond.bond_order,
+                    bond_length=bond.length,
+                )
+                self.assertIsNotNone(matched)
+                self.assertEqual(matched.label, source_order)
+
+    def test_unknown_mol2_bond_order_is_not_canonicalized(self) -> None:
+        parser = Mol2(str(ETHANE_DIR / "GS.mol2"))
+        structure = Structure("unknown-order")
+        structure.atoms.extend(
+            [
+                Atom(element="C", atom_type_name="C.2", coords=[0.0, 0.0, 0.0]),
+                Atom(element="N", atom_type_name="N.am", coords=[1.3, 0.0, 0.0]),
+            ]
+        )
+        structure.bonds = parser.parse_bonds(["1 1 2 am"], structure)
+
+        bond = Q2MMMolecule.from_structure(structure).bonds[0]
+
+        self.assertEqual(bond.bond_order, "")
+        self.assertEqual(bond.source_bond_order, "am")
+
+
+@unittest.skipUnless(RH_JAGUAR_OUT.exists(), "Jaguar fixture not found")
+class TestJaguarConversion(unittest.TestCase):
+    def test_jaguar_molecule_infers_missing_topology_only(self) -> None:
+        parser = JaguarOut(str(RH_JAGUAR_OUT))
+        structure = parser.structures[-1]
+        molecule = parser.molecules[-1]
+
+        self.assertFalse(structure.has_explicit_bonds)
+        self.assertGreater(len(molecule.bonds), 0)
+        self.assertGreater(len(molecule.angles), 0)
+        self.assertIsNone(molecule.hessian)
+        self.assertIsNone(molecule.partial_charges)
+
+    def test_jaguar_hessian_override_is_preserved(self) -> None:
+        structure = MacroModel(str(RH_MMO)).structures[0]
+        hessian = JaguarIn(str(RH_JAGUAR_IN)).get_hessian(len(structure.atoms))
+
+        from q2mm.models.molecule import Q2MMMolecule
+
+        molecule = Q2MMMolecule.from_structure(structure, hessian=hessian)
+
+        np.testing.assert_array_equal(molecule.hessian, hessian)
+
+
+@unittest.skipUnless(RH_MMO.exists(), "MacroModel fixture not found")
+class TestMacroModelConversion(unittest.TestCase):
+    def test_macromodel_molecule_preserves_all_supplied_topology(self) -> None:
+        parser = MacroModel(str(RH_MMO))
+        structure = parser.structures[0]
+        molecule = parser.molecules[0]
+
+        self.assertEqual(len(molecule.bonds), len(structure.bonds))
+        self.assertEqual(len(molecule.angles), len(structure.angles))
+        self.assertEqual(len(molecule.torsions), len(structure.torsions))
+        self.assertEqual(molecule.bonds[0].ff_row, structure.bonds[0].ff_row)
+        self.assertEqual(molecule.angles[0].ff_row, structure.angles[0].ff_row)
+        self.assertEqual(molecule.torsions[0].ff_row, structure.torsions[0].ff_row)
+        self.assertEqual(molecule.bonds[0].bond_order, "")
+        self.assertIsNone(molecule.partial_charges)
 
 
 @unittest.skipUnless((RH_SEMINARIO_DIR / "mm3.fld").exists(), "rh-enamide fixture not found")

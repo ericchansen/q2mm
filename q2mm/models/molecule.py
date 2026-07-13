@@ -23,7 +23,7 @@ from q2mm.models.identifiers import (
 )
 
 if TYPE_CHECKING:
-    from q2mm.models.structure import Structure
+    from q2mm.models.structure import HessianUnits, Structure
 
 try:
     import qcelemental as qcel
@@ -91,7 +91,7 @@ def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarr
 
 
 def _strip_pint(hessian: Any) -> Any:
-    """Strip ``pint.Quantity`` wrapper, converting to canonical AU.
+    """Strip a ``pint.Quantity`` wrapper and convert it to canonical AU.
 
     When ``pint`` is installed, ``JaguarIn.get_hessian(tag_units=True)``
     returns a ``pint.Quantity`` tagged with units.  This helper converts to
@@ -106,6 +106,56 @@ def _strip_pint(hessian: Any) -> Any:
     return hessian
 
 
+_HESSIAN_ATOMIC_UNIT = "hartree/bohr**2"
+_HESSIAN_KJ_MOL_ANGSTROM2_UNIT = "kilojoule/(mole*angstrom**2)"
+
+
+def _hessian_to_atomic_units(hessian: Any, units: HessianUnits | str | None) -> np.ndarray | None:
+    """Convert a Hessian with known provenance to a bare canonical-AU array."""
+    if hessian is None:
+        return None
+    if hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
+        return np.asarray(hessian.to(_HESSIAN_ATOMIC_UNIT).magnitude)
+    array = np.asarray(hessian, dtype=float)
+    unit_value = getattr(units, "value", units)
+    if unit_value == _HESSIAN_ATOMIC_UNIT:
+        return array
+    if unit_value == _HESSIAN_KJ_MOL_ANGSTROM2_UNIT:
+        from q2mm.constants import KJMOLA2_TO_HESSIAN_AU
+
+        return array * KJMOLA2_TO_HESSIAN_AU
+    raise ValueError(
+        "Structure Hessian unit provenance is unknown. Set "
+        "structure.hessian_units or pass an explicit canonical-AU hessian override."
+    )
+
+
+_CANONICAL_BOND_ORDERS = {
+    "-": "-",
+    "=": "=",
+    "*": "*",
+    "%": "%",
+    "1": "-",
+    "2": "=",
+    "ar": "*",
+    "3": "%",
+}
+
+
+def _canonicalize_bond_order(order: str | None) -> str:
+    """Map supported parser bond-order tokens into the MM3 symbol domain."""
+    if order is None:
+        return ""
+    return _CANONICAL_BOND_ORDERS.get(str(order).strip().lower(), "")
+
+
+class _HessianUnset:
+    """Sentinel distinguishing an omitted Hessian from an explicit ``None``."""
+
+
+_HESSIAN_UNSET = _HessianUnset()
+
+
 @dataclass
 class DetectedBond:
     """A bond detected from molecular geometry."""
@@ -117,6 +167,7 @@ class DetectedBond:
     env_id: str = ""
     ff_row: int | None = None
     bond_order: str = ""  # "-" single, "=" double, "*" aromatic, "%" triple
+    source_bond_order: str | None = None  # Original parser token, if supplied.
 
     @property
     def element_pair(self) -> tuple[str, str]:
@@ -186,9 +237,24 @@ class Q2MMMolecule:
     _angles: list[DetectedAngle] | None = field(default=None, repr=False)
     _torsions: list[DetectedTorsion] | None = field(default=None, repr=False)
     _improper_torsions: list[DetectedTorsion] | None = field(default=None, repr=False)
+    _bonds_explicit: bool = field(default=False, repr=False)
+    _angles_explicit: bool = field(default=False, repr=False)
+    _torsions_explicit: bool = field(default=False, repr=False)
+    partial_charges: list[float | None] | None = None
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Invalidate cached topology when the bond-detection tolerance changes."""
+        if name == "bond_tolerance":
+            value = float(value)
+            previous = self.__dict__.get(name)
+            object.__setattr__(self, name, value)
+            if previous is not None and previous != value:
+                self._invalidate_inferred_topology()
+            return
+        object.__setattr__(self, name, value)
 
     def __post_init__(self) -> None:
-        """Validate atom_types length and normalize geometry to float."""
+        """Validate per-atom data and normalize geometry to float."""
         self.symbols = [str(symbol) for symbol in self.symbols]
         if self.atom_types is None:
             self.atom_types = list(self.symbols)
@@ -196,6 +262,12 @@ class Q2MMMolecule:
             self.atom_types = [str(atom_type) for atom_type in self.atom_types]
         if len(self.atom_types) != len(self.symbols):
             raise ValueError("atom_types must have the same length as symbols.")
+        if self.partial_charges is not None:
+            if len(self.partial_charges) != len(self.symbols):
+                raise ValueError("partial_charges must have the same length as symbols.")
+            self.partial_charges = [
+                None if partial_charge is None else float(partial_charge) for partial_charge in self.partial_charges
+            ]
         self.geometry = np.asarray(self.geometry, dtype=float)
 
     @property
@@ -241,11 +313,26 @@ class Q2MMMolecule:
         """Clear all cached bond/angle/torsion data.
 
         Call this after changing ``atom_types`` so that ``env_id`` values
-        in the cached topology are recomputed on next access.
+        in the cached topology are recomputed on next access. This explicitly
+        discards parser-provided topology as well as inferred topology.
         """
         self._bonds = None
         self._angles = None
         self._torsions = None
+        self._improper_torsions = None
+        self._bonds_explicit = False
+        self._angles_explicit = False
+        self._torsions_explicit = False
+
+    def _invalidate_inferred_topology(self) -> None:
+        """Clear only topology that depends on distance-based bond detection."""
+        if self._bonds_explicit:
+            return
+        self._bonds = None
+        if not self._angles_explicit:
+            self._angles = None
+        if not self._torsions_explicit:
+            self._torsions = None
         self._improper_torsions = None
 
     def _detect_bonds(self, tolerance: float = 1.3) -> list[DetectedBond]:
@@ -441,90 +528,164 @@ class Q2MMMolecule:
         cls,
         structure: Structure,
         *,
-        charge: int = 0,
-        multiplicity: int = 1,
+        charge: int | None = None,
+        multiplicity: int | None = None,
         name: str = "",
         bond_tolerance: float = 1.3,
-        hessian: np.ndarray | None = None,
+        hessian: np.ndarray | None | _HessianUnset = _HESSIAN_UNSET,
     ) -> Q2MMMolecule:
-        """Create from a legacy Structure while preserving bond/angle metadata.
+        """Create from a parser ``Structure`` without losing supplied data.
+
+        Topology is preserved per degree of freedom: a supplied list,
+        including an explicitly empty one, is authoritative. Missing bonds are
+        inferred from geometry, while missing angles and torsions are inferred
+        from the resulting bonds.
 
         Args:
             structure: Source :class:`~q2mm.models.structure.Structure` instance.
-            charge: Molecular charge.
-            multiplicity: Spin multiplicity.
+            charge: Molecular charge override. Defaults to the ``Structure``
+                ``props["charge"]`` value, then zero.
+            multiplicity: Spin multiplicity override. Defaults to the
+                ``Structure`` ``props["multiplicity"]`` value, then one.
             name: Display name; defaults to ``structure.origin_name``.
             bond_tolerance: Multiplier on sum of covalent radii for bond
                 detection.
-            hessian: Optional Cartesian Hessian matrix to attach.
+            hessian: Cartesian Hessian override. When omitted, preserves
+                ``structure.hess`` and converts it from
+                ``structure.hessian_units`` to Hartree/Bohr². A bare explicit
+                override is interpreted as Hartree/Bohr². Pass ``None``
+                explicitly to omit it.
 
         Returns:
-            A new :class:`Q2MMMolecule` with bonds and angles copied from
-            *structure*.
+            A new :class:`Q2MMMolecule` with parser-supplied data preserved.
 
         """
         symbols = []
         atom_types = []
+        partial_charges: list[float | None] = []
         coords = []
         for atom in structure.atoms:
             atom_label = _structure_atom_label(atom)
             symbols.append(_structure_atom_element(atom))
             atom_types.append(atom_label.strip() or _extract_element(atom_label))
+            partial_charges.append(atom.partial_charge)
             coords.append(atom.coords)
 
-        bonds = []
-        for bond in structure.bonds:
-            atoms = structure.get_atoms_in_DOF(bond)
-            dof_atom_types = [_structure_atom_label(a) for a in atoms]
-            elements = tuple(_structure_atom_element(atom) for atom in atoms[:2])
-            length = bond.value
-            if length is None:
-                length = np.linalg.norm(atoms[0].coords - atoms[1].coords)
-            bonds.append(
-                DetectedBond(
-                    atom_i=bond.atom_nums[0] - 1,
-                    atom_j=bond.atom_nums[1] - 1,
-                    elements=elements,
-                    length=float(length),
-                    env_id=canonicalize_bond_env_id(dof_atom_types),
-                    ff_row=bond.ff_row,
+        bonds = None
+        if structure.has_explicit_bonds:
+            bonds = []
+            for bond in structure.bonds:
+                atoms = structure.get_atoms_in_DOF(bond)
+                dof_atom_types = [_structure_atom_label(a) for a in atoms]
+                elements = (
+                    _structure_atom_element(atoms[0]),
+                    _structure_atom_element(atoms[1]),
                 )
-            )
+                length = (
+                    float(bond.value)
+                    if bond.value is not None
+                    else float(np.linalg.norm(atoms[0].coords - atoms[1].coords))
+                )
+                bonds.append(
+                    DetectedBond(
+                        atom_i=bond.atom_nums[0] - 1,
+                        atom_j=bond.atom_nums[1] - 1,
+                        elements=elements,
+                        length=length,
+                        env_id=canonicalize_bond_env_id(dof_atom_types),
+                        ff_row=bond.ff_row,
+                        bond_order=_canonicalize_bond_order(bond.order),
+                        source_bond_order=bond.order,
+                    )
+                )
 
-        angles = []
-        for angle in structure.angles:
-            atoms = structure.get_atoms_in_DOF(angle)
-            dof_atom_types = [_structure_atom_label(a) for a in atoms]
-            elements = tuple(_structure_atom_element(atom) for atom in atoms[:3])
-            angle_value = angle.value
-            if angle_value is None:
-                v1 = atoms[0].coords - atoms[1].coords
-                v2 = atoms[2].coords - atoms[1].coords
-                cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-                angle_value = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
-            angles.append(
-                DetectedAngle(
-                    atom_i=angle.atom_nums[0] - 1,
-                    atom_j=angle.atom_nums[1] - 1,
-                    atom_k=angle.atom_nums[2] - 1,
-                    elements=elements,
-                    value=float(angle_value),
-                    env_id=canonicalize_angle_env_id(dof_atom_types),
-                    ff_row=angle.ff_row,
+        angles = None
+        if structure.has_explicit_angles:
+            angles = []
+            for angle in structure.angles:
+                atoms = structure.get_atoms_in_DOF(angle)
+                dof_atom_types = [_structure_atom_label(a) for a in atoms]
+                elements = (
+                    _structure_atom_element(atoms[0]),
+                    _structure_atom_element(atoms[1]),
+                    _structure_atom_element(atoms[2]),
                 )
-            )
+                angle_value = angle.value
+                if angle_value is None:
+                    v1 = atoms[0].coords - atoms[1].coords
+                    v2 = atoms[2].coords - atoms[1].coords
+                    cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+                    angle_value = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
+                angles.append(
+                    DetectedAngle(
+                        atom_i=angle.atom_nums[0] - 1,
+                        atom_j=angle.atom_nums[1] - 1,
+                        atom_k=angle.atom_nums[2] - 1,
+                        elements=elements,
+                        value=float(angle_value),
+                        env_id=canonicalize_angle_env_id(dof_atom_types),
+                        ff_row=angle.ff_row,
+                    )
+                )
+
+        torsions = None
+        if structure.has_explicit_torsions:
+            torsions = []
+            for torsion in structure.torsions:
+                atoms = structure.get_atoms_in_DOF(torsion)
+                dof_atom_types = [_structure_atom_label(a) for a in atoms]
+                elements = (
+                    _structure_atom_element(atoms[0]),
+                    _structure_atom_element(atoms[1]),
+                    _structure_atom_element(atoms[2]),
+                    _structure_atom_element(atoms[3]),
+                )
+                torsion_value = torsion.value
+                if torsion_value is None:
+                    torsion_value = _dihedral_angle(
+                        atoms[0].coords,
+                        atoms[1].coords,
+                        atoms[2].coords,
+                        atoms[3].coords,
+                    )
+                torsions.append(
+                    DetectedTorsion(
+                        atom_i=torsion.atom_nums[0] - 1,
+                        atom_j=torsion.atom_nums[1] - 1,
+                        atom_k=torsion.atom_nums[2] - 1,
+                        atom_l=torsion.atom_nums[3] - 1,
+                        elements=elements,
+                        value=float(torsion_value),
+                        env_id=canonicalize_torsion_env_id(dof_atom_types),
+                        ff_row=torsion.ff_row,
+                    )
+                )
+
+        resolved_charge = int(structure.props.get("charge", 0)) if charge is None else int(charge)
+        resolved_multiplicity = (
+            int(structure.props.get("multiplicity", 1)) if multiplicity is None else int(multiplicity)
+        )
+        if isinstance(hessian, _HessianUnset):
+            resolved_hessian = _hessian_to_atomic_units(structure.hess, structure.hessian_units)
+        else:
+            resolved_hessian = _hessian_to_atomic_units(hessian, _HESSIAN_ATOMIC_UNIT)
 
         return cls(
             symbols=symbols,
             atom_types=atom_types,
+            partial_charges=partial_charges if any(value is not None for value in partial_charges) else None,
             geometry=np.array(coords, dtype=float),
-            charge=charge,
-            multiplicity=multiplicity,
+            charge=resolved_charge,
+            multiplicity=resolved_multiplicity,
             name=name or structure.origin_name,
             bond_tolerance=bond_tolerance,
-            hessian=_strip_pint(hessian),
+            hessian=resolved_hessian,
             _bonds=bonds,
             _angles=angles,
+            _torsions=torsions,
+            _bonds_explicit=structure.has_explicit_bonds,
+            _angles_explicit=structure.has_explicit_angles,
+            _torsions_explicit=structure.has_explicit_torsions,
         )
 
     @classmethod
@@ -588,6 +749,7 @@ class Q2MMMolecule:
         return Q2MMMolecule(
             symbols=self.symbols,
             atom_types=list(self.atom_types),
+            partial_charges=copy.deepcopy(self.partial_charges),
             geometry=self.geometry.copy(),
             charge=self.charge,
             multiplicity=self.multiplicity,
@@ -600,6 +762,9 @@ class Q2MMMolecule:
             _improper_torsions=(
                 copy.deepcopy(self._improper_torsions) if self._improper_torsions is not None else None
             ),
+            _bonds_explicit=self._bonds_explicit,
+            _angles_explicit=self._angles_explicit,
+            _torsions_explicit=self._torsions_explicit,
         )
 
     def __repr__(self) -> str:
