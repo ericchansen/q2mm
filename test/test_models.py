@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,7 @@ from q2mm.models.seminario import (
     _is_hydrogen_angle,
     QFUERZA_H_ANGLE_DEFAULT_CANONICAL,
 )
+from q2mm.models.structure import Angle, Bond, Torsion
 from q2mm.io.tinker import _tinker_import_ff
 
 # Fixture paths (test-specific, not shared)
@@ -105,6 +107,203 @@ class TestMoleculeFromXYZ:
         )
         assert any(bond.env_id == "1-5" for bond in mol.bonds)
         assert any(angle.env_id == "5-1-5" for angle in mol.angles)
+
+
+class TestMoleculeFromStructure:
+    def test_absent_topology_is_inferred(self) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        structure = Structure("water")
+        structure.atoms.extend(
+            [
+                Atom(element="O", coords=[0.0, 0.0, 0.0]),
+                Atom(element="H", coords=[0.96, 0.0, 0.0]),
+                Atom(element="H", coords=[-0.24, 0.93, 0.0]),
+            ]
+        )
+        assert structure.bonds == []
+        assert not structure.has_explicit_bonds
+
+        molecule = Q2MMMolecule.from_structure(structure)
+
+        assert len(molecule.bonds) == 2
+        assert len(molecule.angles) == 1
+
+    def test_explicit_empty_topology_is_authoritative(self) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        structure = Structure("hydrogen")
+        structure.atoms.extend(
+            [
+                Atom(element="H", coords=[0.0, 0.0, 0.0]),
+                Atom(element="H", coords=[0.74, 0.0, 0.0]),
+            ]
+        )
+        structure.bonds = []
+
+        molecule = Q2MMMolecule.from_structure(structure)
+
+        assert molecule.bonds == []
+
+    def test_structure_fields_and_overrides_are_preserved(self) -> None:
+        from q2mm.models.structure import Atom, Bond, HessianUnits, Structure
+
+        structure = Structure("charged")
+        structure.props.update(charge="-1", multiplicity="2")
+        structure.hess = np.eye(6)
+        structure.hessian_units = HessianUnits.ATOMIC
+        structure.atoms.extend(
+            [
+                Atom(element="C", coords=[0.0, 0.0, 0.0], partial_charge=-0.4),
+                Atom(element="O", coords=[1.2, 0.0, 0.0], partial_charge=0.4),
+            ]
+        )
+        structure.bonds.append(Bond(atom_nums=[1, 2], order="2"))
+
+        molecule = Q2MMMolecule.from_structure(structure)
+        overridden = Q2MMMolecule.from_structure(
+            structure,
+            charge=1,
+            multiplicity=3,
+            hessian=np.eye(6) * 2,
+        )
+        without_hessian = Q2MMMolecule.from_structure(structure, hessian=None)
+
+        assert molecule.charge == -1
+        assert molecule.multiplicity == 2
+        assert molecule.partial_charges == [-0.4, 0.4]
+        assert molecule.bonds[0].bond_order == "="
+        assert molecule.bonds[0].source_bond_order == "2"
+        np.testing.assert_array_equal(molecule.hessian, structure.hess)
+        assert overridden.charge == 1
+        assert overridden.multiplicity == 3
+        np.testing.assert_array_equal(overridden.hessian, np.eye(6) * 2)
+        assert without_hessian.hessian is None
+
+    def test_unit_unknown_structure_hessian_is_rejected(self) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        structure = Structure("unknown-units")
+        structure.atoms.append(Atom(element="H", coords=[0.0, 0.0, 0.0]))
+        structure.hess = np.eye(3)
+
+        with pytest.raises(ValueError, match="Hessian unit provenance"):
+            Q2MMMolecule.from_structure(structure)
+
+    @pytest.mark.parametrize("unit_provenance", [None, "kilojoule/(mole*angstrom**2)"])
+    def test_unit_bearing_structure_hessian_is_converted_once(self, unit_provenance: str | None) -> None:
+        from q2mm.constants import KJMOLA2_TO_HESSIAN_AU
+        from q2mm.models.structure import Atom, Structure
+
+        class FakeQuantity:
+            def __init__(self, magnitude: np.ndarray) -> None:
+                self.magnitude = magnitude
+
+            def to(self, target_unit: str) -> FakeQuantity:
+                assert target_unit == "hartree/bohr**2"
+                return FakeQuantity(self.magnitude * KJMOLA2_TO_HESSIAN_AU)
+
+        structure = Structure("unit-bearing")
+        structure.atoms.append(Atom(element="H", coords=[0.0, 0.0, 0.0]))
+        structure.hess = FakeQuantity(np.eye(3))
+        structure.hessian_units = unit_provenance
+
+        molecule = Q2MMMolecule.from_structure(structure)
+
+        np.testing.assert_allclose(molecule.hessian, np.eye(3) * KJMOLA2_TO_HESSIAN_AU)
+
+    @pytest.mark.parametrize("topology_name", ["bonds", "angles", "torsions"])
+    def test_empty_topology_extension_is_authoritative(self, topology_name: str) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        structure = Structure("chain")
+        structure.atoms.extend(
+            [
+                Atom(element="C", coords=[0.0, 0.0, 0.0]),
+                Atom(element="C", coords=[1.4, 0.0, 0.0]),
+                Atom(element="C", coords=[2.8, 0.0, 0.0]),
+                Atom(element="C", coords=[4.2, 0.0, 0.0]),
+            ]
+        )
+
+        getattr(structure, topology_name).extend([])
+
+        assert getattr(structure, f"has_explicit_{topology_name}")
+        assert getattr(Q2MMMolecule.from_structure(structure), topology_name) == []
+
+    @pytest.mark.parametrize(
+        ("topology_name", "item_factory"),
+        [
+            pytest.param(
+                "bonds",
+                lambda: Bond([1, 2]),
+                id="bonds",
+            ),
+            pytest.param(
+                "angles",
+                lambda: Angle([1, 2, 3]),
+                id="angles",
+            ),
+            pytest.param(
+                "torsions",
+                lambda: Torsion([1, 2, 3, 4]),
+                id="torsions",
+            ),
+        ],
+    )
+    def test_cleared_topology_remains_authoritative(
+        self, topology_name: str, item_factory: Callable[[], object]
+    ) -> None:
+        from q2mm.models.structure import Atom, Structure
+
+        structure = Structure("chain")
+        structure.atoms.extend(
+            [
+                Atom(element="C", coords=[0.0, 0.0, 0.0]),
+                Atom(element="C", coords=[1.4, 0.0, 0.0]),
+                Atom(element="C", coords=[2.8, 0.0, 0.0]),
+                Atom(element="C", coords=[4.2, 0.0, 0.0]),
+            ]
+        )
+        topology = getattr(structure, topology_name)
+        topology.append(item_factory())
+        topology.clear()
+
+        assert getattr(structure, f"has_explicit_{topology_name}")
+        assert getattr(Q2MMMolecule.from_structure(structure), topology_name) == []
+
+    def test_bond_tolerance_change_invalidates_dependent_topology(self) -> None:
+        molecule = Q2MMMolecule(
+            symbols=["O", "H", "H"],
+            geometry=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
+        )
+        assert len(molecule.bonds) == 2
+        assert len(molecule.angles) == 1
+
+        molecule.bond_tolerance = 0.5
+
+        assert molecule.bonds == []
+        assert molecule.angles == []
+
+    def test_bond_tolerance_change_preserves_explicit_topology(self) -> None:
+        from q2mm.models.structure import Atom, Bond, Structure
+
+        structure = Structure("carbonyl")
+        structure.atoms.extend(
+            [
+                Atom(element="C", coords=[0.0, 0.0, 0.0]),
+                Atom(element="O", coords=[1.2, 0.0, 0.0]),
+            ]
+        )
+        structure.bonds.append(Bond(atom_nums=[1, 2], order="2", ff_row=42))
+        molecule = Q2MMMolecule.from_structure(structure)
+
+        molecule.bond_tolerance = 0.5
+
+        assert len(molecule.bonds) == 1
+        assert molecule.bonds[0].bond_order == "="
+        assert molecule.bonds[0].source_bond_order == "2"
+        assert molecule.bonds[0].ff_row == 42
 
 
 # ---- Torsion detection ----

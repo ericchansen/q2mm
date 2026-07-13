@@ -771,8 +771,8 @@ class ReferenceData:
         *,
         weights: dict[str, float] | None = None,
         bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
-        charge: int = 0,
-        multiplicity: int = 1,
+        charge: int | None = None,
+        multiplicity: int | None = None,
         include_frequencies: bool = False,
         skip_imaginary: bool = False,
         au_hessian: bool = True,
@@ -796,8 +796,10 @@ class ReferenceData:
                 keys as :meth:`from_molecule`).
             bond_tolerance (float): Multiplier for covalent-radii bond
                 detection. Use 1.4+ for TS.
-            charge (int): Molecular charge.
-            multiplicity (int): Spin multiplicity.
+            charge (int | None): Molecular charge override. ``None`` preserves
+                the value parsed from the Gaussian archive.
+            multiplicity (int | None): Spin multiplicity override. ``None``
+                preserves the value parsed from the Gaussian archive.
             include_frequencies (bool): Whether to add frequency data
                 from the log file. Default is ``False``.
             skip_imaginary (bool): If ``True``, negative frequencies are
@@ -819,8 +821,10 @@ class ReferenceData:
 
         # Build molecule from the last (optimised) structure
         mol = log.molecules[-1]
-        mol.charge = charge
-        mol.multiplicity = multiplicity
+        if charge is not None:
+            mol.charge = charge
+        if multiplicity is not None:
+            mol.multiplicity = multiplicity
         mol.bond_tolerance = bond_tolerance
 
         # ``mol.hessian`` carries the archive Cartesian Hessian (Hartree/Bohr²,

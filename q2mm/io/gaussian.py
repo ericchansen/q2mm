@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.models.structure import Atom, Structure
+from q2mm.models.structure import Atom, HessianUnits, Structure
 
 if TYPE_CHECKING:
     from q2mm.models.molecule import Q2MMMolecule
@@ -164,31 +164,13 @@ class GaussLog:
 
         Each structure is converted via
         :meth:`Q2MMMolecule.from_structure`, preserving any Hessian data
-        attached to the underlying ``Structure`` when it is stored in
-        atomic units (Hartree/Bohr²).
-
-        Note:
-            ``Q2MMMolecule.hessian`` is documented in Hartree/Bohr².  When
-            this parser was constructed with ``au_hessian=False`` (the
-            default), any attached Hessian has already been converted to
-            kJ/(mol·Å²) and will **not** be forwarded to avoid silently
-            mixing unit systems.
+        attached to the underlying ``Structure`` and normalizing it to
+        Hartree/Bohr² from the parser-recorded unit provenance.
 
         """
         from q2mm.models.molecule import Q2MMMolecule
 
-        molecules: list[Q2MMMolecule] = []
-        for s in self.structures:
-            hess = getattr(s, "hess", None)
-            if hess is not None and not self._au_hessian:
-                logger.debug(
-                    "Non-atomic-unit Hessian detected (au_hessian=False); "
-                    "not attaching Hessian to Q2MMMolecule, which expects "
-                    "Hartree/Bohr²."
-                )
-                hess = None
-            molecules.append(Q2MMMolecule.from_structure(s, hessian=hess))
-        return molecules
+        return [Q2MMMolecule.from_structure(structure) for structure in self.structures]
 
     def read_out(self) -> None:
         """Read force constant and eigenvector data from a frequency calculation.
@@ -547,3 +529,4 @@ class GaussLog:
             if not self._au_hessian:
                 hess *= co.HESSIAN_AU_TO_KJMOLA2
             struct.hess = hess
+            struct.hessian_units = HessianUnits.ATOMIC if self._au_hessian else HessianUnits.KJ_MOL_ANGSTROM2

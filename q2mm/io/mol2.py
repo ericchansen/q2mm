@@ -256,10 +256,10 @@ class Mol2:
             raise ValueError("Mol2 atom index values do not match their ordering.")
 
         # send chunk from @<TRIPOS>BOND to end-of-file to parse_bonds
-        struct._bonds = self.parse_bonds(bond_lines, struct)
+        struct.bonds = self.parse_bonds(bond_lines, struct)
 
         # use num bonds from @<TRIPOS>MOLECULE to verify parse is correct
-        if len(struct._bonds) != num_bonds:
+        if len(struct.bonds) != num_bonds:
             raise ValueError(f"Parsed {len(struct.bonds)} bonds but expected {num_bonds} bonds based on Mol2 data.")
 
         return struct
