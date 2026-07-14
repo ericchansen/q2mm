@@ -353,12 +353,19 @@ class ObjectiveFunction:
 
         hess_map: dict[int, np.ndarray] = {}
         for group in groups:
-            # Cache handles created during grouping to avoid duplicate
-            # compilation in subsequent _evaluate_molecule calls.
-            for mol_local_idx in group.mol_indices:
+            if len(group.case_handles) != len(group.mol_indices):
+                raise RuntimeError(
+                    "Topology group lost molecule-specific handles: "
+                    f"{len(group.case_handles)} handles for {len(group.mol_indices)} molecules."
+                )
+
+            # Batched kernels share one topology executable, but every case
+            # keeps its own coordinates/native state for energy and other
+            # non-batched calculations.
+            for local_i, mol_local_idx in enumerate(group.mol_indices):
                 original_idx = idx_list[mol_local_idx]
                 if original_idx not in self._handles:
-                    self._handles[original_idx] = group.handle
+                    self._handles[original_idx] = group.case_handles[local_i]
 
             hessians = batched_hessians(group, forcefield)
             for local_i, hess in enumerate(hessians):

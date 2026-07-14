@@ -36,12 +36,15 @@ class TopologyGroup:
     """A group of molecules sharing the same topology (handle).
 
     All molecules in a group have the same atom count, bond connectivity,
-    angle terms, etc.  Only their coordinates differ.
+    angle terms, etc.  Only their coordinates differ.  ``handle`` owns the
+    shared compiled topology used by batched kernels, while ``case_handles``
+    preserves the molecule-specific state for non-batched calculations.
     """
 
     handle: object  # JaxHandle
     mol_indices: list[int] = field(default_factory=list)
     geometries: list[np.ndarray] = field(default_factory=list)
+    case_handles: list[object] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -119,11 +122,13 @@ def group_by_topology(
         if sig in groups:
             groups[sig].mol_indices.append(i)
             groups[sig].geometries.append(np.asarray(mol.geometry, dtype=np.float64))
+            groups[sig].case_handles.append(handle)
         else:
             groups[sig] = TopologyGroup(
                 handle=handle,
                 mol_indices=[i],
                 geometries=[np.asarray(mol.geometry, dtype=np.float64)],
+                case_handles=[handle],
             )
 
     return list(groups.values())
