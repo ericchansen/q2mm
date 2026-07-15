@@ -308,15 +308,15 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
     smoke_code = """
 import numpy as np
 from q2mm.resources import validate_sn2_resources
-from q2mm.systems import load_system
+from q2mm.benchmarks.systems import load_system
 
 class SmokeEngine:
     def frequencies(self, molecule, forcefield):
         return np.full(3 * molecule.n_atoms, 100.0)
 
 validate_sn2_resources()
-system = load_system("ch3f", engine=SmokeEngine())
-assert system.molecules[0].hessian.shape == (15, 15)
+case = load_system("ch3f", engine=SmokeEngine(), functional_form="harmonic")
+assert case.problem.molecules[0].hessian.shape == (15, 15)
 print("installed-import=ok cli-help=ok sn2-resource=ok ch3f-system=ok")
 """
     completed = subprocess.run(

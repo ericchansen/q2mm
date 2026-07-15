@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from q2mm.backends.mm.jax_engine import JaxEngine, JaxHandle
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
     from q2mm.optimizers.spec import ObjectiveSpec
 
 
@@ -221,7 +221,7 @@ class JaxLoss:
         self,
         spec: ObjectiveSpec,
         engine: JaxEngine,
-        molecules: list[Q2MMMolecule],
+        molecules: list[Molecule],
         forcefield: ForceField,
     ) -> None:
         from q2mm.backends.mm._jax_common import ensure_jax

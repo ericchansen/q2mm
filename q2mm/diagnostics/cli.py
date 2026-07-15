@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from q2mm.diagnostics.benchmark import BenchmarkResult
-    from q2mm.systems import SystemSpec
+    from q2mm.benchmarks.systems import SystemMetadata
 
 
 def _discover_backends() -> list[tuple[str, type, str]]:
@@ -117,25 +117,26 @@ def _functional_form_configs() -> list[tuple[str, str]]:
     ]
 
 
-def _resolve_system(system_key: str) -> SystemSpec:
-    """Look up a benchmark system by key.
+def _resolve_system(system_key: str) -> SystemMetadata:
+    """Look up a benchmark system's declarative metadata by key.
 
     Args:
         system_key: System name (e.g. ``"ch3f"``, ``"rh-enamide"``).
 
     Returns:
-        SystemSpec: The system configuration.
+        SystemMetadata: Cheap, load-free metadata (name, description,
+            default functional forms) for the system.
 
     Raises:
         SystemExit: If the system is not registered.
 
     """
-    from q2mm.systems import SYSTEMS
+    from q2mm.benchmarks.systems import SYSTEM_KEYS, system_metadata
 
-    if system_key not in SYSTEMS:
-        available = ", ".join(sorted(SYSTEMS))
+    if system_key not in SYSTEM_KEYS:
+        available = ", ".join(sorted(SYSTEM_KEYS))
         raise SystemExit(f"Error: unknown system {system_key!r}. Available: {available}")
-    return SYSTEMS[system_key]
+    return system_metadata(system_key)
 
 
 def _run_matrix(
@@ -230,18 +231,16 @@ def _run_matrix(
 
             # Reload system data per-form (reference data depends on form)
             try:
-                from q2mm.systems import load_system
+                from q2mm.benchmarks.systems import load_system
 
-                molecule_loader_kwargs: dict[str, Any] | None = None
+                load_kwargs: dict[str, Any] = {
+                    "engine": engine,
+                    "functional_form": form_value,
+                    "starting_point": starting_point,
+                }
                 if system_key in {"ch3f", "ch3f-sn2"} and data_dir is not None:
-                    molecule_loader_kwargs = {"data_dir": data_dir}
-                sys_data = load_system(
-                    system_key,
-                    engine=engine,
-                    functional_form=form_value,
-                    molecule_loader_kwargs=molecule_loader_kwargs,
-                    starting_point=starting_point,
-                )
+                    load_kwargs["data_dir"] = data_dir
+                case = load_system(system_key, **load_kwargs)
             except Exception as e:
                 print(
                     f"  Skipping {backend_name}/{form_label}: cannot load {system_key} data: {e}",
@@ -253,7 +252,7 @@ def _run_matrix(
                 n_skipped += 1
                 continue
 
-            molecule_name = sys_data.metadata.get("molecule_name", system_key)
+            molecule_name = case.metadata.get("molecule_name", system_key)
 
             for opt_key, opt_label, opt_config in optimizers:
                 idx += 1
@@ -268,7 +267,7 @@ def _run_matrix(
 
                     r = run_combo(
                         engine,
-                        sys_data,
+                        case,
                         optimizer_method=method,
                         optimizer_kwargs=extra_kwargs,
                         maxiter=max_iter,
@@ -290,7 +289,7 @@ def _run_matrix(
                             saved_ffs = r.save_forcefields(
                                 ff_dir,
                                 stem=stem,
-                                molecule=sys_data.molecules[0],
+                                molecule=case.problem.molecules[0],
                             )
                             if saved_ffs:
                                 exts = ", ".join(p.suffix for p in saved_ffs)
@@ -660,10 +659,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # --list: show what's available
     if args.list:
-        from q2mm.systems import SYSTEMS
+        from q2mm.benchmarks.systems import SYSTEM_KEYS, system_metadata
 
         print("\nAvailable systems:")
-        for key, sys_cfg in SYSTEMS.items():
+        for key in SYSTEM_KEYS:
+            sys_cfg = system_metadata(key)
             forms_str = ", ".join(sys_cfg.default_forms)
             print(f"  {key:<14} {sys_cfg.description}  [forms: {forms_str}]")
 

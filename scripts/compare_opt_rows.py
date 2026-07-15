@@ -250,16 +250,17 @@ def main() -> int:
         import tempfile as _tempfile
 
         _sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        from q2mm.systems import load_system
+        from q2mm.benchmarks.systems import load_system
+        from q2mm.io.mm3 import save_mm3_fld
 
         # ``compare_opt_rows.py`` exists to diff the published baseline FF
         # against an optimizer's output, so we must load the literature OPT
         # values verbatim — not the QFUERZA-derived default.
-        sd = load_system(args.system, starting_point="published")
+        case = load_system(args.system, starting_point="published")
         fd, published_path_str = _tempfile.mkstemp(prefix=f"pub-{args.system}-", suffix=".fld")
         _os.close(fd)
         published_path = Path(published_path_str)
-        sd.forcefield.to_mm3_fld(str(published_path))
+        save_mm3_fld(case.problem.starting_force_field, published_path)
     else:
         published_path = args.published
 

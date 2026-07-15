@@ -109,13 +109,13 @@ makes Tinker significantly slower per evaluation than in-process engines
 
 ```python
 from q2mm.backends.mm import TinkerEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.mm3 import load_mm3_fld
+from q2mm.io.xyz import load_xyz
 
 engine = TinkerEngine(tinker_dir="/opt/tinker/bin")
 
-mol = Q2MMMolecule.from_xyz("molecule.xyz")
-ff = ForceField.from_mm3_fld("mm3.fld")
+mol = load_xyz("molecule.xyz")
+ff = load_mm3_fld("mm3.fld")
 
 e = engine.energy(mol, ff)
 print(f"Energy: {e:.4f} kcal/mol")

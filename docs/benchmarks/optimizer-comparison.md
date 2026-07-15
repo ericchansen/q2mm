@@ -23,10 +23,11 @@ sit at a local minimum for the current q2mm objective.
 
 All multi-target benchmarks use the same production setup:
 
-- **Objective:** eigenmatrix-diagonal + geometry references built by
-  `ReferenceData.from_molecules()` with `invert_ts_curvature=True`.
-- **Parameter scope:** frozen base force field; only OPT-substructure
-  parameters are active, matching the published Q2MM workflow.
+- **Objective:** eigenmatrix-diagonal + geometry observations built by
+  `ObservationSet.from_molecules()` from the QM structures/Hessians.
+- **Parameter scope:** an `ActiveParameterSpace` keeps the base force field
+  inactive while exposing only OPT-substructure parameters, matching the
+  published Q2MM workflow.
 - **Starting force field:** the literature OPT values are preserved as
   published (`starting_point="published"`).  The loader does not
   overwrite them with QFUERZA projections.  This page is the
@@ -162,7 +163,7 @@ Known transfer gaps include:
 q2mm's supported path is therefore:
 
 1. load the published or QFUERZA starting force field without corrupting it,
-2. freeze non-OPT parameters when reproducing literature-scale TS systems,
+2. build an `ActiveParameterSpace` that keeps non-OPT parameters inactive for literature-scale TS systems,
 3. optimize under the q2mm engine/objective being used,
 4. report the remaining cross-engine gap honestly.
 
@@ -190,10 +191,10 @@ q2mm's supported path is therefore:
 
 ```bash
 # Full convergence regeneration for all systems; writes results under results/
-python scripts/regenerate_convergence_results.py
+python scripts/benchmark.py
 
 # Example: statistically sampled pd-allyl verdict
-python scripts/regenerate_convergence_results.py --system pd-allyl --n-evals 10
+python scripts/benchmark.py --system pd-allyl --n-evals 10
 ```
 
 Archive any result JSON or optimized force field used in documentation in the

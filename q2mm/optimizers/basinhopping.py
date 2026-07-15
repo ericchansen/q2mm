@@ -13,12 +13,15 @@ L-BFGS-B alone gets trapped in local minima.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import OptimizationResult
+
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ActiveParameterSpace
 
 logger = logging.getLogger(__name__)
 
@@ -87,30 +90,43 @@ class BasinHoppingOptimizer:
         self.seed = seed
         self.verbose = verbose
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run basin-hopping optimization.
 
         Args:
             objective: Configured objective with forcefield, engine,
                 molecules, and reference data.
+            space: The active/frozen projection over ``objective.layout``.
+                Only active parameters are perturbed/optimized;
+                ``objective.forcefield`` is never mutated — materialize
+                the optimized force field explicitly via
+                ``objective.layout.replace(objective.forcefield, result.final_params)``.
 
         Returns:
-            OptimizationResult with the globally best parameters found.
+            OptimizationResult with the globally best full-vector
+            parameters found (length ``space.n_full``).
 
         """
         from scipy.optimize import basinhopping
 
+        if objective.forcefield is None or objective.layout is None:
+            raise ValueError("BasinHoppingOptimizer.optimize() requires objective.forcefield and objective.layout.")
+
         objective.history.clear()
         n_eval_before = objective.n_eval
 
-        x0 = objective.forcefield.get_param_vector().copy()
-        initial_score = objective(x0)
+        initial_full = objective.layout.vector(objective.forcefield)
+        x0 = space.pack(initial_full)
+        initial_score = objective(initial_full)
 
-        bounds = objective.forcefield.get_bounds()
+        def wrapped_objective(x_active: np.ndarray) -> float:
+            return objective(space.expand(x_active))
+
+        bounds = space.bounds.tolist()
         rng = np.random.default_rng(self.seed)
 
         # Resolve Jacobian for the local minimizer
-        jac_fn = self._resolve_jac(objective)
+        jac_fn = self._resolve_jac(objective, space)
 
         # Local minimizer kwargs
         options: dict[str, Any] = {"maxiter": self.local_maxiter}
@@ -139,8 +155,24 @@ class BasinHoppingOptimizer:
                 self.local_maxiter,
             )
 
+        if x0.size == 0:
+            return OptimizationResult(
+                success=True,
+                message="No active parameters to optimize",
+                initial_score=initial_score,
+                final_score=initial_score,
+                n_iterations=0,
+                n_evaluations=objective.n_eval - n_eval_before,
+                initial_params=initial_full,
+                final_params=initial_full.copy(),
+                history=list(objective.history),
+                method=f"basinhopping({self.local_method})",
+                jac_mode=self.jac,
+                eps=None,
+            )
+
         result = basinhopping(
-            objective,
+            wrapped_objective,
             x0,
             niter=self.niter,
             T=self.T,
@@ -149,11 +181,9 @@ class BasinHoppingOptimizer:
             seed=int(rng.integers(2**31)),
         )
 
-        final_params = result.x.copy()
+        final_active = result.x.copy()
+        final_params = space.expand(final_active)
         final_score = float(result.fun)
-
-        # Apply final parameters
-        objective.forcefield.set_param_vector(final_params)
 
         if self.verbose:
             logger.info(
@@ -165,8 +195,6 @@ class BasinHoppingOptimizer:
                 self.niter,
             )
 
-        improvement = (initial_score - final_score) / initial_score if initial_score > 0 else 0.0
-
         return OptimizationResult(
             success=bool(result.lowest_optimization_result.success),
             message=str(result.message[0] if isinstance(result.message, list) else result.message),
@@ -174,7 +202,7 @@ class BasinHoppingOptimizer:
             final_score=final_score,
             n_iterations=self.niter,
             n_evaluations=objective.n_eval - n_eval_before,
-            initial_params=x0,
+            initial_params=initial_full,
             final_params=final_params,
             history=list(objective.history),
             method=f"basinhopping({self.local_method})",
@@ -182,14 +210,14 @@ class BasinHoppingOptimizer:
             eps=None if jac_fn is not None else 1e-3,
         )
 
-    def _resolve_jac(self, objective: ObjectiveFunction) -> Any:
+    def _resolve_jac(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> Any:
         """Resolve the Jacobian function for the local minimizer."""
         if self.jac == "analytical":
-            return objective.gradient
+            return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))
         if self.jac == "auto":
             if hasattr(objective, "engine") and hasattr(objective.engine, "supports_analytical_gradients"):
                 if objective.engine.supports_analytical_gradients():
                     if self.verbose:
                         logger.info("  Basin-hopping: using analytical gradients")
-                    return objective.gradient
+                    return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))
         return None

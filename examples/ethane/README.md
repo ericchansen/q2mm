@@ -17,11 +17,10 @@ from q2mm.io import GaussLog, Mol2
 
 # Parse QM data
 log = GaussLog("GS.log")
-structure = log.structures[0]
-hessian = structure.hess
+molecule = log.molecules[-1]
+hessian = molecule.hessian
 
 # Parse structure
-mol2 = Mol2("GS.mol2")
-atoms = mol2.structures[0].atoms
-print(f"Ethane: {len(atoms)} atoms")
+molecule = Mol2("GS.mol2").molecules[0]
+print(f"Ethane: {molecule.n_atoms} atoms")
 ```

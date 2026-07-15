@@ -1,17 +1,15 @@
-"""Tests for Urey-Bradley term support (#116).
-
-Covers the ForceField param vector integration, OpenMM energy evaluation,
-JAX energy evaluation, and cross-engine parity for Urey-Bradley 1-3
-distance interactions.
-"""
+"""Tests for Urey-Bradley term support (#116)."""
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
+from q2mm.models.parameters import ParameterKind, ParameterLayout
 
 
 # ---------------------------------------------------------------------------
@@ -58,10 +56,11 @@ def _water_ff_no_ub() -> ForceField:
         angles=[
             AngleParam(elements=("H", "O", "H"), equilibrium=104.5, force_constant=0.5),
         ],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
-def _water_molecule(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
+def _water_molecule(angle_deg: float = 104.5, bond_length: float = 0.96) -> Molecule:
     """Create a water molecule."""
     from test._shared import make_water
 
@@ -93,90 +92,97 @@ class TestAngleParamUB:
         assert a.ub_equilibrium == 1.52
 
 
-class TestForceFieldUBParamVector:
-    """ForceField param vector with Urey-Bradley terms."""
+class TestForceFieldUBLayout:
+    """ParameterLayout integrates Urey-Bradley terms."""
 
-    def test_n_params_includes_ub(self) -> None:
+    def test_layout_length_includes_ub(self) -> None:
         ff = _water_ff_with_ub()
-        # 1 bond × 2 + 1 angle × 2 + 1 UB × 2 = 6
-        assert ff.n_params == 6
+        layout = ParameterLayout.from_force_field(ff)
+        assert len(layout) == 6
 
-    def test_n_params_no_ub(self) -> None:
+    def test_layout_length_no_ub(self) -> None:
         ff = _water_ff_no_ub()
-        # 1 bond × 2 + 1 angle × 2 = 4
-        assert ff.n_params == 4
+        layout = ParameterLayout.from_force_field(ff)
+        assert len(layout) == 4
 
-    def test_get_param_vector_includes_ub_tail(self) -> None:
+    def test_layout_vector_includes_ub_tail(self) -> None:
         ff = _water_ff_with_ub(bond_k=5.0, bond_eq=0.96, angle_k=0.5, angle_eq=104.5, ub_k=10.0, ub_eq=1.52)
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
         assert len(vec) == 6
         np.testing.assert_allclose(vec, [5.0, 0.96, 0.5, 104.5, 10.0, 1.52])
 
-    def test_set_param_vector_round_trip(self) -> None:
+    def test_layout_replace_round_trip(self) -> None:
         ff = _water_ff_with_ub()
+        layout = ParameterLayout.from_force_field(ff)
         new_vec = np.array([6.0, 1.0, 0.6, 110.0, 12.0, 1.6])
-        ff.set_param_vector(new_vec)
-        np.testing.assert_allclose(ff.get_param_vector(), new_vec)
-        assert ff.angles[0].ub_force_constant == 12.0
-        assert ff.angles[0].ub_equilibrium == 1.6
-
-    def test_set_param_vector_wrong_length_raises(self) -> None:
-        ff = _water_ff_with_ub()
-        with pytest.raises(ValueError, match="does not match"):
-            ff.set_param_vector(np.array([1.0, 2.0]))
-
-    def test_with_params_preserves_ub(self) -> None:
-        ff = _water_ff_with_ub()
-        new_vec = np.array([6.0, 1.0, 0.6, 110.0, 12.0, 1.6])
-        ff2 = ff.with_params(new_vec)
-        np.testing.assert_allclose(ff2.get_param_vector(), new_vec)
+        ff2 = layout.replace(ff, new_vec)
+        np.testing.assert_allclose(layout.vector(ff2), new_vec)
         assert ff2.angles[0].ub_force_constant == 12.0
         assert ff2.angles[0].ub_equilibrium == 1.6
-        # Original unchanged
+
+    def test_layout_replace_wrong_length_raises(self) -> None:
+        ff = _water_ff_with_ub()
+        layout = ParameterLayout.from_force_field(ff)
+        with pytest.raises(ValueError, match="does not match"):
+            layout.replace(ff, np.array([1.0, 2.0]))
+
+    def test_layout_replace_preserves_ub(self) -> None:
+        ff = _water_ff_with_ub()
+        layout = ParameterLayout.from_force_field(ff)
+        new_vec = np.array([6.0, 1.0, 0.6, 110.0, 12.0, 1.6])
+        ff2 = layout.replace(ff, new_vec)
+        np.testing.assert_allclose(layout.vector(ff2), new_vec)
+        assert ff2.angles[0].ub_force_constant == 12.0
+        assert ff2.angles[0].ub_equilibrium == 1.6
         assert ff.angles[0].ub_force_constant == 10.0
 
-    def test_with_params_no_ub_backward_compat(self) -> None:
+    def test_layout_replace_no_ub_backward_compat(self) -> None:
         ff = _water_ff_no_ub()
-        vec = ff.get_param_vector()
-        ff2 = ff.with_params(vec)
-        np.testing.assert_allclose(ff2.get_param_vector(), vec)
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        ff2 = layout.replace(ff, vec)
+        np.testing.assert_allclose(layout.vector(ff2), vec)
         assert ff2.angles[0].ub_force_constant is None
 
-    def test_get_param_indices_by_type_includes_ub(self) -> None:
+    def test_indices_by_kind_include_ub(self) -> None:
         ff = _water_ff_with_ub()
-        indices = ff.get_param_indices_by_type()
-        assert "ub_k" in indices
-        assert "ub_eq" in indices
-        assert indices["ub_k"] == [4]
-        assert indices["ub_eq"] == [5]
+        layout = ParameterLayout.from_force_field(ff)
+        indices = layout.indices_by_kind
+        assert indices[ParameterKind.UREY_BRADLEY_FORCE_CONSTANT] == (4,)
+        assert indices[ParameterKind.UREY_BRADLEY_EQUILIBRIUM] == (5,)
 
-    def test_get_param_indices_by_type_no_ub(self) -> None:
+    def test_indices_by_kind_omit_ub_without_terms(self) -> None:
         ff = _water_ff_no_ub()
-        indices = ff.get_param_indices_by_type()
-        assert indices["ub_k"] == []
-        assert indices["ub_eq"] == []
+        layout = ParameterLayout.from_force_field(ff)
+        indices = layout.indices_by_kind
+        assert ParameterKind.UREY_BRADLEY_FORCE_CONSTANT not in indices
+        assert ParameterKind.UREY_BRADLEY_EQUILIBRIUM not in indices
 
-    def test_get_param_type_labels(self) -> None:
+    def test_layout_kinds(self) -> None:
         ff = _water_ff_with_ub()
-        labels = ff.get_param_type_labels()
+        layout = ParameterLayout.from_force_field(ff)
+        labels = [kind.value for kind in layout.kinds]
         assert labels == ["bond_k", "bond_eq", "angle_k", "angle_eq", "ub_k", "ub_eq"]
 
-    def test_get_param_type_labels_no_ub(self) -> None:
+    def test_layout_kinds_no_ub(self) -> None:
         ff = _water_ff_no_ub()
-        labels = ff.get_param_type_labels()
+        layout = ParameterLayout.from_force_field(ff)
+        labels = [kind.value for kind in layout.kinds]
         assert labels == ["bond_k", "bond_eq", "angle_k", "angle_eq"]
 
-    def test_get_bounds_includes_ub(self) -> None:
+    def test_layout_bounds_include_ub(self) -> None:
         ff = _water_ff_with_ub()
-        bounds = ff.get_bounds()
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = layout.bounds
         assert len(bounds) == 6
-        # UB bounds
-        assert bounds[4] == (0.0, 500.0)  # ub_k
-        assert bounds[5] == (1.0, 4.0)  # ub_eq
+        np.testing.assert_allclose(bounds[4], (0.0, 500.0))
+        np.testing.assert_allclose(bounds[5], (1.0, 4.0))
 
-    def test_get_bounds_no_ub(self) -> None:
+    def test_layout_bounds_no_ub(self) -> None:
         ff = _water_ff_no_ub()
-        bounds = ff.get_bounds()
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = layout.bounds
         assert len(bounds) == 4
 
     def test_has_urey_bradley(self) -> None:
@@ -188,13 +194,13 @@ class TestForceFieldUBParamVector:
         assert len(ff._ub_angles) == 1
         assert ff._ub_angles[0] is ff.angles[0]
 
-    def test_get_step_sizes_includes_ub(self) -> None:
+    def test_layout_steps_include_ub(self) -> None:
         ff = _water_ff_with_ub()
-        steps = ff.get_step_sizes()
+        layout = ParameterLayout.from_force_field(ff)
+        steps = layout.steps
         assert len(steps) == 6
 
     def test_mixed_ub_and_non_ub_angles(self) -> None:
-        """FF with some angles having UB and some not."""
         ff = ForceField(
             name="mixed",
             angles=[
@@ -207,11 +213,12 @@ class TestForceFieldUBParamVector:
                     ub_equilibrium=2.0,
                 ),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        assert ff.n_params == 4 + 2  # 2 angles × 2 + 1 UB × 2
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        assert len(layout) == 6
+        vec = layout.vector(ff)
         assert len(vec) == 6
-        # UB params at the tail
         np.testing.assert_allclose(vec[4:], [15.0, 2.0])
 
 
@@ -399,15 +406,16 @@ class TestOpenMMUreyBradley:
         engine = OpenMMEngine()
         _e, grad = engine.energy_and_param_grad(mol, ff)
 
-        pv = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        pv = layout.vector(ff)
         step = 1e-5
         for i in (4, 5):  # ub_k, ub_eq
-            pv_plus = pv.copy()
+            pv_plus = np.array(pv, copy=True)
             pv_plus[i] += step
-            pv_minus = pv.copy()
+            pv_minus = np.array(pv, copy=True)
             pv_minus[i] -= step
-            e_plus = engine.energy(mol, ff.with_params(pv_plus))
-            e_minus = engine.energy(mol, ff.with_params(pv_minus))
+            e_plus = engine.energy(mol, layout.replace(ff, pv_plus))
+            e_minus = engine.energy(mol, layout.replace(ff, pv_minus))
             fd = (e_plus - e_minus) / (2.0 * step)
             np.testing.assert_allclose(grad[i], fd, rtol=1e-4, atol=1e-6)
 
@@ -469,8 +477,7 @@ class TestJaxUreyBradley:
         from q2mm.backends.mm.jax_engine import JaxEngine
 
         mol = _water_molecule()
-        ff = _water_ff_no_ub()
-        ff.functional_form = FunctionalForm.HARMONIC
+        ff = replace(_water_ff_no_ub(), functional_form=FunctionalForm.HARMONIC)
         engine = JaxEngine()
         energy = engine.energy(mol, ff)
         assert isinstance(energy, float)

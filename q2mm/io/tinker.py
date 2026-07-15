@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import (
-    Param,
     _build_angle_maps,
     _build_bond_maps,
     _build_vdw_maps,
     _clean_atom_types,
     _match_angle_for_export,
     _match_bond_for_export,
+    _normalize_equilibrium_angle,
     _split_env_id,
-    _update_torsion_param,
+    _torsion_file_value,
     _validate_form_for_format,
 )
 from q2mm.models.forcefield import (
@@ -41,6 +42,47 @@ from q2mm.models.units import (
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclasses.dataclass(slots=True)
+class _TinkerParameterRow:
+    """One Tinker ``.prm`` file row, staged during parsing/serialization.
+
+    Represents a single physical value read from (or to be written back
+    to) a Tinker ``.prm`` file — one bond/angle/torsion/vdW/dipole/pibond/
+    out-of-plane-bend scalar — before it is converted into (or matched
+    against) an immutable :class:`~q2mm.models.forcefield.BondParam` /
+    :class:`~q2mm.models.forcefield.AngleParam` / etc. record.
+    Parser-private to this module; never exported. Carries no
+    optimizer-facing state (step sizes, allowed ranges, active/frozen
+    partition) — that vocabulary lives entirely in
+    :class:`q2mm.models.parameters.ParameterLayout` /
+    :class:`~q2mm.models.parameters.ActiveParameterSpace`. Mutable only so
+    :func:`save_tinker_prm` can overwrite ``value`` in place while
+    staging a template file for re-export. Unlike the MM3 ``.fld`` row,
+    Tinker ``.prm`` records carry no bond-order/context columns.
+    ``slots=True`` enforces this exact field set — no arbitrary
+    attribute (e.g. a MM3-only ``bond_order``/``context``) can be
+    attached later.
+
+    Attributes:
+        ptype: Parameter type (``"bf"``, ``"be"``, ``"af"``, ``"ae"``,
+            ``"df"``, ``"q"``, ``"q_p"``, ``"pi_b"``, ``"pi_t"``,
+            ``"op_b"``, ``"vdw"``).
+        value: The row's numeric value, already in ``.prm`` (file)
+            convention/units.
+        ff_row: 1-based row number in the ``.prm`` file.
+        ff_col: Column index within the row (used to distinguish e.g.
+            multiple equilibrium angles, or torsion Fourier order).
+        atom_types: Atom-type strings for this row, in file order.
+
+    """
+
+    ptype: str
+    value: float
+    ff_row: int
+    ff_col: int
+    atom_types: list[str] = dataclasses.field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -236,15 +278,16 @@ _DIPOLES = ["dipole", "dipole3", "dipole4", "dipole5"]
 logger = logging.getLogger(__name__)
 
 
-def _tinker_import_ff(path: str | Path) -> tuple[list[Param], list[str]]:
-    """Read Q2MM-marked parameters from a Tinker .prm file.
+def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list[str]]:
+    """Read Q2MM-marked parameter rows from a Tinker .prm file.
 
-    Returns a ``(params, lines)`` tuple where *params* is a list of
-    :class:`Param` objects and *lines* is the full file content as a list
-    of strings (needed later by :func:`_tinker_export_ff`).
+    Returns a ``(rows, lines)`` tuple where *rows* is a list of
+    :class:`_TinkerParameterRow` objects and *lines* is the full file
+    content as a list of strings (needed later by
+    :func:`_tinker_export_ff`).
     """
     path = str(path)
-    params: list[Param] = []
+    rows: list[_TinkerParameterRow] = []
     q2mm_sec = False
     gather_data = False
     with open(path) as f:
@@ -261,82 +304,132 @@ def _tinker_import_ff(path: str | Path) -> tuple[list[Param], list[str]]:
             if gather_data and split:
                 if split[0] in _BONDS:
                     at = [split[1], split[2]]
-                    params.extend(
+                    rows.extend(
                         (
-                            Param(atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                            Param(atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="bf", ff_col=1, ff_row=i + 1, value=float(split[3])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="be", ff_col=2, ff_row=i + 1, value=float(split[4])
+                            ),
                         )
                     )
                 if split[0] in _DIPOLES:
                     at = [split[1], split[2]]
-                    params.extend(
+                    rows.extend(
                         (
-                            Param(atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                            Param(atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="q", ff_col=1, ff_row=i + 1, value=float(split[3])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="q_p", ff_col=2, ff_row=i + 1, value=float(split[4])
+                            ),
                         )
                     )
                 if split[0] in _PIBONDS:
                     at = [split[1], split[2]]
-                    params.extend(
+                    rows.extend(
                         (
-                            Param(atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])),
-                            Param(atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="pi_b", ff_col=1, ff_row=i + 1, value=float(split[3])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="pi_t", ff_col=2, ff_row=i + 1, value=float(split[4])
+                            ),
                         )
                     )
                 if split[0] in _ANGLES:
                     at = [split[1], split[2], split[3]]
-                    params.extend(
+                    rows.extend(
                         (
-                            Param(atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])),
-                            Param(atom_types=at, ptype="ae", ff_col=2, ff_row=i + 1, value=float(split[5])),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="af", ff_col=1, ff_row=i + 1, value=float(split[4])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at,
+                                ptype="ae",
+                                ff_col=2,
+                                ff_row=i + 1,
+                                value=_normalize_equilibrium_angle(float(split[5])),
+                            ),
                         )
                     )
                     if len(split) == 8:
-                        params.extend(
+                        rows.extend(
                             (
-                                Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])),
-                                Param(atom_types=at, ptype="ae", ff_col=4, ff_row=i + 1, value=float(split[7])),
+                                _TinkerParameterRow(
+                                    atom_types=at,
+                                    ptype="ae",
+                                    ff_col=3,
+                                    ff_row=i + 1,
+                                    value=_normalize_equilibrium_angle(float(split[6])),
+                                ),
+                                _TinkerParameterRow(
+                                    atom_types=at,
+                                    ptype="ae",
+                                    ff_col=4,
+                                    ff_row=i + 1,
+                                    value=_normalize_equilibrium_angle(float(split[7])),
+                                ),
                             )
                         )
                     elif len(split) == 7:
-                        params.append(Param(atom_types=at, ptype="ae", ff_col=3, ff_row=i + 1, value=float(split[6])))
+                        rows.append(
+                            _TinkerParameterRow(
+                                atom_types=at,
+                                ptype="ae",
+                                ff_col=3,
+                                ff_row=i + 1,
+                                value=_normalize_equilibrium_angle(float(split[6])),
+                            )
+                        )
                 if split[0] in _TORSIONS:
                     at = [split[1], split[2], split[3], split[4]]
-                    params.extend(
+                    rows.extend(
                         (
-                            Param(atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])),
-                            Param(atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])),
-                            Param(atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="df", ff_col=1, ff_row=i + 1, value=float(split[5])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="df", ff_col=2, ff_row=i + 1, value=float(split[8])
+                            ),
+                            _TinkerParameterRow(
+                                atom_types=at, ptype="df", ff_col=3, ff_row=i + 1, value=float(split[11])
+                            ),
                         )
                     )
                 if split[0] == "opbend":
                     at = [split[1], split[2], split[3], split[4]]
-                    params.append(Param(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5])))
+                    rows.append(
+                        _TinkerParameterRow(atom_types=at, ptype="op_b", ff_col=1, ff_row=i + 1, value=float(split[5]))
+                    )
                 if split[0] == "vdw":
                     at = [split[1]]
-                    params.append(Param(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2])))
-    logger.log(15, f"  -- Read {len(params)} parameters.")
+                    rows.append(
+                        _TinkerParameterRow(atom_types=at, ptype="vdw", ff_col=1, ff_row=i + 1, value=float(split[2]))
+                    )
+    logger.log(15, f"  -- Read {len(rows)} parameters.")
 
     with open(path) as f:
         lines = f.readlines()
-    return params, lines
+    return rows, lines
 
 
-def _tinker_export_ff(path: str | Path, params: list[Param], lines: list[str]) -> None:
-    """Write parameters back to a Tinker .prm file.
+def _tinker_export_ff(path: str | Path, rows: list[_TinkerParameterRow], lines: list[str]) -> None:
+    """Write parameter rows back to a Tinker .prm file.
 
     Uses keyword-based column detection (bond, angle, torsion, opbend, vdw)
     to reconstruct each line with updated values.
     """
-    for param in params:
-        logger.log(1, f">>> param: {param} param.value: {param.value}")
-        line = lines[param.ff_row - 1]
-        if abs(param.value) > 999.0:
-            logger.warning(f"Value of {param} is too high! Skipping write.")
+    for row in rows:
+        logger.log(1, f">>> row: {row} row.value: {row.value}")
+        line = lines[row.ff_row - 1]
+        if abs(row.value) > 999.0:
+            logger.warning(f"Value of {row} is too high! Skipping write.")
         else:
-            col = int(param.ff_col - 1)
+            col = int(row.ff_col - 1)
             linesplit = line.split()
-            value = f"{param.value:7.3f}"
+            value = f"{row.value:7.3f}"
             par = format(linesplit[0], "<10")
             space5 = " " * 5
 
@@ -360,7 +453,7 @@ def _tinker_export_ff(path: str | Path, params: list[Param], lines: list[str]) -
                 atoms = format(linesplit[1], ">5") + space5 * 3
                 linesplit[2 + col] = value
                 const = "".join([format(el, ">12") for el in linesplit[2:]])
-            lines[param.ff_row - 1] = par + atoms + const + "\n"
+            lines[row.ff_row - 1] = par + atoms + const + "\n"
     with open(path, "w") as f:
         f.writelines(lines)
     logger.log(10, f"WROTE: {path}")
@@ -373,14 +466,12 @@ def _tinker_export_ff(path: str | Path, params: list[Param], lines: list[str]) -
 
 def load_tinker_prm(path: str | Path) -> ForceField:
     """Load bond and angle parameters from a Tinker .prm file."""
-    params, _lines = _tinker_import_ff(path)
+    rows, _lines = _tinker_import_ff(path)
 
-    if not params:
+    if not rows:
         bonds, angles, vdws = _parse_generic_tinker_prm(Path(path))
-        for b in bonds:
-            b.force_constant = mm3_bond_k_to_canonical(b.force_constant)
-        for a in angles:
-            a.force_constant = mm3_angle_k_to_canonical(a.force_constant)
+        bonds = [dataclasses.replace(b, force_constant=mm3_bond_k_to_canonical(b.force_constant)) for b in bonds]
+        angles = [dataclasses.replace(a, force_constant=mm3_angle_k_to_canonical(a.force_constant)) for a in angles]
         return ForceField(
             name=f"Tinker from {Path(path).name}",
             bonds=bonds,
@@ -401,53 +492,53 @@ def load_tinker_prm(path: str | Path) -> ForceField:
         return atom_elements.get(atom_type.strip(), _extract_element(atom_type))
 
     eq_lookup: dict[tuple[str, int], float] = {}
-    for param in params:
-        if param.ptype == "be" or (param.ptype == "ae" and getattr(param, "ff_col", None) == 2):
-            eq_lookup[(param.ptype, param.ff_row)] = param.value
+    for row in rows:
+        if row.ptype == "be" or (row.ptype == "ae" and row.ff_col == 2):
+            eq_lookup[(row.ptype, row.ff_row)] = row.value
 
-    for param in params:
-        atom_types = _clean_atom_types(getattr(param, "atom_types", None), 4)
+    for row in rows:
+        atom_types = _clean_atom_types(row.atom_types, 4)
 
-        if param.ptype == "bf" and len(atom_types) >= 2:
+        if row.ptype == "bf" and len(atom_types) >= 2:
             elems = tuple(_elem(t) for t in atom_types[:2])
             env_id = canonicalize_bond_env_id(atom_types[:2])
-            eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
+            eq_val = eq_lookup.get(("be", row.ff_row), 0.0)
             bonds.append(
                 BondParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=mm3_bond_k_to_canonical(param.value),
-                    label=f"Tinker row {param.ff_row}",
+                    force_constant=mm3_bond_k_to_canonical(row.value),
+                    label=f"Tinker row {row.ff_row}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
-        elif param.ptype == "af" and len(atom_types) >= 3:
+        elif row.ptype == "af" and len(atom_types) >= 3:
             elems = tuple(_elem(t) for t in atom_types[:3])
             env_id = canonicalize_angle_env_id(atom_types[:3])
-            eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
+            eq_val = eq_lookup.get(("ae", row.ff_row), 0.0)
             angles.append(
                 AngleParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=mm3_angle_k_to_canonical(param.value),
-                    label=f"Tinker row {param.ff_row}",
+                    force_constant=mm3_angle_k_to_canonical(row.value),
+                    label=f"Tinker row {row.ff_row}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
-        elif param.ptype == "df" and len(atom_types) >= 4:
+        elif row.ptype == "df" and len(atom_types) >= 4:
             elems = tuple(_elem(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
-            periodicity = getattr(param, "ff_col", 1)
+            periodicity = row.ff_col
             torsions.append(
                 TorsionParam(
                     elements=elems,
                     periodicity=periodicity,
-                    force_constant=param.value,
-                    label=f"Tinker row {param.ff_row} V{periodicity}",
+                    force_constant=row.value,
+                    label=f"Tinker row {row.ff_row} V{periodicity}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
 
@@ -483,31 +574,31 @@ def save_tinker_prm(
         template = ff.source_path
 
     if template is not None:
-        template_params, template_lines = _tinker_import_ff(template)
-        updated_params = copy.deepcopy(template_params)
+        template_rows, template_lines = _tinker_import_ff(template)
+        updated_rows = copy.deepcopy(template_rows)
         bond_by_row, bond_by_env = _build_bond_maps(ff.bonds)
         angle_by_row, angle_by_env = _build_angle_maps(ff.angles)
 
-        for param in updated_params:
-            if param.ptype in ("bf", "be"):
-                bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
+        for row in updated_rows:
+            if row.ptype in ("bf", "be"):
+                bond = _match_bond_for_export(row.ff_row, row.atom_types, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = (
-                        canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
-                    )
-            elif param.ptype == "af":
-                angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
+                    row.value = canonical_to_mm3_bond_k(bond.force_constant) if row.ptype == "bf" else bond.equilibrium
+            elif row.ptype == "af":
+                angle = _match_angle_for_export(row.ff_row, row.atom_types, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = canonical_to_mm3_angle_k(angle.force_constant)
-            elif param.ptype == "ae" and getattr(param, "ff_col", None) == 2:
-                angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
+                    row.value = canonical_to_mm3_angle_k(angle.force_constant)
+            elif row.ptype == "ae" and row.ff_col == 2:
+                angle = _match_angle_for_export(row.ff_row, row.atom_types, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = angle.equilibrium
-            elif param.ptype == "df":
-                _update_torsion_param(param, ff.torsions)
+                    row.value = _normalize_equilibrium_angle(angle.equilibrium)
+            elif row.ptype == "df":
+                value = _torsion_file_value(ff.torsions, row.ff_row, row.ff_col)
+                if value is not None:
+                    row.value = value
 
         updated_lines = list(template_lines)
-        _tinker_export_ff(str(output_path), updated_params, updated_lines)
+        _tinker_export_ff(str(output_path), updated_rows, updated_lines)
         if ff.vdws:
             _update_tinker_vdw_lines(output_path, ff.vdws)
         return output_path

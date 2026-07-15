@@ -1,11 +1,11 @@
 """The standard single-pass Q2MM workflow.
 
 Wraps the canonical pattern used throughout the codebase — build an
-``ObjectiveFunction`` from a loaded ``SystemData``, run one optimizer
-pass, sample the real objective at the endpoints for noise quantification
-— in the :class:`~q2mm.workflows.base.Workflow` Protocol so it composes
-with multi-stage protocols (forthcoming Method E2) and can be swapped
-without changing the call site.
+``ObjectiveFunction`` from a loaded ``OptimizationProblem``, run one
+optimizer pass, sample the real objective at the endpoints for noise
+quantification — in the :class:`~q2mm.workflows.base.Workflow` Protocol
+so it composes with multi-stage protocols (Method E2) and can be
+swapped without changing the call site.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import numpy as np
 from q2mm.workflows.base import StageResult, WorkflowResult
 
 if TYPE_CHECKING:
-    from q2mm.systems import SystemData
+    from q2mm.models.problem import OptimizationProblem
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.workflows.base import _Optimizer
 
@@ -108,26 +108,27 @@ def _evaluate_samples(obj: ObjectiveFunction, params: np.ndarray, n_evals: int) 
 
 
 class SingleStageWorkflow:
-    """One optimization pass against the system's ``ObjectiveFunction``.
+    """One optimization pass against the problem's ``ObjectiveFunction``.
 
     Equivalent to::
 
-        obj = ObjectiveFunction(system.forcefield, engine,
-                                system.molecules, system.reference)
-        result = optimizer.optimize(obj)
-        final_ff = system.forcefield.with_params(result.final_params)
+        obj = ObjectiveFunction(problem.starting_force_field, engine,
+                                list(problem.molecules), problem.observations,
+                                case_ids=list(problem.case_ids), layout=problem.layout)
+        result = optimizer.optimize(obj, problem.active_space)
+        final_ff = problem.layout.replace(problem.starting_force_field, result.final_params)
         # ... noise-floor sampling, per-category metrics ...
 
     Use this as the default workflow.  For multi-stage TSFF
-    parameterization with negative-FC handling, use the planned
-    ``MethodE2Workflow`` (Phase 9.D).
+    parameterization with negative-FC handling, use
+    ``MethodE2Workflow``.
     """
 
     name: str = "single-stage"
 
     def run(
         self,
-        system: SystemData,
+        problem: OptimizationProblem,
         engine: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
@@ -135,22 +136,10 @@ class SingleStageWorkflow:
     ) -> WorkflowResult:
         """Execute one optimizer pass; return a fully-populated WorkflowResult.
 
-        .. warning::
-
-           ``system.forcefield`` is mutated in place by the inner
-           optimizer (the current :class:`ScipyOptimizer` calls
-           ``ObjectiveFunction.forcefield.set_param_vector`` on every
-           step).  This workflow snapshots the initial parameter
-           vector into ``WorkflowResult.initial_ff`` before invoking
-           the optimizer so consumers have a stable before/after
-           diff; do not rely on ``system.forcefield`` itself being
-           unchanged after the call.
-
         Args:
-            system: Loaded benchmark system.  ``system.forcefield``
-                supplies the starting point; it may be mutated by the
-                optimizer — use ``WorkflowResult.initial_ff`` /
-                ``final_ff`` for the stable snapshots.
+            problem: Loaded optimization problem.  ``problem.starting_force_field``
+                is the starting point and — being immutable — is never
+                mutated; it is also returned as ``WorkflowResult.initial_ff``.
             engine: MM backend.
             optimizer: Pre-configured optimizer (e.g. ``ScipyOptimizer``).
             n_evals: Real-objective samples at initial and final params.
@@ -163,21 +152,21 @@ class SingleStageWorkflow:
         """
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        # Snapshot the starting parameter vector BEFORE optimization.  The
-        # optimizer mutates the FF inside ObjectiveFunction in place during
-        # the search, so a bare reference to ``system.forcefield`` would
-        # point at the *final* state by the time we package it as
-        # ``initial_ff``.  Use ``with_params`` to materialize a stable
-        # snapshot.
-        initial_params = system.forcefield.get_param_vector().copy()
-        initial_ff = system.forcefield.with_params(initial_params)
-        obj = ObjectiveFunction(system.forcefield, engine, system.molecules, system.reference)
+        initial_ff = problem.starting_force_field
+        obj = ObjectiveFunction(
+            initial_ff,
+            engine,
+            list(problem.molecules),
+            problem.observations,
+            case_ids=list(problem.case_ids),
+            layout=problem.layout,
+        )
 
         t0 = time.perf_counter()
-        opt_result = optimizer.optimize(obj)
+        opt_result = optimizer.optimize(obj, problem.active_space)
         elapsed = time.perf_counter() - t0
 
-        final_ff = initial_ff.with_params(opt_result.final_params)
+        final_ff = problem.layout.replace(initial_ff, opt_result.final_params)
 
         initial_samples = _evaluate_samples(obj, opt_result.initial_params, n_evals)
         final_samples = _evaluate_samples(obj, opt_result.final_params, n_evals)

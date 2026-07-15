@@ -30,10 +30,11 @@ def test_source_tree_sn2_resource_is_canonical_package_data() -> None:
     assert (resource_dir / "ch3f-optimized.xyz").is_file()
     assert not (resource_dir.parents[2] / "examples" / "sn2-test" / "qm-reference").exists()
 
-    from q2mm.systems import _load_ch3f_molecules, _load_ch3f_sn2_molecules
+    from q2mm.benchmarks.systems.ch3f import load_molecule as load_ch3f_molecule
+    from q2mm.benchmarks.systems.ch3f_sn2 import load_molecule as load_ch3f_sn2_molecule
 
-    assert _load_ch3f_molecules()[0].hessian.shape == (15, 15)
-    assert _load_ch3f_sn2_molecules()[0].hessian.shape == (18, 18)
+    assert load_ch3f_molecule().hessian.shape == (15, 15)
+    assert load_ch3f_sn2_molecule().hessian.shape == (18, 18)
 
 
 def test_sn2_resource_manifest_covers_exact_payload() -> None:

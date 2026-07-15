@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
+import importlib.util
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-pytest.importorskip("openmm")
-pytestmark = pytest.mark.openmm
-
-from test._shared import SN2_XYZ as TS_XYZ, SN2_HESSIAN as TS_HESS, make_diatomic, make_water
-
-from openmm import openmm as mm
-
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam
-from q2mm.models.molecule import Q2MMMolecule
+
+HAS_OPENMM = importlib.util.find_spec("openmm") is not None
+
+pytestmark = [
+    pytest.mark.openmm,
+    pytest.mark.skipif(not HAS_OPENMM, reason="openmm not installed"),
+]
+
+from test._shared import SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_diatomic, make_noble_gas_pair, make_water
+
 from q2mm.io.openmm import save_openmm_xml
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam, FunctionalForm
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.molecule import Molecule
+
+if HAS_OPENMM:
+    from openmm import openmm as mm
+else:  # pragma: no cover - exercised when OpenMM is not installed
+    mm = None
 
 
 # ---------------------------------------------------------------------------
@@ -26,12 +37,24 @@ from q2mm.io.openmm import save_openmm_xml
 # ---------------------------------------------------------------------------
 
 
-def _diatomic(distance: float = 0.74) -> Q2MMMolecule:
+def _diatomic(distance: float = 0.74) -> Molecule:
     return make_diatomic(distance=distance)
 
 
-def _water(angle_deg: float = 109.5, bond_length: float = 0.96) -> Q2MMMolecule:
+def _water(angle_deg: float = 109.5, bond_length: float = 0.96) -> Molecule:
     return make_water(angle_deg=angle_deg, bond_length=bond_length, name="water-like")
+
+
+def _sn2_ts_molecule() -> Molecule:
+    molecule = load_xyz(TS_XYZ, charge=-1, bond_tolerance=1.5)
+    return molecule.with_hessian(
+        np.load(TS_HESS),
+        HessianProvenance(
+            units=HessianUnits.ATOMIC,
+            source="test-fixture",
+            path=str(TS_HESS),
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +70,9 @@ class TestSystemXMLExport:
 
     def test_export_creates_valid_xml_file(self, tmp_path: Path) -> None:
         molecule = _diatomic()
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
+        ff = ForceField(
+            bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
+        )
 
         out = self.engine.export_system_xml(tmp_path / "system.xml", molecule, ff)
 
@@ -57,7 +82,9 @@ class TestSystemXMLExport:
 
     def test_system_xml_round_trip_preserves_energy(self, tmp_path: Path) -> None:
         molecule = _diatomic(0.84)
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
+        ff = ForceField(
+            bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
+        )
 
         original_energy = self.engine.energy(molecule, ff)
 
@@ -84,6 +111,7 @@ class TestSystemXMLExport:
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
             angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
+            functional_form=FunctionalForm.MM3,
         )
 
         original_energy = self.engine.energy(molecule, ff)
@@ -105,14 +133,8 @@ class TestSystemXMLExport:
         assert loaded_energy == pytest.approx(original_energy, abs=1e-6)
 
     def test_system_xml_with_vdw(self, tmp_path: Path) -> None:
-        molecule = Q2MMMolecule(
-            symbols=["He", "He"],
-            atom_types=["He", "He"],
-            geometry=np.array([[0.0, 0.0, 0.0], [3.5, 0.0, 0.0]]),
-            name="He2",
-            bond_tolerance=0.5,
-        )
-        ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)])
+        molecule = make_noble_gas_pair(distance=3.5)
+        ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)], functional_form=FunctionalForm.MM3)
 
         original_energy = self.engine.energy(molecule, ff)
         xml_path = tmp_path / "vdw_system.xml"
@@ -133,8 +155,8 @@ class TestSystemXMLExport:
     def test_sn2_system_xml_round_trip(self, tmp_path: Path) -> None:
         from q2mm.models.seminario import qfuerza_fresh
 
-        molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        ff = qfuerza_fresh(molecule)
+        molecule = _sn2_ts_molecule()
+        ff = qfuerza_fresh(molecule, functional_form=FunctionalForm.MM3)
 
         original_energy = self.engine.energy(molecule, ff)
 
@@ -163,9 +185,11 @@ class TestForceFieldXMLExport:
     """Test ForceField.to_openmm_xml() standalone XML generation."""
 
     def test_produces_valid_xml_with_bonds(self, tmp_path: Path) -> None:
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
+        ff = ForceField(
+            bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
+        )
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml")
+        out = save_openmm_xml(ff, tmp_path / "ff.xml")
 
         assert out.exists()
         tree = ET.parse(out)
@@ -182,9 +206,10 @@ class TestForceFieldXMLExport:
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
             angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
+            functional_form=FunctionalForm.MM3,
         )
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml")
+        out = save_openmm_xml(ff, tmp_path / "ff.xml")
 
         tree = ET.parse(out)
         root = tree.getroot()
@@ -195,9 +220,9 @@ class TestForceFieldXMLExport:
         assert len(angles) == 1
 
     def test_produces_valid_xml_with_vdw(self, tmp_path: Path) -> None:
-        ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)])
+        ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)], functional_form=FunctionalForm.MM3)
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml")
+        out = save_openmm_xml(ff, tmp_path / "ff.xml")
 
         tree = ET.parse(out)
         root = tree.getroot()
@@ -212,10 +237,11 @@ class TestForceFieldXMLExport:
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5, phase=0.0),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.3, phase=180.0),
-            ]
+            ],
+            functional_form=FunctionalForm.MM3,
         )
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml")
+        out = save_openmm_xml(ff, tmp_path / "ff.xml")
 
         tree = ET.parse(out)
         root = tree.getroot()
@@ -229,9 +255,10 @@ class TestForceFieldXMLExport:
         ff = ForceField(
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
             angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
+            functional_form=FunctionalForm.MM3,
         )
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml", molecule=molecule)
+        out = save_openmm_xml(ff, tmp_path / "ff.xml", molecule=molecule)
 
         tree = ET.parse(out)
         root = tree.getroot()
@@ -255,9 +282,10 @@ class TestForceFieldXMLExport:
             bonds=[BondParam(("C", "F"), equilibrium=1.38, force_constant=359.7)],
             angles=[AngleParam(("F", "C", "F"), equilibrium=108.0, force_constant=86.3)],
             vdws=[VdwParam("C", radius=1.94, epsilon=0.027), VdwParam("F", radius=1.47, epsilon=0.075)],
+            functional_form=FunctionalForm.MM3,
         )
 
-        out = ff.to_openmm_xml(tmp_path / "ff.xml")
+        out = save_openmm_xml(ff, tmp_path / "ff.xml")
         tree = ET.parse(out)
         root = tree.getroot()
 
@@ -279,7 +307,9 @@ class TestForceFieldXMLExport:
 
     def test_save_openmm_xml_function_directly(self, tmp_path: Path) -> None:
         """Test the standalone save_openmm_xml function."""
-        ff = ForceField(bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)])
+        ff = ForceField(
+            bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
+        )
 
         out = save_openmm_xml(ff, tmp_path / "direct.xml")
 
@@ -289,7 +319,7 @@ class TestForceFieldXMLExport:
 
     def test_source_format_updated(self) -> None:
         """Verify that 'openmm_xml' is a valid source_format value."""
-        ff = ForceField(source_format="openmm_xml")
+        ff = ForceField(source_format="openmm_xml", functional_form=FunctionalForm.MM3)
         assert ff.source_format == "openmm_xml"
 
     def test_forcefield_xml_loadable_by_openmm_app(self, tmp_path: Path) -> None:
@@ -301,9 +331,10 @@ class TestForceFieldXMLExport:
             bonds=[BondParam(("H", "O"), equilibrium=0.96, force_constant=71.9)],
             angles=[AngleParam(("H", "O", "H"), equilibrium=104.5, force_constant=36.0)],
             vdws=[VdwParam("O", radius=1.52, epsilon=0.21), VdwParam("H", radius=1.20, epsilon=0.02)],
+            functional_form=FunctionalForm.MM3,
         )
 
-        xml_path = ff.to_openmm_xml(tmp_path / "loadable.xml", molecule=molecule)
+        xml_path = save_openmm_xml(ff, tmp_path / "loadable.xml", molecule=molecule)
 
         # Load via openmm.app.ForceField
         omm_ff = app.ForceField(str(xml_path))
@@ -335,10 +366,10 @@ class TestForceFieldXMLExport:
         """Export Seminario-estimated SN2 force field to ForceField XML."""
         from q2mm.models.seminario import qfuerza_fresh
 
-        molecule = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5).with_hessian(np.load(TS_HESS))
-        ff = qfuerza_fresh(molecule)
+        molecule = _sn2_ts_molecule()
+        ff = qfuerza_fresh(molecule, functional_form=FunctionalForm.MM3)
 
-        out = ff.to_openmm_xml(tmp_path / "sn2_ff.xml", molecule=molecule)
+        out = save_openmm_xml(ff, tmp_path / "sn2_ff.xml", molecule=molecule)
 
         assert out.exists()
         tree = ET.parse(out)

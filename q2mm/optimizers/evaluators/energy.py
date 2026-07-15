@@ -9,8 +9,8 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation
 
 
 @dataclass
@@ -37,7 +37,7 @@ class EnergyEvaluator:
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -61,7 +61,7 @@ class EnergyEvaluator:
     def residuals(
         self,
         computed: EnergyResult,
-        references: list[ReferenceValue],
+        references: list[Observation],
     ) -> list[float]:
         """Compute weighted residuals for energy references.
 
@@ -94,9 +94,9 @@ class EnergyEvaluator:
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
-        references: list[ReferenceValue],
+        references: list[Observation],
         n_params: int,
         *,
         structure: Any | None = None,
@@ -131,7 +131,7 @@ class EnergyEvaluator:
             )
 
         # energy_and_param_grad operates on the molecule, not cached handles,
-        # since some engines (e.g. OpenMM) only accept Q2MMMolecule for
+        # since some engines (e.g. OpenMM) only accept Molecule for
         # parameter gradient computation.
         calc_energy, de_dp = engine.energy_and_param_grad(mol, ff)
 
@@ -145,7 +145,7 @@ class EnergyEvaluator:
         return grad
 
     @staticmethod
-    def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
+    def extract_value(calc: dict[str, Any], ref: Observation) -> float:
         """Extract calculated energy from a results dict.
 
         Args:

@@ -14,7 +14,7 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
 
 
 @runtime_checkable
@@ -34,7 +34,7 @@ class Evaluator(Protocol):
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -82,7 +82,7 @@ class Evaluator(Protocol):
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         references: Any,
         n_params: int,

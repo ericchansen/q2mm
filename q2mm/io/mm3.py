@@ -6,12 +6,12 @@ import contextlib
 import copy
 import logging
 import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm import constants as co
 from q2mm.io._helpers import (
-    Param,
     _build_angle_maps,
     _build_bond_maps,
     _build_sb_maps,
@@ -19,8 +19,9 @@ from q2mm.io._helpers import (
     _match_angle_for_export,
     _match_bond_for_export,
     _match_sb_for_export,
+    _normalize_equilibrium_angle,
     _split_env_id,
-    _update_torsion_param,
+    _torsion_file_value,
     _validate_form_for_format,
 )
 from q2mm.models.forcefield import (
@@ -50,6 +51,53 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _Mm3ParameterRow:
+    """One MM3 ``.fld`` file row, staged during parsing/serialization.
+
+    Represents a single physical value read from (or to be written back
+    to) an MM3 ``.fld`` file — one bond/angle/torsion/stretch-bend/vdW
+    scalar — before it is converted into (or matched against) an
+    immutable :class:`~q2mm.models.forcefield.BondParam` /
+    :class:`~q2mm.models.forcefield.AngleParam` / etc. record. Parser-private
+    to this module; never exported. Carries no optimizer-facing state
+    (step sizes, allowed ranges, active/frozen partition) — that
+    vocabulary lives entirely in
+    :class:`q2mm.models.parameters.ParameterLayout` /
+    :class:`~q2mm.models.parameters.ActiveParameterSpace`. Mutable only so
+    :func:`save_mm3_fld` can overwrite ``value`` in place while staging a
+    template file for re-export. ``slots=True`` enforces this exact field
+    set — no arbitrary attribute can be attached later.
+
+    Attributes:
+        ptype: Parameter type (``"ae"``, ``"af"``, ``"be"``, ``"bf"``,
+            ``"df"``, ``"imp1"``, ``"imp2"``, ``"sb"``, ``"q"``,
+            ``"vdwr"``, ``"vdwfc"``).
+        value: The row's numeric value, already in ``.fld`` (file)
+            convention/units.
+        ff_row: 1-based row number in the ``.fld`` file.
+        ff_col: Column index within the row (1-6 depending on *ptype*;
+            torsion V4/V5/V6 continuation values use 4-6).
+        atom_types: Resolved atom-type strings for this row (digit
+            references already resolved to concrete types).
+        bond_order: Bond-order symbol from the file (``"-"`` single,
+            ``"="`` double, ``"*"`` aromatic, ``"%"`` triple); only ever
+            set for bond ptypes (``"be"``/``"bf"``/``"q"``).
+        context: MM3 context flags (e.g. ``"O200 0000"``); only ever set
+            for bond ptypes.
+
+    """
+
+    ptype: str
+    value: float
+    ff_row: int
+    ff_col: int
+    atom_types: list[str] = field(default_factory=list)
+    bond_order: str = ""
+    context: str = ""
+
 
 # MM3 fixed-format column positions
 COM_POS_START = 96
@@ -361,8 +409,8 @@ def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str
 
 def _mm3_import_ff(
     path: str | Path, sub_search: str = "OPT", *, include_standard: bool = True
-) -> tuple[list[Param], list[str]]:
-    """Read parameters from an mm3.fld file.
+) -> tuple[list[_Mm3ParameterRow], list[str]]:
+    """Read parameter rows from an mm3.fld file.
 
     Args:
         path: Path to the mm3.fld file.
@@ -372,13 +420,13 @@ def _mm3_import_ff(
             main body of the file (outside the substructure section).  These
             serve as the base layer that substructure parameters override.
 
-    Returns a ``(params, lines)`` tuple where *params* is the list of
-    :class:`Param` objects and *lines* is the raw file content (as
-    returned by ``readlines``).
+    Returns a ``(rows, lines)`` tuple where *rows* is the list of
+    :class:`_Mm3ParameterRow` objects and *lines* is the raw file content
+    (as returned by ``readlines``).
 
     """
     path = str(path)
-    params: list[Param] = []
+    rows: list[_Mm3ParameterRow] = []
     smiles_list: list[str] = []
     sub_names: list[str] = []
     atom_types_list: list[list[str]] = []
@@ -443,7 +491,6 @@ def _mm3_import_ff(
                         bond_order = line[6]
                 else:
                     atm_typs = [line[4:6], line[9:11]]
-                    atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
                     # Standard section: bond-order symbol at col 7
@@ -460,26 +507,22 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 2:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="be",
                             ff_col=1,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[0],
                             bond_order=bond_order,
                             context=context,
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="bf",
                             ff_col=2,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                             bond_order=bond_order,
                             context=context,
@@ -487,14 +530,12 @@ def _mm3_import_ff(
                     )
                 )
                 with contextlib.suppress(IndexError):
-                    params.append(
-                        Param(
-                            atom_labels=atm_lbls,
+                    rows.append(
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="q",
                             ff_col=3,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[2],
                             bond_order=bond_order,
                             context=context,
@@ -510,7 +551,6 @@ def _mm3_import_ff(
                     atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16]]
-                    atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
                 try:
@@ -519,24 +559,20 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 2:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="ae",
                             ff_col=1,
                             ff_row=i + 1,
-                            label=line[:2],
-                            value=parm_cols[0],
+                            value=_normalize_equilibrium_angle(parm_cols[0]),
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="af",
                             ff_col=2,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                         ),
                     )
@@ -551,7 +587,6 @@ def _mm3_import_ff(
                     atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16]]
-                    atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
                 try:
@@ -560,14 +595,12 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 1:
                     continue
-                params.append(
-                    Param(
-                        atom_labels=atm_lbls,
+                rows.append(
+                    _Mm3ParameterRow(
                         atom_types=atm_typs,
                         ptype="sb",
                         ff_col=1,
                         ff_row=i + 1,
-                        label=line[:2],
                         value=parm_cols[0],
                     )
                 )
@@ -581,7 +614,6 @@ def _mm3_import_ff(
                     atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16], line[19:21]]
-                    atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
                 try:
@@ -590,33 +622,27 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 3:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=1,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[0],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=2,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=3,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[2],
                         ),
                     )
@@ -625,47 +651,40 @@ def _mm3_import_ff(
 
             # Higher order torsions (4th through 6th)
             elif match_mm3_higher_torsion(line):
-                if not params or params[-1].ptype != "df":
+                if not rows or rows[-1].ptype != "df":
                     continue
                 logger.log(
                     5,
                     "[L{}] Found higher order torsion:\n{}".format(i + 1, line.strip("\n")),
                 )
-                atm_lbls = params[-1].atom_labels
-                atm_typs = params[-1].atom_types
+                atm_typs = rows[-1].atom_types
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
                     continue
                 if len(parm_cols) < 3:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=4,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[0],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=5,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="df",
                             ff_col=6,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[2],
                         ),
                     )
@@ -680,7 +699,6 @@ def _mm3_import_ff(
                     atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16], line[19:21]]
-                    atm_lbls = atm_typs
                     comment = line[COM_POS_START:].strip()
                     sub_names.append(comment)
                 try:
@@ -689,24 +707,20 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 2:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="imp1",
                             ff_col=1,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[0],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="imp2",
                             ff_col=2,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                         ),
                     )
@@ -726,24 +740,20 @@ def _mm3_import_ff(
                     continue
                 if len(parm_cols) < 2:
                     continue
-                params.extend(
+                rows.extend(
                     (
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="vdwr",
                             ff_col=1,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[0],
                         ),
-                        Param(
-                            atom_labels=atm_lbls,
+                        _Mm3ParameterRow(
                             atom_types=atm_typs,
                             ptype="vdwfc",
                             ff_col=2,
                             ff_row=i + 1,
-                            label=line[:2],
                             value=parm_cols[1],
                         ),
                     )
@@ -757,27 +767,27 @@ def _mm3_import_ff(
             section_atm_eqv = True
             continue
 
-    logger.log(15, f"  -- Read {len(params)} parameters.")
-    return params, all_lines
+    logger.log(15, f"  -- Read {len(rows)} parameters.")
+    return rows, all_lines
 
 
-def _mm3_export_ff(path: str | Path, params: list[Param], lines: list[str]) -> None:
-    """Write parameters back to an mm3.fld file at fixed column positions."""
-    for param in params:
-        logger.log(1, f">>> param: {param} param.value: {param.value}")
-        line = lines[param.ff_row - 1]
-        if abs(param.value) > 999.0:
-            logger.warning(f"Value of {param} is too high! Skipping write.")
+def _mm3_export_ff(path: str | Path, rows: list[_Mm3ParameterRow], lines: list[str]) -> None:
+    """Write parameter rows back to an mm3.fld file at fixed column positions."""
+    for row in rows:
+        logger.log(1, f">>> row: {row} row.value: {row.value}")
+        line = lines[row.ff_row - 1]
+        if abs(row.value) > 999.0:
+            logger.warning(f"Value of {row} is too high! Skipping write.")
         # Higher-order torsion amplitudes V4/V5/V6 (ff_col 4/5/6) live in the
         # same three physical parameter columns as V1/V2/V3 but on the "54"
         # continuation line, which is addressed by their own ``ff_row``.  Map
         # them onto the same columns so higher-order torsions round-trip.
-        elif param.ff_col in (1, 4):
-            lines[param.ff_row - 1] = line[:P_1_START] + f"{param.value:10.4f}" + line[P_1_END:]
-        elif param.ff_col in (2, 5):
-            lines[param.ff_row - 1] = line[:P_2_START] + f"{param.value:10.4f}" + line[P_2_END:]
-        elif param.ff_col in (3, 6):
-            lines[param.ff_row - 1] = line[:P_3_START] + f"{param.value:10.4f}" + line[P_3_END:]
+        elif row.ff_col in (1, 4):
+            lines[row.ff_row - 1] = line[:P_1_START] + f"{row.value:10.4f}" + line[P_1_END:]
+        elif row.ff_col in (2, 5):
+            lines[row.ff_row - 1] = line[:P_2_START] + f"{row.value:10.4f}" + line[P_2_END:]
+        elif row.ff_col in (3, 6):
+            lines[row.ff_row - 1] = line[:P_3_START] + f"{row.value:10.4f}" + line[P_3_END:]
     with open(path, "w") as f:
         f.writelines(lines)
     logger.log(10, f"WROTE: {path}")
@@ -804,7 +814,7 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         parameters.
 
     """
-    parsed_params, _ = _mm3_import_ff(path, include_standard=include_standard)
+    parsed_rows, _ = _mm3_import_ff(path, include_standard=include_standard)
 
     bonds = []
     angles = []
@@ -815,53 +825,53 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
     # Pre-build lookup for equilibrium values by (ptype, ff_row)
     eq_lookup = {}
     dipole_lookup: dict[int, float] = {}  # ff_row → dipole moment (Debye)
-    for p in parsed_params:
-        if p.ptype in ("be", "ae"):
-            eq_lookup[(p.ptype, p.ff_row)] = p.value
-        elif p.ptype == "q":
-            dipole_lookup[p.ff_row] = p.value
+    for row in parsed_rows:
+        if row.ptype in ("be", "ae"):
+            eq_lookup[(row.ptype, row.ff_row)] = row.value
+        elif row.ptype == "q":
+            dipole_lookup[row.ff_row] = row.value
 
-    for param in parsed_params:
+    for row in parsed_rows:
         # Extract element letters from atom type (e.g., 'C1' -> 'C', ' F' -> 'F')
-        atom_types = [t.strip() for t in param.atom_types if t.strip() and t.strip() != "-"]
+        atom_types = [t.strip() for t in row.atom_types if t.strip() and t.strip() != "-"]
 
-        if param.ptype == "bf" and len(atom_types) >= 2:
+        if row.ptype == "bf" and len(atom_types) >= 2:
             elems = tuple(_extract_element(t) for t in atom_types[:2])
             env_id = canonicalize_bond_env_id(atom_types[:2])
-            eq_val = eq_lookup.get(("be", param.ff_row), 0.0)
+            eq_val = eq_lookup.get(("be", row.ff_row), 0.0)
             bonds.append(
                 BondParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=mm3_bond_k_to_canonical(param.value),
-                    label=f"MM3 row {param.ff_row}",
+                    force_constant=mm3_bond_k_to_canonical(row.value),
+                    label=f"MM3 row {row.ff_row}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
-                    bond_order=getattr(param, "bond_order", ""),
-                    context=getattr(param, "context", ""),
-                    dipole_moment=dipole_lookup.get(param.ff_row, 0.0),
+                    ff_row=row.ff_row,
+                    bond_order=row.bond_order,
+                    context=row.context,
+                    dipole_moment=dipole_lookup.get(row.ff_row, 0.0),
                 )
             )
 
-        elif param.ptype == "af" and len(atom_types) >= 3:
+        elif row.ptype == "af" and len(atom_types) >= 3:
             elems = tuple(_extract_element(t) for t in atom_types[:3])
             env_id = canonicalize_angle_env_id(atom_types[:3])
-            eq_val = eq_lookup.get(("ae", param.ff_row), 0.0)
+            eq_val = eq_lookup.get(("ae", row.ff_row), 0.0)
             angles.append(
                 AngleParam(
                     elements=elems,
                     equilibrium=eq_val,
-                    force_constant=mm3_angle_k_to_canonical(param.value),
-                    label=f"MM3 row {param.ff_row}",
+                    force_constant=mm3_angle_k_to_canonical(row.value),
+                    label=f"MM3 row {row.ff_row}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
 
-        elif param.ptype == "df" and len(atom_types) >= 4:
+        elif row.ptype == "df" and len(atom_types) >= 4:
             elems = tuple(_extract_element(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
-            periodicity = getattr(param, "ff_col", 1)
+            periodicity = row.ff_col
             # MM3 torsion alternates signs by order:
             #   (V1/2)(1+cos ω) + (V2/2)(1−cos 2ω) + (V3/2)(1+cos 3ω)
             #   + (V4/2)(1−cos 4ω) + (V5/2)(1+cos 5ω) + (V6/2)(1−cos 6ω)
@@ -873,42 +883,42 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
                 TorsionParam(
                     elements=elems,
                     periodicity=periodicity,
-                    force_constant=param.value / 2.0,
+                    force_constant=row.value / 2.0,
                     phase=phase,
-                    label=f"MM3 row {param.ff_row} V{periodicity}",
+                    label=f"MM3 row {row.ff_row} V{periodicity}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
 
-        elif param.ptype in ("imp1", "imp2") and len(atom_types) >= 4:
+        elif row.ptype in ("imp1", "imp2") and len(atom_types) >= 4:
             elems = tuple(_extract_element(t) for t in atom_types[:4])
             env_id = "-".join(t.strip() for t in atom_types[:4])
-            periodicity = 1 if param.ptype == "imp1" else 2
+            periodicity = 1 if row.ptype == "imp1" else 2
             phase = 180.0 if periodicity == 2 else 0.0
             torsions.append(
                 TorsionParam(
                     elements=elems,
                     periodicity=periodicity,
-                    force_constant=param.value / 2.0,
+                    force_constant=row.value / 2.0,
                     phase=phase,
-                    label=f"MM3 row {param.ff_row} imp V{periodicity}",
+                    label=f"MM3 row {row.ff_row} imp V{periodicity}",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                     is_improper=True,
                 )
             )
 
-        elif param.ptype == "sb" and len(atom_types) >= 3:
+        elif row.ptype == "sb" and len(atom_types) >= 3:
             elems = tuple(_extract_element(t) for t in atom_types[:3])
             env_id = canonicalize_angle_env_id(atom_types[:3])
             stretch_bends.append(
                 StretchBendParam(
                     elements=elems,
-                    force_constant=mm3_sb_k_to_canonical(param.value),
-                    label=f"MM3 row {param.ff_row} SB",
+                    force_constant=mm3_sb_k_to_canonical(row.value),
+                    label=f"MM3 row {row.ff_row} SB",
                     env_id=env_id,
-                    ff_row=param.ff_row,
+                    ff_row=row.ff_row,
                 )
             )
 
@@ -923,9 +933,6 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         source_format="mm3_fld",
         functional_form=FunctionalForm.MM3,
     )
-    if include_standard:
-        opt_ff = load_mm3_fld(path, include_standard=False)
-        ff.freeze_standard_params(opt_ff)
     return ff
 
 
@@ -952,33 +959,35 @@ def save_mm3_fld(
         template = ff.source_path
 
     if template is not None:
-        template_params, template_lines = _mm3_import_ff(template)
-        updated_params = copy.deepcopy(template_params)
+        template_rows, template_lines = _mm3_import_ff(template)
+        updated_rows = copy.deepcopy(template_rows)
         bond_by_row, bond_by_env = _build_bond_maps(ff.bonds)
         angle_by_row, angle_by_env = _build_angle_maps(ff.angles)
         sb_by_row, sb_by_env = _build_sb_maps(ff.stretch_bends)
 
-        for param in updated_params:
-            if param.ptype in ("bf", "be"):
-                bond = _match_bond_for_export(param, bond_by_row, bond_by_env)
+        for row in updated_rows:
+            if row.ptype in ("bf", "be"):
+                bond = _match_bond_for_export(row.ff_row, row.atom_types, bond_by_row, bond_by_env)
                 if bond is not None:
-                    param.value = (
-                        canonical_to_mm3_bond_k(bond.force_constant) if param.ptype == "bf" else bond.equilibrium
-                    )
-            elif param.ptype in ("af", "ae"):
-                angle = _match_angle_for_export(param, angle_by_row, angle_by_env)
+                    row.value = canonical_to_mm3_bond_k(bond.force_constant) if row.ptype == "bf" else bond.equilibrium
+            elif row.ptype in ("af", "ae"):
+                angle = _match_angle_for_export(row.ff_row, row.atom_types, angle_by_row, angle_by_env)
                 if angle is not None:
-                    param.value = (
-                        canonical_to_mm3_angle_k(angle.force_constant) if param.ptype == "af" else angle.equilibrium
+                    row.value = (
+                        canonical_to_mm3_angle_k(angle.force_constant)
+                        if row.ptype == "af"
+                        else _normalize_equilibrium_angle(angle.equilibrium)
                     )
-            elif param.ptype == "df":
-                _update_torsion_param(param, ff.torsions)
-            elif param.ptype == "sb":
-                sb = _match_sb_for_export(param, sb_by_row, sb_by_env)
+            elif row.ptype == "df":
+                value = _torsion_file_value(ff.torsions, row.ff_row, row.ff_col)
+                if value is not None:
+                    row.value = value
+            elif row.ptype == "sb":
+                sb = _match_sb_for_export(row.ff_row, row.atom_types, sb_by_row, sb_by_env)
                 if sb is not None:
-                    param.value = canonical_to_mm3_sb_k(sb.force_constant)
+                    row.value = canonical_to_mm3_sb_k(sb.force_constant)
 
-        _mm3_export_ff(output_path, updated_params, list(template_lines))
+        _mm3_export_ff(output_path, updated_rows, list(template_lines))
         if ff.vdws:
             _update_mm3_vdw_lines(output_path, ff.vdws)
         return output_path

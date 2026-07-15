@@ -18,14 +18,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from q2mm.models.forcefield import ForceField
+from q2mm.io.fchk import load_fchk_reference
+from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.seminario import (
     qfuerza_fresh,
     qfuerza_into,
     seminario_angle_fc,
     seminario_bond_fc,
 )
-from q2mm.optimizers.objective import ReferenceData
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -52,28 +52,28 @@ class TestFchkParsing:
     """Verify the .fchk parser extracts correct geometry and Hessian."""
 
     def test_gs_atom_count(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         assert len(mol.symbols) == 8
 
     def test_gs_symbols(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         assert mol.symbols.count("C") == 2
         assert mol.symbols.count("H") == 6
 
     def test_gs_hessian_shape(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         assert mol.hessian.shape == (24, 24)
 
     def test_gs_hessian_symmetric(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         np.testing.assert_allclose(mol.hessian, mol.hessian.T, atol=1e-12)
 
     def test_ts_atom_count(self) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
         assert len(mol.symbols) == 8
 
     def test_ts_hessian_shape(self) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
         assert mol.hessian.shape == (24, 24)
 
 
@@ -84,25 +84,25 @@ class TestBondDetection:
     """Verify bond detection finds the expected connectivity."""
 
     def test_gs_bond_count(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         assert len(mol.bonds) == reference["GS"]["n_atoms"] - 1  # 7 for ethane
 
     def test_gs_has_cc_bond(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         cc_bonds = [b for b in mol.bonds if set(b.elements) == {"C"}]
         assert len(cc_bonds) == 1
 
     def test_gs_has_six_ch_bonds(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         ch_bonds = [b for b in mol.bonds if set(b.elements) == {"C", "H"}]
         assert len(ch_bonds) == 6
 
     def test_gs_angle_count(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         assert len(mol.angles) == reference["GS"]["n_atoms"] + 4  # 12 for ethane
 
     def test_ts_bond_count(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
         assert len(mol.bonds) == reference["TS"]["n_atoms"] - 1
 
 
@@ -113,7 +113,7 @@ class TestIndividualBonds:
     """Verify each Seminario bond projection matches the fixture."""
 
     def test_gs_individual_bond_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         for ref_bond in reference["GS"]["individual_bonds"]:
             k = seminario_bond_fc(
                 ref_bond["atom_i"],
@@ -129,7 +129,7 @@ class TestIndividualBonds:
             )
 
     def test_ts_individual_bond_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
         for ref_bond in reference["TS"]["individual_bonds"]:
             k = seminario_bond_fc(
                 ref_bond["atom_i"],
@@ -146,7 +146,7 @@ class TestIndividualBonds:
 
     def test_gs_ch_bonds_near_equivalent(self) -> None:
         """All 6 C-H bonds in staggered ethane should have similar force constants."""
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         ch_fcs = []
         for b in mol.bonds:
             if set(b.elements) == {"C", "H"}:
@@ -164,7 +164,7 @@ class TestIndividualAngles:
     """Verify each Seminario angle projection matches the fixture."""
 
     def test_gs_individual_angle_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
+        _, mol = load_fchk_reference(GS_FCHK)
         for ref_angle in reference["GS"]["individual_angles"]:
             k = seminario_angle_fc(
                 ref_angle["atom_i"],
@@ -181,7 +181,7 @@ class TestIndividualAngles:
             )
 
     def test_ts_individual_angle_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
         for ref_angle in reference["TS"]["individual_angles"]:
             k = seminario_angle_fc(
                 ref_angle["atom_i"],
@@ -205,8 +205,8 @@ class TestFullPipeline:
     """End-to-end: .fchk → qfuerza_fresh → ForceField."""
 
     def test_gs_averaged_bond_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_bond, param in zip(reference["GS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -216,8 +216,8 @@ class TestFullPipeline:
             )
 
     def test_gs_averaged_bond_equilibria(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_bond, param in zip(reference["GS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.equilibrium,
@@ -227,8 +227,8 @@ class TestFullPipeline:
             )
 
     def test_gs_averaged_angle_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_angle, param in zip(reference["GS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -238,8 +238,8 @@ class TestFullPipeline:
             )
 
     def test_gs_averaged_angle_equilibria(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_angle, param in zip(reference["GS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.equilibrium,
@@ -249,8 +249,8 @@ class TestFullPipeline:
             )
 
     def test_ts_averaged_bond_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_bond, param in zip(reference["TS"]["averaged_bonds"], ff.bonds):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -260,8 +260,8 @@ class TestFullPipeline:
             )
 
     def test_ts_averaged_angle_force_constants(self, reference: dict[str, object]) -> None:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for ref_angle, param in zip(reference["TS"]["averaged_angles"], ff.angles):
             np.testing.assert_allclose(
                 param.force_constant,
@@ -271,13 +271,13 @@ class TestFullPipeline:
             )
 
     def test_forcefield_returns_correct_type(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         assert isinstance(ff, ForceField)
 
     def test_torsions_zeroed_by_default(self) -> None:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        ff = qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         for t in ff.torsions:
             assert t.force_constant == 0.0
 
@@ -290,13 +290,13 @@ class TestGSvsTSComparison:
 
     @pytest.fixture(scope="class")
     def gs_ff(self) -> ForceField:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        return qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        return qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
 
     @pytest.fixture(scope="class")
     def ts_ff(self) -> ForceField:
-        _, mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
-        return qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
+        return qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
 
     def test_ts_cc_bond_longer(self, gs_ff: ForceField, ts_ff: ForceField) -> None:
         """Eclipsed TS has longer C-C bond due to steric repulsion."""
@@ -359,19 +359,18 @@ class TestMultiMoleculeAveraging:
 
     def test_averaged_cc_between_gs_and_ts(self) -> None:
         """C-C force constant averaged across GS+TS should be between individual values."""
-        _, gs_mol = ReferenceData.from_fchk(GS_FCHK)
-        _, ts_mol = ReferenceData.from_fchk(TS_FCHK, bond_tolerance=1.4)
+        _, gs_mol = load_fchk_reference(GS_FCHK)
+        _, ts_mol = load_fchk_reference(TS_FCHK, bond_tolerance=1.4)
 
         # Get individual values
-        gs_ff = qfuerza_fresh(gs_mol)
-        ts_ff = qfuerza_fresh(ts_mol)
+        gs_ff = qfuerza_fresh(gs_mol, functional_form=FunctionalForm.HARMONIC)
+        ts_ff = qfuerza_fresh(ts_mol, functional_form=FunctionalForm.HARMONIC)
         gs_cc = next(b for b in gs_ff.bonds if b.elements == ("C", "C"))
         ts_cc = next(b for b in ts_ff.bonds if b.elements == ("C", "C"))
 
         # Create shared force field for averaging
-        shared_ff = ForceField.create_for_molecule(gs_mol, name="shared")
-        avg_ff = shared_ff.copy()
-        qfuerza_into(avg_ff, [gs_mol, ts_mol])
+        shared_ff = ForceField.create_for_molecule(gs_mol, name="shared", functional_form=FunctionalForm.HARMONIC)
+        avg_ff = qfuerza_into(shared_ff, [gs_mol, ts_mol])
         avg_cc = next(b for b in avg_ff.bonds if b.elements == ("C", "C"))
 
         lo = min(gs_cc.force_constant, ts_cc.force_constant)
@@ -397,8 +396,8 @@ class TestLiteratureValidation:
 
     @pytest.fixture(scope="class")
     def gs_ff(self) -> ForceField:
-        _, mol = ReferenceData.from_fchk(GS_FCHK)
-        return qfuerza_fresh(mol)
+        _, mol = load_fchk_reference(GS_FCHK)
+        return qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
 
     def test_cc_fc_in_literature_range(self, gs_ff: ForceField) -> None:
         """C-C stretch FC should be ~180-468 kcal/(mol·Å²) (Seminario from DFT can be softer than MM3)."""

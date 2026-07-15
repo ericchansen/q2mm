@@ -145,14 +145,14 @@ engine.export_system_xml(handle, "system.xml")
 
 ```python
 from q2mm.backends.mm import OpenMMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.amber import load_amber_frcmod
+from q2mm.io.xyz import load_xyz
 
 engine = OpenMMEngine()
 
 # Load molecule and force field
-mol = Q2MMMolecule.from_xyz("molecule.xyz")
-ff = ForceField.from_amber_frcmod("params.frcmod")
+mol = load_xyz("molecule.xyz")
+ff = load_amber_frcmod("params.frcmod")
 
 # Single-point energy
 e = engine.energy(mol, ff)

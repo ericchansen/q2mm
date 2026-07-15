@@ -18,7 +18,6 @@ Outputs markdown to ``--out``.  If ``--out`` is omitted, prints to stdout.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import sys
 from collections import defaultdict
@@ -29,40 +28,42 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
-from q2mm.systems import SYSTEMS  # noqa: E402
+from q2mm.benchmarks.systems import SYSTEM_KEYS, load_system  # noqa: E402
+from q2mm.io.mm3 import load_mm3_fld  # noqa: E402
 from q2mm.models.forcefield import ForceField  # noqa: E402
 
 
-def _resolve_published_ff_paths(system_key: str) -> list[Path]:
-    """Return the .fld file paths the system's loader points at."""
-    spec = SYSTEMS[system_key]
-    paths: list[Path] = []
-    for _, fn in (spec.ff_paths or {}).items():
-        with contextlib.suppress(Exception):  # pragma: no cover - missing data dir
-            paths.append(Path(fn()))
-    return paths
+def _load_published(system_key: str) -> tuple[ForceField, frozenset[int], frozenset[int]]:
+    """Load the published (literature, verbatim OPT values) FF for a system.
 
+    Uses the ``starting_point="published"`` load path — the same one
+    ``q2mm.benchmark_runner`` uses for publication-baseline runs — so
+    this script never re-implements per-system path resolution.
 
-def _load_published(system_key: str) -> ForceField:
-    """Load the published FF for a system, composing if necessary."""
-    spec = SYSTEMS[system_key]
-    paths = _resolve_published_ff_paths(system_key)
-    if not paths:
-        raise FileNotFoundError(f"No FF paths configured for {system_key}")
+    Returns:
+        ``(published_ff, active_bond_indices, active_angle_indices)`` —
+        the published force field and the 0-based ``ff.bonds``/
+        ``ff.angles`` indices with at least one *active* (OPT,
+        non-frozen-backbone) scalar, per the system's
+        :class:`~q2mm.models.parameters.ActiveParameterSpace`.
 
-    if spec.ff_strategy == "published_opt":
-        return ForceField.from_mm3_fld(paths[0], include_standard=False)
+    """
+    case = load_system(system_key, starting_point="published")
+    problem = case.problem
+    ff = problem.starting_force_field
+    layout = problem.layout
+    active_full_indices = set(problem.active_space.active_indices.tolist())
 
-    if spec.ff_strategy == "published_opt_composed":
-        # Wahlers: base MM3 + OPT substructure file. For per-parameter
-        # comparison we only need the OPT block — the backbone MM3 is
-        # not optimized. Both the published and optimized .fld files
-        # contain only the OPT block, so load them the same way.
-        spec_paths = spec.ff_paths or {}
-        opt_path = spec_paths["opt_path"]()
-        return ForceField.from_mm3_fld(Path(opt_path), include_standard=False)
-
-    raise ValueError(f"Unsupported ff_strategy for {system_key}: {spec.ff_strategy}")
+    active_bonds: set[int] = set()
+    active_angles: set[int] = set()
+    for slot in layout.slots:
+        if slot.index not in active_full_indices:
+            continue
+        if slot.owner == "bonds":
+            active_bonds.add(slot.owner_index)
+        elif slot.owner == "angles":
+            active_angles.add(slot.owner_index)
+    return ff, frozenset(active_bonds), frozenset(active_angles)
 
 
 def _bond_motif(elements: tuple[str, ...]) -> str:
@@ -109,7 +110,12 @@ def _diff_row(
     }
 
 
-def _iter_diffs(pub: ForceField, opt: ForceField) -> Iterable[dict]:
+def _iter_diffs(
+    pub: ForceField,
+    opt: ForceField,
+    active_bonds: frozenset[int],
+    active_angles: frozenset[int],
+) -> Iterable[dict]:
     # Comparison tooling — fail fast on topology mismatches instead of
     # silently producing an incomplete diff.  zip() truncating to the
     # shorter list or skipping mismatched keys would let parameters
@@ -127,9 +133,10 @@ def _iter_diffs(pub: ForceField, opt: ForceField) -> Iterable[dict]:
             "share topology for a per-parameter diff to be meaningful."
         )
 
-    # Bonds
+    # Bonds — skip rows that are frozen (standard MM3 backbone, not OPT)
+    # in the published force field's ActiveParameterSpace.
     for i, (bp, bo) in enumerate(zip(pub.bonds, opt.bonds)):
-        if bp.frozen and bo.frozen:
+        if i not in active_bonds:
             continue
         if bp.key != bo.key:
             raise ValueError(
@@ -142,9 +149,9 @@ def _iter_diffs(pub: ForceField, opt: ForceField) -> Iterable[dict]:
         yield _diff_row("bond_eq", motif, label, bp.equilibrium, bo.equilibrium, "Å")
         yield _diff_row("bond_fc", motif, label, bp.force_constant, bo.force_constant, "kcal/mol/Å²")
 
-    # Angles
+    # Angles — same frozen/active filtering as bonds.
     for i, (ap, ao) in enumerate(zip(pub.angles, opt.angles)):
-        if ap.frozen and ao.frozen:
+        if i not in active_angles:
             continue
         if ap.key != ao.key:
             raise ValueError(
@@ -226,7 +233,7 @@ def _by_motif(diffs: list[dict]) -> str:
 def main() -> int:
     """Entry point: parse CLI args and emit the per-parameter comparison."""
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--system", required=True, choices=sorted(SYSTEMS))
+    ap.add_argument("--system", required=True, choices=sorted(SYSTEM_KEYS))
     ap.add_argument("--optimized", required=True, type=Path)
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument(
@@ -237,9 +244,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
-    pub = _load_published(args.system)
-    opt = ForceField.from_mm3_fld(args.optimized, include_standard=False)
-    diffs = list(_iter_diffs(pub, opt))
+    pub, active_bonds, active_angles = _load_published(args.system)
+    opt = load_mm3_fld(args.optimized, include_standard=False)
+    diffs = list(_iter_diffs(pub, opt, active_bonds, active_angles))
 
     md_parts = [
         f"## Per-parameter comparison: {args.system}",

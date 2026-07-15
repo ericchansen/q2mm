@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 import sys
 
-import numpy as np
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -26,9 +24,9 @@ def main() -> int:
     hessian_path = REPO_ROOT / fixture["metadata"]["direct_hessian_path"]
     scaling = float(fixture["metadata"]["dft_scaling"])
 
-    structure = Mol2(str(mol2_path)).structures[0]
-    hessian = JaguarIn(str(hessian_path)).get_hessian(len(structure.atoms))
-    coordinates = np.array([[atom.x, atom.y, atom.z] for atom in structure.atoms], dtype=float)
+    molecule = Mol2(str(mol2_path)).molecules[0]
+    hessian = JaguarIn(str(hessian_path)).get_hessian(molecule.n_atoms)
+    coordinates = molecule.geometry
 
     print("=" * 70)
     print("Rh-Enamide Direct Bond Parity Comparison")

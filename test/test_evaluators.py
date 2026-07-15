@@ -10,9 +10,8 @@ import pytest
 
 from test._shared import GS_FCHK, make_water, make_ethane
 
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
-
-
+from q2mm.io.fchk import load_fchk_reference
+from q2mm.models.observations import Observation, ObservationSet
 # ---- Stub engine ----
 
 
@@ -94,7 +93,7 @@ class RuntimeHandleStubEngine(GradStubEngine):
     When the objective function dispatches through ``_get_structure``,
     the engine receives a handle from ``create_context`` for compute
     calls, but ``energy_and_param_grad`` must receive the raw molecule
-    (not a handle) since engines like OpenMM only accept Q2MMMolecule.
+    (not a handle) since engines like OpenMM only accept Molecule.
     """
 
     name = "runtime_handle_stub"
@@ -113,7 +112,7 @@ class RuntimeHandleStubEngine(GradStubEngine):
         forcefield: object = None,
     ) -> tuple[float, np.ndarray]:
         if structure is self._HANDLE_SENTINEL:
-            raise TypeError("energy_and_param_grad received the runtime handle, expected Q2MMMolecule")
+            raise TypeError("energy_and_param_grad received the runtime handle, expected Molecule")
         return self._energy, np.array(self._param_grad)
 
 
@@ -136,7 +135,7 @@ class TestEnergyEvaluator:
 
         evaluator = EnergyEvaluator()
         computed = EnergyResult(energy=10.0)
-        refs = [ReferenceValue(kind="energy", value=12.0, weight=2.0)]
+        refs = [Observation(kind="energy", value=12.0, weight=2.0)]
 
         residuals = evaluator.residuals(computed, refs)
         assert len(residuals) == 1
@@ -148,8 +147,8 @@ class TestEnergyEvaluator:
         evaluator = EnergyEvaluator()
         computed = EnergyResult(energy=5.0)
         refs = [
-            ReferenceValue(kind="energy", value=5.0, weight=1.0),
-            ReferenceValue(kind="energy", value=7.0, weight=0.5),
+            Observation(kind="energy", value=5.0, weight=1.0),
+            Observation(kind="energy", value=7.0, weight=0.5),
         ]
 
         residuals = evaluator.residuals(computed, refs)
@@ -161,7 +160,7 @@ class TestEnergyEvaluator:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         calc = {"energy": 99.9}
-        ref = ReferenceValue(kind="energy", value=0.0)
+        ref = Observation(kind="energy", value=0.0)
         assert EnergyEvaluator.extract_value(calc, ref) == 99.9
 
     def test_compute_with_structure(self) -> None:
@@ -196,8 +195,8 @@ class TestFrequencyEvaluator:
         evaluator = FrequencyEvaluator()
         computed = FrequencyResult(frequencies=[100.0, 200.0, 300.0])
         refs = [
-            ReferenceValue(kind="frequency", value=105.0, weight=1.0, data_idx=0),
-            ReferenceValue(kind="frequency", value=195.0, weight=2.0, data_idx=1),
+            Observation(kind="frequency", value=105.0, weight=1.0, data_idx=0),
+            Observation(kind="frequency", value=195.0, weight=2.0, data_idx=1),
         ]
 
         residuals = evaluator.residuals(computed, refs)
@@ -210,7 +209,7 @@ class TestFrequencyEvaluator:
 
         evaluator = FrequencyEvaluator()
         computed = FrequencyResult(frequencies=[100.0])
-        refs = [ReferenceValue(kind="frequency", value=200.0, data_idx=5)]
+        refs = [Observation(kind="frequency", value=200.0, data_idx=5)]
 
         with pytest.raises(IndexError, match="data_idx=5"):
             evaluator.residuals(computed, refs)
@@ -219,7 +218,7 @@ class TestFrequencyEvaluator:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 
         calc = {"frequencies": [100.0, 200.0, 300.0]}
-        ref = ReferenceValue(kind="frequency", value=0.0, data_idx=2)
+        ref = Observation(kind="frequency", value=0.0, data_idx=2)
         assert FrequencyEvaluator.extract_value(calc, ref) == 300.0
 
 
@@ -259,7 +258,7 @@ class TestGeometryEvaluator:
             bond_lengths_by_atoms={(0, 1): 1.0, (1, 2): 1.5},
         )
         refs = [
-            ReferenceValue(kind="bond_length", value=1.1, weight=10.0, atom_indices=(0, 1)),
+            Observation(kind="bond_length", value=1.1, weight=10.0, atom_indices=(0, 1)),
         ]
         residuals = evaluator.residuals(computed, refs)
         assert len(residuals) == 1
@@ -274,7 +273,7 @@ class TestGeometryEvaluator:
             bond_angles_by_atoms={(0, 1, 2): 109.5},
         )
         refs = [
-            ReferenceValue(kind="bond_angle", value=110.0, weight=5.0, atom_indices=(0, 1, 2)),
+            Observation(kind="bond_angle", value=110.0, weight=5.0, atom_indices=(0, 1, 2)),
         ]
         residuals = evaluator.residuals(computed, refs)
         assert len(residuals) == 1
@@ -295,7 +294,7 @@ class TestGeometryEvaluator:
         )
         computed = GeometryResult(torsion_coords=coords)
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="torsion_angle",
                 value=170.0,
                 weight=1.0,
@@ -314,14 +313,14 @@ class TestGeometryEvaluator:
             "bond_lengths": [1.0, 1.5],
             "bond_lengths_by_atoms": {(0, 1): 1.0, (1, 2): 1.5},
         }
-        ref = ReferenceValue(kind="bond_length", value=0.0, atom_indices=(1, 2))
+        ref = Observation(kind="bond_length", value=0.0, atom_indices=(1, 2))
         assert GeometryEvaluator.extract_value(calc, ref) == 1.5
 
     def test_extract_value_bond_by_idx(self) -> None:
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
 
         calc = {"bond_lengths": [1.0, 1.5], "bond_lengths_by_atoms": {}}
-        ref = ReferenceValue(kind="bond_length", value=0.0, data_idx=1)
+        ref = Observation(kind="bond_length", value=0.0, data_idx=1)
         assert GeometryEvaluator.extract_value(calc, ref) == 1.5
 
     def test_extract_value_angle_reverse_order(self) -> None:
@@ -332,7 +331,7 @@ class TestGeometryEvaluator:
             "bond_angles": [109.5],
             "bond_angles_by_atoms": {(2, 1, 0): 109.5},
         }
-        ref = ReferenceValue(kind="bond_angle", value=0.0, atom_indices=(0, 1, 2))
+        ref = Observation(kind="bond_angle", value=0.0, atom_indices=(0, 1, 2))
         assert GeometryEvaluator.extract_value(calc, ref) == 109.5
 
 
@@ -343,10 +342,10 @@ class TestEigenmatrixEvaluator:
     def test_compute_self_projection(self) -> None:
         """Self-projection (MM == QM) should produce a diagonal eigenmatrix."""
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.molecule import Molecule
 
         hess = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["H"],
             geometry=np.array([[0.0, 0.0, 0.0]]),
             name="stub",
@@ -369,8 +368,8 @@ class TestEigenmatrixEvaluator:
         eigmat = np.diag([1.0, 2.0, 3.0])
         computed = EigenmatrixResult(eigenmatrix=eigmat)
         refs = [
-            ReferenceValue(kind="eig_diagonal", value=1.5, weight=0.1, data_idx=0),
-            ReferenceValue(kind="eig_diagonal", value=2.0, weight=0.1, data_idx=1),
+            Observation(kind="eig_diagonal", value=1.5, weight=0.1, data_idx=0),
+            Observation(kind="eig_diagonal", value=2.0, weight=0.1, data_idx=1),
         ]
 
         residuals = evaluator.residuals(computed, refs)
@@ -385,7 +384,7 @@ class TestEigenmatrixEvaluator:
         eigmat = np.array([[1.0, 0.3], [0.3, 2.0]])
         computed = EigenmatrixResult(eigenmatrix=eigmat)
         refs = [
-            ReferenceValue(kind="eig_offdiagonal", value=0.0, weight=0.05, atom_indices=(1, 0)),
+            Observation(kind="eig_offdiagonal", value=0.0, weight=0.05, atom_indices=(1, 0)),
         ]
 
         residuals = evaluator.residuals(computed, refs)
@@ -395,12 +394,12 @@ class TestEigenmatrixEvaluator:
     def test_eigenvector_caching(self) -> None:
         """QM eigenvectors should be computed once and cached."""
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.molecule import Molecule
 
         _rng = np.random.default_rng(42)
         _a = _rng.standard_normal((6, 6))
         hess = _a @ _a.T + np.eye(6)
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["H", "H"],
             geometry=np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]]),
             name="stub",
@@ -426,9 +425,9 @@ class TestEigenmatrixEvaluator:
 
     def test_no_qm_hessian_raises(self) -> None:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.molecule import Molecule
 
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["H"],
             geometry=np.array([[0.0, 0.0, 0.0]]),
             name="stub",
@@ -443,7 +442,7 @@ class TestEigenmatrixEvaluator:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 
         calc = {"eigenmatrix": np.diag([1.0, 2.0, 3.0])}
-        ref = ReferenceValue(kind="eig_diagonal", value=0.0, data_idx=2)
+        ref = Observation(kind="eig_diagonal", value=0.0, data_idx=2)
         assert EigenmatrixEvaluator.extract_value(calc, ref) == 3.0
 
     def test_extract_value_offdiagonal(self) -> None:
@@ -451,7 +450,7 @@ class TestEigenmatrixEvaluator:
 
         mat = np.array([[1.0, 0.5, 0.1], [0.5, 2.0, 0.3], [0.1, 0.3, 3.0]])
         calc = {"eigenmatrix": mat}
-        ref = ReferenceValue(kind="eig_offdiagonal", value=0.0, atom_indices=(2, 1))
+        ref = Observation(kind="eig_offdiagonal", value=0.0, atom_indices=(2, 1))
         assert EigenmatrixEvaluator.extract_value(calc, ref) == 0.3
 
 
@@ -509,7 +508,7 @@ class TestEnergyEvaluatorGradient:
         de_dp = np.array([3.0, -1.0])
         engine = GradStubEngine(energy=10.0, param_grad=de_dp)
         mol = make_water()
-        refs = [ReferenceValue(kind="energy", value=12.0, weight=2.0)]
+        refs = [Observation(kind="energy", value=12.0, weight=2.0)]
 
         grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
         # d(score)/d(p) = -2 * w^2 * (ref - calc) * dE/dp
@@ -525,8 +524,8 @@ class TestEnergyEvaluatorGradient:
         engine = GradStubEngine(energy=5.0, param_grad=de_dp)
         mol = make_water()
         refs = [
-            ReferenceValue(kind="energy", value=5.0, weight=1.0),
-            ReferenceValue(kind="energy", value=7.0, weight=0.5),
+            Observation(kind="energy", value=5.0, weight=1.0),
+            Observation(kind="energy", value=7.0, weight=0.5),
         ]
 
         grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
@@ -539,7 +538,7 @@ class TestEnergyEvaluatorGradient:
         evaluator = EnergyEvaluator()
         engine = StubEngine(energy=1.0)
         mol = make_water()
-        refs = [ReferenceValue(kind="energy", value=2.0, weight=1.0)]
+        refs = [Observation(kind="energy", value=2.0, weight=1.0)]
 
         with pytest.raises(TypeError, match="does not support"):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
@@ -552,7 +551,7 @@ class TestEnergyEvaluatorGradient:
         de_dp = np.array([1.0, 2.0])
         engine = GradStubEngine(energy=5.0, param_grad=de_dp)
         mol = make_water()
-        refs = [ReferenceValue(kind="energy", value=6.0, weight=1.0)]
+        refs = [Observation(kind="energy", value=6.0, weight=1.0)]
 
         with pytest.raises(ValueError, match="returned 2 derivatives but expected 3"):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=3)
@@ -572,7 +571,7 @@ class TestFrequencyEvaluatorGradient:
         evaluator = FrequencyEvaluator()
         engine = StubEngine(frequencies=[100.0])
         mol = make_water()
-        refs = [ReferenceValue(kind="frequency", value=105.0, data_idx=0)]
+        refs = [Observation(kind="frequency", value=105.0, data_idx=0)]
 
         with pytest.raises(TypeError):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
@@ -592,7 +591,7 @@ class TestGeometryEvaluatorGradient:
         evaluator = GeometryEvaluator()
         engine = StubEngine()
         mol = make_water()
-        refs = [ReferenceValue(kind="bond_length", value=1.0, atom_indices=(0, 1))]
+        refs = [Observation(kind="bond_length", value=1.0, atom_indices=(0, 1))]
 
         result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
         assert result is None
@@ -612,7 +611,7 @@ class TestEigenmatrixEvaluatorGradient:
         evaluator = EigenmatrixEvaluator()
         engine = StubEngine()
         mol = make_water()
-        refs = [ReferenceValue(kind="eig_diagonal", value=1.0, data_idx=0)]
+        refs = [Observation(kind="eig_diagonal", value=1.0, data_idx=0)]
 
         with pytest.raises(TypeError):
             evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
@@ -629,16 +628,18 @@ class TestObjectiveFunctionGradient:
         de_dp = np.array([3.0, -1.0])
         engine = GradStubEngine(energy=10.0, param_grad=de_dp)
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(12.0, weight=2.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(12.0, weight=2.0)
 
         # Need a mock forcefield with with_params
         ff = _StubForceField(n_params=2)
+        layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
             engine=engine,
             molecules=[mol],
             reference=ref,
+            layout=layout,
         )
 
         grad = obj.gradient(np.array([0.0, 0.0]))
@@ -658,16 +659,18 @@ class TestObjectiveFunctionGradient:
             frequencies=[100.0],
         )
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(10.0, weight=1.0)  # zero diff → zero energy grad
-        ref.add_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero freq grad
+        ref = ObservationSet()
+        ref = ref.with_energy(10.0, weight=1.0)  # zero diff → zero energy grad
+        ref = ref.with_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero freq grad
 
         ff = _StubForceField(n_params=1)
+        layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
             engine=engine,
             molecules=[mol],
             reference=ref,
+            layout=layout,
         )
 
         # Should NOT raise — it should fall back to FD for frequency
@@ -686,16 +689,18 @@ class TestObjectiveFunctionGradient:
             frequencies=[100.0],
         )
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(15.0, weight=1.0)
-        ref.add_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero FD contribution
+        ref = ObservationSet()
+        ref = ref.with_energy(15.0, weight=1.0)
+        ref = ref.with_frequency(100.0, data_idx=0, weight=1.0)  # zero diff → zero FD contribution
 
         ff = _StubForceField(n_params=1)
+        layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
             engine=engine,
             molecules=[mol],
             reference=ref,
+            layout=layout,
         )
 
         grad = obj.gradient(np.array([0.0]))
@@ -712,20 +717,22 @@ class TestObjectiveFunctionGradient:
         de_dp = np.array([1.0])
         engine = RuntimeHandleStubEngine(energy=10.0, param_grad=de_dp)
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(12.0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(12.0, weight=1.0)
 
         ff = _StubForceField(n_params=1)
+        layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
             engine=engine,
             molecules=[mol],
             reference=ref,
+            layout=layout,
         )
 
         # energy_and_param_grad always receives the raw molecule
         # (not a handle), since some engines (e.g. OpenMM) only
-        # accept Q2MMMolecule for parameter gradient computation.
+        # accept Molecule for parameter gradient computation.
         grad = obj.gradient(np.array([0.0]))
         expected = -2.0 * 1.0**2 * (12.0 - 10.0) * de_dp
         np.testing.assert_allclose(grad, expected)
@@ -740,36 +747,45 @@ class _StubForceField:
     def with_params(self, param_vector: np.ndarray) -> _StubForceField:
         return self
 
-    def get_param_vector(self) -> np.ndarray:
-        return np.zeros(self.n_params)
+
+class _StubLayout:
+    """Minimal ParameterLayout-like stub for ObjectiveFunction tests."""
+
+    def __init__(self, n_params: int) -> None:
+        self._n_params = n_params
+        self.bounds = np.zeros((n_params, 2), dtype=float)
+        self.steps = np.ones(n_params, dtype=float)
+
+    def __len__(self) -> int:
+        return self._n_params
+
+    def vector(self, force_field: _StubForceField) -> np.ndarray:
+        return np.zeros(force_field.n_params, dtype=float)
+
+    def replace(self, force_field: _StubForceField, vector: np.ndarray) -> _StubForceField:
+        return force_field
 
 
 # ---- Parsers ----
 
 
 class TestFchkParser:
-    """Tests that the moved parse_fchk still works identically."""
+    """Tests that FCHK loading emits the canonical molecule."""
 
-    def test_parse_fchk_from_new_location(self) -> None:
-        from q2mm.io.fchk import parse_fchk
+    def test_load_fchk_from_io_boundary(self) -> None:
+        from q2mm.io.fchk import load_fchk
 
-        symbols, coords, hessian, charge, mult = parse_fchk(GS_FCHK)
-        assert len(symbols) == 8
-        assert symbols.count("H") == 6
-        assert symbols.count("C") == 2
-        assert coords.shape == (8, 3)
-        assert charge == 0
-        assert mult == 1
-        assert hessian is not None
-        assert hessian.shape == (24, 24)
-        np.testing.assert_allclose(hessian, hessian.T, atol=1e-15)
-
-    def test_backward_compat_import(self) -> None:
-        """Old import path still works via delegation."""
-        from q2mm.optimizers.objective import _parse_fchk
-
-        symbols, coords, hessian, charge, mult = _parse_fchk(GS_FCHK)
-        assert len(symbols) == 8
+        molecule = load_fchk(GS_FCHK)
+        assert len(molecule.symbols) == 8
+        assert molecule.symbols.count("H") == 6
+        assert molecule.symbols.count("C") == 2
+        assert molecule.geometry.shape == (8, 3)
+        assert molecule.charge == 0
+        assert molecule.multiplicity == 1
+        assert molecule.hessian is not None
+        assert molecule.hessian.shape == (24, 24)
+        assert molecule.hessian_provenance.source == "fchk"
+        np.testing.assert_allclose(molecule.hessian, molecule.hessian.T, atol=1e-15)
 
 
 # ---- Integration: evaluators produce same results as old ObjectiveFunction ----
@@ -784,8 +800,8 @@ class TestEvaluatorObjectiveParity:
 
         engine = StubEngine(energy=42.0)
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(40.0, weight=2.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(40.0, weight=2.0)
 
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
         result = obj._evaluate_molecule(0, obj.forcefield)
@@ -800,9 +816,9 @@ class TestEvaluatorObjectiveParity:
 
         engine = StubEngine(frequencies=[100.0, 200.0, 300.0])
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_frequency(105.0, data_idx=0, weight=1.0)
-        ref.add_frequency(195.0, data_idx=1, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_frequency(105.0, data_idx=0, weight=1.0)
+        ref = ref.with_frequency(195.0, data_idx=1, weight=1.0)
 
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
         result = obj._evaluate_molecule(0, obj.forcefield)
@@ -815,12 +831,12 @@ class TestEvaluatorObjectiveParity:
         """Eigenmatrix evaluation via evaluator matches old implementation."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        ref_data, mol = ReferenceData.from_fchk(str(GS_FCHK))
+        _ref_data, mol = load_fchk_reference(str(GS_FCHK))
         assert mol.hessian is not None
         qm_hessian = np.array(mol.hessian, dtype=float)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
 
         engine = StubEngine(hessian=qm_hessian)
         obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)

@@ -13,8 +13,8 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation
 
 
 @dataclass
@@ -51,7 +51,7 @@ class EigenmatrixEvaluator:
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -96,7 +96,7 @@ class EigenmatrixEvaluator:
     def residuals(
         self,
         computed: EigenmatrixResult,
-        references: list[ReferenceValue],
+        references: list[Observation],
     ) -> list[float]:
         """Compute weighted residuals for eigenmatrix references.
 
@@ -117,7 +117,7 @@ class EigenmatrixEvaluator:
         return result
 
     @staticmethod
-    def _extract(computed: EigenmatrixResult, ref: ReferenceValue) -> float:
+    def _extract(computed: EigenmatrixResult, ref: Observation) -> float:
         """Extract a calculated eigenmatrix element.
 
         Args:
@@ -155,9 +155,9 @@ class EigenmatrixEvaluator:
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
-        references: list[ReferenceValue],
+        references: list[Observation],
         n_params: int,
         *,
         structure: Any | None = None,
@@ -247,7 +247,7 @@ class EigenmatrixEvaluator:
         return grad
 
     @staticmethod
-    def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
+    def extract_value(calc: dict[str, Any], ref: Observation) -> float:
         """Extract a calculated eigenmatrix value from a results dict.
 
         Backward-compatible bridge for ObjectiveFunction._extract_value.

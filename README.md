@@ -22,7 +22,7 @@ reference data. It is designed for building **transition state force fields
   and [Psi4](https://psicode.org/) alongside commercial packages (Gaussian,
   Schrödinger, Tinker).
 - **Clean, modular architecture** — format-agnostic data models (`ForceField`,
-  `Q2MMMolecule`) decouple algorithms from file formats.
+  `Molecule`) decouple algorithms from file formats.
 - **Modern optimization** — powered by `scipy.optimize` with L-BFGS-B,
   Nelder-Mead, trust-region, and Levenberg-Marquardt methods.
 - **Transition state support** — negative force constants, torsion parameters,
@@ -50,28 +50,33 @@ pip install -e ".[dev]"
 ```
 
 ```python
-from q2mm.optimizers.objective import ReferenceData, ObjectiveFunction
+from q2mm.io.fchk import load_fchk_reference
+from q2mm.models.forcefield import FunctionalForm
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from q2mm.models.seminario import qfuerza_fresh
 from q2mm.backends.mm import OpenMMEngine
 
 # 1. Load QM reference data and molecule from a Gaussian checkpoint
-ref, mol = ReferenceData.from_fchk("ts-optimized.fchk", bond_tolerance=1.4)
+ref, mol = load_fchk_reference("ts-optimized.fchk", bond_tolerance=1.4)
 
 # 2. Build the initial force field from the QM Hessian (QFUERZA)
-ff = qfuerza_fresh(mol, au_hessian=True)
+ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
 
 # 3. Set up the objective function and optimize
 engine = OpenMMEngine()
-obj = ObjectiveFunction(ff, engine, [mol], ref)
-result = ScipyOptimizer(method="L-BFGS-B").optimize(obj)
+layout = ParameterLayout.from_force_field(ff)
+space = ActiveParameterSpace.all_active(layout, ff)
+obj = ObjectiveFunction(ff, engine, [mol], ref, layout=layout)
+result = ScipyOptimizer(method="L-BFGS-B").optimize(obj, space)
 
 print(result.summary())
 ```
 
-`ReferenceData.from_fchk()` auto-extracts bond lengths and angles from the
-QM geometry. You can also use `from_gaussian()` for `.log` files, or
-`from_molecule()` for maximum control. See the
+`load_fchk_reference()` auto-extracts bond lengths and angles from the
+QM geometry. You can also use `load_gaussian_reference()` for `.log` files, or
+`ObservationSet.from_molecule()` for maximum control. See the
 [Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for the full
 workflow including frequencies, eigenmatrix data, and multi-molecule fits.
 

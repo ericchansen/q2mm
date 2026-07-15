@@ -35,6 +35,7 @@ import subprocess
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -241,8 +242,13 @@ def per_category_metrics(obj: Any, ff: Any) -> dict[str, dict[str, float]]:
 
 
 def sanitize_for_json(value: Any) -> Any:
-    """Recursively replace non-finite floats with structured strings."""
-    if isinstance(value, dict):
+    """Recursively replace non-finite floats with structured strings.
+
+    Accepts both plain ``dict`` and read-only ``Mapping`` views (e.g. the
+    ``types.MappingProxyType`` used by immutable ``BenchmarkCase.metadata``/
+    ``normal_modes``) — both are JSON-serialised as plain objects.
+    """
+    if isinstance(value, Mapping):
         return {k: sanitize_for_json(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [sanitize_for_json(v) for v in value]
@@ -297,7 +303,7 @@ def _initial_jaxloss(obj: Any) -> float:
         return float("inf")
     spec = obj.to_jax_spec()
     jl = JaxLoss(spec, obj.engine, obj.molecules, obj.forcefield)
-    x = obj.forcefield.get_param_vector()
+    x = obj.layout.vector(obj.forcefield)
     val_jax, _ = jl.value_and_grad_jax(x)
     val = float(val_jax)
     if not math.isfinite(val):
@@ -405,7 +411,7 @@ def run_benchmark(
 
     Args:
         system_key: Registered system identifier.  Must be present in
-            ``q2mm.systems.SYSTEMS``.
+            ``q2mm.benchmarks.systems.SYSTEM_KEYS``.
         workflow: ``"method-e2"`` (default), ``"single-stage"``, or a
             pre-configured :class:`~q2mm.workflows.base.Workflow`
             instance.
@@ -440,28 +446,39 @@ def run_benchmark(
 
     """
     from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.systems import SYSTEMS, load_system
+    from q2mm.benchmarks.systems import SYSTEM_KEYS, load_system
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-    if system_key not in SYSTEMS:
-        raise ValueError(f"Unknown system {system_key!r}.  Available: {sorted(SYSTEMS)}")
+    if system_key not in SYSTEM_KEYS:
+        raise ValueError(f"Unknown system {system_key!r}.  Available: {sorted(SYSTEM_KEYS)}")
 
     workflow_obj = resolve_workflow(workflow)
 
     logger.info("[%s] loading (starting_point=%s)", system_key, starting_point)
     engine = JaxEngine()
-    sys_data = load_system(
-        system_key,
-        engine=engine,
-        starting_point=starting_point,
-        qfuerza_replace_with=qfuerza_replace_with,
-    )
-    initial_ff = sys_data.forcefield.copy()
+    # CH3F/CH3F-SN2 support both forms and therefore require an explicit
+    # choice. This runner always uses JAX; preserving its former unset-form
+    # behavior means selecting harmonic here. Published systems resolve
+    # their MM3 form from the source force field.
+    load_kwargs: dict[str, Any] = {
+        "engine": engine,
+        "starting_point": starting_point,
+        "qfuerza_replace_with": qfuerza_replace_with,
+    }
+    if system_key in ("ch3f", "ch3f-sn2"):
+        load_kwargs["functional_form"] = "harmonic"
+    benchmark_case = load_system(system_key, **load_kwargs)
+    problem = benchmark_case.problem
+    initial_ff = problem.starting_force_field
+    layout = problem.layout
+    molecules = list(problem.molecules)
 
     # ---- Seminario fit quality at the starting FF -----------------------
-    obj_initial = ObjectiveFunction(initial_ff, engine, sys_data.molecules, sys_data.reference)
-    initial_score = float(obj_initial(initial_ff.get_param_vector()))
+    obj_initial = ObjectiveFunction(
+        initial_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+    )
+    initial_score = float(obj_initial(layout.vector(initial_ff)))
     seminario_categories = per_category_metrics(obj_initial, initial_ff)
 
     # ---- JaxLoss ratio gate ---------------------------------------------
@@ -469,14 +486,14 @@ def run_benchmark(
     ratio = initial_jaxloss / initial_score if initial_score > 0 else float("nan")
     ratio_info = classify_ratio(ratio, ratio_tol)
 
-    n_active = int(np.sum(initial_ff.active_mask))
+    n_active = problem.active_space.n_active
     summary: dict[str, Any] = {
         "system": system_key,
         "workflow": workflow_obj.name,
-        "n_molecules": len(sys_data.molecules),
+        "n_molecules": len(molecules),
         "n_active_params": n_active,
         "starting_point": starting_point,
-        "starting_point_audit": sys_data.metadata.get("starting_point_audit"),
+        "starting_point_audit": benchmark_case.metadata.get("starting_point_audit"),
         "initial_obj_score": initial_score,
         "initial_jaxloss": initial_jaxloss,
         **ratio_info,
@@ -531,7 +548,7 @@ def run_benchmark(
         eq_fraction=eq_fraction,
     )
     t0 = time.perf_counter()
-    wf_result = workflow_obj.run(sys_data, engine, optimizer, n_evals=n_evals)
+    wf_result = workflow_obj.run(problem, engine, optimizer, n_evals=n_evals)
     elapsed = time.perf_counter() - t0
 
     final_ff = wf_result.final_ff
@@ -540,8 +557,10 @@ def run_benchmark(
     # the ORIGINAL reference data (not any modified-Hessian Round-2
     # reference), so the improvement number is comparable across
     # workflows and to historical baselines.
-    obj_real_at_final = ObjectiveFunction(final_ff, engine, sys_data.molecules, sys_data.reference)
-    final_obj_score = float(obj_real_at_final(final_ff.get_param_vector()))
+    obj_real_at_final = ObjectiveFunction(
+        final_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+    )
+    final_obj_score = float(obj_real_at_final(layout.vector(final_ff)))
     optimized_categories = per_category_metrics(obj_real_at_final, final_ff)
 
     last_stage = wf_result.stages[-1]
@@ -641,7 +660,9 @@ def run_benchmark_batch(
 
     - ``validation_results.json`` — summary numbers
     - ``paper_metrics.json`` — Seminario + optimized per-category stats
-    - ``<system>_optimized.fld`` — optimized FF (only when optimization ran)
+    - ``<system>_optimized.fld`` (MM3) or ``<system>_optimized.frcmod``
+      (harmonic) — optimized FF (only when optimization ran); see
+      :func:`_save_optimized_ff`.
 
     Args:
         system_keys: List of registered system identifiers.
@@ -735,6 +756,30 @@ def _write_artifacts(
         {"provenance": provenance, "metrics": result.paper},
     )
     if not result.skipped:
+        _save_optimized_ff(sys_out, result)
+
+
+def _save_optimized_ff(sys_out: Path, result: BenchmarkRunResult) -> None:
+    """Persist ``result.final_ff`` in the text format matching its actual functional form.
+
+    Route each result to the serializer compatible with its explicitly
+    declared form. This runner currently selects harmonic for CH3F and
+    CH3F-SN2, while published-OPT systems retain MM3 (see
+    ``q2mm.io._helpers._FORMAT_COMPATIBLE_FORMS``).
+    """
+    from q2mm.models.forcefield import FunctionalForm
+
+    form = result.final_ff.functional_form
+    if form is FunctionalForm.MM3:
+        from q2mm.io.mm3 import save_mm3_fld
+
         ff_path = sys_out / f"{result.system_key}_optimized.fld"
-        result.final_ff.to_mm3_fld(str(ff_path))
-        logger.info("[%s] wrote optimized FF: %s", result.system_key, ff_path)
+        save_mm3_fld(result.final_ff, ff_path)
+    elif form is FunctionalForm.HARMONIC:
+        from q2mm.io.amber import save_amber_frcmod
+
+        ff_path = sys_out / f"{result.system_key}_optimized.frcmod"
+        save_amber_frcmod(result.final_ff, ff_path)
+    else:
+        raise ValueError(f"[{result.system_key}] no artifact serializer registered for functional form {form!r}.")
+    logger.info("[%s] wrote optimized FF: %s", result.system_key, ff_path)

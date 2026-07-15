@@ -2,7 +2,7 @@
 
 Estimates bond and angle force constants directly from a QM Hessian matrix
 using the Seminario (FUERZA) projection method. This implementation uses
-Q2MM's internal models (Q2MMMolecule, ForceField) instead of the legacy
+Q2MM's internal models (Molecule, ForceField) instead of the legacy
 MM3-specific data structures.
 
 Reference:
@@ -12,6 +12,7 @@ Reference:
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterable
 import logging
 import numpy as np
@@ -23,8 +24,8 @@ from q2mm.models.units import (
     AU_ANGLE_K_TO_CANONICAL,
     MDYNA_RAD2_TO_KCALMOLRAD2,
 )
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
+from q2mm.models.molecule import Molecule
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam
 
 # AU → canonical: Hartree/Bohr² → kcal/(mol·Å²) for bonds,
 #                  Hartree/rad² → kcal/(mol·rad²) for angles.
@@ -50,17 +51,17 @@ def _is_hydrogen_angle(elements: tuple[str, str, str]) -> bool:
 
 
 def _coerce_molecules(
-    molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
-) -> list[Q2MMMolecule]:
+    molecule: Molecule | Iterable[Molecule],
+) -> list[Molecule]:
     """Normalize a single molecule or iterable of molecules into a list."""
-    if isinstance(molecule, Q2MMMolecule):
+    if isinstance(molecule, Molecule):
         return [molecule]
 
     molecules = list(molecule)
     if not molecules:
         raise ValueError("At least one molecule is required")
-    if not all(isinstance(item, Q2MMMolecule) for item in molecules):
-        raise TypeError("qfuerza_fresh/qfuerza_into expects Q2MMMolecule instances")
+    if not all(isinstance(item, Molecule) for item in molecules):
+        raise TypeError("qfuerza_fresh/qfuerza_into expects Molecule instances")
     return molecules
 
 
@@ -74,11 +75,11 @@ def _match_mode(param: BondParam | AngleParam, items: list) -> str:
 
 
 def _collect_matching(
-    molecules: list[Q2MMMolecule],
+    molecules: list[Molecule],
     param: BondParam | AngleParam,
     items_attr: str,
     element_key_attr: str,
-) -> list[tuple[Q2MMMolecule, object]]:
+) -> list[tuple[Molecule, object]]:
     """Collect all items (bonds or angles) across molecules that match a parameter."""
     all_items = [(mol, item) for mol in molecules for item in getattr(mol, items_attr)]
     match_mode = _match_mode(param, [item for _, item in all_items])
@@ -276,8 +277,9 @@ def seminario_angle_fc(
 
 
 def qfuerza_fresh(
-    molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
+    molecule: Molecule | Iterable[Molecule],
     *,
+    functional_form: FunctionalForm,
     zero_torsions: bool = True,
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
@@ -297,6 +299,13 @@ def qfuerza_fresh(
             iterable containing exactly one such molecule.  Multi-molecule
             averaging requires an explicit forcefield — use
             :func:`qfuerza_into` for that case.
+        functional_form: Required — every :class:`ForceField` must carry
+            an explicit functional form (see
+            :meth:`ForceField.create_for_molecule`). QFUERZA determines
+            the initial scalar parameters; the caller separately declares
+            the functional form used by its target workflow and backend.
+            There is no default because the former unset value was
+            interpreted differently by OpenMM and JAX.
         zero_torsions: Whether to zero out torsional parameters.  Per
             Farrugia 2025, torsions are not well-suited for FUERZA-style
             parametrization from vibrational data and are zeroed at
@@ -322,7 +331,8 @@ def qfuerza_fresh(
 
     Returns:
         A new :class:`ForceField` whose every parameter is unfrozen and
-        populated from the QFUERZA projection.
+        populated from the QFUERZA projection, tagged with the
+        caller-supplied *functional_form*.
 
     Raises:
         ValueError: If ``molecule`` is an iterable with anything other
@@ -340,8 +350,9 @@ def qfuerza_fresh(
     ff = ForceField.create_for_molecule(
         molecules[0],
         name=f"QFUERZA FF for {molecules[0].name}",
+        functional_form=functional_form,
     )
-    qfuerza_into(
+    return qfuerza_into(
         ff,
         molecules,
         zero_torsions=zero_torsions,
@@ -351,37 +362,52 @@ def qfuerza_fresh(
         replace_with=replace_with,
         strategy=strategy,
     )
-    return ff
 
 
 def qfuerza_into(
     ff: ForceField,
-    molecule: Q2MMMolecule | Iterable[Q2MMMolecule],
+    molecule: Molecule | Iterable[Molecule],
     *,
+    active_bonds: frozenset[int] | None = None,
+    active_angles: frozenset[int] | None = None,
+    active_torsions: frozenset[int] | None = None,
     zero_torsions: bool = True,
     au_hessian: bool = True,
     invalid_policy: Literal["keep", "skip"] = "keep",
     invert_ts_curvature: bool = False,
     replace_with: float = 1.0,
     strategy: Literal["fuerza", "qfuerza"] = "qfuerza",
-) -> None:
-    """Overwrite *unfrozen* parameter values in *ff* using QFUERZA projection.
+) -> ForceField:
+    """Return a copy of *ff* with active parameter values overwritten by QFUERZA projection.
 
-    Iterates every parameter slot in *ff* and writes new values from
-    the QFUERZA projection (Farrugia et al. *J. Chem. Theory Comput.*
-    **2026**, *22*, 469).  **Frozen parameters are skipped** — they
-    represent caller commitments (e.g. published OPT values held fixed
-    via :meth:`ForceField.freeze_standard_params`) and silently
-    overwriting them was the q2mm#277 Heck-relay bug.
-
-    To deliberately re-estimate a frozen param, call ``.unfreeze()``
-    on it first.
+    Iterates every bond/angle/torsion in *ff* and computes new values
+    from the QFUERZA projection (Farrugia et al. *J. Chem. Theory
+    Comput.* **2025**, *22*, 469), but only *active* parameters are
+    overwritten in the returned force field — inactive ones are carried
+    over unchanged.  The caller (typically a
+    ``q2mm.benchmarks.systems`` loader) decides which parameters are
+    active, usually via
+    :func:`q2mm.models.parameters.opt_substructure_membership` /
+    :class:`~q2mm.models.parameters.ActiveParameterSpace`; silently
+    overwriting a caller-fixed published OPT value was the q2mm#277
+    Heck-relay bug.
 
     Args:
-        ff: Force field to mutate in place.  The caller is responsible
-            for setting the active/frozen partition before calling.
+        ff: Force field whose active bond/angle/torsion values are
+            re-estimated.  Not mutated; a new :class:`ForceField` is
+            returned.
         molecule: Molecule(s) with Hessians; multi-molecule values are
             averaged per param.
+        active_bonds: 0-based indices into ``ff.bonds`` that may be
+            overwritten.  ``None`` (default) means every bond is active
+            — the correct default for a freshly-built FF (e.g.
+            :func:`qfuerza_fresh`) that has no frozen backbone.
+        active_angles: 0-based indices into ``ff.angles`` whose
+            *bending* (``force_constant``/``equilibrium``) values may
+            be overwritten.  ``None`` means every angle is active.
+        active_torsions: 0-based indices into ``ff.torsions`` that may
+            be zeroed when *zero_torsions* is set.  ``None`` means
+            every torsion is active.
         zero_torsions: See :func:`qfuerza_fresh` (default ``True`` per
             Farrugia 2025).
         au_hessian: Whether Hessians are in atomic units.
@@ -398,6 +424,11 @@ def qfuerza_into(
             ``invert_ts_curvature=False``.
         strategy: ``"qfuerza"`` (with H-angle substitution) or
             ``"fuerza"`` (pure Seminario).
+
+    Returns:
+        A new :class:`ForceField` with active bond/angle/torsion values
+        overwritten; inactive ones (and all other collections) are
+        unchanged.
 
     Raises:
         ValueError: If ``strategy`` is not recognised or if any
@@ -419,7 +450,7 @@ def qfuerza_into(
     else:
         processed_hessians = None
 
-    _estimate_into_ff(
+    return _estimate_into_ff(
         ff,
         molecules,
         zero_torsions=zero_torsions,
@@ -427,121 +458,176 @@ def qfuerza_into(
         invalid_policy=invalid_policy,
         processed_hessians=processed_hessians,
         strategy=strategy,
+        active_bonds=active_bonds,
+        active_angles=active_angles,
+        active_torsions=active_torsions,
     )
+
+
+def _estimate_bond(
+    bond_param: BondParam,
+    molecules: list[Molecule],
+    *,
+    au_hessian: bool,
+    invalid_policy: Literal["keep", "skip"],
+    processed_hessians: dict[int, np.ndarray] | None,
+) -> BondParam:
+    """Return *bond_param* with its value re-estimated via Seminario projection."""
+    matching_bonds = _collect_matching(molecules, bond_param, "bonds", "element_pair")
+    if not matching_bonds:
+        logger.debug("No bonds match %s in molecule", bond_param.key)
+        return bond_param
+
+    force_constants = []
+    equilibria = [bond.length for _, bond in matching_bonds]
+    for molecule_item, bond in matching_bonds:
+        hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
+        k = seminario_bond_fc(
+            bond.atom_i,
+            bond.atom_j,
+            molecule_item.geometry,
+            hess,
+            au_units=au_hessian,
+        )
+        if _should_keep_force_constant(k, invalid_policy):
+            force_constants.append(float(np.real(k)))
+            if k < 0:
+                logger.warning(
+                    f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): "
+                    f"negative FC = {k:.4f} (TS reaction coordinate?)"
+                )
+        else:
+            logger.warning(f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): invalid FC = {k} — skipped")
+
+    updates: dict[str, float] = {}
+    if equilibria:
+        updates["equilibrium"] = float(np.mean(equilibria))
+    if force_constants:
+        updates["force_constant"] = float(np.mean(force_constants))
+        logger.info(
+            f"  Bond {bond_param.key}: k={updates['force_constant']:.4f} kcal/(mol·Å²), "
+            f"r0={updates.get('equilibrium', bond_param.equilibrium):.4f} Å"
+        )
+    else:
+        logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")
+    return dataclasses.replace(bond_param, **updates) if updates else bond_param
+
+
+def _estimate_angle(
+    angle_param: AngleParam,
+    molecules: list[Molecule],
+    *,
+    au_hessian: bool,
+    invalid_policy: Literal["keep", "skip"],
+    processed_hessians: dict[int, np.ndarray] | None,
+    strategy: Literal["fuerza", "qfuerza"],
+) -> AngleParam:
+    """Return *angle_param* with its value re-estimated via Seminario/QFUERZA projection."""
+    matching_angles = _collect_matching(molecules, angle_param, "angles", "element_triple")
+    if not matching_angles:
+        logger.debug("No angles match %s in molecule", angle_param.key)
+        return angle_param
+
+    force_constants = []
+    equilibria = [angle.value for _, angle in matching_angles]
+    for molecule_item, angle in matching_angles:
+        hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
+        k = seminario_angle_fc(
+            angle.atom_i,
+            angle.atom_j,
+            angle.atom_k,
+            molecule_item.geometry,
+            hess,
+            au_units=au_hessian,
+        )
+        if _should_keep_force_constant(k, invalid_policy):
+            force_constants.append(float(np.real(k)))
+            if k < 0:
+                logger.warning(f"  Angle {angle.elements}: negative FC = {k:.4f}")
+        else:
+            logger.warning(f"  Angle {angle.elements}: invalid FC = {k} — skipped")
+
+    updates: dict[str, float] = {}
+    if equilibria:
+        updates["equilibrium"] = float(np.mean(equilibria))
+    if force_constants:
+        fuerza_value = float(np.mean(force_constants))
+        if strategy == "qfuerza" and _is_hydrogen_angle(angle_param.elements):
+            updates["force_constant"] = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
+            logger.info(
+                f"  Angle {angle_param.key}: QFUERZA H-angle substitution — "
+                f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn·Å/rad² "
+                f"(FUERZA was {fuerza_value:.4f} kcal/(mol·rad²))"
+            )
+        else:
+            updates["force_constant"] = fuerza_value
+            logger.info(
+                f"  Angle {angle_param.key}: k={updates['force_constant']:.4f}, "
+                f"theta0={updates.get('equilibrium', angle_param.equilibrium):.1f} deg"
+            )
+    else:
+        logger.warning(f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant")
+    return dataclasses.replace(angle_param, **updates) if updates else angle_param
 
 
 def _estimate_into_ff(
     ff: ForceField,
-    molecules: list[Q2MMMolecule],
+    molecules: list[Molecule],
     *,
     zero_torsions: bool,
     au_hessian: bool,
     invalid_policy: Literal["keep", "skip"],
     processed_hessians: dict[int, np.ndarray] | None,
     strategy: Literal["fuerza", "qfuerza"],
-) -> None:
-    """Inner per-parameter QFUERZA estimation loop.  Skips frozen params."""
-    # Estimate bond force constants.  Skip frozen params: their values
-    # are caller-owned commitments (e.g. literature OPT params held
-    # fixed via freeze_standard_params) and overwriting them silently
-    # was the load_heck_relay bug (q2mm#277).  The FrozenParamError
-    # guard on _FrozenAwareParam is the backstop; this check is the
-    # explicit fast-path.
-    for bond_param in ff.bonds:
-        if bond_param.frozen:
+    active_bonds: frozenset[int] | None,
+    active_angles: frozenset[int] | None,
+    active_torsions: frozenset[int] | None,
+) -> ForceField:
+    """Return a new ForceField with active bond/angle/torsion values re-estimated.
+
+    Parameters whose collection index is not in the corresponding
+    ``active_*`` set (when given) are carried over unchanged — they
+    represent caller commitments (e.g. published OPT values held fixed
+    via an :class:`~q2mm.models.parameters.ActiveParameterSpace`) and
+    silently overwriting them was the q2mm#277 Heck-relay bug.
+    ``None`` means every parameter in that collection is active.
+    """
+    new_bonds: list[BondParam] = []
+    for i, bond_param in enumerate(ff.bonds):
+        if active_bonds is not None and i not in active_bonds:
+            new_bonds.append(bond_param)
             continue
-        matching_bonds = _collect_matching(molecules, bond_param, "bonds", "element_pair")
+        new_bonds.append(
+            _estimate_bond(
+                bond_param,
+                molecules,
+                au_hessian=au_hessian,
+                invalid_policy=invalid_policy,
+                processed_hessians=processed_hessians,
+            )
+        )
 
-        if not matching_bonds:
-            logger.debug("No bonds match %s in molecule", bond_param.key)
+    new_angles: list[AngleParam] = []
+    for i, angle_param in enumerate(ff.angles):
+        if active_angles is not None and i not in active_angles:
+            new_angles.append(angle_param)
             continue
-
-        force_constants = []
-        equilibria = [bond.length for _, bond in matching_bonds]
-        for molecule_item, bond in matching_bonds:
-            hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
-            k = seminario_bond_fc(
-                bond.atom_i,
-                bond.atom_j,
-                molecule_item.geometry,
-                hess,
-                au_units=au_hessian,
+        new_angles.append(
+            _estimate_angle(
+                angle_param,
+                molecules,
+                au_hessian=au_hessian,
+                invalid_policy=invalid_policy,
+                processed_hessians=processed_hessians,
+                strategy=strategy,
             )
-            if _should_keep_force_constant(k, invalid_policy):
-                force_constants.append(float(np.real(k)))
-                if k < 0:
-                    logger.warning(
-                        f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): "
-                        f"negative FC = {k:.4f} (TS reaction coordinate?)"
-                    )
-            else:
-                logger.warning(f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): invalid FC = {k} — skipped")
+        )
 
-        if equilibria:
-            bond_param.equilibrium = float(np.mean(equilibria))
-        if force_constants:
-            bond_param.force_constant = float(np.mean(force_constants))
-            logger.info(
-                f"  Bond {bond_param.key}: k={bond_param.force_constant:.4f} kcal/(mol·Å²), r0={bond_param.equilibrium:.4f} Å"
-            )
-        else:
-            logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")
-
-    # Estimate angle force constants.  Skip frozen params (see bond loop above).
-    for angle_param in ff.angles:
-        if angle_param.frozen:
-            continue
-        matching_angles = _collect_matching(molecules, angle_param, "angles", "element_triple")
-
-        if not matching_angles:
-            logger.debug("No angles match %s in molecule", angle_param.key)
-            continue
-
-        force_constants = []
-        equilibria = [angle.value for _, angle in matching_angles]
-        for molecule_item, angle in matching_angles:
-            hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
-            k = seminario_angle_fc(
-                angle.atom_i,
-                angle.atom_j,
-                angle.atom_k,
-                molecule_item.geometry,
-                hess,
-                au_units=au_hessian,
-            )
-            if _should_keep_force_constant(k, invalid_policy):
-                force_constants.append(float(np.real(k)))
-                if k < 0:
-                    logger.warning(f"  Angle {angle.elements}: negative FC = {k:.4f}")
-            else:
-                logger.warning(f"  Angle {angle.elements}: invalid FC = {k} — skipped")
-
-        if equilibria:
-            angle_param.equilibrium = float(np.mean(equilibria))
-        if force_constants:
-            fuerza_value = float(np.mean(force_constants))
-
-            if strategy == "qfuerza" and _is_hydrogen_angle(angle_param.elements):
-                angle_param.force_constant = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
-                logger.info(
-                    f"  Angle {angle_param.key}: QFUERZA H-angle substitution — "
-                    f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn·Å/rad² "
-                    f"(FUERZA was {fuerza_value:.4f} kcal/(mol·rad²))"
-                )
-            else:
-                angle_param.force_constant = fuerza_value
-                logger.info(
-                    f"  Angle {angle_param.key}: k={angle_param.force_constant:.4f}, "
-                    f"theta0={angle_param.equilibrium:.1f} deg"
-                )
-        else:
-            logger.warning(
-                f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant"
-            )
-
-    # Zero torsions if requested.  Skip frozen torsions (see bond loop above).
+    new_torsions: list[TorsionParam] = list(ff.torsions)
     if zero_torsions:
-        for t in ff.torsions:
-            if t.frozen:
-                continue
-            t.force_constant = 0.0
+        new_torsions = [
+            dataclasses.replace(t, force_constant=0.0) if (active_torsions is None or i in active_torsions) else t
+            for i, t in enumerate(new_torsions)
+        ]
+
+    return dataclasses.replace(ff, bonds=tuple(new_bonds), angles=tuple(new_angles), torsions=tuple(new_torsions))

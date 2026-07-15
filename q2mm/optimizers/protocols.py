@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
+    from q2mm.models.parameters import ActiveParameterSpace
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import OptimizationResult
 
@@ -27,13 +28,13 @@ if TYPE_CHECKING:
 class _Optimizer(Protocol):
     """Minimal structural interface for any wrappable optimizer.
 
-    Any object exposing an ``optimize(objective)`` method that returns
-    an :class:`~q2mm.optimizers.scipy_opt.OptimizationResult` satisfies
-    this protocol.  It is ``@runtime_checkable`` so ``isinstance``
-    checks succeed for conforming optimizers (see
+    Any object exposing an ``optimize(objective, space)`` method that
+    returns an :class:`~q2mm.optimizers.scipy_opt.OptimizationResult`
+    satisfies this protocol.  It is ``@runtime_checkable`` so
+    ``isinstance`` checks succeed for conforming optimizers (see
     ``test/test_workflows.py``).
     """
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the optimization and return an ``OptimizationResult``."""
         ...

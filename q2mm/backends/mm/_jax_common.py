@@ -1,8 +1,22 @@
 """Shared utilities for JAX-based MM backends.
 
-Contains the JAX import guard, float64 configuration, parameter-vector
-offset calculations, and ForceField matching helpers used by both
-:mod:`jax_engine` and :mod:`jax_md_engine`.
+Contains parameter-vector offset calculations and ForceField matching
+helpers used by both :mod:`jax_engine` and :mod:`jax_md_engine`, plus
+this backend layer's ``jax``/``jnp``/``jaxopt`` module globals and
+``ensure_jax``/``ensure_jaxopt`` entry points.
+
+The actual JAX-import-guard and float64-configuration logic is *not*
+implemented here — it lives in the dependency-free, foundational
+:mod:`q2mm._jax_support` (shared with :mod:`q2mm.models.hessian`, which
+cannot import anything under ``q2mm.backends``). ``ensure_jax`` below
+is a thin backend-local wrapper: it delegates to
+:func:`q2mm._jax_support.load_jax` and rebinds this module's own
+``jax``/``jnp`` globals, so existing callers that do
+``from q2mm.backends.mm._jax_common import jax, jnp`` (or call
+``ensure_jax(...)``) keep working unchanged. ``ensure_jaxopt`` and the
+``jaxopt`` global are backend-specific (only the MM backends' optimizer
+integrations use jaxopt) and have no counterpart in
+``q2mm._jax_support``.
 
 JAX is imported lazily — :func:`ensure_jax` performs the actual import
 and CUDA initialization on first use, so merely importing this module
@@ -12,14 +26,18 @@ does not allocate GPU memory.
 from __future__ import annotations
 
 import importlib.util
-import os
 from collections.abc import Sequence
 from types import ModuleType
+from typing import TYPE_CHECKING
 
+from q2mm._jax_support import has_jax, load_jax
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
 
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ParameterLayout
+
 # Cheap availability check — does NOT import JAX or initialize CUDA.
-_HAS_JAX: bool = importlib.util.find_spec("jax") is not None
+_HAS_JAX: bool = has_jax()
 _HAS_JAXOPT: bool = importlib.util.find_spec("jaxopt") is not None
 
 # These are populated lazily by ensure_jax() / ensure_jaxopt().
@@ -32,8 +50,12 @@ _jax_initialized: bool = False
 def ensure_jax(engine_name: str = "JaxEngine") -> None:
     """Import JAX and configure float64 on first call.
 
-    Subsequent calls are no-ops.  This is the single entry point that
-    triggers ``import jax`` and any associated XLA/CUDA initialization.
+    Subsequent calls are no-ops.  Thin wrapper over the shared
+    :func:`q2mm._jax_support.load_jax`: delegates the actual
+    import-guard/float64-configuration logic there, then rebinds this
+    module's own ``jax``/``jnp`` globals so existing
+    ``from q2mm.backends.mm._jax_common import jax, jnp``-style callers
+    keep working unchanged.
 
     Args:
         engine_name: Name of the engine requesting JAX, used in the
@@ -47,24 +69,8 @@ def ensure_jax(engine_name: str = "JaxEngine") -> None:
 
     if _jax_initialized:
         return
-    if not _HAS_JAX:
-        raise ImportError(f"JAX is required for {engine_name}. Install with: pip install jax jaxlib")
 
-    import jax as _jax
-    import jax.numpy as _jnp
-
-    # JAX defaults to float32.  For MM parameter optimization float64 is the
-    # safe default (energy differences ~1e-6 kcal/mol matter).
-    #
-    # Honour the standard JAX_ENABLE_X64 env-var: when the user has set it
-    # explicitly, we do NOT override JAX's own interpretation.  Otherwise we
-    # enable float64 (standard practice in JAX-based chemistry packages).
-    _user_set_jax_enable_x64 = "JAX_ENABLE_X64" in os.environ
-    if not _jax.config.jax_enable_x64 and not _user_set_jax_enable_x64:
-        _jax.config.update("jax_enable_x64", True)
-
-    jax = _jax
-    jnp = _jnp
+    jax, jnp = load_jax(caller_name=engine_name)
     _jax_initialized = True
 
 
@@ -89,29 +95,24 @@ def ensure_jaxopt() -> None:
     jaxopt = _jaxopt
 
 
-def compute_param_offsets(
-    n_bond_types: int,
-    n_angle_types: int,
-    n_torsion_types: int,
-    n_vdw_types: int = 0,
-    n_sb_types: int = 0,
-) -> dict[str, int]:
-    """Compute parameter vector offsets for bond/angle/torsion/sb/vdw/ub blocks.
+def layout_block_offsets(layout: ParameterLayout) -> dict[str, int]:
+    """Derive parameter-vector block-start offsets from a ParameterLayout.
 
-    The parameter vector layout is:
-      ``[bond_k, bond_r0, ..., angle_k, angle_theta0, ..., torsion_k, ...,
-      sb_k, ..., vdw_radius, vdw_eps, ..., ub_k, ub_eq, ...]``
+    Rather than independently re-deriving the canonical
+    bond/angle/torsion/sb/vdw/ub block order and per-type slot counts,
+    this reads the actual slot indices straight from *layout* — the one
+    source of truth for full-vector order (see
+    :mod:`q2mm.models.parameters`).
 
-    Each bond type contributes 2 values (k, r0), each angle type 2
-    (k, theta0), each torsion type 1 (k), each stretch-bend type 1 (k),
-    each vdW type 2 (radius, epsilon), and each UB type 2 (k, eq).
+    Each bond contributes 2 values (k, r0) at consecutive indices, each
+    angle 2 (k, theta0), each torsion 1 (k), each stretch-bend 1 (k),
+    each vdW 2 (radius, epsilon), and each Urey-Bradley angle 2 (k, eq)
+    — the block for a kind with zero slots collapses to ``len(layout)``
+    (an unused, out-of-range sentinel; callers only read a block's
+    offset when their own ``has_<kind>`` flag is ``True``).
 
     Args:
-        n_bond_types: Number of unique bond parameter types.
-        n_angle_types: Number of unique angle parameter types.
-        n_torsion_types: Number of unique torsion parameter types.
-        n_vdw_types: Number of unique vdW parameter types.
-        n_sb_types: Number of unique stretch-bend parameter types.
+        layout: The force field's :class:`~q2mm.models.parameters.ParameterLayout`.
 
     Returns:
         dict with keys ``"bond"``, ``"angle"``, ``"torsion"``, ``"sb"``,
@@ -119,19 +120,22 @@ def compute_param_offsets(
         in the flat parameter vector.
 
     """
-    bond_offset = 0
-    angle_offset = 2 * n_bond_types
-    torsion_offset = angle_offset + 2 * n_angle_types
-    sb_offset = torsion_offset + n_torsion_types
-    vdw_offset = sb_offset + n_sb_types
-    ub_offset = vdw_offset + 2 * n_vdw_types
+    from q2mm.models.parameters import ParameterKind
+
+    total = len(layout)
+    by_kind = layout.indices_by_kind
+
+    def _block_start(kind: ParameterKind) -> int:
+        indices = by_kind.get(kind)
+        return indices[0] if indices else total
+
     return {
-        "bond": bond_offset,
-        "angle": angle_offset,
-        "torsion": torsion_offset,
-        "sb": sb_offset,
-        "vdw": vdw_offset,
-        "ub": ub_offset,
+        "bond": _block_start(ParameterKind.BOND_FORCE_CONSTANT),
+        "angle": _block_start(ParameterKind.ANGLE_FORCE_CONSTANT),
+        "torsion": _block_start(ParameterKind.TORSION_FORCE_CONSTANT),
+        "sb": _block_start(ParameterKind.STRETCH_BEND_FORCE_CONSTANT),
+        "vdw": _block_start(ParameterKind.VDW_RADIUS),
+        "ub": _block_start(ParameterKind.UREY_BRADLEY_FORCE_CONSTANT),
     }
 
 
@@ -245,6 +249,8 @@ def params_and_coords(
 
     """
     ensure_jax()
-    params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)  # type: ignore[union-attr]
+    from q2mm.models.parameters import ParameterLayout
+
+    params = jnp.array(ParameterLayout.from_force_field(forcefield).vector(forcefield), dtype=jnp.float64)  # type: ignore[union-attr]
     coords = jnp.array(molecule_geometry, dtype=jnp.float64)  # type: ignore[union-attr]
     return params, coords

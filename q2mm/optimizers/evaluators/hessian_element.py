@@ -13,8 +13,8 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation
 
 
 @dataclass
@@ -41,7 +41,7 @@ class HessianElementEvaluator:
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -65,7 +65,7 @@ class HessianElementEvaluator:
     def residuals(
         self,
         computed: HessianResult,
-        references: list[ReferenceValue],
+        references: list[Observation],
     ) -> list[float]:
         """Compute weighted residuals for Hessian element references.
 
@@ -85,7 +85,7 @@ class HessianElementEvaluator:
         return result
 
     @staticmethod
-    def _extract(computed: HessianResult, ref: ReferenceValue) -> float:
+    def _extract(computed: HessianResult, ref: Observation) -> float:
         """Extract a raw Hessian element at (row, col).
 
         Args:
@@ -121,9 +121,9 @@ class HessianElementEvaluator:
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
-        references: list[ReferenceValue],
+        references: list[Observation],
         n_params: int,
         *,
         structure: Any | None = None,
@@ -174,7 +174,7 @@ class HessianElementEvaluator:
         return grad
 
     @staticmethod
-    def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
+    def extract_value(calc: dict[str, Any], ref: Observation) -> float:
         """Extract a calculated Hessian element from a results dict.
 
         Backward-compatible bridge for ObjectiveFunction._extract_value.

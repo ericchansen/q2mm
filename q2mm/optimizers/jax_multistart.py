@@ -26,14 +26,14 @@ Usage::
         perturbation_pct=0.1,
         seed=0,
     )
-    result = opt.optimize(objective_function)
+    result = opt.optimize(objective_function, space)
 
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -42,7 +42,7 @@ from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import OptimizationResult
 
 if TYPE_CHECKING:
-    pass
+    from q2mm.models.parameters import ActiveParameterSpace
 
 logger = logging.getLogger(__name__)
 
@@ -100,16 +100,22 @@ class JaxMultiStartOptimizer:
         self.seed = seed
         self.verbose = verbose
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run ``n_starts`` replicas in parallel, return the best.
 
         Args:
             objective: Configured objective with a JaxEngine backend.
+            space: The active/frozen projection over ``objective.layout``.
+                Only active parameters are perturbed/optimized;
+                ``objective.forcefield`` is never mutated — materialize
+                the optimized force field explicitly via
+                ``objective.layout.replace(objective.forcefield, result.final_params)``.
 
         Returns:
             OptimizationResult for the replica with the lowest final
-            loss.  ``n_iterations`` and ``success`` are taken from the
-            winning replica's jaxopt state.
+            loss, with full-vector (length ``space.n_full``) parameters.
+            ``n_iterations`` and ``success`` are taken from the winning
+            replica's jaxopt state.
 
         Raises:
             TypeError: If the engine is not a JaxEngine.
@@ -138,18 +144,30 @@ class JaxMultiStartOptimizer:
         spec = objective.to_jax_spec()
         jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
 
-        x0 = np.array(objective.forcefield.get_param_vector(), dtype=float)
-        bounds = objective.forcefield.get_bounds()
+        layout = objective.layout
+        initial_full = layout.vector(objective.forcefield)
+        x0 = space.pack(initial_full)
+        active_bounds = space.bounds
+
+        baseline_jax = jnp.array(space.baseline, dtype=jnp.float64)
+        active_indices_jax = jnp.array(space.active_indices, dtype=jnp.int32)
+
+        def expand_jax(x_active: Any):  # noqa: ANN202
+            return baseline_jax.at[active_indices_jax].set(x_active)
+
+        _raw_loss_fn = jax_loss._loss_fn
+
+        def loss_fn(x_active: Any):  # noqa: ANN202
+            return _raw_loss_fn(expand_jax(x_active))
 
         # Evaluate the unperturbed initial score for reporting.
-        initial_score = float(jax_loss(x0))
+        initial_score = float(loss_fn(jnp.array(x0, dtype=jnp.float64)))
 
-        # Generate n_starts initial parameter vectors.
-        starts_np = self._generate_starts(x0, bounds)
+        # Generate n_starts initial parameter vectors (active-only).
+        starts_np = self._generate_starts(x0, active_bounds)
         starts = jnp.asarray(starts_np, dtype=jnp.float64)
 
         method_str = f"jaxopt-multi:{self.method}"
-        loss_fn = jax_loss._loss_fn
 
         if self.verbose:
             logger.info(
@@ -167,8 +185,8 @@ class JaxMultiStartOptimizer:
             final_params_batch, state_batch = jax.vmap(run_one)(starts)
         elif self.method == "lbfgsb":
             solver = jaxopt.LBFGSB(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
-            lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
-            upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
+            lower = jnp.array(active_bounds[:, 0], dtype=jnp.float64)
+            upper = jnp.array(active_bounds[:, 1], dtype=jnp.float64)
             run_one = lambda p: solver.run(p, bounds=(lower, upper))  # noqa: E731
             final_params_batch, state_batch = jax.vmap(run_one)(starts)
         elif self.method == "gradient_descent":
@@ -180,11 +198,12 @@ class JaxMultiStartOptimizer:
 
         # Score each replica's final params on-device and pick argmin.
         # Only the best replica's params/state are transferred to host;
-        # the full (n_starts, n_params) batch stays on-device.
+        # the full (n_starts, n_active) batch stays on-device.
         final_scores = jax.vmap(loss_fn)(final_params_batch)
         best_idx = int(jax.device_get(jnp.argmin(final_scores)))
-        best_params = np.asarray(jax.device_get(final_params_batch[best_idx]), dtype=float)
+        best_active = np.asarray(jax.device_get(final_params_batch[best_idx]), dtype=float)
         best_score = float(jax.device_get(final_scores[best_idx]))
+        best_params = space.expand(best_active, base=initial_full)
 
         # Pull best replica's solver state (per-replica metadata lives
         # on-device until we index into it here).
@@ -195,9 +214,6 @@ class JaxMultiStartOptimizer:
             int(jax.device_get(state_batch.iter_num[best_idx])) if hasattr(state_batch, "iter_num") else self.maxiter
         )
         converged = best_error < self.tol
-
-        # Apply best params to the forcefield.
-        objective.forcefield.set_param_vector(best_params)
 
         if self.verbose:
             min_score = float(jax.device_get(jnp.min(final_scores)))
@@ -232,7 +248,7 @@ class JaxMultiStartOptimizer:
             final_score=best_score,
             n_iterations=best_iter,
             n_evaluations=best_iter * self.n_starts,
-            initial_params=x0,
+            initial_params=initial_full,
             final_params=best_params,
             history=[initial_score, best_score],
             method=method_str,
@@ -243,9 +259,9 @@ class JaxMultiStartOptimizer:
     def _generate_starts(
         self,
         x0: np.ndarray,
-        bounds: list[tuple[float, float]] | None,
+        bounds: np.ndarray | list[tuple[float, float]] | None,
     ) -> np.ndarray:
-        """Generate ``(n_starts, n_params)`` initial parameter batch.
+        """Generate ``(n_starts, n_active)`` initial parameter batch.
 
         The first row is ``x0`` unchanged; subsequent rows are
         ``x0 + U(-scale, +scale)`` where
@@ -258,8 +274,9 @@ class JaxMultiStartOptimizer:
             scale = np.maximum(np.abs(x0) * self.perturbation_pct, 1e-6)
             perturbations = rng.uniform(-scale, scale, size=(n - 1, len(x0)))
             starts[1:] = x0 + perturbations
-            if bounds is not None:
-                lower = np.array([b[0] for b in bounds])
-                upper = np.array([b[1] for b in bounds])
+            bounds_arr = None if bounds is None else np.asarray(bounds, dtype=float)
+            if bounds_arr is not None and bounds_arr.size > 0:
+                lower = bounds_arr[:, 0]
+                upper = bounds_arr[:, 1]
                 starts[1:] = np.clip(starts[1:], lower, upper)
         return starts

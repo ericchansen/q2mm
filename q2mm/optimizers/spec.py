@@ -219,12 +219,12 @@ def _build_molecule_spec(
     *,
     topology: object | None = None,
 ) -> MoleculeSpec:
-    """Build a MoleculeSpec from a list of ReferenceValue objects.
+    """Build a MoleculeSpec from a list of Observation objects.
 
     Args:
         mol_idx: Molecule index in the training set.
         symbols: Element symbols for this molecule.
-        refs: List of ReferenceValue objects for this molecule.
+        refs: List of Observation objects for this molecule.
         topology: Optional molecule object providing ``bonds``,
             ``angles``, and ``torsions`` lists. Used to resolve
             positional ``data_idx`` for geometry references (e.g.
@@ -344,7 +344,7 @@ def _resolve_geom_atoms(
     ...).
 
     Args:
-        ref: The :class:`~q2mm.optimizers.objective.ReferenceValue`.
+        ref: The :class:`~q2mm.models.observations.Observation`.
         attr: The topology attribute to fall back to
             (``"bonds"`` / ``"angles"`` / ``"torsions"``).
         arity: Number of atom indices expected (2, 3, or 4).

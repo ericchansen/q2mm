@@ -1,7 +1,7 @@
 """Tests for eigenmatrix training data pipeline.
 
 Tests the building blocks in hessian.py (transform_to_eigenmatrix,
-extract_eigenmatrix_data) and the ReferenceData/ObjectiveFunction
+extract_eigenmatrix_data) and the ObservationSet/ObjectiveFunction
 integration in objective.py.
 """
 
@@ -18,8 +18,9 @@ from q2mm.models.hessian import (
     reform_hessian,
     transform_to_eigenmatrix,
 )
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
-
+from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.parameters import ParameterLayout
+from q2mm.io.fchk import load_fchk_reference
 # ---- Fixtures ----
 
 
@@ -135,14 +136,14 @@ class TestExtractEigenmatrixData:
         assert len(data) == 18 * 19 // 2  # 171
 
 
-# ---- ReferenceData eigenvalue support ----
+# ---- ObservationSet eigenvalue support ----
 
 
-class TestReferenceDataEigenvalues:
+class TestObservationSetEigenvalues:
     def test_add_hessian_eigenvalue(self) -> None:
         """add_hessian_eigenvalue creates eig_diagonal entries."""
-        ref = ReferenceData()
-        ref.add_hessian_eigenvalue(1.5, mode_idx=3, weight=0.1, label="mode 3")
+        ref = ObservationSet()
+        ref = ref.with_hessian_eigenvalue(1.5, mode_idx=3, weight=0.1, label="mode 3")
 
         assert ref.n_observations == 1
         rv = ref.values[0]
@@ -153,8 +154,8 @@ class TestReferenceDataEigenvalues:
 
     def test_add_hessian_offdiagonal(self) -> None:
         """add_hessian_offdiagonal creates eig_offdiagonal entries."""
-        ref = ReferenceData()
-        ref.add_hessian_offdiagonal(0.001, row=2, col=1, weight=0.05)
+        ref = ObservationSet()
+        ref = ref.with_hessian_offdiagonal(0.001, row=2, col=1, weight=0.05)
 
         assert ref.n_observations == 1
         rv = ref.values[0]
@@ -166,21 +167,20 @@ class TestReferenceDataEigenvalues:
     def test_add_eigenmatrix_from_hessian_diagonal_only(self) -> None:
         """Bulk loader with diagonal_only adds N eigenvalues."""
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
-        ref = ReferenceData()
-        n_added = ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(hess, diagonal_only=True)
 
-        assert n_added == 2
         assert ref.n_observations == 2
         assert all(rv.kind == "eig_diagonal" for rv in ref.values)
 
     def test_add_eigenmatrix_from_hessian_full(self) -> None:
         """Bulk loader without diagonal_only adds N*(N+1)/2 elements."""
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
-        ref = ReferenceData()
-        n_added = ref.add_eigenmatrix_from_hessian(hess, diagonal_only=False)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(hess, diagonal_only=False)
 
         # 2x2 lower triangle: 3 elements
-        assert n_added == 3
+        assert ref.n_observations == 3
         kinds = [rv.kind for rv in ref.values]
         assert kinds.count("eig_diagonal") == 2
         assert kinds.count("eig_offdiagonal") == 1
@@ -188,8 +188,8 @@ class TestReferenceDataEigenvalues:
     def test_weight_scheme_skip_first(self) -> None:
         """First eigenvalue gets eig_i weight (default 0.0) when skip_first=True."""
         hess = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=0)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=0)
 
         # First entry should have weight 0.0 (eig_i)
         assert ref.values[0].weight == 0.0
@@ -199,8 +199,8 @@ class TestReferenceDataEigenvalues:
     def test_weight_scheme_custom(self) -> None:
         """Custom weights override defaults."""
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(
             hess,
             diagonal_only=True,
             skip_first=False,
@@ -215,8 +215,8 @@ class TestReferenceDataEigenvalues:
         """eigenvalue_threshold correctly splits diagonal weights."""
         # eigenvalues of [[4, 1], [1, 3]] are ~2.38 and ~4.62
         hess = np.array([[4.0, 1.0], [1.0, 3.0]])
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(
             hess,
             diagonal_only=True,
             skip_first=False,
@@ -230,9 +230,9 @@ class TestReferenceDataEigenvalues:
 
     def test_sn2_eigenmatrix_reference_data(self, sn2_hessian: np.ndarray) -> None:
         """SN2 bulk loader produces 18 diagonal + 153 off-diagonal = 171 entries."""
-        ref = ReferenceData()
-        n = ref.add_eigenmatrix_from_hessian(sn2_hessian, diagonal_only=False)
-        assert n == 171  # 18*19/2
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(sn2_hessian, diagonal_only=False)
+        assert ref.n_observations == 171  # 18*19/2
 
         diag_count = sum(1 for rv in ref.values if rv.kind == "eig_diagonal")
         offdiag_count = sum(1 for rv in ref.values if rv.kind == "eig_offdiagonal")
@@ -241,19 +241,19 @@ class TestReferenceDataEigenvalues:
 
     def test_sn2_first_eigenvalue_weight_zero(self, sn2_hessian: np.ndarray) -> None:
         """For the SN2 TS, the first eigenvalue (imaginary mode) gets weight 0."""
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(sn2_hessian, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(sn2_hessian, diagonal_only=True)
 
         first_eig = next(rv for rv in ref.values if rv.kind == "eig_diagonal" and rv.data_idx == 0)
         assert first_eig.weight == 0.0
 
     def test_from_molecule_with_eigenmatrix(self) -> None:
         """from_molecule with include_eigenmatrix adds eigenvalue data."""
-        # Use ReferenceData.from_fchk to get a molecule with Hessian, then test from_molecule
-        ref_data, mol = ReferenceData.from_fchk(str(GS_FCHK))
+        # Use the FCHK I/O boundary to get a molecule with Hessian, then test from_molecule
+        _ref_data, mol = load_fchk_reference(str(GS_FCHK))
         assert mol.hessian is not None
 
-        ref = ReferenceData.from_molecule(mol, include_eigenmatrix=True, eigenmatrix_diagonal_only=True)
+        ref = ObservationSet.from_molecule(mol, include_eigenmatrix=True, eigenmatrix_diagonal_only=True)
 
         # Should have bond_length + bond_angle + eig_diagonal entries
         kinds = {rv.kind for rv in ref.values}
@@ -275,7 +275,7 @@ class TestObjectiveFunctionEigenmatrix:
 
         eigenmatrix = np.diag([1.0, 2.0, 3.0])
         calc = {"eigenmatrix": eigenmatrix}
-        ref = ReferenceValue(kind="eig_diagonal", value=1.0, data_idx=1)
+        ref = Observation(kind="eig_diagonal", value=1.0, data_idx=1)
 
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 2.0  # eigenmatrix[1, 1]
@@ -286,7 +286,7 @@ class TestObjectiveFunctionEigenmatrix:
 
         eigenmatrix = np.array([[1.0, 0.5, 0.1], [0.5, 2.0, 0.3], [0.1, 0.3, 3.0]])
         calc = {"eigenmatrix": eigenmatrix}
-        ref = ReferenceValue(kind="eig_offdiagonal", value=0.0, atom_indices=(2, 1))
+        ref = Observation(kind="eig_offdiagonal", value=0.0, atom_indices=(2, 1))
 
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 0.3  # eigenmatrix[2, 1]
@@ -295,7 +295,7 @@ class TestObjectiveFunctionEigenmatrix:
         """_evaluate_molecule computes eigenmatrix from engine.hessian using cached QM eigenvectors."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        ref_data, mol = ReferenceData.from_fchk(str(GS_FCHK))
+        _ref_data, mol = load_fchk_reference(str(GS_FCHK))
         assert mol.hessian is not None
 
         qm_hessian = np.array(mol.hessian, dtype=float)
@@ -317,15 +317,21 @@ class TestObjectiveFunctionEigenmatrix:
                 return False
 
         # Build reference data with eigenmatrix entries
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
 
         # Use MM Hessian == QM Hessian → self-projection should be diagonal
         engine = StubMMEngine(qm_hessian)
-        from q2mm.models.forcefield import ForceField
+        from q2mm.models.forcefield import ForceField, FunctionalForm
 
-        stub_ff = ForceField()
-        obj = ObjectiveFunction(forcefield=stub_ff, engine=engine, molecules=[mol], reference=ref)
+        stub_ff = ForceField(functional_form=FunctionalForm.HARMONIC)
+        obj = ObjectiveFunction(
+            forcefield=stub_ff,
+            engine=engine,
+            molecules=[mol],
+            reference=ref,
+            layout=ParameterLayout.from_force_field(stub_ff),
+        )
 
         result = obj._evaluate_molecule(0, obj.forcefield)
         assert "eigenmatrix" in result
@@ -400,14 +406,14 @@ class TestMassWeightedEigenmatrixParity:
         np.testing.assert_allclose(jaxloss_eigmat, helper_eigmat, atol=1e-12)
 
     def test_reference_generation_uses_mass_weighted_basis(self) -> None:
-        """ReferenceData eig_diagonal values equal mass-weighted eigenvalues."""
+        """ObservationSet eig_diagonal values equal mass-weighted eigenvalues."""
         from q2mm.models.hessian import mass_weighted_normal_modes
 
         symbols = ["C", "H", "H"]
         qm_hess = self._random_hessian(9, seed=33)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(qm_hess, symbols=symbols, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(qm_hess, symbols=symbols, diagonal_only=True)
 
         evals, _ = mass_weighted_normal_modes(qm_hess, symbols)
         diag_vals = np.array([rv.value for rv in ref.values if rv.kind == "eig_diagonal"])
@@ -427,8 +433,8 @@ class TestRigidBodyModeExclusion:
         evals = np.array([3.6e-10, -3.8e-10, 1.1e-9, 3.1e-7, -1.4e-6, 3.4e-6, 2.4e-5, 5.3e-5, 1.3e-4])
         hess = np.diag(evals)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=False, n_rigid_modes=6)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=False, n_rigid_modes=6)
 
         by_mode = {rv.data_idx: rv.weight for rv in ref.values if rv.kind == "eig_diagonal"}
         # Exclusion is by smallest |eigenvalue| (magnitude), NOT by index
@@ -449,8 +455,8 @@ class TestRigidBodyModeExclusion:
         evals = np.array([1e-10, 2e-10, 3e-10, 4e-10, 5e-10, 6e-10, 0.5, 1.0, 2.0])
         hess = np.diag(evals)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(
             hess, diagonal_only=False, skip_first=False, n_rigid_modes=6, weights={"eig_o": 0.05}
         )
 
@@ -479,8 +485,8 @@ class TestRigidBodyModeExclusion:
         evals = np.array([-1e-8, 1e-10, 2e-10, 3e-10, 4e-10, 5e-10, 5e-8, 1e-3, 2e-3, 3e-3])
         hess = np.diag(evals)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=6)
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(hess, diagonal_only=True, skip_first=True, n_rigid_modes=6)
 
         by_mode = {rv.data_idx: rv.weight for rv in ref.values if rv.kind == "eig_diagonal"}
         zero_modes = sorted(m for m, w in by_mode.items() if w == 0.0)

@@ -22,7 +22,7 @@ from q2mm.backends.registry import available_engines as _available_engines
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 
@@ -65,7 +65,7 @@ class TestEnergyParity:
 
     def test_mm3_energy_parity(
         self,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         ch3f_ff: ForceField,
     ) -> None:
         """OpenMM and Tinker should agree on MM3 energy."""
@@ -93,7 +93,7 @@ class TestFrequencyParity:
 
     def test_mm3_frequency_parity(
         self,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         ch3f_ff: ForceField,
     ) -> None:
         """OpenMM and Tinker should agree on MM3 vibrational frequencies."""
@@ -135,7 +135,7 @@ class TestGoldenValues:
     def test_openmm_frequencies_match_golden(
         self,
         openmm_engine: object,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         ch3f_ff: ForceField,
         golden_results: dict[str, dict[str, object]],
     ) -> None:

@@ -1,16 +1,16 @@
-"""Unit tests for parameter cycling: ForceField indices, SubspaceObjective, sensitivity."""
+"""Unit tests for parameter layouts and cycling result containers."""
+
+from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam
-
-
-# ---- Fixtures ----
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam, FunctionalForm
+from q2mm.models.parameters import ParameterKind, ParameterLayout
 
 
 def _full_ff() -> ForceField:
-    """Build a FF with all parameter types for testing indices."""
+    """Build a FF with all parameter types for testing layout ordering."""
     return ForceField(
         name="test-full",
         bonds=[
@@ -27,154 +27,115 @@ def _full_ff() -> ForceField:
         vdws=[
             VdwParam(atom_type="C1", radius=1.7, epsilon=0.05),
         ],
+        functional_form=FunctionalForm.HARMONIC,
     )
-
-
-# ---- TestParamIndices ----
 
 
 class TestParamIndicesByType:
     def test_correct_keys(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
         expected_keys = {
-            "bond_k",
-            "bond_eq",
-            "angle_k",
-            "angle_eq",
-            "torsion_k",
-            "sb_k",
-            "vdw_radius",
-            "vdw_epsilon",
-            "ub_k",
-            "ub_eq",
+            ParameterKind.BOND_FORCE_CONSTANT,
+            ParameterKind.BOND_EQUILIBRIUM,
+            ParameterKind.ANGLE_FORCE_CONSTANT,
+            ParameterKind.ANGLE_EQUILIBRIUM,
+            ParameterKind.TORSION_FORCE_CONSTANT,
+            ParameterKind.VDW_RADIUS,
+            ParameterKind.VDW_EPSILON,
         }
         assert set(indices.keys()) == expected_keys
 
     def test_bond_indices(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
-        # 2 bonds: [k0, eq0, k1, eq1, ...]
-        assert indices["bond_k"] == [0, 2]
-        assert indices["bond_eq"] == [1, 3]
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
+        assert indices[ParameterKind.BOND_FORCE_CONSTANT] == (0, 2)
+        assert indices[ParameterKind.BOND_EQUILIBRIUM] == (1, 3)
 
     def test_angle_indices(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
-        # 1 angle starts after 2 bonds (index 4)
-        assert indices["angle_k"] == [4]
-        assert indices["angle_eq"] == [5]
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
+        assert indices[ParameterKind.ANGLE_FORCE_CONSTANT] == (4,)
+        assert indices[ParameterKind.ANGLE_EQUILIBRIUM] == (5,)
 
     def test_torsion_indices(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
-        # 2 torsions start after bonds(4) + angles(2) = index 6
-        assert indices["torsion_k"] == [6, 7]
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
+        assert indices[ParameterKind.TORSION_FORCE_CONSTANT] == (6, 7)
 
     def test_vdw_indices(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
-        # 1 vdw starts after bonds(4) + angles(2) + torsions(2) = index 8
-        assert indices["vdw_radius"] == [8]
-        assert indices["vdw_epsilon"] == [9]
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
+        assert indices[ParameterKind.VDW_RADIUS] == (8,)
+        assert indices[ParameterKind.VDW_EPSILON] == (9,)
 
-    def test_total_indices_match_n_params(self) -> None:
-        ff = _full_ff()
-        indices = ff.get_param_indices_by_type()
-        all_indices = []
+    def test_total_indices_match_layout_length(self) -> None:
+        layout = ParameterLayout.from_force_field(_full_ff())
+        indices = layout.indices_by_kind
+        all_indices: list[int] = []
         for idx_list in indices.values():
             all_indices.extend(idx_list)
-        assert len(all_indices) == ff.n_params
-        assert sorted(all_indices) == list(range(ff.n_params))
+        assert len(all_indices) == len(layout)
+        assert sorted(all_indices) == list(range(len(layout)))
 
     def test_empty_ff(self) -> None:
-        ff = ForceField(name="empty")
-        indices = ff.get_param_indices_by_type()
-        for idx_list in indices.values():
-            assert idx_list == []
+        layout = ParameterLayout.from_force_field(ForceField(name="empty", functional_form=FunctionalForm.HARMONIC))
+        assert layout.indices_by_kind == {}
 
     def test_indices_match_param_vector_values(self) -> None:
-        """Verify that indices actually point to the right values."""
         ff = _full_ff()
-        vec = ff.get_param_vector()
-        indices = ff.get_param_indices_by_type()
-
-        # bond_k[0] should be the first bond's force constant
-        assert vec[indices["bond_k"][0]] == 359.7
-        # bond_eq[0] should be the first bond's equilibrium
-        assert vec[indices["bond_eq"][0]] == 1.38
-        # angle_k[0] should be the angle force constant
-        assert vec[indices["angle_k"][0]] == 71.9
-        # torsion_k[0] should be the first torsion
-        assert vec[indices["torsion_k"][0]] == 0.5
-        # vdw_radius[0] should be the first vdw radius
-        assert vec[indices["vdw_radius"][0]] == 1.7
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        indices = layout.indices_by_kind
+        assert vec[indices[ParameterKind.BOND_FORCE_CONSTANT][0]] == 359.7
+        assert vec[indices[ParameterKind.BOND_EQUILIBRIUM][0]] == 1.38
+        assert vec[indices[ParameterKind.ANGLE_FORCE_CONSTANT][0]] == 71.9
+        assert vec[indices[ParameterKind.TORSION_FORCE_CONSTANT][0]] == 0.5
+        assert vec[indices[ParameterKind.VDW_RADIUS][0]] == 1.7
 
 
 class TestParamTypeLabels:
     def test_length_matches(self) -> None:
-        ff = _full_ff()
-        labels = ff.get_param_type_labels()
-        assert len(labels) == ff.n_params
+        layout = ParameterLayout.from_force_field(_full_ff())
+        labels = [kind.value for kind in layout.kinds]
+        assert len(labels) == len(layout)
 
     def test_label_values(self) -> None:
-        ff = _full_ff()
-        labels = ff.get_param_type_labels()
-        # 2 bonds: k, eq, k, eq
+        layout = ParameterLayout.from_force_field(_full_ff())
+        labels = [kind.value for kind in layout.kinds]
         assert labels[0] == "bond_k"
         assert labels[1] == "bond_eq"
         assert labels[2] == "bond_k"
         assert labels[3] == "bond_eq"
-        # 1 angle: k, eq
         assert labels[4] == "angle_k"
         assert labels[5] == "angle_eq"
-        # 2 torsions: k, k
         assert labels[6] == "torsion_k"
         assert labels[7] == "torsion_k"
-        # 1 vdw: radius, epsilon
         assert labels[8] == "vdw_radius"
         assert labels[9] == "vdw_epsilon"
 
 
 class TestStepSizes:
     def test_length_matches(self) -> None:
-        ff = _full_ff()
-        steps = ff.get_step_sizes()
-        assert len(steps) == ff.n_params
+        layout = ParameterLayout.from_force_field(_full_ff())
+        steps = layout.steps
+        assert len(steps) == len(layout)
 
     def test_per_type_values(self) -> None:
-        """Step sizes should match the STEPS dict values via the mapping."""
-        from q2mm.optimizers.defaults import STEPS
-
-        ff = _full_ff()
-        steps = ff.get_step_sizes()
-
-        # bond_k → "bf" → 0.1
-        assert steps[0] == STEPS["bf"]
-        # bond_eq → "be" → 0.02
-        assert steps[1] == STEPS["be"]
-        # angle_k → "af" → 0.1
-        assert steps[4] == STEPS["af"]
-        # angle_eq → "ae" → 1.0
-        assert steps[5] == STEPS["ae"]
-        # torsion_k → "df" → 0.1
-        assert steps[6] == STEPS["df"]
-        # vdw_radius → "vdwr" → 0.1
-        assert steps[8] == STEPS["vdwr"]
-        # vdw_epsilon → "vdwfc" → 0.02
-        assert steps[9] == STEPS["vdwfc"]
+        layout = ParameterLayout.from_force_field(_full_ff())
+        steps = layout.steps
+        assert steps[0] == pytest.approx(7.2)
+        assert steps[1] == pytest.approx(0.02)
+        assert steps[4] == pytest.approx(7.2)
+        assert steps[5] == pytest.approx(1.0)
+        assert steps[6] == pytest.approx(0.1)
+        assert steps[8] == pytest.approx(0.1)
+        assert steps[9] == pytest.approx(0.02)
 
     def test_all_positive(self) -> None:
-        ff = _full_ff()
-        steps = ff.get_step_sizes()
+        layout = ParameterLayout.from_force_field(_full_ff())
+        steps = layout.steps
         assert np.all(steps > 0)
-
-
-# ---- TestSubspaceObjective ----
-# These require OpenMM and are in test/integration/test_cycling_optimizer.py
-
-
-# ---- TestSensitivity (pure unit, no engine) ----
 
 
 class TestSensitivityResult:
@@ -203,6 +164,8 @@ class TestLoopResult:
             initial_score=100.0,
             final_score=10.0,
             n_cycles=3,
+            initial_params=np.zeros(0),
+            final_params=np.zeros(0),
             n_eval=500,
         )
         assert lr.improvement == pytest.approx(0.9)
@@ -215,6 +178,8 @@ class TestLoopResult:
             initial_score=100.0,
             final_score=10.0,
             n_cycles=3,
+            initial_params=np.zeros(0),
+            final_params=np.zeros(0),
             n_eval=500,
             message="converged",
         )
@@ -225,5 +190,13 @@ class TestLoopResult:
     def test_zero_initial_score(self) -> None:
         from q2mm.optimizers.cycling import LoopResult
 
-        lr = LoopResult(success=True, initial_score=0.0, final_score=0.0, n_cycles=0, n_eval=0)
+        lr = LoopResult(
+            success=True,
+            initial_score=0.0,
+            final_score=0.0,
+            n_cycles=0,
+            initial_params=np.zeros(0),
+            final_params=np.zeros(0),
+            n_eval=0,
+        )
         assert lr.improvement == 0.0

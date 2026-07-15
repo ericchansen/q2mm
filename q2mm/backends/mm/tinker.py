@@ -32,7 +32,7 @@ from q2mm.constants import (
     TINKER_ANGLEUNIT,
 )
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
 logger = logging.getLogger(__name__)
@@ -194,7 +194,7 @@ class TinkerEngine(MMEngine):
         return any(os.path.isfile(c) for c in candidates)
 
     def _write_tinker_xyz(
-        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
+        self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
     ) -> str:
         """Write a Tinker-format XYZ file from a standard XYZ file.
 
@@ -216,7 +216,7 @@ class TinkerEngine(MMEngine):
         else:
             type_map = getattr(forcefield, "atom_type_map", _default_type_map)
 
-        if isinstance(structure, Q2MMMolecule):
+        if isinstance(structure, Molecule):
             atoms = list(structure.symbols)
             coords = np.asarray(structure.geometry, dtype=float).tolist()
             n_atoms = len(atoms)
@@ -268,7 +268,10 @@ class TinkerEngine(MMEngine):
             exported_prm = os.path.join(workdir, "molecule.prm")
             if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
                 # FF came from a .prm file — use template-based export
-                forcefield.to_tinker_prm(
+                from q2mm.io.tinker import save_tinker_prm
+
+                save_tinker_prm(
+                    forcefield,
                     exported_prm,
                     template_path=forcefield.source_path or self._params_file,
                 )
@@ -485,11 +488,11 @@ class TinkerEngine(MMEngine):
             raise RuntimeError(f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}")
         return result
 
-    def energy(self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None) -> float:
+    def energy(self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
-            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
                 types if ``None``.
 
@@ -510,14 +513,14 @@ class TinkerEngine(MMEngine):
 
     def minimize(
         self,
-        structure: str | Q2MMMolecule,
+        structure: str | Molecule,
         forcefield: ForceField | dict[str, int] | None = None,
         rms_grad: float = 0.01,
     ) -> tuple[float, list[str], np.ndarray]:
         """Energy-minimize structure.
 
         Args:
-            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
                 types if ``None``.
             rms_grad: RMS gradient convergence criterion in kcal/mol/Å.
@@ -561,9 +564,7 @@ class TinkerEngine(MMEngine):
 
             return energy, atoms, np.array(coords)
 
-    def hessian(
-        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None
-    ) -> np.ndarray:
+    def hessian(self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None) -> np.ndarray:
         """Calculate MM Hessian matrix via Tinker ``testhess``.
 
         Calls ``testhess`` to compute the analytical Cartesian Hessian,
@@ -572,7 +573,7 @@ class TinkerEngine(MMEngine):
         unit contract (Hartree/Bohr²).
 
         Args:
-            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping.
 
         Returns:
@@ -646,12 +647,12 @@ class TinkerEngine(MMEngine):
             return hessian * KCALMOLA2_TO_HESSIAN_AU
 
     def frequencies(
-        self, structure: str | Q2MMMolecule, forcefield: ForceField | dict[str, int] | None = None, **kwargs: Any
+        self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None, **kwargs: Any
     ) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
-            structure (str | Q2MMMolecule): Path to XYZ file or :class:`Q2MMMolecule`.
+            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
             forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
                 types if ``None``.
             **kwargs: Forwarded to
@@ -666,7 +667,7 @@ class TinkerEngine(MMEngine):
 
         hessian_au = self.hessian(structure, forcefield)
 
-        if isinstance(structure, Q2MMMolecule):
+        if isinstance(structure, Molecule):
             symbols = list(structure.symbols)
         else:
             with open(structure) as f:

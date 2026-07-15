@@ -50,7 +50,7 @@ from test._shared import (
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 
 # ---------------------------------------------------------------------------
@@ -59,19 +59,46 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(scope="session")
-def ch3f_mol() -> Q2MMMolecule:
+def ch3f_mol() -> Molecule:
     """Load the CH3F molecule from QM reference data."""
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.io.xyz import load_xyz
 
-    return Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
+    return load_xyz(CH3F_XYZ, bond_tolerance=1.5)
 
 
 @pytest.fixture(scope="session")
-def ch3f_ff(ch3f_mol: Q2MMMolecule) -> ForceField:
-    """Create a default force field for CH3F."""
-    from q2mm.models.forcefield import ForceField
+def ch3f_ff(ch3f_mol: Molecule) -> ForceField:
+    """Create a default MM3-tagged force field for CH3F.
 
-    return ForceField.create_for_molecule(ch3f_mol)
+    Used by OpenMM/Tinker (both MM3-only-or-MM3-capable) and by the
+    MM3-only cross-engine parity tests in ``test_cross_engine.py``. JAX
+    and JAX-MD only evaluate the harmonic functional form — see
+    :func:`ch3f_ff_harmonic` for the same auto-generated bond/angle
+    values re-tagged for those two engines.
+    """
+    from q2mm.models.forcefield import ForceField, FunctionalForm
+
+    return ForceField.create_for_molecule(ch3f_mol, functional_form=FunctionalForm.MM3)
+
+
+@pytest.fixture(scope="session")
+def ch3f_ff_harmonic(ch3f_ff: ForceField) -> ForceField:
+    """Re-tag the same CH3F auto-generated bond/angle values as harmonic.
+
+    For JAX/JAX-MD, which only evaluate the harmonic functional form
+    (JAX-MD is harmonic-only; JAX supports both but the same values are
+    equally valid interpreted as harmonic springs). Every
+    :class:`~q2mm.models.forcefield.ForceField` must carry an explicit,
+    correct functional form for the engine that will evaluate it — the
+    same numeric bond_k/bond_eq/angle_k/angle_eq values cannot be
+    silently shared as "unset" across engines that disagree on
+    functional form.
+    """
+    import dataclasses
+
+    from q2mm.models.forcefield import FunctionalForm
+
+    return dataclasses.replace(ch3f_ff, functional_form=FunctionalForm.HARMONIC)
 
 
 @pytest.fixture(scope="session")

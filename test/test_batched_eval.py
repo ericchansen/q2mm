@@ -22,11 +22,34 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.parameters import ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _layout(forcefield: ForceField) -> ParameterLayout:
+    return ParameterLayout.from_force_field(forcefield)
+
+
+def _params(forcefield: ForceField) -> np.ndarray:
+    return _layout(forcefield).vector(forcefield)
+
+
+def _make_objective(
+    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+) -> ObjectiveFunction:
+    return ObjectiveFunction(
+        forcefield=forcefield,
+        engine=engine,
+        molecules=molecules,
+        reference=reference,
+        layout=_layout(forcefield),
+        **kwargs,
+    )
 
 
 def _h2_ff() -> ForceField:
@@ -286,54 +309,54 @@ class TestObjectiveFunctionIntegration:
     def test_can_batch_hessians_true(self) -> None:
         """_can_batch_hessians returns True for JaxEngine with freq refs."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
-        ref = ReferenceData()
-        ref.add_frequency(1000.0, data_idx=0, molecule_idx=0)
-        ref.add_frequency(1000.0, data_idx=0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
+        ref = ref.with_frequency(1000.0, data_idx=0, case_id="1")
 
-        obj = ObjectiveFunction(ff, engine, mols, ref)
+        obj = _make_objective(ff, engine, mols, ref)
         assert obj._can_batch_hessians() is True
 
     def test_can_batch_hessians_false_single_mol(self) -> None:
         """_can_batch_hessians returns False with only one molecule."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         ff = _water_ff()
         mols = [make_water()]
 
-        ref = ReferenceData()
-        ref.add_frequency(1000.0, data_idx=0, molecule_idx=0)
+        ref = ObservationSet()
+        ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
 
-        obj = ObjectiveFunction(ff, engine, mols, ref)
+        obj = _make_objective(ff, engine, mols, ref)
         assert obj._can_batch_hessians() is False
 
     def test_can_batch_hessians_false_energy_only(self) -> None:
         """_can_batch_hessians returns False for energy-only refs."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
-        ref = ReferenceData()
-        ref.add_energy(1.0, molecule_idx=0)
-        ref.add_energy(2.0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_energy(1.0, case_id="0")
+        ref = ref.with_energy(2.0, case_id="1")
 
-        obj = ObjectiveFunction(ff, engine, mols, ref)
+        obj = _make_objective(ff, engine, mols, ref)
         assert obj._can_batch_hessians() is False
 
     def test_batched_vs_sequential_parity(self) -> None:
         """Objective score is identical whether batched or sequential."""
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         ff = _water_ff()
@@ -346,25 +369,25 @@ class TestObjectiveFunctionIntegration:
             freqs = engine.frequencies(h, ff)
             ref_freqs.append(freqs)
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         for mol_idx, freqs in enumerate(ref_freqs):
             for i, f in enumerate(freqs):
                 # Add slightly perturbed frequencies so residuals aren't zero
-                ref.add_frequency(f * 1.05, data_idx=i, molecule_idx=mol_idx)
+                ref = ref.with_frequency(f * 1.05, data_idx=i, case_id=str(mol_idx))
 
         # Compute score with batching enabled (the default for 2+ mols)
-        obj_batched = ObjectiveFunction(ff, engine, mols, ref)
-        params = ff.get_param_vector()
+        obj_batched = _make_objective(ff, engine, mols, ref)
+        params = _params(ff)
         score_batched = obj_batched(params)
 
         # Compute score with batching forcibly disabled by using single-mol
         # calls (force sequential by evaluating each molecule separately)
         score_sequential = 0.0
         for mol_idx, mol in enumerate(mols):
-            ref_single = ReferenceData()
+            ref_single = ObservationSet()
             for i, f in enumerate(ref_freqs[mol_idx]):
-                ref_single.add_frequency(f * 1.05, data_idx=i, molecule_idx=0)
-            obj_single = ObjectiveFunction(ff, engine, [mol], ref_single)
+                ref_single = ref_single.with_frequency(f * 1.05, data_idx=i, case_id="0")
+            obj_single = _make_objective(ff, engine, [mol], ref_single)
             score_sequential += obj_single(params)
 
         assert score_batched == pytest.approx(score_sequential, rel=1e-10)
@@ -377,7 +400,7 @@ class TestObjectiveFunctionIntegration:
         per-molecule ``EigenmatrixEvaluator`` (sequential) path.
         """
         from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         ff_ref = _water_ff()
@@ -392,26 +415,26 @@ class TestObjectiveFunctionIntegration:
             angles=[AngleParam(elements=("H", "O", "H"), force_constant=0.5, equilibrium=110.0)],
             functional_form=FunctionalForm.MM3,
         )
-        params = ff.get_param_vector()
+        params = _params(ff)
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         for mol_idx, mol in enumerate(mols):
-            ref.add_eigenmatrix_from_hessian(
+            ref = ref.with_eigenmatrix_from_hessian(
                 mol.hessian,
                 symbols=list(mol.symbols),
                 diagonal_only=False,
-                molecule_idx=mol_idx,
+                case_id=str(mol_idx),
             )
-        obj_batched = ObjectiveFunction(ff, engine, mols, ref)
+        obj_batched = _make_objective(ff, engine, mols, ref)
         score_batched = obj_batched(params)
 
         score_sequential = 0.0
         for mol in mols:
-            ref_single = ReferenceData()
-            ref_single.add_eigenmatrix_from_hessian(
-                mol.hessian, symbols=list(mol.symbols), diagonal_only=False, molecule_idx=0
+            ref_single = ObservationSet()
+            ref_single = ref_single.with_eigenmatrix_from_hessian(
+                mol.hessian, symbols=list(mol.symbols), diagonal_only=False, case_id="0"
             )
-            obj_single = ObjectiveFunction(ff, engine, [mol], ref_single)
+            obj_single = _make_objective(ff, engine, [mol], ref_single)
             score_sequential += obj_single(params)
 
         assert score_batched > 0.0
@@ -425,7 +448,7 @@ class TestFallback:
         """_can_batch_hessians returns False for a non-JAX engine."""
         from unittest.mock import MagicMock
 
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mock_engine = MagicMock()
         mock_engine.supports_runtime_params.return_value = False
@@ -433,9 +456,9 @@ class TestFallback:
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
-        ref = ReferenceData()
-        ref.add_frequency(1000.0, data_idx=0, molecule_idx=0)
-        ref.add_frequency(1000.0, data_idx=0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
+        ref = ref.with_frequency(1000.0, data_idx=0, case_id="1")
 
-        obj = ObjectiveFunction(ff, mock_engine, mols, ref)
+        obj = _make_objective(ff, mock_engine, mols, ref)
         assert obj._can_batch_hessians() is False

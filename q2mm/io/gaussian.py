@@ -9,17 +9,103 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.models.structure import Atom, HessianUnits, Structure
-
-if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+from q2mm.constants import DEFAULT_BOND_TOLERANCE
+from q2mm.models.hessian import HessianProvenance, HessianUnits, hessian_to_atomic_units
+from q2mm.models.identifiers import _extract_element
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _GaussianAtom:
+    """One atom parsed from a Gaussian log file.
+
+    Gaussian atoms carry either an atomic number (``"Standard orientation"``
+    sections in the log body) or an explicit element symbol (the terse
+    archive block) — never both, and never a separate force-field type
+    label, so there is no Gaussian-specific type-vs-element ambiguity to
+    resolve.
+    """
+
+    index: int | None = None
+    atomic_num: int | None = None
+    element: str | None = None
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    @property
+    def coords(self) -> np.ndarray:
+        """Cartesian coordinates of this atom, as ``[x, y, z]``."""
+        return np.array([self.x, self.y, self.z])
+
+    @property
+    def symbol(self) -> str:
+        """Resolve this atom's element symbol.
+
+        Prefers an explicit ``element`` (archive block); falls back to a
+        periodic-table lookup from ``atomic_num`` (log body).
+        """
+        if self.element:
+            return _extract_element(self.element)
+        if self.atomic_num is not None and self.atomic_num >= 1:
+            return list(co.MASSES.keys())[self.atomic_num - 1]
+        return ""
+
+
+@dataclass
+class _GaussianRecord:
+    """One structure/conformer staging record parsed from a Gaussian log file."""
+
+    origin_name: str
+    source_path: str
+    atoms: list[_GaussianAtom] = field(default_factory=list)
+    props: dict[str, str] = field(default_factory=dict)
+    hess: np.ndarray | None = None
+    hessian_units: HessianUnits | None = None
+
+
+def _molecule_from_gaussian_record(record: _GaussianRecord) -> Molecule:
+    """Convert a :class:`_GaussianRecord` into a :class:`~q2mm.models.molecule.Molecule`.
+
+    Bonds/angles/torsions are always inferred from geometry — Gaussian logs
+    carry no connectivity data. Charge/multiplicity come from the archive's
+    ``props`` (defaulting to neutral singlet); the Hessian (if present) is
+    converted once from its recorded unit provenance to canonical
+    Hartree/Bohr².
+    """
+    symbols = [atom.symbol for atom in record.atoms]
+    coords = [atom.coords for atom in record.atoms]
+    charge = int(record.props.get("charge", 0))
+    multiplicity = int(record.props.get("multiplicity", 1))
+
+    resolved_hessian = hessian_to_atomic_units(record.hess, record.hessian_units)
+    resolved_provenance = None
+    if resolved_hessian is not None:
+        assert record.hessian_units is not None
+        resolved_provenance = HessianProvenance(
+            units=record.hessian_units,
+            source="gaussian",
+            path=record.source_path,
+        )
+
+    return Molecule(
+        symbols=tuple(symbols),
+        geometry=np.array(coords, dtype=float),
+        charge=charge,
+        multiplicity=multiplicity,
+        name=record.origin_name,
+        hessian=resolved_hessian,
+        hessian_provenance=resolved_provenance,
+    )
 
 
 class GaussLog:
@@ -37,7 +123,7 @@ class GaussLog:
         "_evals",
         "_evecs",
         "_frequencies_cm",
-        "_structures",
+        "_records",
         "_esp_rms",
         "_au_hessian",
     ]
@@ -61,7 +147,7 @@ class GaussLog:
         self._evals = None
         self._evecs = None
         self._frequencies_cm = None
-        self._structures = None
+        self._records = None
         self._esp_rms = None
         self._au_hessian = au_hessian
 
@@ -142,47 +228,37 @@ class GaussLog:
         return self._frequencies_cm
 
     @property
-    def structures(self) -> list[Structure]:
-        """Returns Structure objects parsed from the Gaussian log file.
+    def _records_parsed(self) -> list[_GaussianRecord]:
+        """Records parsed from the Gaussian log file archive (private staging).
 
-        If None, parses the archive of the log file for structures.
-
-        Returns:
-            (list[Structure]): Structures parsed from log file archive.
-
-        .. deprecated::
-            Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
-
+        Not part of the public API — see :attr:`molecules`.
         """
-        if self._structures is None:
+        if self._records is None:
             self.read_archive()
-        return self._structures
+        return self._records
 
     @property
-    def molecules(self) -> list[Q2MMMolecule]:
-        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects.
+    def molecules(self) -> list[Molecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Molecule` objects.
 
-        Each structure is converted via
-        :meth:`Q2MMMolecule.from_structure`, preserving any Hessian data
-        attached to the underlying ``Structure`` and normalizing it to
-        Hartree/Bohr² from the parser-recorded unit provenance.
+        Each record is converted via :func:`_molecule_from_gaussian_record`,
+        preserving any Hessian data found in the archive and normalizing it
+        to Hartree/Bohr² from the parser-recorded unit provenance.
 
         """
-        from q2mm.models.molecule import Q2MMMolecule
-
-        return [Q2MMMolecule.from_structure(structure) for structure in self.structures]
+        return [_molecule_from_gaussian_record(record) for record in self._records_parsed]
 
     def read_out(self) -> None:
         """Read force constant and eigenvector data from a frequency calculation.
 
-        Populates ``_evals``, ``_evecs``, ``_frequencies_cm``, ``_structures``,
+        Populates ``_evals``, ``_evecs``, ``_frequencies_cm``, ``_records``,
         and ``_esp_rms`` from the Gaussian log file body.
         """
         logger.log(5, f"READING: {self.filename}")
         self._evals = []
         self._evecs = []
         self._frequencies_cm = []
-        self._structures = []
+        self._records = []
         force_constants = []
         evecs = []
         with open(self.path) as f:
@@ -207,7 +283,7 @@ class GaussLog:
                     self._esp_rms = float(match.group(1))
                 # Gathering some geometric information.
                 elif "Standard orientation:" in line:
-                    self._structures.append(Structure(self.filename))
+                    self._records.append(_GaussianRecord(self.filename, self.path))
                     next(file_iterator)
                     next(file_iterator)
                     next(file_iterator)
@@ -215,8 +291,8 @@ class GaussLog:
                     line = next(file_iterator)
                     while "---" not in line:
                         cols = line.split()
-                        self._structures[-1].atoms.append(
-                            Atom(
+                        self._records[-1].atoms.append(
+                            _GaussianAtom(
                                 index=int(cols[0]),
                                 atomic_num=int(cols[1]),
                                 x=float(cols[3]),
@@ -227,7 +303,7 @@ class GaussLog:
                         line = next(file_iterator)
                     logger.log(
                         5,
-                        f"  -- Found {len(self._structures[-1].atoms)} atoms.",
+                        f"  -- Found {len(self._records[-1].atoms)} atoms.",
                     )
                 elif "Harmonic" in line:
                     # The high quality eigenvectors come before the low quality
@@ -395,7 +471,7 @@ class GaussLog:
             self._frequencies_cm = np.array(self._frequencies_cm)
             logger.log(1, f">>> self._evals: {self._evals}")
             logger.log(1, f">>> self._evecs: {self._evecs}")
-            logger.log(5, f"  -- {len(self.structures)} structures found.")
+            logger.log(5, f"  -- {len(self._records)} structures found.")
 
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
@@ -418,8 +494,8 @@ class GaussLog:
 
         """
         logger.log(5, f"READING: {self.filename}")
-        struct = Structure(self.filename)
-        self._structures = [struct]
+        struct = _GaussianRecord(self.filename, self.path)
+        self._records = [struct]
         # Matches everything in between the start and end.
         # (?s)  - Flag for re.compile which says that . matches all.
         # \\\\  - One single \
@@ -475,7 +551,7 @@ class GaussLog:
         atoms = atoms.split("\\")
         # Z-matrix coordinates adds another section. We need to be aware of
         # this.
-        struct._atoms = []
+        struct.atoms = []
         for atom in atoms:
             stuff = atom.split(",")
             # An atom typically looks like this:
@@ -500,8 +576,8 @@ class GaussLog:
                 break
                 # raise Exception(
                 #     'Not sure how to read coordinates from Gaussian archive!')
-            struct._atoms.append(Atom(element=ele, x=float(x), y=float(y), z=float(z)))
-        logger.log(20, f"  -- Read {len(struct._atoms)} atoms.")
+            struct.atoms.append(_GaussianAtom(element=ele, x=float(x), y=float(y), z=float(z)))
+        logger.log(20, f"  -- Read {len(struct.atoms)} atoms.")
         # SECTION 4
         # All sorts of information here. This area looks like:
         #     prop1=value1\prop2=value2\prop3=value3
@@ -530,3 +606,84 @@ class GaussLog:
                 hess *= co.HESSIAN_AU_TO_KJMOLA2
             struct.hess = hess
             struct.hessian_units = HessianUnits.ATOMIC if self._au_hessian else HessianUnits.KJ_MOL_ANGSTROM2
+
+
+def load_gaussian_reference(
+    path: str | Path,
+    *,
+    weights: dict[str, float] | None = None,
+    bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
+    charge: int | None = None,
+    multiplicity: int | None = None,
+    include_frequencies: bool = False,
+    skip_imaginary: bool = False,
+    au_hessian: bool = True,
+    include_eigenmatrix: bool = True,
+) -> tuple[ObservationSet, Molecule]:
+    """Build reference data from a Gaussian log file.
+
+    Parses the log file for the optimised geometry and vibrational
+    frequencies, then auto-populates bond lengths, angles, and (when a
+    Hessian is available) eigenmatrix data via
+    :meth:`~q2mm.models.observations.ObservationSet.from_molecule`.
+
+    By default, **frequencies are not included** — eigenmatrix
+    training from the Hessian is the standard Q2MM approach per
+    Norrby & Liljefors (1998). Set ``include_frequencies=True``
+    to add them.
+
+    Args:
+        path (str | Path): Path to the Gaussian ``.log`` file
+            (from an ``opt freq`` job).
+        weights (dict[str, float] | None): Weight overrides (same
+            keys as :meth:`~q2mm.models.observations.ObservationSet.from_molecule`).
+        bond_tolerance (float): Multiplier for covalent-radii bond
+            detection. Use 1.4+ for TS.
+        charge (int | None): Molecular charge override. ``None`` preserves
+            the value parsed from the Gaussian archive.
+        multiplicity (int | None): Spin multiplicity override. ``None``
+            preserves the value parsed from the Gaussian archive.
+        include_frequencies (bool): Whether to add frequency data
+            from the log file. Default is ``False``.
+        skip_imaginary (bool): If ``True``, negative frequencies are
+            skipped.
+        au_hessian (bool): Keep Hessian in atomic units
+            (Hartree/Bohr²).
+        include_eigenmatrix (bool): If ``True`` (the default) and a
+            Hessian is available, add eigenmatrix training data.
+
+    Returns:
+        tuple[ObservationSet, Molecule]: Populated reference data
+            and the parsed molecule (with Hessian attached if
+            available).
+
+    """
+    log = GaussLog(str(path), au_hessian=au_hessian)
+
+    # Build molecule from the last (optimised) structure
+    mol = log.molecules[-1]
+    mol = mol.with_overrides(charge=charge, multiplicity=multiplicity, bond_tolerance=bond_tolerance)
+
+    # ``mol.hessian`` carries the archive Cartesian Hessian (Hartree/Bohr²,
+    # full rank 3N, imaginary mode intact) in a frame consistent with the
+    # geometry.  Do NOT override it with a reconstruction from
+    # ``log.evals``/``log.evecs`` — those come from Gaussian's mass-weighted
+    # frequency analysis and would reintroduce a ~√(mᵢmⱼ) error into every
+    # heavy-atom force constant.
+
+    # Frequencies in cm⁻¹ from the Gaussian log
+    # Note: log.evals are eigenvalues (mass-weighted force constants in
+    # atomic units), NOT frequencies.  Use log.frequencies for cm⁻¹ values.
+    frequencies = None
+    if include_frequencies and log.frequencies is not None and len(log.frequencies):
+        frequencies = np.array(log.frequencies)
+
+    ref = ObservationSet.from_molecule(
+        mol,
+        weights=weights,
+        frequencies=frequencies,
+        skip_imaginary=skip_imaginary,
+        include_eigenmatrix=include_eigenmatrix,
+    )
+
+    return ref, mol

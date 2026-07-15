@@ -29,8 +29,8 @@ import pytest
 
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
-    from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.optimizers.objective import ReferenceData
+    from q2mm.models.molecule import Molecule
+    from q2mm.models.observations import ObservationSet
 
 from test._shared import GS_FCHK, REPO_ROOT, TS_FCHK
 
@@ -106,24 +106,24 @@ def _build_frequency_reference(
     *,
     threshold: float = 50.0,
     weight: float = 0.001,
-    molecule_idx: int = 0,
-    ref: ReferenceData | None = None,
-) -> tuple[ReferenceData, list[float]]:
-    """Build (or extend) a ReferenceData with frequency observations.
+    case_id: str = "0",
+    ref: ObservationSet | None = None,
+) -> tuple[ObservationSet, list[float]]:
+    """Build (or extend) an ObservationSet with frequency observations.
 
     Maps QM real frequencies (>threshold) to MM real-mode indices.
     Pass an existing *ref* to append multi-molecule data.
     """
-    from q2mm.optimizers.objective import ReferenceData
+    from q2mm.models.observations import ObservationSet
 
     qm_real = sorted(f for f in qm_freqs if f > threshold)
     mm_real_idx = sorted(i for i, f in enumerate(mm_all_freqs) if f > threshold)
     n = min(len(qm_real), len(mm_real_idx))
 
     if ref is None:
-        ref = ReferenceData()
+        ref = ObservationSet()
     for k in range(n):
-        ref.add_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=weight, molecule_idx=molecule_idx)
+        ref = ref.with_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=weight, case_id=case_id)
     return ref, qm_real[:n]
 
 
@@ -141,57 +141,56 @@ class TestRhEnamideSeminarioTiming:
     """
 
     @pytest.fixture(scope="class")
-    def rh_molecules(self) -> list[Q2MMMolecule]:
+    def rh_molecules(self) -> list[Molecule]:
         """Load all 9 rh-enamide structures + Hessians."""
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.mark.validation
-    def test_seminario_pipeline_timing(
-        self, rh_molecules: list[Q2MMMolecule], capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_seminario_pipeline_timing(self, rh_molecules: list[Molecule], capsys: pytest.CaptureFixture[str]) -> None:
         """Time the full Seminario pipeline on 9 rh-enamide structures."""
-        from q2mm.models.forcefield import ForceField
+        from q2mm.benchmarks.systems._forcefield import load_published_opt
+        from q2mm.models.parameters import ParameterLayout
         from q2mm.models.seminario import qfuerza_into
 
         mm3_path = RH_DIR / "mm3.fld"
         if not mm3_path.exists():
             pytest.skip("mm3.fld not found")
-        ff_template = ForceField.from_mm3_fld(str(mm3_path))
+        _, ff_template = load_published_opt(mm3_path)
 
         t0 = time.perf_counter()
-        ff = ff_template.copy()
-        qfuerza_into(ff, rh_molecules)
+        ff = qfuerza_into(ff_template, rh_molecules, invert_ts_curvature=True)
         elapsed = time.perf_counter() - t0
+        layout = ParameterLayout.from_force_field(ff)
 
         with capsys.disabled():
-            print(f"\n  Rh-enamide Seminario: {elapsed:.3f}s ({len(rh_molecules)} structures, {ff.n_params} params)")
+            print(f"\n  Rh-enamide Seminario: {elapsed:.3f}s ({len(rh_molecules)} structures, {len(layout)} params)")
 
         # Sanity check — never fail on timing
-        assert ff.n_params > 0, "No parameters estimated"
+        assert len(layout) > 0, "No parameters estimated"
         assert len(ff.bonds) > 0, "No bond parameters"
         assert len(ff.angles) > 0, "No angle parameters"
 
     @pytest.mark.validation
-    def test_seminario_is_deterministic(self, rh_molecules: list[Q2MMMolecule]) -> None:
+    def test_seminario_is_deterministic(self, rh_molecules: list[Molecule]) -> None:
         """Two consecutive Seminario runs produce identical results."""
-        from q2mm.models.forcefield import ForceField
+        from q2mm.benchmarks.systems._forcefield import load_published_opt
+        from q2mm.models.parameters import ParameterLayout
         from q2mm.models.seminario import qfuerza_into
 
         mm3_path = RH_DIR / "mm3.fld"
         if not mm3_path.exists():
             pytest.skip("mm3.fld not found")
-        ff_template = ForceField.from_mm3_fld(str(mm3_path))
+        _, ff_template = load_published_opt(mm3_path)
 
-        ff1 = ff_template.copy()
-        qfuerza_into(ff1, rh_molecules)
-        ff2 = ff_template.copy()
-        qfuerza_into(ff2, rh_molecules)
+        ff1 = qfuerza_into(ff_template, rh_molecules, invert_ts_curvature=True)
+        ff2 = qfuerza_into(ff_template, rh_molecules, invert_ts_curvature=True)
+        layout = ParameterLayout.from_force_field(ff1)
 
         np.testing.assert_array_equal(
-            ff1.get_param_vector(),
-            ff2.get_param_vector(),
+            layout.vector(ff1),
+            layout.vector(ff2),
             err_msg="Seminario is non-deterministic across runs",
         )
 
@@ -201,14 +200,14 @@ class TestRhEnamideSeminarioTiming:
 # ===========================================================================
 
 
-def _load_rh_enamide_molecules() -> list[Q2MMMolecule]:
+def _load_rh_enamide_molecules() -> list[Molecule]:
     """Load 9 rh-enamide structures with Jaguar Hessians.
 
-    Delegates to the shared loader in :mod:`q2mm.systems`.
+    Delegates to the benchmark-system loader.
     """
-    from q2mm.systems import load_rh_enamide_molecules
+    from q2mm.benchmarks.systems.rh_enamide import load_molecules
 
-    return load_rh_enamide_molecules()
+    return load_molecules()
 
 
 @requires_openmm
@@ -226,7 +225,8 @@ class TestRhEnamideFullLoop:
     def pipeline_result(self) -> dict[str, object]:
         """Run the full rh-enamide pipeline."""
         from q2mm.backends.mm import OpenMMEngine
-        from q2mm.models.forcefield import ForceField
+        from q2mm.benchmarks.systems._forcefield import load_published_opt
+        from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_into
         from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
@@ -239,14 +239,14 @@ class TestRhEnamideFullLoop:
             pytest.skip("rh-enamide force field file mm3.fld not found")
 
         molecules = _load_rh_enamide_molecules()
-        ff_template = ForceField.from_mm3_fld(str(mm3_fld_path))
+        _, ff_template = load_published_opt(mm3_fld_path)
 
         # Seminario estimation
         t0 = time.perf_counter()
-        ff = ff_template.copy()
-        qfuerza_into(ff, molecules)
+        ff = qfuerza_into(ff_template, molecules, invert_ts_curvature=True)
         t_seminario = time.perf_counter() - t0
-        seminario_params = ff.get_param_vector().copy()
+        layout = ParameterLayout.from_force_field(ff)
+        seminario_params = layout.vector(ff).copy()
 
         # Build multi-molecule frequency reference
         engine = OpenMMEngine()
@@ -258,13 +258,13 @@ class TestRhEnamideFullLoop:
             freq_ref, qm_real = _build_frequency_reference(
                 qm_freqs,
                 mm_freqs,
-                molecule_idx=mol_idx,
+                case_id=str(mol_idx),
                 ref=freq_ref,
             )
             n_freqs_per_mol.append(len(qm_real))
 
         # Initial score
-        obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
         initial_score = obj(seminario_params)
 
         # Optimize — just enough iterations to verify our optimizer wrapper
@@ -272,12 +272,12 @@ class TestRhEnamideFullLoop:
         # (500 iter, 76.7% improvement) are documented in docs/benchmarks/.
         t0 = time.perf_counter()
         opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
         t_optimize = time.perf_counter() - t0
 
         return {
             "n_molecules": len(molecules),
-            "n_params": ff.n_params,
+            "n_params": len(layout),
             "n_bonds": len(ff.bonds),
             "n_angles": len(ff.angles),
             "n_vdws": len(ff.vdws),
@@ -288,7 +288,7 @@ class TestRhEnamideFullLoop:
             "final_score": result.final_score,
             "improvement": result.improvement,
             "converged": result.success,
-            "optimized_params": ff.get_param_vector().copy(),
+            "optimized_params": result.final_params.copy(),
             "t_seminario": t_seminario,
             "t_optimize": t_optimize,
         }
@@ -372,23 +372,27 @@ class TestEthaneFullLoop:
     def pipeline_result(self) -> dict[str, object]:
         """Run the full pipeline and return all intermediate results."""
         from q2mm.backends.mm import OpenMMEngine
+        from q2mm.io.fchk import load_fchk
+        from q2mm.models.forcefield import FunctionalForm
+        from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         if not GS_FCHK.exists():
             pytest.skip("Ethane GS.fchk not found")
 
-        ref, mol = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
+        mol = load_fchk(GS_FCHK, bond_tolerance=1.4)
 
         # QM frequencies from Hessian
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
 
         # Seminario estimation
         t_sem_start = time.perf_counter()
-        ff = qfuerza_fresh(mol, au_hessian=True)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
         t_sem = time.perf_counter() - t_sem_start
-        seminario_params = ff.get_param_vector().copy()
+        layout = ParameterLayout.from_force_field(ff)
+        seminario_params = layout.vector(ff).copy()
 
         # MM frequencies + reference data
         engine = OpenMMEngine()
@@ -396,13 +400,13 @@ class TestEthaneFullLoop:
         freq_ref, qm_real = _build_frequency_reference(qm_freqs, mm_all)
 
         # Penalty score
-        obj = ObjectiveFunction(ff, engine, [mol], freq_ref)
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=freq_ref, layout=layout)
         seminario_score = obj(seminario_params)
 
         # Optimize
         t_opt_start = time.perf_counter()
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
         t_opt = time.perf_counter() - t_opt_start
 
         return {
@@ -411,7 +415,7 @@ class TestEthaneFullLoop:
             "engine": engine,
             "seminario_params": seminario_params,
             "seminario_score": seminario_score,
-            "optimized_params": ff.get_param_vector().copy(),
+            "optimized_params": result.final_params.copy(),
             "optimized_score": result.final_score,
             "improvement": result.improvement,
             "converged": result.success,
@@ -545,14 +549,15 @@ class TestEthaneTSSeminario:
 
     @pytest.fixture(scope="class")
     def ts_result(self) -> dict[str, object]:
+        from q2mm.io.fchk import load_fchk
+        from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ReferenceData
 
         if not TS_FCHK.exists():
             pytest.skip("Ethane TS.fchk not found")
 
-        ref, mol = ReferenceData.from_fchk(str(TS_FCHK), bond_tolerance=1.4)
-        ff = qfuerza_fresh(mol, au_hessian=True)
+        mol = load_fchk(TS_FCHK, bond_tolerance=1.4)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True, invert_ts_curvature=True)
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
         return {"mol": mol, "ff": ff, "qm_freqs": qm_freqs}
 
@@ -576,15 +581,18 @@ class TestEthaneTSSeminario:
 
     def test_ts_seminario_matches_gs_approximately(self, ts_result: dict[str, object]) -> None:
         """TS and GS Seminario parameters should be similar (same molecule)."""
+        from q2mm.io.fchk import load_fchk
+        from q2mm.models.forcefield import FunctionalForm
+        from q2mm.models.parameters import ParameterLayout
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ReferenceData
 
-        ref_gs, mol_gs = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-        ff_gs = qfuerza_fresh(mol_gs, au_hessian=True)
+        mol_gs = load_fchk(GS_FCHK, bond_tolerance=1.4)
+        ff_gs = qfuerza_fresh(mol_gs, functional_form=FunctionalForm.MM3, au_hessian=True)
 
         ff_ts = ts_result["ff"]
-        gs_params = ff_gs.get_param_vector()
-        ts_params = ff_ts.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff_gs)
+        gs_params = layout.vector(ff_gs)
+        ts_params = layout.vector(ff_ts)
 
         # Same molecule → similar parameters (within ~10%)
         assert len(gs_params) == len(ts_params)
@@ -610,8 +618,11 @@ class TestPipelineDeterminism:
     def test_full_pipeline_is_deterministic(self) -> None:
         """Two independent pipeline runs yield identical scores and params."""
         from q2mm.backends.mm import OpenMMEngine
+        from q2mm.io.fchk import load_fchk
+        from q2mm.models.forcefield import FunctionalForm
+        from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         if not GS_FCHK.exists():
@@ -619,18 +630,19 @@ class TestPipelineDeterminism:
 
         results = []
         for _ in range(2):
-            ref, mol = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
-            ff = qfuerza_fresh(mol, au_hessian=True)
+            mol = load_fchk(GS_FCHK, bond_tolerance=1.4)
+            ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
             engine = OpenMMEngine()
+            layout = ParameterLayout.from_force_field(ff)
 
             qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
             mm_all = engine.frequencies(mol, ff)
             freq_ref, _ = _build_frequency_reference(qm_freqs, mm_all)
 
-            obj = ObjectiveFunction(ff, engine, [mol], freq_ref)
+            obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=freq_ref, layout=layout)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-            result = opt.optimize(obj)
-            results.append((result.final_score, ff.get_param_vector().copy()))
+            result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
+            results.append((result.final_score, result.final_params.copy()))
 
         np.testing.assert_array_equal(
             results[0][1],
@@ -647,7 +659,7 @@ class TestPipelineDeterminism:
 
 def _rh_enamide_harmonic_pipeline(
     engine: MMEngine,
-    molecules: list[Q2MMMolecule],
+    molecules: list[Molecule],
 ) -> dict[str, object]:
     """Shared pipeline for JAX/JAX-MD Rh-enamide full-loop tests.
 
@@ -656,7 +668,11 @@ def _rh_enamide_harmonic_pipeline(
     FF from Seminario estimation (which produces harmonic force constants
     regardless of the template FF's functional form).
     """
-    from q2mm.models.forcefield import ForceField, FunctionalForm
+    from dataclasses import replace
+
+    from q2mm.benchmarks.systems._forcefield import load_published_opt
+    from q2mm.models.forcefield import FunctionalForm
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
     from q2mm.models.seminario import qfuerza_into
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
@@ -665,17 +681,17 @@ def _rh_enamide_harmonic_pipeline(
     if not mm3_fld_path.exists():
         pytest.skip("rh-enamide force field file mm3.fld not found")
 
-    ff_template = ForceField.from_mm3_fld(str(mm3_fld_path))
+    _, ff_template = load_published_opt(mm3_fld_path)
 
     # Seminario estimation produces harmonic force constants
     t0 = time.perf_counter()
-    ff = ff_template.copy()
-    qfuerza_into(ff, molecules)
+    ff = qfuerza_into(ff_template, molecules, invert_ts_curvature=True)
     t_seminario = time.perf_counter() - t0
 
     # Switch to harmonic functional form for JAX compatibility
-    ff.functional_form = FunctionalForm.HARMONIC
-    seminario_params = ff.get_param_vector().copy()
+    ff = replace(ff, functional_form=FunctionalForm.HARMONIC)
+    layout = ParameterLayout.from_force_field(ff)
+    seminario_params = layout.vector(ff).copy()
 
     # Build multi-molecule frequency reference
     freq_ref = None
@@ -686,24 +702,24 @@ def _rh_enamide_harmonic_pipeline(
         freq_ref, qm_real = _build_frequency_reference(
             qm_freqs,
             mm_freqs,
-            molecule_idx=mol_idx,
+            case_id=str(mol_idx),
             ref=freq_ref,
         )
         n_freqs_per_mol.append(len(qm_real))
 
     # Initial score
-    obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
+    obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
     initial_score = obj(seminario_params)
 
     # Optimize (3 iterations, just enough to validate the pipeline)
     t0 = time.perf_counter()
     opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
-    result = opt.optimize(obj)
+    result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
     t_optimize = time.perf_counter() - t0
 
     return {
         "n_molecules": len(molecules),
-        "n_params": ff.n_params,
+        "n_params": len(layout),
         "n_bonds": len(ff.bonds),
         "n_angles": len(ff.angles),
         "n_vdws": len(ff.vdws),
@@ -714,7 +730,7 @@ def _rh_enamide_harmonic_pipeline(
         "final_score": result.final_score,
         "improvement": result.improvement,
         "converged": result.success,
-        "optimized_params": ff.get_param_vector().copy(),
+        "optimized_params": result.final_params.copy(),
         "t_seminario": t_seminario,
         "t_optimize": t_optimize,
         "functional_form": "harmonic",
@@ -734,13 +750,13 @@ class TestRhEnamideFullLoopJax:
     """
 
     @pytest.fixture(scope="class")
-    def rh_molecules(self) -> list[Q2MMMolecule]:
+    def rh_molecules(self) -> list[Molecule]:
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.fixture(scope="class")
-    def pipeline_result(self, rh_molecules: list[Q2MMMolecule]) -> dict[str, object]:
+    def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
         """Run the full rh-enamide pipeline with JaxEngine."""
         from q2mm.backends.mm.jax_engine import JaxEngine
 
@@ -801,13 +817,13 @@ class TestRhEnamideFullLoopJaxMD:
     """
 
     @pytest.fixture(scope="class")
-    def rh_molecules(self) -> list[Q2MMMolecule]:
+    def rh_molecules(self) -> list[Molecule]:
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.fixture(scope="class")
-    def pipeline_result(self, rh_molecules: list[Q2MMMolecule]) -> dict[str, object]:
+    def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
         """Run the full rh-enamide pipeline with JaxMDEngine."""
         from q2mm.backends.mm.jax_md_engine import JaxMDEngine
 

@@ -36,7 +36,20 @@ from q2mm.models.forcefield import (
     TorsionParam,
     VdwParam,
 )
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
+from q2mm.models.parameters import ParameterLayout
+
+
+def _layout(forcefield: ForceField) -> ParameterLayout:
+    return ParameterLayout.from_force_field(forcefield)
+
+
+def _params(forcefield: ForceField) -> np.ndarray:
+    return _layout(forcefield).vector(forcefield)
+
+
+def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
+    return _layout(forcefield).replace(forcefield, vector)
 
 
 @pytest.fixture(autouse=True)
@@ -404,19 +417,16 @@ class TestJaxEngineMM3:
         _e, grad_anal = engine.energy_and_param_grad(mol, ff)
 
         # Finite difference gradient
-        params = ff.get_param_vector().copy()
+        params = _params(ff).copy()
         grad_fd = np.zeros_like(params)
         h = 1e-5
         for i in range(len(params)):
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            ff.set_param_vector(p_plus)
-            e_plus = engine.energy(mol, ff)
-            ff.set_param_vector(p_minus)
-            e_minus = engine.energy(mol, ff)
+            e_plus = engine.energy(mol, _materialize(ff, p_plus))
+            e_minus = engine.energy(mol, _materialize(ff, p_minus))
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
-        ff.set_param_vector(params)
 
         np.testing.assert_allclose(grad_anal, grad_fd, atol=1e-4, rtol=1e-4)
 
@@ -482,13 +492,13 @@ class TestMM3ParityJaxVsOpenMM:
 def _make_four_atom_chain(
     central_angle_deg: float,
     dihedral_deg: float = 60.0,
-) -> Q2MMMolecule:
+) -> Molecule:
     """Build a 4-atom chain C-C-C-C with a controlled central angle.
 
     Atom 0 at origin, atom 1 along +x, atom 2 at the specified
     angle from the 0→1 bond, atom 3 rotated by dihedral_deg.
     """
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
     r = 1.5  # bond length
     theta = np.radians(central_angle_deg)
@@ -509,7 +519,7 @@ def _make_four_atom_chain(
         -np.cos(np.pi - theta) * b1_hat + np.sin(np.pi - theta) * (np.cos(phi) * v_in_hat + np.sin(phi) * v_out)
     )
 
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["C", "C", "C", "C"],
         geometry=np.array([p0, p1, p2, p3]),
     )
@@ -576,7 +586,7 @@ class TestNearLinearTorsionDamping:
         ff = _torsion_ff()
         engine = JaxEngine()
         handle = engine._get_handle(mol, ff)
-        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64)
         coords = jnp.array(mol.geometry, dtype=jnp.float64)
 
         grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
@@ -597,7 +607,7 @@ class TestNearLinearTorsionDamping:
         ff = _torsion_ff()
         engine = JaxEngine()
         handle = engine._get_handle(mol, ff)
-        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64)
 
         flat = jnp.array(mol.geometry.flatten(), dtype=jnp.float64)
         hess = jax.hessian(lambda fc: handle._energy_fn(params, fc.reshape(-1, 3)))(flat)
@@ -706,7 +716,7 @@ class TestStretchBendEnergy:
         )
         engine = JaxEngine()
         handle = engine._get_handle(mol, ff)
-        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64)
         coords = jnp.array(mol.geometry, dtype=jnp.float64)
         grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
         assert np.all(np.isfinite(np.array(grad))), "SB gradient contains NaN/Inf"

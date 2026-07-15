@@ -1,6 +1,6 @@
 """Tests for raw Hessian element training data pipeline.
 
-Tests the HessianElementEvaluator and the ReferenceData/ObjectiveFunction
+Tests the HessianElementEvaluator and the ObservationSet/ObjectiveFunction
 integration for raw Hessian matrix element training.
 """
 
@@ -17,8 +17,8 @@ from q2mm.optimizers.evaluators.hessian_element import (
     HessianElementEvaluator,
     HessianResult,
 )
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
-
+from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.parameters import ParameterLayout
 # ---- Fixtures ----
 
 
@@ -92,7 +92,7 @@ class TestHessianElementExtract:
     def test_extract_diagonal(self, small_hessian: np.ndarray) -> None:
         """Diagonal element extraction at (1,1)."""
         computed = HessianResult(hessian=small_hessian)
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(1, 1))
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(1, 1))
 
         result = HessianElementEvaluator._extract(computed, ref)
         assert result == 3.0
@@ -100,7 +100,7 @@ class TestHessianElementExtract:
     def test_extract_offdiagonal(self, small_hessian: np.ndarray) -> None:
         """Off-diagonal element extraction at (2,0)."""
         computed = HessianResult(hessian=small_hessian)
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(2, 0))
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(2, 0))
 
         result = HessianElementEvaluator._extract(computed, ref)
         assert result == 0.5
@@ -108,7 +108,7 @@ class TestHessianElementExtract:
     def test_extract_corner(self, small_hessian: np.ndarray) -> None:
         """Element at (0,0)."""
         computed = HessianResult(hessian=small_hessian)
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(0, 0))
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(0, 0))
 
         result = HessianElementEvaluator._extract(computed, ref)
         assert result == 4.0
@@ -116,7 +116,7 @@ class TestHessianElementExtract:
     def test_extract_out_of_range_raises(self, small_hessian: np.ndarray) -> None:
         """Out-of-range indices raise IndexError."""
         computed = HessianResult(hessian=small_hessian)
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(5, 0), label="bad")
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(5, 0), label="bad")
 
         with pytest.raises(IndexError, match="out of range"):
             HessianElementEvaluator._extract(computed, ref)
@@ -124,7 +124,7 @@ class TestHessianElementExtract:
     def test_extract_missing_atom_indices_raises(self, small_hessian: np.ndarray) -> None:
         """Missing atom_indices raises ValueError."""
         computed = HessianResult(hessian=small_hessian)
-        ref = ReferenceValue(kind="hessian_element", value=0.0)
+        ref = Observation(kind="hessian_element", value=0.0)
 
         with pytest.raises(ValueError, match="requires atom_indices"):
             HessianElementEvaluator._extract(computed, ref)
@@ -142,8 +142,8 @@ class TestHessianElementResiduals:
         """Residuals are weight * (ref - calc)."""
         computed = HessianResult(hessian=small_hessian)
         refs = [
-            ReferenceValue(kind="hessian_element", value=5.0, weight=0.1, atom_indices=(0, 0)),
-            ReferenceValue(kind="hessian_element", value=3.0, weight=0.2, atom_indices=(1, 1)),
+            Observation(kind="hessian_element", value=5.0, weight=0.1, atom_indices=(0, 0)),
+            Observation(kind="hessian_element", value=3.0, weight=0.2, atom_indices=(1, 1)),
         ]
 
         residuals = evaluator.residuals(computed, refs)
@@ -155,14 +155,14 @@ class TestHessianElementResiduals:
         assert residuals[1] == pytest.approx(0.0)
 
 
-# ---- ReferenceData.add_hessian_element ----
+# ---- ObservationSet.add_hessian_element ----
 
 
-class TestReferenceDataAddHessianElement:
+class TestObservationSetAddHessianElement:
     def test_add_hessian_element(self) -> None:
-        """add_hessian_element creates a hessian_element ReferenceValue."""
-        ref = ReferenceData()
-        ref.add_hessian_element(1.5, row=2, col=1, weight=0.1, label="test")
+        """with_hessian_element creates a hessian_element Observation."""
+        ref = ObservationSet()
+        ref = ref.with_hessian_element(1.5, row=2, col=1, weight=0.1, label="test")
 
         assert ref.n_observations == 1
         rv = ref.values[0]
@@ -174,23 +174,22 @@ class TestReferenceDataAddHessianElement:
 
     def test_add_hessian_element_default_label(self) -> None:
         """Default label is generated from row/col."""
-        ref = ReferenceData()
-        ref.add_hessian_element(0.5, row=3, col=4)
+        ref = ObservationSet()
+        ref = ref.with_hessian_element(0.5, row=3, col=4)
 
         assert ref.values[0].label == "hess[3,4]"
 
 
-# ---- ReferenceData.add_hessian_from_matrix ----
+# ---- ObservationSet.with_hessian_from_matrix ----
 
 
-class TestReferenceDataAddHessianFromMatrix:
+class TestObservationSetAddHessianFromMatrix:
     def test_full_lower_triangle(self, small_hessian: np.ndarray) -> None:
         """Full loading adds n*(n+1)/2 elements."""
-        ref = ReferenceData()
-        n_added = ref.add_hessian_from_matrix(small_hessian)
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(small_hessian)
 
         # 3×3 lower triangle: 3*(3+1)/2 = 6
-        assert n_added == 6
         assert ref.n_observations == 6
 
         # Check all are hessian_element kind
@@ -206,10 +205,9 @@ class TestReferenceDataAddHessianFromMatrix:
 
     def test_diagonal_only(self, small_hessian: np.ndarray) -> None:
         """diagonal_only=True adds only N elements."""
-        ref = ReferenceData()
-        n_added = ref.add_hessian_from_matrix(small_hessian, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(small_hessian, diagonal_only=True)
 
-        assert n_added == 3
         assert ref.n_observations == 3
         # All entries should be on diagonal
         for rv in ref.values:
@@ -221,41 +219,41 @@ class TestReferenceDataAddHessianFromMatrix:
 
     def test_skip_translational(self, hessian_6x6: np.ndarray) -> None:
         """skip_translational skips leading rows/cols."""
-        ref = ReferenceData()
-        n_added = ref.add_hessian_from_matrix(
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(
             hessian_6x6,
             skip_translational=3,
             diagonal_only=True,
         )
 
         # Only indices 3, 4, 5 → 3 diagonal entries
-        assert n_added == 3
+        assert ref.n_observations == 3
         rows = [rv.atom_indices[0] for rv in ref.values]
         assert rows == [3, 4, 5]
 
     def test_skip_translational_full(self, hessian_6x6: np.ndarray) -> None:
         """skip_translational with full lower triangle."""
-        ref = ReferenceData()
-        n_added = ref.add_hessian_from_matrix(
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(
             hessian_6x6,
             skip_translational=3,
         )
 
         # Remaining 3×3 block: 3*(3+1)/2 = 6
-        assert n_added == 6
+        assert ref.n_observations == 6
 
     def test_non_square_raises(self) -> None:
         """Non-square matrix raises ValueError."""
         hess = np.ones((3, 4))
-        ref = ReferenceData()
+        ref = ObservationSet()
 
         with pytest.raises(ValueError, match="square"):
-            ref.add_hessian_from_matrix(hess)
+            ref.with_hessian_from_matrix(hess)
 
     def test_custom_weights(self, small_hessian: np.ndarray) -> None:
         """Custom diagonal/offdiagonal weights are applied."""
-        ref = ReferenceData()
-        ref.add_hessian_from_matrix(
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(
             small_hessian,
             diagonal_weight=0.5,
             offdiagonal_weight=0.2,
@@ -283,7 +281,7 @@ class TestYAMLRoundTrip:
             "weight": 0.1,
         }
 
-        refs = _parse_datum(datum, molecule_idx=0, context="test")
+        refs = _parse_datum(datum, case_id="0", context="test")
         assert len(refs) == 1
         rv = refs[0]
         assert rv.kind == "hessian_element"
@@ -312,7 +310,7 @@ class TestYAMLRoundTrip:
             "label": "H(0,0)",
         }
 
-        refs = _parse_datum(datum, molecule_idx=0, context="test")
+        refs = _parse_datum(datum, case_id="0", context="test")
         assert refs[0].label == "H(0,0)"
 
     def test_hessian_element_negative_indices_rejected(self) -> None:
@@ -327,7 +325,7 @@ class TestYAMLRoundTrip:
         }
 
         with pytest.raises(ReferenceYAMLError, match="non-negative"):
-            _parse_datum(datum, molecule_idx=0, context="test")
+            _parse_datum(datum, case_id="0", context="test")
 
 
 # ---- YAML bulk hessian directive ----
@@ -338,7 +336,7 @@ class TestYAMLBulkHessian:
         """kind: hessian bulk directive creates hessian_element entries."""
         from q2mm.io.reference import _load_molecule
 
-        hess = np.array([[4.0, 1.0], [1.0, 3.0]])
+        hess = np.diag([4.0, 3.0, 2.0, 1.0, 0.5, 0.25])
         mol_dict = {
             "name": "test_mol",
             "geometry": {
@@ -354,7 +352,7 @@ class TestYAMLBulkHessian:
         mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
         assert mol.hessian is not None
-        assert len(ref_values) == 2  # diagonal_only, 2×2 → 2
+        assert len(ref_values) == 6  # diagonal_only, 6×6 → 6
         assert all(rv.kind == "hessian_element" for rv in ref_values)
         assert all(rv.atom_indices[0] == rv.atom_indices[1] for rv in ref_values)
 
@@ -362,7 +360,7 @@ class TestYAMLBulkHessian:
         """kind: hessian without diagonal_only creates full lower triangle."""
         from q2mm.io.reference import _load_molecule
 
-        hess = np.array([[4.0, 1.0], [1.0, 3.0]])
+        hess = np.diag([4.0, 3.0, 2.0, 1.0, 0.5, 0.25])
         hess_path = tmp_path / "test_hessian_full.npy"
         np.save(str(hess_path), hess)
         mol_dict = {
@@ -376,18 +374,18 @@ class TestYAMLBulkHessian:
         }
         mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
-        # 2×2 lower triangle: 3 elements
-        assert len(ref_values) == 3
+        # 6×6 lower triangle: 6*7/2 = 21 elements
+        assert len(ref_values) == 21
         diag = [rv for rv in ref_values if rv.atom_indices[0] == rv.atom_indices[1]]
         offdiag = [rv for rv in ref_values if rv.atom_indices[0] != rv.atom_indices[1]]
-        assert len(diag) == 2
-        assert len(offdiag) == 1
+        assert len(diag) == 6
+        assert len(offdiag) == 15
 
     def test_bulk_hessian_skip_translational(self, tmp_path: Path) -> None:
         """skip_translational parameter works in bulk directive."""
         from q2mm.io.reference import _load_molecule
 
-        hess = np.eye(4)
+        hess = np.eye(6)
         hess_path = tmp_path / "test_hessian_skip.npy"
         np.save(str(hess_path), hess)
         mol_dict = {
@@ -401,10 +399,10 @@ class TestYAMLBulkHessian:
         }
         mol, ref_values = _load_molecule(mol_dict, tmp_path, 0)
 
-        # skip 2, diagonal only → indices 2, 3
-        assert len(ref_values) == 2
+        # skip 2, diagonal only → indices 2, 3, 4, 5
+        assert len(ref_values) == 4
         rows = [rv.atom_indices[0] for rv in ref_values]
-        assert rows == [2, 3]
+        assert rows == [2, 3, 4, 5]
 
     def test_bulk_hessian_no_hessian_raises(self, tmp_path: Path) -> None:
         """kind: hessian raises when molecule has no hessian."""
@@ -433,7 +431,7 @@ class TestObjectiveFunctionHessianElement:
 
         hessian = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
         calc = {"raw_hessian": hessian}
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(2, 1))
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(2, 1))
 
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 0.2
@@ -444,14 +442,14 @@ class TestObjectiveFunctionHessianElement:
 
         hessian = np.diag([1.0, 2.0, 3.0])
         calc = {"raw_hessian": hessian}
-        ref = ReferenceValue(kind="hessian_element", value=0.0, atom_indices=(2, 2))
+        ref = Observation(kind="hessian_element", value=0.0, atom_indices=(2, 2))
 
         result = ObjectiveFunction._extract_value(calc, ref)
         assert result == 3.0
 
     def test_evaluate_molecule_hessian_element(self) -> None:
         """_evaluate_molecule computes raw_hessian for hessian_element refs."""
-        from q2mm.models.forcefield import ForceField
+        from q2mm.models.forcefield import ForceField, FunctionalForm
         from q2mm.optimizers.objective import ObjectiveFunction
 
         hessian = np.array([[4.0, 1.0], [1.0, 3.0]])
@@ -463,12 +461,13 @@ class TestObjectiveFunctionHessianElement:
         engine.hessian.return_value = hessian
         engine.supports_runtime_params.return_value = False
 
-        ref = ReferenceData()
-        ref.add_hessian_element(4.0, row=0, col=0, weight=0.1)
-        ref.add_hessian_element(1.0, row=1, col=0, weight=0.05)
+        ref = ObservationSet()
+        ref = ref.with_hessian_element(4.0, row=0, col=0, weight=0.1)
+        ref = ref.with_hessian_element(1.0, row=1, col=0, weight=0.05)
 
-        ff = ForceField()
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        ff = ForceField(functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(ff)
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, layout=layout)
 
         result = obj._evaluate_molecule(0, ff)
         assert "raw_hessian" in result
@@ -477,7 +476,7 @@ class TestObjectiveFunctionHessianElement:
 
     def test_full_objective_with_hessian_elements(self) -> None:
         """Full objective evaluation with hessian_element references."""
-        from q2mm.models.forcefield import ForceField
+        from q2mm.models.forcefield import ForceField, FunctionalForm
         from q2mm.optimizers.objective import ObjectiveFunction
 
         qm_hessian = np.array([[4.0, 1.0], [1.0, 3.0]])
@@ -491,13 +490,14 @@ class TestObjectiveFunctionHessianElement:
         engine.hessian.return_value = mm_hessian
         engine.supports_runtime_params.return_value = False
 
-        ref = ReferenceData()
-        ref.add_hessian_from_matrix(qm_hessian, diagonal_only=True)
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(qm_hessian, diagonal_only=True)
 
-        ff = ForceField()
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        ff = ForceField(functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(ff)
+        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, layout=layout)
 
-        score = obj(ff.get_param_vector())
+        score = obj(layout.vector(ff))
         assert score > 0  # Non-zero since MM != QM
         assert isinstance(score, float)
 
@@ -525,7 +525,7 @@ class TestObjectiveFunctionHessianElement:
         engine.hessian_and_param_jacobian.return_value = (hess, dH_dp)
         mol = MagicMock()
         ff = MagicMock()
-        refs = [ReferenceValue(kind="hessian_element", value=0.5, weight=1.0, data_idx=0, atom_indices=(0, 1))]
+        refs = [Observation(kind="hessian_element", value=0.5, weight=1.0, data_idx=0, atom_indices=(0, 1))]
         result = ev.gradient(engine, mol, ff, refs, 2)
         assert isinstance(result, np.ndarray)
         assert result.shape == (2,)

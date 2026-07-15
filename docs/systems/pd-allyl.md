@@ -86,7 +86,7 @@ Per-category fit of the optimized force field (post-L-BFGS-B):
 | eig_diagonal | 2,412 | −2.82 |
 
 These numbers are from the published-start baseline. Reproduce with
-`scripts/regenerate_convergence_results.py --starting-point published --system pd-allyl --n-evals 10`;
+`scripts/benchmark.py --starting-point published --system pd-allyl --n-evals 10`;
 raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/pd-allyl-amination/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/from-published).
 The canonical QFUERZA-start results (current default since q2mm#290)

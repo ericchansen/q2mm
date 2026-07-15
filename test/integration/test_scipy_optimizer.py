@@ -1,5 +1,7 @@
 """Tests for q2mm.optimizers (objective, scipy_opt)."""
 
+from __future__ import annotations
+
 import pytest
 
 pytest.importorskip("openmm")
@@ -8,27 +10,30 @@ pytestmark = pytest.mark.openmm
 from test._shared import make_diatomic, make_water
 
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.models.forcefield import BondParam, AngleParam, ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
 # ---- Helpers ----
 
 
-def _diatomic(distance: float = 0.74) -> Q2MMMolecule:
+def _diatomic(distance: float = 0.74) -> Molecule:
     return make_diatomic(distance=distance)
 
 
-def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
+def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Molecule:
     return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
 def _h2_ff(k: float = 359.7, r0: float = 0.74) -> ForceField:
     return ForceField(
         name="H2-test",
-        bonds=[BondParam(elements=("H", "H"), force_constant=k, equilibrium=r0)],
+        bonds=(BondParam(elements=("H", "H"), force_constant=k, equilibrium=r0),),
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -40,38 +45,51 @@ def _water_ff(
 ) -> ForceField:
     return ForceField(
         name="water-test",
-        bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
-        angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        bonds=(BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0),),
+        angles=(AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq),),
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
-# ---- ReferenceData ----
+def _build_objective(
+    ff: ForceField,
+    engine: OpenMMEngine,
+    molecules: list,
+    reference: ObservationSet,
+) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+    layout = ParameterLayout.from_force_field(ff)
+    objective = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    return objective, layout, space
 
 
-class TestReferenceData:
+# ---- ObservationSet ----
+
+
+class TestObservationSet:
     def test_add_energy(self) -> None:
-        ref = ReferenceData()
-        ref.add_energy(10.0, weight=2.0, label="TS energy")
+        ref = ObservationSet()
+        ref = ref.with_energy(10.0, weight=2.0, label="TS energy")
         assert ref.n_observations == 1
         assert ref.values[0].kind == "energy"
         assert ref.values[0].value == 10.0
         assert ref.values[0].weight == 2.0
 
     def test_add_multiple_types(self) -> None:
-        ref = ReferenceData()
-        ref.add_energy(5.0)
-        ref.add_frequency(1200.0, data_idx=0)
-        ref.add_bond_length(1.52, data_idx=0)
-        ref.add_bond_angle(109.5, data_idx=0)
+        ref = ObservationSet()
+        ref = ref.with_energy(5.0)
+        ref = ref.with_frequency(1200.0, data_idx=0)
+        ref = ref.with_bond_length(1.52, data_idx=0)
+        ref = ref.with_bond_angle(109.5, data_idx=0)
         assert ref.n_observations == 4
 
     def test_multi_molecule(self) -> None:
-        ref = ReferenceData()
-        ref.add_energy(5.0, molecule_idx=0)
-        ref.add_energy(8.0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_energy(5.0, case_id="0")
+        ref = ref.with_energy(8.0, case_id="1")
         assert ref.n_observations == 2
-        assert ref.values[0].molecule_idx == 0
-        assert ref.values[1].molecule_idx == 1
+        assert ref.values[0].case_id == "0"
+        assert ref.values[1].case_id == "1"
 
 
 # ---- ObjectiveFunction ----
@@ -84,31 +102,29 @@ class TestObjectiveFunction:
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         target_energy = engine.energy(mol, ff)
-        ref.add_energy(target_energy, weight=1.0)
+        ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        score = obj(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        score = obj(layout.vector(ff))
         assert isinstance(score, float)
-        # At the target parameters, residual should be ~0
         assert score == pytest.approx(0.0, abs=1e-10)
 
     def test_perturbed_params_increase_score(self) -> None:
         """Perturbing parameters away from reference should increase score."""
-        # Use a displaced geometry so energy depends on force constant
-        mol = _diatomic(0.80)  # displaced from r0=0.74
+        mol = _diatomic(0.80)
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol, ff), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol, ff), weight=1.0)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        base_score = obj(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        base_score = obj(layout.vector(ff))
 
-        perturbed = ff.get_param_vector().copy()
-        perturbed[0] *= 1.5  # Change force constant by 50%
+        perturbed = layout.vector(ff).copy()
+        perturbed[0] *= 1.5
         perturbed_score = obj(perturbed)
         assert perturbed_score > base_score
 
@@ -118,13 +134,13 @@ class TestObjectiveFunction:
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol, ff) + 1.0, weight=2.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol, ff) + 1.0, weight=2.0)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        r = obj.residuals(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        r = obj.residuals(layout.vector(ff))
         assert r.shape == (1,)
-        assert r[0] == pytest.approx(2.0, abs=0.1)  # weight * (ref - calc) ≈ 2*1
+        assert r[0] == pytest.approx(2.0, abs=0.1)
 
     def test_tracks_history(self) -> None:
         """Objective tracks evaluation count and score history."""
@@ -132,13 +148,14 @@ class TestObjectiveFunction:
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol, ff))
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol, ff))
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        obj(ff.get_param_vector())
-        obj(ff.get_param_vector())
-        obj(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        params = layout.vector(ff)
+        obj(params)
+        obj(params)
+        obj(params)
         assert obj.n_eval == 3
         assert len(obj.history) == 3
 
@@ -147,11 +164,11 @@ class TestObjectiveFunction:
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
-        ref = ReferenceData()
-        ref.add_energy(0.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(0.0)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        obj(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj(layout.vector(ff))
         obj.reset()
         assert obj.n_eval == 0
         assert len(obj.history) == 0
@@ -163,12 +180,11 @@ class TestObjectiveFunction:
         engine = OpenMMEngine()
 
         freqs = engine.frequencies(mol, ff)
-        ref = ReferenceData()
-        # Use highest frequency as reference
-        ref.add_frequency(freqs[-1], data_idx=len(freqs) - 1, weight=0.01)
+        ref = ObservationSet()
+        ref = ref.with_frequency(freqs[-1], data_idx=len(freqs) - 1, weight=0.01)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        score = obj(ff.get_param_vector())
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        score = obj(layout.vector(ff))
         assert score == pytest.approx(0.0, abs=1e-6)
 
     def test_out_of_range_data_idx_raises(self) -> None:
@@ -177,27 +193,29 @@ class TestObjectiveFunction:
         ff = _h2_ff(359.7, 0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_frequency(1000.0, data_idx=999)
+        ref = ObservationSet()
+        ref = ref.with_frequency(1000.0, data_idx=999)
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
         with pytest.raises(IndexError, match="data_idx=999 out of range"):
-            obj(ff.get_param_vector())
+            obj(layout.vector(ff))
 
 
-# ---- ForceField.get_bounds ----
+# ---- ParameterLayout.bounds ----
 
 
 class TestForceFieldBounds:
     def test_bounds_length_matches_param_vector(self) -> None:
         ff = _water_ff()
-        bounds = ff.get_bounds()
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = layout.bounds
+        vec = layout.vector(ff)
         assert len(bounds) == len(vec)
 
     def test_bounds_are_tuples(self) -> None:
         ff = _h2_ff()
-        bounds = ff.get_bounds()
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = [tuple(map(float, row)) for row in layout.bounds.tolist()]
         for lo, hi in bounds:
             assert isinstance(lo, float)
             assert isinstance(hi, float)
@@ -205,8 +223,9 @@ class TestForceFieldBounds:
 
     def test_initial_params_within_bounds(self) -> None:
         ff = _water_ff()
-        vec = ff.get_param_vector()
-        bounds = ff.get_bounds()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        bounds = layout.bounds.tolist()
         for val, (lo, hi) in zip(vec, bounds):
             assert lo <= val <= hi, f"{val} not in [{lo}, {hi}]"
 
@@ -217,22 +236,20 @@ class TestForceFieldBounds:
 class TestScipyOptimizer:
     def test_optimize_to_known_energy(self) -> None:
         """Optimizer can fit force constant to match target energies."""
-        # Use two displaced geometries so both k and r0 are identifiable
         mol_short = _diatomic(0.70)
         mol_long = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol_short, true_ff), weight=1.0, molecule_idx=0)
-        ref.add_energy(engine.energy(mol_long, true_ff), weight=1.0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol_short, true_ff), weight=1.0, case_id="0")
+        ref = ref.with_energy(engine.energy(mol_long, true_ff), weight=1.0, case_id="1")
 
-        # Start with wrong force constant and equilibrium
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
-        obj = ObjectiveFunction(guess_ff, engine, [mol_short, mol_long], ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, [mol_short, mol_long], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.final_score < 1e-3
         assert result.improvement > 0.9
@@ -245,12 +262,12 @@ class TestScipyOptimizer:
         target_energy = engine.energy(mol, true_ff)
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
-        ref = ReferenceData()
-        ref.add_energy(target_energy, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj = ObjectiveFunction(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
         opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
 
@@ -262,12 +279,12 @@ class TestScipyOptimizer:
         target_energy = engine.energy(mol, true_ff)
 
         guess_ff = _h2_ff(k=575.5, r0=0.74)
-        ref = ReferenceData()
-        ref.add_energy(target_energy, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj = ObjectiveFunction(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
         opt = ScipyOptimizer(method="least_squares", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.success
         assert result.final_score < 1e-6
@@ -277,12 +294,12 @@ class TestScipyOptimizer:
         mol = _diatomic(0.74)
         ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol, ff))
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol, ff))
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(ff, engine, [mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=10, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         summary = result.summary()
         assert "L-BFGS-B" in summary
@@ -297,38 +314,37 @@ class TestScipyOptimizer:
         target_energy = engine.energy(mol, true_ff)
         target_freqs = engine.frequencies(mol, true_ff)
 
-        # Start with perturbed parameters
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
-        ref = ReferenceData()
-        ref.add_energy(target_energy, weight=1.0)
-        # Add a few key frequencies
+        ref = ObservationSet()
+        ref = ref.with_energy(target_energy, weight=1.0)
         for i in range(len(target_freqs)):
-            ref.add_frequency(target_freqs[i], data_idx=i, weight=0.001)
+            ref = ref.with_frequency(target_freqs[i], data_idx=i, weight=0.001)
 
-        obj = ObjectiveFunction(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
         assert result.improvement > 0.5
 
     def test_params_applied_to_ff(self) -> None:
-        """After optimization, forcefield has the optimized parameters."""
+        """After optimization, a replaced forcefield has the optimized parameters."""
         mol_short = _diatomic(0.70)
         mol_long = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
         engine = OpenMMEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(engine.energy(mol_short, true_ff), weight=1.0, molecule_idx=0)
-        ref.add_energy(engine.energy(mol_long, true_ff), weight=1.0, molecule_idx=1)
+        ref = ObservationSet()
+        ref = ref.with_energy(engine.energy(mol_short, true_ff), weight=1.0, case_id="0")
+        ref = ref.with_energy(engine.energy(mol_long, true_ff), weight=1.0, case_id="1")
 
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
-        obj = ObjectiveFunction(guess_ff, engine, [mol_short, mol_long], ref)
+        obj, layout, space = _build_objective(guess_ff, engine, [mol_short, mol_long], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
-        # k should have moved substantially toward 5.0
-        final_k = guess_ff.bonds[0].force_constant
+        optimized_ff = layout.replace(guess_ff, result.final_params)
+        final_k = optimized_ff.bonds[0].force_constant
         assert abs(final_k - 359.7) < 143.9
+        assert guess_ff.bonds[0].force_constant == 575.5

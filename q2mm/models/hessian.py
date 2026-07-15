@@ -21,7 +21,9 @@ import copy
 import logging
 import warnings
 from collections.abc import Sequence
-from typing import Literal
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Literal
 
 import numpy as np
 
@@ -36,13 +38,13 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
 
     Accepts:
       - ``list[str]`` — element symbols directly
-      - Any object with a ``.symbols`` attribute (``Q2MMMolecule``)
+      - Any object with a ``.symbols`` attribute (``Molecule``)
 
     Returns:
         list[str]: Non-dummy element symbols.
 
     """
-    # Q2MMMolecule (has .symbols attribute)
+    # Molecule (has .symbols attribute)
     if hasattr(atoms_or_symbols, "symbols"):
         return list(atoms_or_symbols.symbols)
 
@@ -51,9 +53,7 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
         return []
 
     if not isinstance(items[0], str):
-        raise TypeError(
-            f"Expected element symbols (list[str]) or a Q2MMMolecule; got list of {type(items[0]).__name__}."
-        )
+        raise TypeError(f"Expected element symbols (list[str]) or a Molecule; got list of {type(items[0]).__name__}.")
 
     unknown = [s for s in items if s not in co.MASSES]
     if unknown:
@@ -63,6 +63,105 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
             "calling mass-weighting functions."
         )
     return items
+
+
+# ---- Hessian unit provenance ----
+#
+# Single canonical unit/provenance model for bare (unitless-array) Hessians
+# flowing through Q2MM's I/O layer. ``Molecule.hessian`` is always canonical
+# Hartree/Bohr² (see q2mm.models.molecule); ``HessianUnits`` records what unit
+# a *source* array (parser output, programmatic override, ...) was in before
+# conversion, and ``HessianProvenance`` records that unit together with where
+# the Hessian came from, so downstream code / diagnostics can trace a
+# molecule's Hessian back to its origin without re-deriving it.
+
+
+class HessianUnits(str, Enum):
+    """Supported units for a bare Hessian array before conversion to canonical AU."""
+
+    ATOMIC = "hartree/bohr**2"
+    KJ_MOL_ANGSTROM2 = "kilojoule/(mole*angstrom**2)"
+
+
+@dataclass(frozen=True)
+class HessianProvenance:
+    """Immutable record of where a :class:`~q2mm.models.molecule.Molecule` Hessian came from.
+
+    Attributes:
+        units: The unit the source Hessian was supplied in, before it was
+            converted (exactly once) to canonical Hartree/Bohr².
+        source: Short origin label, e.g. ``"gaussian"``, ``"jaguar"``,
+            ``"fchk"``, or ``"programmatic"`` for Hessians attached directly
+            via :meth:`~q2mm.models.molecule.Molecule.with_hessian`.
+        path: File path the Hessian was parsed from, if any.
+
+    """
+
+    units: HessianUnits
+    source: str = "programmatic"
+    path: str | None = None
+
+
+def _strip_pint(hessian: Any) -> Any:
+    """Strip a ``pint.Quantity`` wrapper, converting it to canonical AU.
+
+    When ``pint`` is installed, some Hessian sources (e.g.
+    ``JaguarIn.get_hessian(tag_units=True)``) return a ``pint.Quantity``
+    tagged with units.  This helper converts to ``hartree/bohr**2`` (if not
+    already) and extracts the bare ``np.ndarray`` so downstream code sees
+    plain arrays with zero Pint overhead.
+
+    Args:
+        hessian: ``None``, a bare array-like, or a ``pint.Quantity``
+            (detected duck-typed via ``.magnitude``/``.to``).
+
+    Returns:
+        ``None`` if *hessian* is ``None``; the bare converted array if
+        *hessian* is pint-like; otherwise *hessian* unchanged.
+
+    """
+    if hessian is None:
+        return None
+    if hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
+        return np.asarray(hessian.to(HessianUnits.ATOMIC.value).magnitude)
+    return hessian
+
+
+def hessian_to_atomic_units(hessian: Any, units: HessianUnits | str | None) -> np.ndarray | None:
+    """Convert a Hessian with known unit provenance to a bare canonical-AU array.
+
+    Args:
+        hessian: ``None``, a bare array-like, or a ``pint.Quantity`` (detected
+            duck-typed via ``.magnitude``/``.to``).
+        units: The :class:`HessianUnits` (or its string value) the bare
+            array is expressed in. Ignored for ``pint.Quantity`` input, whose
+            own units are authoritative.
+
+    Returns:
+        np.ndarray | None: The Hessian converted to Hartree/Bohr², or
+        ``None`` if *hessian* is ``None``.
+
+    Raises:
+        ValueError: If *hessian* is a bare array and *units* does not
+            identify a supported :class:`HessianUnits` value.
+
+    """
+    if hessian is None:
+        return None
+    stripped = _strip_pint(hessian)
+    if stripped is not hessian:
+        # Was pint-like — its own units are authoritative, already AU.
+        return stripped
+    array = np.asarray(hessian, dtype=float)
+    unit_value = getattr(units, "value", units)
+    if unit_value == HessianUnits.ATOMIC.value:
+        return array
+    if unit_value == HessianUnits.KJ_MOL_ANGSTROM2.value:
+        return array * co.KJMOLA2_TO_HESSIAN_AU
+    raise ValueError(
+        "Hessian unit provenance is unknown. Pass a supported HessianUnits value "
+        "(or an explicit canonical Hartree/Bohr^2 override)."
+    )
 
 
 # ---- Mass-weighting functions ----
@@ -81,7 +180,7 @@ def mass_weight_hessian(
 
     Args:
         hess: ``(3N, 3N)`` Hessian matrix — modified in place.
-        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
+        atoms: Element symbols (``list[str]``) or a ``Molecule``.
         reverse: If ``True``, un-mass-weight instead.
 
     """
@@ -104,7 +203,7 @@ def mass_weight_scale_3n(atoms: Sequence[str] | object) -> np.ndarray:
     exact same factor.
 
     Args:
-        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
+        atoms: Element symbols (``list[str]``) or a ``Molecule``.
 
     Returns:
         ``(3N, 3N)`` array of ``1/√(mᵢmⱼ)`` factors.
@@ -334,11 +433,9 @@ def _jax_frequency_param_jacobian(
         sorted ascending in cm⁻¹; Jacobian is ``(3N, n_params)``.
 
     """
-    from q2mm.backends.mm._jax_common import ensure_jax
+    from q2mm._jax_support import load_jax
 
-    ensure_jax(engine_name="jax_frequency_sensitivity")
-
-    from q2mm.backends.mm._jax_common import jnp
+    _, jnp = load_jax(caller_name="jax_frequency_sensitivity")
 
     # Mass-weighting scale: 1/sqrt(m_i * m_j)
     inv_sqrt = 1.0 / jnp.sqrt(masses_3n)
@@ -403,11 +500,9 @@ def _jax_frequencies_from_hessian(
         ``(3N,)`` frequencies in cm⁻¹, sorted ascending.
 
     """
-    from q2mm.backends.mm._jax_common import ensure_jax
+    from q2mm._jax_support import load_jax
 
-    ensure_jax(engine_name="jax_frequencies")
-
-    from q2mm.backends.mm._jax_common import jnp
+    _, jnp = load_jax(caller_name="jax_frequencies")
 
     inv_sqrt = 1.0 / jnp.sqrt(masses_3n)
     scale = jnp.outer(inv_sqrt, inv_sqrt)
@@ -639,7 +734,7 @@ def mass_weighted_normal_modes(
     Args:
         hessian_au: ``(3N, 3N)`` Cartesian Hessian in Hartree/Bohr².  Not
             modified (a copy is mass-weighted internally).
-        atoms: Element symbols (``list[str]``) or a ``Q2MMMolecule``.
+        atoms: Element symbols (``list[str]``) or a ``Molecule``.
 
     Returns:
         ``(eigenvalues, eigenvectors)`` of the mass-weighted Hessian, with
@@ -671,7 +766,7 @@ def mass_weighted_eigenmatrix(
     Args:
         hessian_au: ``(3N, 3N)`` Cartesian Hessian in Hartree/Bohr².
         modes: ``(3N, 3N)`` normal-mode matrix (eigenvectors as columns).
-        atoms: Element symbols or a ``Q2MMMolecule`` (for mass-weighting).
+        atoms: Element symbols or a ``Molecule`` (for mass-weighting).
 
     Returns:
         ``(3N, 3N)`` mass-weighted eigenmatrix.
@@ -713,11 +808,9 @@ def invert_ts_curvature_jax(
         ``(3N, 3N)`` modified Hessian with TS curvature inverted.
 
     """
-    from q2mm.backends.mm._jax_common import ensure_jax
+    from q2mm._jax_support import load_jax
 
-    ensure_jax(engine_name="invert_ts_curvature_jax")
-
-    from q2mm.backends.mm._jax_common import jnp
+    _, jnp = load_jax(caller_name="invert_ts_curvature_jax")
 
     hess = 0.5 * (hessian_matrix + hessian_matrix.T)
     evals, evecs = jnp.linalg.eigh(hess)

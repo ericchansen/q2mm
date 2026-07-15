@@ -24,7 +24,7 @@ except ImportError:  # pragma: no cover
     _HAS_JAX = False
 
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 
 if _HAS_JAX:
@@ -87,7 +87,7 @@ def _topology_signature(handle: JaxHandle) -> str:
 
 
 def group_by_topology(
-    molecules: list[Q2MMMolecule],
+    molecules: list[Molecule],
     forcefield: ForceField,
     engine: JaxEngine,
     handles: dict[int, JaxHandle] | None = None,
@@ -160,7 +160,9 @@ def batched_hessians(
 
     """
     handle: JaxHandle = group.handle  # type: ignore[assignment]
-    params = jnp.array(forcefield.get_param_vector(), dtype=jnp.float64)
+    from q2mm.models.parameters import ParameterLayout
+
+    params = jnp.array(ParameterLayout.from_force_field(forcefield).vector(forcefield), dtype=jnp.float64)
 
     # Ensure the single-molecule coord Hessian function is compiled
     if handle._coord_hess_fn is None:

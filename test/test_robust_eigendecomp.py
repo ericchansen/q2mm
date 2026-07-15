@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from q2mm.models.hessian import PENALTY_FREQUENCY, hessian_to_frequencies
+from q2mm.models.parameters import ParameterLayout
 
 
 # ---------------------------------------------------------------------------
@@ -146,19 +147,22 @@ class TestBoundAwareSensitivity:
         """Create a mock objective with a quadratic landscape."""
         from unittest.mock import MagicMock
 
-        from q2mm.models.forcefield import BondParam, ForceField
+        from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 
         ff = ForceField(
             name="test",
             bonds=[
                 BondParam(elements=("C", "H"), force_constant=300.0, equilibrium=1.1),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
+        layout = ParameterLayout.from_force_field(ff)
         obj = MagicMock()
         obj.forcefield = ff
+        obj.layout = layout
 
         # Quadratic objective: f(x) = sum((x - x0)^2)
-        x0 = ff.get_param_vector()
+        x0 = layout.vector(ff)
 
         def mock_call(pvec: np.ndarray) -> float:
             return float(np.sum((np.asarray(pvec) - x0) ** 2))
@@ -172,15 +176,15 @@ class TestBoundAwareSensitivity:
         from q2mm.optimizers.cycling import compute_sensitivity
 
         result = compute_sensitivity(mock_objective, bounds=None)
-        assert result.n_evals == 2 * mock_objective.forcefield.n_params + 1
+        assert result.n_evals == 2 * len(mock_objective.layout) + 1
 
     def test_bounds_shrink_steps(self, mock_objective: Any) -> None:
         """When param is near a bound, step is shrunk."""
         from q2mm.optimizers.cycling import compute_sensitivity
 
         ff = mock_objective.forcefield
-        x0 = ff.get_param_vector()
-        steps = ff.get_step_sizes()
+        x0 = mock_objective.layout.vector(ff)
+        steps = mock_objective.layout.steps
 
         # Set tight upper bound for param 0: x0[0] + 0.01 (step is ~7.2)
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]
@@ -195,8 +199,8 @@ class TestBoundAwareSensitivity:
         from q2mm.optimizers.cycling import compute_sensitivity
 
         ff = mock_objective.forcefield
-        x0 = ff.get_param_vector()
-        steps = ff.get_step_sizes()
+        x0 = mock_objective.layout.vector(ff)
+        steps = mock_objective.layout.steps
 
         # Set param 0 exactly at its upper bound
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]
@@ -214,8 +218,8 @@ class TestBoundAwareSensitivity:
         from q2mm.optimizers.cycling import compute_sensitivity
 
         ff = mock_objective.forcefield
-        x0 = ff.get_param_vector()
-        steps = ff.get_step_sizes()
+        x0 = mock_objective.layout.vector(ff)
+        steps = mock_objective.layout.steps
 
         # Skip param 0
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]

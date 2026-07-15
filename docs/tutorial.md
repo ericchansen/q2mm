@@ -77,10 +77,10 @@ the transition state: an **optimized geometry** and the **Hessian matrix**
 
     hessian     = np.load(str(QM_REF / "sn2-ts-hessian.npy"))       # (18, 18)
     frequencies = np.loadtxt(QM_REF / "sn2-ts-frequencies.txt")     # cm⁻¹
-    # Geometry is loaded in Step 2 via Q2MMMolecule.from_xyz()
+    # Geometry is loaded in Step 2 via load_xyz()
     ```
 
-    Skip to [Step 2](#step-2-build-a-q2mmmolecule) if using these files.
+    Skip to [Step 2](#step-2-build-a-molecule) if using these files.
 
 ### Generating your own QM data
 
@@ -149,23 +149,21 @@ molecule), expand the section for your QM engine:
     `GaussLog` parser:
 
     ```python
+    import numpy as np
     from q2mm.io.gaussian import GaussLog
-    from q2mm.models.hessian import reform_hessian
 
     log = GaussLog("sn2-ts.log", au_hessian=True)
 
-    # Geometry comes from the archive section
-    structures = log.structures          # list of Structure objects
-    atoms = structures[-1].atoms         # last (optimized) geometry
-
-    # Reconstruct the Cartesian Hessian from eigenvalues / eigenvectors
-    eigenvalues = log.evals
-    eigenvectors = log.evecs
-    hessian = reform_hessian(eigenvalues, eigenvectors)
+    # Geometry + Hessian are already packaged as Molecule objects
+    mol = log.molecules[-1]
+    hessian = mol.hessian               # (3N, 3N), Hartree/Bohr²
+    frequencies = np.array(log.frequencies)
     ```
 
     Pass `au_hessian=True` to keep the Hessian in atomic units
-    (Hartree/Bohr²) — QFUERZA estimation expects this.
+    (Hartree/Bohr²) — QFUERZA estimation expects this. Use
+    `log.molecules[-1].hessian` directly; do **not** reconstruct the
+    Cartesian Hessian from Gaussian's mass-weighted eigenvectors.
 
 ??? example "Jaguar (Schrödinger)"
 
@@ -177,10 +175,10 @@ molecule), expand the section for your QM engine:
     jag_out = JaguarOut("sn2-ts.out")
     eigenvalues = jag_out.eigenvalues
     eigenvectors = jag_out.eigenvectors
-    structures = jag_out.structures
+    molecules = jag_out.molecules
     frequencies = jag_out.frequencies
 
-    num_atoms = structures[0].coords.shape[0]
+    num_atoms = molecules[0].n_atoms
     jag_in = JaguarIn("sn2-ts.in")
     hessian = jag_in.get_hessian(num_atoms)   # (3N, 3N), Hartree/Bohr²
     ```
@@ -197,11 +195,12 @@ molecule), expand the section for your QM engine:
 
 ---
 
-## Step 2: Build a Q2MMMolecule
+## Step 2: Build a Molecule
 
-`Q2MMMolecule` is Q2MM's format-agnostic molecular structure. It auto-detects
-bonds and angles from covalent radii and stores the QM Hessian alongside the
-geometry.
+`Molecule` is Q2MM's format-agnostic molecular structure. Loader functions
+construct it from XYZ, MOL2, MacroModel, Gaussian, Jaguar, or QCElemental
+inputs; when needed, it auto-detects bonds and angles from covalent radii and
+stores the QM Hessian alongside the geometry.
 
 !!! info "Bond detection and `bond_tolerance`"
     Not all file formats include bond information — XYZ files, for instance,
@@ -218,8 +217,8 @@ geometry.
     are missing from your molecule, increase this value.
 
     Formats that **do** include explicit bond tables (MOL2, MacroModel `.mmo`)
-    skip detection entirely — use `from_structure()` and the bonds and angles
-    from the file are preserved as-is, with no recalculation.
+    skip detection entirely — their dedicated loaders preserve the explicit bond
+    tables from the file, with no recalculation.
 
 ???+ example "From an XYZ file (simplest)"
 
@@ -231,13 +230,13 @@ geometry.
 
     ```python
     import numpy as np
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.io.xyz import load_xyz
     from q2mm.resources import sn2_reference_dir
 
     QM_REF = sn2_reference_dir()
 
     # Load the optimised TS geometry saved by Psi4
-    mol = Q2MMMolecule.from_xyz(
+    mol = load_xyz(
         QM_REF / "sn2-ts-optimized.xyz",
         charge=-1,
         name="SN2_TS",
@@ -277,24 +276,19 @@ geometry.
 
     ```python
     from q2mm.io.gaussian import GaussLog
-    from q2mm.models.molecule import Q2MMMolecule
-    from q2mm.models.hessian import reform_hessian
 
     log = GaussLog("sn2-ts.log", au_hessian=True)
 
-    # Build molecule from the last (optimised) structure
-    structure = log.structures[-1]
-    mol = Q2MMMolecule.from_structure(
-        structure,
+    # Build the molecule from the last (optimised) geometry in the log
+    mol = log.molecules[-1].with_overrides(
         charge=-1,
         bond_tolerance=1.4,
-        hessian=reform_hessian(log.evals, log.evecs),
     )
     ```
 
-    The `from_structure()` constructor also preserves atom type labels from
-    MacroModel `.mmo` files, which is useful for matching to existing force
-    field parameters.
+    Gaussian and MacroModel loaders preserve the atom typing / connectivity
+    information they already know about, which is useful when matching to
+    existing force-field parameters.
 
 ??? example "From a QCElemental Molecule"
 
@@ -303,10 +297,10 @@ geometry.
 
     ```python
     import qcelemental as qcel
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.io.qcelemental import molecule_from_qcel
 
     qcel_mol = qcel.models.Molecule(...)
-    mol = Q2MMMolecule.from_qcel(qcel_mol, name="my-molecule")
+    mol = molecule_from_qcel(qcel_mol, name="my-molecule")
     ```
 
 ??? example "From raw arrays (manual construction)"
@@ -315,7 +309,7 @@ geometry.
 
     ```python
     import numpy as np
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
     coordinates = np.array([
         [ 0.000000,  0.000000,  0.000000],   # C
@@ -326,8 +320,9 @@ geometry.
         [-0.513360, -0.889165,  0.000000],   # H
     ])
 
-    mol = Q2MMMolecule(
-        symbols=["C", "F", "F", "H", "H", "H"],
+    mol = Molecule(
+        symbols=("C", "F", "F", "H", "H", "H"),
+        atom_types=("C", "F", "F", "H", "H", "H"),
         geometry=coordinates,
         charge=-1,
         name="sn2-ts",
@@ -342,7 +337,8 @@ geometry.
 
 ## Step 3: Initialise the Force Field with QFUERZA
 
-**QFUERZA** (Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469–476)
+**QFUERZA**
+([Farrugia et al., *J. Chem. Theory Comput.* **2025**, 22, 469–476](https://doi.org/10.1021/acs.jctc.5c01751))
 extracts harmonic force constants directly from the QM Hessian matrix using
 Seminario projection. For each bond or angle, it projects the Hessian onto the
 internal coordinate's subspace and takes the eigenvalue along that direction.
@@ -354,13 +350,17 @@ without running a single MM calculation.
 ???+ example "Quick start — auto-create and estimate"
 
     ```python
+    from q2mm.models.forcefield import FunctionalForm
     from q2mm.models.seminario import qfuerza_fresh
 
     # qfuerza_fresh accepts a single molecule and builds a fresh FF from
     # its QM Hessian.  For multi-molecule averaging (with a template FF
     # whose frozen partition is preserved), use qfuerza_into instead.
+    # functional_form is required — no default is chosen for you; pick
+    # HARMONIC for JAX/JAX-MD or MM3 for OpenMM/Tinker.
     ff = qfuerza_fresh(
         mol,
+        functional_form=FunctionalForm.HARMONIC,
         zero_torsions=True,    # set torsion barriers to zero (common for TS)
         au_hessian=True,       # Hessian is in Hartree/Bohr²
         invalid_policy="skip", # skip negative force constants (TS artefacts)
@@ -371,34 +371,33 @@ without running a single MM calculation.
     print(f"Torsion params: {len(ff.torsions)}")
 
     for b in ff.bonds:
-        print(f"  {b.elements}: k = {b.force_constant:.3f} mdyn/Å, "
+        print(f"  {b.elements}: k = {b.force_constant:.3f} kcal/(mol·Å²), "
               f"r₀ = {b.equilibrium:.4f} Å")
     for a in ff.angles:
-        print(f"  {a.elements}: k = {a.force_constant:.6f} mdyn·Å/rad², "
+        print(f"  {a.elements}: k = {a.force_constant:.6f} kcal/(mol·rad²), "
               f"θ₀ = {a.equilibrium:.1f}°")
     ```
 
 ???+ example "With an existing force field template"
 
     If you already have an MM3 `.fld` file with initial guesses (or placeholder
-    values), use ``qfuerza_into`` to update the unfrozen parameters in place
-    while preserving atom types and row numbers.  Any parameters that the
-    caller has frozen (e.g. via ``ForceField.freeze_standard_params``) are
-    left untouched — see Farrugia 2025 for the "mixing literature + custom
-    params" workflow this enables.
+    values), use ``qfuerza_into`` to return a new force field whose *selected*
+    parameter rows are overwritten while preserving atom types and row numbers.
+    Active/frozen state now lives outside `ForceField`: benchmark loaders build
+    OPT-only subsets with `opt_substructure_membership(...)` and
+    `ActiveParameterSpace`, while standalone scripts can simply overwrite every
+    compatible bond/angle/torsion row.
 
     ```python
-    from q2mm.models.forcefield import ForceField
+    from q2mm.io import load_mm3_fld
     from q2mm.models.seminario import qfuerza_into
 
     # Load template with initial guesses (replace with your .fld path)
-    initial_ff = ForceField.from_mm3_fld("my-system.fld")
+    initial_ff = load_mm3_fld("my-system.fld")
 
-    # Make a working copy so the template isn't mutated, then overwrite
-    # every unfrozen parameter's value with the QFUERZA projection.
-    estimated_ff = initial_ff.copy()
-    qfuerza_into(
-        estimated_ff,
+    # Return a new ForceField with selected rows overwritten by QFUERZA.
+    estimated_ff = qfuerza_into(
+        initial_ff,
         mol,
         zero_torsions=True,
         au_hessian=True,
@@ -406,10 +405,10 @@ without running a single MM calculation.
     )
 
     # Compare before / after
-    for i, (old, new) in enumerate(zip(initial_ff.bonds, estimated_ff.bonds)):
+    for old, new in zip(initial_ff.bonds, estimated_ff.bonds):
         delta = new.force_constant - old.force_constant
         print(f"  Bond {old.elements}: {old.force_constant:.3f} → "
-              f"{new.force_constant:.3f} mdyn/Å  (Δ = {delta:+.3f})")
+              f"{new.force_constant:.3f} kcal/(mol·Å²)  (Δ = {delta:+.3f})")
     ```
 
     !!! note "What `invalid_policy='skip'` does"
@@ -423,40 +422,42 @@ without running a single MM calculation.
 
 ## Step 4: Set Up Reference Data
 
-The `ReferenceData` container holds the QM target values that the objective
+The `ObservationSet` container holds the QM target values that the objective
 function will try to reproduce. Each entry has a **kind** (energy, frequency,
-bond length, bond angle, torsion angle), a **value**, and a **weight** that
-controls its importance in the fit.
+bond length, bond angle, torsion angle, eigenmatrix term, ...), a **value**,
+and a **weight** that controls its importance in the fit.
 
 ???+ example "Quick start — auto-populate from a molecule"
 
-    The simplest approach auto-extracts bond lengths and angles from the
-    molecule we already built, and adds frequencies from the QM calculation:
+    The simplest approach auto-extracts bond lengths, angles, and
+    Hessian-derived eigenmatrix terms from the molecule we already built, and
+    optionally adds frequencies from the QM calculation:
 
     ```python
     import numpy as np
-    from q2mm.optimizers.objective import ReferenceData
+    from q2mm.models.observations import ObservationSet
     from q2mm.resources import sn2_reference_dir
 
     # Load frequencies from QM output
     ts_freqs = np.loadtxt(sn2_reference_dir() / "sn2-ts-frequencies.txt")
 
-    # One call populates everything
-    ref = ReferenceData.from_molecule(
+    # One call populates geometry + eigenmatrix targets, plus the real frequencies
+    ref = ObservationSet.from_molecule(
         mol,
         frequencies=ts_freqs,
         skip_imaginary=True,  # skip the imaginary TS mode
     )
 
     print(f"Reference observations: {ref.n_observations}")
-    # → bonds + angles + real frequencies
+    # → bonds + angles + eigenmatrix terms + real frequencies
     ```
 
     Default weights are `bond_length=10.0`, `bond_angle=5.0`,
-    `frequency=1.0`.  Override with the `weights` parameter:
+    `frequency=1.0`, with separate defaults for eigenmatrix terms. Override
+    them with the `weights` parameter:
 
     ```python
-    ref = ReferenceData.from_molecule(
+    ref = ObservationSet.from_molecule(
         mol,
         frequencies=ts_freqs,
         weights={"bond_length": 50.0, "bond_angle": 25.0, "frequency": 2.0},
@@ -469,7 +470,9 @@ controls its importance in the fit.
     build both the molecule and reference data in one step:
 
     ```python
-    ref, mol = ReferenceData.from_fchk(
+    from q2mm.io.fchk import load_fchk_reference
+
+    ref, mol = load_fchk_reference(
         "examples/ethane/GS.fchk",
         bond_tolerance=1.3,
     )
@@ -484,7 +487,9 @@ controls its importance in the fit.
     For Gaussian log files from `opt freq` jobs:
 
     ```python
-    ref, mol = ReferenceData.from_gaussian(
+    from q2mm.io.gaussian import load_gaussian_reference
+
+    ref, mol = load_gaussian_reference(
         "sn2-ts.log",
         bond_tolerance=1.4,
         charge=-1,
@@ -498,43 +503,50 @@ controls its importance in the fit.
     For optimising against multiple conformers or molecules:
 
     ```python
-    ref = ReferenceData.from_molecules(
+    ref = ObservationSet.from_molecules(
         [mol_gs, mol_ts],
+        case_ids=["gs", "ts"],
         frequencies_list=[freqs_gs, freqs_ts],
         skip_imaginary=True,
     )
-    # Each molecule gets a sequential molecule_idx (0, 1, ...)
+    # Each molecule is bound to its case_id ("gs", "ts", ...) rather than
+    # a positional index — every observation carries that stable ID.
     ```
 
 ??? example "Manual construction (full control)"
 
-    You can still build `ReferenceData` entry by entry when you need
-    complete control over what goes in:
+    You can still build `ObservationSet` entry by entry when you need
+    complete control over what goes in. Every `with_*` method returns a
+    **new** `ObservationSet`, so reassign `ref` each time:
 
     ```python
-    ref = ReferenceData()
+    from q2mm.models.observations import ObservationSet
+
+    ref = ObservationSet()
 
     for bond in mol.bonds:
-        ref.add_bond_length(
+        ref = ref.with_bond_length(
             bond.length,
             atom_indices=(bond.atom_i, bond.atom_j),
             weight=10.0,
+            case_id="0",
             label=f"{bond.element_pair} bond",
         )
 
     for angle in mol.angles:
-        ref.add_bond_angle(
+        ref = ref.with_bond_angle(
             angle.value,
             atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
             weight=5.0,
+            case_id="0",
             label=f"{angle.elements} angle",
         )
 
     # Bulk-add frequencies
-    ref.add_frequencies_from_array(ts_freqs, weight=1.0, skip_imaginary=True)
+    ref = ref.with_frequencies_from_array(ts_freqs, weight=1.0, case_id="0", skip_imaginary=True)
 
     # Add an energy target
-    ref.add_energy(-239.12345, weight=1.0, label="TS energy")
+    ref = ref.with_energy(-239.12345, weight=1.0, case_id="0", label="TS energy")
     ```
 
 !!! tip "Choosing weights"
@@ -554,31 +566,36 @@ controls its importance in the fit.
 ## Step 5: Create the Objective Function
 
 The `ObjectiveFunction` ties together the force field, the MM engine, the
-molecular structures, and the reference data into a single callable that
-`scipy.optimize.minimize` can drive.
+molecular structures, the observation set, and an explicit `ParameterLayout`
+into a single callable that `scipy.optimize.minimize` can drive.
 
 At each evaluation it:
 
-1. Sets the force-field parameters from the current parameter vector
+1. Materializes a candidate `ForceField` from the current parameter vector via `ParameterLayout.replace()`
 2. Runs the MM engine (energy, geometry, frequencies) for each molecule
-3. Computes weighted residuals against the reference data
+3. Computes weighted residuals against the observation set
 4. Returns the sum of squared residuals
 
 ```python
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
+
+layout = ParameterLayout.from_force_field(ff)
+space = ActiveParameterSpace.all_active(layout, ff)
 
 objective = ObjectiveFunction(
     forcefield=ff,
     engine=engine,        # your MM backend (see below)
     molecules=[mol],
     reference=ref,
+    layout=layout,
 )
 
 # Evaluate at the initial (QFUERZA) parameters
-initial_params = ff.get_param_vector()
+initial_params = layout.vector(ff)
 initial_score = objective(initial_params)
 print(f"Initial score: {initial_score:.6f}")
-print(f"Parameters:    {len(initial_params)}")
+print(f"Parameters:    {len(layout)} total / {space.n_active} active")
 ```
 
 !!! note "Setting up an MM engine"
@@ -634,7 +651,7 @@ force-field fitting.
         verbose=True,
     )
 
-    result = optimizer.optimize(objective)
+    result = optimizer.optimize(objective, space)
     print(result.summary())
     ```
 
@@ -665,10 +682,10 @@ force-field fitting.
     # Fractional improvement (0 = no change, 1 = perfect)
     print(f"Improvement: {result.improvement:.1%}")
 
-    # Optimised parameters are already applied to the ForceField
-    optimised_ff = objective.forcefield
+    # Materialize the optimised immutable ForceField from result.final_params
+    optimised_ff = layout.replace(ff, result.final_params)
     for b in optimised_ff.bonds:
-        print(f"  {b.elements}: k = {b.force_constant:.4f} mdyn/Å, "
+        print(f"  {b.elements}: k = {b.force_constant:.4f} kcal/(mol·Å²), "
               f"r₀ = {b.equilibrium:.4f} Å")
 
     # Convergence history (score at each evaluation)
@@ -697,6 +714,7 @@ parameters, combining the strengths of both approaches.
 
     loop = OptimizationLoop(
         objective,
+        space,
         max_params=3,         # simplex on bottom 3 by simp_var per cycle
         max_cycles=10,        # up to 10 grad-simp cycles
         convergence=0.01,     # stop when <1% improvement per cycle
@@ -753,7 +771,7 @@ outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
         max_steps=2000,
     )
 
-    result = optimizer.optimize(objective)
+    result = optimizer.optimize(objective, space)
     print(result.summary())
     ```
 
@@ -799,14 +817,15 @@ outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
 
 ---
 
-## Step 6d: JaxOpt Optimizers (JAX only — End-to-End Differentiable)
+## Step 6d: JaxOpt Optimizers (JAX only — Analytical-Gradient Solvers)
 
 If you're using the **JAX backend**, you can also use
-[JAXopt](https://jaxopt.github.io/) for **end-to-end differentiable**
-optimisation. Unlike optax (which differentiates through the *loss* only),
-JaxOpt compiles the entire objective — force field → MM engine → loss — into
-a single JIT-traced function. This enables true second-order methods like
-L-BFGS and L-BFGS-B with exact gradients.
+[JAXopt](https://jaxopt.github.io/) for analytical-gradient optimisation.
+Unlike optax's adaptive first-order updates, JaxOpt gives you solvers such as
+L-BFGS and L-BFGS-B while still sourcing exact gradients from Q2MM's
+per-molecule `JaxLoss` functions. q2mm deliberately keeps the outer JaxOpt
+solver loop in Python (`jit=False`) so multi-molecule jobs do **not** get
+re-inlined into one giant XLA program.
 
 ???+ example "JaxOpt L-BFGS-B optimization"
 
@@ -818,7 +837,7 @@ L-BFGS and L-BFGS-B with exact gradients.
         maxiter=500,
     )
 
-    result = optimizer.optimize(objective)
+    result = optimizer.optimize(objective, space)
     print(result.summary())
     ```
 
@@ -827,14 +846,16 @@ L-BFGS and L-BFGS-B with exact gradients.
 
 !!! warning "JAX backend required"
     `JaxOptOptimizer` only works with `JaxEngine`. It converts the
-    `ObjectiveFunction` into a frozen `ObjectiveSpec` and compiles the
-    entire pipeline with `jax.jit`. Non-JAX backends are not supported.
+    `ObjectiveFunction` into a frozen `ObjectiveSpec` and evaluates gradients
+    through `JaxLoss`; non-JAX backends are not supported.
 
 !!! tip "When to use JaxOpt"
     JaxOpt is most useful when you want the same algorithms as SciPy (L-BFGS-B)
     but with **exact analytical gradients** instead of finite differences. The
     gradient quality is identical to optax, but the optimiser itself is
-    second-order. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax)
+    second-order. In production, the SciPy + JaxLoss route remains the default
+    for literature-scale TS benchmarks; JaxOpt is most useful on smaller JAX
+    problems. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax)
     in the Optimization Guide for details.
 
 ---
@@ -842,16 +863,23 @@ L-BFGS and L-BFGS-B with exact gradients.
 ## Step 7: Export the Optimised Force Field
 
 Q2MM can write the optimised parameters to **MM3 `.fld`**, **Tinker `.prm`**,
-**AMBER `.frcmod`**, or **OpenMM `.xml`** format. For **JAX** and **JAX-MD**
-backends, save the parameter vector directly as a NumPy array. The `ForceField`
-object has convenience methods for all formats:
+**AMBER `.frcmod`**, or **OpenMM `.xml`** format via free I/O functions. For
+**JAX** and **JAX-MD** backends, save the parameter vector directly as a NumPy
+array using the same `ParameterLayout` that defined the optimization:
 
 ```python
-optimised_ff.to_mm3_fld("optimized_mm3.fld")
-optimised_ff.to_tinker_prm("optimized.prm")
-optimised_ff.to_amber_frcmod("optimized.frcmod")
-optimised_ff.to_openmm_xml("forcefield.xml")
-np.save("optimized_params.npy", optimised_ff.get_param_vector())
+from q2mm.io import (
+    save_amber_frcmod,
+    save_mm3_fld,
+    save_openmm_xml,
+    save_tinker_prm,
+)
+
+save_mm3_fld(optimised_ff, "optimized_mm3.fld")
+save_tinker_prm(optimised_ff, "optimized.prm")
+save_amber_frcmod(optimised_ff, "optimized.frcmod")
+save_openmm_xml(optimised_ff, "forcefield.xml", molecule=mol)
+np.save("optimized_params.npy", layout.vector(optimised_ff))
 ```
 
 Expand each format below for details and template-based export options:
@@ -930,14 +958,14 @@ Expand each format below for details and template-based export options:
     ```python
     import numpy as np
 
-    np.save("optimized_params.npy", optimised_ff.get_param_vector())
+    np.save("optimized_params.npy", layout.vector(optimised_ff))
     ```
 
     To reload into a new session:
 
     ```python
     params = np.load("optimized_params.npy")
-    ff.set_param_vector(params)
+    reloaded_ff = layout.replace(ff, params)
     ```
 
 ---
@@ -953,17 +981,20 @@ analysis steps immediately without a source checkout.
 
 import numpy as np
 
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField
+from q2mm.io import save_mm3_fld
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import FunctionalForm
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from q2mm.resources import sn2_reference_dir
 
 QM_REF = sn2_reference_dir()
 
 # ── Step 1: Load QM data ──────────────────────────────────────────
-mol = Q2MMMolecule.from_xyz(
+mol = load_xyz(
     QM_REF / "sn2-ts-optimized.xyz",
     charge=-1,
     name="SN2_TS",
@@ -978,6 +1009,7 @@ print(f"Loaded: {mol.n_atoms} atoms, {len(mol.bonds)} bonds, "
 # ── Step 2: QFUERZA estimation ──────────────────────────────────
 ff = qfuerza_fresh(
     mol,
+    functional_form=FunctionalForm.MM3,
     zero_torsions=True,
     au_hessian=True,
     invalid_policy="skip",
@@ -985,16 +1017,16 @@ ff = qfuerza_fresh(
 
 print("\nQFUERZA estimates:")
 for b in ff.bonds:
-    print(f"  Bond {b.elements}: k={b.force_constant:.4f} mdyn/Å, "
+    print(f"  Bond {b.elements}: k={b.force_constant:.4f} kcal/(mol·Å²), "
           f"r₀={b.equilibrium:.4f} Å  {b.label}")
 for a in ff.angles:
-    print(f"  Angle {a.elements}: k={a.force_constant:.6f} mdyn·Å/rad², "
+    print(f"  Angle {a.elements}: k={a.force_constant:.6f} kcal/(mol·rad²), "
           f"θ₀={a.equilibrium:.1f}°  {a.label}")
 
 # ── Step 3: Reference data ────────────────────────────────────────
 ts_freqs = np.loadtxt(str(QM_REF / "sn2-ts-frequencies.txt"))
 
-ref = ReferenceData.from_molecule(
+ref = ObservationSet.from_molecule(
     mol,
     frequencies=ts_freqs,
     skip_imaginary=True,
@@ -1006,21 +1038,26 @@ from q2mm.backends.mm.openmm import OpenMMEngine
 
 engine = OpenMMEngine()
 
+layout = ParameterLayout.from_force_field(ff)
+space = ActiveParameterSpace.all_active(layout, ff)
+
 objective = ObjectiveFunction(
     forcefield=ff,
     engine=engine,
     molecules=[mol],
     reference=ref,
+    layout=layout,
 )
 
 optimizer = ScipyOptimizer(
     method="L-BFGS-B", maxiter=500, eps=1e-3
 )
-result = optimizer.optimize(objective)
+result = optimizer.optimize(objective, space)
 print(result.summary())
 
 # ── Step 5: Export ────────────────────────────────────────────────
-ff.to_mm3_fld("sn2-ts-qfuerza.fld")
+final_ff = layout.replace(ff, result.final_params)
+save_mm3_fld(final_ff, "sn2-ts-qfuerza.fld")
 ```
 
 ---
@@ -1038,7 +1075,7 @@ Once you have completed this tutorial, consider:
   data (Step 4) for a tighter fit of force constants.
 
 - **Torsion scanning** — for systems with soft torsions, run a QM torsion
-  scan and add the energy profile to `ReferenceData` for proper barrier
+  scan and add the energy profile to `ObservationSet` for proper barrier
   heights.
 
 - **Custom weighting** — experiment with different weights to balance
@@ -1053,5 +1090,5 @@ Once you have completed this tutorial, consider:
   than parameters.
 
 - **Consult the API reference** — see the [API Reference](reference/q2mm/index.md) for the
-  complete interface of `ForceField`, `Q2MMMolecule`, `ObjectiveFunction`,
+  complete interface of `ForceField`, `Molecule`, `ObservationSet`, `ObjectiveFunction`,
   and all I/O functions.

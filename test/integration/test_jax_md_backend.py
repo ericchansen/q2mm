@@ -27,7 +27,7 @@ pytestmark = [
 
 from test._shared import make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam, FunctionalForm
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +47,7 @@ def _init_jax_md() -> None:
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     return ForceField(
         bonds=[BondParam(elements=("H", "H"), force_constant=bond_k, equilibrium=bond_r0)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -56,12 +57,14 @@ def _water_ff(
     return ForceField(
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
 def _vdw_ff() -> ForceField:
     return ForceField(
         vdws=[VdwParam(atom_type="He", element="He", radius=1.40, epsilon=0.02)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 

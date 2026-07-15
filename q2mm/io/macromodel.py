@@ -10,17 +10,231 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.models.structure import Angle, Atom, Bond, Structure, Torsion
-
-if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.identifiers import (
+    _extract_element,
+    canonicalize_angle_env_id,
+    canonicalize_bond_env_id,
+    canonicalize_torsion_env_id,
+)
+from q2mm.models.molecule import Angle, Bond, Molecule, Torsion
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _MacroModelAtom:
+    """One atom parsed from a MacroModel ``.mmo`` connectivity block."""
+
+    index: int
+    element: str
+    atom_type_name: str
+    x: float
+    y: float
+    z: float
+
+    @property
+    def coords(self) -> np.ndarray:
+        """Cartesian coordinates of this atom, as ``[x, y, z]``."""
+        return np.array([self.x, self.y, self.z])
+
+    @property
+    def symbol(self) -> str:
+        """Resolve this atom's element symbol."""
+        if self.element:
+            return _extract_element(self.element)
+        return _extract_element(self.atom_type_name) if self.atom_type_name else ""
+
+
+@dataclass
+class _MacroModelBond:
+    """One bond parsed from a MacroModel ``.mmo`` bond-energy line."""
+
+    atom_nums: list[int]
+    value: float
+    ff_row: int
+    comment: str = ""
+
+
+@dataclass
+class _MacroModelAngle:
+    """One angle parsed from a MacroModel ``.mmo`` angle-energy line."""
+
+    atom_nums: list[int]
+    value: float
+    ff_row: int
+    comment: str = ""
+
+
+@dataclass
+class _MacroModelTorsion:
+    """One torsion parsed from a MacroModel ``.mmo`` torsion-energy line."""
+
+    atom_nums: list[int]
+    value: float
+    ff_row: int
+    comment: str = ""
+
+
+@dataclass
+class _MacroModelRecord:
+    """One structure/conformer staging record parsed from a MacroModel file.
+
+    MacroModel ``.mmo`` files always supply full bond/angle/torsion
+    connectivity for every structure — there is no "topology omitted"
+    case for this format — so ``bonds``/``angles``/``torsions`` here are
+    always converted as explicit/authoritative, never inferred.
+    """
+
+    origin_name: str
+    atoms: list[_MacroModelAtom] = field(default_factory=list)
+    bonds: list[_MacroModelBond] = field(default_factory=list)
+    angles: list[_MacroModelAngle] = field(default_factory=list)
+    torsions: list[_MacroModelTorsion] = field(default_factory=list)
+
+
+def _read_bond_line(line: str) -> _MacroModelBond | None:
+    """Parse a single line for bond data.
+
+    Args:
+        line: A line from the bond section of the ``.mmo`` file.
+
+    Returns:
+        A :class:`_MacroModelBond` if the line matches the bond pattern,
+        otherwise ``None``.
+
+    """
+    match = co.RE_BOND.match(line)
+    # atom_nums are 1-based atom indices (not atomic numbers)
+    if match:
+        atom_nums = [int(x) for x in [match.group(1), match.group(2)]]
+        value = float(match.group(3))
+        comment = match.group(4).strip()
+        ff_row = int(match.group(5))
+        return _MacroModelBond(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+    return None
+
+
+def _read_angle_line(line: str) -> _MacroModelAngle | None:
+    """Parse a single line for angle data.
+
+    Terminal atoms are reordered so that the lower index comes first.
+
+    Args:
+        line: A line from the angle section of the ``.mmo`` file.
+
+    Returns:
+        A :class:`_MacroModelAngle` if the line matches the angle pattern,
+        otherwise ``None``.
+
+    """
+    match = co.RE_ANGLE.match(line)
+    if match:
+        atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3)]]
+        # Reorder the terminal atoms so that the lower index atom is first.
+        if atom_nums[0] > atom_nums[2]:
+            atom_nums = [atom_nums[2], atom_nums[1], atom_nums[0]]
+        value = float(match.group(4))
+        comment = match.group(5).strip()
+        ff_row = int(match.group(6))
+        return _MacroModelAngle(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+    return None
+
+
+def _read_torsion_line(line: str) -> _MacroModelTorsion | None:
+    """Parse a single line for torsion data.
+
+    Atom indices are reordered so that the lower central-atom index comes
+    first.
+
+    Args:
+        line: A line from the torsion section of the ``.mmo`` file.
+
+    Returns:
+        A :class:`_MacroModelTorsion` if the line matches the torsion
+        pattern, otherwise ``None``.
+
+    """
+    match = co.RE_TORSION.match(line)
+    if match:
+        atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3), match.group(4)]]
+        if atom_nums[1] > atom_nums[2]:
+            atom_nums = [atom_nums[3], atom_nums[2], atom_nums[1], atom_nums[0]]
+        value = float(match.group(5))
+        comment = match.group(6).strip()
+        ff_row = int(match.group(7))
+        return _MacroModelTorsion(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+    return None
+
+
+def _molecule_from_macromodel_record(record: _MacroModelRecord) -> Molecule:
+    """Convert a :class:`_MacroModelRecord` into a :class:`~q2mm.models.molecule.Molecule`.
+
+    Bonds/angles/torsions are always explicit/authoritative — MacroModel
+    ``.mmo`` files always supply full connectivity for every structure.
+    """
+    symbols = [atom.symbol for atom in record.atoms]
+    atom_types = [atom.atom_type_name for atom in record.atoms]
+    coords = [atom.coords for atom in record.atoms]
+
+    def _atom(num: int) -> _MacroModelAtom:
+        return record.atoms[num - 1]
+
+    bonds = tuple(
+        Bond(
+            atom_i=b.atom_nums[0] - 1,
+            atom_j=b.atom_nums[1] - 1,
+            elements=(_atom(b.atom_nums[0]).symbol, _atom(b.atom_nums[1]).symbol),
+            length=b.value,
+            env_id=canonicalize_bond_env_id([_atom(n).atom_type_name for n in b.atom_nums]),
+            ff_row=b.ff_row,
+        )
+        for b in record.bonds
+    )
+    angles = tuple(
+        Angle(
+            atom_i=a.atom_nums[0] - 1,
+            atom_j=a.atom_nums[1] - 1,
+            atom_k=a.atom_nums[2] - 1,
+            elements=(_atom(a.atom_nums[0]).symbol, _atom(a.atom_nums[1]).symbol, _atom(a.atom_nums[2]).symbol),
+            value=a.value,
+            env_id=canonicalize_angle_env_id([_atom(n).atom_type_name for n in a.atom_nums]),
+            ff_row=a.ff_row,
+        )
+        for a in record.angles
+    )
+    torsions = tuple(
+        Torsion(
+            atom_i=t.atom_nums[0] - 1,
+            atom_j=t.atom_nums[1] - 1,
+            atom_k=t.atom_nums[2] - 1,
+            atom_l=t.atom_nums[3] - 1,
+            elements=(
+                _atom(t.atom_nums[0]).symbol,
+                _atom(t.atom_nums[1]).symbol,
+                _atom(t.atom_nums[2]).symbol,
+                _atom(t.atom_nums[3]).symbol,
+            ),
+            value=t.value,
+            env_id=canonicalize_torsion_env_id([_atom(n).atom_type_name for n in t.atom_nums]),
+            ff_row=t.ff_row,
+        )
+        for t in record.torsions
+    )
+
+    return Molecule(
+        symbols=tuple(symbols),
+        atom_types=tuple(atom_types),
+        geometry=np.array(coords, dtype=float),
+        bonds=bonds,
+        angles=angles,
+        torsions=torsions,
+        name=record.origin_name,
+    )
 
 
 class MacroModel:
@@ -41,7 +255,7 @@ class MacroModel:
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        self._structures = None
+        self._records = None
 
     @property
     def lines(self) -> list[str]:
@@ -72,20 +286,16 @@ class MacroModel:
                 f.write(line)
 
     @property
-    def structures(self) -> list[Structure]:
-        """list[Structure]: Parsed structures with bonds, angles, and torsions.
+    def _records_parsed(self) -> list[_MacroModelRecord]:
+        """Parsed records with bonds, angles, and torsions (private staging).
 
-        Returns:
-            (list[Structure]): Structure objects extracted from the ``.mmo``
-                file, each populated with sorted bonds, angles, and
-                torsions.
-
+        Not part of the public API — see :attr:`molecules`.
         """
         # Atom reading not yet implemented; would be needed for
         # Hessian extraction (requires atom count for matrix shape).
-        if self._structures is None or self._structures == []:
+        if self._records is None or self._records == []:
             logger.log(10, f"READING: {self.filename}")
-            self._structures = []
+            self._records = []
             with open(self.path) as f:
                 count_current = 0
                 count_input = 0
@@ -95,16 +305,14 @@ class MacroModel:
                 angles = []
                 torsions = []
                 atoms = []
-                current_structure = None
+                current_record = None
                 section = None
                 for line in f:
-                    # This would probably be better as a function in the structure
-                    # class but I wanted this as upstream as possible so I didn't
-                    # have to worry about other coding issues. The MMO file lists
-                    # the bonds, angles, and torsions in some order that I am unsure
-                    # of. It seems consistent with the same filename but with two
-                    # files with the exact same structure the ordering is off. This
-                    # reorders the lists before being added to the structure class.
+                    # The MMO file lists the bonds, angles, and torsions in
+                    # some order that I am unsure of. It seems consistent
+                    # with the same filename but with two files with the
+                    # exact same structure the ordering is off. This
+                    # reorders the lists before being added to the record.
                     if "Atomic Charges, Coordinates and Connectivity" in line:
                         section = "atoms"
                         continue
@@ -113,7 +321,7 @@ class MacroModel:
                             split = [item.strip() for item in line.split()]
                             atom_num = split[2][:-1]  # same as index
                             ele_name = re.sub(r"[0-9]", "", split[0])
-                            atom = Atom(
+                            atom = _MacroModelAtom(
                                 atom_type_name=split[0],
                                 element=ele_name,
                                 index=int(atom_num),
@@ -131,12 +339,12 @@ class MacroModel:
                             torsions.sort(
                                 key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3])
                             )
-                            current_structure.bonds = bonds
-                            current_structure.angles = angles
-                            current_structure.torsions = torsions
+                            current_record.bonds = bonds
+                            current_record.angles = angles
+                            current_record.torsions = torsions
                             if atoms:
                                 atoms.sort(key=lambda x: x.index)
-                                current_structure.atoms.extend(atoms)
+                                current_record.atoms.extend(atoms)
                     if "Input filename" in line:
                         count_input += 1
                     if "Input Structure Name" in line:
@@ -153,8 +361,8 @@ class MacroModel:
                         angles = []
                         torsions = []
                         atoms = []
-                        current_structure = Structure(self.filename)
-                        self._structures.append(current_structure)
+                        current_record = _MacroModelRecord(self.filename)
+                        self._records.append(current_record)
                     # For each structure we come across, look for sections that
                     # we are interested in: those pertaining to bonds, angles,
                     # and torsions. Of course more could be added. We set the
@@ -171,100 +379,23 @@ class MacroModel:
                     if "DIHEDRAL ANGLES AND TORSIONAL CROSS-TERMS" in line:
                         section = None
                     if section == "bond":
-                        bond = self.read_line_for_bond(line)
+                        bond = _read_bond_line(line)
                         if bond is not None:
                             bonds.append(bond)
                     if section == "angle":
-                        angle = self.read_line_for_angle(line)
+                        angle = _read_angle_line(line)
                         if angle is not None:
                             angles.append(angle)
                     if section == "torsion":
-                        torsion = self.read_line_for_torsion(line)
+                        torsion = _read_torsion_line(line)
                         if torsion is not None:
                             torsions.append(torsion)
-        return self._structures
+        return self._records
 
     @property
-    def molecules(self) -> list[Q2MMMolecule]:
-        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
-        from q2mm.models.molecule import Q2MMMolecule
-
-        return [Q2MMMolecule.from_structure(s) for s in self.structures]
-
-    def read_line_for_bond(self, line: str) -> Bond | None:
-        """Parse a single line for bond data.
-
-        Args:
-            line (str): A line from the bond section of the ``.mmo`` file.
-
-        Returns:
-            (Bond | None): A Bond object if the line matches the bond
-                pattern, otherwise ``None``.
-
-        """
-        match = co.RE_BOND.match(line)
-        # atom_nums are 1-based atom indices (not atomic numbers)
-        if match:
-            atom_nums = [int(x) for x in [match.group(1), match.group(2)]]
-            value = float(match.group(3))
-            comment = match.group(4).strip()
-            ff_row = int(match.group(5))
-            return Bond(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
-        else:
-            return None
-
-    def read_line_for_angle(self, line: str) -> Angle | None:
-        """Parse a single line for angle data.
-
-        Terminal atoms are reordered so that the lower index comes first.
-
-        Args:
-            line (str): A line from the angle section of the ``.mmo`` file.
-
-        Returns:
-            (Angle | None): An Angle object if the line matches the angle
-                pattern, otherwise ``None``.
-
-        """
-        match = co.RE_ANGLE.match(line)
-        if match:
-            atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3)]]
-            # Reorder the terminal atoms so that the lower index atom is first.
-            if atom_nums[0] > atom_nums[2]:
-                atom_nums = [atom_nums[2], atom_nums[1], atom_nums[0]]
-            value = float(match.group(4))
-            comment = match.group(5).strip()
-            ff_row = int(match.group(6))
-            return Angle(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
-        else:
-            return None
-
-    def read_line_for_torsion(self, line: str) -> Torsion | None:
-        """Parse a single line for torsion data.
-
-        Atom indices are reordered so that the lower central-atom index
-        comes first.
-
-        Args:
-            line (str): A line from the torsion section of the ``.mmo``
-                file.
-
-        Returns:
-            (Torsion | None): A Torsion object if the line matches the
-                torsion pattern, otherwise ``None``.
-
-        """
-        match = co.RE_TORSION.match(line)
-        if match:
-            atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3), match.group(4)]]
-            if atom_nums[1] > atom_nums[2]:
-                atom_nums = [atom_nums[3], atom_nums[2], atom_nums[1], atom_nums[0]]
-            value = float(match.group(5))
-            comment = match.group(6).strip()
-            ff_row = int(match.group(7))
-            return Torsion(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
-        else:
-            return None
+    def molecules(self) -> list[Molecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Molecule` objects."""
+        return [_molecule_from_macromodel_record(record) for record in self._records_parsed]
 
 
 class MacroModelLog:
@@ -285,7 +416,7 @@ class MacroModelLog:
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
         self._hessian = None
-        self._structures = None
+        self._records = None
 
     @property
     def lines(self) -> list[str]:
@@ -385,24 +516,23 @@ class MacroModelLog:
         return self._hessian
 
     @property
-    def structures(self) -> list[Structure]:
-        """list[Structure]: Parsed structures from the log file.
+    def _records_parsed(self) -> list[_MacroModelRecord]:
+        """Parsed records from the log file (private staging).
 
-        Returns:
-            (list[Structure]): Structure objects extracted from the
-                MacroModel log file.
-
+        Not part of the public API — see :attr:`molecules`.
         """
-        if self._structures is None:
+        if self._records is None:
             logger.log(10, f"READING: {self.filename}")
-            self._structures = []
+            self._records = []
             with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
                 count_previous = 0
-                atoms = []
                 bonds = []
+                angles = []
+                torsions = []
+                current_record = None
                 section = None
                 for line in f:
                     if "m_atom" in line:
@@ -421,13 +551,11 @@ class MacroModelLog:
                         continue
                     else:
                         continue
-                    # This would probably be better as a function in the structure
-                    # class but I wanted this as upstream as possible so I didn't
-                    # have to worry about other coding issues. The MMO file lists
-                    # the bonds, angles, and torsions in some order that I am unsure
-                    # of. It seems consistent with the same filename but with two
-                    # files with the exact same structure the ordering is off. This
-                    # reorders the lists before being added to the structure class.
+                    # The MMO file lists the bonds, angles, and torsions in
+                    # some order that I am unsure of. It seems consistent
+                    # with the same filename but with two files with the
+                    # exact same structure the ordering is off. This
+                    # reorders the lists before being added to the record.
                     if "Input filename" in line:
                         count_input += 1
                     if "Input Structure Name" in line:
@@ -443,8 +571,8 @@ class MacroModelLog:
                         bonds = []
                         angles = []
                         torsions = []
-                        current_structure = Structure(self.filename)
-                        self._structures.append(current_structure)
+                        current_record = _MacroModelRecord(self.filename)
+                        self._records.append(current_record)
                     # For each structure we come across, look for sections that
                     # we are interested in: those pertaining to bonds, angles,
                     # and torsions. Of course more could be added. We set the
@@ -461,15 +589,15 @@ class MacroModelLog:
                     if "DIHEDRAL ANGLES AND TORSIONAL CROSS-TERMS" in line:
                         section = None
                     if section == "bond":
-                        bond = self.read_line_for_bond(line)
+                        bond = _read_bond_line(line)
                         if bond is not None:
                             bonds.append(bond)
                     if section == "angle":
-                        angle = self.read_line_for_angle(line)
+                        angle = _read_angle_line(line)
                         if angle is not None:
                             angles.append(angle)
                     if section == "torsion":
-                        torsion = self.read_line_for_torsion(line)
+                        torsion = _read_torsion_line(line)
                         if torsion is not None:
                             torsions.append(torsion)
                     if "Connection Table" in line:
@@ -478,15 +606,13 @@ class MacroModelLog:
                         bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
                         angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
                         torsions.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
-                        current_structure.bonds = bonds
-                        current_structure.angles = angles
-                        current_structure.torsions = torsions
-            logger.log(5, f"  -- Imported {len(self._structures)} structure(s).")
-        return self._structures
+                        current_record.bonds = bonds
+                        current_record.angles = angles
+                        current_record.torsions = torsions
+            logger.log(5, f"  -- Imported {len(self._records)} structure(s).")
+        return self._records
 
     @property
-    def molecules(self) -> list[Q2MMMolecule]:
-        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
-        from q2mm.models.molecule import Q2MMMolecule
-
-        return [Q2MMMolecule.from_structure(s) for s in self.structures]
+    def molecules(self) -> list[Molecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Molecule` objects."""
+        return [_molecule_from_macromodel_record(record) for record in self._records_parsed]

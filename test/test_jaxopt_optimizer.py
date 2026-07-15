@@ -22,15 +22,47 @@ pytestmark = [
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 
 # Module-level globals populated by autouse fixture
 JaxEngine = None
 
 
+def _layout(forcefield: ForceField) -> ParameterLayout:
+    return ParameterLayout.from_force_field(forcefield)
+
+
+def _params(forcefield: ForceField) -> np.ndarray:
+    return _layout(forcefield).vector(forcefield)
+
+
+def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
+    return _layout(forcefield).replace(forcefield, vector)
+
+
+def _make_objective(
+    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+) -> ObjectiveFunction:
+    return ObjectiveFunction(
+        forcefield=forcefield,
+        engine=engine,
+        molecules=molecules,
+        reference=reference,
+        layout=_layout(forcefield),
+        **kwargs,
+    )
+
+
+def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
+    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+
+
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     return ForceField(
         bonds=[BondParam(elements=("H", "H"), force_constant=bond_k, equilibrium=bond_r0)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -43,6 +75,7 @@ def _water_ff(
     return ForceField(
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -79,20 +112,20 @@ class TestJaxOptOptimizerValidation:
         from unittest.mock import MagicMock
 
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff()
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         fake_engine = MagicMock()
         fake_engine.__class__.__name__ = "FakeEngine"
-        obj = ObjectiveFunction(forcefield=ff, engine=fake_engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=fake_engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
         with pytest.raises(TypeError, match="JaxOptOptimizer requires a JaxEngine"):
-            optimizer.optimize(obj)
+            optimizer.optimize(obj, _all_active_space(obj))
 
 
 class TestJaxOptOptimizerConvergence:
@@ -101,20 +134,20 @@ class TestJaxOptOptimizerConvergence:
     def test_lbfgs_h2_energy(self) -> None:
         """L-BFGS converges on H2 energy optimization."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         # Perturbed r0 so energy at geometry != 0 (gives non-zero initial loss)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgs"
@@ -124,19 +157,19 @@ class TestJaxOptOptimizerConvergence:
     def test_lbfgsb_h2_energy(self) -> None:
         """L-BFGS-B converges with box constraints."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgsb"
@@ -152,19 +185,19 @@ class TestJaxOptOptimizerConvergence:
         surrogate scale.
         """
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         true_initial = float(obj(np.asarray(result.initial_params)))
         true_final = float(obj(np.asarray(result.final_params)))
@@ -174,20 +207,20 @@ class TestJaxOptOptimizerConvergence:
     def test_result_format(self) -> None:
         """OptimizationResult has all expected fields."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
         from q2mm.optimizers.scipy_opt import OptimizationResult
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert isinstance(result, OptimizationResult)
         assert isinstance(result.success, bool)
@@ -202,66 +235,71 @@ class TestJaxOptOptimizerConvergence:
     def test_water_energy_convergence(self) -> None:
         """Water (bond + angle) energy converges with L-BFGS."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=104.5)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
 
     def test_forcefield_updated(self) -> None:
-        """After optimization, the forcefield params are updated."""
+        """After optimization, final_params can be materialized into a new force field."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        initial_params = ff.get_param_vector().copy()
+        initial_params = _params(ff).copy()
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
-        final_params = ff.get_param_vector()
+        np.testing.assert_array_equal(_params(ff), initial_params)
+        optimized_ff = _materialize(ff, result.final_params)
+        final_params = _params(optimized_ff)
         np.testing.assert_array_equal(final_params, result.final_params)
         # If the optimizer improved, params should differ from initial
         if result.final_score < result.initial_score:
             assert not np.allclose(final_params, initial_params)
 
-    def test_frozen_param_stays_fixed(self) -> None:
-        """Frozen parameters are held constant while active ones optimize."""
+    def test_inactive_param_stays_fixed(self) -> None:
+        """Inactive parameters are held constant while active ones optimize."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
-        ff.bonds[0].frozen = True
-        initial_params = ff.get_param_vector().copy()
+        initial_params = _params(ff).copy()
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        full_space = _all_active_space(obj)
+        active_indices = [slot.index for slot in obj.layout if slot.owner != "bonds"]
+        constrained_space = full_space.with_active_indices(active_indices)
+        result = optimizer.optimize(obj, constrained_space)
 
-        np.testing.assert_allclose(result.final_params[~ff.active_mask], initial_params[~ff.active_mask])
-        np.testing.assert_allclose(ff.get_param_vector(), result.final_params)
+        bond_indices = [slot.index for slot in obj.layout if slot.owner == "bonds"]
+        np.testing.assert_allclose(result.final_params[bond_indices], initial_params[bond_indices])
+        np.testing.assert_allclose(_params(ff), initial_params)
         assert result.final_score <= result.initial_score
 
 
@@ -271,50 +309,50 @@ class TestJaxOptFrequencyConvergence:
     def test_ch3f_frequency_convergence(self) -> None:
         """L-BFGS converges on CH3F frequency optimization."""
         from q2mm.models.hessian import hessian_to_frequencies
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.io.xyz import load_xyz
+        from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.seminario import qfuerza_fresh
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
-
+        from q2mm.models.observations import ObservationSet
         from test._shared import CH3F_HESS, CH3F_XYZ
 
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         hess_qm = np.load(CH3F_HESS)
         mol = mol.with_hessian(hess_qm)
 
         # Build a real FF and perturb it
-        ff = qfuerza_fresh(mol)
+        ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
         freqs_qm = hessian_to_frequencies(hess_qm, list(mol.symbols))
 
         # Perturb bond force constants by 20%
-        params = ff.get_param_vector()
+        params = _params(ff).copy()
         n_bonds = len(ff.bonds)
         for i in range(n_bonds):
             params[2 * i] *= 0.8  # force constant
-        ff.set_param_vector(params)
+        ff = _materialize(ff, params)
 
         engine = JaxEngine()
 
         # Add only real vibrational frequencies (skip first 6 trans/rot)
         n3 = 3 * mol.n_atoms
-        ref = ReferenceData()
+        ref = ObservationSet()
         for i in range(6, n3):
             if abs(freqs_qm[i]) > 10.0:
-                ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
+                ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
             f"Score should improve: {result.initial_score:.2f} → {result.final_score:.2f}"
         )
 
         # Final sorted frequencies should be closer to QM
-        final_ff = ff.with_params(result.final_params)
+        final_ff = _materialize(ff, result.final_params)
         final_freqs = engine.frequencies(mol, final_ff)
-        initial_freqs = engine.frequencies(mol, ff.with_params(result.initial_params))
+        initial_freqs = engine.frequencies(mol, _materialize(ff, result.initial_params))
 
         qm_real = [freqs_qm[i] for i in range(6, n3) if abs(freqs_qm[i]) > 10.0]
         final_real = [final_freqs[i] for i in range(6, n3) if abs(freqs_qm[i]) > 10.0]
@@ -334,7 +372,7 @@ class TestJaxOptBoundsActive:
         """When unconstrained optimum is outside bounds, final params land on bound."""
         from dataclasses import replace
 
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         # Water at bond_length=0.96. Energy minimum wants bond_r0≈0.96.
         # We start at bond_r0=0.88 and constrain to [0.85, 0.90].
@@ -342,10 +380,10 @@ class TestJaxOptBoundsActive:
         ff = _water_ff(bond_k=553.0, bond_r0=0.88, angle_k=49.9, angle_eq=104.5)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
 
         # Override bounds: constrain bond_r0 (index 1) to [0.85, 0.90]
@@ -366,7 +404,7 @@ class TestJaxOptBoundsActive:
         import jaxopt
 
         solver = jaxopt.LBFGSB(fun=jax_loss._loss_fn, maxiter=200, tol=1e-6)
-        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64)
         lower_jnp = jnp.array(lower, dtype=jnp.float64)
         upper_jnp = jnp.array(upper, dtype=jnp.float64)
         result_params, _state = solver.run(params, bounds=(lower_jnp, upper_jnp))
@@ -393,20 +431,20 @@ class TestScipyJaxLossTelemetry:
     """
 
     def test_n_evaluations_reflects_jaxloss_calls(self) -> None:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
 
         optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, jac="auto", ratio_tol=None, verbose=False)
-        result = optimizer.optimize(obj)
+        result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.jac_mode == "jax_loss"
         # Telemetry counts the initial ratio probe plus every optimizer eval.

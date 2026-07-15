@@ -9,8 +9,8 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation
 
 
 @dataclass
@@ -37,7 +37,7 @@ class FrequencyEvaluator:
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -66,7 +66,7 @@ class FrequencyEvaluator:
     def residuals(
         self,
         computed: FrequencyResult,
-        references: list[ReferenceValue],
+        references: list[Observation],
     ) -> list[float]:
         """Compute weighted residuals for frequency references.
 
@@ -109,9 +109,9 @@ class FrequencyEvaluator:
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
-        references: list[ReferenceValue],
+        references: list[Observation],
         n_params: int,
         *,
         structure: Any | None = None,
@@ -162,7 +162,7 @@ class FrequencyEvaluator:
         return grad
 
     @staticmethod
-    def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
+    def extract_value(calc: dict[str, Any], ref: Observation) -> float:
         """Extract a calculated frequency from a results dict.
 
         Args:

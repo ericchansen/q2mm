@@ -1,9 +1,9 @@
-# Reference Data Types
+# Observation Types
 
-This page documents all reference data types supported by Q2MM's
-`ReferenceData` container. Each type represents a QM-computed observable that
-the objective function compares against the corresponding MM prediction during
-force field optimization.
+This page documents the observation kinds supported by Q2MM's
+`ObservationSet` container. Each `Observation` represents one QM- or
+experiment-derived target that the objective function compares against the
+corresponding MM prediction during force field optimization.
 
 ---
 
@@ -19,7 +19,7 @@ force field optimization.
 | [Eigenvalue (diagonal)](#eigenvalue-diagonal) | `eig_diagonal` | 0.1 | Per-mode force constant accuracy |
 | [Eigenmatrix (off-diagonal)](#eigenmatrix-off-diagonal) | `eig_offdiagonal` | 0.05 | Cross-coupling between modes |
 
-All data types are stored in `ReferenceData` and can be combined freely.
+All observation kinds live in `ObservationSet` and can be combined freely.
 The objective function computes weighted squared residuals:
 
 $$\text{Score} = \sum_i w_i \cdot (x_i^\text{QM} - x_i^\text{MM})^2$$
@@ -53,10 +53,14 @@ where the force field may not be expected to reproduce the QM value exactly.
 **API:**
 
 ```python
-ref.add_bond_length(
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_bond_length(
     value=1.384,                  # QM bond length in Å
     atom_indices=(0, 1),          # 0-indexed atom pair
     weight=10.0,
+    case_id="0",                  # stable ID of the training case
     label="C-F bond",
 )
 ```
@@ -82,10 +86,14 @@ other observables.
 **API:**
 
 ```python
-ref.add_bond_angle(
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_bond_angle(
     value=104.52,                   # QM angle in degrees
     atom_indices=(1, 0, 2),         # vertex atom is index 1 (middle)
     weight=5.0,
+    case_id="0",                    # stable ID of the training case
     label="F-C-F angle",
 )
 ```
@@ -115,10 +123,14 @@ them from dominating the fit.
 **API:**
 
 ```python
-ref.add_torsion_angle(
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_torsion_angle(
     value=180.0,                      # QM dihedral in degrees
     atom_indices=(0, 1, 2, 3),        # four atoms defining the dihedral
     weight=2.0,
+    case_id="0",                      # stable ID of the training case
     label="F-C-C-H torsion",
 )
 ```
@@ -165,9 +177,13 @@ to geometric residuals.
 **API:**
 
 ```python
-ref.add_energy(
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_energy(
     value=0.0,                        # QM energy (usually relative)
     weight=1.0,
+    case_id="0",                      # stable ID of the training case
     label="TS energy",
 )
 ```
@@ -210,19 +226,28 @@ poorly described by harmonic force fields and may warrant lower weights.
 **API:**
 
 ```python
+import numpy as np
+
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+
 # Bulk-add from an array (most common)
 ts_freqs = np.loadtxt("qm-frequencies.txt")
-n = ref.add_frequencies_from_array(ts_freqs, weight=1.0, skip_imaginary=True)
+ref = ref.with_frequencies_from_array(ts_freqs, weight=1.0, case_id="0", skip_imaginary=True)
 
 # Or add individually
-ref.add_frequency(value=1648.5, data_idx=0, weight=1.0)
+ref = ref.with_frequency(value=1648.5, data_idx=0, weight=1.0, case_id="0")
 ```
 
 ---
 
 ## Hessian-derived data
 
-These data types are derived from the QM Hessian via the Seminario/QFUERZA projection method. See [Theory & Methods — Stage 1](theory.md#stage-1-qfuerza-estimation) for the full mathematical treatment.
+These data types are derived from the QM Hessian via the Seminario/QFUERZA
+projection method
+([Farrugia, Helquist, Norrby & Wiest, *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.5c01751)).
+See [Theory & Methods — Stage 1](theory.md#stage-1-qfuerza-estimation) for the full mathematical treatment.
 
 Q2MM supports two ways to use Hessian information as training data, both derived from eigendecomposition of the Hessian.
 
@@ -260,10 +285,14 @@ high-frequency modes:
 **API:**
 
 ```python
-ref.add_hessian_eigenvalue(
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_hessian_eigenvalue(
     value=0.0543,            # in Hartree/Bohr²
     mode_idx=1,              # which eigenvalue (0 = most negative)
     weight=0.1,
+    case_id="0",             # stable ID of the training case
 )
 ```
 
@@ -291,18 +320,24 @@ critical to reproduce exactly).
 **API:**
 
 ```python
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+
 # Add all eigenmatrix data from a Hessian (recommended)
-n = ref.add_eigenmatrix_from_hessian(
+ref = ref.with_eigenmatrix_from_hessian(
     hessian,                       # (3N, 3N) array in Hartree/Bohr²
     diagonal_only=False,           # include off-diagonal elements
+    case_id="0",                   # stable ID of the training case
     skip_first=True,               # zero-weight the reaction coordinate
 )
 
 # Or add individual off-diagonal elements
-ref.add_hessian_offdiagonal(
+ref = ref.with_hessian_offdiagonal(
     value=0.00234,
     row=1, col=3,                     # mode indices
     weight=0.05,
+    case_id="0",                      # stable ID of the training case
 )
 ```
 
@@ -320,7 +355,7 @@ For TSFF parameterization, the standard Q2MM combination is:
 - **Eigenmatrix** (diagonal + off-diagonal) — capture per-mode force
   constants *and* cross-coupling between modes
 
-This is the default in `ReferenceData.from_molecule()` and the approach
+This is the default in `ObservationSet.from_molecule()` and the approach
 used in
 [Rosales et al., *Chem. Commun.* **2018**](https://doi.org/10.1039/C8CC03695K)
 and subsequent Q2MM publications.
@@ -379,47 +414,54 @@ eigenmatrix data.
 ### From files (recommended)
 
 ```python
-from q2mm.optimizers.objective import ReferenceData
+from q2mm.io.fchk import load_fchk_reference
+from q2mm.io.gaussian import load_gaussian_reference
+from q2mm.models.observations import ObservationSet
 
 # Standard TSFF: geometry + eigenmatrix (the default)
-ref = ReferenceData.from_molecule(mol)
+ref = ObservationSet.from_molecule(mol)
 
 # Explicitly include off-diagonal eigenmatrix elements (also the default)
-ref = ReferenceData.from_molecule(
+ref = ObservationSet.from_molecule(
     mol,
     include_eigenmatrix=True,
     eigenmatrix_diagonal_only=False,
 )
 
 # Ground-state with frequency data instead of eigenmatrix
-ref = ReferenceData.from_molecule(
+ref = ObservationSet.from_molecule(
     mol,
     frequencies=gs_freqs,
     include_eigenmatrix=False,
 )
 
 # From a Gaussian formatted checkpoint file
-ref, mol = ReferenceData.from_fchk("calculation.fchk")
+ref, mol = load_fchk_reference("calculation.fchk")
 
 # From a Gaussian log file
-ref, mol = ReferenceData.from_gaussian("calculation.log")
+ref, mol = load_gaussian_reference("calculation.log")
 
-# Multi-conformer fit
-ref = ReferenceData.from_molecules(
+# Multi-conformer fit — case_ids must be passed explicitly, one per molecule
+ref = ObservationSet.from_molecules(
     [mol1, mol2, mol3],
+    case_ids=["conformer-1", "conformer-2", "conformer-3"],
 )
 ```
 
 ### Manual construction
 
-For fine-grained control, build `ReferenceData` manually:
+For fine-grained control, build `ObservationSet` manually. Every `with_*`
+method returns a **new** `ObservationSet` — reassign (or chain) rather than
+calling it for a side effect:
 
 ```python
-ref = ReferenceData()
-ref.add_bond_length(value=1.384, atom_indices=(0, 1), weight=10.0)
-ref.add_bond_angle(value=104.5, atom_indices=(1, 0, 2), weight=5.0)
-ref.add_frequency(value=1648.5, data_idx=0, weight=1.0)
-ref.add_eigenmatrix_from_hessian(hessian, diagonal_only=False)
+from q2mm.models.observations import ObservationSet
+
+ref = ObservationSet()
+ref = ref.with_bond_length(value=1.384, atom_indices=(0, 1), weight=10.0, case_id="0")
+ref = ref.with_bond_angle(value=104.5, atom_indices=(1, 0, 2), weight=5.0, case_id="0")
+ref = ref.with_frequency(value=1648.5, data_idx=0, weight=1.0, case_id="0")
+ref = ref.with_eigenmatrix_from_hessian(hessian, diagonal_only=False, case_id="0")
 ```
 
 See the [API Reference](../reference/q2mm/index.md) for the full method signatures.

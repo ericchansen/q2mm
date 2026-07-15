@@ -36,13 +36,13 @@ import logging
 from typing import Any
 
 from q2mm.optimizers.objective import ObjectiveFunction
-from q2mm.optimizers.reference import ReferenceData
+from q2mm.models.observations import ObservationSet
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "ObjectiveFunction",
-    "ReferenceData",
+    "ObservationSet",
     "available_optimizers",
     "get_optimizer",
 ]

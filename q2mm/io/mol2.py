@@ -8,15 +8,118 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from q2mm.geometry import bond_length
-from q2mm.models.structure import Atom, Bond, Structure
-
-if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.identifiers import _extract_element, canonicalize_bond_env_id
+from q2mm.models.molecule import Bond, Molecule
 
 logger = logging.getLogger(__name__)
+
+# Mol2 (SYBYL) bond-order tokens mapped onto the MM3 symbol domain.
+_CANONICAL_BOND_ORDERS = {
+    "-": "-",
+    "=": "=",
+    "*": "*",
+    "%": "%",
+    "1": "-",
+    "2": "=",
+    "ar": "*",
+    "3": "%",
+}
+
+
+def _canonicalize_bond_order(order: str | None) -> str:
+    """Map a Mol2 bond-order token into the MM3 symbol domain."""
+    if order is None:
+        return ""
+    return _CANONICAL_BOND_ORDERS.get(str(order).strip().lower(), "")
+
+
+@dataclass
+class _Mol2Atom:
+    """One atom parsed from a Mol2 ``@<TRIPOS>ATOM`` block."""
+
+    index: int
+    element: str
+    x: float
+    y: float
+    z: float
+    atom_type_name: str
+    partial_charge: float | None = None
+
+    @property
+    def coords(self) -> np.ndarray:
+        """Cartesian coordinates of this atom, as ``[x, y, z]``."""
+        return np.array([self.x, self.y, self.z])
+
+    @property
+    def symbol(self) -> str:
+        """Resolve this atom's element symbol."""
+        return _extract_element(self.element) if self.element else ""
+
+
+@dataclass
+class _Mol2Bond:
+    """One bond parsed from a Mol2 ``@<TRIPOS>BOND`` block."""
+
+    atom_nums: list[int]
+    value: float
+    order: str | None = None
+
+
+@dataclass
+class _Mol2Record:
+    """One structure staging record parsed from a Mol2 ``MOLECULE`` chunk.
+
+    Mol2 files always supply explicit bonds for every structure; angles and
+    torsions are never present in the format and are always inferred by
+    :class:`~q2mm.models.molecule.Molecule` from that bond connectivity.
+    """
+
+    origin_name: str
+    atoms: list[_Mol2Atom] = field(default_factory=list)
+    bonds: list[_Mol2Bond] = field(default_factory=list)
+
+
+def _molecule_from_mol2_record(record: _Mol2Record) -> Molecule:
+    """Convert a :class:`_Mol2Record` into a :class:`~q2mm.models.molecule.Molecule`.
+
+    Bonds are always explicit/authoritative; angles/torsions are always
+    inferred from that bond connectivity (Mol2 carries no angle/torsion
+    data at all).
+    """
+    symbols = [atom.symbol for atom in record.atoms]
+    atom_types = [atom.atom_type_name for atom in record.atoms]
+    coords = [atom.coords for atom in record.atoms]
+    partial_charges = [atom.partial_charge for atom in record.atoms]
+
+    def _atom(num: int) -> _Mol2Atom:
+        return record.atoms[num - 1]
+
+    bonds = tuple(
+        Bond(
+            atom_i=b.atom_nums[0] - 1,
+            atom_j=b.atom_nums[1] - 1,
+            elements=(_atom(b.atom_nums[0]).symbol, _atom(b.atom_nums[1]).symbol),
+            length=b.value,
+            env_id=canonicalize_bond_env_id([_atom(n).atom_type_name for n in b.atom_nums]),
+            bond_order=_canonicalize_bond_order(b.order),
+            source_bond_order=b.order,
+        )
+        for b in record.bonds
+    )
+
+    return Molecule(
+        symbols=tuple(symbols),
+        atom_types=tuple(atom_types),
+        partial_charges=(tuple(partial_charges) if any(c is not None for c in partial_charges) else None),
+        geometry=np.array(coords, dtype=float),
+        bonds=bonds,
+        name=record.origin_name,
+    )
 
 
 class Mol2:
@@ -36,7 +139,7 @@ class Mol2:
     ATOM_FLAG = "ATOM"
     BOND_FLAG = "BOND"
 
-    __slots__ = ["_lines", "path", "directory", "filename", "_structures"]
+    __slots__ = ["_lines", "path", "directory", "filename", "_records"]
 
     def __init__(self, path: str) -> None:
         """Initialize a Mol2 instance.
@@ -49,7 +152,7 @@ class Mol2:
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        self._structures: list[Structure] = None
+        self._records: list[_Mol2Record] | None = None
 
     @property
     def lines(self) -> list[str]:
@@ -80,56 +183,47 @@ class Mol2:
                 f.write(line)
 
     @property
-    def structures(self) -> list[Structure]:
-        """list[Structure]: Structure objects extracted from the mol2 file.
+    def _records_parsed(self) -> list[_Mol2Record]:
+        """Records extracted from the mol2 file (private staging).
 
-        Lazily parses the file on first access.
-
-        Returns:
-            (list[Structure]): Structure objects extracted from parsing the
-                mol2 file.
-
-        .. deprecated::
-            Use :attr:`molecules` instead for ``Q2MMMolecule`` objects.
-
+        Lazily parses the file on first access. Not part of the public API
+        — see :attr:`molecules`.
         """
-        if self._structures is None:
+        if self._records is None:
             self.parse_lines()
-        return self._structures
+        return self._records
 
     @property
-    def molecules(self) -> list[Q2MMMolecule]:
-        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
-        from q2mm.models.molecule import Q2MMMolecule
-
-        return [Q2MMMolecule.from_structure(s) for s in self.structures]
+    def molecules(self) -> list[Molecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Molecule` objects."""
+        return [_molecule_from_mol2_record(record) for record in self._records_parsed]
 
     def parse_lines(self) -> None:
-        """Parse file lines to extract Structure objects into ``self.structures``.
+        """Parse file lines to extract records into ``self._records``.
 
         It is safe to parse this with ``split`` because the mol2 format
         from SYBYL requires consistent data ordering matching the
         standard; otherwise the file is not in valid mol2 format.
         """
-        self._structures: list[Structure] = []
+        self._records = []
         joined_lines = "".join(self.lines)
         structure_chunks = joined_lines.split(self.TRIPOS_FLAG + self.MOLECULE_FLAG)
         entry_num = 0 if len(structure_chunks) > 2 else None
         for struct_chunk in structure_chunks:
             if struct_chunk != "":
-                self._structures.append(self.parse_structure(struct_chunk, chunk_index=entry_num))
+                self._records.append(self.parse_structure(struct_chunk, chunk_index=entry_num))
 
-        if len(structure_chunks) - 1 != len(self._structures):
+        if len(structure_chunks) - 1 != len(self._records):
             logger.log(
                 logging.WARNING,
                 "Only "
-                + str(len(self._structures))
+                + str(len(self._records))
                 + " structures could be parsed from "
                 + str(len(structure_chunks) - 1)
                 + " MOLECULE entries in the .mol2 file",
             )
 
-    def parse_atoms(self, atom_lines: list[str]) -> list[Atom]:
+    def parse_atoms(self, atom_lines: list[str]) -> list[_Mol2Atom]:
         """Parse atom entries from mol2 atom-section lines.
 
         Args:
@@ -137,7 +231,7 @@ class Mol2:
                 to the atoms in the structure.
 
         Returns:
-            (list[Atom]): Atom objects parsed from *atom_lines*.
+            (list[_Mol2Atom]): Atom records parsed from *atom_lines*.
 
         """
         atoms = []
@@ -155,28 +249,31 @@ class Mol2:
                 charge = float(atom_split[8])
             except (IndexError, ValueError):
                 charge = None
+            x, y, z = (float(v) for v in atom_split[2:5])
             atoms.append(
-                Atom(
+                _Mol2Atom(
                     index=int(atom_split[0]),
                     element=element,
-                    coords=atom_split[2:5],
+                    x=x,
+                    y=y,
+                    z=z,
                     atom_type_name=atom_split[5],
                     partial_charge=charge,
                 )
             )
         return atoms
 
-    def parse_bonds(self, bond_lines: list[str], structure: Structure) -> list[Bond]:
+    def parse_bonds(self, bond_lines: list[str], structure: _Mol2Record) -> list[_Mol2Bond]:
         """Parse bond entries from mol2 bond-section lines.
 
         Args:
             bond_lines (list[str]): Lines from the mol2 file pertaining
                 to the bond connectivity in the structure.
-            structure (Structure): Structure to which the bonds pertain,
+            structure (_Mol2Record): Record to which the bonds pertain,
                 used for bond-length measurement.
 
         Returns:
-            (list[Bond]): Bond objects parsed from *bond_lines*.
+            (list[_Mol2Bond]): Bond records parsed from *bond_lines*.
 
         """
         bonds = []
@@ -187,7 +284,7 @@ class Mol2:
             a_index = int(bond_split[1])
             b_index = int(bond_split[2])
             bonds.append(
-                Bond(
+                _Mol2Bond(
                     atom_nums=[a_index, b_index],
                     order=bond_split[3],
                     value=bond_length(
@@ -199,7 +296,7 @@ class Mol2:
 
         return bonds
 
-    def parse_structure(self, structure_chunk: str, chunk_index: int | None = None) -> Structure:
+    def parse_structure(self, structure_chunk: str, chunk_index: int | None = None) -> _Mol2Record:
         """Parse a single structure from a mol2 molecule chunk.
 
         Args:
@@ -211,8 +308,7 @@ class Mol2:
                 structures. ``None`` for single-structure files.
 
         Returns:
-            (Structure): The Structure object parsed from
-                *structure_chunk* data.
+            (_Mol2Record): The record parsed from *structure_chunk* data.
 
         """
         tripos_chunks = structure_chunk.split(self.TRIPOS_FLAG)
@@ -242,15 +338,13 @@ class Mol2:
 
         file_identifier = self.filename if chunk_index is None else self.filename + str(chunk_index)
 
-        struct = Structure(file_identifier)  # ideally we would gather data, then instantiate a Structure with
-        # all the data as arguments, but for now I will follow the precedent within the Q2MM code
-        # to avoid significant refactoring since we still don't have test cases or test scripts
+        struct = _Mol2Record(file_identifier)
 
         # send chunk from @<TRIPOS>ATOM to @<TRIPOS>BOND to parse_atoms
-        struct._atoms = self.parse_atoms(atom_lines)
+        struct.atoms = self.parse_atoms(atom_lines)
 
         # use num atoms from @<TRIPOS>MOLECULE to verify parse is correct
-        if len(struct._atoms) != num_atoms:
+        if len(struct.atoms) != num_atoms:
             raise ValueError(f"Parsed {len(struct.atoms)} atoms but expected {num_atoms} atoms based on Mol2 data.")
         if not all(struct.atoms[i].index == i + 1 for i in range(len(struct.atoms))):
             raise ValueError("Mol2 atom index values do not match their ordering.")

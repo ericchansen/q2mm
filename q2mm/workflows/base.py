@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from q2mm.optimizers.protocols import _Optimizer
 
 if TYPE_CHECKING:
-    from q2mm.systems import SystemData
     from q2mm.models.forcefield import ForceField
+    from q2mm.models.problem import OptimizationProblem
 
 
 @dataclass
@@ -75,17 +75,11 @@ class WorkflowResult:
         workflow_name: Identifier of the workflow that produced this
             result (e.g. ``"single-stage"``).
         final_ff: Force field at the end of the workflow.
-        initial_ff: Snapshot of the force field as it was when the
-            workflow started.  Workflow implementations are
-            responsible for materializing this snapshot via
-            ``forcefield.with_params(initial_vector)`` before invoking
-            the optimizer — the current ``ScipyOptimizer`` mutates the
-            FF inside the ObjectiveFunction during the search, so a
-            bare reference to ``system.forcefield`` would point at the
-            *final* state.
+        initial_ff: The force field the workflow started from
+            (``problem.starting_force_field``). Immutable, so this is
+            always a stable snapshot — the optimizer never mutates it.
         stages: Per-stage diagnostics, ordered chronologically.  Length
-            1 for ``SingleStageWorkflow``; 2 for the planned
-            ``MethodE2Workflow``.
+            1 for ``SingleStageWorkflow``; 2 for ``MethodE2Workflow``.
         initial_obj_samples: ``n_evals`` samples of the *real*
             :class:`~q2mm.optimizers.objective.ObjectiveFunction`
             evaluated at the initial parameters.  Engine non-
@@ -115,7 +109,7 @@ class Workflow(Protocol):
     """Multi-stage force field parameterization workflow.
 
     Implementations build the :class:`ObjectiveFunction` internally
-    from ``system``, call ``optimizer.optimize(...)`` one or more
+    from ``problem``, call ``optimizer.optimize(...)`` one or more
     times, and aggregate per-stage diagnostics into a
     :class:`WorkflowResult`.
     """
@@ -124,7 +118,7 @@ class Workflow(Protocol):
 
     def run(
         self,
-        system: SystemData,
+        problem: OptimizationProblem,
         engine: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
@@ -132,20 +126,12 @@ class Workflow(Protocol):
     ) -> WorkflowResult:
         """Execute the workflow.
 
-        .. warning::
-
-           Implementations using the current :class:`ScipyOptimizer`
-           will see ``system.forcefield`` mutated in place during the
-           search (``ObjectiveFunction.forcefield.set_param_vector``
-           runs on every step).  Use ``WorkflowResult.initial_ff`` and
-           ``WorkflowResult.final_ff`` as the stable before/after
-           snapshots; do not rely on ``system.forcefield`` being
-           unchanged after the call.
-
         Args:
-            system: Loaded benchmark system; supplies the force field,
-                molecules, and reference data.  ``system.forcefield``
-                may be mutated by the inner optimizer — see warning.
+            problem: The immutable
+                :class:`~q2mm.models.problem.OptimizationProblem` —
+                supplies the training cases, starting force field,
+                parameter layout, active space, and observations.  Never
+                mutated by the workflow or the optimizer.
             engine: MM backend used to evaluate the objective.
             optimizer: Pre-configured search algorithm.  Constructor
                 kwargs (method, bounds strategy, ftol, etc.) belong

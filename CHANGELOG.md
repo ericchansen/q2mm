@@ -46,6 +46,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Published FF validation test harness (`test/integration/test_published_ff_validation.py`)
 - Benchmark results saving to `results/` by default
 - CHANGELOG.md (this file)
+- `q2mm/models/parameters.py` — `ParameterLayout` (the one full-vector
+  parameter layout, replacing `ForceField`'s removed vector methods) and
+  `ActiveParameterSpace` (the one active/frozen projection, replacing
+  per-row `.frozen` state and `ForceField.freeze_standard_params()`).
+  Includes a deterministic, value-free `fingerprint` (sha256 over
+  canonical slot metadata) verified stable across `PYTHONHASHSEED`.
+- `q2mm/models/observations.py` — `Observation`/`ObservationSet`, the
+  canonical observation vocabulary (renamed from `ReferenceValue`/
+  `ReferenceData`), now living under `q2mm.models` instead of
+  `q2mm.optimizers.reference` (deleted).
+- `q2mm/models/problem.py` — `StationaryPointKind`, `TrainingCase`, and
+  immutable `OptimizationProblem` (training cases, starting force
+  field, parameter layout, active space, observations) with full
+  structural validation.
+- `q2mm/benchmarks/` package — `BenchmarkCase` plus one module per
+  scientific system (`ch3f`, `ch3f_sn2`, `rh_enamide`, `heck_relay`,
+  `pd_allyl`, `pd_conjugate`, `rh_conjugate`) under
+  `q2mm/benchmarks/systems/`, replacing `q2mm/systems.py` and
+  `q2mm/models/loaders.py` (both deleted).
 
 ### Changed
 - Per-molecule JIT compilation in `JaxLoss` — each molecule's loss and
@@ -61,6 +80,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Overhauled `AGENTS.md` for better AI agent guidance
 - OpenMM-CUDA-12 platform gate: now excludes only macOS (was Linux-only)
 - JAX engine now supports both harmonic and MM3 functional forms
+- `ForceField` and its parameter rows (`BondParam`, `AngleParam`,
+  `TorsionParam`, `StretchBendParam`, `VdwParam`) are now fully
+  immutable frozen dataclasses with tuple collections. All vector/
+  active/bounds/step access and mutation methods
+  (`get_param_vector`/`set_param_vector`/`active_mask`/`n_params`/
+  `get_bounds`/`get_step_sizes`/`get_param_type_labels`/
+  `get_param_names`/`get_param_indices_by_type`/
+  `freeze_standard_params`/`.copy()`) moved to `ParameterLayout` /
+  `ActiveParameterSpace`; model I/O convenience methods
+  (`from_mm3_fld`/`to_mm3_fld`/etc.) moved to free functions in
+  `q2mm.io.*`.
+- `q2mm.models.seminario`'s `qfuerza_fresh`/`qfuerza_into` are now pure
+  functions (return a new `ForceField`; never mutate their input),
+  taking explicit `active_bonds`/`active_angles`/`active_torsions`
+  index sets instead of relying on a per-row frozen flag.
+- Every optimizer's `optimize()` now takes `(objective, space)` —
+  `space: ActiveParameterSpace` is a new required argument. Optimizers
+  never mutate `objective.forcefield`; `OptimizationResult.initial_params`/
+  `final_params` are always full-length vectors. `BasinHoppingOptimizer`
+  and `MultiStartOptimizer` now respect `space` (previously had no
+  active/frozen awareness at all).
+- `Workflow.run()` now takes an immutable `OptimizationProblem` instead
+  of the old mutable `SystemData`.
 
 ### Fixed
 - **MM3 angle gradient correctness** — replaced the JAX angle term's
@@ -96,6 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `invert_ts_curvature` field from `MoleculeSpec` — curvature inversion
   now happens only during Seminario projection, before JAX
 - `benchmarks/` directory — data moved to `q2mm-data` repository
+- `q2mm/systems.py`, `q2mm/models/loaders.py`, `q2mm/models/datum.py`,
+  `q2mm/optimizers/reference.py`, `q2mm/optimizers/defaults.py` — no
+  compatibility aliases or re-exports retained.
 
 ## [5.0.0a3] - Pre-release
 

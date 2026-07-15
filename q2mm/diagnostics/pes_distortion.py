@@ -17,7 +17,7 @@ from q2mm.constants import AMU_TO_KG, BOHR_TO_ANG, HARTREE_TO_J, SPEED_OF_LIGHT_
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 HA_TO_KCAL = 627.5094740631
 
@@ -45,7 +45,7 @@ def load_normal_modes(path: Path) -> dict:
 
 
 def compute_distortions(
-    mol: Q2MMMolecule,
+    mol: Molecule,
     ff: ForceField,
     engine: MMEngine,
     modes: dict,
@@ -54,7 +54,7 @@ def compute_distortions(
     """Displace molecule along QM normal modes and compare energies.
 
     Args:
-        mol (Q2MMMolecule): Equilibrium geometry molecule.
+        mol (Molecule): Equilibrium geometry molecule.
         ff (ForceField): Force field to evaluate MM energies with.
         engine (MMEngine): Any backend engine with an ``energy()`` method.
         modes (dict): Output from ``load_normal_modes()``.
@@ -70,7 +70,7 @@ def compute_distortions(
             - **elapsed** (*float*) — Wall-clock time in seconds.
 
     """
-    from q2mm.models.molecule import Q2MMMolecule as _Mol
+    from q2mm.models.molecule import Molecule as _Mol
 
     if target_norms_ang is None:
         target_norms_ang = [0.05, 0.10, 0.15]

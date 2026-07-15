@@ -13,8 +13,8 @@ import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation
 
 
 def dihedral_angle(
@@ -84,7 +84,7 @@ class GeometryEvaluator:
     def compute(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
         *,
         structure: Any | None = None,
@@ -116,14 +116,14 @@ class GeometryEvaluator:
         result = GeometryResult()
 
         if "bond_length" in needed_kinds:
-            for bond in mol.bonds:
+            for bond in mol.bonds or ():
                 length = float(np.linalg.norm(opt_coords[bond.atom_j] - opt_coords[bond.atom_i]))
                 result.bond_lengths.append(length)
                 key = tuple(sorted((bond.atom_i, bond.atom_j)))
                 result.bond_lengths_by_atoms[key] = length
 
         if "bond_angle" in needed_kinds:
-            for angle in mol.angles:
+            for angle in mol.angles or ():
                 v1 = opt_coords[angle.atom_i] - opt_coords[angle.atom_j]
                 v2 = opt_coords[angle.atom_k] - opt_coords[angle.atom_j]
                 cos_val = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
@@ -139,7 +139,7 @@ class GeometryEvaluator:
     def residuals(
         self,
         computed: GeometryResult,
-        references: list[ReferenceValue],
+        references: list[Observation],
     ) -> list[float]:
         """Compute weighted residuals for geometry references.
 
@@ -162,7 +162,7 @@ class GeometryEvaluator:
         return result
 
     @staticmethod
-    def _extract(computed: GeometryResult, ref: ReferenceValue) -> float:
+    def _extract(computed: GeometryResult, ref: Observation) -> float:
         """Extract a single calculated value from a GeometryResult.
 
         Args:
@@ -258,9 +258,9 @@ class GeometryEvaluator:
     def gradient(
         self,
         engine: MMEngine,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         ff: ForceField,
-        references: list[ReferenceValue],
+        references: list[Observation],
         n_params: int,
         *,
         structure: Any | None = None,
@@ -278,7 +278,7 @@ class GeometryEvaluator:
         return None
 
     @staticmethod
-    def extract_value(calc: dict[str, Any], ref: ReferenceValue) -> float:
+    def extract_value(calc: dict[str, Any], ref: Observation) -> float:
         """Extract a calculated geometry value from a results dict.
 
         Backward-compatible bridge for ObjectiveFunction._extract_value.

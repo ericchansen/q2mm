@@ -41,7 +41,7 @@ available.
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500, jac="auto")
-result = optimizer.optimize(objective)
+result = optimizer.optimize(objective, space)
 print(result.summary())
 ```
 
@@ -81,7 +81,7 @@ multi = MultiStartOptimizer(
     perturbation_pct=0.1,
     seed=42,
 )
-result = multi.optimize(objective)
+result = multi.optimize(objective, space)
 ```
 
 **Why this works:** The MM3 landscape has many local minima. Single-start
@@ -137,6 +137,7 @@ from q2mm.optimizers.cycling import OptimizationLoop
 
 loop = OptimizationLoop(
     objective,
+    space,                # ActiveParameterSpace over objective.layout
     max_params=3,         # simplex on top 3 params per cycle
     max_cycles=10,        # up to 10 grad-simp cycles
     convergence=0.01,     # stop when <1% improvement per cycle
@@ -176,6 +177,7 @@ from q2mm.optimizers.cycling import OptimizationLoop
 
 loop = OptimizationLoop(
     objective,
+    space,
     max_params=3,
     max_cycles=5,
     full_method="multi:L-BFGS-B",  # multi-start each gradient phase
@@ -205,10 +207,11 @@ objective = ObjectiveFunction(
     engine=engine,
     molecules=molecules,
     reference=reference,
+    layout=layout,         # ParameterLayout.from_force_field(ff)
     regularization=0.01,   # keeps params near QFUERZA values
 )
 
-loop = OptimizationLoop(objective, max_params=3, max_cycles=10)
+loop = OptimizationLoop(objective, space, max_params=3, max_cycles=10)
 result = loop.run()
 ```
 
@@ -229,7 +232,7 @@ JaxEngine and routes gradients through JaxLoss.
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="auto")
-result = optimizer.optimize(objective)
+result = optimizer.optimize(objective, space)
 print(result.summary())
 ```
 
@@ -293,6 +296,7 @@ $$\text{loss}_\text{total} = \text{loss}_\text{data} + \lambda \cdot \| \mathbf{
 objective = ObjectiveFunction(
     forcefield=ff, engine=engine,
     molecules=molecules, reference=reference,
+    layout=layout,             # ParameterLayout.from_force_field(ff)
     regularization=0.01,      # λ — penalty strength
     # reference_params=...    # defaults to initial FF params
 )
@@ -329,7 +333,7 @@ these are parameters where simplex outperforms gradient methods.
 from q2mm.optimizers.cycling import compute_sensitivity
 
 sens = compute_sensitivity(objective, metric="simp_var")
-labels = ff.get_param_type_labels()
+labels = [kind.value for kind in objective.layout.kinds]
 for rank, idx in enumerate(sens.ranking):
     print(f"  {rank+1}. {labels[idx]:12s}  "
           f"d1={sens.d1[idx]:+.4f}  simp_var={sens.simp_var[idx]:.4f}")

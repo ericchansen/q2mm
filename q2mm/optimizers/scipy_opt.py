@@ -33,24 +33,30 @@ import logging
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.optimizers._metrics import fractional_improvement
 from q2mm.optimizers.objective import ObjectiveFunction
 
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ActiveParameterSpace
+
 logger = logging.getLogger(__name__)
 
 
 class _ActiveObjectiveWrapper:
-    """Objective adapter exposing only the active force-field parameters."""
+    """Thin objective adapter exposing only the active-space parameters.
 
-    def __init__(self, objective: ObjectiveFunction, mask: np.ndarray, frozen_full: np.ndarray) -> None:
+    Delegates every active/full projection to
+    :class:`~q2mm.models.parameters.ActiveParameterSpace` — it holds no
+    duplicated mask/baseline state of its own.
+    """
+
+    def __init__(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> None:
         self._objective = objective
-        self._mask = np.asarray(mask, dtype=bool)
-        self._active_indices = np.flatnonzero(self._mask)
-        self._frozen_full = np.asarray(frozen_full, dtype=float).copy()
+        self._space = space
 
     @property
     def history(self) -> list[float]:
@@ -69,15 +75,13 @@ class _ActiveObjectiveWrapper:
         return self._objective.forcefield
 
     def expand(self, x_active: np.ndarray) -> np.ndarray:
-        full = self._frozen_full.copy()
-        full[self._active_indices] = np.asarray(x_active, dtype=float)
-        return full
+        return self._space.expand(x_active)
 
     def __call__(self, x_active: np.ndarray) -> float:
         return self._objective(self.expand(x_active))
 
     def gradient(self, x_active: np.ndarray) -> np.ndarray:
-        return self._objective.gradient(self.expand(x_active))[self._mask]
+        return self._space.pack(self._objective.gradient(self.expand(x_active)))
 
     def residuals(self, x_active: np.ndarray) -> np.ndarray:
         return self._objective.residuals(self.expand(x_active))
@@ -164,7 +168,7 @@ class ScipyOptimizer:
             so the default scipy step (~1e-8) is too small; 1e-3 works
             well.
         use_bounds (bool): Whether to use parameter bounds from
-            :meth:`ForceField.get_bounds`.
+            ``space.bounds`` (see :class:`~q2mm.models.parameters.ActiveParameterSpace`).
         verbose (bool): Log progress during optimization.
         jac (str | None): Jacobian computation strategy.
             ``None`` (default) uses scipy's built-in finite differences.
@@ -250,16 +254,22 @@ class ScipyOptimizer:
         self.fc_fraction = fc_fraction
         self.eq_fraction = eq_fraction
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the optimization.
 
         Args:
             objective (ObjectiveFunction): Configured objective with
                 forcefield, engine, molecules, and reference data.
+            space (ActiveParameterSpace): The active/frozen projection
+                over ``objective.layout``. ``objective.forcefield`` is
+                never mutated — materialize the optimized force field
+                explicitly via
+                ``objective.layout.replace(objective.forcefield, result.final_params)``.
 
         Returns:
-            OptimizationResult: Optimization outcome with final parameters
-                and convergence history.
+            OptimizationResult: Optimization outcome with final full-vector
+                parameters (``initial_params``/``final_params`` always have
+                length ``space.n_full``) and convergence history.
 
         """
         # Clear history for a fresh divergence-callback baseline but do NOT
@@ -269,42 +279,26 @@ class ScipyOptimizer:
         objective.history.clear()
         n_eval_before = objective.n_eval
 
-        ff = objective.forcefield
-        initial_full = ff.get_param_vector().copy()
-        has_frozen = ff.n_active_params < ff.n_params
-        wrapped_objective: ObjectiveFunction | _ActiveObjectiveWrapper = objective
+        layout = objective.layout
+        initial_full = layout.vector(objective.forcefield)
+        wrapped_objective = _ActiveObjectiveWrapper(objective, space)
+        x0 = space.pack(initial_full)
 
         use_fractional = self.fc_fraction is not None or self.eq_fraction is not None
         if use_fractional and not self.use_bounds:
             logger.warning("fc_fraction/eq_fraction set but use_bounds=False — ignoring fractional bounds.")
 
-        if has_frozen:
-            wrapped_objective = _ActiveObjectiveWrapper(objective, ff.active_mask, initial_full)
-            x0 = ff.get_active_param_vector().copy()
-            if self.use_bounds:
-                if use_fractional:
-                    full_bounds = np.asarray(
-                        ff.get_fractional_bounds(self.fc_fraction, self.eq_fraction),
-                        dtype=float,
-                    )
-                    bounds = full_bounds[ff.active_mask].tolist()
-                else:
-                    bounds = ff.get_active_bounds().tolist()
-            else:
-                bounds = None
-            expand = wrapped_objective.expand
-        else:
-            x0 = initial_full.copy()
-            if self.use_bounds:
-                if use_fractional:
-                    bounds = ff.get_fractional_bounds(self.fc_fraction, self.eq_fraction)
-                else:
-                    bounds = ff.get_bounds()
-            else:
-                bounds = None
+        if self.use_bounds:
+            if use_fractional:
+                from q2mm.models.parameters import fractional_bounds
 
-            def expand(x: np.ndarray) -> np.ndarray:
-                return np.asarray(x, dtype=float).copy()
+                bounds = fractional_bounds(
+                    space.kinds, space.bounds, x0, fc_fraction=self.fc_fraction, eq_fraction=self.eq_fraction
+                ).tolist()
+            else:
+                bounds = space.bounds.tolist()
+        else:
+            bounds = None
 
         initial_score = wrapped_objective(x0)
 
@@ -312,8 +306,8 @@ class ScipyOptimizer:
             logger.info(
                 "Starting %s optimization: %d active params (%d total), initial score %.6f",
                 self.method,
-                ff.n_active_params,
-                ff.n_params,
+                space.n_active,
+                space.n_full,
                 initial_score,
             )
 
@@ -343,16 +337,12 @@ class ScipyOptimizer:
         else:
             result = self._run_minimize(wrapped_objective, x0, bounds, initial_score, n_eval_before)
 
-        final_full = expand(result.final_params)
-        if has_frozen:
-            result = replace(
-                result,
-                initial_params=initial_full,
-                final_params=final_full,
-            )
-
-        # Apply final parameters to the forcefield
-        objective.forcefield.set_param_vector(final_full)
+        final_full = wrapped_objective.expand(result.final_params)
+        result = replace(
+            result,
+            initial_params=initial_full,
+            final_params=final_full,
+        )
 
         if self.verbose:
             logger.info(
@@ -367,7 +357,7 @@ class ScipyOptimizer:
 
     def _run_minimize(
         self,
-        objective: ObjectiveFunction,
+        objective: _ActiveObjectiveWrapper,
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
         initial_score: float,
@@ -376,7 +366,8 @@ class ScipyOptimizer:
         """Run scipy.optimize.minimize.
 
         Args:
-            objective (ObjectiveFunction): The objective function.
+            objective (_ActiveObjectiveWrapper): The (always active-space
+                wrapped) objective function.
             x0 (np.ndarray): Initial parameter vector.
             bounds (list[tuple[float, float]] | None): Parameter bounds.
             initial_score (float): Objective value at ``x0``.
@@ -439,22 +430,21 @@ class ScipyOptimizer:
                 if isinstance(objective.engine, JaxEngine):
                     from q2mm.optimizers.jaxloss import JaxLoss
 
-                    # Unwrap _ActiveObjectiveWrapper to get raw ObjectiveFunction
-                    raw_obj = getattr(objective, "_objective", objective)
+                    # Unwrap _ActiveObjectiveWrapper to get the raw
+                    # ObjectiveFunction + ActiveParameterSpace — `optimize()`
+                    # always passes a wrapped objective here.
+                    raw_obj = objective._objective if isinstance(objective, _ActiveObjectiveWrapper) else objective
+                    space = objective._space if isinstance(objective, _ActiveObjectiveWrapper) else None
                     spec = raw_obj.to_jax_spec()
                     jax_loss = JaxLoss(spec, raw_obj.engine, raw_obj.molecules, raw_obj.forcefield)
 
-                    ff = raw_obj.forcefield
-                    active_idx = np.flatnonzero(ff.active_mask)
-                    frozen_full = np.array(ff.get_param_vector(), dtype=float)
-
                     def _jax_loss_fun(x_active: np.ndarray) -> tuple[float, np.ndarray]:
-                        full = frozen_full.copy()
-                        full[active_idx] = np.asarray(x_active, dtype=float)
+                        full = space.expand(x_active) if space is not None else np.asarray(x_active, dtype=float)
                         loss, grad_full = jax_loss.loss_and_grad(full)
                         jax_telemetry["n_eval"] += 1
                         jax_telemetry["last_score"] = float(loss)
-                        return loss, grad_full[active_idx]
+                        packed_grad = space.pack(grad_full) if space is not None else grad_full
+                        return loss, packed_grad
 
                     # Validate JaxLoss/ObjectiveFunction agreement at x0.
                     # If the ratio deviates significantly, JaxLoss is an
@@ -611,7 +601,7 @@ class ScipyOptimizer:
 
     def _run_least_squares(
         self,
-        objective: ObjectiveFunction,
+        objective: _ActiveObjectiveWrapper,
         x0: np.ndarray,
         bounds: list[tuple[float, float]] | None,
         n_eval_before: int,
@@ -619,7 +609,8 @@ class ScipyOptimizer:
         """Run scipy.optimize.least_squares (Levenberg-Marquardt or trf).
 
         Args:
-            objective (ObjectiveFunction): The objective function.
+            objective (_ActiveObjectiveWrapper): The (always active-space
+                wrapped) objective function.
             x0 (np.ndarray): Initial parameter vector.
             bounds (list[tuple[float, float]] | None): Parameter bounds.
             n_eval_before (int): ``objective.n_eval`` before this run,
@@ -669,7 +660,7 @@ class ScipyOptimizer:
 
     def _make_callback(
         self,
-        objective: ObjectiveFunction,
+        objective: _ActiveObjectiveWrapper,
         initial_score: float,
         telemetry: dict[str, Any] | None = None,
     ) -> Callable:

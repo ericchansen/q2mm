@@ -96,17 +96,17 @@ cd q2mm
 
 ```python
 from q2mm.io import GaussLog, load_mm3_fld
-from q2mm.models import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
 from q2mm.resources import sn2_reference_dir
 
 # Parse a Gaussian log for the QM Hessian (matrix of energy second derivatives)
 log = GaussLog("examples/ethane/TS.log")
-structure = log.structures[0]
-print(f"Atoms: {structure.num_atoms}, Hessian shape: {structure.hess.shape}")
+mol_from_log = log.molecules[-1]
+print(f"Gaussian molecule: {mol_from_log.n_atoms} atoms, Hessian shape: {mol_from_log.hessian.shape}")
 
-# Load an XYZ geometry into the unified molecule model
-mol = Q2MMMolecule.from_xyz(sn2_reference_dir() / "ch3f-optimized.xyz")
-print(f"Q2MMMolecule atoms: {mol.n_atoms}")
+# Load an XYZ geometry into the unified Molecule model
+mol = load_xyz(sn2_reference_dir() / "ch3f-optimized.xyz")
+print(f"Molecule atoms: {mol.n_atoms}")
 
 # Load an MM3 force field
 ff = load_mm3_fld("examples/rh-enamide/mm3.fld")

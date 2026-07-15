@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from q2mm.io._helpers import Param
 from q2mm.io.mm3 import (
     P_1_END,
     P_1_START,
@@ -12,6 +11,7 @@ from q2mm.io.mm3 import (
     P_2_START,
     P_3_END,
     P_3_START,
+    _Mm3ParameterRow,
     _mm3_export_ff,
     _mm3_import_ff,
     _splice_fixed,
@@ -72,9 +72,9 @@ class TestMM3ExportHigherTorsion(unittest.TestCase):
     def test_higher_torsion_values_written_back(self) -> None:
         lines = [self._build_54_line(1.0, 2.0, 3.0)]
         params = [
-            Param(ptype="df", ff_col=4, ff_row=1, value=11.0, label="54"),
-            Param(ptype="df", ff_col=5, ff_row=1, value=22.0, label="54"),
-            Param(ptype="df", ff_col=6, ff_row=1, value=33.0, label="54"),
+            _Mm3ParameterRow(ptype="df", ff_col=4, ff_row=1, value=11.0),
+            _Mm3ParameterRow(ptype="df", ff_col=5, ff_row=1, value=22.0),
+            _Mm3ParameterRow(ptype="df", ff_col=6, ff_row=1, value=33.0),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "higher.fld"

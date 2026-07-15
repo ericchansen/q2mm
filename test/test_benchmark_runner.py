@@ -16,6 +16,7 @@ Validation strategy:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -28,6 +29,9 @@ from q2mm.benchmark_runner import (
     run_benchmark_batch,
 )
 from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow
+
+if TYPE_CHECKING:
+    from q2mm.models.forcefield import ForceField
 
 
 class TestPublicSurface:
@@ -183,7 +187,11 @@ class TestRunBenchmarkBatch:
         sys_out = tmp_path / "ch3f" / "convergence"
         assert (sys_out / "validation_results.json").is_file()
         assert (sys_out / "paper_metrics.json").is_file()
-        assert (sys_out / "ch3f_optimized.fld").is_file()
+        # This runner explicitly selects harmonic for its JAX CH3F path,
+        # so the artifact uses the compatible .frcmod serializer.
+        assert outcome.results["ch3f"].final_ff.functional_form.value == "harmonic"
+        assert (sys_out / "ch3f_optimized.frcmod").is_file()
+        assert not (sys_out / "ch3f_optimized.fld").exists()
 
     def test_batch_skip_optimization_no_fld_written(self, tmp_path: Path) -> None:
         outcome = run_benchmark_batch(
@@ -194,6 +202,7 @@ class TestRunBenchmarkBatch:
         sys_out = tmp_path / "ch3f" / "convergence"
         assert (sys_out / "validation_results.json").is_file()
         assert not (sys_out / "ch3f_optimized.fld").exists()
+        assert not (sys_out / "ch3f_optimized.frcmod").exists()
 
     def test_batch_unknown_system_collects_failure(self, tmp_path: Path) -> None:
         outcome = run_benchmark_batch(
@@ -202,3 +211,44 @@ class TestRunBenchmarkBatch:
         )
         assert "nonexistent" in outcome.failed_systems
         assert outcome.ok is False
+
+
+class TestSaveOptimizedFf:
+    """``_save_optimized_ff`` dispatches to the serializer matching the FF's actual form."""
+
+    @staticmethod
+    def _result(final_ff: ForceField) -> BenchmarkRunResult:
+        return BenchmarkRunResult(
+            system_key="unit-test-system",
+            workflow_name="single-stage",
+            initial_ff=final_ff,
+            final_ff=final_ff,
+            skipped=False,
+            skip_reason=None,
+            summary={},
+            paper={},
+        )
+
+    def test_mm3_form_writes_fld(self, tmp_path: Path) -> None:
+        from q2mm.benchmark_runner import _save_optimized_ff
+        from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
+
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 300.0)],
+            functional_form=FunctionalForm.MM3,
+        )
+        _save_optimized_ff(tmp_path, self._result(ff))
+        assert (tmp_path / "unit-test-system_optimized.fld").is_file()
+        assert not (tmp_path / "unit-test-system_optimized.frcmod").exists()
+
+    def test_harmonic_form_writes_frcmod(self, tmp_path: Path) -> None:
+        from q2mm.benchmark_runner import _save_optimized_ff
+        from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
+
+        ff = ForceField(
+            bonds=[BondParam(("C", "C"), 1.54, 300.0)],
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        _save_optimized_ff(tmp_path, self._result(ff))
+        assert (tmp_path / "unit-test-system_optimized.frcmod").is_file()
+        assert not (tmp_path / "unit-test-system_optimized.fld").exists()

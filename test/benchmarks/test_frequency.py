@@ -18,7 +18,7 @@ import pytest
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 
@@ -68,7 +68,7 @@ def _validate_frequencies(freqs: list[float]) -> None:
 def test_frequencies_openmm(
     benchmark: object,
     openmm_engine: object,
-    ch3f_mol: Q2MMMolecule,
+    ch3f_mol: Molecule,
     ch3f_ff: ForceField,
 ) -> None:
     """Benchmark frequencies with OpenMM."""
@@ -80,7 +80,7 @@ def test_frequencies_openmm(
 def test_frequencies_tinker(
     benchmark: object,
     tinker_engine: object,
-    ch3f_mol: Q2MMMolecule,
+    ch3f_mol: Molecule,
     ch3f_ff: ForceField,
 ) -> None:
     """Benchmark frequencies with Tinker."""
@@ -92,11 +92,11 @@ def test_frequencies_tinker(
 def test_frequencies_jax(
     benchmark: object,
     jax_engine: object,
-    ch3f_mol: Q2MMMolecule,
-    ch3f_ff: ForceField,
+    ch3f_mol: Molecule,
+    ch3f_ff_harmonic: ForceField,
 ) -> None:
     """Benchmark frequencies with JAX (harmonic)."""
-    freqs: list[float] = benchmark(jax_engine.frequencies, ch3f_mol, ch3f_ff)  # type: ignore[attr-defined]
+    freqs: list[float] = benchmark(jax_engine.frequencies, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[attr-defined]
     _validate_frequencies(freqs)
 
 
@@ -104,9 +104,9 @@ def test_frequencies_jax(
 def test_frequencies_jax_md(
     benchmark: object,
     jax_md_engine: object,
-    ch3f_mol: Q2MMMolecule,
-    ch3f_ff: ForceField,
+    ch3f_mol: Molecule,
+    ch3f_ff_harmonic: ForceField,
 ) -> None:
     """Benchmark frequencies with JAX-MD (OPLSAA)."""
-    freqs: list[float] = benchmark(jax_md_engine.frequencies, ch3f_mol, ch3f_ff)  # type: ignore[attr-defined]
+    freqs: list[float] = benchmark(jax_md_engine.frequencies, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[attr-defined]
     _validate_frequencies(freqs)
