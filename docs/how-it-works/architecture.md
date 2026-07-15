@@ -14,9 +14,9 @@ All scientific algorithms operate on **format-neutral data structures**:
 
 | Structure | Purpose |
 |-----------|---------|
-| `ForceField` | Bond, angle, torsion, and vdW parameters with metadata |
-| `Q2MMMolecule` | Cartesian geometry, topology, and optional Hessian |
-| `ReferenceData` | QM reference values (energies, frequencies, geometries) |
+| `ForceField` | Immutable bond, angle, torsion, and vdW parameters with metadata |
+| `Molecule` | Cartesian geometry, topology, and optional Hessian |
+| `ObservationSet` | QM reference targets (energies, frequencies, geometries, eigenmatrix terms) |
 
 These models have no knowledge of MM3, AMBER, CHARMM, or any file format.
 Parsers and savers translate between external formats and internal models at
@@ -140,9 +140,8 @@ def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
             return ureg.Quantity(hessian, "hartree/bohr**2")
     return hessian  # bare ndarray by default
 
-# q2mm/models/molecule.py  — strips pint tag at the model boundary
-@classmethod
-def from_structure(cls, structure, *, hessian=None, ...) -> Q2MMMolecule:
+# q2mm/models/molecule.py  — strips pint tags at the model boundary
+def with_hessian(self, hessian, provenance=None) -> Molecule:
     if hessian is not None and hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
         # pint.Quantity: convert to canonical AU and extract magnitude
         hessian = np.asarray(hessian.to("hartree/bohr**2").magnitude)
@@ -193,16 +192,19 @@ q2mm/
 ├── elements.py           # Periodic table data
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
+├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── benchmark_runner.py   # Canonical convergence benchmark runner (backs q2mm.benchmark)
-├── systems.py            # Benchmark system registry (SYSTEMS, SystemData, load_system)
+├── benchmarks/           # Scientific benchmark-system loaders and metadata
+│   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
+│   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
 │
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
-│   ├── molecule.py       # Q2MMMolecule, DetectedBond, DetectedTorsion
-│   ├── structure.py      # Legacy Structure/Atom/Bond DTO emitted by the parsers
-│   ├── loaders.py        # Molecule + force-field convenience loaders
-│   ├── datum.py          # Datum data container
+│   ├── molecule.py       # Molecule, Bond, Angle, Torsion
+│   ├── observations.py   # Observation + ObservationSet
+│   ├── parameters.py     # ParameterLayout + ActiveParameterSpace
+│   ├── problem.py        # TrainingCase + OptimizationProblem
 │   ├── seminario.py      # Hessian → initial force constants (QFUERZA)
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
 │   ├── units.py          # Conversion constants and helpers
@@ -219,13 +221,12 @@ q2mm/
 │   │   ├── jax_engine.py    # JAX engine (differentiable, analytical gradients)
 │   │   ├── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
 │   │   ├── batched.py       # Batched multi-molecule energy helpers
-│   │   └── _jax_common.py   # Shared JAX match/assignment helpers
+│   │   └── _jax_common.py   # Backend jax/jnp/jaxopt globals + ForceField match/offset helpers (JAX import guard itself lives in q2mm/_jax_support.py)
 │   └── qm/
 │       └── psi4.py       # Psi4 engine (QM single-points, Hessians)
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── objective.py      # ObjectiveFunction (+ ReferenceData/Value re-export)
-│   ├── reference.py      # ReferenceValue, ReferenceData builders
+│   ├── objective.py      # ObjectiveFunction
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
@@ -236,7 +237,6 @@ q2mm/
 │   ├── jaxloss.py        # JaxLoss — JIT-compiled loss for JaxOpt/Optax
 │   ├── spec.py           # ObjectiveSpec — frozen JAX-compatible objective description
 │   ├── cycling.py        # grad-simp parameter cycling (OptimizationLoop)
-│   ├── defaults.py       # Default step sizes and bounds
 │   └── evaluators/       # Per-category residual evaluators
 │       ├── energy.py          # Relative energy residuals
 │       ├── frequency.py       # Vibrational frequency residuals
@@ -252,10 +252,12 @@ q2mm/
 │   ├── amber.py          # load_amber_frcmod, save_amber_frcmod
 │   ├── openmm.py         # save_openmm_xml
 │   ├── gaussian.py       # GaussLog
-│   ├── fchk.py           # parse_fchk
+│   ├── fchk.py           # load_fchk, load_fchk_reference
 │   ├── jaguar.py         # JaguarIn, JaguarOut
 │   ├── macromodel.py     # MacroModel, MacroModelLog
 │   ├── mol2.py           # Mol2
+│   ├── xyz.py            # load_xyz
+│   ├── qcelemental.py    # molecule_from_qcel, molecule_to_qcel
 │   ├── cmap.py           # parse_cmap_section, load_cmap_from_prm
 │   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
@@ -308,14 +310,14 @@ flowchart TD
 
     subgraph Models["Models"]
         ff[ForceField]
-        mol[Q2MMMolecule]
+        mol[Molecule]
         hess[Hessian]
         sem[QFUERZA]
     end
 
     subgraph Opt["Optimizers"]
         obj[Objective]
-        ref[ReferenceData]
+        obs[ObservationSet]
         scipy[ScipyOptimizer]
         optax_opt[OptaxOptimizer]
         jaxopt_opt[JaxOptOptimizer]
@@ -415,7 +417,7 @@ Columns:
 | `ScipyOptimizer`           | ❌ | ❌ | ❌ |
 | `OptimizationLoop` (cycling) | ✅ when configured [^cycling-jit] | ❌ | ❌ |
 | `OptaxOptimizer`           | ✅ | ❌ (Python step loop) | ❌ |
-| `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ✅ | ❌ |
+| `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ❌ (Python step loop) | ❌ |
 
 [^cycling-jit]: `OptimizationLoop` uses `JaxLoss` only when its
     full-space phase is configured with `full_method="jaxopt:*"` or
@@ -443,9 +445,10 @@ Columns:
    ever reaches the optimizer. Loaders convert on input; savers convert on
    output; engines convert at their own boundary.
 
-2. **Immutable topology.** `Q2MMMolecule` topology (bonds, angles) is fixed at
-   construction. Only `ForceField` parameter *values* change during
-   optimization.
+2. **Immutable scientific models.** `Molecule` topology (bonds, angles) is
+   fixed at construction, and `ForceField` rows are frozen dataclass values.
+   Optimization changes only explicit parameter vectors/materialized replacements
+   via `ParameterLayout` and `ActiveParameterSpace`.
 
 3. **Stateless engines.** `energy()` and `frequencies()` are pure functions of
    (molecule, forcefield). Engines may cache OpenMM `Context` objects for

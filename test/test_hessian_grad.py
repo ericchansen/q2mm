@@ -23,7 +23,7 @@ from q2mm.models.hessian import (
 from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 from q2mm.optimizers.evaluators.hessian_element import HessianElementEvaluator
-from q2mm.optimizers.reference import ReferenceValue
+from q2mm.models.observations import Observation
 
 
 def _make_symmetric(n: int, rng: np.random.Generator) -> np.ndarray:
@@ -194,7 +194,7 @@ class TestFrequencyEvaluatorGradient:
 
         freqs = hessian_to_frequencies(hess, ["C", "H"])
         refs = [
-            ReferenceValue(kind="frequency", value=freqs[3] + 10.0, weight=1.0, data_idx=3, molecule_idx=0),
+            Observation(kind="frequency", value=freqs[3] + 10.0, weight=1.0, data_idx=3, case_id="0"),
         ]
 
         evaluator = FrequencyEvaluator()
@@ -215,8 +215,8 @@ class TestFrequencyEvaluatorGradient:
         freqs = hessian_to_frequencies(hess, symbols)
 
         refs = [
-            ReferenceValue(kind="frequency", value=freqs[2] + 5.0, weight=1.5, data_idx=2, molecule_idx=0),
-            ReferenceValue(kind="frequency", value=freqs[4] - 3.0, weight=0.8, data_idx=4, molecule_idx=0),
+            Observation(kind="frequency", value=freqs[2] + 5.0, weight=1.5, data_idx=2, case_id="0"),
+            Observation(kind="frequency", value=freqs[4] - 3.0, weight=0.8, data_idx=4, case_id="0"),
         ]
 
         engine = _make_mock_engine(hess, dH_dp)
@@ -272,12 +272,12 @@ class TestHessianElementEvaluatorGradient:
         ff = MagicMock()
 
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="hessian_element",
                 value=hess[1, 2] + 0.01,
                 weight=1.0,
                 data_idx=0,
-                molecule_idx=0,
+                case_id="0",
                 atom_indices=(1, 2),
             ),
         ]
@@ -298,12 +298,12 @@ class TestHessianElementEvaluatorGradient:
         ref_val = hess[row, col] + 0.005
         w = 2.0
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="hessian_element",
                 value=ref_val,
                 weight=w,
                 data_idx=0,
-                molecule_idx=0,
+                case_id="0",
                 atom_indices=(row, col),
             ),
         ]
@@ -364,12 +364,12 @@ class TestEigenmatrixEvaluatorGradient:
         eigmat = transform_to_eigenmatrix(hess, qm_evecs)
 
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="eig_diagonal",
                 value=eigmat[2, 2] + 0.01,
                 weight=1.0,
                 data_idx=2,
-                molecule_idx=0,
+                case_id="0",
             ),
         ]
 
@@ -392,12 +392,12 @@ class TestEigenmatrixEvaluatorGradient:
         ref_val = eigmat[idx, idx] + 0.005
         w = 1.5
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="eig_diagonal",
                 value=ref_val,
                 weight=w,
                 data_idx=idx,
-                molecule_idx=0,
+                case_id="0",
             ),
         ]
 
@@ -437,12 +437,12 @@ class TestEigenmatrixEvaluatorGradient:
         ref_val = eigmat[row, col] + 0.003
         w = 1.0
         refs = [
-            ReferenceValue(
+            Observation(
                 kind="eig_offdiagonal",
                 value=ref_val,
                 weight=w,
                 data_idx=0,
-                molecule_idx=0,
+                case_id="0",
                 atom_indices=(row, col),
             ),
         ]
@@ -480,7 +480,7 @@ class TestEigenmatrixEvaluatorGradient:
         _, qm_evecs = mass_weighted_normal_modes(qm_hess, ["C", "H"])
         eigmat = mass_weighted_eigenmatrix(hess, qm_evecs, ["C", "H"])
         refs = [
-            ReferenceValue(kind="eig_diagonal", value=eigmat[0, 0], weight=1.0, data_idx=0, molecule_idx=0),
+            Observation(kind="eig_diagonal", value=eigmat[0, 0], weight=1.0, data_idx=0, case_id="0"),
         ]
 
         engine = _make_mock_engine(hess, dH_dp)
@@ -502,7 +502,7 @@ class TestEigenmatrixEvaluatorGradient:
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
         refs = [
-            ReferenceValue(kind="eig_diagonal", value=0.0, weight=1.0, data_idx=0, molecule_idx=0),
+            Observation(kind="eig_diagonal", value=0.0, weight=1.0, data_idx=0, case_id="0"),
         ]
 
         engine = _make_mock_engine(hess, dH_dp)

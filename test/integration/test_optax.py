@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 
+import numpy as np
 import pytest
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
@@ -22,15 +23,44 @@ pytestmark = [
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 
 # Module-level globals populated by autouse fixture
 JaxEngine = None
 
 
+def _layout(forcefield: ForceField) -> ParameterLayout:
+    return ParameterLayout.from_force_field(forcefield)
+
+
+def _params(forcefield: ForceField) -> np.ndarray:
+    return _layout(forcefield).vector(forcefield)
+
+
+def _make_objective(
+    forcefield: ForceField, engine: object, molecules: list, reference: ObservationSet, **kwargs: object
+) -> ObjectiveFunction:
+    return ObjectiveFunction(
+        forcefield=forcefield,
+        engine=engine,
+        molecules=molecules,
+        reference=reference,
+        layout=_layout(forcefield),
+        **kwargs,
+    )
+
+
+def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
+    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+
+
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     return ForceField(
         bonds=[BondParam(elements=("H", "H"), force_constant=bond_k, equilibrium=bond_r0)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -43,6 +73,7 @@ def _water_ff(
     return ForceField(
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -65,38 +96,36 @@ class TestOptaxJaxDiatomic:
         self.engine = JaxEngine()
 
     def test_adam_converges(self) -> None:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
             max_steps=200,
             verbose=False,
         )
-        result = optimizer.optimize(objective)
+        result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < 1e-4
         assert result.method == "optax:adam"
 
     def test_sgd_converges(self) -> None:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="sgd",
             learning_rate=0.05,
@@ -104,21 +133,20 @@ class TestOptaxJaxDiatomic:
             max_steps=300,
             verbose=False,
         )
-        result = optimizer.optimize(objective)
+        result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < 0.1
 
     def test_cosine_schedule(self) -> None:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
 
         mol = make_diatomic(distance=0.80, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
 
-        ref = ReferenceData()
-        ref.add_energy(value=5.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=5.0, case_id="0", weight=1.0)
 
-        objective = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
@@ -126,7 +154,7 @@ class TestOptaxJaxDiatomic:
             schedule="cosine",
             verbose=False,
         )
-        result = optimizer.optimize(objective)
+        result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < result.initial_score
         assert "cosine" in result.method
@@ -139,23 +167,22 @@ class TestOptaxJaxWater:
         self.engine = JaxEngine()
 
     def test_adam_improves_water(self) -> None:
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
 
         mol = make_water()
         ff = _water_ff(bond_k=400.0, bond_r0=1.0, angle_k=40.0, angle_eq=109.5)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.05,
             max_steps=300,
             verbose=False,
         )
-        result = optimizer.optimize(objective)
+        result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < result.initial_score
         assert result.improvement > 0.0
@@ -169,7 +196,6 @@ class TestOptaxVsScipyBaseline:
 
     def test_adam_comparable_to_lbfgsb(self) -> None:
         """Adam should achieve comparable (if not better) results to L-BFGS-B."""
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -178,23 +204,23 @@ class TestOptaxVsScipyBaseline:
 
         # Run L-BFGS-B
         ff_scipy = _h2_ff(bond_k=215.8, bond_r0=0.74)
-        ref = ReferenceData()
-        ref.add_energy(value=target_energy, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
-        obj_scipy = ObjectiveFunction(forcefield=ff_scipy, engine=self.engine, molecules=[mol], reference=ref)
+        obj_scipy = _make_objective(forcefield=ff_scipy, engine=self.engine, molecules=[mol], reference=ref)
         opt_scipy = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
-        res_scipy = opt_scipy.optimize(obj_scipy)
+        res_scipy = opt_scipy.optimize(obj_scipy, _all_active_space(obj_scipy))
 
         # Run Adam
         ff_optax = _h2_ff(bond_k=215.8, bond_r0=0.74)
-        obj_optax = ObjectiveFunction(forcefield=ff_optax, engine=self.engine, molecules=[mol], reference=ref)
+        obj_optax = _make_objective(forcefield=ff_optax, engine=self.engine, molecules=[mol], reference=ref)
         opt_optax = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
             max_steps=500,
             verbose=False,
         )
-        res_optax = opt_optax.optimize(obj_optax)
+        res_optax = opt_optax.optimize(obj_optax, _all_active_space(obj_optax))
 
         # Both should converge well on this simple problem
         assert res_scipy.final_score < 1.0
@@ -202,22 +228,21 @@ class TestOptaxVsScipyBaseline:
 
     def test_gradient_support_detected(self) -> None:
         """OptaxOptimizer should detect analytical gradient support."""
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
         from q2mm.optimizers.optax import OptaxOptimizer
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = ObjectiveFunction(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.01,
             max_steps=10,
             verbose=False,
         )
-        result = optimizer.optimize(objective)
+        result = optimizer.optimize(objective, _all_active_space(objective))
 
         # JAX engine → uses JaxLoss gradient path (memory-efficient)
         assert result.jac_mode == "jax_loss"

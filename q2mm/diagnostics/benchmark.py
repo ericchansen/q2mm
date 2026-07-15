@@ -23,9 +23,10 @@ from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 
 if TYPE_CHECKING:
     from q2mm.backends.base import MMEngine
-    from q2mm.systems import SystemData
+    from q2mm.benchmarks.cases import BenchmarkCase
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
     from q2mm.optimizers.objective import ObjectiveFunction
 
 
@@ -111,11 +112,13 @@ class _OptResult:
     eps: float | None
     gradients: dict[str, str]
     extra: dict[str, Any]
+    final_params: np.ndarray
 
 
 def _run_optimizer(
     opt: Any,
     obj: ObjectiveFunction,
+    space: ActiveParameterSpace,
     *,
     method: str,
     extra: dict[str, Any] | None = None,
@@ -123,14 +126,18 @@ def _run_optimizer(
     """Run an optimizer and extract result fields into a uniform struct.
 
     Args:
-        opt: Optimizer with an ``.optimize(obj)`` method.
+        opt: Optimizer with an ``.optimize(obj, space)`` method.
         obj: Objective function.
+        space: Active/frozen projection over ``obj.layout``.
+            ``obj.forcefield`` is never mutated by ``opt.optimize`` —
+            the optimized force field must be materialized from
+            ``result.final_params`` (see :attr:`_OptResult.final_params`).
         method: Method name for gradient resolution.
         extra: Additional metadata to include in the result.
 
     """
     t0 = time.perf_counter()
-    opt_result = opt.optimize(obj)
+    opt_result = opt.optimize(obj, space)
     elapsed = time.perf_counter() - t0
 
     jac_mode = opt_result.jac_mode
@@ -147,6 +154,7 @@ def _run_optimizer(
         eps=eps,
         gradients=_resolve_gradients(jac_mode, obj, method=method),
         extra=extra or {},
+        final_params=opt_result.final_params,
     )
 
 
@@ -389,7 +397,7 @@ class BenchmarkResult:
         self,
         directory: str | Path,
         stem: str | None = None,
-        molecule: Q2MMMolecule | None = None,
+        molecule: Molecule | None = None,
     ) -> list[Path]:
         """Save the optimized force field in all compatible native formats.
 
@@ -401,7 +409,7 @@ class BenchmarkResult:
             directory (str | Path): Output directory (created if needed).
             stem (str | None): Base filename without extension. Defaults to
                 ``'{backend}_{optimizer}'`` from metadata.
-            molecule (Q2MMMolecule | None): Molecule for OpenMM XML residue
+            molecule (Molecule | None): Molecule for OpenMM XML residue
                 generation. If ``None``, a minimal XML is written.
 
         Returns:
@@ -425,16 +433,7 @@ class BenchmarkResult:
             stem = benchmark_stem(self.metadata)
 
         ff = self.optimized_ff
-        form = getattr(ff, "functional_form", None)
-        if form is None:
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Cannot save force field: functional_form is not set. "
-                "Set it explicitly on the ForceField before running the benchmark."
-            )
-            return []
-        form_value = form.value if hasattr(form, "value") else str(form)
+        form_value = ff.functional_form.value
 
         # Map format name → (saver function, extension, extra kwargs)
         savers: list[tuple[Any, str, dict[str, Any]]] = []
@@ -557,14 +556,14 @@ def real_frequencies(freqs: np.ndarray | list, threshold: float = REAL_FREQUENCY
     return np.sort(arr[arr > threshold])
 
 
-def _param_names(ff: ForceField) -> list[str]:
-    """Build human-readable names for each parameter in get_param_vector() order."""
-    return ff.get_param_names()
+def _param_names(layout: ParameterLayout) -> list[str]:
+    """Build human-readable names for each parameter in ``layout.vector()`` order."""
+    return list(layout.names)
 
 
 def run_combo(
     engine: MMEngine,
-    sys_data: SystemData,
+    case: BenchmarkCase,
     *,
     optimizer_method: str = "L-BFGS-B",
     optimizer_kwargs: dict[str, Any] | None = None,
@@ -578,7 +577,9 @@ def run_combo(
 
     Args:
         engine: The MM backend engine to use.
-        sys_data: Fully-loaded system data (molecules, forcefield, reference).
+        case: Fully-loaded benchmark case (training molecules, starting
+            force field, parameter layout, active space, and
+            observations — see :attr:`BenchmarkCase.problem`).
         optimizer_method: Optimizer method.  ``'L-BFGS-B'``, ``'Nelder-Mead'``,
             ``'Powell'`` dispatch to :class:`ScipyOptimizer`; ``'cycling'``
             dispatches to :class:`OptimizationLoop`; ``'optax:adam'`` (or
@@ -601,16 +602,20 @@ def run_combo(
     if optimizer_kwargs is None:
         optimizer_kwargs = {}
 
-    ff = sys_data.forcefield.copy()
-    molecule_name = sys_data.metadata.get("molecule_name", "unknown")
-    level_of_theory = sys_data.metadata.get("level_of_theory", "unknown")
+    problem = case.problem
+    ff = problem.starting_force_field
+    layout = problem.layout
+    space = problem.active_space
+    molecules = list(problem.molecules)
+    molecule_name = case.metadata.get("molecule_name", "unknown")
+    level_of_theory = case.metadata.get("level_of_theory", "unknown")
 
     # Aggregate QM real frequencies (sorted) across all molecules
-    all_qm_real = np.sort(np.concatenate(sys_data.qm_freqs_per_mol))
+    all_qm_real = np.sort(np.concatenate(case.qm_freqs_per_mol))
 
     # Aggregate MM frequencies across all molecules for initial RMSD
     all_mm_real_init: list[float] = []
-    for mol in sys_data.molecules:
+    for mol in molecules:
         mm_freqs = engine.frequencies(mol, ff)
         all_mm_real_init.extend(real_frequencies(mm_freqs).tolist())
     all_mm_real_init_arr = np.array(sorted(all_mm_real_init))
@@ -618,8 +623,8 @@ def run_combo(
     n_init = min(len(all_qm_real), len(all_mm_real_init_arr))
     initial_rmsd = frequency_rmsd(all_qm_real[:n_init], all_mm_real_init_arr[:n_init])
 
-    seminario_params = ff.get_param_vector().copy()
-    param_names = _param_names(ff)
+    seminario_params = layout.vector(ff)
+    param_names = _param_names(layout)
 
     git = _git_info()
 
@@ -628,8 +633,8 @@ def run_combo(
             "backend": backend_name,
             "optimizer": optimizer_method,
             "molecule": molecule_name,
-            "functional_form": ff.functional_form.value if ff.functional_form else "unknown",
-            "n_molecules": len(sys_data.molecules),
+            "functional_form": ff.functional_form.value,
+            "n_molecules": len(molecules),
             "source": "q2mm",
             "level_of_theory": level_of_theory,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -659,7 +664,9 @@ def run_combo(
         obj_kwargs["regularization"] = 0.01
 
     optimizer_kwargs = {k: v for k, v in optimizer_kwargs.items() if k not in _obj_only_keys}
-    obj = ObjectiveFunction(ff, engine, sys_data.molecules, sys_data.reference, **obj_kwargs)
+    obj = ObjectiveFunction(
+        ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout, **obj_kwargs
+    )
     initial_score = obj(seminario_params)
 
     result.seminario = {
@@ -676,6 +683,7 @@ def run_combo(
 
         loop_kwargs: dict[str, Any] = {
             "objective": obj,
+            "space": space,
             "max_params": optimizer_kwargs.get("max_params", 3),
             "convergence": optimizer_kwargs.get("convergence", 0.01),
             "max_cycles": optimizer_kwargs.get("max_cycles", 10),
@@ -705,6 +713,7 @@ def run_combo(
         opt_initial_score = loop_result.initial_score
         opt_final_score = loop_result.final_score
         opt_message = loop_result.message
+        final_params = loop_result.final_params
         extra_opt_data = {
             "n_cycles": loop_result.n_cycles,
             "cycle_scores": loop_result.cycle_scores,
@@ -751,13 +760,14 @@ def run_combo(
 
         opt = OptaxOptimizer(**optax_kwargs)
 
-        r = _run_optimizer(opt, obj, method=optimizer_method)
+        r = _run_optimizer(opt, obj, space, method=optimizer_method)
         opt_elapsed = r.elapsed
         n_eval = r.n_eval
         converged = r.converged
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -777,13 +787,14 @@ def run_combo(
 
         opt = JaxOptOptimizer(**jaxopt_kwargs)
 
-        r = _run_optimizer(opt, obj, method=optimizer_method)
+        r = _run_optimizer(opt, obj, space, method=optimizer_method)
         opt_elapsed = r.elapsed
         n_eval = r.n_eval
         converged = r.converged
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -806,6 +817,7 @@ def run_combo(
         r = _run_optimizer(
             opt,
             obj,
+            space,
             method=optimizer_method,
             extra={"n_starts": jaxopt_multi_kwargs.get("n_starts", 10)},
         )
@@ -815,6 +827,7 @@ def run_combo(
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -841,6 +854,7 @@ def run_combo(
         r = _run_optimizer(
             opt,
             obj,
+            space,
             method=bh_kwargs.get("local_method", "L-BFGS-B"),
             extra={"niter": bh_kwargs.get("niter", 50)},
         )
@@ -850,6 +864,7 @@ def run_combo(
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -879,6 +894,7 @@ def run_combo(
         r = _run_optimizer(
             opt,
             obj,
+            space,
             method=inner_method,
             extra={"n_starts": multi_kwargs.get("n_starts", 5)},
         )
@@ -888,6 +904,7 @@ def run_combo(
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -904,13 +921,14 @@ def run_combo(
         opt_kwargs.update(optimizer_kwargs)
         opt = ScipyOptimizer(**opt_kwargs)
 
-        r = _run_optimizer(opt, obj, method=optimizer_method)
+        r = _run_optimizer(opt, obj, space, method=optimizer_method)
         opt_elapsed = r.elapsed
         n_eval = r.n_eval
         converged = r.converged
         opt_initial_score = r.initial_score
         opt_final_score = r.final_score
         opt_message = r.message
+        final_params = r.final_params
         extra_opt_data = r.extra
         jac_mode = r.jac_mode
         eps = r.eps
@@ -924,17 +942,21 @@ def run_combo(
         result.metadata["regularization"] = obj_kwargs["regularization"]
     result.metadata["metadata_version"] = 2
 
+    # Materialize the optimized force field — no optimizer mutates `ff` in
+    # place (it is immutable), so the final vector must be applied explicitly.
+    final_ff = layout.replace(ff, final_params)
+
     # Final aggregate frequencies and RMSD
     all_mm_real_final: list[float] = []
-    for mol in sys_data.molecules:
-        mm_freqs = engine.frequencies(mol, ff)
+    for mol in molecules:
+        mm_freqs = engine.frequencies(mol, final_ff)
         all_mm_real_final.extend(real_frequencies(mm_freqs).tolist())
     all_mm_real_final_arr = np.array(sorted(all_mm_real_final))
 
     n_final = min(len(all_qm_real), len(all_mm_real_final_arr))
     final_rmsd = frequency_rmsd(all_qm_real[:n_final], all_mm_real_final_arr[:n_final])
 
-    param_final = ff.get_param_vector().tolist()
+    param_final = final_params.tolist()
 
     result.optimized = {
         "frequencies_cm1": all_mm_real_final_arr.tolist(),
@@ -953,14 +975,14 @@ def run_combo(
     }
 
     # PES distortion (if the system provides normal modes)
-    if sys_data.normal_modes is not None:
+    if case.normal_modes is not None:
         from q2mm.diagnostics.pes_distortion import compute_distortions
 
         distortion_results, _, dist_elapsed = compute_distortions(
-            sys_data.molecules[0],
-            ff,
+            molecules[0],
+            final_ff,
             engine,
-            sys_data.normal_modes,
+            case.normal_modes,
         )
         all_errs: list[float] = []
         for m in distortion_results:
@@ -973,5 +995,5 @@ def run_combo(
             "elapsed_s": dist_elapsed,
         }
 
-    result.optimized_ff = ff.copy()
+    result.optimized_ff = final_ff
     return result

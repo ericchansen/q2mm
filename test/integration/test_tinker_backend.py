@@ -4,7 +4,7 @@ Contract tests (energy, frequencies, minimize) are in
 test_engine_contract.py and run for every registered engine.  This file
 covers only behaviour unique to the Tinker backend:
 
-* File-path-based API (passing XYZ paths instead of Q2MMMolecule objects)
+* File-path-based API (passing XYZ paths instead of Molecule objects)
 * SN2 TS imaginary-frequency check on the MM3 surface
 """
 
@@ -38,7 +38,7 @@ SN2_XYZ = QM_REF / "sn2-ts-optimized.xyz"
 
 
 class TestTinkerFilePathAPI:
-    """Tinker accepts raw file paths in addition to Q2MMMolecule objects."""
+    """Tinker accepts raw file paths in addition to Molecule objects."""
 
     def setup_method(self) -> None:
         self.engine = TinkerEngine()

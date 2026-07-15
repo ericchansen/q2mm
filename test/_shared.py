@@ -14,7 +14,8 @@ import numpy as np
 from q2mm.resources import sn2_reference_dir
 
 if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.forcefield import FunctionalForm
+    from q2mm.models.molecule import Molecule
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -91,11 +92,11 @@ if _missing:
 def make_diatomic(
     distance: float = 0.74,
     bond_tolerance: float = 2.0,
-) -> Q2MMMolecule:
+) -> Molecule:
     """H2 molecule at specified bond distance."""
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["H", "H"],
         geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
         name="H2",
@@ -108,12 +109,12 @@ def make_water(
     bond_length: float = 0.96,
     bond_tolerance: float = 1.5,
     name: str = "water",
-) -> Q2MMMolecule:
+) -> Molecule:
     """Water molecule at specified geometry."""
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
     theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["O", "H", "H"],
         geometry=np.array(
             [
@@ -131,11 +132,11 @@ def make_noble_gas_pair(
     distance: float = 3.0,
     atom_type: str = "He",
     bond_tolerance: float = 0.5,
-) -> Q2MMMolecule:
+) -> Molecule:
     """Two noble gas atoms for vdW testing (no bonds)."""
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["He", "He"],
         atom_types=[atom_type, atom_type],
         geometry=np.array([[0.0, 0.0, 0.0], [distance, 0.0, 0.0]]),
@@ -144,13 +145,13 @@ def make_noble_gas_pair(
     )
 
 
-def make_ethane() -> Q2MMMolecule:
+def make_ethane() -> Molecule:
     """Staggered ethane (C₂H₆) for torsion testing.
 
     C-C along x-axis, tetrahedral H arrangement, staggered by 60°.
     Has 9 H-C-C-H torsions with ≈60° or 180° dihedral angles.
     """
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
     r_cc = 1.54
     r_ch = 1.09
@@ -165,8 +166,37 @@ def make_ethane() -> Q2MMMolecule:
     h4 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi / 3), sin_t * np.sin(np.pi / 3)])
     h5 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(np.pi), sin_t * np.sin(np.pi)])
     h6 = c2 + r_ch * np.array([-cos_t, sin_t * np.cos(5 * np.pi / 3), sin_t * np.sin(5 * np.pi / 3)])
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["C", "C", "H", "H", "H", "H", "H", "H"],
         geometry=np.array([c1, c2, h1, h2, h3, h4, h5, h6]),
         name="ethane",
     )
+
+
+# ---------------------------------------------------------------------------
+# Engine -> functional_form mapping
+# ---------------------------------------------------------------------------
+
+
+def engine_functional_form(engine: object) -> FunctionalForm:
+    """Pick the :class:`~q2mm.models.forcefield.FunctionalForm` *engine* actually supports.
+
+    Several benchmark/optimizer tests parametrize the exact same helper
+    function or fixture across multiple engine types (OpenMM/Tinker are
+    MM3-only-or-MM3-capable; JAX/JAX-MD are harmonic-only-or-harmonic-
+    preferred), so a single call site cannot hardcode one form for every
+    engine it might receive. Prefers harmonic when an engine supports
+    both (JAX historically defaulted to it before ``functional_form``
+    became required everywhere).
+    """
+    from q2mm.models.forcefield import FunctionalForm
+
+    supported = engine.supported_functional_forms()  # type: ignore[attr-defined]
+    if "harmonic" in supported:
+        return FunctionalForm.HARMONIC
+    if "mm3" in supported:
+        return FunctionalForm.MM3
+    for name in sorted(supported):
+        if hasattr(FunctionalForm, name.upper()):
+            return getattr(FunctionalForm, name.upper())  # type: ignore[no-any-return]
+    raise RuntimeError(f"Engine {engine!r} reports no mappable functional forms: {supported!r}")

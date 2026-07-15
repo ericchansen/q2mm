@@ -9,15 +9,16 @@ import pytest
 
 from test._shared import SN2_HESSIAN, SN2_XYZ
 
-from q2mm.models.forcefield import ForceField, TorsionParam
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import ForceField, TorsionParam, FunctionalForm
+from q2mm.models.molecule import Molecule
 from q2mm.models.seminario import qfuerza_fresh, qfuerza_into
-from q2mm.optimizers.reference import ReferenceData
+from q2mm.models.observations import ObservationSet
 
 
-def _sn2_transition_state() -> Q2MMMolecule:
+def _sn2_transition_state() -> Molecule:
     hessian = np.load(SN2_HESSIAN)
-    return Q2MMMolecule.from_xyz(
+    return load_xyz(
         SN2_XYZ,
         charge=-1,
         name="sn2-ts",
@@ -32,7 +33,7 @@ def test_ts_qfuerza_projection_preserves_qm_inputs() -> None:
     hessian_before = molecule.hessian.copy()
 
     with pytest.warns(UserWarning, match="negative eigenvalues"):
-        forcefield = qfuerza_fresh(molecule, invert_ts_curvature=True)
+        forcefield = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC, invert_ts_curvature=True)
 
     assert np.linalg.eigvalsh(hessian_before).min() < 0.0
     assert all(parameter.force_constant > 0.0 for parameter in forcefield.bonds)
@@ -43,7 +44,7 @@ def test_ts_qfuerza_projection_preserves_qm_inputs() -> None:
 
 def test_ts_reference_builder_is_geometry_and_eigenmatrix_multitarget() -> None:
     """Publication-style TS references are not replaced by frequencies."""
-    reference = ReferenceData.from_molecules([_sn2_transition_state()])
+    reference = ObservationSet.from_molecules([_sn2_transition_state()], case_ids=["0"])
     counts = Counter(value.kind for value in reference.values)
 
     assert counts == {
@@ -61,12 +62,15 @@ def test_qfuerza_zeroes_only_active_initial_torsions() -> None:
     forcefield = ForceField(
         torsions=[
             TorsionParam(("F", "C", "H", "H"), periodicity=1, force_constant=2.0),
-            TorsionParam(("F", "C", "H", "H"), periodicity=2, force_constant=3.0, frozen=True),
-        ]
+            TorsionParam(("F", "C", "H", "H"), periodicity=2, force_constant=3.0),
+        ],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
     with pytest.warns(UserWarning, match="negative eigenvalues"):
-        qfuerza_into(forcefield, [molecule], invert_ts_curvature=True)
+        updated = qfuerza_into(forcefield, [molecule], invert_ts_curvature=True, active_torsions=frozenset({0}))
 
-    assert forcefield.torsions[0].force_constant == 0.0
+    assert updated.torsions[0].force_constant == 0.0
+    assert updated.torsions[1].force_constant == 3.0
+    assert forcefield.torsions[0].force_constant == 2.0
     assert forcefield.torsions[1].force_constant == 3.0

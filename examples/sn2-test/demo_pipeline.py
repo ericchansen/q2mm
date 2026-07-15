@@ -8,15 +8,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.seminario import qfuerza_fresh
 from q2mm.resources import sn2_reference_dir
 
 QM_REF = sn2_reference_dir()
 
 # Load SN2 TS (use 1.4x tolerance for partially broken C-F bonds at TS)
-mol = Q2MMMolecule.from_xyz(QM_REF / "sn2-ts-optimized.xyz", charge=-1, name="SN2_TS", bond_tolerance=1.4)
+mol = load_xyz(QM_REF / "sn2-ts-optimized.xyz", charge=-1, name="SN2_TS", bond_tolerance=1.4)
 hess = np.load(str(QM_REF / "sn2-ts-hessian.npy"))
 mol = mol.with_hessian(hess)
 
@@ -27,7 +27,7 @@ for a in mol.angles:
     print(f"  {a.elements}: {a.value:.1f} deg")
 
 # Auto-create force field
-ff = ForceField.create_for_molecule(mol)
+ff = ForceField.create_for_molecule(mol, functional_form=FunctionalForm.HARMONIC)
 print(f"\n{ff}")
 for b in ff.bonds:
     print(f"  Bond {b.key}: r0={b.equilibrium:.4f} A, k={b.force_constant:.2f} mdyn/A")
@@ -38,7 +38,7 @@ for a in ff.angles:
 print("\n" + "=" * 60)
 print("Running QFUERZA estimation...")
 print("=" * 60)
-estimated_ff = qfuerza_fresh(mol)
+estimated_ff = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
 
 print(f"\n{'=' * 60}")
 print("RESULTS: Estimated Force Constants from QM Hessian")

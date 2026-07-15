@@ -7,7 +7,6 @@ functional forms with runtime parameter updates via :class:`OpenMMHandle`.
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import Any
 from dataclasses import dataclass, field
@@ -59,7 +58,7 @@ from q2mm.models.units import (
     kj_to_kcal,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
 
 try:
     from openmm import openmm as mm
@@ -98,7 +97,7 @@ class OpenMMHandle:
 
     """
 
-    molecule: Q2MMMolecule
+    molecule: Molecule
     system: object
     integrator: object
     context: object
@@ -215,28 +214,30 @@ def detect_best_platform() -> str:
     return mm.Platform.getPlatform(0).getName()  # pragma: no cover
 
 
-def _as_molecule(structure: Q2MMMolecule | str | Path) -> Q2MMMolecule:
-    """Coerce *structure* to a :class:`Q2MMMolecule`.
+def _as_molecule(structure: Molecule | str | Path) -> Molecule:
+    """Coerce *structure* to a :class:`Molecule`.
 
     Args:
-        structure: A :class:`Q2MMMolecule`, file path (``str`` or ``Path``),
+        structure: A :class:`Molecule`, file path (``str`` or ``Path``),
             or any other type (which will raise ``TypeError``).
 
     Returns:
-        Q2MMMolecule: The coerced molecule object.
+        Molecule: The coerced molecule object.
 
     Raises:
         TypeError: If *structure* is not a recognised type.
 
     """
-    if isinstance(structure, Q2MMMolecule):
+    if isinstance(structure, Molecule):
         return structure
     if isinstance(structure, (str, Path)):
-        return Q2MMMolecule.from_xyz(structure)
-    raise TypeError("OpenMMEngine expects a Q2MMMolecule or path to an XYZ file.")
+        from q2mm.io.xyz import load_xyz
+
+        return load_xyz(structure)
+    raise TypeError("OpenMMEngine expects a Molecule or path to an XYZ file.")
 
 
-def _coerce_forcefield(forcefield: ForceField | None, molecule: Q2MMMolecule) -> ForceField:
+def _coerce_forcefield(forcefield: ForceField | None, molecule: Molecule) -> ForceField:
     """Return *forcefield* or create a default one from *molecule*.
 
     Args:
@@ -249,11 +250,11 @@ def _coerce_forcefield(forcefield: ForceField | None, molecule: Q2MMMolecule) ->
     """
     if forcefield is not None:
         return forcefield
-    return ForceField.create_for_molecule(molecule)
+    return ForceField.create_for_molecule(molecule, functional_form=FunctionalForm.MM3)
 
 
 def _collect_bond_assignments(
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
     forcefield: ForceField,
 ) -> list[tuple[Any, BondParam]]:
     """Match each molecule bond to a force field bond parameter.
@@ -276,7 +277,7 @@ def _collect_bond_assignments(
 
 
 def _collect_angle_assignments(
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
     forcefield: ForceField,
 ) -> list[tuple[Any, AngleParam]]:
     """Match each molecule angle to a force field angle parameter.
@@ -293,7 +294,7 @@ def _collect_angle_assignments(
 
 
 def _collect_torsion_assignments(
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
     forcefield: ForceField,
     *,
     is_improper: bool,
@@ -324,7 +325,7 @@ def _collect_torsion_assignments(
 
 
 def _collect_vdw_assignments(
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
     forcefield: ForceField,
 ) -> list[tuple[int, str, str, VdwParam]]:
     """Match each atom to a force field vdW parameter.
@@ -363,7 +364,7 @@ def _index_by_param_id(
 
 
 def _build_harmonic_exclusions(
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
     vdw_force: Any,
 ) -> list[_Exception14]:
     """Add 1-2/1-3 exclusions and scaled 1-4 exceptions to a NonbondedForce.
@@ -420,7 +421,7 @@ def _build_harmonic_exclusions(
     return exceptions_14
 
 
-def _build_atom_type_index(molecule: Q2MMMolecule) -> dict[str, list[int]]:
+def _build_atom_type_index(molecule: Molecule) -> dict[str, list[int]]:
     """Build a mapping from atom type to atom indices in the molecule.
 
     Args:
@@ -439,7 +440,7 @@ def _build_atom_type_index(molecule: Q2MMMolecule) -> dict[str, list[int]]:
 def _find_dihedral_atoms(
     type_to_indices: dict[str, list[int]],
     atom_types: tuple[str, str, str, str],
-    molecule: Q2MMMolecule,
+    molecule: Molecule,
 ) -> list[tuple[int, int, int, int]]:
     """Find all atom-index quadruples matching a dihedral type pattern.
 
@@ -474,7 +475,7 @@ def _find_dihedral_atoms(
     return results
 
 
-def _build_cmap_force(molecule: Q2MMMolecule, forcefield: ForceField) -> tuple[object | None, list[_CmapTerm]]:
+def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[object | None, list[_CmapTerm]]:
     """Build a ``CMAPTorsionForce`` for the molecule's matching phi/psi pairs.
 
     Shared by ``create_context`` (scalar energy) and ``_create_diff_handle``
@@ -650,7 +651,7 @@ class OpenMMEngine(MMEngine):
         """
         return True
 
-    def _positions(self, molecule: Q2MMMolecule) -> Any:
+    def _positions(self, molecule: Molecule) -> Any:
         """Convert molecule geometry to OpenMM position array.
 
         Args:
@@ -724,7 +725,7 @@ class OpenMMEngine(MMEngine):
 
     def create_context(
         self,
-        structure: Q2MMMolecule | str | Path,
+        structure: Molecule | str | Path,
         forcefield: ForceField | None = None,
         *,
         precision: str | None = None,
@@ -735,8 +736,8 @@ class OpenMMEngine(MMEngine):
         functional form and assigns per-term parameters from *forcefield*.
 
         Args:
-            structure (Q2MMMolecule | str | Path): A
-                :class:`~q2mm.models.molecule.Q2MMMolecule` or path to an
+            structure (Molecule | str | Path): A
+                :class:`~q2mm.models.molecule.Molecule` or path to an
                 XYZ file.
             forcefield: Force field to apply. Auto-generated from the
                 molecule if ``None``.
@@ -764,8 +765,9 @@ class OpenMMEngine(MMEngine):
                 "Use JaxEngine for force fields with stretch-bend parameters."
             )
 
-        # Default to MM3 for backward compatibility when functional_form is None
-        ff_form = forcefield.functional_form or FunctionalForm.MM3
+        # Functional form is always explicit on the (possibly auto-generated,
+        # always MM3-tagged by _coerce_forcefield) force field.
+        ff_form = forcefield.functional_form
         use_harmonic = ff_form == FunctionalForm.HARMONIC
 
         system = mm.System()
@@ -1041,7 +1043,7 @@ class OpenMMEngine(MMEngine):
         context.setPositions(self._positions(molecule))
 
         return OpenMMHandle(
-            molecule=copy.deepcopy(molecule),
+            molecule=molecule,
             system=system,
             integrator=integrator,
             context=context,
@@ -1078,7 +1080,7 @@ class OpenMMEngine(MMEngine):
 
         """
         incoming_form = forcefield.functional_form
-        if incoming_form is not None and incoming_form != handle.functional_form:
+        if incoming_form != handle.functional_form:
             raise ValueError(
                 f"Force field functional form {incoming_form!r} does not match "
                 f"the handle's form {handle.functional_form!r}. "
@@ -1221,7 +1223,7 @@ class OpenMMEngine(MMEngine):
     def export_system_xml(
         self,
         path: str | Path,
-        structure: Q2MMMolecule | str | Path | OpenMMHandle,
+        structure: Molecule | str | Path | OpenMMHandle,
         forcefield: ForceField | None = None,
     ) -> Path:
         """Serialize the OpenMM System to XML.
@@ -1233,8 +1235,8 @@ class OpenMMEngine(MMEngine):
 
         Args:
             path: Output file path.
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): A
-                :class:`~q2mm.models.molecule.Q2MMMolecule`, path to an XYZ
+            structure (Molecule | str | Path | OpenMMHandle): A
+                :class:`~q2mm.models.molecule.Molecule`, path to an XYZ
                 file, or an existing :class:`OpenMMHandle`.
             forcefield: Force field to apply.  When *structure* is not an
                 :class:`OpenMMHandle`, this is used to build the OpenMM
@@ -1270,7 +1272,7 @@ class OpenMMEngine(MMEngine):
         return mm.XmlSerializer.deserialize(xml_string)
 
     def _prepare_handle(
-        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
+        self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
     ) -> OpenMMHandle:
         """Get or create an :class:`OpenMMHandle`.
 
@@ -1278,8 +1280,8 @@ class OpenMMEngine(MMEngine):
         its parameters.  Otherwise, build a new handle.
 
         Args:
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): A
-                :class:`Q2MMMolecule`, XYZ path, or existing
+            structure (Molecule | str | Path | OpenMMHandle): A
+                :class:`Molecule`, XYZ path, or existing
                 :class:`OpenMMHandle`.
             forcefield: Force field to apply (used for creation or update).
 
@@ -1298,7 +1300,7 @@ class OpenMMEngine(MMEngine):
     # Analytical parameter gradients via addEnergyParameterDerivative
     # ------------------------------------------------------------------
 
-    def _create_diff_handle(self, molecule: Q2MMMolecule, forcefield: ForceField) -> _DiffHandle:
+    def _create_diff_handle(self, molecule: Molecule, forcefield: ForceField) -> _DiffHandle:
         """Build an OpenMM system with global parameters for analytical gradients.
 
         Each unique FF parameter becomes a named global parameter on the
@@ -1320,7 +1322,7 @@ class OpenMMEngine(MMEngine):
 
         """
         self._validate_forcefield(forcefield)
-        ff_form = forcefield.functional_form or FunctionalForm.MM3
+        ff_form = forcefield.functional_form
         use_harmonic = ff_form == FunctionalForm.HARMONIC
 
         system = mm.System()
@@ -1330,7 +1332,6 @@ class OpenMMEngine(MMEngine):
         param_names: list[str] = []
         param_vector_indices: list[int] = []
         grad_unit_factors: list[float] = []
-        param_vector = forcefield.get_param_vector()
         pv_idx = 0  # tracks position in flat param vector
 
         # Precompute assignments and build reverse indices for O(n) lookups.
@@ -1497,7 +1498,7 @@ class OpenMMEngine(MMEngine):
 
         # --- Urey-Bradley: each UB angle contributes (ub_k, ub_r0) on the
         # 1-3 pair (atom_i, atom_k).  These live at the tail of the param
-        # vector (after vdW), mirroring get_param_vector().  Modeled as a
+        # vector (after vdW), mirroring ParameterLayout ordering.  Modeled as a
         # harmonic bond so the energy and derivatives match energy()'s
         # HarmonicBondForce term. ---
         ub_k_factor = canonical_to_openmm_bond_k_nm(1.0)
@@ -1545,7 +1546,7 @@ class OpenMMEngine(MMEngine):
             functional_form=forcefield.functional_form,
         )
 
-    def energy_and_param_grad(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
+    def energy_and_param_grad(self, structure: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
@@ -1555,13 +1556,13 @@ class OpenMMEngine(MMEngine):
         computed via central finite differences automatically.
 
         Args:
-            structure (Q2MMMolecule): Molecular structure.
+            structure (Molecule): Molecular structure.
             forcefield (ForceField): Force field parameters.
 
         Returns:
             tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy``
                 is in kcal/mol and ``grad`` has the same length as
-                ``forcefield.get_param_vector()``.
+                ``ParameterLayout.from_force_field(forcefield).vector(forcefield)``.
 
         """
         molecule = _as_molecule(structure)
@@ -1576,7 +1577,10 @@ class OpenMMEngine(MMEngine):
         energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
         derivs = state.getEnergyParameterDerivatives()
 
-        param_vector = forcefield.get_param_vector()
+        from q2mm.models.parameters import ParameterKind, ParameterLayout
+
+        layout = ParameterLayout.from_force_field(forcefield)
+        param_vector = layout.vector(forcefield)
         grad = np.zeros(len(param_vector))
 
         for name, pv_idx, unit_factor in zip(
@@ -1591,12 +1595,8 @@ class OpenMMEngine(MMEngine):
         # context for each perturbation.  Use double precision on GPU
         # so the finite differences are not lost to float32 rounding.
         if forcefield.vdws:
-            vdw_start = (
-                2 * len(forcefield.bonds)
-                + 2 * len(forcefield.angles)
-                + len(forcefield.torsions)
-                + len(forcefield.stretch_bends)
-            )
+            vdw_radius_indices = layout.indices_by_kind.get(ParameterKind.VDW_RADIUS, ())
+            vdw_start = min(vdw_radius_indices)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
             handle = self.create_context(molecule, forcefield, precision="double")
@@ -1605,19 +1605,17 @@ class OpenMMEngine(MMEngine):
                 pv_plus[i] += step
                 pv_minus = param_vector.copy()
                 pv_minus[i] -= step
-                e_plus = self.energy(handle, forcefield.with_params(pv_plus))
-                e_minus = self.energy(handle, forcefield.with_params(pv_minus))
+                e_plus = self.energy(handle, layout.replace(forcefield, pv_plus))
+                e_minus = self.energy(handle, layout.replace(forcefield, pv_minus))
                 grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
 
-    def energy(
-        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
-    ) -> float:
+    def energy(self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): Molecule,
+            structure (Molecule | str | Path | OpenMMHandle): Molecule,
                 XYZ path, or :class:`OpenMMHandle`.
             forcefield: Force field to apply. Auto-generated if ``None``.
 
@@ -1631,7 +1629,7 @@ class OpenMMEngine(MMEngine):
 
     def minimize(
         self,
-        structure: Q2MMMolecule | str | Path | OpenMMHandle,
+        structure: Molecule | str | Path | OpenMMHandle,
         forcefield: ForceField | None = None,
         tolerance: float = 1.0,
         max_iterations: int = 200,
@@ -1639,7 +1637,7 @@ class OpenMMEngine(MMEngine):
         """Energy-minimize structure using L-BFGS.
 
         Args:
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): Molecule,
+            structure (Molecule | str | Path | OpenMMHandle): Molecule,
                 XYZ path, or :class:`OpenMMHandle`.
             forcefield: Force field to apply. Auto-generated if ``None``.
             tolerance: Energy convergence tolerance in kJ/mol.
@@ -1654,13 +1652,13 @@ class OpenMMEngine(MMEngine):
         mm.LocalEnergyMinimizer.minimize(handle.context, tolerance, max_iterations)
         state = handle.context.getState(getEnergy=True, getPositions=True)
         coords = np.array(state.getPositions(asNumpy=True).value_in_unit(unit.angstrom))
-        handle.molecule.geometry = coords
+        handle.molecule = handle.molecule.with_geometry(coords)
         energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
         return energy, list(handle.molecule.symbols), coords
 
     def hessian(
         self,
-        structure: Q2MMMolecule | str | Path | OpenMMHandle,
+        structure: Molecule | str | Path | OpenMMHandle,
         forcefield: ForceField | None = None,
         step: float = 1.0e-4,
     ) -> np.ndarray:
@@ -1671,7 +1669,7 @@ class OpenMMEngine(MMEngine):
         contract defined in :class:`~q2mm.backends.base.MMEngine`.
 
         Args:
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): Molecule,
+            structure (Molecule | str | Path | OpenMMHandle): Molecule,
                 XYZ path, or :class:`OpenMMHandle`.
             forcefield: Force field to apply. Auto-generated if ``None``.
             step: Finite-difference displacement in nm.
@@ -1719,12 +1717,12 @@ class OpenMMEngine(MMEngine):
         return hessian_symmetric * hessian_kjmolnm2_to_au(1.0)
 
     def frequencies(
-        self, structure: Q2MMMolecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None, **kwargs: Any
+        self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None, **kwargs: Any
     ) -> list[float]:
         """Approximate harmonic frequencies in cm⁻¹ from the numerical Hessian.
 
         Args:
-            structure (Q2MMMolecule | str | Path | OpenMMHandle): Molecule,
+            structure (Molecule | str | Path | OpenMMHandle): Molecule,
                 XYZ path, or :class:`OpenMMHandle`.
             forcefield: Force field to apply. Auto-generated if ``None``.
             **kwargs: Forwarded to

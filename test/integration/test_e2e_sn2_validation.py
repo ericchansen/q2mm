@@ -43,10 +43,14 @@ from test._shared import (
 from q2mm.backends.mm.openmm import OpenMMEngine
 from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, frequency_rmsd, load_normal_modes
 from q2mm.diagnostics.benchmark import real_frequencies
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import ForceField, FunctionalForm
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 # ---- Paths (test-specific) ----
@@ -85,6 +89,41 @@ def _load_external_reference() -> dict:
     return json.loads(EXT_REF.read_text())
 
 
+def _load_molecule(path: Path, *, bond_tolerance: float, charge: int = 0) -> Molecule:
+    """Load an XYZ molecule using the canonical immutable Molecule API."""
+    return load_xyz(path, bond_tolerance=bond_tolerance, charge=charge)
+
+
+def _with_atomic_hessian(molecule: Molecule, path: Path, *, source: str) -> Molecule:
+    """Attach a canonical-AU Hessian with explicit provenance."""
+    return molecule.with_hessian(
+        np.load(path),
+        HessianProvenance(units=HessianUnits.ATOMIC, source=source, path=str(path.resolve())),
+    )
+
+
+def _build_frequency_objective(
+    molecule: Molecule, forcefield: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+) -> tuple[ObjectiveFunction, ActiveParameterSpace]:
+    """Build a frequency-only objective matching the legacy test behavior."""
+    layout = ParameterLayout.from_force_field(forcefield)
+
+    mm_all = engine.frequencies(molecule, forcefield)
+    mm_real_indices = sorted(i for i, f in enumerate(mm_all) if f > 50.0)
+    qm_real = sorted(qm_freqs[qm_freqs > 50.0])
+
+    ref = ObservationSet()
+    n = min(len(qm_real), len(mm_real_indices))
+    for k in range(n):
+        ref = ref.with_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, case_id="0")
+
+    objective = ObjectiveFunction(
+        forcefield=forcefield, engine=engine, molecules=[molecule], reference=ref, layout=layout
+    )
+    space = ActiveParameterSpace.all_active(layout, forcefield)
+    return objective, space
+
+
 def _imaginary_frequencies(freqs: list[float] | np.ndarray) -> np.ndarray:
     """Extract imaginary (negative) frequencies."""
     arr = np.asarray(freqs)
@@ -107,8 +146,8 @@ class TestCH3FGroundState:
         return OpenMMEngine()
 
     @pytest.fixture(scope="class")
-    def ch3f_mol(self) -> Q2MMMolecule:
-        return Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
+    def ch3f_mol(self) -> Molecule:
+        return _load_molecule(CH3F_XYZ, bond_tolerance=1.5)
 
     @pytest.fixture(scope="class")
     def qm_freqs(self) -> np.ndarray:
@@ -119,17 +158,16 @@ class TestCH3FGroundState:
         return _load_external_reference()
 
     @pytest.fixture(scope="class")
-    def default_ff(self, ch3f_mol: Q2MMMolecule) -> ForceField:
+    def default_ff(self, ch3f_mol: Molecule) -> ForceField:
         """Create generic FF with default force constants -- the poor baseline."""
-        return ForceField.create_for_molecule(ch3f_mol, name="CH3F default")
+        return ForceField.create_for_molecule(ch3f_mol, name="CH3F default", functional_form=FunctionalForm.HARMONIC)
 
     @pytest.fixture(scope="class")
-    def seminario_result(self, ch3f_mol: Q2MMMolecule) -> tuple[ForceField, float]:
+    def seminario_result(self, ch3f_mol: Molecule) -> tuple[ForceField, float]:
         """Seminario-estimated FF from QM Hessian, with timing."""
-        hess = np.load(CH3F_HESS)
-        mol_h = ch3f_mol.with_hessian(hess)
+        mol_h = _with_atomic_hessian(ch3f_mol, CH3F_HESS, source="test-fixture-ch3f")
         t0 = time.perf_counter()
-        ff = qfuerza_fresh(mol_h)
+        ff = qfuerza_fresh(mol_h, functional_form=FunctionalForm.MM3)
         elapsed = time.perf_counter() - t0
         return ff, elapsed
 
@@ -139,30 +177,16 @@ class TestCH3FGroundState:
 
     @pytest.fixture(scope="class")
     def optimized_result(
-        self, ch3f_mol: Q2MMMolecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+        self, ch3f_mol: Molecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized FF: Seminario starting point -> optimize to match QM."""
-        ff = seminario_ff.copy()
-
-        # Compute engine frequencies to get correct data_idx mapping.
-        # The engine returns ALL 3N modes (including near-zero trans/rot);
-        # data_idx must index into that full array, not the QM-only array.
-        mm_all = engine.frequencies(ch3f_mol, ff)
-        mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
-        qm_real = sorted(qm_freqs[qm_freqs > 50.0])
-
-        ref = ReferenceData()
-        n = min(len(qm_real), len(mm_real_indices))
-        for k in range(n):
-            ref.add_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, molecule_idx=0)
-
-        obj = ObjectiveFunction(ff, engine, [ch3f_mol], ref)
+        objective, space = _build_frequency_objective(ch3f_mol, seminario_ff, engine, qm_freqs)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         t0 = time.perf_counter()
-        opt.optimize(obj)
+        result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0
-        n_eval = obj.n_eval
-        return ff, elapsed, n_eval  # ff modified in-place by optimizer
+        optimized_ff = objective.layout.replace(seminario_ff, result.final_params)
+        return optimized_ff, elapsed, result.n_evaluations
 
     @pytest.fixture(scope="class")
     def optimized_ff(self, optimized_result: tuple[ForceField, float, int]) -> ForceField:
@@ -171,7 +195,7 @@ class TestCH3FGroundState:
     # ---- Stage 1: Default FF baseline ----
 
     def test_default_ff_frequencies_exist(
-        self, engine: OpenMMEngine, ch3f_mol: Q2MMMolecule, default_ff: ForceField
+        self, engine: OpenMMEngine, ch3f_mol: Molecule, default_ff: ForceField
     ) -> None:
         """Default FF can compute frequencies without crashing."""
         freqs = engine.frequencies(ch3f_mol, default_ff)
@@ -179,7 +203,7 @@ class TestCH3FGroundState:
         assert len(real) >= 6, f"Expected at least 6 real modes, got {len(real)}"
 
     def test_default_ff_vs_qm_is_poor(
-        self, engine: OpenMMEngine, ch3f_mol: Q2MMMolecule, default_ff: ForceField, qm_freqs: np.ndarray
+        self, engine: OpenMMEngine, ch3f_mol: Molecule, default_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Default (generic) FF should be a poor match to QM — establishing baseline."""
         mm_freqs = real_frequencies(engine.frequencies(ch3f_mol, default_ff))
@@ -203,7 +227,7 @@ class TestCH3FGroundState:
     def test_seminario_better_than_default(
         self,
         engine: OpenMMEngine,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         default_ff: ForceField,
         seminario_ff: ForceField,
         qm_freqs: np.ndarray,
@@ -233,7 +257,7 @@ class TestCH3FGroundState:
     def test_optimized_better_than_seminario(
         self,
         engine: OpenMMEngine,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         seminario_ff: ForceField,
         optimized_ff: ForceField,
         qm_freqs: np.ndarray,
@@ -254,7 +278,7 @@ class TestCH3FGroundState:
         )
 
     def test_optimized_frequency_rmsd_acceptable(
-        self, engine: OpenMMEngine, ch3f_mol: Q2MMMolecule, optimized_ff: ForceField, qm_freqs: np.ndarray
+        self, engine: OpenMMEngine, ch3f_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Optimized FF frequencies should be within reasonable RMSD of QM."""
         qm_real = sorted(real_frequencies(qm_freqs))
@@ -324,7 +348,7 @@ class TestCH3FGroundState:
     def test_improvement_progression_logged(
         self,
         engine: OpenMMEngine,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         default_ff: ForceField,
         seminario_result: tuple[ForceField, float],
         optimized_result: tuple[ForceField, float, int],
@@ -405,7 +429,7 @@ class TestCH3FGroundState:
     def distortion_results(
         self,
         engine: OpenMMEngine,
-        ch3f_mol: Q2MMMolecule,
+        ch3f_mol: Molecule,
         seminario_ff: ForceField,
         optimized_ff: ForceField,
         normal_modes: np.ndarray,
@@ -524,21 +548,20 @@ class TestSN2TransitionState:
         return OpenMMEngine()
 
     @pytest.fixture(scope="class")
-    def ts_mol(self) -> Q2MMMolecule:
+    def ts_mol(self) -> Molecule:
         # TS has 5-valent carbon — need larger bond tolerance
-        return Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
+        return _load_molecule(TS_XYZ, bond_tolerance=1.6)
 
     @pytest.fixture(scope="class")
     def qm_freqs(self) -> np.ndarray:
         return _load_qm_frequencies(TS_FREQS)
 
     @pytest.fixture(scope="class")
-    def seminario_result(self, ts_mol: Q2MMMolecule) -> tuple[ForceField, float]:
+    def seminario_result(self, ts_mol: Molecule) -> tuple[ForceField, float]:
         """Seminario FF for TS (no curvature inversion)."""
-        hess = np.load(TS_HESS)
-        mol_h = ts_mol.with_hessian(hess)
+        mol_h = _with_atomic_hessian(ts_mol, TS_HESS, source="test-fixture-sn2")
         t0 = time.perf_counter()
-        ff = qfuerza_fresh(mol_h)
+        ff = qfuerza_fresh(mol_h, functional_form=FunctionalForm.MM3)
         elapsed = time.perf_counter() - t0
         return ff, elapsed
 
@@ -548,27 +571,16 @@ class TestSN2TransitionState:
 
     @pytest.fixture(scope="class")
     def optimized_result(
-        self, ts_mol: Q2MMMolecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+        self, ts_mol: Molecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized TS FF."""
-        ff = seminario_ff.copy()
-
-        # Map QM real modes to engine frequency indices (see CH3F fixture)
-        mm_all = engine.frequencies(ts_mol, ff)
-        mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
-        qm_real = sorted(qm_freqs[qm_freqs > 50.0])
-
-        ref = ReferenceData()
-        n = min(len(qm_real), len(mm_real_indices))
-        for k in range(n):
-            ref.add_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, molecule_idx=0)
-
-        obj = ObjectiveFunction(ff, engine, [ts_mol], ref)
+        objective, space = _build_frequency_objective(ts_mol, seminario_ff, engine, qm_freqs)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         t0 = time.perf_counter()
-        opt.optimize(obj)
+        result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0
-        return ff, elapsed, obj.n_eval
+        optimized_ff = objective.layout.replace(seminario_ff, result.final_params)
+        return optimized_ff, elapsed, result.n_evaluations
 
     @pytest.fixture(scope="class")
     def optimized_ff(self, optimized_result: tuple[ForceField, float, int]) -> ForceField:
@@ -581,9 +593,7 @@ class TestSN2TransitionState:
         negative_fcs = [b for b in seminario_ff.bonds if b.force_constant < 0]
         assert len(negative_fcs) > 0, "Expected at least one negative FC for TS reaction coordinate"
 
-    def test_seminario_ts_frequencies(
-        self, engine: OpenMMEngine, ts_mol: Q2MMMolecule, seminario_ff: ForceField
-    ) -> None:
+    def test_seminario_ts_frequencies(self, engine: OpenMMEngine, ts_mol: Molecule, seminario_ff: ForceField) -> None:
         """Seminario TS FF should produce at least one imaginary frequency."""
         freqs = engine.frequencies(ts_mol, seminario_ff)
         imag = _imaginary_frequencies(freqs)
@@ -600,7 +610,7 @@ class TestSN2TransitionState:
         assert len(optimized_ff.bonds) > 0
 
     def test_ts_optimized_real_freqs_match_qm(
-        self, engine: OpenMMEngine, ts_mol: Q2MMMolecule, optimized_ff: ForceField, qm_freqs: np.ndarray
+        self, engine: OpenMMEngine, ts_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Optimized TS FF real frequencies should reasonably match QM."""
         qm_real = sorted(real_frequencies(qm_freqs))
@@ -613,7 +623,7 @@ class TestSN2TransitionState:
     def test_ts_progression_logged(
         self,
         engine: OpenMMEngine,
-        ts_mol: Q2MMMolecule,
+        ts_mol: Molecule,
         seminario_result: tuple[ForceField, float],
         optimized_result: tuple[ForceField, float, int],
         qm_freqs: np.ndarray,
@@ -732,16 +742,18 @@ class TestSN2ReactionProfile:
     @pytest.fixture(scope="class")
     def ch3f_ff(self) -> ForceField:
         """Seminario FF for CH3F ground state."""
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
-        hess = np.load(CH3F_HESS)
-        return qfuerza_fresh(mol.with_hessian(hess))
+        mol = _load_molecule(CH3F_XYZ, bond_tolerance=1.5)
+        return qfuerza_fresh(
+            _with_atomic_hessian(mol, CH3F_HESS, source="test-fixture-ch3f"), functional_form=FunctionalForm.MM3
+        )
 
     @pytest.fixture(scope="class")
     def ts_ff(self) -> ForceField:
         """Seminario FF for SN2 TS."""
-        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
-        hess = np.load(TS_HESS)
-        return qfuerza_fresh(mol.with_hessian(hess))
+        mol = _load_molecule(TS_XYZ, bond_tolerance=1.6)
+        return qfuerza_fresh(
+            _with_atomic_hessian(mol, TS_HESS, source="test-fixture-sn2"), functional_form=FunctionalForm.MM3
+        )
 
     def test_qm_barrier_matches_literature(self, qm_energies: dict[str, float], ext_ref: dict[str, object]) -> None:
         """Our QM barrier should be in the ballpark of published values."""
@@ -759,8 +771,8 @@ class TestSN2ReactionProfile:
 
     def test_mm_energies_are_finite(self, engine: OpenMMEngine, ch3f_ff: ForceField, ts_ff: ForceField) -> None:
         """MM energies should be finite for both GS and TS geometries."""
-        ch3f_mol = Q2MMMolecule.from_xyz(CH3F_XYZ, bond_tolerance=1.5)
-        ts_mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.6)
+        ch3f_mol = _load_molecule(CH3F_XYZ, bond_tolerance=1.5)
+        ts_mol = _load_molecule(TS_XYZ, bond_tolerance=1.6)
 
         e_ch3f = engine.energy(ch3f_mol, ch3f_ff)
         e_ts = engine.energy(ts_mol, ts_ff)

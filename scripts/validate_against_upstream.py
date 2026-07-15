@@ -23,12 +23,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
 from q2mm.models.seminario import qfuerza_into, seminario_bond_fc
 from q2mm.resources import sn2_reference_dir
 from q2mm.io.jaguar import JaguarIn
 from q2mm.io.macromodel import MacroModel
+from q2mm.io.mm3 import load_mm3_fld
 from q2mm.io.mol2 import Mol2
+from q2mm.io.xyz import load_xyz
 
 DEFAULT_WORKTREE = REPO_ROOT.parent / f"{REPO_ROOT.name}-upstream-worktree"
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
@@ -166,7 +168,7 @@ def _blocked_result(case: CaseDefinition, mode: str, reason: str | None = None) 
 def _run_sn2_bond_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     case = CASE_MATRIX["seminario-sn2-bond"]
     fixture = _load_json(fixture_dir / "sn2_reference.json")
-    molecule = Q2MMMolecule.from_xyz(SN2_XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
+    molecule = load_xyz(SN2_XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
     hessian = np.load(str(SN2_HESSIAN_PATH))
     scaling = float(fixture["metadata"]["dft_scaling"])
 
@@ -205,9 +207,9 @@ def _run_sn2_bond_case(fixture_dir: Path, mode: Mode) -> CaseResult:
 def _run_rh_direct_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     case = CASE_MATRIX["seminario-rh-direct-bond"]
     fixture = _load_json(fixture_dir / "rh_enamide_reference.json")
-    structure = Mol2(str(MOL2_PATH)).structures[0]
-    hessian = JaguarIn(str(RH_DIRECT_HESSIAN_PATH)).get_hessian(len(structure.atoms))
-    coordinates = np.array([[atom.x, atom.y, atom.z] for atom in structure.atoms], dtype=float)
+    molecule = Mol2(str(MOL2_PATH)).molecules[0]
+    hessian = JaguarIn(str(RH_DIRECT_HESSIAN_PATH)).get_hessian(molecule.n_atoms)
+    coordinates = molecule.geometry
     scaling = float(fixture["metadata"]["dft_scaling"])
 
     max_abs_diff = 0.0
@@ -245,23 +247,18 @@ def _run_rh_direct_case(fixture_dir: Path, mode: Mode) -> CaseResult:
 def _run_rh_pipeline_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     case = CASE_MATRIX["seminario-rh-pipeline"]
     fixture = _load_json(fixture_dir / "rh_enamide_reference.json")
-    structures = MacroModel(str(MMO_PATH)).structures
+    base_molecules = MacroModel(str(MMO_PATH)).molecules
     hessian_files = sorted(JAG_DIR.glob("*.in"))
-    hessians = [
-        JaguarIn(str(path)).get_hessian(len(structure.atoms)) for structure, path in zip(structures, hessian_files)
-    ]
+    hessians = [JaguarIn(str(path)).get_hessian(mol.n_atoms) for mol, path in zip(base_molecules, hessian_files)]
     molecules = [
-        Q2MMMolecule.from_structure(
-            structure,
-            hessian=hessian,
-            name=f"rh_enamide_{index + 1}",
-        )
-        for index, (structure, hessian) in enumerate(zip(structures, hessians))
+        mol.with_hessian(hessian).with_overrides(name=f"rh_enamide_{index + 1}")
+        for index, (mol, hessian) in enumerate(zip(base_molecules, hessians))
     ]
-    clean_start = ForceField.from_mm3_fld(MM3_PATH)
+    clean_start = load_mm3_fld(MM3_PATH)
     with _DisableLogging():
-        clean_estimated = clean_start.copy()
-        qfuerza_into(clean_estimated, molecules, zero_torsions=True, au_hessian=True, invalid_policy="skip")
+        clean_estimated = qfuerza_into(
+            clean_start, molecules, zero_torsions=True, au_hessian=True, invalid_policy="skip"
+        )
 
     fixture_bf = _int_keyed_map(fixture["parameters"]["bond_force_constants_mdyn_a"])
     fixture_be = _int_keyed_map(fixture["parameters"]["bond_equilibria_angstrom"])
@@ -339,15 +336,17 @@ def _run_openmm_tinker_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     except (ImportError, FileNotFoundError) as exc:
         return _blocked_result(case, mode, str(exc))
 
-    forcefield = ForceField.from_tinker_prm(Path(tinker._params_file))
-    bond_molecule = Q2MMMolecule(
+    from q2mm.io.tinker import load_tinker_prm
+
+    forcefield = load_tinker_prm(Path(tinker._params_file))
+    bond_molecule = Molecule(
         symbols=["C", "H"],
         atom_types=["1", "5"],
         geometry=np.array([[0.0, 0.0, 0.0], [1.20, 0.0, 0.0]], dtype=float),
         name="CH-bond",
         bond_tolerance=1.5,
     )
-    vdw_molecule = Q2MMMolecule(
+    vdw_molecule = Molecule(
         symbols=["F", "F"],
         atom_types=["11", "11"],
         geometry=np.array([[0.0, 0.0, 0.0], [3.50, 0.0, 0.0]], dtype=float),
@@ -400,25 +399,30 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
 
     try:
         from q2mm.backends.mm.openmm import OpenMMEngine
-        from q2mm.models.forcefield import AngleParam, BondParam
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.forcefield import AngleParam, BondParam, FunctionalForm
+        from q2mm.models.observations import ObservationSet
+        from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
     except ImportError as exc:
         return _blocked_result(case, mode, f"Import error: {exc}")
 
     golden = _load_json(OPTIMIZATION_GOLDEN_PATH)
 
-    # Reproduce the same water problem used to generate the fixture
+    # Reproduce the same water problem used to generate the fixture.
+    # MM3, not HARMONIC: the fixture was generated under OpenMM's old
+    # implicit-MM3 branch (see generate_optimization_fixtures.py).
     engine = OpenMMEngine()
     true_ff = ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=503.6, equilibrium=0.96)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=57.6, equilibrium=104.5)],
+        functional_form=FunctionalForm.MM3,
     )
 
-    def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
+    def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Molecule:
         theta = np.deg2rad(angle_deg)
-        return Q2MMMolecule(
+        return Molecule(
             symbols=["O", "H", "H"],
             geometry=np.array(
                 [
@@ -432,23 +436,26 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         )
 
     mols = [_water(104.5, 0.96), _water(115.0, 0.96), _water(104.5, 1.05)]
-    ref = ReferenceData()
+    ref = ObservationSet()
     for i, mol in enumerate(mols):
-        ref.add_energy(engine.energy(mol, true_ff), weight=1.0, molecule_idx=i)
+        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0, case_id=str(i))
     freqs = engine.frequencies(mols[0], true_ff)
     for j, f in enumerate(freqs):
         if abs(f) > 50.0:
-            ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
+            ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
 
     guess_ff = ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=611.5, equilibrium=1.01)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=79.1, equilibrium=109.5)],
+        functional_form=FunctionalForm.MM3,
     )
 
-    obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+    layout = ParameterLayout.from_force_field(guess_ff)
+    space = ActiveParameterSpace.all_active(layout, guess_ff)
+    obj = ObjectiveFunction(guess_ff, engine, mols, ref, layout=layout)
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-    result = opt.optimize(obj)
+    result = opt.optimize(obj, space)
 
     details: list[str] = []
     score_tol = 1e-6

@@ -3,10 +3,12 @@
 This module contains unit conversions, MM3 force field coefficients, and other
 physical constants.  Element data (masses, radii, symbols) is centralized
 in ``q2mm.elements``; ``MASSES`` is re-exported here for backward
-compatibility.  Optimization defaults (``WEIGHTS``, ``STEPS``) live in
-``q2mm.optimizers.defaults``; regex patterns used by the parsers are
-defined inline below, and this module is now their canonical location
-following the removal of the legacy ``_patterns`` module.
+compatibility.  Parameter kind bounds/steps live in
+``q2mm.models.parameters`` (``ParameterKind`` metadata); observation
+weights are set directly by ``q2mm.models.observations.ObservationSet``
+builders.  Regex patterns used by the parsers are defined inline below,
+and this module is their canonical location following the removal of
+the legacy ``_patterns`` module.
 
 Module-level Constants:
     HARTREE_TO_KJMOL: Hartree to kJ/mol conversion factor.
@@ -22,8 +24,6 @@ Module-level Constants:
     SPEED_OF_LIGHT_MS: Speed of light in m/s.
     RAD_TO_DEG: Radians to degrees conversion factor.
     MASSES: Element symbol to monoisotopic mass mapping (re-exported).
-    STEPS: Optimization step sizes (re-exported from optimizers.defaults).
-    WEIGHTS: Optimization weights (re-exported from optimizers.defaults).
 """
 
 import math
@@ -100,24 +100,6 @@ KJMOLA = "KJMOLA"
 
 # MASSES — re-exported from q2mm.elements (single source of truth).
 from q2mm.elements import MASSES  # noqa: E402, F401
-
-# ---------------------------------------------------------------------------
-# Backward-compatible re-exports
-# ---------------------------------------------------------------------------
-# STEPS and WEIGHTS are now in q2mm.optimizers.defaults.
-# Regex patterns are defined inline below (the standalone _patterns
-# module was removed).
-# MacroModel constants are now in q2mm.io.macromodel.
-#
-# These cannot be re-exported here because the io package imports
-# constants, creating circular dependencies.  Import from the canonical
-# locations instead:
-#   q2mm.optimizers.defaults  ->  STEPS, WEIGHTS
-#   q2mm.io.macromodel        ->  COM_FORM, ...
-#
-# For the most common case (co.STEPS / co.WEIGHTS), we re-export only
-# optimizers.defaults since it has no dependency on io.
-from q2mm.optimizers.defaults import STEPS, WEIGHTS  # noqa: E402, F401
 
 # ---------------------------------------------------------------------------
 # Regex patterns — defined here as the canonical location.

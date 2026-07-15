@@ -16,12 +16,15 @@ from __future__ import annotations
 
 import logging
 from importlib.util import find_spec
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import OptimizationResult
+
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ActiveParameterSpace
 
 logger = logging.getLogger(__name__)
 
@@ -185,16 +188,20 @@ class OptaxOptimizer:
             )
         raise ValueError(f"Unknown schedule '{self.schedule}'. Choose from: 'cosine', 'exponential', or None.")
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the optimization.
 
         Args:
             objective: Configured objective with forcefield, engine,
                 molecules, and reference data.
+            space: The active/frozen projection over ``objective.layout``.
+                ``objective.forcefield`` is never mutated — materialize
+                the optimized force field explicitly via
+                ``objective.layout.replace(objective.forcefield, result.final_params)``.
 
         Returns:
-            Optimization outcome with final parameters and convergence
-            history.
+            Optimization outcome with final full-vector parameters
+            (length ``space.n_full``) and convergence history.
 
         """
         ensure_optax()
@@ -202,30 +209,17 @@ class OptaxOptimizer:
         objective.history.clear()
         n_eval_before = objective.n_eval
 
-        ff = objective.forcefield
-        initial_full = ff.get_param_vector().copy()
-        has_frozen = ff.n_active_params < ff.n_params
-        active_indices = np.flatnonzero(ff.active_mask) if has_frozen else None
+        layout = objective.layout
+        initial_full = layout.vector(objective.forcefield)
+        x0 = space.pack(initial_full)
 
-        if has_frozen:
-            x0 = ff.get_active_param_vector().copy()
-            bounds = ff.get_active_bounds() if self.use_bounds else None
-        else:
-            x0 = initial_full.copy()
-            bounds = ff.get_bounds() if self.use_bounds else None
-
-        bounds_arr = None if bounds is None else np.asarray(bounds, dtype=np.float64)
+        bounds_arr = space.bounds if self.use_bounds else None
         if bounds_arr is not None and bounds_arr.size > 0:
             lower = bounds_arr[:, 0]
             upper = bounds_arr[:, 1]
 
         def expand_np(x: np.ndarray) -> np.ndarray:
-            x = np.asarray(x, dtype=np.float64)
-            if not has_frozen:
-                return x.copy()
-            full = initial_full.copy()
-            full[active_indices] = x
-            return full
+            return space.expand(np.asarray(x, dtype=np.float64))
 
         initial_score = objective(expand_np(x0))
 
@@ -270,17 +264,11 @@ class OptaxOptimizer:
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)
 
-        if has_frozen:
-            frozen_template = jnp.array(initial_full, dtype=jnp.float64)
-            active_indices_jax = jnp.array(active_indices, dtype=jnp.int32)
+        baseline_jax = jnp.array(space.baseline, dtype=jnp.float64)
+        active_indices_jax = jnp.array(space.active_indices, dtype=jnp.int32)
 
-            def expand_jax(x_active: Any):  # noqa: ANN202
-                return frozen_template.at[active_indices_jax].set(x_active)
-
-        else:
-
-            def expand_jax(x_active: Any):  # noqa: ANN202
-                return x_active
+        def expand_jax(x_active: Any):  # noqa: ANN202
+            return baseline_jax.at[active_indices_jax].set(x_active)
 
         method_str = f"optax:{self.optimizer_name}"
         if self.schedule:
@@ -290,22 +278,12 @@ class OptaxOptimizer:
             # Use Python-dispatch value_and_grad to avoid compiling
             # all molecules into one XLA program.  Each per-molecule
             # function is compiled independently.
-            if has_frozen:
+            def jax_loss_vag(x_active: Any):  # noqa: ANN202
+                loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
+                return loss, full_grad[active_indices_jax]
 
-                def jax_loss_vag(x_active: Any):  # noqa: ANN202
-                    loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
-                    return loss, full_grad[active_indices_jax]
-
-                def jax_loss_eval(x_active: Any):  # noqa: ANN202
-                    return float(jax_loss.value_and_grad_jax(expand_jax(x_active))[0])
-
-            else:
-
-                def jax_loss_vag(x_active: Any):  # noqa: ANN202
-                    return jax_loss.value_and_grad_jax(x_active)
-
-                def jax_loss_eval(x_active: Any):  # noqa: ANN202
-                    return float(jax_loss.value_and_grad_jax(x_active)[0])
+            def jax_loss_eval(x_active: Any):  # noqa: ANN202
+                return float(jax_loss.value_and_grad_jax(expand_jax(x_active))[0])
 
         else:
             jax_loss_vag = None
@@ -315,8 +293,8 @@ class OptaxOptimizer:
             logger.info(
                 "Starting %s optimization: %d active params (%d total), initial score %.6f, lr=%.1e, max_steps=%d",
                 method_str,
-                ff.n_active_params,
-                ff.n_params,
+                space.n_active,
+                space.n_full,
                 initial_score,
                 self.learning_rate,
                 self.max_steps,
@@ -324,7 +302,6 @@ class OptaxOptimizer:
 
         if x0.size == 0:
             final_params = initial_full.copy()
-            objective.forcefield.set_param_vector(final_params)
             return OptimizationResult(
                 success=True,
                 message="No active parameters to optimize",
@@ -365,9 +342,7 @@ class OptaxOptimizer:
                 _pre_loss, grad_jax = jax_loss_vag(params)
                 grad_np = np.asarray(grad_jax, dtype=np.float64)
             else:
-                grad_np = objective.gradient(expand_np(params_np))
-                if has_frozen:
-                    grad_np = grad_np[active_indices]
+                grad_np = space.pack(objective.gradient(expand_np(params_np)))
             grad = jnp.array(grad_np, dtype=jnp.float64)
 
             # Optax update
@@ -453,9 +428,6 @@ class OptaxOptimizer:
         # and cross-stage acceptance tests in cycling.py are corrupted.
         final_score = float(objective(final_params))
 
-        # Apply final parameters to the forcefield
-        objective.forcefield.set_param_vector(final_params)
-
         if self.verbose:
             logger.info(
                 "Optimization %s: score %.6f → %.6f (%d steps, %d evals)",
@@ -473,7 +445,7 @@ class OptaxOptimizer:
             final_score=final_score,
             n_iterations=step + 1 if self.max_steps > 0 else 0,
             n_evaluations=objective.n_eval - n_eval_before,
-            initial_params=initial_full if has_frozen else x0,
+            initial_params=initial_full,
             final_params=final_params,
             history=list(objective.history),
             method=method_str,

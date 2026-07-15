@@ -125,10 +125,10 @@ or `JAX (harmonic, cpu)`).
 
 ```python
 from q2mm.backends.mm import JaxEngine
+from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
 
-mol = Q2MMMolecule.from_xyz("molecule.xyz")
+mol = load_xyz("molecule.xyz")
 ff = ForceField.create_for_molecule(mol)
 
 engine = JaxEngine()

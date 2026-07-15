@@ -3,17 +3,23 @@
 Decouples Q2MM's optimization from specific file formats (MM3 .fld,
 Tinker .prm, AMBER .frcmod). Parameters are identified by element
 pairs/triples, not format-specific atom type strings or line numbers.
+
+Every parameter record and :class:`ForceField` itself is a value-like
+immutable object: frozen dataclasses with tuple collections. There is no
+optimizer state (no ``frozen`` flag, no active/frozen partition) on these
+records — that lives entirely in
+:class:`~q2mm.models.parameters.ActiveParameterSpace`. Pure replacement
+via :meth:`q2mm.models.parameters.ParameterLayout.replace` is the only
+way to change parameter values; construct a new force field explicitly
+for anything else (file I/O lives in ``q2mm.io``, not here).
 """
 
 from __future__ import annotations
 
-
-import copy
-from collections import Counter
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -23,68 +29,7 @@ from q2mm.models.identifiers import (
 )
 
 if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
-
-
-class FrozenParamError(ValueError):
-    """Raised when code attempts to mutate a value field of a frozen parameter.
-
-    A parameter is "frozen" when its ``frozen`` attribute is ``True``;
-    optimizers respect this by holding the parameter fixed, and so does
-    every method that writes to physical value fields (force constants,
-    equilibria, vdW radii, etc.).  Construction is unaffected — you may
-    instantiate a new dataclass with ``frozen=True`` directly, and the
-    initial values are stored without triggering the guard.
-
-    To intentionally overwrite a frozen parameter's value (e.g. when
-    rebuilding a force field from optimized parameters), call
-    :meth:`_FrozenAwareParam.unfreeze` first.
-    """
-
-
-class _FrozenAwareParam:
-    """Mixin enforcing the ``frozen`` invariant on value-field writes.
-
-    Subclasses declare which dataclass fields are *physical values*
-    (force constants, equilibria, etc.) via the ``_VALUE_FIELDS`` class
-    attribute.  ``__setattr__`` raises :class:`FrozenParamError` when
-    code tries to assign to one of those fields while ``self.frozen``
-    is ``True``.
-
-    Construction via ``__init__`` is exempt because the dataclass
-    generates an ``__init__`` that runs *before* ``self.frozen`` is
-    True (Python sets attributes in declaration order; ``frozen``
-    appears last in every Param dataclass).  Even when ``frozen=True``
-    is passed at construction time, the value fields are assigned
-    first, so the guard never trips.  Direct post-construction writes
-    via :meth:`set_value` or attribute assignment are guarded.
-
-    Use :meth:`freeze` / :meth:`unfreeze` for the explicit, named
-    state transitions rather than ``param.frozen = True/False``;
-    direct writes to ``frozen`` itself are allowed (the mixin only
-    guards value fields).
-    """
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset()
-
-    # mypy: the dataclass decorator adds these; declared here for type
-    frozen: bool
-
-    def __setattr__(self, name: str, value: object) -> None:
-        if name in self._VALUE_FIELDS and getattr(self, "frozen", False):
-            raise FrozenParamError(
-                f"Cannot set {type(self).__name__}.{name} on a frozen parameter. "
-                "Call .unfreeze() first, or construct a fresh parameter."
-            )
-        object.__setattr__(self, name, value)
-
-    def freeze(self) -> None:
-        """Mark this parameter as frozen (forbids future value writes)."""
-        object.__setattr__(self, "frozen", True)
-
-    def unfreeze(self) -> None:
-        """Mark this parameter as unfrozen (allows value writes again)."""
-        object.__setattr__(self, "frozen", False)
+    from q2mm.models.molecule import Molecule
 
 
 class FunctionalForm(str, Enum):
@@ -107,8 +52,8 @@ class FunctionalForm(str, Enum):
     MM3 = "mm3"
 
 
-@dataclass
-class BondParam(_FrozenAwareParam):
+@dataclass(frozen=True)
+class BondParam:
     """A bond force field parameter.
 
     Units (canonical): ``force_constant`` in kcal/(mol·Å²),
@@ -127,9 +72,6 @@ class BondParam(_FrozenAwareParam):
     context: str = ""  # MM3 context flags (e.g., "O200 0000"). Empty or
     # "0000 0000" = generic (any context).
     dipole_moment: float = 0.0  # Bond dipole in Debye (MM3 .fld P3 column)
-    frozen: bool = False
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"equilibrium", "force_constant", "dipole_moment"})
 
     @property
     def key(self) -> tuple[str, str]:
@@ -137,8 +79,8 @@ class BondParam(_FrozenAwareParam):
         return tuple(sorted(self.elements))
 
 
-@dataclass
-class AngleParam(_FrozenAwareParam):
+@dataclass(frozen=True)
+class AngleParam:
     """An angle force field parameter.
 
     Units (canonical): ``force_constant`` in kcal/(mol·rad²),
@@ -157,11 +99,6 @@ class AngleParam(_FrozenAwareParam):
     ff_row: int | None = None  # Source force-field row for exact legacy parity
     ub_force_constant: float | None = None  # kcal/(mol·Å²), None = no UB term
     ub_equilibrium: float | None = None  # Å, None = no UB term
-    frozen: bool = False
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"equilibrium", "force_constant", "ub_force_constant", "ub_equilibrium"}
-    )
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -170,8 +107,8 @@ class AngleParam(_FrozenAwareParam):
         return (outer[0], self.elements[1], outer[1])
 
 
-@dataclass
-class StretchBendParam(_FrozenAwareParam):
+@dataclass(frozen=True)
+class StretchBendParam:
     """A stretch-bend cross-term parameter (MM3).
 
     Couples bond stretching with angle bending:
@@ -187,9 +124,6 @@ class StretchBendParam(_FrozenAwareParam):
     label: str = ""
     env_id: str = ""
     ff_row: int | None = None
-    frozen: bool = False
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"force_constant"})
 
     @property
     def key(self) -> tuple[str, str, str]:
@@ -198,8 +132,8 @@ class StretchBendParam(_FrozenAwareParam):
         return (outer[0], self.elements[1], outer[1])
 
 
-@dataclass
-class TorsionParam(_FrozenAwareParam):
+@dataclass(frozen=True)
+class TorsionParam:
     """A torsion/dihedral force field parameter.
 
     Each object represents a single Fourier component (V_n).  An MM3
@@ -220,13 +154,10 @@ class TorsionParam(_FrozenAwareParam):
     env_id: str = ""  # Environment ID for disambiguating same-element params
     ff_row: int | None = None  # Source force-field row for legacy parity
     is_improper: bool = False
-    frozen: bool = False
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"force_constant", "phase"})
 
 
-@dataclass
-class VdwParam(_FrozenAwareParam):
+@dataclass(frozen=True)
+class VdwParam:
     """An atom-type van der Waals parameter."""
 
     atom_type: str
@@ -236,21 +167,15 @@ class VdwParam(_FrozenAwareParam):
     reduction: float = 0.0
     label: str = ""
     ff_row: int | None = None
-    frozen: bool = False
-
-    _VALUE_FIELDS: ClassVar[frozenset[str]] = frozenset({"radius", "epsilon", "reduction"})
 
     def __post_init__(self) -> None:
         """Normalize atom_type and auto-extract element if not provided."""
-        # Bypass the frozen guard here — atom_type and element are
-        # identity fields, not value fields, but assigning to them
-        # after construction is fine even on frozen params.
         object.__setattr__(self, "atom_type", str(self.atom_type).strip())
         if not self.element:
             object.__setattr__(self, "element", _extract_element(self.atom_type))
 
 
-@dataclass
+@dataclass(frozen=True)
 class CmapGrid:
     """A CMAP (correction map) energy grid for backbone φ/ψ dihedrals.
 
@@ -267,7 +192,7 @@ class CmapGrid:
         atom_types_psi: Atom types defining the ψ dihedral (4 types).
         resolution: Number of grid points along each axis (e.g., 24 for
             15° spacing over 360°).
-        energy: Flat list of energy corrections in kcal/mol, length
+        energy: Flat tuple of energy corrections in kcal/mol, length
             ``resolution * resolution``.  Entry ``energy[i * resolution + j]``
             corresponds to φ = -180 + i * 360/resolution and
             ψ = -180 + j * 360/resolution.
@@ -278,63 +203,75 @@ class CmapGrid:
     atom_types_phi: tuple[str, str, str, str]
     atom_types_psi: tuple[str, str, str, str]
     resolution: int
-    energy: list[float]
+    energy: tuple[float, ...]
     label: str = ""
 
     def __post_init__(self) -> None:
+        energy = tuple(float(v) for v in self.energy)
+        object.__setattr__(self, "energy", energy)
         expected = self.resolution * self.resolution
-        if len(self.energy) != expected:
+        if len(energy) != expected:
             raise ValueError(
-                f"CMAP grid energy has {len(self.energy)} values, "
-                f"expected {expected} ({self.resolution}×{self.resolution})."
+                f"CMAP grid energy has {len(energy)} values, expected {expected} ({self.resolution}×{self.resolution})."
             )
         if self.resolution < 2:
             raise ValueError(f"CMAP resolution must be ≥ 2, got {self.resolution}.")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ForceField:
-    """Format-agnostic force field representation.
+    """Format-agnostic, immutable force field representation.
 
     Parameters are identified by element tuples, not format-specific
     atom types or line numbers. This eliminates matching bugs between
     different I/O backends.
 
-    Usage:
-        ff = ForceField.from_mm3_fld("mm3.fld")
-        ff = ForceField(bonds=[BondParam(('C', 'F'), 1.38, 5.0)])
-        ff.to_mm3_fld("output.fld", template_path="mm3.fld")
+    Every collection is a tuple; there is no in-place mutation API.
+    Building a force field with different parameter values is done via
+    :meth:`q2mm.models.parameters.ParameterLayout.replace`, never by
+    assigning to an existing instance's fields.
+
+    :attr:`functional_form` is required — there is no implicit default
+    (e.g. no silent fallback to ``HARMONIC`` or ``MM3``). Callers must
+    always state which physical functional form the parameter values
+    are meant to be evaluated under.
+
+    Usage::
+
+        from q2mm.io.mm3 import load_mm3_fld
+        ff = load_mm3_fld("mm3.fld")  # functional_form is set by the loader
+        ff = ForceField(
+            bonds=(BondParam(('C', 'F'), 1.38, 5.0),),
+            functional_form=FunctionalForm.MM3,
+        )
+
     """
 
     name: str = "Q2MM Force Field"
-    bonds: list[BondParam] = field(default_factory=list)
-    angles: list[AngleParam] = field(default_factory=list)
-    stretch_bends: list[StretchBendParam] = field(default_factory=list)
-    torsions: list[TorsionParam] = field(default_factory=list)
-    vdws: list[VdwParam] = field(default_factory=list)
-    cmaps: list[CmapGrid] = field(default_factory=list)
+    bonds: tuple[BondParam, ...] = field(default_factory=tuple)
+    angles: tuple[AngleParam, ...] = field(default_factory=tuple)
+    stretch_bends: tuple[StretchBendParam, ...] = field(default_factory=tuple)
+    torsions: tuple[TorsionParam, ...] = field(default_factory=tuple)
+    vdws: tuple[VdwParam, ...] = field(default_factory=tuple)
+    cmaps: tuple[CmapGrid, ...] = field(default_factory=tuple)
     source_path: Path | None = field(default=None, repr=False)
     source_format: Literal["mm3_fld", "tinker_prm", "openmm_xml", "amber_frcmod", "charmm_prm"] | None = field(
         default=None, repr=False
     )
-    functional_form: FunctionalForm | None = field(default=None, repr=True)
+    functional_form: FunctionalForm = field(kw_only=True)
 
-    # Schema for the flat parameter vector layout.  Each entry is
-    # (collection_attribute, [param_attribute_names...]).  This is the
-    # single source of truth consumed by n_params, get_param_vector,
-    # set_param_vector, and with_params.
-    _PARAM_SLOTS: ClassVar[list[tuple[str, list[str]]]] = [
-        ("bonds", ["force_constant", "equilibrium"]),
-        ("angles", ["force_constant", "equilibrium"]),
-        ("torsions", ["force_constant"]),
-        ("stretch_bends", ["force_constant"]),
-        ("vdws", ["radius", "epsilon"]),
-    ]
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "bonds", tuple(self.bonds))
+        object.__setattr__(self, "angles", tuple(self.angles))
+        object.__setattr__(self, "stretch_bends", tuple(self.stretch_bends))
+        object.__setattr__(self, "torsions", tuple(self.torsions))
+        object.__setattr__(self, "vdws", tuple(self.vdws))
+        object.__setattr__(self, "cmaps", tuple(self.cmaps))
 
     @property
-    def _ub_angles(self) -> list[AngleParam]:
+    def _ub_angles(self) -> tuple[AngleParam, ...]:
         """Angles that have Urey-Bradley parameters set."""
-        return [a for a in self.angles if a.ub_force_constant is not None and a.ub_equilibrium is not None]
+        return tuple(a for a in self.angles if a.ub_force_constant is not None and a.ub_equilibrium is not None)
 
     @property
     def has_urey_bradley(self) -> bool:
@@ -345,33 +282,6 @@ class ForceField:
     def has_cmap(self) -> bool:
         """Whether the force field includes CMAP correction grids."""
         return len(self.cmaps) > 0
-
-    @property
-    def n_params(self) -> int:
-        """Number of adjustable scalar parameters in get_param_vector().
-
-        Layout: 2 per bond (k, r0) + 2 per angle (k, theta0)
-        + 1 per torsion (k) + 2 per vdw (radius, epsilon)
-        + 2 per UB angle (ub_k, ub_eq).
-        """
-        base = sum(len(slots) * len(getattr(self, attr)) for attr, slots in self._PARAM_SLOTS)
-        return base + 2 * len(self._ub_angles)
-
-    @property
-    def active_mask(self) -> np.ndarray:
-        """Boolean mask over get_param_vector() — True for active (non-frozen) params."""
-        mask: list[bool] = []
-        for attr, slots in self._PARAM_SLOTS:
-            for param in getattr(self, attr):
-                mask.extend([not param.frozen] * len(slots))
-        for angle in self._ub_angles:
-            mask.extend([not angle.frozen, not angle.frozen])
-        return np.array(mask, dtype=bool)
-
-    @property
-    def n_active_params(self) -> int:
-        """Number of active (non-frozen) scalar parameters."""
-        return int(self.active_mask.sum())
 
     def get_bond(
         self,
@@ -463,194 +373,6 @@ class ForceField:
                 continue
             return t
         return None
-
-    def get_param_vector(self) -> np.ndarray:
-        """Get all adjustable parameters as a flat vector.
-
-        Order: bond (k, r0), angle (k, theta0), torsion (k), vdw (radius, epsilon),
-        UB (ub_k, ub_eq) for angles with Urey-Bradley terms.
-        """
-        values: list[float] = []
-        for attr, slots in self._PARAM_SLOTS:
-            for param in getattr(self, attr):
-                values.extend(getattr(param, s) for s in slots)
-        for angle in self._ub_angles:
-            values.append(angle.ub_force_constant)
-            values.append(angle.ub_equilibrium)
-        return np.array(values)
-
-    def get_param_names(self) -> list[str]:
-        """Build human-readable names for each parameter in get_param_vector() order."""
-        names: list[str] = []
-        for bond in self.bonds:
-            label = "-".join(bond.key) + (f"[{bond.env_id}]" if bond.env_id else "")
-            names.append(f"kb_{label}")
-            names.append(f"r0_{label}")
-        for angle in self.angles:
-            label = "-".join(angle.key) + (f"[{angle.env_id}]" if angle.env_id else "")
-            names.append(f"ka_{label}")
-            names.append(f"th0_{label}")
-        for torsion in self.torsions:
-            label = "-".join(torsion.elements) + f"_n{torsion.periodicity}"
-            if torsion.is_improper:
-                label += "_imp"
-            names.append(f"kt_{label}")
-        for stretch_bend in self.stretch_bends:
-            label = "-".join(stretch_bend.key) + (f"[{stretch_bend.env_id}]" if stretch_bend.env_id else "")
-            names.append(f"ksb_{label}")
-        for vdw in self.vdws:
-            label = vdw.atom_type or vdw.element
-            names.append(f"rvdw_{label}")
-            names.append(f"evdw_{label}")
-        for angle in self._ub_angles:
-            label = "-".join(angle.key) + (f"[{angle.env_id}]" if angle.env_id else "")
-            names.append(f"kub_{label}")
-            names.append(f"r13_{label}")
-        return names
-
-    def get_active_param_vector(self) -> np.ndarray:
-        """Get only the active (non-frozen) parameters as a flat vector."""
-        return self.get_param_vector()[self.active_mask]
-
-    def set_active_param_vector(self, vec: np.ndarray) -> None:
-        """Set only the active (non-frozen) parameters from a flat vector.
-
-        Frozen parameters are left unchanged.
-        """
-        if len(vec) != self.n_active_params:
-            raise ValueError(
-                f"Active parameter vector length {len(vec)} does not match "
-                f"expected {self.n_active_params} active parameters."
-            )
-        full = self.get_param_vector()
-        full[self.active_mask] = vec
-        self.set_param_vector(full)
-
-    def with_active_params(self, vec: np.ndarray) -> ForceField:
-        """Return a new ForceField with active parameters set from *vec*.
-
-        Frozen parameters retain their current values.
-        """
-        if len(vec) != self.n_active_params:
-            raise ValueError(
-                f"Active parameter vector length {len(vec)} does not match "
-                f"expected {self.n_active_params} active parameters."
-            )
-        full = self.get_param_vector()
-        full[self.active_mask] = vec
-        return self.with_params(full)
-
-    def get_active_param_names(self) -> list[str]:
-        """Get parameter names for active (non-frozen) parameters only."""
-        all_names = self.get_param_names()
-        mask = self.active_mask
-        return [name for name, is_active in zip(all_names, mask, strict=True) if is_active]
-
-    def get_active_step_sizes(self) -> np.ndarray:
-        """Get step sizes for active (non-frozen) parameters only."""
-        return self.get_step_sizes()[self.active_mask]
-
-    def get_active_bounds(self) -> np.ndarray:
-        """Get bounds for active (non-frozen) parameters only.
-
-        Returns array of shape (n_active_params, 2).
-        """
-        bounds = np.asarray(self.get_bounds(), dtype=float)
-        if bounds.size == 0:
-            return bounds.reshape(0, 2)
-        return bounds[self.active_mask]
-
-    def get_fractional_bounds(
-        self,
-        fc_fraction: float | None = None,
-        eq_fraction: float | None = None,
-    ) -> list[tuple[float, float]]:
-        """Get bounds as a fractional box around each parameter's current value.
-
-        Unlike :meth:`get_bounds`, which returns physical sanity bounds (e.g.
-        ``bond_k ∈ (0, 3600)``), this returns a *sign-aware* fractional
-        box ``(val - frac * abs(val), val + frac * abs(val))`` for each
-        parameter.  The sign-aware formulation matters for parameters that
-        legitimately span both signs (``torsion_k``, ``sb_k``); a naive
-        ``(val * (1 - frac), val * (1 + frac))`` would invert ``lo`` and
-        ``hi`` for ``val < 0`` and produce an invalid bound.  This is the
-        appropriate strategy for the canonical QFUERZA-start runs
-        (``starting_point="qfuerza"``, the default) where you want the
-        optimizer to refine the QFUERZA-derived starting FF locally
-        instead of escaping the starting basin.
-
-        Force-constant types (``bond_k``, ``angle_k``, ``torsion_k``, ``sb_k``,
-        ``vdw_epsilon``, ``ub_k``) use ``fc_fraction``.
-        Equilibrium types (``bond_eq``, ``angle_eq``, ``vdw_radius``,
-        ``ub_eq``) use ``eq_fraction``.
-
-        Parameters
-        ----------
-        fc_fraction : float, optional
-            Fractional box width for force-constant parameters. ``None``
-            means use the corresponding sanity bound from
-            :attr:`DEFAULT_BOUNDS`.
-        eq_fraction : float, optional
-            Fractional box width for equilibrium parameters. ``None``
-            means use the corresponding sanity bound.
-
-        Returns
-        -------
-        list[tuple[float, float]]
-            Bounds list in the same layout as :meth:`get_param_vector`.
-
-        Notes
-        -----
-        - For parameters with ``|value| < 1e-6`` (effectively zero, e.g.
-          frozen torsions), falls back to sanity bounds because a
-          ``±0%`` window would collapse to a single point.
-        - The returned box is intersected with the sanity bounds from
-          :attr:`DEFAULT_BOUNDS` so the optimizer never explores
-          unphysical regions.  If the fractional window lies entirely
-          outside the sanity envelope (e.g. a negative ``bond_k``
-          starting value, which can occur if Hessian inversion was
-          accidentally skipped), the method falls back to the full
-          sanity envelope so L-BFGS-B can pull the value into a
-          physical region.
-
-        """
-        if fc_fraction is None and eq_fraction is None:
-            return self.get_bounds()
-
-        FC_TYPES = {"bond_k", "angle_k", "torsion_k", "sb_k", "vdw_epsilon", "ub_k"}
-        EQ_TYPES = {"bond_eq", "angle_eq", "vdw_radius", "ub_eq"}
-
-        vec = self.get_param_vector()
-        labels = self.get_param_type_labels()
-        bounds: list[tuple[float, float]] = []
-        for val, lbl in zip(vec, labels, strict=True):
-            sanity_lo, sanity_hi = self.DEFAULT_BOUNDS[lbl]
-            frac: float | None
-            if lbl in FC_TYPES:
-                frac = fc_fraction
-            elif lbl in EQ_TYPES:
-                frac = eq_fraction
-            else:  # pragma: no cover — defensive
-                frac = None
-
-            if frac is None or abs(val) < 1e-6:
-                bounds.append((sanity_lo, sanity_hi))
-                continue
-
-            window = frac * abs(val)
-            lo = max(sanity_lo, val - window)
-            hi = min(sanity_hi, val + window)
-            if lo >= hi:
-                # Intersection is empty/degenerate: the current value lies
-                # outside the sanity envelope (or against an edge), so a
-                # symmetric ±frac window around it doesn't fit inside
-                # DEFAULT_BOUNDS. Fall back to sanity bounds — keeps L-BFGS-B
-                # well-defined and lets it pull the value back into a
-                # physical region.
-                bounds.append((sanity_lo, sanity_hi))
-            else:
-                bounds.append((lo, hi))
-        return bounds
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
 
@@ -810,410 +532,36 @@ class ForceField:
                     return vdw
         return self.get_vdw(atom_type=atom_type, element=element)
 
-    def set_param_vector(self, vec: np.ndarray) -> None:
-        """Set parameters from a flat vector (inverse of get_param_vector).
-
-        Iterates every slot of every param.  Frozen params are skipped:
-        their value is taken from *vec* but not written through, which
-        keeps the function callable with full-length vectors produced by
-        :meth:`get_param_vector` even when some params are frozen.
-        """
-        if len(vec) != self.n_params:
-            raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
-        idx = 0
-        for attr, slots in self._PARAM_SLOTS:
-            for param in getattr(self, attr):
-                for s in slots:
-                    if not getattr(param, "frozen", False):
-                        setattr(param, s, vec[idx])
-                    idx += 1
-        for angle in self._ub_angles:
-            if not getattr(angle, "frozen", False):
-                angle.ub_force_constant = vec[idx]
-                angle.ub_equilibrium = vec[idx + 1]
-            idx += 2
-
-    def with_params(self, vec: np.ndarray) -> ForceField:
-        """Return a new ForceField with parameters set from *vec*.
-
-        Unlike :meth:`set_param_vector`, this does **not** mutate the
-        current instance.  The returned object shares metadata (labels,
-        env_ids, source_path, …) but has independent parameter values.
-
-        Args:
-            vec: Flat parameter vector (same layout as
-                :meth:`get_param_vector`).
-
-        Returns:
-            A new :class:`ForceField` with updated parameter values.
-
-        Raises:
-            ValueError: If *vec* length does not match :attr:`n_params`.
-
-        """
-        if len(vec) != self.n_params:
-            raise ValueError(f"Parameter vector length {len(vec)} does not match expected {self.n_params} parameters.")
-        idx = 0
-        new_collections: dict[str, list] = {}
-        for attr, slots in self._PARAM_SLOTS:
-            new_list = []
-            for param in getattr(self, attr):
-                if getattr(param, "frozen", False):
-                    # Skip vec entries for frozen params — carry the
-                    # existing values forward unchanged.
-                    idx += len(slots)
-                    new_list.append(replace(param))
-                else:
-                    updates = {}
-                    for s in slots:
-                        updates[s] = vec[idx]
-                        idx += 1
-                    new_list.append(replace(param, **updates))
-            new_collections[attr] = new_list
-        # Update UB params on the new angle list (skip frozen, mirroring
-        # set_param_vector semantics — the optimizer never changes them).
-        ub_angles = [
-            a for a in new_collections["angles"] if a.ub_force_constant is not None and a.ub_equilibrium is not None
-        ]
-        for angle in ub_angles:
-            if not getattr(angle, "frozen", False):
-                angle.ub_force_constant = float(vec[idx])
-                angle.ub_equilibrium = float(vec[idx + 1])
-            idx += 2
-        return replace(self, **new_collections)
-
-    @staticmethod
-    def _param_identity(
-        attr: str,
-        param: BondParam | AngleParam | StretchBendParam | TorsionParam | VdwParam,
-    ) -> tuple:
-        """Build a stable identity for matching parameters across FF variants."""
-        if attr == "vdws":
-            return (attr, param.atom_type, param.element)
-        if attr == "torsions":
-            elements = min(param.elements, tuple(reversed(param.elements)))
-            env_id = ""
-            if param.env_id:
-                env_id = canonicalize_torsion_env_id(param.env_id.split("-"))
-            return (attr, elements, param.periodicity, param.is_improper, env_id)
-        return (attr, param.key, getattr(param, "env_id", ""))
-
-    def freeze_all(self) -> None:
-        """Mark all parameters as frozen (not optimizable)."""
-        for attr, _ in self._PARAM_SLOTS:
-            for param in getattr(self, attr):
-                param.freeze()
-        for angle in self._ub_angles:
-            angle.freeze()
-
-    def freeze_standard_params(self, opt_ff: ForceField) -> None:
-        """Mark params as frozen unless they match an OPT-substructure param."""
-        self.freeze_all()
-
-        same_source = (
-            self.source_path is not None
-            and opt_ff.source_path is not None
-            and self.source_path.resolve() == opt_ff.source_path.resolve()
-        )
-        opt_rows = {
-            attr: Counter(param.ff_row for param in getattr(opt_ff, attr) if param.ff_row is not None)
-            for attr, _ in self._PARAM_SLOTS
-        }
-        opt_ids = {
-            attr: Counter(self._param_identity(attr, param) for param in getattr(opt_ff, attr))
-            for attr, _ in self._PARAM_SLOTS
-        }
-
-        for attr, _ in self._PARAM_SLOTS:
-            for param in getattr(self, attr):
-                if same_source and param.ff_row is not None:
-                    if opt_rows[attr][param.ff_row] > 0:
-                        param.unfreeze()
-                        opt_rows[attr][param.ff_row] -= 1
-                    continue
-                ident = self._param_identity(attr, param)
-                if opt_ids[attr][ident] > 0:
-                    param.unfreeze()
-                    opt_ids[attr][ident] -= 1
-
-        opt_ub_rows = Counter(angle.ff_row for angle in opt_ff._ub_angles if angle.ff_row is not None)
-        opt_ub_ids = Counter(self._param_identity("angles", angle) for angle in opt_ff._ub_angles)
-        for angle in self._ub_angles:
-            if same_source and angle.ff_row is not None:
-                if opt_ub_rows[angle.ff_row] > 0:
-                    angle.unfreeze()
-                    opt_ub_rows[angle.ff_row] -= 1
-                continue
-            ident = self._param_identity("angles", angle)
-            if opt_ub_ids[ident] > 0:
-                angle.unfreeze()
-                opt_ub_ids[ident] -= 1
-
-    # Default bounds per parameter type (min, max) in canonical units.
-    # ``bond_k``, ``angle_k``, and ``ub_k`` are constrained to be
-    # non-negative.  TSFFs handle the negative reaction-coordinate
-    # eigenvalue by *Hessian inversion* prior to Seminario projection
-    # (Limé & Norrby 2015 method C; see :func:`q2mm.models.hessian.
-    # invert_ts_curvature`), so the resulting starting force field
-    # has only positive bond/angle force constants.  Round-1 of
-    # :class:`~q2mm.workflows.MethodE2Workflow` identifies any force
-    # constant that drifts toward zero/negative during optimization
-    # and locks it at a physical value for Round-2.  L-BFGS-B does
-    # not enforce non-negativity implicitly the way MacroModel did
-    # in the original Q2MM pipeline, so we encode it here.
-    # Bond/angle k in kcal/(mol·Å²) and kcal/(mol·rad²) respectively.
-    DEFAULT_BOUNDS: ClassVar[dict[str, tuple[float, float]]] = {
-        "bond_k": (0.0, 3600.0),
-        "bond_eq": (0.5, 3.0),
-        "angle_k": (0.0, 720.0),
-        "angle_eq": (30.0, 180.0),
-        "torsion_k": (-20.0, 20.0),
-        "sb_k": (-50.0, 50.0),
-        "vdw_radius": (0.5, 5.0),
-        "vdw_epsilon": (0.001, 2.0),
-        "ub_k": (0.0, 500.0),
-        "ub_eq": (1.0, 4.0),
-    }
-
-    # Maps ForceField param-vector slot types to legacy STEPS keys for
-    # per-type differentiation step sizes (upstream constants.py).
-    _PARAM_TYPE_TO_STEP_KEY: ClassVar[dict[str, str]] = {
-        "bond_k": "bf",
-        "bond_eq": "be",
-        "angle_k": "af",
-        "angle_eq": "ae",
-        "torsion_k": "df",
-        "sb_k": "sb",
-        "vdw_radius": "vdwr",
-        "vdw_epsilon": "vdwfc",
-        "ub_k": "bf",
-        "ub_eq": "be",
-    }
-
-    def get_param_indices_by_type(self) -> dict[str, list[int]]:
-        """Map parameter type names to their indices in the param vector.
-
-        Returns a dict with keys ``bond_k``, ``bond_eq``, ``angle_k``,
-        ``angle_eq``, ``torsion_k``, ``vdw_radius``, ``vdw_epsilon``,
-        ``ub_k``, ``ub_eq`` and values that are lists of integer indices
-        into :meth:`get_param_vector`.
-        """
-        idx = 0
-        result: dict[str, list[int]] = {
-            "bond_k": [],
-            "bond_eq": [],
-            "angle_k": [],
-            "angle_eq": [],
-            "torsion_k": [],
-            "sb_k": [],
-            "vdw_radius": [],
-            "vdw_epsilon": [],
-            "ub_k": [],
-            "ub_eq": [],
-        }
-        for _ in self.bonds:
-            result["bond_k"].append(idx)
-            result["bond_eq"].append(idx + 1)
-            idx += 2
-        for _ in self.angles:
-            result["angle_k"].append(idx)
-            result["angle_eq"].append(idx + 1)
-            idx += 2
-        for _ in self.torsions:
-            result["torsion_k"].append(idx)
-            idx += 1
-        for _ in self.stretch_bends:
-            result["sb_k"].append(idx)
-            idx += 1
-        for _ in self.vdws:
-            result["vdw_radius"].append(idx)
-            result["vdw_epsilon"].append(idx + 1)
-            idx += 2
-        for _ in self._ub_angles:
-            result["ub_k"].append(idx)
-            result["ub_eq"].append(idx + 1)
-            idx += 2
-        return result
-
-    def get_param_type_labels(self) -> list[str]:
-        """Return the type label for each element of the param vector.
-
-        Same length as :meth:`get_param_vector`, useful for mapping each
-        scalar to its per-type step size or bounds category.
-        """
-        labels: list[str] = []
-        for _ in self.bonds:
-            labels.extend(["bond_k", "bond_eq"])
-        for _ in self.angles:
-            labels.extend(["angle_k", "angle_eq"])
-        for _ in self.torsions:
-            labels.append("torsion_k")
-        for _ in self.stretch_bends:
-            labels.append("sb_k")
-        for _ in self.vdws:
-            labels.extend(["vdw_radius", "vdw_epsilon"])
-        for _ in self._ub_angles:
-            labels.extend(["ub_k", "ub_eq"])
-        return labels
-
-    def get_step_sizes(self) -> np.ndarray:
-        """Per-element differentiation step sizes for the param vector.
-
-        Uses the legacy ``STEPS`` dictionary values from
-        :mod:`q2mm.optimizers.defaults`, mapped via
-        :attr:`_PARAM_TYPE_TO_STEP_KEY`.
-
-        Returns
-        -------
-        np.ndarray
-            Array of step sizes, same length as :meth:`get_param_vector`.
-
-        """
-        from q2mm.optimizers.defaults import STEPS
-
-        labels = self.get_param_type_labels()
-        return np.array([STEPS[self._PARAM_TYPE_TO_STEP_KEY[lbl]] for lbl in labels])
-
-    def get_bounds(self, overrides: dict[str, tuple[float, float]] | None = None) -> list[tuple[float, float]]:
-        """Get (min, max) bounds for each element of the param vector.
-
-        Matches the layout of :meth:`get_param_vector`:
-        bond (k, r0), angle (k, theta0), torsion (k), stretch-bend (k),
-        vdw (radius, epsilon), UB (ub_k, ub_eq).
-
-        Parameters
-        ----------
-        overrides : dict, optional
-            Override default bounds per type. Keys: ``bond_k``,
-            ``bond_eq``, ``angle_k``, ``angle_eq``, ``torsion_k``,
-            ``sb_k``, ``vdw_radius``, ``vdw_epsilon``, ``ub_k``,
-            ``ub_eq``.
-
-        """
-        b = {**self.DEFAULT_BOUNDS, **(overrides or {})}
-        bounds: list[tuple[float, float]] = []
-        for _bond in self.bonds:
-            bounds.append(b["bond_k"])
-            bounds.append(b["bond_eq"])
-        for _angle in self.angles:
-            bounds.append(b["angle_k"])
-            bounds.append(b["angle_eq"])
-        for _torsion in self.torsions:
-            bounds.append(b["torsion_k"])
-        for _sb in self.stretch_bends:
-            bounds.append(b["sb_k"])
-        for _vdw in self.vdws:
-            bounds.append(b["vdw_radius"])
-            bounds.append(b["vdw_epsilon"])
-        for _ub in self._ub_angles:
-            bounds.append(b["ub_k"])
-            bounds.append(b["ub_eq"])
-        return bounds
-
-    def copy(self) -> ForceField:
-        """Deep copy."""
-        return copy.deepcopy(self)
-
-    # ---- Format converters ----
-
-    @classmethod
-    def from_mm3_fld(cls, path: str | Path, *, include_standard: bool = True) -> ForceField:
-        """Load from Schrödinger MM3 .fld file.
-
-        Args:
-            path: Path to the mm3.fld file.
-            include_standard: When ``True`` (the default), also load
-                standard MM3 parameters from the main body of the file.
-
-        """
-        from q2mm.io.mm3 import load_mm3_fld
-
-        return load_mm3_fld(path, include_standard=include_standard)
-
-    @classmethod
-    def from_tinker_prm(cls, path: str | Path) -> ForceField:
-        """Load bond and angle parameters from a Tinker .prm file."""
-        from q2mm.io.tinker import load_tinker_prm
-
-        return load_tinker_prm(path)
-
-    def to_mm3_fld(
-        self,
-        path: str | Path,
-        template_path: str | Path | None = None,
-        *,
-        substructure_name: str = "OPT Generated",
-        smiles: str = "AUTO",
-    ) -> Path:
-        """Export to MM3 .fld format."""
-        from q2mm.io.mm3 import save_mm3_fld
-
-        return save_mm3_fld(self, path, template_path, substructure_name=substructure_name, smiles=smiles)
-
-    def to_tinker_prm(
-        self,
-        path: str | Path,
-        template_path: str | Path | None = None,
-        *,
-        section_name: str = "OPT Generated",
-    ) -> Path:
-        """Export to Tinker .prm format."""
-        from q2mm.io.tinker import save_tinker_prm
-
-        return save_tinker_prm(self, path, template_path, section_name=section_name)
-
-    def to_openmm_xml(
-        self,
-        path: str | Path,
-        molecule: Q2MMMolecule | list[Q2MMMolecule] | None = None,
-    ) -> Path:
-        """Export to OpenMM ForceField XML format.
-
-        Produces a standalone ``<ForceField>`` XML file loadable by
-        ``openmm.app.ForceField(path)``.  Uses custom force definitions
-        with MM3 functional forms (cubic bond, sextic angle, buffered
-        14-7 vdW).
-
-        Args:
-            path (str | Path): Output file path.
-            molecule (Q2MMMolecule | list[Q2MMMolecule] | None): Optional molecule(s) for generating
-                ``<AtomTypes>`` and ``<Residues>`` sections.
-
-        Returns:
-            The resolved output path.
-
-        """
-        from q2mm.io.openmm import save_openmm_xml
-
-        return save_openmm_xml(self, path, molecule=molecule)
-
-    @classmethod
-    def from_amber_frcmod(cls, path: str | Path) -> ForceField:
-        """Load from an AMBER .frcmod file."""
-        from q2mm.io.amber import load_amber_frcmod
-
-        return load_amber_frcmod(path)
-
-    def to_amber_frcmod(
-        self,
-        path: str | Path,
-        template_path: str | Path | None = None,
-        *,
-        remark: str = "Q2MM generated frcmod",
-    ) -> Path:
-        """Export to AMBER .frcmod format."""
-        from q2mm.io.amber import save_amber_frcmod
-
-        return save_amber_frcmod(self, path, template_path, remark=remark)
-
     @classmethod
     def create_for_molecule(
-        cls, molecule: Q2MMMolecule, default_bond_k: float = 5.0, default_angle_k: float = 0.5, name: str = ""
+        cls,
+        molecule: Molecule,
+        *,
+        functional_form: FunctionalForm,
+        default_bond_k: float = 5.0,
+        default_angle_k: float = 0.5,
+        name: str = "",
     ) -> ForceField:
         """Create a force field with default parameters for a molecule.
 
         Auto-detects unique bond and angle types from the molecule's
         geometry and creates parameters with sensible defaults.
+
+        Args:
+            molecule: Molecule to auto-detect bond/angle types from.
+            functional_form: Required — every :class:`ForceField` must
+                carry an explicit functional form (there is no implicit
+                default). Callers must decide the scientifically
+                correct form for their use case (e.g. ``MM3`` for an
+                MM3/Tinker-evaluated force field, ``HARMONIC`` for a
+                JAX/JAX-MD/AMBER-evaluated one).
+            default_bond_k: Default bond force constant for every
+                auto-detected bond type.
+            default_angle_k: Default angle force constant for every
+                auto-detected angle type.
+            name: Force field name; defaults to ``"Auto FF for
+                {molecule.name}"`` when empty.
+
         """
         # Unique bond types
         bond_types: dict[tuple[str, str], list[float]] = {}
@@ -1257,8 +605,9 @@ class ForceField:
 
         return cls(
             name=name or f"Auto FF for {molecule.name}",
-            bonds=bonds,
-            angles=angles,
+            bonds=tuple(bonds),
+            angles=tuple(angles),
+            functional_form=functional_form,
         )
 
     def __repr__(self) -> str:

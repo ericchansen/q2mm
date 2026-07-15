@@ -1,12 +1,8 @@
-"""Unit tests for OptaxOptimizer (no backend required).
-
-These tests use a mock ObjectiveFunction with a simple quadratic loss
-to verify optimizer mechanics: convergence, bounds, schedules, and
-divergence detection.
-"""
+"""Unit tests for OptaxOptimizer (no backend required)."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from importlib.util import find_spec
 from unittest.mock import MagicMock
 
@@ -19,43 +15,104 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@dataclass(frozen=True)
+class MockForceField:
+    """Minimal immutable force field for optimizer tests."""
+
+    params: tuple[float, ...]
+
+
+class MockLayout:
+    """Minimal layout exposing vector/replace over MockForceField."""
+
+    def __init__(self, n_params: int) -> None:
+        self.n_params = n_params
+
+    def __len__(self) -> int:
+        return self.n_params
+
+    def vector(self, forcefield: MockForceField) -> np.ndarray:
+        return np.asarray(forcefield.params, dtype=np.float64)
+
+    def replace(self, forcefield: MockForceField, vector: np.ndarray) -> MockForceField:
+        values = np.asarray(vector, dtype=np.float64)
+        return MockForceField(tuple(values.tolist()))
+
+
+class MockSpace:
+    """Active/full parameter projection used by optimizer tests."""
+
+    def __init__(
+        self,
+        baseline: np.ndarray,
+        bounds: list[tuple[float, float]] | None = None,
+        active_indices: np.ndarray | None = None,
+    ) -> None:
+        self.baseline = np.asarray(baseline, dtype=np.float64).copy()
+        self.active_indices = (
+            np.arange(self.baseline.size, dtype=int)
+            if active_indices is None
+            else np.asarray(active_indices, dtype=int)
+        )
+        full_bounds = bounds if bounds is not None else [(-1_000.0, 1_000.0)] * self.baseline.size
+        self._full_bounds = np.asarray(full_bounds, dtype=np.float64)
+
+    @property
+    def n_active(self) -> int:
+        return int(self.active_indices.size)
+
+    @property
+    def n_full(self) -> int:
+        return int(self.baseline.size)
+
+    @property
+    def bounds(self) -> np.ndarray:
+        return self._full_bounds[self.active_indices]
+
+    def pack(self, full_vector: np.ndarray) -> np.ndarray:
+        full = np.asarray(full_vector, dtype=np.float64)
+        return full[self.active_indices].copy()
+
+    def expand(self, active_vector: np.ndarray, *, base: np.ndarray | None = None) -> np.ndarray:
+        full = self.baseline.copy() if base is None else np.asarray(base, dtype=np.float64).copy()
+        full[self.active_indices] = np.asarray(active_vector, dtype=np.float64)
+        return full
+
+    def with_baseline(self, vector: np.ndarray) -> MockSpace:
+        return MockSpace(
+            baseline=np.asarray(vector, dtype=np.float64),
+            bounds=self._full_bounds.tolist(),
+            active_indices=self.active_indices.copy(),
+        )
+
+
 class MockObjective:
-    """Minimal ObjectiveFunction mock with a quadratic loss.
-
-    ``f(x) = sum((x - target)**2)``
-
-    Gradient: ``2 * (x - target)``
-    """
+    """Minimal ObjectiveFunction mock with a quadratic loss."""
 
     def __init__(
         self,
         target: np.ndarray,
         bounds: list[tuple[float, float]] | None = None,
+        initial: np.ndarray | None = None,
     ) -> None:
         self.target = target.astype(np.float64)
-        self._bounds = bounds
+        baseline = np.zeros_like(self.target) if initial is None else np.asarray(initial, dtype=np.float64)
+        self.forcefield = MockForceField(tuple(baseline.tolist()))
+        self.layout = MockLayout(self.target.size)
+        self.space = MockSpace(baseline, bounds=bounds)
         self.n_eval = 0
         self.history: list[float] = []
-        self.forcefield = MagicMock()
-        self.forcefield.get_param_vector.return_value = np.zeros_like(self.target)
-        self.forcefield.get_active_param_vector.return_value = np.zeros_like(self.target)
-        self.forcefield.get_bounds.return_value = self._bounds
-        self.forcefield.get_active_bounds.return_value = (
-            None if self._bounds is None else np.asarray(self._bounds, dtype=np.float64)
-        )
-        self.forcefield.active_mask = np.ones_like(self.target, dtype=bool)
-        self.forcefield.n_params = int(self.target.size)
-        self.forcefield.n_active_params = int(self.target.size)
-        self.forcefield.set_param_vector = MagicMock()
+        self.engine = MagicMock()
+        self.engine.supports_analytical_gradients.return_value = True
 
     def __call__(self, x: np.ndarray) -> float:
-        score = float(np.sum((x - self.target) ** 2))
+        score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))
         self.n_eval += 1
         self.history.append(score)
         return score
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
-        return 2.0 * (x - self.target)
+        return 2.0 * (np.asarray(x, dtype=np.float64) - self.target)
 
 
 class MockDivergentObjective:
@@ -63,75 +120,41 @@ class MockDivergentObjective:
 
     def __init__(self, n_params: int = 3) -> None:
         self._call_count = 0
+        baseline = np.ones(n_params, dtype=np.float64)
+        self.forcefield = MockForceField(tuple(baseline.tolist()))
+        self.layout = MockLayout(n_params)
+        self.space = MockSpace(baseline)
         self.n_eval = 0
         self.history: list[float] = []
-        self.forcefield = MagicMock()
-        self.forcefield.get_param_vector.return_value = np.ones(n_params)
-        self.forcefield.get_active_param_vector.return_value = np.ones(n_params)
-        self.forcefield.get_bounds.return_value = None
-        self.forcefield.get_active_bounds.return_value = None
-        self.forcefield.active_mask = np.ones(n_params, dtype=bool)
-        self.forcefield.n_params = n_params
-        self.forcefield.n_active_params = n_params
-        self.forcefield.set_param_vector = MagicMock()
+        self.engine = MagicMock()
+        self.engine.supports_analytical_gradients.return_value = True
 
     def __call__(self, x: np.ndarray) -> float:
         self._call_count += 1
-        # First call returns 10.0, then escalates rapidly
         score = 10.0 * self._call_count
         self.n_eval += 1
         self.history.append(score)
         return score
 
     def gradient(self, x: np.ndarray) -> np.ndarray:
-        return np.ones_like(x) * 100.0  # large gradient pushing params away
-
-
-class MockFrozenForceField:
-    """Mock force field exposing the active-parameter API."""
-
-    def __init__(self) -> None:
-        self._full = np.array([0.0, 5.0, 0.0], dtype=np.float64)
-        self._mask = np.array([True, False, True])
-        self._bounds = [(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)]
-        self.set_param_vector = MagicMock(side_effect=self._set_param_vector)
-
-    @property
-    def n_params(self) -> int:
-        return int(self._full.size)
-
-    @property
-    def n_active_params(self) -> int:
-        return int(self._mask.sum())
-
-    @property
-    def active_mask(self) -> np.ndarray:
-        return self._mask.copy()
-
-    def get_param_vector(self) -> np.ndarray:
-        return self._full.copy()
-
-    def get_active_param_vector(self) -> np.ndarray:
-        return self._full[self._mask].copy()
-
-    def get_bounds(self) -> list[tuple[float, float]]:
-        return list(self._bounds)
-
-    def get_active_bounds(self) -> np.ndarray:
-        return np.asarray(self._bounds, dtype=np.float64)[self._mask]
-
-    def _set_param_vector(self, vec: np.ndarray) -> None:
-        self._full = np.asarray(vec, dtype=np.float64).copy()
+        return np.ones_like(np.asarray(x, dtype=np.float64)) * 100.0
 
 
 class MockFrozenObjective:
     """Quadratic objective with one frozen full-vector coordinate."""
 
     def __init__(self) -> None:
+        baseline = np.array([0.0, 5.0, 0.0], dtype=np.float64)
         self.target = np.array([1.0, 4.0, 3.0], dtype=np.float64)
+        self.forcefield = MockForceField(tuple(baseline.tolist()))
+        self.layout = MockLayout(3)
+        self.space = MockSpace(
+            baseline,
+            bounds=[(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)],
+            active_indices=np.array([0, 2]),
+        )
         self.n_eval = 0
         self.history: list[float] = []
-        self.forcefield = MockFrozenForceField()
         self.engine = MagicMock()
         self.engine.supports_analytical_gradients.return_value = True
 
@@ -144,9 +167,6 @@ class MockFrozenObjective:
     def gradient(self, x: np.ndarray) -> np.ndarray:
         x = np.asarray(x, dtype=np.float64)
         return 2.0 * (x - self.target)
-
-
-# ---- Tests ----
 
 
 class TestOptaxOptimizerCreation:
@@ -189,7 +209,7 @@ class TestOptaxOptimizerCreation:
         opt = OptaxOptimizer(schedule="invalid")
         obj = MockObjective(np.array([1.0, 2.0]))
         with pytest.raises(ValueError, match="Unknown schedule"):
-            opt.optimize(obj)
+            opt.optimize(obj, obj.space)
 
 
 class TestOptaxConvergence:
@@ -200,13 +220,8 @@ class TestOptaxConvergence:
 
         target = np.array([1.0, 2.0, 3.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=500,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=500, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         assert result.final_score < result.initial_score
         assert result.final_score < 0.01
@@ -217,14 +232,8 @@ class TestOptaxConvergence:
 
         target = np.array([1.0, -1.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="sgd",
-            learning_rate=0.1,
-            momentum=0.9,
-            max_steps=500,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="sgd", learning_rate=0.1, momentum=0.9, max_steps=500, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         assert result.final_score < 0.01
 
@@ -233,21 +242,15 @@ class TestOptaxConvergence:
 
         target = np.array([5.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adagrad",
-            learning_rate=1.0,
-            max_steps=500,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adagrad", learning_rate=1.0, max_steps=500, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         assert result.final_score < 0.1
 
     def test_gradient_norm_convergence(self) -> None:
-        """Optimizer should stop when gradient norm is small enough."""
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        target = np.array([0.0])  # start at 0, target at 0 → zero gradient
+        target = np.array([0.0])
         obj = MockObjective(target)
         opt = OptaxOptimizer(
             optimizer="adam",
@@ -256,13 +259,12 @@ class TestOptaxConvergence:
             grad_norm_tol=1e-4,
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
         assert result.success
         assert "gradient norm" in result.message
 
     def test_score_plateau_convergence(self) -> None:
-        """Optimizer should stop when score plateaus."""
         from q2mm.optimizers.optax import OptaxOptimizer
 
         target = np.array([1.0, 2.0])
@@ -273,12 +275,11 @@ class TestOptaxConvergence:
             max_steps=2000,
             ftol=1e-8,
             patience=20,
-            grad_norm_tol=1e-12,  # don't trigger grad norm convergence
+            grad_norm_tol=1e-12,
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
-        # Should have converged via plateau or grad norm
         assert result.success
         assert result.n_iterations < 2000
 
@@ -290,18 +291,13 @@ class TestOptaxFrozenParams:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         obj = MockFrozenObjective()
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=300,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=300, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
-        np.testing.assert_allclose(result.final_params[~obj.forcefield.active_mask], [5.0])
+        np.testing.assert_allclose(result.final_params[[1]], [5.0])
         assert result.final_score < result.initial_score
-        np.testing.assert_allclose(obj.forcefield.get_param_vector(), result.final_params)
+        np.testing.assert_allclose(obj.layout.vector(obj.forcefield), [0.0, 5.0, 0.0])
 
 
 class TestOptaxBounds:
@@ -310,19 +306,12 @@ class TestOptaxBounds:
     def test_bounds_enforced(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        # Target is at [10, 10] but bounds restrict to [0, 5]
         target = np.array([10.0, 10.0])
         bounds = [(0.0, 5.0), (0.0, 5.0)]
         obj = MockObjective(target, bounds=bounds)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=200,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
-        # Final params should be at upper bound (closest feasible to target)
         assert np.all(result.final_params >= 0.0 - 1e-10)
         assert np.all(result.final_params <= 5.0 + 1e-10)
 
@@ -338,9 +327,8 @@ class TestOptaxBounds:
             use_bounds=False,
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
-        # Should converge without bound constraints
         assert result.final_score < 1.0
 
 
@@ -359,7 +347,7 @@ class TestOptaxDivergence:
             divergence_patience=5,
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
         assert not result.success
         assert "Abandoned" in result.message
@@ -367,28 +355,15 @@ class TestOptaxDivergence:
 
 
 class TestOptaxFinalScoreUnits:
-    """F6: the reported final_score must be in ObjectiveFunction units.
-
-    On the JaxLoss surrogate path the in-loop ``best_score`` is a
-    surrogate value; the optimizer now re-evaluates the returned point
-    with the true objective before reporting so ``final_score`` and
-    ``initial_score`` (and therefore ``improvement``) share the same
-    scale.  This mock (no JaxLoss) pins the contract at the unit level:
-    the reported ``final_score`` equals ``objective(final_params)``.
-    """
+    """The reported final_score must be in ObjectiveFunction units."""
 
     def test_final_score_matches_true_objective(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         target = np.array([1.0, 2.0, 3.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=200,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         true_score = float(np.sum((result.final_params - target) ** 2))
         assert result.final_score == pytest.approx(true_score, rel=1e-9, abs=1e-9)
@@ -409,7 +384,7 @@ class TestOptaxSchedules:
             schedule="cosine",
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
         assert result.final_score < result.initial_score
         assert "cosine" in result.method
@@ -426,7 +401,7 @@ class TestOptaxSchedules:
             schedule="exponential",
             verbose=False,
         )
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, obj.space)
 
         assert result.final_score < result.initial_score
         assert "exponential" in result.method
@@ -440,13 +415,8 @@ class TestOptaxResult:
 
         target = np.array([1.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=100,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
         assert result.method.startswith("optax:")
         assert result.jac_mode in ("analytical", "auto")
@@ -464,34 +434,25 @@ class TestOptaxResult:
 
         target = np.array([1.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=50,
-            verbose=False,
-        )
-        result = opt.optimize(obj)
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=50, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
-        # History should have one entry per step + initial
         assert len(result.history) >= 2
-        # First entry should be the initial score
         assert result.history[0] == result.initial_score
 
-    def test_forcefield_updated(self) -> None:
+    def test_forcefield_is_not_mutated(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         target = np.array([1.0, 2.0])
         obj = MockObjective(target)
-        opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=100,
-            verbose=False,
-        )
-        opt.optimize(obj)
+        original_ff = obj.forcefield
+        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False)
+        result = opt.optimize(obj, obj.space)
 
-        # set_param_vector should have been called with final params
-        obj.forcefield.set_param_vector.assert_called_once()
+        assert obj.forcefield is original_ff
+        np.testing.assert_array_equal(obj.layout.vector(obj.forcefield), np.array([0.0, 0.0]))
+        final_ff = obj.layout.replace(obj.forcefield, result.final_params)
+        np.testing.assert_array_equal(obj.layout.vector(final_ff), result.final_params)
 
 
 class TestOptaxImport:

@@ -21,15 +21,39 @@ pytestmark = [
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.parameters import ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 
 # Module-level globals populated by autouse fixture
 JaxEngine = None
 
 
+def _layout(forcefield: ForceField) -> ParameterLayout:
+    return ParameterLayout.from_force_field(forcefield)
+
+
+def _params(forcefield: ForceField) -> np.ndarray:
+    return _layout(forcefield).vector(forcefield)
+
+
+def _make_objective(
+    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+) -> ObjectiveFunction:
+    return ObjectiveFunction(
+        forcefield=forcefield,
+        engine=engine,
+        molecules=molecules,
+        reference=reference,
+        layout=_layout(forcefield),
+        **kwargs,
+    )
+
+
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     return ForceField(
         bonds=[BondParam(elements=("H", "H"), force_constant=bond_k, equilibrium=bond_r0)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -42,6 +66,7 @@ def _water_ff(
     return ForceField(
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        functional_form=FunctionalForm.HARMONIC,
     )
 
 
@@ -62,15 +87,15 @@ class TestObjectiveSpec:
 
     def test_energy_spec_roundtrip(self) -> None:
         """ObjectiveFunction.to_jax_spec() captures energy references."""
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
 
         assert spec.n_params == 2
@@ -82,16 +107,16 @@ class TestObjectiveSpec:
 
     def test_geometry_included(self) -> None:
         """Geometry references are included via implicit-diff path."""
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
-        ref.add_bond_length(value=0.96, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
+        ref = ref.with_bond_length(value=0.96, case_id="0", atom_indices=(0, 1), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
 
         assert spec.molecules[0].has_energy
@@ -104,15 +129,15 @@ class TestObjectiveSpec:
 
     def test_bounds_roundtrip(self) -> None:
         """Parameter bounds transferred to spec."""
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=JaxEngine(), molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
 
         assert len(spec.lower_bounds) == 2
@@ -123,22 +148,22 @@ class TestJaxLoss:
     """Tests for JaxLoss compiled loss function."""
 
     def test_loss_matches_objective(self) -> None:
-        """JaxLoss(params) ≈ ObjectiveFunction(params) for energy."""
+        """JaxLoss(params) ≈ _make_objective(params) for energy."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -147,20 +172,20 @@ class TestJaxLoss:
     def test_loss_and_grad_returns_gradient(self) -> None:
         """loss_and_grad returns a scalar loss and param-shaped gradient."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         loss, grad = jax_loss.loss_and_grad(params)
 
         assert isinstance(loss, float)
@@ -169,17 +194,17 @@ class TestJaxLoss:
     def test_loss_with_regularization(self) -> None:
         """L2 regularization adds penalty to loss."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.74)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj_noreg = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, regularization=0.0)
-        obj_reg = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, regularization=0.1)
+        obj_noreg = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref, regularization=0.0)
+        obj_reg = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref, regularization=0.1)
 
         spec_noreg = obj_noreg.to_jax_spec()
         spec_reg = obj_reg.to_jax_spec()
@@ -187,7 +212,7 @@ class TestJaxLoss:
         loss_noreg = JaxLoss(spec_noreg, engine, [mol], ff)
         loss_reg = JaxLoss(spec_reg, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         score_noreg = loss_noreg(params)
         score_reg = loss_reg(params)
 
@@ -215,20 +240,20 @@ class TestJaxLoss:
     def test_water_energy_loss(self) -> None:
         """JaxLoss works for water (bond + angle params)."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=553.0, bond_r0=0.96, angle_k=49.9, angle_eq=104.5)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -267,21 +292,21 @@ class TestJaxLossFrequencyParity:
     def test_frequency_loss_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree on frequency loss."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, _hess, freqs_qm = _water_with_qm_refs(engine)
 
         # Add only the 3 real vibrational modes (indices 6, 7, 8)
-        ref = ReferenceData()
+        ref = ObservationSet()
         for i in range(6, 9):
-            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
+            ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -291,20 +316,20 @@ class TestJaxLossFrequencyParity:
     def test_frequency_gradient_shape_and_direction(self) -> None:
         """JaxLoss gradient has correct shape and points downhill."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, _hess, freqs_qm = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         for i in range(6, 9):
-            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
+            ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         loss, grad = jax_loss.loss_and_grad(params)
 
         assert grad.shape == params.shape
@@ -324,25 +349,25 @@ class TestJaxLossHessianParity:
     def test_hessian_element_loss_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree on hessian-element loss."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
-        ref.add_hessian_from_matrix(
+        ref = ObservationSet()
+        ref = ref.with_hessian_from_matrix(
             hess_qm,
             diagonal_only=True,
-            molecule_idx=0,
+            case_id="0",
             diagonal_weight=0.1,
             offdiagonal_weight=0.0,
         )
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -356,25 +381,25 @@ class TestJaxLossEigenmatrixParity:
     def test_eigenmatrix_diagonal_loss_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree on eigenmatrix diagonal loss."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(
             hess_qm,
             symbols=list(mol.symbols),
             diagonal_only=True,
-            molecule_idx=0,
+            case_id="0",
             weights={"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.0},
         )
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -384,25 +409,25 @@ class TestJaxLossEigenmatrixParity:
     def test_eigenmatrix_offdiagonal_loss_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree on the full (off-diagonal) eigenmatrix."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, _freqs = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
-        ref.add_eigenmatrix_from_hessian(
+        ref = ObservationSet()
+        ref = ref.with_eigenmatrix_from_hessian(
             hess_qm,
             symbols=list(mol.symbols),
             diagonal_only=False,
-            molecule_idx=0,
+            case_id="0",
             weights={"eig_i": 0.0, "eig_d_low": 0.1, "eig_d_high": 0.1, "eig_o": 0.05},
         )
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -416,28 +441,28 @@ class TestJaxLossMixedObjective:
     def test_mixed_loss_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree on combined energy+freq+hessian."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, freqs_qm = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
         for i in range(6, 9):
-            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
-        ref.add_hessian_from_matrix(
+            ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
+        ref = ref.with_hessian_from_matrix(
             hess_qm,
             diagonal_only=True,
-            molecule_idx=0,
+            case_id="0",
             diagonal_weight=0.1,
             offdiagonal_weight=0.0,
         )
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -447,28 +472,28 @@ class TestJaxLossMixedObjective:
     def test_mixed_gradient_lowers_loss(self) -> None:
         """One gradient step on combined loss reduces the score."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol, _ff_ref, ff_pert, hess_qm, freqs_qm = _water_with_qm_refs(engine)
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
         for i in range(6, 9):
-            ref.add_frequency(freqs_qm[i], data_idx=i, weight=1.0, molecule_idx=0)
-        ref.add_hessian_from_matrix(
+            ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
+        ref = ref.with_hessian_from_matrix(
             hess_qm,
             diagonal_only=True,
-            molecule_idx=0,
+            case_id="0",
             diagonal_weight=0.1,
             offdiagonal_weight=0.0,
         )
 
-        obj = ObjectiveFunction(forcefield=ff_pert.copy(), engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff_pert, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, [mol], ff_pert.copy())
+        jax_loss = JaxLoss(spec, engine, [mol], ff_pert)
 
-        params = ff_pert.get_param_vector()
+        params = _params(ff_pert)
         loss0, grad = jax_loss.loss_and_grad(params)
         lr = 1e-6 / np.linalg.norm(grad)
         step = params - lr * grad
@@ -483,7 +508,7 @@ class TestJaxLossMultiMolecule:
     def test_multi_molecule_energy_parity(self) -> None:
         """JaxLoss and ObjectiveFunction agree across 2 molecules."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
 
@@ -498,18 +523,19 @@ class TestJaxLossMultiMolecule:
             angles=[
                 AngleParam(elements=("H", "O", "H"), force_constant=35.0, equilibrium=110.0),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
 
-        ref = ReferenceData()
-        ref.add_energy(value=0.0, molecule_idx=0, weight=1.0)
-        ref.add_energy(value=0.0, molecule_idx=1, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
+        ref = ref.with_energy(value=0.0, case_id="1", weight=1.0)
 
         molecules = [mol_h2, mol_water]
-        obj = ObjectiveFunction(forcefield=ff.copy(), engine=engine, molecules=molecules, reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=molecules, reference=ref)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
+        jax_loss = JaxLoss(spec, engine, molecules, ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -574,7 +600,7 @@ class TestJaxLossGeometryParity:
     def test_bond_length_relaxes_to_eq(self) -> None:
         """Relaxed H2 bond length matches the FF equilibrium parameter."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         # Start with a stretched bond; equilibrium r0 = 0.74 Å.
         mol = make_diatomic(distance=0.90, bond_tolerance=1.5)
@@ -582,14 +608,14 @@ class TestJaxLossGeometryParity:
         engine = JaxEngine()
 
         # Reference equals the eq value → relaxed loss should be ~0.
-        ref = ReferenceData()
-        ref.add_bond_length(value=0.74, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         loss = jax_loss(params)
         # With harmonic geometry restraint (K=100), relaxation from 0.90 to
         # 0.74 Å is approximate — the restraint anchors the geometry near
@@ -599,21 +625,21 @@ class TestJaxLossGeometryParity:
     def test_bond_length_grad_matches_fd(self) -> None:
         """∇_p loss for a bond-length ref matches finite differences."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.90, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         engine = JaxEngine()
 
         # Reference offset from current r0 so the gradient is non-trivial.
-        ref = ReferenceData()
-        ref.add_bond_length(value=0.80, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(value=0.80, case_id="0", atom_indices=(0, 1), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         _, grad_jax = jax_loss.loss_and_grad(params)
 
         # Central-difference reference gradient (full-pipeline FD: each
@@ -630,22 +656,22 @@ class TestJaxLossGeometryParity:
     def test_bond_angle_relaxes_to_eq(self) -> None:
         """Relaxed H2O bond angle matches the FF equilibrium parameter."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         # Start with a perturbed angle; eq is 104.5°.
         mol = make_water(bond_length=0.96, angle_deg=110.0)
         ff = _water_ff(bond_k=553.0, bond_r0=0.96, angle_k=49.9, angle_eq=104.5)
         engine = JaxEngine()
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         # Atom indices: H(1)–O(0)–H(2) with O as vertex.
-        ref.add_bond_angle(value=104.5, molecule_idx=0, atom_indices=(1, 0, 2), weight=1.0)
+        ref = ref.with_bond_angle(value=104.5, case_id="0", atom_indices=(1, 0, 2), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         loss = jax_loss(params)
         # With harmonic geometry restraint (K=100), the angle doesn't
         # fully relax from 110° to the 104.5° equilibrium — the
@@ -656,21 +682,21 @@ class TestJaxLossGeometryParity:
     def test_geometry_grad_jit_callable(self) -> None:
         """JaxLoss.loss_and_grad with geometry refs is jit-compilable."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.97, angle_deg=104.5)
         ff = _water_ff()
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_bond_length(value=0.96, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
-        ref.add_bond_angle(value=104.5, molecule_idx=0, atom_indices=(1, 0, 2), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(value=0.96, case_id="0", atom_indices=(0, 1), weight=1.0)
+        ref = ref.with_bond_angle(value=104.5, case_id="0", atom_indices=(1, 0, 2), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         loss, grad = jax_loss.loss_and_grad(params)
         assert np.isfinite(loss)
         assert grad.shape == params.shape
@@ -745,7 +771,7 @@ class TestJaxLossGeometryParity:
         import jax.numpy as jnp
 
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         # Use a very stretched geometry far from equilibrium — the inner
         # solver with limited iterations may not fully converge.
@@ -753,14 +779,14 @@ class TestJaxLossGeometryParity:
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         engine = JaxEngine()
 
-        ref = ReferenceData()
-        ref.add_bond_length(value=0.74, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = jnp.array(ff.get_param_vector(), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64)
         loss, _grad = jax_loss.loss_and_grad(params)
         loss = float(loss)
         assert np.isfinite(loss), f"Loss is not finite: {loss}"
@@ -776,7 +802,7 @@ class TestJaxLossTopologyBatching:
     def test_two_water_freq_batching_parity(self) -> None:
         """Two water molecules (same topology) — vmapped Hessian matches sequential."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol1 = make_water(bond_length=0.96, angle_deg=104.5)
@@ -785,6 +811,7 @@ class TestJaxLossTopologyBatching:
         ff = ForceField(
             bonds=[BondParam(elements=("H", "O"), force_constant=553.0, equilibrium=0.96)],
             angles=[AngleParam(elements=("H", "O", "H"), force_constant=49.9, equilibrium=104.5)],
+            functional_form=FunctionalForm.HARMONIC,
         )
 
         # Get MM frequencies to build realistic reference indices
@@ -793,15 +820,15 @@ class TestJaxLossTopologyBatching:
         real_indices1 = [i for i, f in enumerate(mm_freqs1) if f > 50.0]
         real_indices2 = [i for i, f in enumerate(mm_freqs2) if f > 50.0]
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         for idx in real_indices1[:3]:
-            ref.add_frequency(mm_freqs1[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=0)
+            ref = ref.with_frequency(mm_freqs1[idx] * 1.05, data_idx=idx, weight=1.0, case_id="0")
         for idx in real_indices2[:3]:
-            ref.add_frequency(mm_freqs2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=1)
+            ref = ref.with_frequency(mm_freqs2[idx] * 1.05, data_idx=idx, weight=1.0, case_id="1")
 
         molecules = [mol1, mol2]
-        obj = ObjectiveFunction(
-            forcefield=ff.copy(),
+        obj = _make_objective(
+            forcefield=ff,
             engine=engine,
             molecules=molecules,
             reference=ref,
@@ -809,9 +836,9 @@ class TestJaxLossTopologyBatching:
 
         # Batched JaxLoss (exercises vmap path — same topology, 2 molecules)
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
+        jax_loss = JaxLoss(spec, engine, molecules, ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -826,7 +853,7 @@ class TestJaxLossTopologyBatching:
     def test_mixed_topology_freq_parity(self) -> None:
         """H₂ + 2× water: singleton and multi-molecule topology groups."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         engine = JaxEngine()
         mol_h2 = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -841,6 +868,7 @@ class TestJaxLossTopologyBatching:
             angles=[
                 AngleParam(elements=("H", "O", "H"), force_constant=49.9, equilibrium=104.5),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
 
         # Frequency refs for all three molecules (exercises Hessian path)
@@ -848,28 +876,28 @@ class TestJaxLossTopologyBatching:
         mm_w1 = engine.frequencies(mol_w1, ff)
         mm_w2 = engine.frequencies(mol_w2, ff)
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         # H₂ — singleton topology group
         real_h2 = [i for i, f in enumerate(mm_h2) if f > 50.0]
         for idx in real_h2[:1]:
-            ref.add_frequency(mm_h2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=0)
+            ref = ref.with_frequency(mm_h2[idx] * 1.05, data_idx=idx, weight=1.0, case_id="0")
         # Water 1 + 2 — same topology group (vmapped)
         real_w = [i for i, f in enumerate(mm_w1) if f > 50.0]
         for idx in real_w[:3]:
-            ref.add_frequency(mm_w1[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=1)
-            ref.add_frequency(mm_w2[idx] * 1.05, data_idx=idx, weight=1.0, molecule_idx=2)
+            ref = ref.with_frequency(mm_w1[idx] * 1.05, data_idx=idx, weight=1.0, case_id="1")
+            ref = ref.with_frequency(mm_w2[idx] * 1.05, data_idx=idx, weight=1.0, case_id="2")
 
         molecules = [mol_h2, mol_w1, mol_w2]
-        obj = ObjectiveFunction(
-            forcefield=ff.copy(),
+        obj = _make_objective(
+            forcefield=ff,
             engine=engine,
             molecules=molecules,
             reference=ref,
         )
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, engine, molecules, ff.copy())
+        jax_loss = JaxLoss(spec, engine, molecules, ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
         python_score = obj(params)
         jax_score = jax_loss(params)
 
@@ -883,19 +911,19 @@ class TestJaxLossNaNProtection:
     def test_nan_returns_sentinel(self) -> None:
         """When a per-molecule function returns NaN, loss_and_grad returns (1e30, zeros)."""
         from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+        from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74)
         ff = _h2_ff()
         engine = JaxEngine()
-        ref = ReferenceData()
-        ref.add_bond_length(value=0.74, molecule_idx=0, atom_indices=(0, 1), weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
         jax_loss = JaxLoss(spec, engine, [mol], ff)
 
-        params = ff.get_param_vector()
+        params = _params(ff)
 
         # Patch the compiled vag fns to return NaN
         import jax.numpy as jnp

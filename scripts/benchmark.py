@@ -11,7 +11,9 @@ For each requested system this script:
 4. If the ratio is within the configured tolerance (or the tolerance has
    been disabled with ``--ratio-tol none``) it runs the requested workflow
    (default Method E2) using scipy L-BFGS-B with JaxLoss analytical
-   gradients and writes the optimized force field as a ``.fld`` file.
+   gradients and writes the optimized force field as a ``.fld`` (MM3
+   systems) or ``.frcmod`` (harmonic systems, e.g. CH3F) file, matching
+   the force field's actual, always-explicit functional form.
 5. With ``--n-evals N``, repeats post-hoc ObjectiveFunction evaluations at
    both the initial and optimized parameter vectors to report sample-mean
    scores, t-distribution 95% confidence-interval half-widths, mean
@@ -28,8 +30,10 @@ Outputs (per system) live under
   ``"ok_bypassed"``, ``"out_of_band"``, ``"diverged"``, ``"nan"``), and
   ``ratio_passes`` (bool).
 - ``paper_metrics.json`` — Seminario + optimized per-category stats.
-- ``<system>_optimized.fld`` — optimized force field (only when
-  optimization ran and succeeded).
+- ``<system>_optimized.fld`` (MM3 systems) or ``<system>_optimized.frcmod``
+  (harmonic systems, e.g. CH3F) — optimized force field (only when
+  optimization ran and succeeded); format follows the force field's own
+  functional form, never assumed.
 
 Every output embeds a ``provenance`` block: git SHA + dirty flag for q2mm
 and q2mm-data, full command line, all CLI knobs, JAX/OpenMM device
@@ -93,7 +97,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sel.add_argument(
         "--system",
         action="append",
-        help="System key to process (repeatable). Defaults to all systems in SYSTEMS.",
+        help="System key to process (repeatable). Defaults to all registered systems.",
     )
     sel.add_argument(
         "--output-dir",
@@ -194,12 +198,12 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%H:%M:%S",
     )
 
-    from q2mm.systems import SYSTEMS
+    from q2mm.benchmarks.systems import SYSTEM_KEYS
 
-    systems = args.system or list(SYSTEMS.keys())
-    unknown = [s for s in systems if s not in SYSTEMS]
+    systems = args.system or list(SYSTEM_KEYS)
+    unknown = [s for s in systems if s not in SYSTEM_KEYS]
     if unknown:
-        parser.error(f"Unknown system(s): {unknown}. Available: {sorted(SYSTEMS)}")
+        parser.error(f"Unknown system(s): {unknown}. Available: {sorted(SYSTEM_KEYS)}")
 
     output_dir = args.output_dir.resolve()
     logger.info("Output directory: %s", output_dir)

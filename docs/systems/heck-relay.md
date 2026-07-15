@@ -76,8 +76,9 @@ complete failure of cross-engine transfer, not a small miss.
     inner geometry minimization diverges chaotically; a prior committed
     convergence baseline saw ≈ −48 for the same code).  Either way the
     fit is catastrophic.  The loader now keeps the Rosales OPT values
-    as-is (it still calls `freeze_standard_params` so the active mask
-    is correct for optimization, but no QFUERZA re-estimation).
+    as-is and builds the OPT-only active subset separately via
+    `opt_substructure_membership(...)` / `ActiveParameterSpace.from_membership(...)`,
+    with no QFUERZA re-estimation of the published rows.
 
 Run with `--n-evals 10 --ratio-tol none` so the verdict is
 statistically defensible against the per-call engine noise documented
@@ -146,7 +147,7 @@ situation transforms:
 system into the standard optimization pipeline.
 
 The numbers above are from the published-start baseline. Reproduce with
-`scripts/regenerate_convergence_results.py --starting-point published --system heck-relay`;
+`scripts/benchmark.py --starting-point published --system heck-relay`;
 raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/heck-relay/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/from-published)
 and the three-baseline diagnostic that diagnosed the loader bug lives at

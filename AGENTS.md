@@ -19,7 +19,7 @@ functions, and evaluation tools for force field development.
 
 Q2MM has a specific scientific lineage.  Before changing anything in
 `q2mm/models/seminario.py`, `q2mm/models/forcefield.py`, the
-parametrization loaders in `q2mm/systems.py`, or the
+parametrization loaders in `q2mm/benchmarks/systems/`, or the
 optimizers in `q2mm/optimizers/`, look at the right paper.  Agents have
 repeatedly cited the wrong reference here.
 
@@ -256,11 +256,11 @@ python -c "import jax; print(jax.devices())"
 ### Reference Data and Objective Function
 
 For **publication reproduction** benchmarks (TS systems from the Q2MM
-literature), use `ReferenceData.from_molecules()` to build the objective.
-This auto-populates bond lengths, bond angles, and Hessian eigenmatrix
-references from the QM training structures — matching the multi-target
-penalty function used in the published papers (Donoghue 2008, Rosales
-2020, Wahlers 2021/2022).
+literature), use `ObservationSet.from_molecules()` (`q2mm.models.observations`)
+to build the objective. This auto-populates bond lengths, bond angles, and
+Hessian eigenmatrix references from the QM training structures — matching
+the multi-target penalty function used in the published papers (Donoghue
+2008, Rosales 2020, Wahlers 2021/2022).
 
 `_build_frequency_reference()` builds frequency-only references. This is
 appropriate for the CH₃F full-matrix benchmark and ground-state force
@@ -270,7 +270,7 @@ frequency RMSD.
 
 ### Starting Point (`starting_point` kwarg / `--starting-point` CLI flag)
 
-`load_system()` and `benchmark.py` accept a
+`q2mm.benchmarks.systems.load_system()` and `benchmark.py` accept a
 `starting_point` of either `"qfuerza"` (canonical default) or
 `"published"`:
 
@@ -292,19 +292,24 @@ for the publication-baseline path.
 
 ### TS Curvature Inversion
 
-All TS system loaders **must** pass `invert_ts_curvature=True` to
-`estimate_force_constants()`. Without this, the reaction-coordinate
-eigenvalue stays negative, producing a saddle-point force field where
-geometry minimization blows up. If you see "negative FC (TS reaction
+All TS system loaders **must** pass `invert_ts_curvature=True` when
+building the QFUERZA starting force field (`q2mm.models.seminario.qfuerza_fresh`/
+`qfuerza_into`). Without this, the reaction-coordinate eigenvalue stays
+negative, producing a saddle-point force field where geometry
+minimization blows up. If you see "negative FC (TS reaction
 coordinate?)" warnings, TS inversion is missing.
 
 ### Frozen Parameters
 
 Published papers only optimize the OPT substructure parameters near
 the metal center (~182–488 params), not the full composed force field
-(~2,700–3,200). Use `ForceField.freeze_standard_params(opt_ff)` to
-mark base-FF parameters as frozen. All three optimizers (SciPy, Optax,
-JaxOpt) respect `n_active_params`.
+(~2,700–3,200). Use `q2mm.models.parameters.opt_substructure_membership(ff, opt_ff)`
++ `ActiveParameterSpace.from_membership(layout, ff, membership)` to
+derive which base-FF parameters are frozen — frozen/active state lives
+entirely in `ActiveParameterSpace`, never on the (immutable) `ForceField`
+itself. All three optimizers (SciPy, Optax, JaxOpt) take this
+`ActiveParameterSpace` as their required second `optimize()` argument
+and respect `space.n_active`.
 
 ### Two Gradient Pipelines
 
@@ -422,7 +427,7 @@ metadata in this project.
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
 | **JIT-wrapping `JaxLoss._loss_fn`** | `jax.jit()` or `jax.vmap()` on multi-molecule `_loss_fn` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxLoss.value_and_grad_jax()` (Python dispatch) or `JaxLoss.loss_and_grad()` instead. See §6 Two Gradient Pipelines. |
-| **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ReferenceData.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
+| **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ObservationSet.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
 | **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
 | **TS ratio check fallback** | `ScipyOptimizer(jac='auto')` ratio check fails for ALL TS systems (0.1–0.4), silently falls back to slow FD gradients | Set `ratio_tol=None` to bypass. CLI key: `scipy-lbfgsb-jax` |
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
@@ -470,13 +475,18 @@ file, ~2,000 lines) and do not need composition.
 
 ### Adding a new benchmark system
 
-1. Write a `load_*()` function in `q2mm/systems.py` following the
-   pattern of `load_rh_enamide()` — load molecules, build `ReferenceData`,
-   return `SystemData`.
-2. Register in the `SYSTEMS` dict at the bottom of `systems.py`.
+1. Write a `load()` function in a new module under
+   `q2mm/benchmarks/systems/` (e.g. `q2mm/benchmarks/systems/my_system.py`)
+   following the pattern of `rh_enamide.py` — load molecules, build an
+   `OptimizationProblem` (via `q2mm.benchmarks.systems._shared`'s
+   `assemble_published_case`/`assemble_qfuerza_fresh_case` helpers), and
+   return a `BenchmarkCase`.
+2. Register the key -> module mapping in `q2mm/benchmarks/systems/__init__.py`'s
+   `_REGISTRY` dict.
 3. Create a validation test under `test/integration/` following the pattern
-   of `test_published_ff_validation.py` — load published FF, evaluate with
-   `JaxEngine`, compare QM vs MM, pin results in a golden fixture JSON.
+   of `test_published_ff_validation.py` — load published FF via
+   `q2mm.benchmarks.systems.load_system(...)`, evaluate with `JaxEngine`,
+   compare QM vs MM, pin results in a golden fixture JSON.
 4. Mark with `@pytest.mark.validation` so it runs with `--run-validation`.
 5. If the system depends on external (gitignored) data, the loader must
    skip gracefully when files are absent.

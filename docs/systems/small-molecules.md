@@ -268,7 +268,7 @@ where multi-start and global search methods show material differences:
 
 In addition to the optimizer matrix above, CH₃F is run through the
 **convergence-baseline** pipeline at
-`scripts/regenerate_convergence_results.py`, which is the standard
+`scripts/benchmark.py`, which is the standard
 pipeline used for all published-FF systems
 ([rh-enamide](rh-enamide.md), [pd-allyl](pd-allyl.md), etc.).  For
 CH₃F the strategy is `qfuerza_fresh` (the FF is built from the QM

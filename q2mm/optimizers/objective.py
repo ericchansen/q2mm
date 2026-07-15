@@ -16,37 +16,21 @@ by ``scipy.optimize.least_squares`` and gradient-based minimizers.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.backends.base import MMEngine
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.parameters import ParameterLayout
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from q2mm.optimizers.spec import ObjectiveSpec
-
-
-from q2mm.optimizers.reference import ReferenceData, ReferenceValue  # re-export for backward compatibility
-
-
-# ---- Lazy re-exports (avoid circular imports at module load) ----
-
-
-def __getattr__(name: str) -> Any:
-    """Lazy re-exports to preserve backward-compatible import paths."""
-    if name == "_parse_fchk":
-        from q2mm.io.fchk import parse_fchk
-
-        return parse_fchk
-    if name == "_dihedral_angle":
-        from q2mm.optimizers.evaluators.geometry import dihedral_angle
-
-        return dihedral_angle
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # ---- Per-data-type evaluators (lazy-imported in ObjectiveFunction.__init__) ----
@@ -65,30 +49,48 @@ class ObjectiveFunction:
         forcefield (ForceField): The force field whose parameters are
             being optimized.
         engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
-        molecules (list[Q2MMMolecule]): Training set molecules.
-        reference (ReferenceData): QM/experimental reference observations.
+        molecules (list[Molecule]): Training set molecules.
+        reference (ObservationSet): QM/experimental reference observations.
+        layout (ParameterLayout | None): The full-vector layout for
+            *forcefield* — required whenever *forcefield* is given, since
+            :class:`~q2mm.models.forcefield.ForceField` no longer exposes
+            vector extraction/replacement itself.
 
     """
 
     def __init__(
         self,
-        forcefield: ForceField,
+        forcefield: ForceField | None,
         engine: MMEngine,
-        molecules: list[Q2MMMolecule],
-        reference: ReferenceData,
+        molecules: list[Molecule],
+        reference: ObservationSet,
         *,
+        case_ids: Sequence[str] | None = None,
+        layout: ParameterLayout | None = None,
         regularization: float = 0.0,
         reference_params: np.ndarray | None = None,
     ) -> None:
         """Initialize the objective function.
 
         Args:
-            forcefield (ForceField): The force field whose parameters
-                are being optimized.
+            forcefield (ForceField | None): The force field whose
+                parameters are being optimized.
             engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
-            molecules (list[Q2MMMolecule]): Training set molecules.
-            reference (ReferenceData): QM/experimental reference
+            molecules (list[Molecule]): Training set molecules.
+            reference (ObservationSet): QM/experimental reference
                 observations.
+            case_ids (Sequence[str] | None): Stable case ID for each
+                entry of *molecules*, in the same order (matches
+                :attr:`~q2mm.models.observations.Observation.case_id` /
+                :attr:`~q2mm.models.problem.TrainingCase.case_id`).  When
+                ``None`` (default), positions are auto-labelled
+                ``"0"``, ``"1"``, ... — this matches
+                :class:`~q2mm.models.observations.Observation`'s own
+                single-case default of ``case_id="0"``, so simple
+                single-molecule callers need not pass this explicitly.
+            layout (ParameterLayout | None): Layout for *forcefield*'s
+                scalar parameters.  Required whenever *forcefield* is
+                not ``None``.
             regularization: L2 penalty strength (λ).  The total loss
                 becomes ``loss_data + λ * ||params - ref||²``.  Keeps
                 optimised parameters near their physical starting
@@ -99,11 +101,32 @@ class ObjectiveFunction:
                 initial parameter vector is used — typically the
                 QFUERZA-derived starting point.
 
+        Raises:
+            ValueError: If *forcefield* is given without *layout*, if
+                *reference_params* has the wrong shape/length, if
+                *case_ids* has a different length than *molecules* or
+                contains duplicates, or if *regularization* is negative
+                or requires a forcefield/reference_params that were not
+                supplied.
+
         """
+        if forcefield is not None and layout is None:
+            raise ValueError("layout is required whenever forcefield is provided.")
         self.forcefield = forcefield
+        self.layout = layout
         self.engine = engine
         self.molecules = molecules
         self.reference = reference
+
+        resolved_case_ids = [str(i) for i in range(len(molecules))] if case_ids is None else list(case_ids)
+        if len(resolved_case_ids) != len(molecules):
+            raise ValueError(
+                f"case_ids length ({len(resolved_case_ids)}) must match molecules length ({len(molecules)})."
+            )
+        if len(set(resolved_case_ids)) != len(resolved_case_ids):
+            raise ValueError(f"case_ids must be unique, got {resolved_case_ids}.")
+        self.case_ids: tuple[str, ...] = tuple(resolved_case_ids)
+        self._case_id_to_index: dict[str, int] = {cid: i for i, cid in enumerate(self.case_ids)}
         self.n_eval = 0
         self.fd_step = 1e-4
         self.history: list[float] = []
@@ -114,13 +137,13 @@ class ObjectiveFunction:
             self._reference_params = np.asarray(reference_params, dtype=float)
             if self._reference_params.ndim != 1:
                 raise ValueError("reference_params must be a 1-D vector")
-            if forcefield is not None and len(self._reference_params) != forcefield.n_params:
+            if layout is not None and len(self._reference_params) != len(layout):
                 raise ValueError(
-                    f"reference_params length ({len(self._reference_params)}) "
-                    f"does not match forcefield.n_params ({forcefield.n_params})"
+                    f"reference_params length ({len(self._reference_params)}) does not match layout ({len(layout)})"
                 )
         elif forcefield is not None:
-            self._reference_params = np.array(forcefield.get_param_vector(), dtype=float)
+            assert layout is not None  # guaranteed by the check above
+            self._reference_params = layout.vector(forcefield)
         else:
             if self.regularization > 0:
                 raise ValueError("regularization > 0 requires a forcefield or explicit reference_params")
@@ -135,7 +158,7 @@ class ObjectiveFunction:
         self._handles: dict[int, object] = {}
         # Per-data-type evaluator instances (created once, reused).
         # Lazy imports to break circular dependency (evaluators import
-        # ReferenceValue from this module).
+        # Observation from this module).
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
@@ -155,6 +178,22 @@ class ObjectiveFunction:
             for kind in ev.HANDLED_KINDS:
                 self._kind_to_evaluator[kind] = ev
 
+    def _mol_idx(self, ref: Observation) -> int:
+        """Resolve *ref*'s stable ``case_id`` to a position in ``self.molecules``.
+
+        Raises:
+            KeyError: If ``ref.case_id`` is not one of this objective's
+                ``case_ids``.
+
+        """
+        try:
+            return self._case_id_to_index[ref.case_id]
+        except KeyError:
+            raise KeyError(
+                f"Observation {ref.label!r} (kind={ref.kind!r}) references case_id={ref.case_id!r}, "
+                f"which is not among this objective's case_ids: {self.case_ids}."
+            ) from None
+
     def __call__(self, param_vector: np.ndarray) -> float:
         """Evaluate objective for a given parameter vector.
 
@@ -168,7 +207,7 @@ class ObjectiveFunction:
             float: Sum-of-squared weighted residuals.
 
         """
-        ff = self.forcefield.with_params(param_vector)
+        ff = self.layout.replace(self.forcefield, param_vector)
 
         residuals = self._compute_residuals(ff)
         score = float(np.sum(residuals**2))
@@ -196,7 +235,7 @@ class ObjectiveFunction:
             with optional L2 regularization terms appended.
 
         """
-        ff = self.forcefield.with_params(param_vector)
+        ff = self.layout.replace(self.forcefield, param_vector)
         r = self._compute_residuals(ff)
 
         if self.regularization > 0:
@@ -237,10 +276,8 @@ class ObjectiveFunction:
 
         """
         param_matrix = np.atleast_2d(np.asarray(param_matrix, dtype=float))
-        if param_matrix.ndim != 2 or param_matrix.shape[1] != self.forcefield.n_params:
-            raise ValueError(
-                f"param_matrix must have shape (batch, {self.forcefield.n_params}), got {param_matrix.shape}"
-            )
+        if param_matrix.ndim != 2 or param_matrix.shape[1] != len(self.layout):
+            raise ValueError(f"param_matrix must have shape (batch, {len(self.layout)}), got {param_matrix.shape}")
 
         use_batched = self.engine.supports_batched_energy() and self.is_energy_only()
         if not use_batched:
@@ -258,7 +295,7 @@ class ObjectiveFunction:
         # Group energy references by molecule index
         mol_refs: dict[int, list] = {}
         for ref in self.reference.values:
-            mol_refs.setdefault(ref.molecule_idx, []).append(ref)
+            mol_refs.setdefault(self._mol_idx(ref), []).append(ref)
 
         # For each molecule, batch-evaluate energies
         mol_energies: dict[int, np.ndarray] = {}
@@ -273,7 +310,7 @@ class ObjectiveFunction:
         # Compute residuals and scores
         scores = np.zeros(batch_size)
         for ref in self.reference.values:
-            energies = mol_energies[ref.molecule_idx]
+            energies = mol_energies[self._mol_idx(ref)]
             residuals = ref.weight * (ref.value - energies)
             scores += residuals**2
 
@@ -330,7 +367,7 @@ class ObjectiveFunction:
         mol_indices_needing_hess: set[int] = set()
         for ref in self.reference.values:
             if ref.kind in hessian_kinds:
-                mol_indices_needing_hess.add(ref.molecule_idx)
+                mol_indices_needing_hess.add(self._mol_idx(ref))
 
         if not mol_indices_needing_hess:
             return {}
@@ -385,7 +422,7 @@ class ObjectiveFunction:
 
         Args:
             forcefield: The force field to evaluate (typically a temporary
-                instance from :meth:`~ForceField.with_params`).
+                instance from :meth:`~q2mm.models.parameters.ParameterLayout.replace`).
 
         Returns:
             np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
@@ -407,7 +444,7 @@ class ObjectiveFunction:
 
         residuals = []
         for ref in self.reference.values:
-            mol_idx = ref.molecule_idx
+            mol_idx = self._mol_idx(ref)
             if mol_idx not in calc_cache:
                 calc_cache[mol_idx] = self._evaluate_molecule(
                     mol_idx,
@@ -466,14 +503,14 @@ class ObjectiveFunction:
             those counters.
 
         """
-        ff = self.forcefield.with_params(param_vector)
+        ff = self.layout.replace(self.forcefield, param_vector)
         n_params = len(param_vector)
         total_grad = np.zeros(n_params)
 
         # Group references by molecule and evaluator kind
-        refs_by_mol: dict[int, dict[str, list[ReferenceValue]]] = {}
+        refs_by_mol: dict[int, dict[str, list[Observation]]] = {}
         for ref in self.reference.values:
-            mol_refs = refs_by_mol.setdefault(ref.molecule_idx, {})
+            mol_refs = refs_by_mol.setdefault(self._mol_idx(ref), {})
             # Map kinds to evaluator categories
             category = self._kind_to_category(ref.kind)
             mol_refs.setdefault(category, []).append(ref)
@@ -572,9 +609,9 @@ class ObjectiveFunction:
         from q2mm.optimizers.spec import ObjectiveSpec, _build_molecule_spec
 
         # Group references by molecule index
-        refs_by_mol: dict[int, list[ReferenceValue]] = {}
+        refs_by_mol: dict[int, list[Observation]] = {}
         for ref in self.reference.values:
-            refs_by_mol.setdefault(ref.molecule_idx, []).append(ref)
+            refs_by_mol.setdefault(self._mol_idx(ref), []).append(ref)
 
         # Build per-molecule specs
         mol_specs = []
@@ -606,14 +643,14 @@ class ObjectiveFunction:
                 "No references found. ObjectiveFunction.to_jax_spec() requires at least one reference value."
             )
 
-        # Parameter bounds from the force field
-        bounds = self.forcefield.get_bounds()
-        lower = np.array([b[0] for b in bounds], dtype=float)
-        upper = np.array([b[1] for b in bounds], dtype=float)
+        # Parameter bounds from the layout
+        bounds = self.layout.bounds
+        lower = np.array(bounds[:, 0], dtype=float)
+        upper = np.array(bounds[:, 1], dtype=float)
 
         return ObjectiveSpec(
             molecules=tuple(mol_specs),
-            n_params=self.forcefield.n_params,
+            n_params=len(self.layout),
             regularization=self.regularization,
             reference_params=self._reference_params.copy(),
             lower_bounds=lower,
@@ -626,7 +663,7 @@ class ObjectiveFunction:
         param_vector: np.ndarray,
         mol_idx: int,
         category: str,
-        refs: list[ReferenceValue],
+        refs: list[Observation],
         step: float | None = None,
     ) -> np.ndarray:
         """Compute finite-difference gradient for one evaluator's contribution.
@@ -682,7 +719,7 @@ class ObjectiveFunction:
         param_vector: np.ndarray,
         mol_idx: int,
         category: str,
-        refs: list[ReferenceValue],
+        refs: list[Observation],
     ) -> float:
         """Evaluate score contribution from a subset of references.
 
@@ -705,7 +742,7 @@ class ObjectiveFunction:
             Sum-of-squared weighted residuals for the given references.
 
         """
-        ff = self.forcefield.with_params(param_vector)
+        ff = self.layout.replace(self.forcefield, param_vector)
         mol = self.molecules[mol_idx]
         evaluator = self._get_evaluator(category)
 
@@ -831,7 +868,7 @@ class ObjectiveFunction:
         Args:
             mol_idx (int): Index into the molecules list.
             forcefield: The force field to evaluate (typically a temporary
-                instance from :meth:`~ForceField.with_params`).
+                instance from :meth:`~q2mm.models.parameters.ParameterLayout.replace`).
             precomputed_hessian: Optional ``(3N, 3N)`` Hessian in
                 Hartree/Bohr² from batched evaluation.
 
@@ -845,7 +882,7 @@ class ObjectiveFunction:
         result: dict = {}
 
         # Determine what data types are needed for this molecule
-        needed = {ref.kind for ref in self.reference.values if ref.molecule_idx == mol_idx}
+        needed = {ref.kind for ref in self.reference.values if self._mol_idx(ref) == mol_idx}
 
         energy_ev = self._kind_to_evaluator.get("energy")
         freq_ev = self._kind_to_evaluator.get("frequency")
@@ -929,7 +966,7 @@ class ObjectiveFunction:
         return result
 
     @staticmethod
-    def _extract_value(calc: dict, ref: ReferenceValue) -> float:
+    def _extract_value(calc: dict, ref: Observation) -> float:
         """Extract a calculated value matching a reference observation.
 
         Delegates to per-data-type evaluators for extraction logic.
@@ -937,7 +974,7 @@ class ObjectiveFunction:
 
         Args:
             calc (dict): Calculated results from :meth:`_evaluate_molecule`.
-            ref (ReferenceValue): Reference observation to match.
+            ref (Observation): Reference observation to match.
 
         Returns:
             float: The calculated value corresponding to the reference.

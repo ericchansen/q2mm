@@ -1,11 +1,11 @@
-"""Tests for _strip_pint() helper in q2mm.models.molecule."""
+"""Tests for _strip_pint() helper in q2mm.models.hessian."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from q2mm.models.molecule import _strip_pint
+from q2mm.models.hessian import _strip_pint
 
 
 def _has_pint() -> bool:

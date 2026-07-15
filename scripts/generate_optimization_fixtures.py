@@ -22,17 +22,19 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 OUTPUT_PATH = REPO_ROOT / "test" / "fixtures" / "optimization_golden.json"
 
 
-def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
+def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Molecule:
     theta = np.deg2rad(angle_deg)
-    return Q2MMMolecule(
+    return Molecule(
         symbols=["O", "H", "H"],
         geometry=np.array(
             [
@@ -49,16 +51,26 @@ def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
 def _water_ff(
     bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5
 ) -> ForceField:
+    """Build a minimal water force field.
+
+    MM3, not HARMONIC: this is the exact generator for
+    ``test/fixtures/optimization_golden.json``, produced under OpenMM's
+    old implicit-MM3 branch. The fixture is frozen (never regenerated
+    to "fix" a physics change), but this script must keep matching what
+    it actually encodes, or a future re-run of it would silently drift
+    from the committed golden.
+    """
     return ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
         angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        functional_form=FunctionalForm.MM3,
     )
 
 
 def _make_water_problem(
     engine: OpenMMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
-) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, OpenMMEngine]:
+) -> tuple[ForceField, ForceField, list[Molecule], ObservationSet, OpenMMEngine]:
     """Create a water optimization problem with known true parameters."""
     if engine is None:
         engine = OpenMMEngine()
@@ -68,15 +80,15 @@ def _make_water_problem(
     mol_wide = _water(115.0, 0.96)
     mol_long = _water(104.5, 1.05)
 
-    ref = ReferenceData()
+    ref = ObservationSet()
     for i, mol in enumerate([mol_eq, mol_wide, mol_long]):
-        ref.add_energy(engine.energy(mol, true_ff), weight=1.0, molecule_idx=i)
+        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0, case_id=str(i))
 
     openmm = OpenMMEngine()
     freqs = openmm.frequencies(mol_eq, true_ff)
     for j, f in enumerate(freqs):
         if abs(f) > 50.0:
-            ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
+            ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
 
     guess_ff = _water_ff(
         bond_k=true_ff.bonds[0].force_constant + perturb_k,
@@ -93,9 +105,11 @@ def main() -> int:
     print("Generating optimization golden fixture ...")
 
     true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-    obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+    layout = ParameterLayout.from_force_field(guess_ff)
+    space = ActiveParameterSpace.all_active(layout, guess_ff)
+    obj = ObjectiveFunction(guess_ff, engine, mols, ref, layout=layout)
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-    result = opt.optimize(obj)
+    result = opt.optimize(obj, space)
 
     fixture = {
         "metadata": {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -10,7 +11,7 @@ import pytest
 
 from test._shared import CH3F_HESS, CH3F_XYZ, SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_ethane
 
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Angle, Bond, Molecule, Torsion
 from q2mm.models.forcefield import (
     ForceField,
     FunctionalForm,
@@ -19,16 +20,19 @@ from q2mm.models.forcefield import (
     StretchBendParam,
     TorsionParam,
     VdwParam,
-    _extract_element,
 )
+from q2mm.models.identifiers import _extract_element
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout, fractional_bounds, opt_substructure_membership
 from q2mm.models.seminario import (
     qfuerza_fresh,
     qfuerza_into,
     _is_hydrogen_angle,
     QFUERZA_H_ANGLE_DEFAULT_CANONICAL,
 )
-from q2mm.models.structure import Angle, Bond, Torsion
-from q2mm.io.tinker import _tinker_import_ff
+from q2mm.io.amber import load_amber_frcmod, save_amber_frcmod
+from q2mm.io.mm3 import load_mm3_fld, save_mm3_fld
+from q2mm.io.tinker import _tinker_import_ff, load_tinker_prm, save_tinker_prm
+from q2mm.io.xyz import load_xyz
 
 # Fixture paths (test-specific, not shared)
 RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "mm3.fld"
@@ -56,37 +60,37 @@ class TestExtractElement:
         assert _extract_element(" F") == "F"
 
 
-# ---- Q2MMMolecule ----
+# ---- Molecule ----
 
 
 class TestMoleculeFromXYZ:
     def test_load_ch3f(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         assert mol.n_atoms == 5
         assert mol.symbols[0] == "C"
         assert mol.symbols[1] == "F"
         assert mol.geometry.shape == (5, 3)
 
     def test_load_ts(self) -> None:
-        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
+        mol = load_xyz(TS_XYZ, bond_tolerance=1.5)
         assert mol.n_atoms == 6
         assert mol.symbols.count("F") == 2
 
     def test_bond_detection_default(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         bonds = mol.bonds
         assert len(bonds) > 0
         elements_found = {b.element_pair for b in bonds}
         assert ("C", "H") in elements_found or ("H", "C") in elements_found
 
     def test_bond_detection_ts_tolerance(self) -> None:
-        mol_tight = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.3)
-        mol_loose = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
+        mol_tight = load_xyz(TS_XYZ, bond_tolerance=1.3)
+        mol_loose = load_xyz(TS_XYZ, bond_tolerance=1.5)
         # Looser tolerance should detect more bonds (partial TS bonds)
         assert len(mol_loose.bonds) >= len(mol_tight.bonds)
 
     def test_angle_detection(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         angles = mol.angles
         assert len(angles) > 0
         # CH3F has H-C-H and H-C-F angles
@@ -94,7 +98,7 @@ class TestMoleculeFromXYZ:
         assert "C" in center_elements
 
     def test_detected_env_ids_use_atom_types(self) -> None:
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["C", "H", "H"],
             atom_types=["1", "5", "5"],
             geometry=np.array(
@@ -111,89 +115,75 @@ class TestMoleculeFromXYZ:
 
 class TestMoleculeFromStructure:
     def test_absent_topology_is_inferred(self) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        structure = Structure("water")
-        structure.atoms.extend(
-            [
-                Atom(element="O", coords=[0.0, 0.0, 0.0]),
-                Atom(element="H", coords=[0.96, 0.0, 0.0]),
-                Atom(element="H", coords=[-0.24, 0.93, 0.0]),
-            ]
+        molecule = Molecule(
+            symbols=["O", "H", "H"],
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [0.96, 0.0, 0.0],
+                    [-0.24, 0.93, 0.0],
+                ]
+            ),
+            name="water",
         )
-        assert structure.bonds == []
-        assert not structure.has_explicit_bonds
-
-        molecule = Q2MMMolecule.from_structure(structure)
-
+        assert not molecule.bonds_explicit
+        assert not molecule.angles_explicit
         assert len(molecule.bonds) == 2
         assert len(molecule.angles) == 1
 
     def test_explicit_empty_topology_is_authoritative(self) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        structure = Structure("hydrogen")
-        structure.atoms.extend(
-            [
-                Atom(element="H", coords=[0.0, 0.0, 0.0]),
-                Atom(element="H", coords=[0.74, 0.0, 0.0]),
-            ]
+        molecule = Molecule(
+            symbols=["H", "H"],
+            geometry=np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]]),
+            name="hydrogen",
+            bonds=(),
         )
-        structure.bonds = []
-
-        molecule = Q2MMMolecule.from_structure(structure)
-
-        assert molecule.bonds == []
+        assert molecule.bonds_explicit
+        assert molecule.bonds == ()
 
     def test_structure_fields_and_overrides_are_preserved(self) -> None:
-        from q2mm.models.structure import Atom, Bond, HessianUnits, Structure
-
-        structure = Structure("charged")
-        structure.props.update(charge="-1", multiplicity="2")
-        structure.hess = np.eye(6)
-        structure.hessian_units = HessianUnits.ATOMIC
-        structure.atoms.extend(
-            [
-                Atom(element="C", coords=[0.0, 0.0, 0.0], partial_charge=-0.4),
-                Atom(element="O", coords=[1.2, 0.0, 0.0], partial_charge=0.4),
-            ]
+        molecule = Molecule(
+            symbols=["C", "O"],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]]),
+            partial_charges=[-0.4, 0.4],
+            charge=-1,
+            multiplicity=2,
+            name="charged",
+            hessian=np.eye(6),
+            bonds=(
+                Bond(
+                    atom_i=0,
+                    atom_j=1,
+                    elements=("C", "O"),
+                    length=1.2,
+                    bond_order="=",
+                    source_bond_order="2",
+                ),
+            ),
         )
-        structure.bonds.append(Bond(atom_nums=[1, 2], order="2"))
-
-        molecule = Q2MMMolecule.from_structure(structure)
-        overridden = Q2MMMolecule.from_structure(
-            structure,
-            charge=1,
-            multiplicity=3,
-            hessian=np.eye(6) * 2,
-        )
-        without_hessian = Q2MMMolecule.from_structure(structure, hessian=None)
+        overridden = molecule.with_overrides(charge=1, multiplicity=3).with_hessian(np.eye(6) * 2)
+        without_hessian = molecule.with_hessian(None)
 
         assert molecule.charge == -1
         assert molecule.multiplicity == 2
-        assert molecule.partial_charges == [-0.4, 0.4]
+        assert molecule.partial_charges == (-0.4, 0.4)
         assert molecule.bonds[0].bond_order == "="
         assert molecule.bonds[0].source_bond_order == "2"
-        np.testing.assert_array_equal(molecule.hessian, structure.hess)
+        np.testing.assert_array_equal(molecule.hessian, np.eye(6))
         assert overridden.charge == 1
         assert overridden.multiplicity == 3
         np.testing.assert_array_equal(overridden.hessian, np.eye(6) * 2)
         assert without_hessian.hessian is None
 
     def test_unit_unknown_structure_hessian_is_rejected(self) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        structure = Structure("unknown-units")
-        structure.atoms.append(Atom(element="H", coords=[0.0, 0.0, 0.0]))
-        structure.hess = np.eye(3)
+        from q2mm.models.hessian import hessian_to_atomic_units
 
         with pytest.raises(ValueError, match="Hessian unit provenance"):
-            Q2MMMolecule.from_structure(structure)
+            hessian_to_atomic_units(np.eye(3), "unknown")
 
     @pytest.mark.parametrize("unit_provenance", [None, "kilojoule/(mole*angstrom**2)"])
     def test_unit_bearing_structure_hessian_is_converted_once(self, unit_provenance: str | None) -> None:
         from q2mm.constants import KJMOLA2_TO_HESSIAN_AU
-        from q2mm.models.structure import Atom, Structure
 
         class FakeQuantity:
             def __init__(self, magnitude: np.ndarray) -> None:
@@ -203,50 +193,46 @@ class TestMoleculeFromStructure:
                 assert target_unit == "hartree/bohr**2"
                 return FakeQuantity(self.magnitude * KJMOLA2_TO_HESSIAN_AU)
 
-        structure = Structure("unit-bearing")
-        structure.atoms.append(Atom(element="H", coords=[0.0, 0.0, 0.0]))
-        structure.hess = FakeQuantity(np.eye(3))
-        structure.hessian_units = unit_provenance
-
-        molecule = Q2MMMolecule.from_structure(structure)
+        base = Molecule(symbols=["H"], geometry=np.array([[0.0, 0.0, 0.0]]), name="unit-bearing")
+        molecule = base.with_hessian(FakeQuantity(np.eye(3)))
 
         np.testing.assert_allclose(molecule.hessian, np.eye(3) * KJMOLA2_TO_HESSIAN_AU)
+        assert molecule.hessian_provenance is not None
 
     @pytest.mark.parametrize("topology_name", ["bonds", "angles", "torsions"])
     def test_empty_topology_extension_is_authoritative(self, topology_name: str) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        structure = Structure("chain")
-        structure.atoms.extend(
-            [
-                Atom(element="C", coords=[0.0, 0.0, 0.0]),
-                Atom(element="C", coords=[1.4, 0.0, 0.0]),
-                Atom(element="C", coords=[2.8, 0.0, 0.0]),
-                Atom(element="C", coords=[4.2, 0.0, 0.0]),
-            ]
-        )
-
-        getattr(structure, topology_name).extend([])
-
-        assert getattr(structure, f"has_explicit_{topology_name}")
-        assert getattr(Q2MMMolecule.from_structure(structure), topology_name) == []
+        kwargs = {
+            "symbols": ["C", "C", "C", "C"],
+            "geometry": np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.4, 0.0, 0.0],
+                    [2.8, 0.0, 0.0],
+                    [4.2, 0.0, 0.0],
+                ]
+            ),
+            topology_name: (),
+        }
+        molecule = Molecule(**kwargs)
+        assert getattr(molecule, f"{topology_name}_explicit")
+        assert getattr(molecule, topology_name) == ()
 
     @pytest.mark.parametrize(
         ("topology_name", "item_factory"),
         [
             pytest.param(
                 "bonds",
-                lambda: Bond([1, 2]),
+                lambda: Bond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.4),
                 id="bonds",
             ),
             pytest.param(
                 "angles",
-                lambda: Angle([1, 2, 3]),
+                lambda: Angle(atom_i=0, atom_j=1, atom_k=2, elements=("C", "C", "C"), value=180.0),
                 id="angles",
             ),
             pytest.param(
                 "torsions",
-                lambda: Torsion([1, 2, 3, 4]),
+                lambda: Torsion(atom_i=0, atom_j=1, atom_k=2, atom_l=3, elements=("C", "C", "C", "C"), value=180.0),
                 id="torsions",
             ),
         ],
@@ -254,51 +240,54 @@ class TestMoleculeFromStructure:
     def test_cleared_topology_remains_authoritative(
         self, topology_name: str, item_factory: Callable[[], object]
     ) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        structure = Structure("chain")
-        structure.atoms.extend(
-            [
-                Atom(element="C", coords=[0.0, 0.0, 0.0]),
-                Atom(element="C", coords=[1.4, 0.0, 0.0]),
-                Atom(element="C", coords=[2.8, 0.0, 0.0]),
-                Atom(element="C", coords=[4.2, 0.0, 0.0]),
-            ]
-        )
-        topology = getattr(structure, topology_name)
+        topology: list[object] = []
         topology.append(item_factory())
         topology.clear()
-
-        assert getattr(structure, f"has_explicit_{topology_name}")
-        assert getattr(Q2MMMolecule.from_structure(structure), topology_name) == []
+        molecule = Molecule(
+            symbols=["C", "C", "C", "C"],
+            geometry=np.array(
+                [
+                    [0.0, 0.0, 0.0],
+                    [1.4, 0.0, 0.0],
+                    [2.8, 0.0, 0.0],
+                    [4.2, 0.0, 0.0],
+                ]
+            ),
+            **{topology_name: topology},
+        )
+        assert getattr(molecule, f"{topology_name}_explicit")
+        assert getattr(molecule, topology_name) == ()
 
     def test_bond_tolerance_change_invalidates_dependent_topology(self) -> None:
-        molecule = Q2MMMolecule(
+        molecule = Molecule(
             symbols=["O", "H", "H"],
             geometry=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
         )
         assert len(molecule.bonds) == 2
         assert len(molecule.angles) == 1
 
-        molecule.bond_tolerance = 0.5
+        molecule = molecule.with_overrides(bond_tolerance=0.5)
 
-        assert molecule.bonds == []
-        assert molecule.angles == []
+        assert molecule.bonds == ()
+        assert molecule.angles == ()
 
     def test_bond_tolerance_change_preserves_explicit_topology(self) -> None:
-        from q2mm.models.structure import Atom, Bond, Structure
-
-        structure = Structure("carbonyl")
-        structure.atoms.extend(
-            [
-                Atom(element="C", coords=[0.0, 0.0, 0.0]),
-                Atom(element="O", coords=[1.2, 0.0, 0.0]),
-            ]
-        )
-        structure.bonds.append(Bond(atom_nums=[1, 2], order="2", ff_row=42))
-        molecule = Q2MMMolecule.from_structure(structure)
-
-        molecule.bond_tolerance = 0.5
+        molecule = Molecule(
+            symbols=["C", "O"],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0]]),
+            name="carbonyl",
+            bonds=(
+                Bond(
+                    atom_i=0,
+                    atom_j=1,
+                    elements=("C", "O"),
+                    length=1.2,
+                    bond_order="=",
+                    source_bond_order="2",
+                    ff_row=42,
+                ),
+            ),
+        ).with_overrides(bond_tolerance=0.5)
 
         assert len(molecule.bonds) == 1
         assert molecule.bonds[0].bond_order == "="
@@ -330,7 +319,7 @@ class TestTorsionDetection:
 
     def test_water_no_torsions(self) -> None:
         """Water (H-O-H) has no torsions — not enough connectivity depth."""
-        water = Q2MMMolecule(
+        water = Molecule(
             symbols=["O", "H", "H"],
             geometry=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
         )
@@ -338,7 +327,7 @@ class TestTorsionDetection:
 
     def test_ch3f_no_torsions(self) -> None:
         """CH3F has no torsions — F is terminal with no further neighbors."""
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         assert len(mol.torsions) == 0
 
     def test_no_duplicate_torsions(self) -> None:
@@ -353,12 +342,12 @@ class TestTorsionDetection:
 
     def test_element_quad_canonical(self) -> None:
         """element_quad returns the lexically smaller direction."""
-        from q2mm.models.molecule import DetectedTorsion
+        from q2mm.models.molecule import Torsion
 
-        t = DetectedTorsion(0, 1, 2, 3, ("H", "C", "N", "O"), 60.0)
+        t = Torsion(0, 1, 2, 3, ("H", "C", "N", "O"), 60.0)
         # forward: (H,C,N,O), reverse: (O,N,C,H) — forward is smaller
         assert t.element_quad == ("H", "C", "N", "O")
-        t2 = DetectedTorsion(0, 1, 2, 3, ("O", "N", "C", "H"), 60.0)
+        t2 = Torsion(0, 1, 2, 3, ("O", "N", "C", "H"), 60.0)
         assert t2.element_quad == ("H", "C", "N", "O")
 
     def test_torsion_env_ids(self) -> None:
@@ -371,7 +360,7 @@ class TestTorsionDetection:
 
     def test_formaldehyde_improper_detection(self) -> None:
         """Formaldehyde (H2CO) has one trigonal centre (C) → one improper."""
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["C", "O", "H", "H"],
             geometry=np.array(
                 [
@@ -401,7 +390,7 @@ class TestTorsionDetection:
 
     def test_improper_deterministic_ordering(self) -> None:
         """Improper neighbour ordering is deterministic (sorted by index)."""
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["C", "O", "H", "H"],
             geometry=np.array(
                 [
@@ -429,6 +418,7 @@ class TestMatchTorsion:
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
                 TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.25),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("H", "C", "C", "H"))
         assert len(matches) == 3
@@ -437,6 +427,7 @@ class TestMatchTorsion:
         """match_torsion matches reversed element order."""
         ff = ForceField(
             torsions=[TorsionParam(("H", "C", "N", "O"), periodicity=1, force_constant=0.5)],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("O", "N", "C", "H"))
         assert len(matches) == 1
@@ -445,6 +436,7 @@ class TestMatchTorsion:
         """match_torsion matches when env_id is reversed (D-C-B-A vs A-B-C-D)."""
         ff = ForceField(
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5, env_id="H1-C1-C2-H2")],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("H", "C", "C", "H"), env_id="H2-C2-C1-H1")
         assert len(matches) == 1
@@ -456,6 +448,7 @@ class TestMatchTorsion:
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("H", "C", "C", "H"), periodicity=2)
         assert len(matches) == 1
@@ -468,6 +461,7 @@ class TestMatchTorsion:
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15, ff_row=10),
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.99, ff_row=20),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("H", "C", "C", "H"), ff_row=20)
         assert len(matches) == 1
@@ -477,6 +471,7 @@ class TestMatchTorsion:
         """match_torsion returns empty list when nothing matches."""
         ff = ForceField(
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5)],
+            functional_form=FunctionalForm.HARMONIC,
         )
         matches = ff.match_torsion(("C", "N", "C", "O"))
         assert matches == []
@@ -488,6 +483,7 @@ class TestMatchTorsion:
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.30, is_improper=True),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         proper = ff.match_torsion(("H", "C", "C", "H"), is_improper=False)
         assert len(proper) == 1
@@ -505,6 +501,7 @@ class TestMatchTorsion:
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("C", "N", "C", "O"), periodicity=2, force_constant=1.0, is_improper=True),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         assert len(ff.proper_torsions) == 1
         assert len(ff.improper_torsions) == 1
@@ -517,8 +514,8 @@ class TestMatchTorsion:
 
 class TestForceField:
     def test_create_for_molecule(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ff = ForceField.create_for_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ff = ForceField.create_for_molecule(mol, functional_form=FunctionalForm.HARMONIC)
         assert len(ff.bonds) > 0
         assert len(ff.angles) > 0
 
@@ -527,25 +524,28 @@ class TestForceField:
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
-        assert ff.n_params == len(vec)
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        assert len(layout) == len(vec)
 
     def test_param_vector_roundtrip(self) -> None:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
-        ff2 = ff.copy()
-        ff2.set_param_vector(vec * 2)
-        vec2 = ff2.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        ff2 = layout.replace(ff, vec * 2)
+        vec2 = layout.vector(ff2)
         np.testing.assert_allclose(vec2, vec * 2)
 
     def test_active_param_api_tracks_frozen_params(self) -> None:
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, 359.7, frozen=True)],
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[
                 AngleParam(
                     ("H", "C", "F"),
@@ -555,49 +555,53 @@ class TestForceField:
                     ub_equilibrium=1.52,
                 )
             ],
-            stretch_bends=[StretchBendParam(("H", "C", "F"), force_constant=0.75, frozen=True)],
+            stretch_bends=[StretchBendParam(("H", "C", "F"), force_constant=0.75)],
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
-            vdws=[VdwParam("F1", 1.47, 0.061, frozen=True)],
+            vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-
+        layout = ParameterLayout.from_force_field(ff)
+        space = ActiveParameterSpace(
+            layout=layout, baseline=layout.vector(ff), active_indices=np.array([2, 3, 4, 8, 9])
+        )
         expected_mask = np.array([False, False, True, True, True, False, False, False, True, True])
-        np.testing.assert_array_equal(ff.active_mask, expected_mask)
-        assert ff.n_params == len(expected_mask)
-        assert ff.n_active_params == 5
-        np.testing.assert_allclose(ff.get_active_param_vector(), ff.get_param_vector()[expected_mask])
-        assert ff.get_active_param_names() == [
+        active_mask = np.zeros(len(layout), dtype=bool)
+        active_mask[space.active_indices] = True
+        np.testing.assert_array_equal(active_mask, expected_mask)
+        assert len(layout) == len(expected_mask)
+        assert space.n_active == 5
+        np.testing.assert_allclose(space.pack(layout.vector(ff)), layout.vector(ff)[expected_mask])
+        assert list(space.names) == [
             "ka_F-C-H",
             "th0_F-C-H",
             "kt_H-C-C-H_n1",
             "kub_F-C-H",
             "r13_F-C-H",
         ]
-        assert ff.get_active_step_sizes().shape == (5,)
-        assert ff.get_active_bounds().shape == (5, 2)
+        assert space.steps.shape == (5,)
+        assert space.bounds.shape == (5, 2)
 
     def test_active_param_mutators_preserve_frozen_values(self) -> None:
         ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, 359.7, frozen=True)],
+            bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
-            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15, frozen=True)],
+            torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
+            functional_form=FunctionalForm.HARMONIC,
         )
         updated = np.array([72.0, 120.0])
+        layout = ParameterLayout.from_force_field(ff)
+        space = ActiveParameterSpace(layout=layout, baseline=layout.vector(ff), active_indices=np.array([2, 3]))
+        ff_new = layout.replace(ff, space.expand(updated))
+        assert ff_new.bonds[0].force_constant == pytest.approx(359.7)
+        assert ff_new.bonds[0].equilibrium == pytest.approx(1.38)
+        assert ff_new.torsions[0].force_constant == pytest.approx(0.15)
+        np.testing.assert_allclose(space.pack(layout.vector(ff_new)), updated)
+        np.testing.assert_allclose(space.pack(layout.vector(ff)), [36.0, 109.5])
 
-        ff_mut = ff.copy()
-        ff_mut.set_active_param_vector(updated)
-        assert ff_mut.bonds[0].force_constant == pytest.approx(359.7)
-        assert ff_mut.bonds[0].equilibrium == pytest.approx(1.38)
-        assert ff_mut.torsions[0].force_constant == pytest.approx(0.15)
-        np.testing.assert_allclose(ff_mut.get_active_param_vector(), updated)
-
-        ff_new = ff.with_active_params(updated)
-        np.testing.assert_allclose(ff_new.get_active_param_vector(), updated)
-        np.testing.assert_allclose(ff.get_active_param_vector(), [36.0, 109.5])
-
+        with pytest.raises(ValueError, match="shape"):
+            space.expand(np.array([1.0]))
         with pytest.raises(ValueError, match="does not match"):
-            ff_mut.set_active_param_vector(np.array([1.0]))
-        with pytest.raises(ValueError, match="does not match"):
-            ff.with_active_params(np.array([1.0]))
+            layout.replace(ff, np.array([1.0]))
 
     def test_default_bounds_enforce_nonnegative_bond_k(self) -> None:
         """``bond_k`` is non-negative per Phase 9.E.0 methodology shift.
@@ -612,8 +616,9 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 49.6)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_bounds()
+        bounds = ParameterLayout.from_force_field(ff).bounds
         bond_k_lower, bond_k_upper = bounds[0]
         assert bond_k_lower == pytest.approx(0.0)
         assert bond_k_upper == pytest.approx(3600.0)
@@ -623,8 +628,9 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 21.6)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_bounds()
+        bounds = ParameterLayout.from_force_field(ff).bounds
         angle_k_lower, angle_k_upper = bounds[2]
         assert angle_k_lower == pytest.approx(0.0)
         assert angle_k_upper == pytest.approx(720.0)
@@ -634,8 +640,9 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "C"), 1.54, 300.0)],
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-1.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_bounds()
+        bounds = ParameterLayout.from_force_field(ff).bounds
         # Layout: bond_k, bond_eq, torsion_k
         torsion_k_lower, torsion_k_upper = bounds[2]
         assert torsion_k_lower < 0, "Torsion k retains signed bounds"
@@ -653,12 +660,13 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, -49.6)],
             angles=[AngleParam(("H", "C", "F"), 109.5, -10.8)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
         assert vec[0] == pytest.approx(-49.6)
         assert vec[2] == pytest.approx(-10.8)
-        ff2 = ff.copy()
-        ff2.set_param_vector(vec)
+        ff2 = layout.replace(ff, vec)
         assert ff2.bonds[0].force_constant == pytest.approx(-49.6)
         assert ff2.angles[0].force_constant == pytest.approx(-10.8)
 
@@ -667,8 +675,10 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.20, eq_fraction=0.05)
         # Layout: bond_k, bond_eq, angle_k, angle_eq
         assert bounds[0] == pytest.approx((359.7 * 0.8, 359.7 * 1.2), rel=1e-6)
         assert bounds[1] == pytest.approx((1.38 * 0.95, 1.38 * 1.05), rel=1e-6)
@@ -686,8 +696,9 @@ class TestForceField:
         degenerate intersection and falls back to the full sanity
         envelope so L-BFGS-B can pull the value into a physical region.
         """
-        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, -49.6)])
-        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, -49.6)], functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.20, eq_fraction=0.05)
         bond_k_lo, bond_k_hi = bounds[0]
         # |val|=49.6, window=9.92; naive box = (-59.52, -39.68) ∩ (0, 3600) = empty.
         # Guard catches this and falls back to sanity envelope.
@@ -700,8 +711,10 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 100.0)],
             torsions=[TorsionParam(("H", "C", "F", "H"), periodicity=2, force_constant=-2.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.20, eq_fraction=0.05)
         # Layout: bond_k, bond_eq, torsion_k. |val|=2.0, window=0.4 → (-2.4, -1.6)
         torsion_k_lo, torsion_k_hi = bounds[2]
         assert torsion_k_lo == pytest.approx(-2.4)
@@ -710,8 +723,9 @@ class TestForceField:
 
     def test_fractional_bounds_intersect_sanity_bounds(self) -> None:
         """Fractional bounds are clipped to the DEFAULT_BOUNDS sanity envelope."""
-        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 3000.0)])
-        bounds = ff.get_fractional_bounds(fc_fraction=0.50, eq_fraction=None)
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 3000.0)], functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.50, eq_fraction=None)
         bond_k_lo, bond_k_hi = bounds[0]
         # |val|*0.5 = 1500 → box (1500, 4500); sanity hi = 3600 → clipped
         assert bond_k_lo == pytest.approx(1500.0)
@@ -722,8 +736,10 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 100.0)],
             torsions=[TorsionParam(("H", "C", "F", "H"), periodicity=1, force_constant=0.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.20, eq_fraction=0.05)
         # Layout: bond_k, bond_eq, torsion_k
         assert bounds[0] == pytest.approx((80.0, 120.0))
         # Torsion_k (val=0): falls back to DEFAULT_BOUNDS["torsion_k"]
@@ -734,16 +750,22 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 300.0)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        assert ff.get_fractional_bounds(None, None) == ff.get_bounds()
+        layout = ParameterLayout.from_force_field(ff)
+        np.testing.assert_allclose(
+            fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=None, eq_fraction=None),
+            layout.bounds,
+        )
 
     def test_fractional_bounds_value_outside_sanity_falls_back(self) -> None:
         """Param values outside DEFAULT_BOUNDS get sanity bounds, not degenerate (lo >= hi)."""
         # bond_k sanity = (0, 3600); val = 5000 is outside the envelope.
         # Naive: window = 0.20 * 5000 = 1000 → lo = max(0, 4000) = 4000,
         # hi = min(3600, 6000) = 3600 → lo > hi (degenerate). Guard must catch this.
-        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 5000.0)])
-        bounds = ff.get_fractional_bounds(fc_fraction=0.20, eq_fraction=0.05)
+        ff = ForceField(bonds=[BondParam(("C", "F"), 1.38, 5000.0)], functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(ff)
+        bounds = fractional_bounds(layout.kinds, layout.bounds, layout.vector(ff), fc_fraction=0.20, eq_fraction=0.05)
         bond_k_lo, bond_k_hi = bounds[0]
         assert bond_k_lo < bond_k_hi, "bounds must not be degenerate"
         assert bond_k_lo == pytest.approx(0.0)
@@ -759,10 +781,12 @@ class TestForceField:
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
                 TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.25),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
         # 2 bond + 2 angle + 3 torsion = 7
-        assert ff.n_params == 7
+        assert len(layout) == 7
         assert len(vec) == 7
         # Torsion values at indices 4, 5, 6
         assert vec[4] == pytest.approx(0.15)
@@ -777,12 +801,13 @@ class TestForceField:
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15),
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
-        ff2 = ff.copy()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
         vec[2] = 0.30  # Double V1
         vec[3] = 0.20  # Change V2
-        ff2.set_param_vector(vec)
+        ff2 = layout.replace(ff, vec)
         assert ff2.torsions[0].force_constant == pytest.approx(0.30)
         assert ff2.torsions[1].force_constant == pytest.approx(0.20)
 
@@ -795,10 +820,12 @@ class TestForceField:
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
-        ff2 = ff.with_params(vec)
-        np.testing.assert_allclose(ff2.get_param_vector(), vec)
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
+        ff2 = layout.replace(ff, vec)
+        np.testing.assert_allclose(layout.vector(ff2), vec)
 
     def test_with_params_applies_new_values(self) -> None:
         """with_params applies the given vector to the new ForceField."""
@@ -806,11 +833,13 @@ class TestForceField:
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        vec = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff)
         new_vec = vec * 2.0
-        ff2 = ff.with_params(new_vec)
-        np.testing.assert_allclose(ff2.get_param_vector(), new_vec)
+        ff2 = layout.replace(ff, new_vec)
+        np.testing.assert_allclose(layout.vector(ff2), new_vec)
 
     def test_with_params_does_not_mutate_original(self) -> None:
         """with_params returns a new FF; the original is unchanged."""
@@ -818,25 +847,32 @@ class TestForceField:
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
             vdws=[VdwParam("F1", 1.47, 0.061)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        original_vec = ff.get_param_vector().copy()
+        layout = ParameterLayout.from_force_field(ff)
+        original_vec = layout.vector(ff).copy()
         new_vec = original_vec * 3.0
-        ff2 = ff.with_params(new_vec)
+        ff2 = layout.replace(ff, new_vec)
 
         # Original unchanged
-        np.testing.assert_allclose(ff.get_param_vector(), original_vec)
+        np.testing.assert_allclose(layout.vector(ff), original_vec)
         # New FF has new values
-        np.testing.assert_allclose(ff2.get_param_vector(), new_vec)
+        np.testing.assert_allclose(layout.vector(ff2), new_vec)
 
     def test_with_params_no_aliasing(self) -> None:
         """Mutating returned FF params does not affect the original."""
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
+        from dataclasses import FrozenInstanceError
+
+        layout = ParameterLayout.from_force_field(ff)
         original_k = ff.bonds[0].force_constant
-        ff2 = ff.with_params(ff.get_param_vector())
-        ff2.bonds[0].force_constant = 999.0
+        ff2 = layout.replace(ff, layout.vector(ff))
+        with pytest.raises(FrozenInstanceError):
+            ff2.bonds[0].force_constant = 999.0
         assert ff.bonds[0].force_constant == pytest.approx(original_k)
 
     def test_with_params_preserves_metadata(self) -> None:
@@ -849,7 +885,8 @@ class TestForceField:
             vdws=[VdwParam("F1", 1.47, 0.061, reduction=0.92)],
             functional_form=FunctionalForm.MM3,
         )
-        ff2 = ff.with_params(ff.get_param_vector() * 1.5)
+        layout = ParameterLayout.from_force_field(ff)
+        ff2 = layout.replace(ff, layout.vector(ff) * 1.5)
 
         assert ff2.name == "test_ff"
         assert ff2.functional_form == FunctionalForm.MM3
@@ -868,19 +905,22 @@ class TestForceField:
         ff = ForceField(
             bonds=[BondParam(("C", "F"), 1.38, 359.7)],
             angles=[AngleParam(("H", "C", "F"), 109.5, 36.0)],
+            functional_form=FunctionalForm.HARMONIC,
         )
+        layout = ParameterLayout.from_force_field(ff)
         with pytest.raises(ValueError, match="does not match"):
-            ff.with_params(np.array([1.0, 2.0]))  # too short
+            layout.replace(ff, np.array([1.0, 2.0]))  # too short
         with pytest.raises(ValueError, match="does not match"):
-            ff.with_params(np.zeros(100))  # too long
+            layout.replace(ff, np.zeros(100))  # too long
 
     def test_torsion_bounds(self) -> None:
         """Torsion bounds included in get_bounds()."""
         ff = ForceField(
             bonds=[BondParam(("C", "C"), 1.54, 323.7)],
             torsions=[TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.15)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bounds = ff.get_bounds()
+        bounds = ParameterLayout.from_force_field(ff).bounds
         # 2 bond bounds + 1 torsion bound = 3
         assert len(bounds) == 3
         torsion_lower, torsion_upper = bounds[2]
@@ -895,6 +935,7 @@ class TestForceField:
                 TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=-0.10),
                 TorsionParam(("C", "C", "N", "H"), periodicity=1, force_constant=0.30),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         t1 = ff.get_torsion("H", "C", "C", "H", periodicity=1)
         assert t1 is not None
@@ -909,7 +950,7 @@ class TestForceField:
 
     def test_mm3_loads_torsions(self) -> None:
         """MM3 .fld loading should extract torsion parameters."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         assert len(ff.torsions) > 0, "Expected torsion parameters from Rh-enamide mm3.fld"
         assert all(isinstance(t, TorsionParam) for t in ff.torsions)
         assert all(t.periodicity in (1, 2, 3) for t in ff.torsions)
@@ -917,28 +958,23 @@ class TestForceField:
 
     def test_mm3_imp_conversion(self) -> None:
         """ff_io converts imp1/imp2 MM3 params to TorsionParam(is_improper=True)."""
-        from q2mm.io import Param
-        from q2mm.io.mm3 import load_mm3_fld
+        from q2mm.io.mm3 import _Mm3ParameterRow, load_mm3_fld
         from unittest.mock import patch
 
-        # Create mock _mm3_import_ff output with imp1 and imp2 params
+        # Create mock _mm3_import_ff output with imp1 and imp2 rows
         mock_params = [
-            Param(
-                atom_labels=["C2", "O2", "H1", "H1"],
+            _Mm3ParameterRow(
                 atom_types=["C2", "O2", "H1", "H1"],
                 ptype="imp1",
                 ff_col=1,
                 ff_row=100,
-                label=" 5",
                 value=0.0,
             ),
-            Param(
-                atom_labels=["C2", "O2", "H1", "H1"],
+            _Mm3ParameterRow(
                 atom_types=["C2", "O2", "H1", "H1"],
                 ptype="imp2",
                 ff_col=2,
                 ff_row=100,
-                label=" 5",
                 value=0.8,
             ),
         ]
@@ -965,11 +1001,12 @@ class TestForceField:
             name="Generic MM3",
             bonds=[BondParam(("C", "F"), 1.381, 377.7, env_id="C1-F1")],
             angles=[AngleParam(("H", "C", "F"), 109.7, 39.6, env_id="H1-C1-F1")],
+            functional_form=FunctionalForm.MM3,
         )
         out_path = tmp_path / "generated.fld"
-        ff.to_mm3_fld(out_path)
+        save_mm3_fld(ff, out_path)
 
-        roundtrip = ForceField.from_mm3_fld(out_path)
+        roundtrip = load_mm3_fld(out_path)
         assert roundtrip.source_format == "mm3_fld"
         assert roundtrip.source_path == out_path
 
@@ -983,11 +1020,15 @@ class TestForceField:
         assert angle.equilibrium == pytest.approx(109.7)
 
     def test_mm3_vdw_roundtrip_generic(self, tmp_path: Path) -> None:
-        ff = ForceField(name="Generic MM3", vdws=[VdwParam("F0", 1.71, 0.075), VdwParam("H1", 1.62, 0.02)])
+        ff = ForceField(
+            name="Generic MM3",
+            vdws=[VdwParam("F0", 1.71, 0.075), VdwParam("H1", 1.62, 0.02)],
+            functional_form=FunctionalForm.MM3,
+        )
         out_path = tmp_path / "generated_vdw.fld"
 
-        ff.to_mm3_fld(out_path)
-        roundtrip = ForceField.from_mm3_fld(out_path)
+        save_mm3_fld(ff, out_path)
+        roundtrip = load_mm3_fld(out_path)
 
         fluorine = roundtrip.get_vdw(atom_type="F0")
         hydrogen = roundtrip.get_vdw(atom_type="H1")
@@ -1011,11 +1052,12 @@ class TestForceField:
                 TorsionParam(("C", "C", "C", "H"), periodicity=1, force_constant=0.185, env_id="C3-C3-C3-H1"),
                 TorsionParam(("C", "C", "C", "H"), periodicity=3, force_constant=0.52, env_id="C3-C3-C3-H1"),
             ],
+            functional_form=FunctionalForm.MM3,
         )
         out_path = tmp_path / "torsion_test.fld"
-        ff.to_mm3_fld(out_path)
+        save_mm3_fld(ff, out_path)
 
-        roundtrip = ForceField.from_mm3_fld(out_path)
+        roundtrip = load_mm3_fld(out_path)
         assert len(roundtrip.torsions) == 6, "Should have 6 torsion params (3 per line × 2 lines)"
 
         # Check specific values round-tripped correctly
@@ -1044,11 +1086,12 @@ class TestForceField:
                 TorsionParam(("H", "C", "C", "F"), periodicity=3, force_constant=0.0, env_id="H1-C1-C1-F1"),
             ],
             vdws=[VdwParam("F0", 1.71, 0.075)],
+            functional_form=FunctionalForm.MM3,
         )
         out_path = tmp_path / "full_test.fld"
-        ff.to_mm3_fld(out_path)
+        save_mm3_fld(ff, out_path)
 
-        roundtrip = ForceField.from_mm3_fld(out_path)
+        roundtrip = load_mm3_fld(out_path)
         assert len(roundtrip.bonds) == 1
         assert len(roundtrip.angles) == 1
         assert len(roundtrip.torsions) == 3
@@ -1059,27 +1102,25 @@ class TestForceField:
         assert v1.force_constant == pytest.approx(-0.5)
 
     def test_mm3_export_updates_template(self, tmp_path: Path) -> None:
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         first_bond = ff.bonds[0]
-        # Mutating a value field on a frozen param now raises FrozenParamError
-        # (q2mm#277 follow-up). The test's intent is roundtrip fidelity, not
-        # frozenness, so unfreeze for the edit and re-freeze for parity with
-        # the original FF state.
-        first_bond.unfreeze()
-        first_bond.force_constant += 1.234
-        first_bond.equilibrium += 0.123
-        first_bond.freeze()
+        first_bond = replace(
+            first_bond,
+            force_constant=first_bond.force_constant + 1.234,
+            equilibrium=first_bond.equilibrium + 0.123,
+        )
+        ff = replace(ff, bonds=(first_bond, *ff.bonds[1:]))
 
         out_path = tmp_path / "updated_mm3.fld"
-        ff.to_mm3_fld(out_path)
+        save_mm3_fld(ff, out_path)
 
-        roundtrip = ForceField.from_mm3_fld(out_path)
+        roundtrip = load_mm3_fld(out_path)
         updated = next(bond for bond in roundtrip.bonds if bond.ff_row == first_bond.ff_row)
         assert updated.force_constant == pytest.approx(first_bond.force_constant, rel=1e-3)
         assert updated.equilibrium == pytest.approx(first_bond.equilibrium)
 
     def test_mm3_imports_vdw_table(self) -> None:
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
 
         rh = ff.get_vdw(atom_type="RH")
         fluorine = ff.get_vdw(atom_type="F0")
@@ -1091,16 +1132,19 @@ class TestForceField:
         assert fluorine.epsilon == pytest.approx(0.075)
 
     def test_mm3_freezes_standard_params_by_default(self) -> None:
-        ff = ForceField.from_mm3_fld(RH_MM3)
-        ff_opt = ForceField.from_mm3_fld(RH_MM3, include_standard=False)
-        ff.freeze_standard_params(ff_opt)
+        ff = load_mm3_fld(RH_MM3)
+        ff_opt = load_mm3_fld(RH_MM3, include_standard=False)
+        membership = opt_substructure_membership(ff, ff_opt)
+        layout = ParameterLayout.from_force_field(ff)
+        space = ActiveParameterSpace.from_membership(layout, ff, membership)
+        active_mask = np.zeros(len(layout), dtype=bool)
+        active_mask[space.active_indices] = True
 
-        assert ff.n_params == 2742
-        assert ff.n_active_params == 182
-        assert ff.active_mask.shape == (2742,)
-        assert len(ff.get_active_param_vector()) == 182
-        assert any(param.frozen for param in ff.bonds)
-        assert any(not param.frozen for param in ff.bonds)
+        assert len(layout) == 2742
+        assert space.n_active == 182
+        assert active_mask.shape == (2742,)
+        assert len(space.pack(layout.vector(ff))) == 182
+        assert 0 < len(space.active_owner_indices("bonds")) < len(ff.bonds)
 
     def test_tinker_import_export_roundtrip(self, tmp_path: Path) -> None:
         prm_path = tmp_path / "sample.prm"
@@ -1119,7 +1163,7 @@ class TestForceField:
             encoding="utf-8",
         )
 
-        ff = ForceField.from_tinker_prm(prm_path)
+        ff = load_tinker_prm(prm_path)
         assert ff.source_format == "tinker_prm"
         assert ff.source_path == prm_path
 
@@ -1137,8 +1181,8 @@ class TestForceField:
         assert vdw.epsilon == pytest.approx(0.061)
 
         generic_out = tmp_path / "generated.prm"
-        ff.to_tinker_prm(generic_out, template_path=None)
-        generic_roundtrip = ForceField.from_tinker_prm(generic_out)
+        save_tinker_prm(ff, generic_out, template_path=None)
+        generic_roundtrip = load_tinker_prm(generic_out)
         generic_bond = generic_roundtrip.get_bond("C", "F", env_id="C1-F1")
         generic_angle = generic_roundtrip.get_angle("H", "C", "F", env_id="F1-C1-H1")
         assert generic_bond is not None
@@ -1166,7 +1210,7 @@ class TestForceField:
             encoding="utf-8",
         )
 
-        ff = ForceField.from_tinker_prm(prm_path)
+        ff = load_tinker_prm(prm_path)
 
         bond = ff.get_bond("C", "H", env_id="1-5")
         angle = ff.get_angle("H", "C", "H", env_id="5-1-5")
@@ -1197,12 +1241,17 @@ class TestForceField:
             ),
             encoding="utf-8",
         )
-        ff = ForceField.from_tinker_prm(prm_path)
-        ff.angles[0].equilibrium = 108.25
-        ff.angles[0].force_constant = 54.0
+        ff = load_tinker_prm(prm_path)
+        ff = replace(
+            ff,
+            angles=(
+                replace(ff.angles[0], equilibrium=108.25, force_constant=54.0),
+                *ff.angles[1:],
+            ),
+        )
 
         out_path = tmp_path / "updated.prm"
-        ff.to_tinker_prm(out_path)
+        save_tinker_prm(ff, out_path)
 
         legacy_params, _ = _tinker_import_ff(str(out_path))
         angle_row = ff.angles[0].ff_row
@@ -1226,14 +1275,13 @@ class TestForceField:
             ),
             encoding="utf-8",
         )
-        ff = ForceField.from_tinker_prm(prm_path)
-        ff.vdws[0].radius = 1.55
-        ff.vdws[0].epsilon = 0.081
+        ff = load_tinker_prm(prm_path)
+        ff = replace(ff, vdws=(replace(ff.vdws[0], radius=1.55, epsilon=0.081), *ff.vdws[1:]))
 
         out_path = tmp_path / "updated_vdw.prm"
-        ff.to_tinker_prm(out_path)
+        save_tinker_prm(ff, out_path)
 
-        roundtrip = ForceField.from_tinker_prm(out_path)
+        roundtrip = load_tinker_prm(out_path)
         updated = roundtrip.get_vdw(atom_type="F1")
         assert updated is not None
         assert updated.radius == pytest.approx(1.55)
@@ -1257,13 +1305,13 @@ class TestForceField:
             ),
             encoding="utf-8",
         )
-        ff = ForceField.from_tinker_prm(prm_path)
-        ff.vdws[0].reduction = 0.923
+        ff = load_tinker_prm(prm_path)
+        ff = replace(ff, vdws=(replace(ff.vdws[0], reduction=0.923), *ff.vdws[1:]))
 
         out_path = tmp_path / "updated_reduction.prm"
-        ff.to_tinker_prm(out_path)
+        save_tinker_prm(ff, out_path)
 
-        roundtrip = ForceField.from_tinker_prm(out_path)
+        roundtrip = load_tinker_prm(out_path)
         assert roundtrip.vdws[0].reduction == pytest.approx(0.923)
 
     def test_generic_prm_amoeba_style_atom_records(self, tmp_path: Path) -> None:
@@ -1281,7 +1329,7 @@ class TestForceField:
             ),
             encoding="utf-8",
         )
-        ff = ForceField.from_tinker_prm(prm_path)
+        ff = load_tinker_prm(prm_path)
         assert len(ff.bonds) == 1
         assert ff.bonds[0].elements == ("N", "H")
         assert ff.vdws[0].element == "N"
@@ -1295,7 +1343,7 @@ class TestBondOrderParsing:
 
     def test_standard_section_bond_order_single(self) -> None:
         """Standard section: '-' at column 7 is parsed as single bond."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         # C3-C3 single bonds exist in the standard section
         c3c3_bonds = [b for b in ff.bonds if b.env_id == "C3-C3"]
         assert len(c3c3_bonds) > 0
@@ -1303,7 +1351,7 @@ class TestBondOrderParsing:
 
     def test_standard_section_bond_order_double(self) -> None:
         """Standard section: '=' at column 7 is parsed as double bond."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         c2c2_double = [b for b in ff.bonds if b.env_id == "C2-C2" and b.bond_order == "="]
         assert len(c2c2_double) > 0, "Expected C2=C2 double bonds in Rh-enamide mm3.fld"
         # Verify at least one has the expected equilibrium ~1.33 Å
@@ -1314,21 +1362,21 @@ class TestBondOrderParsing:
         """Standard section: bond-order symbols include '*' (aromatic) in angles."""
         # Aromatic bonds appear in angles (C2*C2) but not in bond section
         # of the standard MM3. Verify we can parse '-' and '=' at minimum.
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         orders = {b.bond_order for b in ff.bonds if b.bond_order}
         assert "-" in orders, "Expected single bonds"
         assert "=" in orders, "Expected double bonds"
 
     def test_standard_section_context_parsed(self) -> None:
         """Context flags from cols 55-65 are stored on BondParam."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         # Some C3-C3 bonds have context like "O200 0000" or "1C200 000"
         with_context = [b for b in ff.bonds if b.context]
         assert len(with_context) > 0, "Expected some bonds with context flags"
 
     def test_standard_section_generic_has_empty_context(self) -> None:
         """Generic entries (0000 0000) have empty context string."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         # The generic C3-C3 bond (r₀≈1.5247) has context "0000 0000" → empty
         c3c3_generic = [b for b in ff.bonds if b.env_id == "C3-C3" and not b.context]
         assert len(c3c3_generic) > 0, "Expected at least one generic C3-C3 bond"
@@ -1401,6 +1449,64 @@ class TestBondOrderParsing:
         assert bond_params[1].context == ""
 
 
+class TestEquilibriumAngleNormalization:
+    """MM3/Tinker parsers fold equilibrium-angle values into [0, 180].
+
+    ``_normalize_equilibrium_angle`` (tested in isolation in
+    ``test_io_helpers.py``) is called explicitly by each format module at
+    every equilibrium-angle ("ae") construction site; this class proves
+    that wiring: both MM3 and Tinker fold "ae" values during real parsing,
+    and MM3 leaves non-angle values (e.g. a bond force constant) untouched
+    even when their raw magnitude exceeds 180.
+    """
+
+    def test_mm3_angle_equilibrium_folds_above_180(self, tmp_path: Path) -> None:
+        from q2mm.io.mm3 import _format_mm3_angle_line, _mm3_import_ff
+
+        fld = tmp_path / "angle_fold.fld"
+        fld.write_text(_format_mm3_angle_line(["C2", "C2", "C2"], 200.0, 4.5), encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        ae_params = [p for p in params if p.ptype == "ae"]
+        assert len(ae_params) == 1
+        assert ae_params[0].value == pytest.approx(160.0)
+
+    def test_mm3_bond_force_constant_above_180_is_not_folded(self, tmp_path: Path) -> None:
+        """Only "ae" rows are folded; a bond force constant > 180 must pass through unchanged."""
+        from q2mm.io.mm3 import _format_mm3_bond_line, _mm3_import_ff
+
+        fld = tmp_path / "bond_no_fold.fld"
+        fld.write_text(_format_mm3_bond_line(["C2", "C2"], 1.50, 200.0), encoding="utf-8")
+
+        params, _ = _mm3_import_ff(str(fld))
+        bf_params = [p for p in params if p.ptype == "bf"]
+        assert len(bf_params) == 1
+        assert bf_params[0].value == pytest.approx(200.0)
+
+    def test_tinker_angle_equilibria_fold_above_180(self, tmp_path: Path) -> None:
+        """All three Tinker "ae" columns (ff_col 2/3/4) must fold independently."""
+        from q2mm.io.tinker import _tinker_import_ff
+
+        prm_path = tmp_path / "angle_fold.prm"
+        prm_path.write_text(
+            "\n".join(
+                [
+                    "# Q2MM",
+                    "# OPT Synthetic",
+                    "angle    H1   C1   F1     0.5000   200.0000   211.0000   222.0000",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        params, _ = _tinker_import_ff(str(prm_path))
+        ae_by_col = {p.ff_col: p.value for p in params if p.ptype == "ae"}
+        assert ae_by_col[2] == pytest.approx(160.0)
+        assert ae_by_col[3] == pytest.approx(149.0)
+        assert ae_by_col[4] == pytest.approx(138.0)
+
+
 class TestBondOrderMatching:
     """Test ForceField.get_bond() and match_bond() with bond_order and context."""
 
@@ -1433,6 +1539,7 @@ class TestBondOrderMatching:
                 BondParam(("C", "C"), 1.48, 290.0, env_id="C2-C2", bond_order="-", ff_row=101, label="single-generic"),
                 BondParam(("C", "C"), 1.54, 300.0, env_id="C3-C3", bond_order="-", ff_row=59, label="sp3-single"),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
 
     # --- get_bond with bond_order ---
@@ -1546,6 +1653,7 @@ class TestBondOrderMatching:
                 ),
                 BondParam(("C", "C"), 1.48, 290.0, env_id="C2-C2", bond_order="-", label="generic"),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         result = ff.match_bond(("C", "C"), env_id="C2-C2")
         assert result is not None
@@ -1557,6 +1665,7 @@ class TestBondOrderMatching:
             bonds=[
                 BondParam(("C", "C"), 1.54, 300.0, env_id="C3-C3", label="sp3"),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         result = ff.match_bond(("C", "C"), env_id="C99-C99")
         assert result is not None
@@ -1568,36 +1677,35 @@ class TestBondOrderMatching:
             bonds=[
                 BondParam(("C", "F"), 1.38, 370.0, env_id="C1-F1", label="CF"),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
         result = ff.match_bond(("N", "H"), env_id="N3-H1")
         assert result is None
 
 
-from q2mm.models.molecule import DetectedBond
-
-
 class TestDetectedBondOrder:
-    """Test that DetectedBond carries bond_order through matching."""
+    """Test that Bond carries bond_order through matching."""
 
     def test_detected_bond_stores_bond_order(self) -> None:
-        """DetectedBond stores the bond_order field."""
-        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.34, env_id="C2-C2", bond_order="=")
+        """Bond stores the bond_order field."""
+        bond = Bond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.34, env_id="C2-C2", bond_order="=")
         assert bond.bond_order == "="
 
     def test_detected_bond_default_empty_order(self) -> None:
-        """DetectedBond defaults to empty bond_order."""
-        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.54, env_id="C3-C3")
+        """Bond defaults to empty bond_order."""
+        bond = Bond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.54, env_id="C3-C3")
         assert bond.bond_order == ""
 
     def test_match_bond_uses_detected_bond_fields(self) -> None:
-        """match_bond correctly uses bond_order and length from DetectedBond."""
+        """match_bond correctly uses bond_order and length from Bond."""
         ff = ForceField(
             bonds=[
                 BondParam(("C", "C"), 1.48, 300.0, env_id="C2-C2", bond_order="-", label="single"),
                 BondParam(("C", "C"), 1.332, 500.0, env_id="C2-C2", bond_order="=", label="double"),
             ],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        bond = DetectedBond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.35, env_id="C2-C2", bond_order="=")
+        bond = Bond(atom_i=0, atom_j=1, elements=("C", "C"), length=1.35, env_id="C2-C2", bond_order="=")
         result = ff.match_bond(
             bond.elements,
             env_id=bond.env_id,
@@ -1614,7 +1722,7 @@ class TestV2TorsionPhase:
 
     def test_mm3_fld_v2_phase_180(self) -> None:
         """load_mm3_fld sets phase=180° for periodicity=2 torsions."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         v2_torsions = [t for t in ff.torsions if t.periodicity == 2 and not t.is_improper]
         assert len(v2_torsions) > 0, "Expected V2 torsions in Rh-enamide mm3.fld"
         for t in v2_torsions:
@@ -1622,7 +1730,7 @@ class TestV2TorsionPhase:
 
     def test_mm3_fld_v1_v3_phase_0(self) -> None:
         """load_mm3_fld sets phase=0° for V1 and V3 torsions."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         v1_torsions = [t for t in ff.torsions if t.periodicity == 1 and not t.is_improper]
         v3_torsions = [t for t in ff.torsions if t.periodicity == 3 and not t.is_improper]
         assert len(v1_torsions) > 0
@@ -1634,7 +1742,7 @@ class TestV2TorsionPhase:
 
     def test_improper_v2_phase_180(self) -> None:
         """Improper torsions with periodicity=2 also get phase=180°."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         imp_v2 = [t for t in ff.torsions if t.periodicity == 2 and t.is_improper]
         for t in imp_v2:
             assert t.phase == pytest.approx(180.0), f"Improper V2 {t.label} has phase={t.phase}, expected 180.0"
@@ -1661,7 +1769,7 @@ class TestV2TorsionPhase:
 
     def test_v2_count_in_rh_enamide(self) -> None:
         """Rh-enamide .fld should have multiple V2 torsions with significant k."""
-        ff = ForceField.from_mm3_fld(RH_MM3)
+        ff = load_mm3_fld(RH_MM3)
         v2_proper = [t for t in ff.torsions if t.periodicity == 2 and not t.is_improper]
         # k stores V2/2 (MM3 convention). V2=16.25 → k=8.125; threshold at k>2.5 (V2>5).
         large_v2 = [t for t in v2_proper if abs(t.force_constant) > 2.5]
@@ -1709,7 +1817,7 @@ UPSTREAM_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "upstream_q2mm.
 
 class TestAmberFrcmod:
     def test_load_bonds(self) -> None:
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.bonds) == 3
         assert ff.source_format == "amber_frcmod"
         b = ff.get_bond("C", "P")
@@ -1718,35 +1826,35 @@ class TestAmberFrcmod:
         assert b.equilibrium == pytest.approx(1.7631)
 
     def test_load_angles(self) -> None:
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.angles) == 7
 
     def test_load_dihedrals(self) -> None:
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.proper_torsions) == 8
 
     def test_load_impropers(self) -> None:
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.improper_torsions) == 3
         assert ff.improper_torsions[0].force_constant == pytest.approx(10.5)
         assert all(t.is_improper for t in ff.improper_torsions)
         assert all(not t.is_improper for t in ff.proper_torsions)
 
     def test_load_vdw(self) -> None:
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.vdws) == 1
         assert ff.vdws[0].atom_type == "c4"
 
     def test_element_from_mass_section(self) -> None:
         """MASS section should inform element identification."""
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         # c4 has mass 12.010 → element C
         b = ff.bonds[0]
         assert all(e == "C" for e in b.elements)
 
     def test_standalone_roundtrip(self, tmp_path: Path) -> None:
         """Standalone save → reload should preserve all values."""
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         # Clear source info to force standalone mode
         ff_clean = ForceField(
             name=ff.name,
@@ -1754,10 +1862,11 @@ class TestAmberFrcmod:
             angles=ff.angles,
             torsions=ff.torsions,
             vdws=ff.vdws,
+            functional_form=FunctionalForm.HARMONIC,
         )
         out = tmp_path / "standalone.frcmod"
-        ff_clean.to_amber_frcmod(out)
-        rt = ForceField.from_amber_frcmod(out)
+        save_amber_frcmod(ff_clean, out)
+        rt = load_amber_frcmod(out)
 
         assert len(rt.bonds) == len(ff.bonds)
         assert len(rt.angles) == len(ff.angles)
@@ -1773,13 +1882,12 @@ class TestAmberFrcmod:
 
     def test_template_roundtrip(self, tmp_path: Path) -> None:
         """Template-based save should update values in-place."""
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
-        ff.bonds[0].force_constant = 999.0
-        ff.bonds[0].equilibrium = 1.234
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
+        ff = replace(ff, bonds=(replace(ff.bonds[0], force_constant=999.0, equilibrium=1.234), *ff.bonds[1:]))
 
         out = tmp_path / "updated.frcmod"
-        ff.to_amber_frcmod(out)
-        rt = ForceField.from_amber_frcmod(out)
+        save_amber_frcmod(ff, out)
+        rt = load_amber_frcmod(out)
 
         assert rt.bonds[0].force_constant == pytest.approx(999.0)
         assert rt.bonds[0].equilibrium == pytest.approx(1.234)
@@ -1788,9 +1896,9 @@ class TestAmberFrcmod:
 
     def test_template_preserves_comments(self, tmp_path: Path) -> None:
         """Template mode should preserve the remark line."""
-        ff = ForceField.from_amber_frcmod(SAMPLE_FRCMOD)
+        ff = load_amber_frcmod(SAMPLE_FRCMOD)
         out = tmp_path / "preserved.frcmod"
-        ff.to_amber_frcmod(out)
+        save_amber_frcmod(ff, out)
         content = out.read_text()
         assert content.startswith("Remark line goes here")
 
@@ -1809,11 +1917,11 @@ class TestAmberFrcmod:
             "\n",
             encoding="utf-8",
         )
-        ff = ForceField.from_amber_frcmod(frcmod_with_comments)
-        ff.bonds[0].force_constant = 400.0
-        ff.angles[0].force_constant = 60.0
+        ff = load_amber_frcmod(frcmod_with_comments)
+        ff = replace(ff, bonds=(replace(ff.bonds[0], force_constant=400.0), *ff.bonds[1:]))
+        ff = replace(ff, angles=(replace(ff.angles[0], force_constant=60.0), *ff.angles[1:]))
         out = tmp_path / "updated.frcmod"
-        ff.to_amber_frcmod(out)
+        save_amber_frcmod(ff, out)
         content = out.read_text()
         assert "ATTN, need revision" in content
         assert "# penalty score" in content
@@ -1822,7 +1930,7 @@ class TestAmberFrcmod:
 
     def test_upstream_frcmod_irregular_spacing(self) -> None:
         """Parser should handle upstream Q2MM frcmod with irregular spacing."""
-        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ff = load_amber_frcmod(UPSTREAM_FRCMOD)
         assert len(ff.bonds) == 3
         assert len(ff.angles) == 10
         proper = [t for t in ff.torsions if "(improper)" not in t.label]
@@ -1833,28 +1941,29 @@ class TestAmberFrcmod:
 
     def test_upstream_idivf_division(self) -> None:
         """IDIVF=4 should divide barrier by 4."""
-        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ff = load_amber_frcmod(UPSTREAM_FRCMOD)
         ca_tor = next(t for t in ff.torsions if t.env_id == "ca-ca-ce-c")
         assert ca_tor.force_constant == pytest.approx(0.7)
 
     def test_upstream_comment_lines_skipped(self) -> None:
         """Lines starting with # should be skipped."""
-        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ff = load_amber_frcmod(UPSTREAM_FRCMOD)
         assert ff.source_format == "amber_frcmod"
 
     def test_upstream_roundtrip(self, tmp_path: Path) -> None:
         """Upstream frcmod should round-trip through standalone save."""
-        ff = ForceField.from_amber_frcmod(UPSTREAM_FRCMOD)
+        ff = load_amber_frcmod(UPSTREAM_FRCMOD)
         ff_clean = ForceField(
             name=ff.name,
             bonds=ff.bonds,
             angles=ff.angles,
             torsions=ff.torsions,
             vdws=ff.vdws,
+            functional_form=FunctionalForm.HARMONIC,
         )
         out = tmp_path / "upstream_rt.frcmod"
-        ff_clean.to_amber_frcmod(out)
-        rt = ForceField.from_amber_frcmod(out)
+        save_amber_frcmod(ff_clean, out)
+        rt = load_amber_frcmod(out)
 
         assert len(rt.bonds) == len(ff.bonds)
         for orig, new in zip(ff.bonds, rt.bonds):
@@ -1868,50 +1977,53 @@ class TestAmberFrcmod:
 
 class TestSeminario:
     @pytest.fixture
-    def ch3f_mol_with_hess(self) -> Q2MMMolecule:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+    def ch3f_mol_with_hess(self) -> Molecule:
+        mol = load_xyz(CH3F_XYZ)
         hess = np.load(CH3F_HESS)
         return mol.with_hessian(hess)
 
     @pytest.fixture
-    def ts_mol_with_hess(self) -> Q2MMMolecule:
-        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
+    def ts_mol_with_hess(self) -> Molecule:
+        mol = load_xyz(TS_XYZ, bond_tolerance=1.5)
         hess = np.load(TS_HESS)
         return mol.with_hessian(hess)
 
-    def test_estimate_runs(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        ff = qfuerza_fresh(ch3f_mol_with_hess)
+    def test_estimate_runs(self, ch3f_mol_with_hess: Molecule) -> None:
+        ff = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC)
         assert len(ff.bonds) > 0
         assert len(ff.angles) > 0
 
-    def test_fc_values_positive_ground_state(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        ff = qfuerza_fresh(ch3f_mol_with_hess)
+    def test_fc_values_positive_ground_state(self, ch3f_mol_with_hess: Molecule) -> None:
+        ff = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC)
         for b in ff.bonds:
             assert b.force_constant > 0, f"Bond {b.key} has non-positive FC"
 
-    def test_negative_fc_included_for_ts(self, ts_mol_with_hess: Q2MMMolecule) -> None:
+    def test_negative_fc_included_for_ts(self, ts_mol_with_hess: Molecule) -> None:
         """Negative FCs from TS reaction coordinates should be included, not dropped."""
-        ff = qfuerza_fresh(ts_mol_with_hess)
+        ff = qfuerza_fresh(ts_mol_with_hess, functional_form=FunctionalForm.HARMONIC)
         bond_fcs = [b.force_constant for b in ff.bonds]
         # The C-F bond in the TS is partially breaking — may have negative FC
         # At minimum, verify the estimation completes and produces values
         assert len(bond_fcs) > 0
 
-    def test_respects_frozen_params(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
-        ff = ForceField.create_for_molecule(ch3f_mol_with_hess)
-        ff.bonds[0].force_constant = 123.0
-        ff.bonds[0].equilibrium = 9.9
-        ff.bonds[0].frozen = True
-        ff.angles[0].force_constant = 456.0
-        ff.angles[0].equilibrium = 150.0
-        ff.angles[0].frozen = True
-        ff.torsions = [
-            TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=7.0, frozen=True),
-            TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=8.0),
-        ]
-
-        estimated = ff.copy()
-        qfuerza_into(estimated, ch3f_mol_with_hess)
+    def test_respects_frozen_params(self, ch3f_mol_with_hess: Molecule) -> None:
+        ff = ForceField.create_for_molecule(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC)
+        ff = replace(
+            ff,
+            bonds=(replace(ff.bonds[0], force_constant=123.0, equilibrium=9.9), *ff.bonds[1:]),
+            angles=(replace(ff.angles[0], force_constant=456.0, equilibrium=150.0), *ff.angles[1:]),
+            torsions=(
+                TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=7.0),
+                TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=8.0),
+            ),
+        )
+        estimated = qfuerza_into(
+            ff,
+            ch3f_mol_with_hess,
+            active_bonds=frozenset(),
+            active_angles=frozenset(),
+            active_torsions=frozenset({1}),
+        )
 
         assert estimated.bonds[0].force_constant == pytest.approx(123.0)
         assert estimated.bonds[0].equilibrium == pytest.approx(9.9)
@@ -1921,22 +2033,42 @@ class TestSeminario:
         assert estimated.torsions[1].force_constant == pytest.approx(0.0)
 
     def test_raises_without_hessian(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="Hessian"):
-            qfuerza_fresh(mol)
+            qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC)
+
+    def test_requires_explicit_functional_form(self, ch3f_mol_with_hess: Molecule) -> None:
+        """``qfuerza_fresh`` must reject an omitted ``functional_form``.
+
+        Regression guard: the old implementation silently hardcoded
+        ``FunctionalForm.HARMONIC`` internally, which OpenMM's own
+        (now-removed) ``functional_form or FunctionalForm.MM3`` fallback
+        then silently reinterpreted as MM3 — two different backends
+        disagreeing about the same unset field. There is no
+        scientifically correct default across engines, so the caller
+        must always decide.
+        """
+        with pytest.raises(TypeError, match="functional_form"):
+            qfuerza_fresh(ch3f_mol_with_hess)  # type: ignore[call-arg]
+
+    @pytest.mark.parametrize("form", [FunctionalForm.HARMONIC, FunctionalForm.MM3])
+    def test_preserves_requested_functional_form(self, ch3f_mol_with_hess: Molecule, form: FunctionalForm) -> None:
+        """The returned force field is tagged with exactly the caller-requested form."""
+        ff = qfuerza_fresh(ch3f_mol_with_hess, functional_form=form)
+        assert ff.functional_form is form
 
 
 class TestQFUERZA:
     """Tests for QFUERZA hybrid initialization (issue #208)."""
 
     @pytest.fixture
-    def ch3f_mol_with_hess(self) -> Q2MMMolecule:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+    def ch3f_mol_with_hess(self) -> Molecule:
+        mol = load_xyz(CH3F_XYZ)
         hess = np.load(CH3F_HESS)
         return mol.with_hessian(hess)
 
     @pytest.fixture
-    def water_mol_with_hess(self) -> Q2MMMolecule:
+    def water_mol_with_hess(self) -> Molecule:
         from test._shared import make_water
 
         mol = make_water()
@@ -1965,10 +2097,10 @@ class TestQFUERZA:
 
     # -- strategy="fuerza" determinism --
 
-    def test_fuerza_strategy_deterministic(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_fuerza_strategy_deterministic(self, ch3f_mol_with_hess: Molecule) -> None:
         """strategy='fuerza' is deterministic across repeated calls."""
-        ff_first = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
-        ff_second = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
+        ff_first = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
+        ff_second = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
 
         assert len(ff_first.bonds) == len(ff_second.bonds)
         for b1, b2 in zip(ff_first.bonds, ff_second.bonds):
@@ -1977,10 +2109,10 @@ class TestQFUERZA:
         for a1, a2 in zip(ff_first.angles, ff_second.angles):
             assert a1.force_constant == pytest.approx(a2.force_constant)
 
-    def test_default_is_qfuerza(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_default_is_qfuerza(self, ch3f_mol_with_hess: Molecule) -> None:
         """Default strategy is QFUERZA."""
-        ff_default = qfuerza_fresh(ch3f_mol_with_hess)
-        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_default = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC)
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
 
         assert len(ff_default.bonds) == len(ff_qfuerza.bonds)
         for b_def, b_qf in zip(ff_default.bonds, ff_qfuerza.bonds):
@@ -1991,18 +2123,18 @@ class TestQFUERZA:
 
     # -- strategy="qfuerza" substitution --
 
-    def test_qfuerza_substitutes_h_angles(self, water_mol_with_hess: Q2MMMolecule) -> None:
+    def test_qfuerza_substitutes_h_angles(self, water_mol_with_hess: Molecule) -> None:
         """QFUERZA replaces the H-O-H angle force constant with the empirical default."""
-        ff = qfuerza_fresh(water_mol_with_hess, strategy="qfuerza")
+        ff = qfuerza_fresh(water_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
         h_angles = [a for a in ff.angles if _is_hydrogen_angle(a.elements)]
         assert len(h_angles) > 0, "Expected at least one H-angle in water"
         for angle in h_angles:
             assert angle.force_constant == pytest.approx(QFUERZA_H_ANGLE_DEFAULT_CANONICAL)
 
-    def test_qfuerza_keeps_bonds_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_qfuerza_keeps_bonds_unchanged(self, ch3f_mol_with_hess: Molecule) -> None:
         """QFUERZA does not alter bond force constants."""
-        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
-        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
 
         for b_fur, b_qf in zip(ff_fuerza.bonds, ff_qfuerza.bonds):
             assert b_fur.force_constant == pytest.approx(b_qf.force_constant)
@@ -2010,12 +2142,12 @@ class TestQFUERZA:
     def test_qfuerza_does_not_substitute_non_h_angles(self) -> None:
         """Non-hydrogen angles are not substituted by QFUERZA."""
         # Use SN2 TS which has F-C-Cl (non-H) angles
-        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
+        mol = load_xyz(TS_XYZ, bond_tolerance=1.5)
         hess = np.load(TS_HESS)
         mol = mol.with_hessian(hess)
 
-        ff_fuerza = qfuerza_fresh(mol, strategy="fuerza")
-        ff_qfuerza = qfuerza_fresh(mol, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(mol, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
 
         non_h_angles = [
             (a_fur, a_qf)
@@ -2026,9 +2158,9 @@ class TestQFUERZA:
         for a_fur, a_qf in non_h_angles:
             assert a_fur.force_constant == pytest.approx(a_qf.force_constant)
 
-    def test_qfuerza_ch3f_all_h_angles_substituted(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_qfuerza_ch3f_all_h_angles_substituted(self, ch3f_mol_with_hess: Molecule) -> None:
         """CH₃F has H-C-F and H-C-H angles — all have H outer atoms."""
-        ff = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
+        ff = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
 
         for angle in ff.angles:
             if _is_hydrogen_angle(angle.elements):
@@ -2036,10 +2168,10 @@ class TestQFUERZA:
                     f"H-angle {angle.key} was not substituted"
                 )
 
-    def test_qfuerza_equilibria_unchanged(self, ch3f_mol_with_hess: Q2MMMolecule) -> None:
+    def test_qfuerza_equilibria_unchanged(self, ch3f_mol_with_hess: Molecule) -> None:
         """QFUERZA only changes force constants, not equilibrium values."""
-        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="fuerza")
-        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, strategy="qfuerza")
+        ff_fuerza = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
+        ff_qfuerza = qfuerza_fresh(ch3f_mol_with_hess, functional_form=FunctionalForm.HARMONIC, strategy="qfuerza")
 
         for a_fur, a_qf in zip(ff_fuerza.angles, ff_qfuerza.angles):
             assert a_fur.equilibrium == pytest.approx(a_qf.equilibrium)
@@ -2095,146 +2227,86 @@ class TestSaverFormValidation:
         result = save_amber_frcmod(harmonic_ff, tmp_path / "out.frcmod")
         assert result.exists()
 
-    def test_save_with_none_form_always_allowed(self, tmp_path: Path) -> None:
-        """ForceField with functional_form=None is allowed everywhere (backward compat)."""
-        from q2mm.io.amber import save_amber_frcmod
 
-        ff = ForceField(
+class TestFunctionalFormIsRequired:
+    """``functional_form`` has no implicit default — every ForceField must state it explicitly."""
+
+    def test_forcefield_requires_functional_form(self) -> None:
+        """Omitting ``functional_form`` entirely must raise, not silently default."""
+        with pytest.raises(TypeError, match="functional_form"):
+            ForceField(bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)])  # type: ignore[call-arg]
+
+    def test_forcefield_functional_form_is_keyword_only(self) -> None:
+        """``functional_form`` must be passed by keyword, not positionally."""
+        with pytest.raises(TypeError):
+            ForceField("name", (), (), (), (), (), (), None, None, FunctionalForm.HARMONIC)  # type: ignore[misc]
+
+    def test_create_for_molecule_requires_functional_form(self) -> None:
+        """``create_for_molecule`` must also require an explicit functional_form."""
+        mol = load_xyz(CH3F_XYZ)
+        with pytest.raises(TypeError, match="functional_form"):
+            ForceField.create_for_molecule(mol)  # type: ignore[call-arg]
+
+    def test_wrong_form_type_rejected_by_engine(self) -> None:
+        """An engine must reject an unsupported functional form rather than silently accept it.
+
+        Regression guard for the removed ``functional_form or FunctionalForm.MM3``
+        (and similar) None-inference fallbacks: engines must now always
+        validate the *actual*, always-explicit form against what they support.
+        """
+        from q2mm.backends.mm.tinker import TinkerEngine
+
+        harmonic_ff = ForceField(
             bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        assert ff.functional_form is None
-        result = save_amber_frcmod(ff, tmp_path / "out.frcmod")
-        assert result.exists()
+        engine = TinkerEngine()
+        if not engine.is_available():
+            pytest.skip("Tinker not installed")
+        mol = load_xyz(CH3F_XYZ)
+        with pytest.raises(ValueError, match="does not support functional form"):
+            engine.energy(mol, harmonic_ff)
 
 
 class TestFrozenParamInvariant:
-    """Frozen params raise FrozenParamError when value fields are mutated.
-
-    The invariant exists to prevent silent overwriting of literature /
-    held-fixed parameter values (the q2mm#277 bug).  See the docstring
-    of :class:`q2mm.models.forcefield.FrozenParamError` for the user
-    workflow (``.unfreeze()`` to opt in to the override).
-    """
-
-    def test_setting_value_on_frozen_bond_raises(self) -> None:
-        from q2mm.models.forcefield import BondParam, FrozenParamError
-
-        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
-        with pytest.raises(FrozenParamError, match="BondParam.force_constant"):
-            b.force_constant = 500.0
-        with pytest.raises(FrozenParamError, match="BondParam.equilibrium"):
-            b.equilibrium = 1.5
-
-    def test_setting_value_on_frozen_angle_raises(self) -> None:
-        from q2mm.models.forcefield import AngleParam, FrozenParamError
-
-        a = AngleParam(("H", "C", "F"), 109.5, 50.0, frozen=True)
-        with pytest.raises(FrozenParamError, match="AngleParam.force_constant"):
-            a.force_constant = 80.0
-        with pytest.raises(FrozenParamError, match="AngleParam.ub_force_constant"):
-            a.ub_force_constant = 10.0
-
-    def test_setting_value_on_frozen_torsion_raises(self) -> None:
-        from q2mm.models.forcefield import FrozenParamError, TorsionParam
-
-        t = TorsionParam(("H", "C", "C", "H"), periodicity=3, force_constant=0.16, frozen=True)
-        with pytest.raises(FrozenParamError, match="TorsionParam.force_constant"):
-            t.force_constant = 0.5
-
-    def test_setting_value_on_frozen_vdw_raises(self) -> None:
-        from q2mm.models.forcefield import FrozenParamError, VdwParam
-
-        v = VdwParam("C1", 1.96, 0.044, frozen=True)
-        with pytest.raises(FrozenParamError, match="VdwParam.radius"):
-            v.radius = 2.0
-
-    def test_setting_value_on_frozen_stretch_bend_raises(self) -> None:
-        from q2mm.models.forcefield import FrozenParamError, StretchBendParam
-
-        sb = StretchBendParam(("H", "C", "F"), force_constant=0.75, frozen=True)
-        with pytest.raises(FrozenParamError, match="StretchBendParam.force_constant"):
-            sb.force_constant = 1.0
-
-    def test_setting_value_on_unfrozen_param_works(self) -> None:
-        from q2mm.models.forcefield import BondParam
-
-        b = BondParam(("C", "F"), 1.38, 359.7, frozen=False)
-        b.force_constant = 500.0
-        assert b.force_constant == 500.0
-
-    def test_freeze_unfreeze_methods_toggle_invariant(self) -> None:
-        from q2mm.models.forcefield import BondParam, FrozenParamError
-
-        b = BondParam(("C", "F"), 1.38, 359.7)
-        assert not b.frozen
-
-        b.freeze()
-        assert b.frozen
-        with pytest.raises(FrozenParamError):
-            b.force_constant = 999.0
-
-        b.unfreeze()
-        assert not b.frozen
-        b.force_constant = 999.0
-        assert b.force_constant == 999.0
-
-    def test_construction_with_frozen_true_assigns_initial_values(self) -> None:
-        """Bypass the guard during __init__ so ``frozen=True`` constructs work."""
-        from q2mm.models.forcefield import BondParam
-
-        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
-        assert b.frozen
-        assert b.force_constant == 359.7
-        assert b.equilibrium == 1.38
-
-    def test_assigning_frozen_directly_is_not_guarded(self) -> None:
-        """``frozen`` itself is not a value field; direct assignment works.
-
-        This is the documented escape hatch for code that prefers
-        ``param.frozen = False`` over ``param.unfreeze()``.
-        """
-        from q2mm.models.forcefield import BondParam
-
-        b = BondParam(("C", "F"), 1.38, 359.7, frozen=True)
-        b.frozen = False
-        b.force_constant = 999.0
-        assert b.force_constant == 999.0
-
-    def test_qfuerza_into_does_not_overwrite_frozen_opt_block(self) -> None:
+    def test_qfuerza_into_does_not_overwrite_inactive_bond(self) -> None:
         """Regression for the q2mm#277 pattern at the unit level.
 
-        ``qfuerza_into(ff, molecules)`` must not overwrite the values
-        of any frozen param.  The Heck-relay loader bug fell out of
-        this contract being silently violated; now both the
-        skip-frozen shortcut in seminario.py and the FrozenParamError
-        guard back it up.
+        ``qfuerza_into(ff, molecules, active_bonds=frozenset())`` must not
+        overwrite the values of any bond outside the active set. The
+        Heck-relay loader bug fell out of this contract being silently
+        violated (previously enforced by a mutable frozen-flag guard; now
+        enforced by qfuerza_into only touching indices the caller marks
+        active).
         """
-        import numpy as np
-
-        from q2mm.models.forcefield import BondParam, ForceField
-        from q2mm.models.molecule import Q2MMMolecule
-        from q2mm.models.seminario import qfuerza_into
-
-        # Build a tiny FF whose only bond is frozen at a marker value.
         marker_k = 12345.67
-        ff = ForceField(
-            bonds=[BondParam(("C", "F"), 1.38, marker_k, frozen=True)],
-        )
+        ff = ForceField(bonds=(BondParam(("C", "F"), 1.38, marker_k),), functional_form=FunctionalForm.HARMONIC)
 
-        # Minimal two-atom molecule with a dummy Hessian — Seminario's
-        # bond loop will iterate ff.bonds; the skip-frozen branch must
-        # bypass it without touching the value.
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["C", "F"],
             geometry=np.array([[0.0, 0.0, 0.0], [1.38, 0.0, 0.0]]),
             bond_tolerance=1.5,
             hessian=np.eye(6),
         )
 
-        qfuerza_into(ff, mol)
-        assert ff.bonds[0].force_constant == marker_k, (
-            "Frozen bond force constant was silently overwritten by qfuerza_into — this is the q2mm#277 bug pattern."
+        result_ff = qfuerza_into(ff, mol, active_bonds=frozenset())
+        assert result_ff.bonds[0].force_constant == marker_k, (
+            "Bond force constant outside the active set was overwritten by "
+            "qfuerza_into — this is the q2mm#277 bug pattern."
         )
+
+    def test_qfuerza_into_overwrites_active_bond(self) -> None:
+        marker_k = 12345.67
+        ff = ForceField(bonds=(BondParam(("C", "F"), 1.38, marker_k),), functional_form=FunctionalForm.HARMONIC)
+        mol = Molecule(
+            symbols=["C", "F"],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.38, 0.0, 0.0]]),
+            bond_tolerance=1.5,
+            hessian=np.eye(6),
+        )
+
+        result_ff = qfuerza_into(ff, mol, active_bonds=frozenset({0}))
+        assert result_ff.bonds[0].force_constant != pytest.approx(marker_k)
 
 
 # ---------------------------------------------------------------------------
@@ -2309,39 +2381,24 @@ class TestStructureElementResolution:
     """F7: element resolution must trust ``atom.element``, not the type label."""
 
     def test_two_letter_carbon_type_is_not_mislabeled(self) -> None:
-        """A carbon atom typed ``CO``/``CA`` resolves to C, not cobalt/calcium."""
-        from q2mm.models.structure import Atom, Structure
-
-        struct = Structure("test")
-        # "CO" is a carbonyl carbon *type* whose element is carbon (atomic_num 6).
-        struct.atoms.append(Atom(atom_type_name="CO", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
-        # A genuine cobalt atom (atomic_num 27) must still resolve to "Co".
-        struct.atoms.append(Atom(atom_type_name="Co", atomic_num=27, index=2, coords=[1.9, 0.0, 0.0]))
-
-        mol = Q2MMMolecule.from_structure(struct)
-        assert mol.symbols == ["C", "Co"]
-        # The type label is preserved separately from the element.
+        """The canonical Molecule model keeps element symbols separate from type labels."""
+        mol = Molecule(
+            symbols=["C", "Co"],
+            atom_types=["CO", "Co"],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.9, 0.0, 0.0]]),
+        )
+        assert mol.symbols == ("C", "Co")
         assert mol.atom_types[0] == "CO"
 
     def test_dummy_atom_without_element_does_not_crash_import(self) -> None:
-        """A dummy atom (no type name, no valid atomic_num) imports safely.
-
-        ``Atom.element`` raises ``ValueError`` for such atoms; the label and
-        env-id construction in ``from_structure`` must fall back to an empty
-        label rather than propagating that error and aborting the load.
-        """
-        from q2mm.models.structure import Atom, Bond, Structure
-
-        struct = Structure("test")
-        # Atom 1 is a real carbon; atom 2 is a dummy with no derivable element.
-        struct.atoms.append(Atom(atom_type_name="C3", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
-        struct.atoms.append(Atom(index=2, coords=[1.5, 0.0, 0.0]))
-        struct.bonds.append(Bond(atom_nums=[1, 2], value=1.5))
-
-        # Must not raise despite the dummy atom's element being underivable.
-        mol = Q2MMMolecule.from_structure(struct)
+        """The canonical Molecule model can carry an empty dummy-element placeholder safely."""
+        mol = Molecule(
+            symbols=["C", ""],
+            atom_types=["C3", ""],
+            geometry=np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]]),
+            bonds=(Bond(atom_i=0, atom_j=1, elements=("C", ""), length=1.5),),
+        )
         assert mol.symbols[0] == "C"
-        # The dummy atom resolves to an empty element rather than crashing.
         assert mol.symbols[1] == ""
 
 
@@ -2364,65 +2421,27 @@ class TestMm3VdwOptLineTolerated:
         assert ff is not None
 
 
-class TestStructureFormatCoords:
-    """F10: format_coords uses ``atom.element`` directly (dead None-fallback removed)."""
-
-    def test_all_formats_render_element(self) -> None:
-        from q2mm.models.structure import Atom, Structure
-
-        struct = Structure("test")
-        struct.atoms.append(Atom(atom_type_name="C3", atomic_num=6, index=1, coords=[0.0, 0.0, 0.0]))
-        struct.atoms.append(Atom(atom_type_name="O", atomic_num=8, index=2, coords=[1.0, 0.0, 0.0]))
-
-        latex = struct.format_coords("latex")
-        assert latex[1].startswith("C1 &")
-        assert latex[2].startswith("O2 &")
-
-        gauss = struct.format_coords("gauss")
-        assert gauss[0].split()[0] == "C"
-        assert gauss[1].split()[0] == "O"
-
-        jaguar = struct.format_coords("jaguar")
-        assert jaguar[0].split()[0] == "C1"
-        assert jaguar[1].split()[0] == "O2"
-
-
 class TestMoleculeWithHessianCarriesTorsions:
     """F11: ``with_hessian`` must preserve cached torsion / improper metadata."""
 
     def test_torsion_metadata_survives(self) -> None:
-        from q2mm.models.molecule import DetectedTorsion
-
-        mol = make_ethane()
-        # Attach explicit torsion metadata carrying a distinctive ff_row.
-        mol._torsions = [
-            DetectedTorsion(
-                atom_i=0,
-                atom_j=1,
-                atom_k=2,
-                atom_l=3,
-                elements=("H", "C", "C", "H"),
-                value=60.0,
-                ff_row=4242,
-            )
-        ]
-        mol._improper_torsions = [
-            DetectedTorsion(
-                atom_i=0,
-                atom_j=1,
-                atom_k=2,
-                atom_l=3,
-                elements=("C", "C", "C", "H"),
-                value=0.0,
-                ff_row=99,
-            )
-        ]
+        base = make_ethane()
+        explicit_torsion = replace(base.torsions[0], ff_row=4242)
+        mol = Molecule(
+            symbols=base.symbols,
+            geometry=base.geometry,
+            atom_types=base.atom_types,
+            charge=base.charge,
+            multiplicity=base.multiplicity,
+            name=base.name,
+            bond_tolerance=base.bond_tolerance,
+            bonds=base.bonds,
+            angles=base.angles,
+            torsions=(explicit_torsion,),
+        )
 
         new = mol.with_hessian(np.eye(3 * mol.n_atoms))
 
-        assert new._torsions is not None
+        assert new is not mol
         assert new.torsions[0].ff_row == 4242
-        assert new._improper_torsions is not None
-        assert new.improper_torsions[0].ff_row == 99
-        # Deep-copied, not aliased to the source lists.
-        assert new._torsions is not mol._torsions
+        assert new.improper_torsions == mol.improper_torsions

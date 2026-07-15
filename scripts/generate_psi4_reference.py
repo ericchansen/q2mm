@@ -40,7 +40,6 @@ from q2mm.constants import (
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
-from q2mm.models.molecule import Q2MMMolecule
 from q2mm.io import JaguarIn, MacroModel
 
 RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
@@ -71,7 +70,8 @@ def main() -> None:
         JAG_DIR.glob("*.in"),
         key=lambda p: [int(s) if s.isdigit() else s for s in re.split(r"(\d+)", p.stem)],
     )
-    n_mm_structures = len(mm.structures)
+    base_molecules = mm.molecules
+    n_mm_structures = len(base_molecules)
     n_jag_files = len(jag_files)
     expected_n = 9
     if not (n_mm_structures == n_jag_files == expected_n):
@@ -89,16 +89,16 @@ def main() -> None:
 
     # Psi4 memory is configured via Psi4Engine constructor; threads via n_threads=16.
 
-    for i, (struct, jag_path) in enumerate(zip(mm.structures, jag_files)):
+    for i, (base_mol, jag_path) in enumerate(zip(base_molecules, jag_files)):
         label = jag_path.stem
         print(f"\n{'=' * 60}")
-        print(f"[{i + 1}/9] {label} ({len(struct.atoms)} atoms)")
+        print(f"[{i + 1}/9] {label} ({base_mol.n_atoms} atoms)")
         print(f"{'=' * 60}")
 
         # Load Jaguar reference
         jag = JaguarIn(str(jag_path))
-        jag_hessian = jag.get_hessian(len(struct.atoms))
-        mol = Q2MMMolecule.from_structure(struct, hessian=jag_hessian)
+        mol = jag.attach_hessian(base_mol)
+        jag_hessian = mol.hessian
 
         # Compute Psi4 Hessian at B3LYP/def2-SVP (charge=+1 for cationic Rh complex)
         structure = (list(mol.symbols), mol.geometry)

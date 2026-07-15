@@ -7,7 +7,7 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
   3. OpenMM and Tinker backends produce the same optimized FF
   4. The objective function's scoring formula is correct
   5. Round-trip recovery of known parameters
-  6. Parameter vector roundtrip (get→set→get identity)
+  6. Parameter vector roundtrip via ParameterLayout.replace()
   7. Atom-identity matching for bond/angle references
   8. Optimization determinism (same inputs → same outputs)
   9. Parameter vector length validation
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -29,10 +30,14 @@ from test._shared import CH3F_HESS, CH3F_XYZ, make_water
 
 from q2mm.backends.base import MMEngine
 from q2mm.backends.mm.openmm import OpenMMEngine
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData, ReferenceValue
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -42,14 +47,12 @@ _TINKER_DIR = Path(os.environ.get("TINKER_DIR", "")) if os.environ.get("TINKER_D
 _TINKER_PRM = Path(os.environ.get("TINKER_PRM", "")) if os.environ.get("TINKER_PRM") else None
 
 if _TINKER_DIR is None or _TINKER_PRM is None:
-    # Auto-detect from TinkerEngine's built-in search
     from q2mm.backends.mm.tinker import _find_tinker_dir
 
     _auto_dir = _find_tinker_dir()
     if _auto_dir and _TINKER_DIR is None:
         _TINKER_DIR = Path(_auto_dir)
     if _TINKER_DIR and _TINKER_PRM is None:
-        # Look for mm3.prm relative to bin dir (../params/mm3.prm)
         _candidate = _TINKER_DIR.parent / "params" / "mm3.prm"
         if _candidate.exists():
             _TINKER_PRM = _candidate
@@ -67,50 +70,78 @@ def _tinker_engine() -> MMEngine:
 # ---- Helpers ----
 
 
-def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Q2MMMolecule:
+def _water(angle_deg: float = 104.5, bond_length: float = 0.96) -> Molecule:
     return make_water(angle_deg=angle_deg, bond_length=bond_length)
 
 
 def _water_ff(
     bond_k: float = 503.6, bond_r0: float = 0.96, angle_k: float = 57.6, angle_eq: float = 104.5
 ) -> ForceField:
+    """Build a minimal water force field.
+
+    MM3, not HARMONIC: this FF is evaluated through :class:`OpenMMEngine`
+    (harmonic + MM3 dual-mode, MM3 by default pre-Phase-2) and
+    :class:`TinkerEngine` (MM3-only) in this file's cross-engine parity
+    tests, and ``test_matches_golden_fixture`` compares against
+    ``test/fixtures/optimization_golden.json``, which was generated
+    under OpenMM's old implicit-MM3 branch. Tagging this HARMONIC would
+    silently change the physics (MM3's cubic bond-stretch/sextic
+    angle-bend corrections vs. pure quadratic) while leaving that golden
+    fixture's numbers unchanged underneath a since-shifted optimum.
+    """
     return ForceField(
         name="water-test",
-        bonds=[BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0)],
-        angles=[AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq)],
+        bonds=(BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0),),
+        angles=(AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq),),
+        functional_form=FunctionalForm.MM3,
     )
+
+
+def _ch3f_molecule() -> Molecule:
+    return load_xyz(CH3F_XYZ, bond_tolerance=1.5).with_hessian(
+        np.load(CH3F_HESS),
+        HessianProvenance(
+            units=HessianUnits.ATOMIC,
+            source="q2mm-sn2-resource",
+            path=str(Path(CH3F_HESS).resolve()),
+        ),
+    )
+
+
+def _build_objective(
+    ff: ForceField,
+    engine: MMEngine,
+    molecules: list[Molecule],
+    reference: ObservationSet,
+) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+    layout = ParameterLayout.from_force_field(ff)
+    objective = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    return objective, layout, space
 
 
 def _make_water_problem(
     engine: MMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
-) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, MMEngine]:
-    """Create a water optimization problem with known true parameters.
-
-    Returns (true_ff, guess_ff, molecules, reference_data, engine).
-    The guess FF is perturbed from the true one.
-    """
+) -> tuple[ForceField, ForceField, list[Molecule], ObservationSet, MMEngine]:
+    """Create a water optimization problem with known true parameters."""
     if engine is None:
         engine = OpenMMEngine()
     true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
-    # Multiple geometries for identifiability
     mol_eq = _water(104.5, 0.96)
     mol_wide = _water(115.0, 0.96)
     mol_long = _water(104.5, 1.05)
 
-    ref = ReferenceData()
+    ref = ObservationSet()
     for i, mol in enumerate([mol_eq, mol_wide, mol_long]):
-        ref.add_energy(engine.energy(mol, true_ff), weight=1.0, molecule_idx=i)
+        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0, case_id=str(i))
 
-    # Add frequencies from equilibrium geometry (OpenMM only — Tinker
-    # vibrate gives different mode ordering)
     openmm = OpenMMEngine()
     freqs = openmm.frequencies(mol_eq, true_ff)
     for j, f in enumerate(freqs):
-        if abs(f) > 50.0:  # skip near-zero translational/rotational
-            ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
+        if abs(f) > 50.0:
+            ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
 
-    # Perturbed starting point
     guess_ff = _water_ff(
         bond_k=true_ff.bonds[0].force_constant + perturb_k,
         bond_r0=true_ff.bonds[0].equilibrium + 0.05,
@@ -123,22 +154,18 @@ def _make_water_problem(
 
 def _make_energy_only_problem(
     engine: MMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
-) -> tuple[ForceField, ForceField, list[Q2MMMolecule], ReferenceData, MMEngine]:
-    """Water problem with energy-only references (works with any backend).
-
-    Avoids frequencies so Tinker and OpenMM get identical reference values.
-    """
+) -> tuple[ForceField, ForceField, list[Molecule], ObservationSet, MMEngine]:
+    """Water problem with energy-only references (works with any backend)."""
     if engine is None:
         engine = OpenMMEngine()
     true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     mols = [_water(104.5, 0.96), _water(115.0, 0.96), _water(104.5, 1.05), _water(95.0, 1.02)]
 
-    # Generate reference energies from the TRUE ff using OpenMM (ground truth)
     openmm = OpenMMEngine()
-    ref = ReferenceData()
+    ref = ObservationSet()
     for i, mol in enumerate(mols):
-        ref.add_energy(openmm.energy(mol, true_ff), weight=1.0, molecule_idx=i)
+        ref = ref.with_energy(openmm.energy(mol, true_ff), weight=1.0, case_id=str(i))
 
     guess_ff = _water_ff(
         bond_k=true_ff.bonds[0].force_constant + perturb_k,
@@ -157,13 +184,11 @@ class TestSeminarioOptimizePipeline:
     """Validates the full QM → Seminario → scipy optimize pipeline."""
 
     @pytest.fixture
-    def ch3f_seminario_ff(self) -> tuple[ForceField, Q2MMMolecule]:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        hess = np.load(CH3F_HESS)
-        mol_h = mol.with_hessian(hess)
-        return qfuerza_fresh(mol_h), mol
+    def ch3f_seminario_ff(self) -> tuple[ForceField, Molecule]:
+        mol = _ch3f_molecule()
+        return qfuerza_fresh(mol, functional_form=FunctionalForm.MM3), mol
 
-    def test_seminario_ff_can_evaluate(self, ch3f_seminario_ff: tuple[ForceField, Q2MMMolecule]) -> None:
+    def test_seminario_ff_can_evaluate(self, ch3f_seminario_ff: tuple[ForceField, Molecule]) -> None:
         """Seminario-derived FF can compute energy via OpenMM."""
         ff, mol = ch3f_seminario_ff
         engine = OpenMMEngine()
@@ -172,31 +197,29 @@ class TestSeminarioOptimizePipeline:
         assert np.isfinite(energy)
 
     @pytest.mark.integration
-    def test_optimize_improves_seminario_ff(self, ch3f_seminario_ff: tuple[ForceField, Q2MMMolecule]) -> None:
+    def test_optimize_improves_seminario_ff(self, ch3f_seminario_ff: tuple[ForceField, Molecule]) -> None:
         """Optimizing Seminario FF against QM frequencies improves the score."""
         ff, mol = ch3f_seminario_ff
         engine = OpenMMEngine()
 
-        # Generate "QM" frequencies from a slightly different FF (the target)
-        target_ff = ff.copy()
-        for b in target_ff.bonds:
-            b.force_constant *= 1.1
-        for a in target_ff.angles:
-            a.force_constant *= 0.9
-
+        target_ff = replace(
+            ff,
+            bonds=tuple(replace(b, force_constant=b.force_constant * 1.1) for b in ff.bonds),
+            angles=tuple(replace(a, force_constant=a.force_constant * 0.9) for a in ff.angles),
+        )
         target_freqs = engine.frequencies(mol, target_ff)
 
-        ref = ReferenceData()
+        ref = ObservationSet()
         for j, f in enumerate(target_freqs):
             if abs(f) > 100.0:
-                ref.add_frequency(f, data_idx=j, weight=0.001, molecule_idx=0)
+                ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
 
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(ff, engine, [mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
-        assert result.improvement > 0.1  # at least 10% improvement
+        assert result.improvement > 0.1
 
 
 # ---- Cross-backend optimization parity (OpenMM vs Tinker) ----
@@ -206,7 +229,7 @@ class TestSeminarioOptimizePipeline:
 class TestCrossBackendOptimization:
     """Optimize the same problem with OpenMM and Tinker, compare results."""
 
-    def test_openmm_vs_tinker_energy_parity(self) -> None:  # ~0.3s — fast
+    def test_openmm_vs_tinker_energy_parity(self) -> None:
         """OpenMM and Tinker agree on energy for the same FF + geometry."""
         mol = _water()
         ff = _water_ff()
@@ -216,9 +239,6 @@ class TestCrossBackendOptimization:
         e_openmm = openmm.energy(mol, ff)
         e_tinker = tinker.energy(mol, ff)
 
-        # Both compute the same MM3 functional form — should agree closely.
-        # Small differences arise from vdW treatment and numerical precision;
-        # empirically within ~0.003 kcal/mol, we use 0.01 as tolerance.
         assert e_openmm == pytest.approx(e_tinker, abs=0.01), f"OpenMM={e_openmm:.6f} vs Tinker={e_tinker:.6f}"
 
     @pytest.mark.nightly
@@ -227,15 +247,13 @@ class TestCrossBackendOptimization:
         results = {}
         for label, engine in [("OpenMM", OpenMMEngine()), ("Tinker", _tinker_engine())]:
             true_ff, guess_ff, mols, ref, eng = _make_energy_only_problem(engine=engine)
-            obj = ObjectiveFunction(guess_ff, eng, mols, ref)
+            obj, _layout, space = _build_objective(guess_ff, eng, mols, ref)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-            results[label] = opt.optimize(obj)
+            results[label] = opt.optimize(obj, space)
 
-        # Both should achieve significant improvement
         for label, result in results.items():
             assert result.improvement > 0.3, f"{label} didn't improve enough: {result.improvement:.2%}"
 
-        # Optimized parameters should be similar (within 20%)
         p_omm = results["OpenMM"].final_params
         p_tnk = results["Tinker"].final_params
         for i, (a, b) in enumerate(zip(p_omm, p_tnk)):
@@ -256,23 +274,18 @@ class TestMultiMethodConvergence:
 
         results = {}
         for method in ["L-BFGS-B", "Nelder-Mead", "least_squares"]:
-            ff_copy = guess_ff.copy()
-            obj = ObjectiveFunction(ff_copy, engine, mols, ref)
+            obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
             opt = ScipyOptimizer(
                 method=method,
                 maxiter=300,
                 use_bounds=(method != "Nelder-Mead"),
                 verbose=False,
             )
-            results[method] = opt.optimize(obj)
+            results[method] = opt.optimize(obj, space)
 
-        # All should achieve significant improvement
         for method, result in results.items():
             assert result.improvement > 0.5, f"{method} didn't improve enough: {result.improvement:.2%}"
 
-        # Derivative-free methods (Nelder-Mead, least_squares) should
-        # reach near-zero scores. L-BFGS-B may get stuck at a slightly
-        # higher local minimum due to finite-difference gradient noise.
         for method in ["Nelder-Mead", "least_squares"]:
             assert results[method].final_score < 1.0, f"{method} score too high: {results[method].final_score:.4f}"
 
@@ -281,12 +294,7 @@ class TestMultiMethodConvergence:
 
 
 class TestScoreParity:
-    """Verify ObjectiveFunction scoring computes sum((w * diff)²).
-
-    The objective function's score is defined as:
-        score = sum( (weight_i × (calc_i - ref_i))² )
-    These tests verify that formula against hand-computed expected values.
-    """
+    """Verify ObjectiveFunction scoring computes sum((w * diff)²)."""
 
     def test_single_energy_score(self) -> None:
         """With 1 energy point, score = (w * diff)²."""
@@ -298,20 +306,16 @@ class TestScoreParity:
         offset = 0.5
         ref_energy = calc_energy + offset
 
-        ref = ReferenceData()
-        ref.add_energy(ref_energy, weight=1.0, molecule_idx=0)
-        obj = ObjectiveFunction(ff, engine, [mol], ref)
-        score = obj(ff.get_param_vector())
+        ref = ObservationSet()
+        ref = ref.with_energy(ref_energy, weight=1.0, case_id="0")
+        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        score = obj(layout.vector(ff))
 
-        # Expected: (1.0 * 0.5)² = 0.25
         expected = (1.0 * offset) ** 2
         assert score == pytest.approx(expected, rel=0.01), f"score={score}, expected={expected}"
 
     def test_multi_energy_score(self) -> None:
-        """With N energy points, score = sum of (w * diff)² for each.
-
-        Uses a uniform offset so the expected value is trivially N × (w × offset)².
-        """
+        """With N energy points, score = sum of (w * diff)² for each."""
         mol1 = _water()
         mol2 = _water(110.0, 0.96)
         ff = _water_ff()
@@ -323,13 +327,12 @@ class TestScoreParity:
         ref_e1 = e1 + offset
         ref_e2 = e2 + offset
 
-        ref = ReferenceData()
-        ref.add_energy(ref_e1, weight=1.0, molecule_idx=0)
-        ref.add_energy(ref_e2, weight=1.0, molecule_idx=1)
-        obj = ObjectiveFunction(ff, engine, [mol1, mol2], ref)
-        score = obj(ff.get_param_vector())
+        ref = ObservationSet()
+        ref = ref.with_energy(ref_e1, weight=1.0, case_id="0")
+        ref = ref.with_energy(ref_e2, weight=1.0, case_id="1")
+        obj, layout, _space = _build_objective(ff, engine, [mol1, mol2], ref)
+        score = obj(layout.vector(ff))
 
-        # Expected: 2 × (1.0 × 0.3)² = 0.18
         expected = 2 * (1.0 * offset) ** 2
         assert score == pytest.approx(expected, rel=0.05), f"score={score}, expected={expected}"
 
@@ -345,14 +348,13 @@ class TestOptimizationRoundtrip:
         """Optimizer recovers correct bond k from energy data."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
 
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
-        true_params = true_ff.get_param_vector()
+        true_params = layout.vector(true_ff)
         final_params = result.final_params
 
-        # Bond k should be within 30% of true value
         true_bond_k = true_params[0]
         final_bond_k = final_params[0]
         assert abs(final_bond_k - true_bond_k) / true_bond_k < 0.3, (
@@ -364,14 +366,10 @@ class TestOptimizationRoundtrip:
         """Score history should be roughly monotonically decreasing."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
 
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="Nelder-Mead", maxiter=100, use_bounds=False, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
-        # The optimizer should find a better score than the starting point.
-        # Use initial_score/final_score (guaranteed by OptimizationResult)
-        # instead of history endpoints, since history[-1] may not be the best
-        # point found (e.g., Nelder-Mead evaluates worse points late in a run).
         assert result.final_score <= result.initial_score
         assert min(result.history) <= result.history[0]
 
@@ -382,13 +380,13 @@ class TestOptimizationRoundtrip:
         tinker = _tinker_engine()
         true_ff, guess_ff, mols, ref, engine = _make_energy_only_problem(engine=tinker)
 
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.improvement > 0.3, f"Tinker optimization only improved {result.improvement:.2%}"
 
-        true_params = true_ff.get_param_vector()
+        true_params = layout.vector(true_ff)
         final_params = result.final_params
         true_bond_k = true_params[0]
         final_bond_k = final_params[0]
@@ -404,50 +402,49 @@ class TestForceFieldExportRoundtrip:
     """Verify optimized parameters survive export/re-import."""
 
     def test_param_vector_roundtrip(self) -> None:
-        """set_param_vector(get_param_vector()) is identity."""
+        """ParameterLayout.replace(vector(layout.vector(ff))) is identity."""
         ff = _water_ff()
-        original = ff.get_param_vector().copy()
-        ff.set_param_vector(original)
-        roundtripped = ff.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        original = layout.vector(ff).copy()
+        roundtripped = layout.vector(layout.replace(ff, original))
         np.testing.assert_array_equal(original, roundtripped)
 
     def test_param_vector_roundtrip_after_mutation(self) -> None:
         """Roundtrip still works after modifying individual parameters."""
         ff = _water_ff()
-        vec = ff.get_param_vector().copy()
-        # Perturb each element
+        layout = ParameterLayout.from_force_field(ff)
+        vec = layout.vector(ff).copy()
         vec *= 1.1
         vec[0] += 0.5
-        ff.set_param_vector(vec)
-        roundtripped = ff.get_param_vector()
+        mutated_ff = layout.replace(ff, vec)
+        roundtripped = layout.vector(mutated_ff)
         np.testing.assert_array_almost_equal(vec, roundtripped, decimal=15)
 
     @pytest.mark.integration
     def test_param_vector_roundtrip_optimized_ff(self) -> None:
-        """Optimized FF survives get→set→get roundtrip."""
+        """Optimized FF survives replace→vector→replace→vector roundtrip."""
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
-        # Apply final params, roundtrip
-        optimized_ff = guess_ff.copy()
-        optimized_ff.set_param_vector(result.final_params)
-        vec_before = optimized_ff.get_param_vector().copy()
-        optimized_ff.set_param_vector(vec_before)
-        vec_after = optimized_ff.get_param_vector()
+        optimized_ff = layout.replace(guess_ff, result.final_params)
+        vec_before = layout.vector(optimized_ff).copy()
+        vec_after = layout.vector(layout.replace(optimized_ff, vec_before))
         np.testing.assert_array_equal(vec_before, vec_after)
 
     def test_copy_preserves_params(self) -> None:
-        """ForceField.copy() preserves the parameter vector exactly."""
+        """dataclasses.replace() preserves the parameter vector exactly."""
         ff = _water_ff(bond_k=225.9, bond_r0=1.23, angle_k=30.2, angle_eq=109.5)
-        ff_copy = ff.copy()
-        np.testing.assert_array_equal(ff.get_param_vector(), ff_copy.get_param_vector())
-        # Mutating the copy should not affect the original
-        vec = ff_copy.get_param_vector()
+        layout = ParameterLayout.from_force_field(ff)
+        ff_copy = replace(ff)
+        np.testing.assert_array_equal(layout.vector(ff), layout.vector(ff_copy))
+
+        vec = layout.vector(ff_copy).copy()
         vec[0] = 999.0
-        ff_copy.set_param_vector(vec)
-        assert ff.get_param_vector()[0] != 999.0
+        mutated_copy = layout.replace(ff_copy, vec)
+        assert layout.vector(ff)[0] != 999.0
+        assert layout.vector(mutated_copy)[0] == 999.0
 
 
 # ---- Atom-identity matching ----
@@ -462,8 +459,7 @@ class TestAtomIdentityMatching:
             "bond_lengths": [0.96, 0.97],
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
-        # Ask for bond (0, 2) via atom_indices
-        ref = ReferenceValue(kind="bond_length", value=0.97, atom_indices=(0, 2))
+        ref = Observation(kind="bond_length", value=0.97, atom_indices=(0, 2))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -473,8 +469,7 @@ class TestAtomIdentityMatching:
             "bond_lengths": [0.96, 0.97],
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
-        # Reversed order — _extract_value sorts the key
-        ref = ReferenceValue(kind="bond_length", value=0.97, atom_indices=(2, 0))
+        ref = Observation(kind="bond_length", value=0.97, atom_indices=(2, 0))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -484,7 +479,7 @@ class TestAtomIdentityMatching:
             "bond_angles": [104.5],
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
-        ref = ReferenceValue(kind="bond_angle", value=104.5, atom_indices=(1, 0, 2))
+        ref = Observation(kind="bond_angle", value=104.5, atom_indices=(1, 0, 2))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
@@ -494,19 +489,17 @@ class TestAtomIdentityMatching:
             "bond_angles": [104.5],
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
-        # Reversed: (2, 0, 1) — _extract_value tries both orderings
-        ref = ReferenceValue(kind="bond_angle", value=104.5, atom_indices=(2, 0, 1))
+        ref = Observation(kind="bond_angle", value=104.5, atom_indices=(2, 0, 1))
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
     def test_fallback_to_data_idx(self) -> None:
-        """When atom_indices is None, data_idx still works (backwards compat)."""
+        """When atom_indices is None, data_idx still works."""
         calc = {
             "bond_lengths": [0.96, 0.97, 0.98],
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97, (1, 2): 0.98},
         }
-        # Use data_idx=1, no atom_indices
-        ref = ReferenceValue(kind="bond_length", value=0.97, data_idx=1, atom_indices=None)
+        ref = Observation(kind="bond_length", value=0.97, data_idx=1, atom_indices=None)
         extracted = ObjectiveFunction._extract_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
@@ -516,21 +509,21 @@ class TestAtomIdentityMatching:
             "bond_lengths": [0.96],
             "bond_lengths_by_atoms": {(0, 1): 0.96},
         }
-        ref = ReferenceValue(kind="bond_length", value=1.0, atom_indices=(5, 6))
+        ref = Observation(kind="bond_length", value=1.0, atom_indices=(5, 6))
         with pytest.raises(KeyError):
             ObjectiveFunction._extract_value(calc, ref)
 
     def test_add_bond_length_requires_idx_or_atoms(self) -> None:
-        """ReferenceData.add_bond_length raises without data_idx or atom_indices."""
-        ref = ReferenceData()
+        """ObservationSet.add_bond_length raises without data_idx or atom_indices."""
+        ref = ObservationSet()
         with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
-            ref.add_bond_length(0.96)
+            ref = ref.with_bond_length(0.96)
 
     def test_add_bond_angle_requires_idx_or_atoms(self) -> None:
-        """ReferenceData.add_bond_angle raises without data_idx or atom_indices."""
-        ref = ReferenceData()
+        """ObservationSet.add_bond_angle raises without data_idx or atom_indices."""
+        ref = ObservationSet()
         with pytest.raises(ValueError, match="Either atom_indices or data_idx"):
-            ref.add_bond_angle(104.5)
+            ref = ref.with_bond_angle(104.5)
 
 
 # ---- Optimization determinism ----
@@ -545,9 +538,9 @@ class TestOptimizationDeterminism:
         results = []
         for _ in range(2):
             true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-            obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+            obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-            results.append(opt.optimize(obj))
+            results.append(opt.optimize(obj, space))
 
         np.testing.assert_array_almost_equal(
             results[0].final_params,
@@ -563,9 +556,9 @@ class TestOptimizationDeterminism:
         results = []
         for _ in range(2):
             true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-            obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+            obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
             opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
-            results.append(opt.optimize(obj))
+            results.append(opt.optimize(obj, space))
 
         np.testing.assert_array_almost_equal(
             results[0].final_params,
@@ -578,28 +571,32 @@ class TestOptimizationDeterminism:
 
 
 class TestParamVectorValidation:
-    """Verify set_param_vector rejects wrong-length vectors."""
+    """Verify ParameterLayout.replace rejects wrong-length vectors."""
 
     def test_short_vector_raises(self) -> None:
         ff = _water_ff()
+        layout = ParameterLayout.from_force_field(ff)
         with pytest.raises(ValueError, match="does not match"):
-            ff.set_param_vector(np.array([1.0]))  # too short
+            layout.replace(ff, np.array([1.0]))
 
     def test_long_vector_raises(self) -> None:
         ff = _water_ff()
+        layout = ParameterLayout.from_force_field(ff)
         with pytest.raises(ValueError, match="does not match"):
-            ff.set_param_vector(np.zeros(100))  # too long
+            layout.replace(ff, np.zeros(100))
 
     def test_empty_vector_raises(self) -> None:
         ff = _water_ff()
+        layout = ParameterLayout.from_force_field(ff)
         with pytest.raises(ValueError, match="does not match"):
-            ff.set_param_vector(np.array([]))
+            layout.replace(ff, np.array([]))
 
     def test_exact_length_accepted(self) -> None:
         ff = _water_ff()
-        n = len(ff.get_param_vector())
-        ff.set_param_vector(np.ones(n))  # should not raise
-        np.testing.assert_array_equal(ff.get_param_vector(), np.ones(n))
+        layout = ParameterLayout.from_force_field(ff)
+        n = len(layout.vector(ff))
+        replaced_ff = layout.replace(ff, np.ones(n))
+        np.testing.assert_array_equal(layout.vector(replaced_ff), np.ones(n))
 
 
 # ---- Golden fixture regression ----
@@ -616,19 +613,13 @@ class TestGoldenFixtureRegression:
         reason="Golden fixture not yet generated (run scripts/generate_optimization_fixtures.py)",
     )
     def test_matches_golden_fixture(self) -> None:
-        """Final score and parameters fall within tolerance of golden fixture.
-
-        L-BFGS-B on noisy Hessian landscapes lands in different local
-        minima across scipy/OpenMM versions.  A 5% score tolerance and
-        10% parameter tolerance catch real regressions while allowing
-        legitimate platform variance.  Resolves #258.
-        """
+        """Final score and parameters fall within tolerance of golden fixture."""
         golden = json.loads(self.GOLDEN_PATH.read_text())
 
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert len(result.final_params) == len(golden["final_params"]), (
             f"Param vector length changed: {len(result.final_params)} vs {len(golden['final_params'])}"
@@ -640,17 +631,13 @@ class TestGoldenFixtureRegression:
             assert got == pytest.approx(want, rel=0.10), f"Param {i} drift: {got} vs {want}"
 
     def test_optimizer_improves_score(self) -> None:
-        """Verify optimizer substantially improves the score.
-
-        Also verifies initial_score stability (single evaluation, should be
-        deterministic across environments).
-        """
+        """Verify optimizer substantially improves the score."""
         golden = json.loads(self.GOLDEN_PATH.read_text())
 
         true_ff, guess_ff, mols, ref, engine = _make_water_problem()
-        obj = ObjectiveFunction(guess_ff, engine, mols, ref)
+        obj, _layout, space = _build_objective(guess_ff, engine, mols, ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-        result = opt.optimize(obj)
+        result = opt.optimize(obj, space)
 
         assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-4), (
             f"Initial score drift: {result.initial_score} vs {golden['initial_score']}"

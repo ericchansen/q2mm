@@ -10,17 +10,17 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass, field
 from importlib.util import find_spec
 from string import digits
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 
 from q2mm import constants as co
-from q2mm.models.structure import Atom, Structure
-
-if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.identifiers import _extract_element
+from q2mm.models.molecule import Molecule
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 # When pint is installed (``pip install q2mm[qm]``) and the caller passes
 # ``tag_units=True``, ``JaguarIn.get_hessian`` returns a ``pint.Quantity``
 # tagged as ``hartree/bohr**2``.  Callers that pass the result to
-# ``Q2MMMolecule.from_structure`` get automatic unit validation: an
+# ``Molecule.with_hessian`` get automatic unit validation: an
 # incompatible tag (e.g. ``kJ/(mol·Å²)``) raises
 # ``pint.errors.DimensionalityError`` instead of silently producing wrong
 # force constants.  The default (``tag_units=False``) always returns a bare
@@ -48,6 +48,62 @@ def _get_pint_ureg() -> Any:  # returns pint.UnitRegistry or None
 
         _pint_ureg = pint.UnitRegistry()
     return _pint_ureg
+
+
+@dataclass
+class _JaguarAtom:
+    """One atom parsed from a Jaguar ``.out`` geometry block.
+
+    Jaguar labels carry the element with trailing digits (e.g. ``"Rh1"``);
+    it has no separate force-field type label and no atomic number, so
+    there is nothing else to resolve an element from.
+    """
+
+    element: str = ""
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+    @property
+    def coords(self) -> np.ndarray:
+        """Cartesian coordinates of this atom, as ``[x, y, z]``."""
+        return np.array([self.x, self.y, self.z])
+
+    @property
+    def symbol(self) -> str:
+        """Resolve this atom's element symbol."""
+        return _extract_element(self.element) if self.element else ""
+
+    @property
+    def is_dummy(self) -> bool:
+        """Whether this is a dummy atom (Jaguar's ``"X"`` placeholder)."""
+        return self.symbol == "X"
+
+
+@dataclass
+class _JaguarRecord:
+    """One structure/conformer staging record parsed from a Jaguar ``.out`` file."""
+
+    origin_name: str
+    atoms: list[_JaguarAtom] = field(default_factory=list)
+
+
+def _molecule_from_jaguar_record(record: _JaguarRecord) -> Molecule:
+    """Convert a :class:`_JaguarRecord` into a :class:`~q2mm.models.molecule.Molecule`.
+
+    Bonds/angles/torsions are always inferred from geometry — Jaguar
+    ``.out`` files carry no connectivity data. Charge, multiplicity, and
+    Hessian are not available from this file format (the Hessian, when
+    needed, comes from a separate :class:`JaguarIn` file via
+    :meth:`JaguarIn.get_hessian` and is attached by the caller).
+    """
+    symbols = [atom.symbol for atom in record.atoms]
+    coords = [atom.coords for atom in record.atoms]
+    return Molecule(
+        symbols=tuple(symbols),
+        geometry=np.array(coords, dtype=float),
+        name=record.origin_name,
+    )
 
 
 class JaguarIn:
@@ -72,7 +128,6 @@ class JaguarIn:
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        self._structures = None
         self._hessian = None
         self._empty_atoms = None
 
@@ -163,32 +218,16 @@ class JaguarIn:
                 return ureg.Quantity(self._hessian, "hartree/bohr**2")
         return self._hessian
 
-    def gen_lines(self) -> list[str]:
-        """Generate output lines for the Jaguar ``.in`` file.
-
-        Since it would be difficult to reproduce all original data, the
-        written version will be missing much of the data in the original.
-        The Schrödinger API may provide a better mechanism for that.
-
-        The intent is to include the ability to write out an atomic
-        section with the ESP data that we would want.
-
-        Returns:
-            (list[str]): Generated lines for the ``.in`` file.
-
-        """
-        lines = []
-        mae_name = None
-        lines.append(f"MAEFILE: {mae_name}")
-        lines.append("&gen")
-        lines.append("&")
-        lines.append("&zmat")
-        # Just use the 1st structure. I don't imagine a Jaguar input file
-        # ever containing more than one structure.
-        struct = self.structures[0]
-        lines.extend(struct.format_coords(format="gauss"))
-        lines.append("&")
-        return lines
+    def attach_hessian(self, molecule: Molecule) -> Molecule:
+        """Return *molecule* with this Jaguar input's Hessian and provenance."""
+        return molecule.with_hessian(
+            self.get_hessian(molecule.n_atoms),
+            HessianProvenance(
+                units=HessianUnits.ATOMIC,
+                source="jaguar",
+                path=self.path,
+            ),
+        )
 
 
 class JaguarOut:
@@ -208,7 +247,7 @@ class JaguarOut:
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
-        self._structures = None
+        self._records = None
         self._eigenvalues = None
         self._eigenvectors = None
         self._frequencies = None
@@ -243,18 +282,19 @@ class JaguarOut:
                 f.write(line)
 
     @property
-    def structures(self) -> list[Structure]:
-        """list[Structure]: Parsed molecular structures from the output file."""
-        if self._structures is None:
+    def _records_parsed(self) -> list[_JaguarRecord]:
+        """Records parsed from the output file (private staging).
+
+        Not part of the public API — see :attr:`molecules`.
+        """
+        if self._records is None:
             self.import_file()
-        return self._structures
+        return self._records
 
     @property
-    def molecules(self) -> list[Q2MMMolecule]:
-        """Parsed structures as :class:`~q2mm.models.molecule.Q2MMMolecule` objects."""
-        from q2mm.models.molecule import Q2MMMolecule
-
-        return [Q2MMMolecule.from_structure(s) for s in self.structures]
+    def molecules(self) -> list[Molecule]:
+        """Parsed structures as :class:`~q2mm.models.molecule.Molecule` objects."""
+        return [_molecule_from_jaguar_record(record) for record in self._records_parsed]
 
     @property
     def eigenvalues(self) -> np.ndarray:
@@ -295,31 +335,31 @@ class JaguarOut:
         frequencies = []
         force_constants = []
         eigenvectors = []
-        structures = []
+        records: list[_JaguarRecord] = []
         with open(self.path) as f:
             section_geometry = False
             section_eigenvalues = False
             section_eigenvectors = False
-            current_structure = None
+            current_record: _JaguarRecord | None = None
             temp_eigenvectors = []
             for i, line in enumerate(f):
                 if section_geometry:
                     cols = line.split()
                     if len(cols) == 0:
                         section_geometry = False
-                        structures.append(current_structure)
+                        records.append(current_record)
                         continue
                     elif len(cols) == 1:
                         pass
                     else:
                         match = re.match(rf"\s+([\d\w]+)\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})", line)
                         if match is not None:
-                            current_atom = Atom()
+                            current_atom = _JaguarAtom()
                             current_atom.element = match.group(1).translate(str.maketrans("", "", digits))
                             current_atom.x = float(match.group(2))
                             current_atom.y = float(match.group(3))
                             current_atom.z = float(match.group(4))
-                            current_structure.atoms.append(current_atom)
+                            current_record.atoms.append(current_atom)
                             logger.log(
                                 0,
                                 f"{current_atom.element:<3}{current_atom.x:>12.6f}{current_atom.y:>12.6f}"
@@ -327,7 +367,7 @@ class JaguarOut:
                             )
                 if "geometry:" in line:
                     section_geometry = True
-                    current_structure = Structure(self.filename)
+                    current_record = _JaguarRecord(self.filename)
                     logger.log(5, f"[L{i + 1}] Located geometry.")
                 if (
                     "Number of imaginary frequencies" in line
@@ -375,7 +415,7 @@ class JaguarOut:
         # Remove eigenvector components related to dummy atoms.
         # Find the index of the atoms that are dummies.
         dummy_atom_indices = []
-        for i, atom in enumerate(structures[-1].atoms):
+        for i, atom in enumerate(records[-1].atoms):
             if atom.is_dummy:
                 dummy_atom_indices.append(i)
         logger.log(10, f"  -- Located {len(dummy_atom_indices)} dummy atoms.")
@@ -397,11 +437,11 @@ class JaguarOut:
         # Replace old eigenvectors with new where dummy atoms aren't included.
         eigenvectors = np.array(new_eigenvectors)
         self._dummy_atom_eigenvector_indices = dummy_atom_eigenvector_indices
-        self._structures = structures
+        self._records = records
         self._eigenvalues = np.array(eigenvalues)
         self._eigenvectors = np.array(eigenvectors)
         self._frequencies = np.array(frequencies)
-        logger.log(5, f"  -- Read {len(self.structures)} structures")
+        logger.log(5, f"  -- Read {len(self._records)} structures")
         logger.log(5, f"  -- Read {len(self.frequencies)} frequencies.")
         logger.log(5, f"  -- Read {len(self.eigenvalues)} eigenvalues.")
         logger.log(5, f"  -- Read {self.eigenvectors.shape} eigenvectors.")

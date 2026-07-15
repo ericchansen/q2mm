@@ -35,8 +35,10 @@ import numpy as np
 import yaml
 
 from q2mm.constants import DEFAULT_BOND_TOLERANCE
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.reference import ReferenceData, ReferenceValue
+from q2mm.io.xyz import load_xyz
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation, ObservationSet
 
 # Reference-value kinds accepted by the schema.
 # Note: ``eigenmatrix`` is also supported as a special bulk-loading directive
@@ -133,18 +135,18 @@ def _as_float_list(value: Any, name: str, context: str) -> list[float]:
 
 def _parse_datum(
     datum: dict[str, Any],
-    molecule_idx: int,
+    case_id: str,
     context: str,
-) -> list[ReferenceValue]:
-    """Parse a single ``data`` entry into one or more :class:`ReferenceValue` objects.
+) -> list[Observation]:
+    """Parse a single ``data`` entry into one or more :class:`Observation` objects.
 
     Args:
         datum: A single mapping from the ``data`` list.
-        molecule_idx: Index of the parent molecule.
+        case_id: Stable ID of the parent molecule (its resolved ``name``).
         context: Human-readable location for error messages.
 
     Returns:
-        List of :class:`ReferenceValue` instances.
+        List of :class:`Observation` instances.
 
     """
     kind = _validate_kind(str(_require_key(datum, "kind", context)), context)
@@ -166,12 +168,12 @@ def _parse_datum(
         else:
             indices = list(range(len(values)))
         return [
-            ReferenceValue(
+            Observation(
                 kind="frequency",
                 value=v,
                 weight=weight,
                 label=label or f"mode {idx}",
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 data_idx=idx,
             )
             for idx, v in zip(indices, values)
@@ -181,12 +183,12 @@ def _parse_datum(
     if kind in ("energy",):
         value = _as_float(_require_key(datum, "value", context), "value", context)
         return [
-            ReferenceValue(
+            Observation(
                 kind=kind,
                 value=value,
                 weight=weight,
                 label=label,
-                molecule_idx=molecule_idx,
+                case_id=case_id,
             )
         ]
 
@@ -205,12 +207,12 @@ def _parse_datum(
                     f"'{kind}' requires exactly {required} atom indices, got {len(atoms)} in {context}."
                 )
             return [
-                ReferenceValue(
+                Observation(
                     kind=kind,
                     value=value,
                     weight=weight,
                     label=label,
-                    molecule_idx=molecule_idx,
+                    case_id=case_id,
                     atom_indices=tuple(atoms),
                 )
             ]
@@ -220,12 +222,12 @@ def _parse_datum(
             if data_idx < 0:
                 raise ReferenceYAMLError(f"'data_idx' must be non-negative in {context}, got {data_idx}.")
             return [
-                ReferenceValue(
+                Observation(
                     kind=kind,
                     value=value,
                     weight=weight,
                     label=label,
-                    molecule_idx=molecule_idx,
+                    case_id=case_id,
                     data_idx=data_idx,
                 )
             ]
@@ -238,12 +240,12 @@ def _parse_datum(
         if mode_idx < 0:
             raise ReferenceYAMLError(f"'mode_idx' must be non-negative in {context}, got {mode_idx}.")
         return [
-            ReferenceValue(
+            Observation(
                 kind="eig_diagonal",
                 value=value,
                 weight=weight,
                 label=label or f"eig[{mode_idx}]",
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 data_idx=mode_idx,
             )
         ]
@@ -255,12 +257,12 @@ def _parse_datum(
         if row < 0 or col < 0:
             raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
         return [
-            ReferenceValue(
+            Observation(
                 kind="eig_offdiagonal",
                 value=value,
                 weight=weight,
                 label=label or f"eig[{row},{col}]",
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 atom_indices=(row, col),
             )
         ]
@@ -272,12 +274,12 @@ def _parse_datum(
         if row < 0 or col < 0:
             raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
         return [
-            ReferenceValue(
+            Observation(
                 kind="hessian_element",
                 value=value,
                 weight=weight,
                 label=label or f"hess[{row},{col}]",
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 atom_indices=(row, col),
             )
         ]
@@ -289,12 +291,12 @@ def _parse_datum(
         if data_idx < 0:
             raise ReferenceYAMLError(f"'data_idx' must be non-negative in {context}, got {data_idx}.")
         return [
-            ReferenceValue(
+            Observation(
                 kind="frequency",
                 value=value,
                 weight=weight,
                 label=label or f"mode {data_idx}",
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 data_idx=data_idx,
             )
         ]
@@ -307,7 +309,7 @@ def _load_molecule(
     mol_dict: dict[str, Any],
     base_dir: Path,
     molecule_idx: int,
-) -> tuple[Q2MMMolecule, list[ReferenceValue]]:
+) -> tuple[Molecule, list[Observation]]:
     """Parse one molecule entry from the YAML.
 
     Args:
@@ -324,6 +326,10 @@ def _load_molecule(
     """
     ctx = f"molecule[{molecule_idx}]"
     name = str(mol_dict.get("name", f"mol_{molecule_idx}"))
+    # The molecule's resolved "name" (explicit, or the positional default)
+    # is this molecule's stable case_id — every Observation built from it
+    # binds to that same string, never the positional molecule_idx.
+    case_id = name
     charge = _as_int(mol_dict.get("charge", 0), "charge", ctx)
     multiplicity = _as_int(mol_dict.get("multiplicity", 1), "multiplicity", ctx)
     bond_tolerance = _as_float(mol_dict.get("bond_tolerance", DEFAULT_BOND_TOLERANCE), "bond_tolerance", ctx)
@@ -334,7 +340,7 @@ def _load_molecule(
             f"Molecule '{name}' at index {molecule_idx} has no geometry ('xyz' or 'geometry' key required)."
         )
 
-    mol: Q2MMMolecule
+    mol: Molecule
     if "xyz" in mol_dict:
         xyz_raw = mol_dict["xyz"]
         if not isinstance(xyz_raw, str):
@@ -342,7 +348,7 @@ def _load_molecule(
         xyz_path = base_dir / xyz_raw
         if not xyz_path.exists():
             raise ReferenceYAMLError(f"XYZ file not found: {xyz_path} (referenced in {ctx}).")
-        mol = Q2MMMolecule.from_xyz(
+        mol = load_xyz(
             xyz_path,
             charge=charge,
             multiplicity=multiplicity,
@@ -380,7 +386,7 @@ def _load_molecule(
                     f"'atom_types' must be a list of type labels, not a {type(atom_types).__name__} in {ctx}.geometry."
                 )
             atom_types = [str(t) for t in atom_types]
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=symbols,
             geometry=coords_arr,
             atom_types=atom_types,
@@ -399,10 +405,17 @@ def _load_molecule(
         if not hessian_path.exists():
             raise ReferenceYAMLError(f"Hessian file not found: {hessian_path} (referenced in {ctx}).")
         hessian = np.load(str(hessian_path))
-        mol = mol.with_hessian(hessian)
+        mol = mol.with_hessian(
+            hessian,
+            HessianProvenance(
+                units=HessianUnits.ATOMIC,
+                source="reference-yaml",
+                path=str(hessian_path.resolve()),
+            ),
+        )
 
     # ---- Data entries -----------------------------------------------------
-    ref_values: list[ReferenceValue] = []
+    ref_values: list[Observation] = []
     data_list = mol_dict.get("data", [])
     if not isinstance(data_list, list):
         raise ReferenceYAMLError(f"'data' must be a list in {ctx}, got {type(data_list).__name__}.")
@@ -420,12 +433,11 @@ def _load_molecule(
             offdiag_weight = _as_float(datum.get("offdiagonal_weight", 0.05), "offdiagonal_weight", datum_ctx)
             skip_first = datum.get("skip_first", True)
             diagonal_only = datum.get("diagonal_only", False)
-            temp_ref = ReferenceData()
-            temp_ref.add_eigenmatrix_from_hessian(
+            temp_ref = ObservationSet().with_eigenmatrix_from_hessian(
                 mol.hessian,
                 symbols=list(mol.symbols),
                 diagonal_only=diagonal_only,
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 weights={
                     "eig_i": 0.0 if skip_first else diag_weight,
                     "eig_d_low": diag_weight,
@@ -455,11 +467,10 @@ def _load_molecule(
                     f"'skip_translational' ({skip_translational}) must be less than "
                     f"Hessian dimension ({n}) in {datum_ctx}."
                 )
-            temp_ref = ReferenceData()
-            temp_ref.add_hessian_from_matrix(
+            temp_ref = ObservationSet().with_hessian_from_matrix(
                 mol.hessian,
                 diagonal_only=diagonal_only,
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 diagonal_weight=diag_weight,
                 offdiagonal_weight=offdiag_weight,
                 skip_translational=skip_translational,
@@ -467,12 +478,12 @@ def _load_molecule(
             ref_values.extend(temp_ref.values)
             continue
 
-        ref_values.extend(_parse_datum(datum, molecule_idx, datum_ctx))
+        ref_values.extend(_parse_datum(datum, case_id, datum_ctx))
 
     return mol, ref_values
 
 
-def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolecule]]:
+def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule]]:
     """Load reference data and molecules from a YAML file.
 
     Args:
@@ -506,8 +517,8 @@ def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolec
         raise ReferenceYAMLError(f"'molecules' must be a list, got {type(mol_list).__name__}.")
 
     base_dir = path.parent
-    molecules: list[Q2MMMolecule] = []
-    all_values: list[ReferenceValue] = []
+    molecules: list[Molecule] = []
+    all_values: list[Observation] = []
 
     for idx, mol_dict in enumerate(mol_list):
         if not isinstance(mol_dict, dict):
@@ -516,7 +527,7 @@ def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolec
         molecules.append(mol)
         all_values.extend(values)
 
-    return ReferenceData(values=all_values), molecules
+    return ObservationSet(values=all_values), molecules
 
 
 # ---------------------------------------------------------------------------
@@ -524,8 +535,8 @@ def load_reference_yaml(path: str | Path) -> tuple[ReferenceData, list[Q2MMMolec
 # ---------------------------------------------------------------------------
 
 
-def _reference_value_to_dict(rv: ReferenceValue) -> dict[str, Any]:
-    """Convert a single :class:`ReferenceValue` to a YAML-friendly dict.
+def _reference_value_to_dict(rv: Observation) -> dict[str, Any]:
+    """Convert a single :class:`Observation` to a YAML-friendly dict.
 
     Args:
         rv: The reference value to serialise.
@@ -566,8 +577,8 @@ def _reference_value_to_dict(rv: ReferenceValue) -> dict[str, Any]:
     return d
 
 
-def _molecule_to_dict(mol: Q2MMMolecule) -> dict[str, Any]:
-    """Convert a :class:`Q2MMMolecule` to a YAML-friendly dict (inline geometry).
+def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
+    """Convert a :class:`Molecule` to a YAML-friendly dict (inline geometry).
 
     Args:
         mol: The molecule to serialise.
@@ -599,40 +610,55 @@ def _molecule_to_dict(mol: Q2MMMolecule) -> dict[str, Any]:
 
 def save_reference_yaml(
     path: str | Path,
-    ref: ReferenceData,
-    molecules: list[Q2MMMolecule],
+    ref: ObservationSet,
+    molecules: list[Molecule],
 ) -> None:
     """Save reference data and molecules to a YAML file.
 
     Each molecule's geometry is serialised inline. Reference values are
-    grouped under their parent molecule's ``data`` list.
+    grouped under their parent molecule's ``data`` list by matching
+    ``Observation.case_id`` against each molecule's ``name`` (the same
+    stable-ID binding :func:`load_reference_yaml` uses on load).
 
     Args:
         path: Output file path.
         ref: Reference data to save.
-        molecules: Molecules corresponding to the reference data.
+        molecules: Molecules corresponding to the reference data. Must
+            have unique ``name`` values.
+
+    Raises:
+        ReferenceYAMLError: If *molecules* have duplicate names, or if
+            *ref* contains observations whose ``case_id`` does not match
+            any molecule's name.
 
     """
     path = Path(path)
 
-    # Group reference values by molecule_idx.
-    grouped: dict[int, list[dict[str, Any]]] = {}
+    names = [mol.name for mol in molecules]
+    if len(set(names)) != len(names):
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        raise ReferenceYAMLError(
+            f"molecules must have unique 'name' values to serialise as stable case_ids; duplicates found: {duplicates}."
+        )
+
+    # Group reference values by case_id (== the owning molecule's name).
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for rv in ref.values:
-        grouped.setdefault(rv.molecule_idx, []).append(_reference_value_to_dict(rv))
+        grouped.setdefault(rv.case_id, []).append(_reference_value_to_dict(rv))
 
     mol_dicts: list[dict[str, Any]] = []
-    for idx, mol in enumerate(molecules):
+    for mol in molecules:
         mol_d = _molecule_to_dict(mol)
-        data = grouped.get(idx, [])
+        data = grouped.pop(mol.name, [])
         if data:
             mol_d["data"] = data
         mol_dicts.append(mol_d)
 
-    # Reject orphaned molecule indices rather than writing invalid placeholders.
-    orphaned = sorted(idx for idx in grouped if idx >= len(molecules))
-    if orphaned:
+    # Reject orphaned case_ids rather than silently dropping them.
+    if grouped:
         raise ReferenceYAMLError(
-            f"Reference values point to molecule indices {orphaned} but only {len(molecules)} molecule(s) provided."
+            f"Reference values reference case_id(s) {sorted(grouped)} that do not "
+            "match the 'name' of any provided molecule."
         )
 
     output: dict[str, Any] = {"molecules": mol_dicts}

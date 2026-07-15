@@ -90,13 +90,16 @@ plain Seminario give identical results.
 QFUERZA is the default. To use plain Seminario projection instead:
 
 ```python
+from q2mm.models.forcefield import FunctionalForm
 from q2mm.models.seminario import qfuerza_fresh
 
-# Default — QFUERZA (recommended)
-ff = qfuerza_fresh(molecule)
+# Default — QFUERZA (recommended). functional_form is required — no
+# default is chosen for you; pick HARMONIC for JAX/JAX-MD or MM3 for
+# OpenMM/Tinker.
+ff = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC)
 
 # Plain Seminario projection (no H-angle substitution)
-ff = qfuerza_fresh(molecule, strategy="fuerza")
+ff = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC, strategy="fuerza")
 ```
 
 The implementation lives in

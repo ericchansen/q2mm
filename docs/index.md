@@ -27,9 +27,9 @@ captures the unusual bonding at the reaction's energy barrier.
   Nelder-Mead, trust-constr, Powell, least-squares) and JAX-native
   [optax](https://optax.readthedocs.io/) adaptive optimizers (Adam, AdaGrad,
   SGD) for force field parameter fitting.
-- **Clean model layer** — `ForceField`, `Q2MMMolecule`, and `ReferenceData` objects
-  decouple algorithms from file formats, making it straightforward to add new
-  I/O modules or backends.
+- **Clean model layer** — immutable `ForceField`, `Molecule`, and `ObservationSet`
+  objects, plus explicit `ParameterLayout` / `ActiveParameterSpace` helpers,
+  decouple algorithms from file formats and optimization state.
 
 ---
 
@@ -51,8 +51,8 @@ flowchart TD
     %% ── Models ──
     subgraph Models["🧱 Data Models"]
         direction LR
-        MOL["Q2MMMolecule<br/><small>geometry + topology</small>"]
-        RD["ReferenceData<br/><small>QM Hessians + freqs</small>"]
+        MOL["Molecule<br/><small>geometry + topology</small>"]
+        RD["ObservationSet<br/><small>QM targets + weights</small>"]
         FF["ForceField<br/><small>bonds · angles · torsions · vdW</small>"]
     end
 
@@ -99,9 +99,9 @@ flowchart TD
 **Pipeline overview:**
 
 1. **I/O modules** read three kinds of external data into q2mm's unified models:
-    - **QM programs** (Gaussian `.log`/`.fchk`, Jaguar `.in`/`.out`, or Psi4 live calculations) → `ReferenceData` (Hessians, frequencies, energies) and `Q2MMMolecule` (geometry)
-    - **Molecular structures** (MOL2 `.mol2`, MacroModel `.mmo`) → `Q2MMMolecule` (atom coordinates, bond connectivity)
-    - **Force field parameters** (MM3 `.fld`, Tinker `.prm`, AMBER `.frcmod`) → `ForceField` (bonds, angles, torsions, vdW)
+    - **QM programs** (Gaussian `.log`/`.fchk`, Jaguar `.in`/`.out`, or Psi4 live calculations) → `ObservationSet` (energies, frequencies, geometries, eigenmatrix targets) and `Molecule` (geometry + optional Hessian)
+    - **Molecular structures** (XYZ `.xyz`, MOL2 `.mol2`, MacroModel `.mmo`) → `Molecule` (atom coordinates, bond connectivity)
+    - **Force field parameters** (MM3 `.fld`, Tinker `.prm`, AMBER `.frcmod`) → immutable `ForceField` values
 
     Optimized parameters are written back via the same force field modules, plus OpenMM `.xml` export.
 2. **QFUERZA estimation** projects the QM Hessian onto internal coordinates to extract

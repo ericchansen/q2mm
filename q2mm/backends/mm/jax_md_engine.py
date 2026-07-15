@@ -44,7 +44,6 @@ full feature set of jax-md.
 
 from __future__ import annotations
 
-import copy
 import importlib.util
 import logging
 from collections.abc import Callable
@@ -57,12 +56,12 @@ logger = logging.getLogger(__name__)
 from q2mm.backends.base import MMEngine, coerce_molecule
 from q2mm.backends.registry import register_mm
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.forcefield import ForceField, FunctionalForm
+from q2mm.models.molecule import Molecule
 
 from q2mm.backends.mm._jax_common import (
-    compute_param_offsets,
     ensure_jax as _ensure_jax_common,
+    layout_block_offsets,
     match_angle as _match_angle,
     match_bond as _match_bond,
     match_vdw as _match_vdw,
@@ -151,7 +150,7 @@ class JaxMDHandle:
 
     """
 
-    molecule: Q2MMMolecule
+    molecule: Molecule
     box: np.ndarray
     # Matched atom indices (parallel with param maps)
     bond_indices: np.ndarray  # (n_matched_bonds, 2) atom indices
@@ -188,6 +187,7 @@ class JaxMDHandle:
 
 def _build_jaxmd_params_fn(
     handle: JaxMDHandle,
+    forcefield: ForceField,
 ) -> Callable[
     [jnp.ndarray],
     tuple[
@@ -202,6 +202,9 @@ def _build_jaxmd_params_fn(
 
     Args:
         handle: A :class:`JaxMDHandle` with topology mappings populated.
+        forcefield: The force field *handle* was built from — used only
+            to derive the parameter-vector block offsets via its
+            :class:`~q2mm.models.parameters.ParameterLayout`.
 
     Returns:
         Callable: ``build_params(param_vector) -> (bonded_tuple, nonbonded_tuple)``
@@ -218,8 +221,11 @@ def _build_jaxmd_params_fn(
     torsion_map = jnp.array(handle.torsion_param_map, dtype=jnp.int32)
     atom_vdw_map = jnp.array(handle.atom_vdw_map, dtype=jnp.int32)
 
-    # Param vector offsets (same layout as ForceField.get_param_vector)
-    _offsets = compute_param_offsets(n_bt, n_at, n_tt, n_sb_types=handle.n_sb_types)
+    # Param vector offsets, derived from the force field's ParameterLayout
+    # (the one source of truth for vector order — see q2mm.models.parameters).
+    from q2mm.models.parameters import ParameterLayout
+
+    _offsets = layout_block_offsets(ParameterLayout.from_force_field(forcefield))
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
@@ -362,7 +368,7 @@ def _compile_energy_fn(
     )
 
     # Build the param-mapping function
-    build_params = _build_jaxmd_params_fn(handle)
+    build_params = _build_jaxmd_params_fn(handle, forcefield)
 
     # Build jax-md energy function
     # This returns (energy_fn, neighbor_fn, displacement_fn)
@@ -613,13 +619,11 @@ class JaxMDEngine(MMEngine):
         """Return True — JAX-MD supports analytical gradients via autodiff."""
         return True
 
-    def create_context(
-        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField | None = None
-    ) -> JaxMDHandle:
+    def create_context(self, structure: Molecule | JaxMDHandle, forcefield: ForceField | None = None) -> JaxMDHandle:
         """Build jax-md topology and compile energy function.
 
         Args:
-            structure: A :class:`Q2MMMolecule` or :class:`JaxMDHandle`.
+            structure: A :class:`Molecule` or :class:`JaxMDHandle`.
             forcefield: Force field parameters.
 
         Returns:
@@ -635,7 +639,7 @@ class JaxMDEngine(MMEngine):
                 )
         molecule = coerce_molecule(structure, engine_name="JaxMDEngine")
         if forcefield is None:
-            forcefield = ForceField.create_for_molecule(molecule)
+            forcefield = ForceField.create_for_molecule(molecule, functional_form=FunctionalForm.HARMONIC)
 
         # Match bonds
         bond_atom_indices = []
@@ -702,7 +706,7 @@ class JaxMDEngine(MMEngine):
         )
 
         handle = JaxMDHandle(
-            molecule=copy.deepcopy(molecule),
+            molecule=molecule,
             box=self._box.copy(),
             bond_indices=bond_indices_arr,
             angle_indices=angle_indices_arr,
@@ -733,7 +737,7 @@ class JaxMDEngine(MMEngine):
 
         return handle
 
-    def _get_handle(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> JaxMDHandle:
+    def _get_handle(self, structure: Molecule | JaxMDHandle, forcefield: ForceField) -> JaxMDHandle:
         if isinstance(structure, JaxMDHandle):
             return structure
         return self.create_context(coerce_molecule(structure, engine_name="JaxMDEngine"), forcefield)
@@ -742,7 +746,7 @@ class JaxMDEngine(MMEngine):
         """Extract JAX arrays from force field and molecule."""
         return _params_and_coords_impl(handle.molecule.geometry, forcefield)
 
-    def energy(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> float:
+    def energy(self, structure: Molecule | JaxMDHandle, forcefield: ForceField) -> float:
         """Calculate energy in kcal/mol.
 
         Args:
@@ -758,7 +762,7 @@ class JaxMDEngine(MMEngine):
         result = handle._energy_fn(params, coords, handle._nlist)
         return float(result["total"])
 
-    def energy_breakdown(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> dict[str, float]:
+    def energy_breakdown(self, structure: Molecule | JaxMDHandle, forcefield: ForceField) -> dict[str, float]:
         """Calculate energy with per-term breakdown.
 
         Args:
@@ -776,7 +780,7 @@ class JaxMDEngine(MMEngine):
         return {k: float(v) for k, v in result.items()}
 
     def energy_and_param_grad(
-        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField
+        self, structure: Molecule | JaxMDHandle, forcefield: ForceField
     ) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
@@ -786,7 +790,7 @@ class JaxMDEngine(MMEngine):
 
         Returns:
             tuple: ``(energy, grad)`` where energy is kcal/mol and grad
-                has same shape as ``forcefield.get_param_vector()``.
+                has same shape as ``ParameterLayout.from_force_field(forcefield).vector(forcefield)``.
 
         """
         handle = self._get_handle(structure, forcefield)
@@ -804,7 +808,7 @@ class JaxMDEngine(MMEngine):
 
     def batched_energy(
         self,
-        structure: Q2MMMolecule | JaxMDHandle,
+        structure: Molecule | JaxMDHandle,
         forcefield: ForceField,
         param_matrix: np.ndarray,
     ) -> np.ndarray:
@@ -829,7 +833,7 @@ class JaxMDEngine(MMEngine):
 
         return np.asarray(handle._batched_energy_fn(batch_params, coords, nlist))
 
-    def hessian(self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField) -> np.ndarray:
+    def hessian(self, structure: Molecule | JaxMDHandle, forcefield: ForceField) -> np.ndarray:
         """Compute Hessian (d²E/dcoords²) in Hartree/Bohr².
 
         Args:
@@ -855,9 +859,7 @@ class JaxMDEngine(MMEngine):
         hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
 
-    def minimize(
-        self, structure: Q2MMMolecule | JaxMDHandle, forcefield: ForceField, max_iterations: int = 200
-    ) -> tuple:
+    def minimize(self, structure: Molecule | JaxMDHandle, forcefield: ForceField, max_iterations: int = 200) -> tuple:
         """Minimize energy w.r.t. coordinates.
 
         Args:

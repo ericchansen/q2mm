@@ -1,4 +1,4 @@
-"""Tests for ReferenceData auto-population (issue #63)."""
+"""Tests for ObservationSet auto-population (issue #63)."""
 
 import numpy as np
 import pytest
@@ -10,10 +10,13 @@ from test._shared import (
     TS_FCHK,
 )
 
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
+from q2mm.io.fchk import load_fchk, load_fchk_reference
+from q2mm.io.gaussian import load_gaussian_reference
+from q2mm.models.forcefield import FunctionalForm
+from q2mm.models.parameters import ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ReferenceData
-from q2mm.io.fchk import parse_fchk as _parse_fchk
+from q2mm.models.observations import ObservationSet
 
 
 # ---- from_molecule ----
@@ -21,8 +24,8 @@ from q2mm.io.fchk import parse_fchk as _parse_fchk
 
 class TestFromMolecule:
     def test_basic_ch3f(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol)
 
         n_bonds = len(mol.bonds)
         n_angles = len(mol.angles)
@@ -37,8 +40,8 @@ class TestFromMolecule:
         assert "frequency" not in kinds
 
     def test_default_weights(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol)
 
         bond_vals = [v for v in ref.values if v.kind == "bond_length"]
         angle_vals = [v for v in ref.values if v.kind == "bond_angle"]
@@ -47,8 +50,8 @@ class TestFromMolecule:
         assert all(v.weight == 5.0 for v in angle_vals)
 
     def test_custom_weights(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol, weights={"bond_length": 50.0, "bond_angle": 25.0})
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol, weights={"bond_length": 50.0, "bond_angle": 25.0})
 
         bond_vals = [v for v in ref.values if v.kind == "bond_length"]
         angle_vals = [v for v in ref.values if v.kind == "bond_angle"]
@@ -57,8 +60,8 @@ class TestFromMolecule:
         assert all(v.weight == 25.0 for v in angle_vals)
 
     def test_atom_indices_populated(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol)
 
         for v in ref.values:
             assert v.atom_indices is not None
@@ -68,47 +71,47 @@ class TestFromMolecule:
                 assert len(v.atom_indices) == 3
 
     def test_bond_values_match_molecule(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol)
 
         ref_bonds = [v for v in ref.values if v.kind == "bond_length"]
         for rb, mb in zip(ref_bonds, mol.bonds):
             assert abs(rb.value - mb.length) < 1e-10
 
     def test_angle_values_match_molecule(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol)
 
         ref_angles = [v for v in ref.values if v.kind == "bond_angle"]
         for ra, ma in zip(ref_angles, mol.angles):
             assert abs(ra.value - ma.value) < 1e-10
 
     def test_with_frequencies(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         freqs = np.array([100.0, 200.0, -50.0, 300.0])
-        ref = ReferenceData.from_molecule(mol, frequencies=freqs)
+        ref = ObservationSet.from_molecule(mol, frequencies=freqs)
 
         freq_vals = [v for v in ref.values if v.kind == "frequency"]
         assert len(freq_vals) == 4
 
     def test_with_frequencies_skip_imaginary(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         freqs = np.array([100.0, 200.0, -50.0, 300.0])
-        ref = ReferenceData.from_molecule(mol, frequencies=freqs, skip_imaginary=True)
+        ref = ObservationSet.from_molecule(mol, frequencies=freqs, skip_imaginary=True)
 
         freq_vals = [v for v in ref.values if v.kind == "frequency"]
         assert len(freq_vals) == 3
         assert all(v.value >= 0 for v in freq_vals)
 
     def test_molecule_idx_propagated(self) -> None:
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        ref = ReferenceData.from_molecule(mol, molecule_idx=3)
+        mol = load_xyz(CH3F_XYZ)
+        ref = ObservationSet.from_molecule(mol, case_id="3")
 
-        assert all(v.molecule_idx == 3 for v in ref.values)
+        assert all(v.case_id == "3" for v in ref.values)
 
     def test_ts_molecule(self) -> None:
-        mol = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
-        ref = ReferenceData.from_molecule(mol)
+        mol = load_xyz(TS_XYZ, bond_tolerance=1.5)
+        ref = ObservationSet.from_molecule(mol)
 
         # SN2 TS should have C-F bonds detected with loose tolerance
         bond_labels = [v.label for v in ref.values if v.kind == "bond_length"]
@@ -122,18 +125,18 @@ class TestFromMolecule:
         ``mol.hessian is not None`` — callers passing an override
         without a base Hessian would get no eigenmatrix references.
         """
-        mol = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol = load_xyz(CH3F_XYZ)
         assert mol.hessian is None  # bare XYZ load — no Hessian
 
         n_atoms = mol.n_atoms
         synthetic_hessian = np.eye(3 * n_atoms) * 0.1  # plausible PSD shape
 
-        ref_with_override = ReferenceData.from_molecule(mol, eigenmatrix_hessian=synthetic_hessian)
+        ref_with_override = ObservationSet.from_molecule(mol, eigenmatrix_hessian=synthetic_hessian)
         eig_refs = [v for v in ref_with_override.values if v.kind.startswith("eig")]
         assert len(eig_refs) > 0, "override Hessian should produce eigenmatrix references"
 
         # Sanity: without the override, no eigenmatrix block is built.
-        ref_no_override = ReferenceData.from_molecule(mol)
+        ref_no_override = ObservationSet.from_molecule(mol)
         assert not any(v.kind.startswith("eig") for v in ref_no_override.values)
 
 
@@ -142,107 +145,116 @@ class TestFromMolecule:
 
 class TestFromMolecules:
     def test_two_molecules(self) -> None:
-        mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        mol2 = Q2MMMolecule.from_xyz(TS_XYZ, bond_tolerance=1.5)
-        ref = ReferenceData.from_molecules([mol1, mol2])
+        mol1 = load_xyz(CH3F_XYZ)
+        mol2 = load_xyz(TS_XYZ, bond_tolerance=1.5)
+        ref = ObservationSet.from_molecules([mol1, mol2], case_ids=["0", "1"])
 
         # Should have data from both
-        mol0_vals = [v for v in ref.values if v.molecule_idx == 0]
-        mol1_vals = [v for v in ref.values if v.molecule_idx == 1]
+        mol0_vals = [v for v in ref.values if v.case_id == "0"]
+        mol1_vals = [v for v in ref.values if v.case_id == "1"]
         assert len(mol0_vals) > 0
         assert len(mol1_vals) > 0
         assert ref.n_observations == len(mol0_vals) + len(mol1_vals)
 
     def test_with_per_molecule_frequencies(self) -> None:
-        mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
-        mol2 = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol1 = load_xyz(CH3F_XYZ)
+        mol2 = load_xyz(CH3F_XYZ)
         freqs1 = np.array([100.0, 200.0])
         freqs2 = np.array([150.0, 250.0, 350.0])
 
-        ref = ReferenceData.from_molecules([mol1, mol2], frequencies_list=[freqs1, freqs2])
+        ref = ObservationSet.from_molecules([mol1, mol2], case_ids=["0", "1"], frequencies_list=[freqs1, freqs2])
 
-        freq_vals_0 = [v for v in ref.values if v.kind == "frequency" and v.molecule_idx == 0]
-        freq_vals_1 = [v for v in ref.values if v.kind == "frequency" and v.molecule_idx == 1]
+        freq_vals_0 = [v for v in ref.values if v.kind == "frequency" and v.case_id == "0"]
+        freq_vals_1 = [v for v in ref.values if v.kind == "frequency" and v.case_id == "1"]
         assert len(freq_vals_0) == 2
         assert len(freq_vals_1) == 3
 
     def test_mismatched_frequencies_raises(self) -> None:
-        mol1 = Q2MMMolecule.from_xyz(CH3F_XYZ)
+        mol1 = load_xyz(CH3F_XYZ)
         with pytest.raises(ValueError, match="frequencies_list length"):
-            ReferenceData.from_molecules([mol1], frequencies_list=[np.array([1.0]), np.array([2.0])])
+            ObservationSet.from_molecules([mol1], case_ids=["0"], frequencies_list=[np.array([1.0]), np.array([2.0])])
 
 
-# ---- add_frequencies_from_array ----
+# ---- with_frequencies_from_array ----
 
 
-class TestAddFrequenciesFromArray:
+class TestWithFrequenciesFromArray:
+    """Covers the ``with_frequencies_from_array`` pure bulk loader.
+
+    Renamed from the old in-place ``add_frequencies_from_array`` (which
+    mutated ``ref`` and returned an ``int`` count added); the immutable
+    replacement returns a new :class:`ObservationSet` instead, so the
+    "count added" assertions below are now expressed via
+    ``ref.n_observations`` on the returned set (equivalent coverage: each
+    test still verifies exactly how many/which observations were added).
+    """
+
     def test_basic(self) -> None:
-        ref = ReferenceData()
-        added = ref.add_frequencies_from_array([100.0, 200.0, 300.0])
-        assert added == 3
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([100.0, 200.0, 300.0])
         assert ref.n_observations == 3
 
     def test_skip_imaginary(self) -> None:
-        ref = ReferenceData()
-        added = ref.add_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
-        assert added == 2
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
+        assert ref.n_observations == 2
 
     def test_data_idx_preserved(self) -> None:
-        ref = ReferenceData()
-        ref.add_frequencies_from_array([100.0, -50.0, 300.0])
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([100.0, -50.0, 300.0])
         indices = [v.data_idx for v in ref.values]
         assert indices == [0, 1, 2]
 
     def test_data_idx_with_skip(self) -> None:
         """data_idx should reflect original position even when skipping."""
-        ref = ReferenceData()
-        ref.add_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([100.0, -50.0, 300.0], skip_imaginary=True)
         indices = [v.data_idx for v in ref.values]
         # Original positions 0 and 2 (skipped position 1)
         assert indices == [0, 2]
 
     def test_weight_propagated(self) -> None:
-        ref = ReferenceData()
-        ref.add_frequencies_from_array([100.0, 200.0], weight=3.5)
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([100.0, 200.0], weight=3.5)
         assert all(v.weight == 3.5 for v in ref.values)
 
     def test_numpy_array(self) -> None:
-        ref = ReferenceData()
-        ref.add_frequencies_from_array(np.array([100.0, 200.0]))
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array(np.array([100.0, 200.0]))
         assert ref.n_observations == 2
 
 
-# ---- _parse_fchk ----
+# ---- load_fchk ----
 
 
 class TestParseFchk:
     def test_parse_gs(self) -> None:
-        symbols, coords, hessian, charge, mult = _parse_fchk(GS_FCHK)
-        assert len(symbols) == 8
-        assert symbols.count("H") == 6
-        assert symbols.count("C") == 2
-        assert coords.shape == (8, 3)
-        assert charge == 0
-        assert mult == 1
-        assert hessian is not None
-        assert hessian.shape == (24, 24)
+        molecule = load_fchk(GS_FCHK)
+        assert len(molecule.symbols) == 8
+        assert molecule.symbols.count("H") == 6
+        assert molecule.symbols.count("C") == 2
+        assert molecule.geometry.shape == (8, 3)
+        assert molecule.charge == 0
+        assert molecule.multiplicity == 1
+        assert molecule.hessian is not None
+        assert molecule.hessian.shape == (24, 24)
         # Hessian should be symmetric
-        np.testing.assert_allclose(hessian, hessian.T, atol=1e-15)
+        np.testing.assert_allclose(molecule.hessian, molecule.hessian.T, atol=1e-15)
 
     def test_parse_ts(self) -> None:
-        symbols, coords, hessian, charge, mult = _parse_fchk(TS_FCHK)
-        assert len(symbols) == 8
-        assert hessian is not None
-        assert hessian.shape == (24, 24)
+        molecule = load_fchk(TS_FCHK)
+        assert len(molecule.symbols) == 8
+        assert molecule.hessian is not None
+        assert molecule.hessian.shape == (24, 24)
 
     def test_coordinates_reasonable(self) -> None:
         """Coordinates should be in Angstrom and within reasonable range."""
-        symbols, coords, _, _, _ = _parse_fchk(GS_FCHK)
+        molecule = load_fchk(GS_FCHK)
         # All coordinates should be within ~5 Angstrom of origin
-        assert np.all(np.abs(coords) < 5.0)
+        assert np.all(np.abs(molecule.geometry) < 5.0)
         # C-C bond should be ~1.5 Angstrom
-        c_indices = [i for i, s in enumerate(symbols) if s == "C"]
-        cc_dist = np.linalg.norm(coords[c_indices[0]] - coords[c_indices[1]])
+        c_indices = [i for i, symbol in enumerate(molecule.symbols) if symbol == "C"]
+        cc_dist = np.linalg.norm(molecule.geometry[c_indices[0]] - molecule.geometry[c_indices[1]])
         assert 1.3 < cc_dist < 1.7, f"C-C distance {cc_dist:.3f} Å out of range"
 
 
@@ -251,7 +263,7 @@ class TestParseFchk:
 
 class TestFromFchk:
     def test_basic(self) -> None:
-        ref, mol = ReferenceData.from_fchk(GS_FCHK)
+        ref, mol = load_fchk_reference(GS_FCHK)
 
         assert mol.n_atoms == 8
         assert mol.hessian is not None
@@ -263,13 +275,13 @@ class TestFromFchk:
         assert "bond_angle" in kinds
 
     def test_bond_count(self) -> None:
-        ref, mol = ReferenceData.from_fchk(GS_FCHK)
+        ref, mol = load_fchk_reference(GS_FCHK)
         n_bonds = len(mol.bonds)
         bond_refs = [v for v in ref.values if v.kind == "bond_length"]
         assert len(bond_refs) == n_bonds
 
     def test_custom_weights(self) -> None:
-        ref, _ = ReferenceData.from_fchk(GS_FCHK, weights={"bond_length": 100.0, "bond_angle": 50.0})
+        ref, _ = load_fchk_reference(GS_FCHK, weights={"bond_length": 100.0, "bond_angle": 50.0})
         bond_vals = [v for v in ref.values if v.kind == "bond_length"]
         angle_vals = [v for v in ref.values if v.kind == "bond_angle"]
         assert all(v.weight == 100.0 for v in bond_vals)
@@ -277,8 +289,8 @@ class TestFromFchk:
 
     def test_gs_vs_ts_different_geometries(self) -> None:
         """GS (staggered) and TS (eclipsed) should have different angles."""
-        ref_gs, mol_gs = ReferenceData.from_fchk(GS_FCHK)
-        ref_ts, mol_ts = ReferenceData.from_fchk(TS_FCHK)
+        ref_gs, mol_gs = load_fchk_reference(GS_FCHK)
+        ref_ts, mol_ts = load_fchk_reference(TS_FCHK)
 
         # Both are ethane with 8 atoms
         assert mol_gs.n_atoms == mol_ts.n_atoms == 8
@@ -296,18 +308,18 @@ class TestFromFchk:
 
 class TestFromGaussian:
     def test_ethane_log_builds_geometry_references_and_force_field(self) -> None:
-        ref, molecule = ReferenceData.from_gaussian(GS_FCHK.with_suffix(".log"), au_hessian=True)
-        force_field = qfuerza_fresh(molecule)
+        ref, molecule = load_gaussian_reference(GS_FCHK.with_suffix(".log"), au_hessian=True)
+        force_field = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC)
 
         assert molecule.n_atoms == 8
         assert len(molecule.bonds) == 7
         assert len(molecule.angles) == 12
         assert any(value.kind == "bond_length" for value in ref.values)
         assert any(value.kind == "bond_angle" for value in ref.values)
-        assert force_field.n_params > 0
+        assert len(ParameterLayout.from_force_field(force_field)) > 0
 
     def test_explicit_charge_and_multiplicity_override_archive(self) -> None:
-        _, molecule = ReferenceData.from_gaussian(
+        _, molecule = load_gaussian_reference(
             GS_FCHK.with_suffix(".log"),
             charge=-2,
             multiplicity=3,

@@ -10,21 +10,23 @@ The protocol — paraphrased from paper §97 + Conclusion:
    *unmodified* QM Hessian eigenmatrix, with the imaginary
    (reaction-coordinate) mode excluded from the fit (weight = 0).
    This is what the existing :class:`~q2mm.workflows.SingleStageWorkflow`
-   already does for TSFFs: ``ReferenceData.from_molecules`` uses
+   already does for TSFFs: ``ObservationSet.from_molecules`` uses
    ``mol.hessian`` (the unmodified Hessian) and
    ``add_eigenmatrix_from_hessian(skip_first=True)`` assigns weight 0
    to the imaginary mode.
 
-2. **Identify candidates**: scan the Round 1 final FF for bond/angle/UB
-   force constants that drifted to zero / went negative.  These are
-   the parameters Limé & Norrby's paper explicitly calls out as
-   needing protection (¶97: "we were troubled to see that the FACAF
+2. **Identify candidates**: scan the Round 1 final full-vector for
+   bond/angle/UB force constants that drifted to zero / went negative.
+   These are the parameters Limé & Norrby's paper explicitly calls out
+   as needing protection (¶97: "we were troubled to see that the FACAF
    bend constant went to zero in the optimization, and would have
    become negative if allowed").
 
-3. **Lock candidates at Round 1 values**: per paper recommendation,
-   freeze these candidates at the values they reached in Round 1
-   (the "Method D natural" values).
+3. **Derive a round-2 active space**: build a new
+   :class:`~q2mm.models.parameters.ActiveParameterSpace` over the same
+   layout, rebased to the Round 1 final vector, with the candidates'
+   full-vector indices removed from the active set (never mutating the
+   original problem's force field or active space).
 
 4. **Round 2 (Method C)**: optimize only the *remaining* active
    parameters against a fresh reference set built with the
@@ -32,11 +34,6 @@ The protocol — paraphrased from paper §97 + Conclusion:
    preserves correct steric response along the reaction coordinate
    (paper ¶98) while the locked Method-D values keep the problematic
    FCs from drifting back into the unphysical region.
-
-5. **Restore active mask**: before returning, unfreeze the candidates
-   so the caller sees the same active/frozen partition they passed
-   in.  The locked values stay; the freeze state is purely a
-   workflow-internal bookkeeping.
 
 If Round 1 produces no candidates, the workflow short-circuits to
 ``SingleStageWorkflow`` behavior: returns the Round 1 result with one
@@ -56,17 +53,17 @@ from q2mm.workflows.base import StageResult, WorkflowResult
 from q2mm.workflows.single_stage import _evaluate_samples, _per_category_metrics
 
 if TYPE_CHECKING:
-    from q2mm.systems import SystemData
-    from q2mm.models.forcefield import ForceField, _FrozenAwareParam
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterId, ParameterKind, ParameterLayout
+    from q2mm.models.problem import OptimizationProblem
     from q2mm.workflows.base import _Optimizer
 
 logger = logging.getLogger(__name__)
 
 
-# Force-constant parameter types that are physically required to be
+# Force-constant parameter kinds that are physically required to be
 # non-negative (Hooke's-law springs); torsions, stretch-bends, and
 # bend-bend cross terms can legitimately be negative.
-_PHYSICAL_FC_TYPES = frozenset({"bond_k", "angle_k", "ub_k"})
+_PHYSICAL_FC_KINDS = frozenset({"bond_k", "angle_k", "ub_k"})
 
 
 # --- Q2MM Approxn defaults (Farrugia 2025, JCTC 22, 469) ----------
@@ -75,7 +72,7 @@ _PHYSICAL_FC_TYPES = frozenset({"bond_k", "angle_k", "ub_k"})
 # during optimization).  Numbers are the paper's "Q2MM Approxn"
 # standards in MM3 units; we convert once at import time so callers
 # get the canonical kcal/(mol·Å²) and kcal/(mol·rad²) values used by
-# :class:`~q2mm.models.forcefield.ForceField`.
+# :class:`~q2mm.models.parameters.ParameterLayout`.
 APPROXN_BOND_K_MDYNA = 5.0  # 5 mdyn/Å
 APPROXN_ANGLE_K_MDYNA_RAD2 = 0.5  # 0.5 mdyn·Å/rad²
 APPROXN_DEFAULTS: dict[str, float] = {
@@ -85,97 +82,110 @@ APPROXN_DEFAULTS: dict[str, float] = {
 }
 
 
-def _iter_active_force_constants(ff: ForceField) -> list[tuple[int, str, _FrozenAwareParam, str]]:
-    """Walk active force-constant params; yield ``(full_idx, type, row, attr)``.
-
-    Returns one tuple per active ``bond_k`` / ``angle_k`` / ``ub_k``
-    slot, paired with the underlying parameter object (``BondParam``
-    or ``AngleParam``) so callers can mutate the FC value and toggle
-    the freeze flag.  Cursor logic mirrors
-    ``q2mm/workflows/single_stage.py`` and the Phase 9.1 diff script.
-    """
-    labels = ff.get_param_type_labels()
-    active = ff.active_mask
-    coll_iters: dict[str, list] = {
-        "bonds": list(ff.bonds),
-        "angles": list(ff.angles),
-        "torsions": list(getattr(ff, "torsions", [])),
-        "stretch_bends": list(getattr(ff, "stretch_bends", [])),
-        "vdw": list(getattr(ff, "vdws", [])),
-        "ub_angles": list(getattr(ff, "_ub_angles", [])),
-    }
-    type_to_collection = {
-        "bond_k": ("bonds", "k"),
-        "bond_eq": ("bonds", "eq"),
-        "angle_k": ("angles", "k"),
-        "angle_eq": ("angles", "eq"),
-        "torsion_k": ("torsions", "k"),
-        "sb_k": ("stretch_bends", "k"),
-        "vdw_radius": ("vdw", "r"),
-        "vdw_epsilon": ("vdw", "epsilon"),
-        "ub_k": ("ub_angles", "k"),
-        "ub_eq": ("ub_angles", "eq"),
-    }
-    cursor: dict[str, int] = {}
-    results: list[tuple[int, str, _FrozenAwareParam, str]] = []
-
-    for full_i, lbl in enumerate(labels):
-        coll, attr = type_to_collection.get(lbl, ("?", "?"))
-        c = cursor.get(coll, 0)
-        row = coll_iters.get(coll, [None])[c] if coll in coll_iters and c < len(coll_iters[coll]) else None
-        # Advance cursor on every label (active and frozen) so positions
-        # stay aligned with the underlying FF collections.
-        if attr == "eq" or coll in {"torsions", "stretch_bends"} or (coll == "vdw" and attr == "epsilon"):
-            cursor[coll] = c + 1
-        if not active[full_i] or lbl not in _PHYSICAL_FC_TYPES or row is None:
-            continue
-        results.append((full_i, lbl, row, attr))
-    return results
+def _iter_active_force_constants(
+    layout: ParameterLayout, active_space: ActiveParameterSpace
+) -> list[tuple[int, ParameterKind]]:
+    """Yield ``(full_idx, kind)`` for every active bond_k/angle_k/ub_k slot."""
+    active = {int(i) for i in active_space.active_indices}
+    return [
+        (slot.index, slot.kind)
+        for slot in layout.slots
+        if slot.index in active and slot.kind.value in _PHYSICAL_FC_KINDS
+    ]
 
 
 def _identify_method_e2_candidates(
-    ff: ForceField, *, threshold: float, allow_negative: bool
-) -> list[tuple[int, str, _FrozenAwareParam, float]]:
+    layout: ParameterLayout,
+    active_space: ActiveParameterSpace,
+    vector: np.ndarray,
+    *,
+    threshold: float,
+    allow_negative: bool,
+) -> list[tuple[int, str, float]]:
     """Return active force constants that need Method E2 protection.
 
     A parameter is a candidate when its current force-constant value
-    falls below ``threshold`` in magnitude (drifted toward zero) or
-    is strictly negative (when ``allow_negative=False``).  Returns a
-    list of ``(full_idx, type, param_row, current_value)`` tuples.
+    (``vector[full_idx]``) falls below ``threshold`` in magnitude
+    (drifted toward zero) or is strictly negative (when
+    ``allow_negative=False``).  Returns a list of
+    ``(full_idx, kind_value, current_value)`` tuples.
     """
-    candidates: list[tuple[int, str, _FrozenAwareParam, float]] = []
-    for full_i, lbl, row, _attr in _iter_active_force_constants(ff):
-        # ``BondParam`` and ``AngleParam`` both expose ``force_constant``;
-        # ``ub_k`` lives on ``AngleParam.ub_force_constant``.
-        if lbl == "ub_k":
-            value = float(row.ub_force_constant) if row.ub_force_constant is not None else 0.0
-        else:
-            value = float(row.force_constant)
+    candidates: list[tuple[int, str, float]] = []
+    for full_i, kind in _iter_active_force_constants(layout, active_space):
+        value = float(vector[full_i])
         is_negative = (not allow_negative) and value < 0.0
         is_near_zero = abs(value) < threshold
         if is_negative or is_near_zero:
-            candidates.append((full_i, lbl, row, value))
+            candidates.append((full_i, kind.value, value))
     return candidates
 
 
-def _build_round2_references(system: SystemData, *, replace_with: float) -> Any:  # noqa: ANN401 — returns ReferenceData but TYPE_CHECKING circular
-    """Build a Method C reference set: geometry + modified-Hessian eigenmatrix.
+def _row_key(parameter_id: ParameterId) -> tuple[str, tuple[str, ...], int]:
+    """Semantic row identity for a slot: family + chemical identity + occurrence.
 
-    Mirrors the call ``load_system`` makes for published-FF strategies
-    (``ReferenceData.from_molecules(... eigenmatrix_diagonal_only=True)``)
-    except eigenmatrix references use each molecule's Hessian with the
-    reaction-coordinate eigenvalue replaced via
+    Two ``ParameterSlot`` objects belong to the same physical parameter
+    row — and thus must be locked together — iff this key matches; only
+    :attr:`ParameterId.field` differs between them (e.g. a bond's
+    ``force_constant`` vs. its ``equilibrium``). An angle's
+    Urey-Bradley ``ub_k``/``ub_eq`` slots do NOT share a row with that
+    same angle's own bending ``angle_k``/``angle_eq`` slots even though
+    both live on the same ``owner="angles"``/``owner_index`` —
+    ``ParameterId.family`` is ``"urey_bradley"`` for the former and
+    ``"angle"`` for the latter.
+    """
+    return (parameter_id.family, parameter_id.identity, parameter_id.occurrence)
+
+
+def _lock_candidate_rows(layout: ParameterLayout, candidate_indices: set[int]) -> frozenset[int]:
+    """Expand *candidate_indices* to every full-vector slot sharing a row.
+
+    Limé & Norrby ¶104's "lock at the Method D values" applies to the
+    *whole* physical parameter a candidate force constant belongs to,
+    not just the force-constant scalar itself: locking a ``bond_k``/
+    ``angle_k``/``ub_k`` candidate must also lock its paired
+    ``bond_eq``/``angle_eq``/``ub_eq`` slot at its Round-1 (QM-derived
+    geometry) value, exactly as the pre-Phase-2 row-scoped
+    ``BondParam.freeze()``/``AngleParam.freeze()`` API did.
+
+    Expansion uses only :class:`~q2mm.models.parameters.ParameterLayout`
+    / :class:`~q2mm.models.parameters.ParameterId` metadata — the
+    semantic row identity from :func:`_row_key` — never manual block
+    arithmetic or tuple-position assumptions, so one implementation
+    covers bonds/angles/Urey-Bradley uniformly without a hardcoded
+    per-kind pairing table.
+    """
+    rows: dict[tuple[str, tuple[str, ...], int], set[int]] = {}
+    for slot in layout.slots:
+        rows.setdefault(_row_key(slot.id), set()).add(slot.index)
+    locked: set[int] = set()
+    for full_i in candidate_indices:
+        locked.update(rows[_row_key(layout.slots[full_i].id)])
+    return frozenset(locked)
+
+
+def _build_round2_problem(problem: OptimizationProblem, *, replace_with: float) -> OptimizationProblem:
+    """Build a Method C problem: geometry + modified-Hessian eigenmatrix.
+
+    Mirrors the reference construction every published-FF system
+    loader uses (``ObservationSet.from_molecules``) except eigenmatrix
+    references use each molecule's Hessian with the reaction-coordinate
+    eigenvalue replaced via
     :func:`~q2mm.models.hessian.invert_ts_curvature`.
     """
-    from q2mm.models.hessian import invert_ts_curvature
-    from q2mm.optimizers.objective import ReferenceData
+    import dataclasses
 
-    inverted_hessians = [invert_ts_curvature(mol.hessian, replace_with=replace_with) for mol in system.molecules]
-    return ReferenceData.from_molecules(
-        system.molecules,
+    from q2mm.models.hessian import invert_ts_curvature
+    from q2mm.models.observations import ObservationSet
+
+    molecules = list(problem.molecules)
+    inverted_hessians = [invert_ts_curvature(mol.hessian, replace_with=replace_with) for mol in molecules]
+    observations = ObservationSet.from_molecules(
+        molecules,
+        case_ids=list(problem.case_ids),
         eigenmatrix_diagonal_only=True,
         eigenmatrix_hessians=inverted_hessians,
     )
+    return dataclasses.replace(problem, observations=observations)
 
 
 class MethodE2Workflow:
@@ -217,8 +227,8 @@ class MethodE2Workflow:
                 check applies.  Set ``True`` only when you have
                 specifically reasoned about why a negative bond/angle
                 FC is acceptable for your system.
-            near_zero_replace_with: Per-type replacement values applied
-                to candidate force constants *before* freezing them
+            near_zero_replace_with: Per-kind replacement values applied
+                to candidate force constants *before* locking them
                 for Round 2.  When ``None`` (default), uses
                 :data:`APPROXN_DEFAULTS` — the Q2MM Approxn standards
                 from Farrugia 2025 (5 mdyn/Å for bond/UB, 0.5
@@ -230,13 +240,13 @@ class MethodE2Workflow:
                 positive value that keeps the MM potential
                 well-defined for downstream production use.
 
-                When a dict of ``{label: value}`` in canonical units
-                (kcal/(mol·Å²) for ``bond_k``/``ub_k``,
+                When a dict of ``{kind_value: value}`` in canonical
+                units (kcal/(mol·Å²) for ``bond_k``/``ub_k``,
                 kcal/(mol·rad²) for ``angle_k``) is provided,
-                candidates of the listed types are reset to the given
-                value before freezing.  Keys not present in the dict
+                candidates of the listed kinds are reset to the given
+                value before locking. Keys not present in the dict
                 are *not* replaced — the paper-literal
-                lock-at-Round-1-value applies to those types.  Pass
+                lock-at-Round-1-value applies to those kinds. Pass
                 ``{}`` for the strict paper-literal behavior with no
                 replacements (Limé & Norrby ¶104: lock at Round 1 /
                 Method D values).
@@ -252,19 +262,19 @@ class MethodE2Workflow:
         if near_zero_replace_with is None:
             self.near_zero_replace_with: dict[str, float] = dict(APPROXN_DEFAULTS)
         else:
-            for lbl, val in near_zero_replace_with.items():
-                if lbl not in _PHYSICAL_FC_TYPES:
+            for kind_value, val in near_zero_replace_with.items():
+                if kind_value not in _PHYSICAL_FC_KINDS:
                     raise ValueError(
-                        f"near_zero_replace_with: unsupported label {lbl!r}; "
-                        f"must be one of {sorted(_PHYSICAL_FC_TYPES)}"
+                        f"near_zero_replace_with: unsupported kind {kind_value!r}; "
+                        f"must be one of {sorted(_PHYSICAL_FC_KINDS)}"
                     )
                 if not np.isfinite(val) or val < 0:
-                    raise ValueError(f"near_zero_replace_with[{lbl!r}]={val!r} must be finite and ≥ 0")
+                    raise ValueError(f"near_zero_replace_with[{kind_value!r}]={val!r} must be finite and ≥ 0")
             self.near_zero_replace_with = dict(near_zero_replace_with)
 
     def run(
         self,
-        system: SystemData,
+        problem: OptimizationProblem,
         engine: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
@@ -272,17 +282,12 @@ class MethodE2Workflow:
     ) -> WorkflowResult:
         """Execute the two-stage Method E2 protocol.
 
-        .. warning::
-
-           ``system.forcefield`` is mutated in place by both rounds.
-           Use ``WorkflowResult.initial_ff`` / ``final_ff`` for stable
-           before/after snapshots.  The active/frozen partition on
-           ``system.forcefield`` is restored before returning — any
-           freezes the workflow applies are reverted.
-
         Args:
-            system: Loaded benchmark system.  Reference data must
-                already be built (typically via ``load_system``).
+            problem: Loaded optimization problem.  ``problem.starting_force_field``
+                is never mutated — Round 2's locked candidates are
+                expressed as a derived, rebased
+                :class:`~q2mm.models.parameters.ActiveParameterSpace`,
+                not by freezing rows in place.
             engine: MM backend used to evaluate both rounds.
             optimizer: Pre-configured optimizer.  The same instance
                 is used for both Round 1 and Round 2; for a single
@@ -300,18 +305,19 @@ class MethodE2Workflow:
         """
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        # --- Snapshot initial state ---------------------------------
-        initial_params = system.forcefield.get_param_vector().copy()
-        initial_ff = system.forcefield.with_params(initial_params)
+        initial_ff = problem.starting_force_field
+        layout = problem.layout
+        molecules = list(problem.molecules)
 
         # --- Round 1: Method D (unmodified Hessian; existing behaviour)
-        obj_round1 = ObjectiveFunction(system.forcefield, engine, system.molecules, system.reference)
+        obj_round1 = ObjectiveFunction(
+            initial_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+        )
         t0 = time.perf_counter()
-        round1_result = optimizer.optimize(obj_round1)
+        round1_result = optimizer.optimize(obj_round1, problem.active_space)
         round1_elapsed = time.perf_counter() - t0
-        # ``optimizer.optimize`` mutates the FF in place to the final
-        # parameter values.  This is the "Method D natural" FF.
-        round1_ff = system.forcefield
+        round1_vector = np.asarray(round1_result.final_params, dtype=float)
+        round1_ff = layout.replace(initial_ff, round1_vector)
 
         round1_stage = StageResult(
             name="round-1-method-d",
@@ -328,11 +334,15 @@ class MethodE2Workflow:
 
         # --- Identify Method E2 candidates --------------------------
         candidates = _identify_method_e2_candidates(
-            round1_ff, threshold=self.negative_fc_threshold, allow_negative=self.allow_negative
+            layout,
+            problem.active_space,
+            round1_vector,
+            threshold=self.negative_fc_threshold,
+            allow_negative=self.allow_negative,
         )
         round1_stage.notes["method_e2_candidates"] = [
-            {"full_idx": full_i, "type": lbl, "round1_value": value, "atoms": "-".join(row.elements)}
-            for (full_i, lbl, row, value) in candidates
+            {"full_idx": full_i, "type": kind_value, "round1_value": value, "name": layout.slots[full_i].name}
+            for (full_i, kind_value, value) in candidates
         ]
 
         if not candidates:
@@ -343,7 +353,7 @@ class MethodE2Workflow:
             categories = _per_category_metrics(obj_round1, round1_ff)
             return WorkflowResult(
                 workflow_name=self.name,
-                final_ff=initial_ff.with_params(round1_result.final_params),
+                final_ff=round1_ff,
                 initial_ff=initial_ff,
                 stages=[round1_stage],
                 initial_obj_samples=initial_samples,
@@ -360,24 +370,21 @@ class MethodE2Workflow:
         # --- Apply near-zero replacements before locking -----------
         # When Round 1 (with the new non-negative bounds on bond_k /
         # angle_k / ub_k) parks a candidate at exactly 0.0, locking
-        # the row at that value gives a Hooke's-law spring with no
-        # restoring force — an unphysical artefact of the bounded
+        # the value at that value gives a Hooke's-law spring with no
+        # restoring force (unphysical), an artefact of the bounded
         # search.  ``near_zero_replace_with`` lets the caller (default
         # ``APPROXN_DEFAULTS``) substitute a small empirical positive
-        # value for the type so the locked Round 2 force constant is
+        # value for the kind so the locked Round 2 force constant is
         # production-usable.  Pass ``near_zero_replace_with={}`` to
         # opt out and recover the strict paper-literal Method E2.
+        round2_baseline = round1_vector.copy()
         replaced: list[dict[str, Any]] = []
-        for full_i, lbl, row, _value in candidates:
-            if lbl not in self.near_zero_replace_with:
+        for full_i, kind_value, old_value in candidates:
+            if kind_value not in self.near_zero_replace_with:
                 continue
-            new_val = self.near_zero_replace_with[lbl]
-            old_val = float(row.ub_force_constant) if lbl == "ub_k" else float(row.force_constant)
-            if lbl == "ub_k":
-                row.ub_force_constant = new_val
-            else:
-                row.force_constant = new_val
-            replaced.append({"full_idx": full_i, "type": lbl, "from": old_val, "to": new_val})
+            new_val = self.near_zero_replace_with[kind_value]
+            round2_baseline[full_i] = new_val
+            replaced.append({"full_idx": full_i, "type": kind_value, "from": old_value, "to": new_val})
         if replaced:
             round1_stage.notes["near_zero_replacements"] = replaced
             logger.info(
@@ -385,51 +392,49 @@ class MethodE2Workflow:
                 len(replaced),
             )
 
-        # --- Lock candidates at Round 1 (or replacement) values ----
+        # --- Derive a Round 2 active space: candidate rows removed, ---
+        # --- rebased to the (possibly Approxn-adjusted) Round 1 values.
         # Per Limé & Norrby ¶104, "all force constants that go to zero
         # in the method C refinement should be set to the values found
         # in the method D force field, and subsequently left out of the
-        # refinement (method E2)."  Round 1 values ARE the Method D
-        # values; just freeze the rows in place.
+        # refinement (method E2)."  This never mutates the original
+        # problem's force field or active space — it derives a new
+        # ActiveParameterSpace by exact full-vector index.
         #
-        # NOTE: ``BondParam.freeze`` / ``AngleParam.freeze`` operate on
-        # the whole row (the ``frozen`` flag is per-param, not per-
-        # field), so freezing a bond_k candidate also freezes the
-        # paired bond_eq.  This matches the paper's "lock at Method D
-        # values" semantics in spirit (eq values came from QM geometry
-        # and shouldn't drift either) but be aware of the coupling
-        # when reasoning about which slots are active in Round 2.
-        # Take an active-mask snapshot BEFORE freezing so we can
-        # report every slot the freeze actually locked (the freeze is
-        # row-scoped, so both ``bond_k`` and the paired ``bond_eq``
-        # transition from active to frozen — recording only the
-        # ``bond_k`` index would under-report what Round 2 is
-        # actually skipping).
-        active_before_lock = system.forcefield.active_mask.copy()
-        for full_i, lbl, row, _value in candidates:
-            row.freeze()
-        active_after_lock = system.forcefield.active_mask
-        locked_param_indices = [int(i) for i in np.flatnonzero(active_before_lock & ~active_after_lock).tolist()]
+        # Locking is row-scoped, not scalar-scoped: each candidate
+        # *_k is expanded (via ParameterLayout's semantic row identity
+        # — see _lock_candidate_rows) to include its paired *_eq slot,
+        # matching the pre-Phase-2 row-scoped BondParam.freeze()/
+        # AngleParam.freeze() semantics (freezing a row froze both its
+        # force constant and its equilibrium value together). Both the
+        # candidate and its paired eq are removed from Round 2's active
+        # set and both are reported in locked_param_indices — reporting
+        # only the *_k index would under-report what Round 2 actually
+        # skips.
+        candidate_indices = {full_i for full_i, _kind, _value in candidates}
+        locked_row_indices = _lock_candidate_rows(layout, candidate_indices)
+        active_before_lock = {int(i) for i in problem.active_space.active_indices}
+        round2_active_indices = sorted(active_before_lock - locked_row_indices)
+        locked_param_indices = sorted(active_before_lock & locked_row_indices)
+        round2_space = problem.active_space.with_baseline(round2_baseline).with_active_indices(round2_active_indices)
 
-        n_active_after_lock = int(system.forcefield.active_mask.sum())
-        if n_active_after_lock == 0:
+        if not round2_active_indices:
             # Pathological: all active rows had a candidate, leaving
-            # nothing for Round 2 to optimize.  Skip Round 2, unfreeze,
-            # and return Round 1 result with a notes flag.
+            # nothing for Round 2 to optimize.  Skip Round 2 and return
+            # the (Approxn-adjusted) Round 1 result with a notes flag.
             logger.warning(
                 "MethodE2Workflow: locking all %d candidate(s) left 0 active params; "
                 "skipping Round 2.  Try a tighter ``negative_fc_threshold``.",
                 len(candidates),
             )
-            for _full_i, _lbl, row, _value in candidates:
-                row.unfreeze()
             round1_stage.notes["round_2_skipped"] = "no_active_params_after_lock"
+            adjusted_ff = layout.replace(initial_ff, round2_baseline)
             initial_samples = _evaluate_samples(obj_round1, round1_result.initial_params, n_evals)
-            final_samples = _evaluate_samples(obj_round1, round1_result.final_params, n_evals)
-            categories = _per_category_metrics(obj_round1, round1_ff)
+            final_samples = _evaluate_samples(obj_round1, round2_baseline, n_evals)
+            categories = _per_category_metrics(obj_round1, adjusted_ff)
             return WorkflowResult(
                 workflow_name=self.name,
-                final_ff=initial_ff.with_params(round1_result.final_params),
+                final_ff=adjusted_ff,
                 initial_ff=initial_ff,
                 stages=[round1_stage],
                 initial_obj_samples=initial_samples,
@@ -438,20 +443,22 @@ class MethodE2Workflow:
             )
 
         # --- Round 2: Method C (modified Hessian; locked candidates) ---
-        round2_ref = _build_round2_references(system, replace_with=self.replace_with_round2)
-        obj_round2 = ObjectiveFunction(system.forcefield, engine, system.molecules, round2_ref)
-        try:
-            t0 = time.perf_counter()
-            round2_result = optimizer.optimize(obj_round2)
-            round2_elapsed = time.perf_counter() - t0
-        finally:
-            # --- Restore active mask: unfreeze the candidates -------
-            # The locked values stay (they're the Method D values per
-            # the paper); the freeze state is workflow-internal.
-            for _full_i, _lbl, row, _value in candidates:
-                row.unfreeze()
+        round2_problem = _build_round2_problem(problem, replace_with=self.replace_with_round2)
+        round2_start_ff = layout.replace(initial_ff, round2_baseline)
+        obj_round2 = ObjectiveFunction(
+            round2_start_ff,
+            engine,
+            molecules,
+            round2_problem.observations,
+            case_ids=list(round2_problem.case_ids),
+            layout=layout,
+        )
+        t0 = time.perf_counter()
+        round2_result = optimizer.optimize(obj_round2, round2_space)
+        round2_elapsed = time.perf_counter() - t0
 
-        round2_ff = system.forcefield
+        final_full = np.asarray(round2_result.final_params, dtype=float)
+        round2_ff = layout.replace(initial_ff, final_full)
 
         round2_stage = StageResult(
             name="round-2-method-c",
@@ -471,18 +478,13 @@ class MethodE2Workflow:
         # Use obj_round2 (modified-Hessian reference) for consistency with
         # the final stage — Method E2's defining feature is that final
         # validation uses the Method C reference data.
-        final_full = system.forcefield.get_param_vector()
-        initial_samples = _evaluate_samples(obj_round1, initial_params, n_evals)
+        initial_samples = _evaluate_samples(obj_round1, round1_result.initial_params, n_evals)
         final_samples = _evaluate_samples(obj_round2, final_full, n_evals)
         categories = _per_category_metrics(obj_round2, round2_ff)
 
-        # Snapshot final FF (with_params copies; round2_ff is the caller's
-        # mutated reference and may still get modified by subsequent code).
-        final_ff = initial_ff.with_params(final_full)
-
         return WorkflowResult(
             workflow_name=self.name,
-            final_ff=final_ff,
+            final_ff=round2_ff,
             initial_ff=initial_ff,
             stages=[round1_stage, round2_stage],
             initial_obj_samples=initial_samples,

@@ -3,17 +3,30 @@
 Builds three no-optimization baselines for the Heck-relay system and
 evaluates each against the QM training set:
 
-A. Untouched Rosales FF — ForceField.from_mm3_fld(include_standard=True),
-   no freeze_standard_params, no Seminario re-estimation.
-B. Pre-fix loader pattern — the BUGGY combination that load_heck_relay
-   used before #277 was fixed: ForceField.from_mm3_fld +
-   freeze_standard_params + qfuerza_into(ff, molecules,
-   invert_ts_curvature=True).  Reconstructed inline (NOT by calling
-   the current loader), so this diagnostic stays valid as a
-   regression-detection tool after the fix lands.
-C. Seminario-only — ForceField.from_mm3_fld(include_standard=False)
-   (Rosales OPT block as the template), then Seminario re-estimates
-   every active param (no freeze step).
+A. Untouched Rosales FF — ``load_mm3_fld(include_standard=True)``, no
+   active/frozen partition applied, no Seminario re-estimation.
+B. Current (fixed) loader pattern — ``load_mm3_fld(include_standard=True)``
+   composed with the OPT-only block via ``opt_substructure_membership`` +
+   ``ActiveParameterSpace.from_membership``, then ``qfuerza_into(ff,
+   molecules, active_bonds=..., active_angles=..., active_torsions=...,
+   invert_ts_curvature=True)`` re-estimates only the OPT-substructure
+   parameters.  Reconstructed inline (NOT by calling
+   ``q2mm.benchmarks.systems.heck_relay.load``), so this diagnostic
+   stays independent of the production loader.  Note: the #277 bug
+   itself — ``ForceField.freeze_standard_params()`` silently mutating
+   rows in place and interacting badly with a mutating ``qfuerza_into``
+   — is now structurally impossible: parameter values are immutable,
+   ``qfuerza_into`` is pure and takes explicit ``active_bonds``/
+   ``active_angles``/``active_torsions`` index sets, and frozen/active
+   state lives only in :class:`~q2mm.models.parameters.ActiveParameterSpace`,
+   never on the force field itself.  Baseline B therefore now shows the
+   *fixed* loader pattern rather than the pre-fix bug — kept for its
+   original diagnostic value (comparing "backbone kept as literature
+   values" against A and C).
+C. Seminario-only — ``load_mm3_fld(include_standard=False)`` (Rosales
+   OPT block as the template), then Seminario re-estimates every active
+   param (no freeze step; every parameter in the OPT-only block is
+   active by construction).
 
 For each baseline this script reports:
 
@@ -160,7 +173,7 @@ def _per_category_metrics(obj: Any, ff: Any) -> tuple[dict[str, dict[str, float]
         if ref.kind == "bond_length":
             bond_records.append(
                 {
-                    "molecule_idx": int(ref.molecule_idx),
+                    "molecule_idx": int(ref.case_id),
                     "atom_indices": list(ref.atom_indices) if ref.atom_indices is not None else None,
                     "ref_value": float(ref.value),
                     "calc_value": calc_value,
@@ -187,7 +200,7 @@ def _per_molecule_r2(obj: Any, ff: Any) -> list[dict[str, float]]:
             continue
         raw_residual = float(weighted) / float(ref.weight)
         calc_value = float(ref.value) - raw_residual
-        per_mol[ref.molecule_idx].append((float(ref.value), calc_value))
+        per_mol[int(ref.case_id)].append((float(ref.value), calc_value))
     out: list[dict[str, float]] = []
     for idx in sorted(per_mol):
         pairs = per_mol[idx]
@@ -204,54 +217,84 @@ def _per_molecule_r2(obj: Any, ff: Any) -> list[dict[str, float]]:
 
 def _ff_path() -> Path:
     """Resolve the Rosales Heck-relay FF file path."""
-    from q2mm.systems import _resolve_supporting_info_dir
+    from q2mm.benchmarks.systems._paths import resolve_supporting_info_dir
 
-    si = _resolve_supporting_info_dir()
+    si = resolve_supporting_info_dir()
     return si / "rosales" / "Rosales_Anthony_Supporting_Information" / "Chapter3_Heck" / "mm3.FF1.fld"
 
 
-def build_ff_a_untouched(molecules: list[Any]) -> Any:
-    """Build baseline A — untouched Rosales FF (no Seminario, no freeze)."""
-    from q2mm.models.forcefield import ForceField, FunctionalForm
+def build_ff_a_untouched(molecules: list[Any]) -> tuple[Any, int]:
+    """Build baseline A — untouched Rosales FF (no Seminario, no freeze).
 
-    ff = ForceField.from_mm3_fld(str(_ff_path()), include_standard=True)
-    ff.functional_form = FunctionalForm.MM3
-    return ff
+    Returns:
+        ``(ff, n_active)`` — every parameter counts as "active" since no
+        frozen/active partition is applied.
 
-
-def build_ff_b_prefix_loader_pattern(molecules: list[Any]) -> Any:
-    """Build baseline B — explicit reconstruction of the PRE-FIX loader bug.
-
-    Reproduces the pre-#277 ``load_heck_relay()`` exactly:
-    ``from_mm3_fld(include_standard=True)`` + ``freeze_standard_params``
-    + ``qfuerza_into(ff, molecules, invert_ts_curvature=True)``.  This
-    is the bug we are diagnosing — we do **not** call the current
-    loader, because the current loader was fixed in #280 and no longer
-    reproduces the bug.  Keeping the buggy pattern inline here means
-    the diagnostic stays valid as a regression-detection tool even
-    after the fix lands.
     """
-    from q2mm.models.forcefield import ForceField, FunctionalForm
+    from q2mm.io.mm3 import load_mm3_fld
+    from q2mm.models.parameters import ParameterLayout
+
+    del molecules  # unused — baseline A applies no Seminario re-estimation
+    ff = load_mm3_fld(str(_ff_path()), include_standard=True)
+    n_active = len(ParameterLayout.from_force_field(ff))
+    return ff, n_active
+
+
+def build_ff_b_prefix_loader_pattern(molecules: list[Any]) -> tuple[Any, int]:
+    """Build baseline B — the current (fixed) loader pattern, reconstructed inline.
+
+    Composes the full Rosales FF with the OPT-only block via
+    :func:`~q2mm.models.parameters.opt_substructure_membership` and
+    :meth:`~q2mm.models.parameters.ActiveParameterSpace.from_membership`,
+    then ``qfuerza_into`` re-estimates only the OPT-substructure
+    bonds/angles/torsions.  This mirrors
+    ``q2mm.benchmarks.systems.heck_relay.load(starting_point="qfuerza")``
+    without calling it directly, so this diagnostic stays independent
+    of the production loader.  See the module docstring for why this is
+    no longer "the pre-fix bug" — that bug's root cause (mutable
+    ``.frozen`` row state) no longer exists.
+
+    Returns:
+        ``(ff, n_active)`` where *n_active* is the OPT-substructure
+        parameter count from :class:`~q2mm.models.parameters.ActiveParameterSpace`.
+
+    """
+    from q2mm.io.mm3 import load_mm3_fld
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout, opt_substructure_membership
     from q2mm.models.seminario import qfuerza_into
 
-    ff = ForceField.from_mm3_fld(str(_ff_path()), include_standard=True)
-    opt_ff = ForceField.from_mm3_fld(str(_ff_path()), include_standard=False)
-    ff.freeze_standard_params(opt_ff)
-    qfuerza_into(ff, molecules, invert_ts_curvature=True)
-    ff.functional_form = FunctionalForm.MM3
-    return ff
+    ff = load_mm3_fld(str(_ff_path()), include_standard=True)
+    opt_ff = load_mm3_fld(str(_ff_path()), include_standard=False)
+    membership = opt_substructure_membership(ff, opt_ff)
+    layout = ParameterLayout.from_force_field(ff)
+    ff = qfuerza_into(
+        ff,
+        molecules,
+        active_bonds=membership.bonds,
+        active_angles=membership.angles,
+        active_torsions=membership.torsions,
+        invert_ts_curvature=True,
+    )
+    space = ActiveParameterSpace.from_membership(layout, ff, membership)
+    return ff, space.n_active
 
 
-def build_ff_c_seminario_only(molecules: list[Any]) -> Any:
-    """Build baseline C — Seminario over the OPT block, no published values."""
-    from q2mm.models.forcefield import ForceField, FunctionalForm
+def build_ff_c_seminario_only(molecules: list[Any]) -> tuple[Any, int]:
+    """Build baseline C — Seminario over the OPT block, no published values.
+
+    Returns:
+        ``(ff, n_active)`` — every parameter in the OPT-only block is
+        active by construction (no frozen backbone).
+
+    """
+    from q2mm.io.mm3 import load_mm3_fld
+    from q2mm.models.parameters import ParameterLayout
     from q2mm.models.seminario import qfuerza_into
 
-    ff_template = ForceField.from_mm3_fld(str(_ff_path()), include_standard=False)
-    ff = ff_template.copy()
-    qfuerza_into(ff, molecules, invert_ts_curvature=True)
-    ff.functional_form = FunctionalForm.MM3
-    return ff
+    ff_template = load_mm3_fld(str(_ff_path()), include_standard=False)
+    ff = qfuerza_into(ff_template, molecules, invert_ts_curvature=True)
+    n_active = len(ParameterLayout.from_force_field(ff))
+    return ff, n_active
 
 
 # ---------------------------------------------------------------------------
@@ -262,15 +305,18 @@ def build_ff_c_seminario_only(molecules: list[Any]) -> Any:
 def evaluate_baseline(
     label: str,
     ff: Any,
+    n_active: int,
     molecules: list[Any],
     reference: Any,
     engine: Any,
 ) -> dict[str, Any]:
     """Compute the full diagnostic block for one baseline."""
+    from q2mm.models.parameters import ParameterLayout
     from q2mm.optimizers.objective import ObjectiveFunction
 
-    obj = ObjectiveFunction(ff, engine, molecules, reference)
-    x = ff.get_param_vector()
+    layout = ParameterLayout.from_force_field(ff)
+    obj = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    x = layout.vector(ff)
     obj_score = float(obj(x))
 
     categories, bond_records = _per_category_metrics(obj, ff)
@@ -296,8 +342,7 @@ def evaluate_baseline(
         logger.warning("[%s] JaxLoss evaluation failed: %s", label, exc)
         jaxloss_finite = False
 
-    n_active = int(np.sum(ff.active_mask))
-    n_total = int(ff.n_params)
+    n_total = len(layout)
 
     return {
         "label": label,
@@ -345,29 +390,33 @@ def main() -> int:
     )
 
     from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.systems import load_heck_relay_molecules
-    from q2mm.optimizers.objective import ReferenceData
+    from q2mm.benchmarks.systems.heck_relay import load_molecules as load_heck_relay_molecules
+    from q2mm.models.observations import ObservationSet
 
     logger.info("Loading 23 Heck-relay molecules + QM Hessians")
     engine = JaxEngine()
     molecules = load_heck_relay_molecules()
-    reference = ReferenceData.from_molecules(molecules, eigenmatrix_diagonal_only=True)
+    reference = ObservationSet.from_molecules(
+        molecules,
+        case_ids=[str(i) for i in range(len(molecules))],
+        eigenmatrix_diagonal_only=True,
+    )
     logger.info(
         "Loaded %d molecules; %d reference values across categories",
         len(molecules),
         len(reference.values),
     )
 
-    baselines: list[tuple[str, Any]] = [
-        ("A_untouched_rosales", build_ff_a_untouched(molecules)),
-        ("B_prefix_loader_pattern", build_ff_b_prefix_loader_pattern(molecules)),
-        ("C_seminario_only", build_ff_c_seminario_only(molecules)),
+    baselines: list[tuple[str, Any, int]] = [
+        ("A_untouched_rosales", *build_ff_a_untouched(molecules)),
+        ("B_prefix_loader_pattern", *build_ff_b_prefix_loader_pattern(molecules)),
+        ("C_seminario_only", *build_ff_c_seminario_only(molecules)),
     ]
 
     results: dict[str, Any] = {}
-    for label, ff in baselines:
+    for label, ff, n_active in baselines:
         logger.info("Evaluating baseline %s", label)
-        results[label] = evaluate_baseline(label, ff, molecules, reference, engine)
+        results[label] = evaluate_baseline(label, ff, n_active, molecules, reference, engine)
         r = results[label]
         cats = r["categories"]
         logger.info(
@@ -404,17 +453,18 @@ def main() -> int:
     print("Three-baseline summary (Heck relay)")
     print("=" * 70)
     print(f"{'Baseline':<22} {'n_active':>9} {'obj':>12} {'ratio':>12} {'R²(bond_len)':>14}")
-    for label, _ in baselines:
+    for label, _, _ in baselines:
         r = results[label]
         ratio_s = f"{r['ratio']:.2e}" if r["ratio"] is not None else "n/a"
         r2_bond = r["categories"].get("bond_length", {}).get("r2", float("nan"))
         print(f"  {label:<20} {r['n_active_params']:>9d} {r['objective_score']:>12.3e} {ratio_s:>12} {r2_bond:>14.3f}")
 
     print()
-    print("Decision rule (per issue #277):")
-    print("  A's bond_length R² >> B's   → bug in freeze_standard_params + Seminario interaction")
+    print("Decision rule (per issue #277, historical — the bug's root cause")
+    print("no longer exists post-phase-2; kept for the 3-baseline comparison):")
+    print("  A's bond_length R² >> B's   → backbone-vs-OPT-only estimation gap")
     print("  A ≈ B ≈ C                   → bug upstream (MM3 evaluator / atom types)")
-    print("  A fine, B explodes          → narrow on Seminario behavior with freeze_standard_params")
+    print("  A fine, B explodes          → narrow on Seminario/active-space interaction")
     return 0
 
 

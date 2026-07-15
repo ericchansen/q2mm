@@ -15,7 +15,7 @@ Usage::
     from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
     optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200)
-    result = optimizer.optimize(objective_function)
+    result = optimizer.optimize(objective_function, space)
 
 """
 
@@ -24,12 +24,15 @@ from __future__ import annotations
 import logging
 import math
 from importlib.util import find_spec
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import OptimizationResult
+
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ActiveParameterSpace
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +90,7 @@ class JaxOptOptimizer:
         self.tol = tol
         self.verbose = verbose
 
-    def optimize(self, objective: ObjectiveFunction) -> OptimizationResult:
+    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the JIT-compiled optimization.
 
         Builds a :class:`~q2mm.optimizers.jaxloss.JaxLoss` from the
@@ -97,9 +100,14 @@ class JaxOptOptimizer:
             objective: Configured objective with forcefield, engine,
                 molecules, and reference data.  Engine must be a
                 JaxEngine.
+            space: The active/frozen projection over ``objective.layout``.
+                ``objective.forcefield`` is never mutated — materialize
+                the optimized force field explicitly via
+                ``objective.layout.replace(objective.forcefield, result.final_params)``.
 
         Returns:
-            Optimization result with final parameters and history.
+            Optimization result with final full-vector parameters
+            (length ``space.n_full``) and history.
 
         Raises:
             TypeError: If the engine is not a JaxEngine.
@@ -124,39 +132,22 @@ class JaxOptOptimizer:
         spec = objective.to_jax_spec()
         jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
 
-        ff = objective.forcefield
-        initial_full = np.array(ff.get_param_vector(), dtype=float)
-        has_frozen = ff.n_active_params < ff.n_params
-        active_indices = np.flatnonzero(ff.active_mask) if has_frozen else None
+        layout = objective.layout
+        initial_full = layout.vector(objective.forcefield)
+        x0 = space.pack(initial_full)
+        active_bounds = space.bounds
+        baseline_jax = jnp.array(space.baseline, dtype=jnp.float64)
+        active_indices_jax = jnp.array(space.active_indices, dtype=jnp.int32)
 
-        if has_frozen:
-            x0 = np.array(ff.get_active_param_vector(), dtype=float)
-            active_bounds = np.asarray(ff.get_active_bounds(), dtype=float)
-            frozen_template = jnp.array(initial_full, dtype=jnp.float64)
-            active_indices_jax = jnp.array(active_indices, dtype=jnp.int32)
+        def expand_jax(x_active: Any):  # noqa: ANN202
+            return baseline_jax.at[active_indices_jax].set(x_active)
 
-            def expand_jax(x_active: Any):  # noqa: ANN202
-                return frozen_template.at[active_indices_jax].set(x_active)
+        def expand_np(x_active: np.ndarray) -> np.ndarray:
+            return space.expand(np.asarray(x_active, dtype=float))
 
-            def expand_np(x_active: np.ndarray) -> np.ndarray:
-                full = initial_full.copy()
-                full[active_indices] = np.asarray(x_active, dtype=float)
-                return full
-
-            def vag_fn(x_active: Any):  # noqa: ANN202
-                loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
-                return loss, full_grad[active_indices_jax]
-        else:
-            x0 = initial_full.copy()
-            active_bounds = np.asarray(spec.lower_bounds, dtype=float)
-
-            def expand_jax(x_active: Any):  # noqa: ANN202
-                return x_active
-
-            def expand_np(x_active: np.ndarray) -> np.ndarray:
-                return np.asarray(x_active, dtype=float).copy()
-
-            vag_fn = jax_loss.value_and_grad_jax
+        def vag_fn(x_active: Any):  # noqa: ANN202
+            loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
+            return loss, full_grad[active_indices_jax]
 
         # Use Python dispatch (value_and_grad_jax) to avoid compiling
         # all molecules into one XLA program.  jit=False makes
@@ -173,15 +164,14 @@ class JaxOptOptimizer:
             logger.info(
                 "Starting %s optimization: %d active params (%d total), initial score %.6f, maxiter=%d",
                 method_str,
-                ff.n_active_params,
-                ff.n_params,
+                space.n_active,
+                space.n_full,
                 initial_score,
                 self.maxiter,
             )
 
         if x0.size == 0:
             final_params = initial_full.copy()
-            objective.forcefield.set_param_vector(final_params)
             return OptimizationResult(
                 success=True,
                 message="No active parameters to optimize",
@@ -212,12 +202,8 @@ class JaxOptOptimizer:
                     "on GPU, or force CPU with "
                     "`jax.config.update('jax_platform_name', 'cpu')`."
                 )
-            if has_frozen:
-                lower = jnp.array(active_bounds[:, 0], dtype=jnp.float64)
-                upper = jnp.array(active_bounds[:, 1], dtype=jnp.float64)
-            else:
-                lower = jnp.array(spec.lower_bounds, dtype=jnp.float64)
-                upper = jnp.array(spec.upper_bounds, dtype=jnp.float64)
+            lower = jnp.array(active_bounds[:, 0], dtype=jnp.float64)
+            upper = jnp.array(active_bounds[:, 1], dtype=jnp.float64)
             result = solver.run(params, bounds=(lower, upper))
         else:
             result = solver.run(params)
@@ -266,9 +252,6 @@ class JaxOptOptimizer:
                     f"was worse than initial ({initial_score:.4f})"
                 )
 
-        # Apply final parameters to the forcefield
-        objective.forcefield.set_param_vector(final_params)
-
         # ``initial_score``/``final_score`` above are JaxLoss-unit surrogate
         # values used for the internal revert guard.  Report scores in true
         # ObjectiveFunction units so cross-stage comparisons in cycling.py
@@ -292,7 +275,7 @@ class JaxOptOptimizer:
             final_score=report_final,
             n_iterations=n_iter,
             n_evaluations=n_iter,
-            initial_params=initial_full if has_frozen else x0,
+            initial_params=initial_full,
             final_params=final_params,
             history=[report_initial, report_final],
             method=method_str,

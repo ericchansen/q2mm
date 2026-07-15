@@ -245,7 +245,6 @@ module = [
   "q2mm.models.hessian",
   "q2mm.models.molecule",
   "q2mm.models.seminario",
-  "q2mm.models.structure",
   "q2mm.optimizers.cycling",
   "q2mm.optimizers.evaluators.eigenmatrix",
   "q2mm.optimizers.evaluators.energy",
@@ -255,9 +254,7 @@ module = [
   "q2mm.optimizers.jaxopt_opt",
   "q2mm.optimizers.objective",
   "q2mm.optimizers.optax",
-  "q2mm.optimizers.reference",
   "q2mm.optimizers.scipy_opt",
   "q2mm.optimizers.spec",
-  "q2mm.systems",
   "q2mm.workflows.method_e2",
 ]

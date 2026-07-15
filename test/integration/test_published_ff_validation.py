@@ -10,7 +10,7 @@ single, uniform pipeline:
 
 * molecules + published force field come from
   ``load_system(key, starting_point="published")`` (one loader path for all
-  systems — see :mod:`q2mm.systems`);
+ systems — see :mod:`q2mm.benchmarks.systems`);
 * frequencies come from :func:`q2mm.models.hessian.hessian_to_frequencies`
   (QM) and ``JaxEngine.frequencies`` (MM);
 * the objective score is the real :class:`~q2mm.optimizers.objective.
@@ -198,10 +198,10 @@ def _build_frequency_reference(
     threshold: float = 50.0,
     upper_threshold: float = 4000.0,
     weight: float = 0.001,
-    molecule_idx: int = 0,
+    case_id: str = "0",
     ref: Any = None,
 ) -> tuple[Any, list[float]]:
-    """Build (or extend) a ReferenceData with frequency observations.
+    """Build (or extend) an ObservationSet with frequency observations.
 
     Frequencies below *threshold* are excluded (near-zero rigid-body modes and
     QM imaginary modes).  MM frequencies above *upper_threshold* are excluded —
@@ -209,20 +209,20 @@ def _build_frequency_reference(
     imaginary and thus already excluded, matching the Q2MM eig_i = 0.00 weight
     convention.
     """
-    from q2mm.optimizers.objective import ReferenceData
+    from q2mm.models.observations import ObservationSet
 
     qm_real = sorted(f for f in qm_freqs if f > threshold)
     mm_real_idx = sorted(i for i, f in enumerate(mm_all_freqs) if threshold < f <= upper_threshold)
     n = min(len(qm_real), len(mm_real_idx))
 
     if ref is None:
-        ref = ReferenceData()
+        ref = ObservationSet()
     for k in range(n):
-        ref.add_frequency(
+        ref = ref.with_frequency(
             float(qm_real[k]),
             data_idx=mm_real_idx[k],
             weight=weight,
-            molecule_idx=molecule_idx,
+            case_id=case_id,
         )
     return ref, qm_real[:n]
 
@@ -251,7 +251,7 @@ def _evaluate_ff_on_training_set(
             qm_freqs,
             mm_freqs,
             upper_threshold=upper_threshold,
-            molecule_idx=mol_idx,
+            case_id=str(mol_idx),
             ref=freq_ref,
         )
 
@@ -281,9 +281,11 @@ def _evaluate_ff_on_training_set(
         )
 
     from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.models.parameters import ParameterLayout
 
-    obj = ObjectiveFunction(ff, engine, molecules, freq_ref)
-    params = ff.get_param_vector()
+    layout = ParameterLayout.from_force_field(ff)
+    obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
+    params = layout.vector(ff)
     score = float(obj(params))
 
     return {
@@ -293,7 +295,7 @@ def _evaluate_ff_on_training_set(
         "overall_rmsd_cm1": float(np.mean([m["rmsd_cm1"] for m in per_molecule])),
         "overall_mae_cm1": float(np.mean([m["mae_cm1"] for m in per_molecule])),
         "overall_r_squared": float(np.mean([m["r_squared"] for m in per_molecule])),
-        "n_params": ff.n_params if hasattr(ff, "n_params") else len(params),
+        "n_params": len(layout),
         "n_molecules": len(molecules),
         "param_vector": params.tolist(),
     }
@@ -351,15 +353,17 @@ def _results_for(spec: Check1Spec) -> dict[str, Any]:
     if spec.key in _RESULTS_CACHE:
         return _RESULTS_CACHE[spec.key]
 
-    from q2mm.systems import load_system
+    from q2mm.benchmarks.systems import load_system
 
     try:
-        sd = load_system(spec.key, starting_point="published")
+        case = load_system(spec.key, starting_point="published")
     except FileNotFoundError as exc:
         pytest.skip(f"{spec.key}: training data not found ({exc})")
 
     t0 = time.perf_counter()
-    results = _evaluate_ff_on_training_set(sd.forcefield, sd.molecules, _get_engine())
+    results = _evaluate_ff_on_training_set(
+        case.problem.starting_force_field, list(case.problem.molecules), _get_engine()
+    )
     results["wall_time"] = time.perf_counter() - t0
 
     if UPDATE_GOLDEN:
@@ -459,14 +463,14 @@ class TestPublishedFFCheck1:
         results = _results_for(spec)
         with capsys.disabled():
             print("\n" + "=" * 72)
-            print(f"  CHECK 1: {spec.key} — {spec.metadata.get('paper', '')}")
+            print(f"  CHECK 1: {spec.key} - {spec.metadata.get('paper', '')}")
             print("=" * 72)
             print(f"  Molecules:   {results['n_molecules']}")
             print(f"  Parameters:  {results['n_params']}")
             print(f"  Freq refs:   {results['total_freq_refs']}")
             print(f"  Score:       {results['objective_score']:.4f}")
-            print(f"  Overall R²:  {results['overall_r_squared']:.4f}")
-            print(f"  Overall RMSD:{results['overall_rmsd_cm1']:8.1f} cm⁻¹")
+            print(f"  Overall R^2: {results['overall_r_squared']:.4f}")
+            print(f"  Overall RMSD:{results['overall_rmsd_cm1']:8.1f} cm^-1")
             print(f"  Wall time:   {results.get('wall_time', 0):.1f}s")
         assert results["per_molecule"], "summary should contain at least one molecule"
 
@@ -489,23 +493,28 @@ def test_load_heck_relay_preserves_published_opt_values() -> None:
     ``load_system("heck-relay", starting_point="published")`` against the same
     params loaded directly from the .fld file with no Seminario step.
     """
-    from q2mm.systems import _heck_relay_ff_path, load_system
-    from q2mm.models.forcefield import ForceField
+    from q2mm.benchmarks.systems import load_system
+    from q2mm.benchmarks.systems._forcefield import load_published_opt
+    from q2mm.benchmarks.systems._paths import ExternalDataRoots
+    from q2mm.benchmarks.systems.heck_relay import _ff_path
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout, opt_substructure_membership
 
-    ff_path = _heck_relay_ff_path()
+    ff_path = _ff_path(ExternalDataRoots())
     if not ff_path.exists():
         pytest.skip(f"Heck relay FF not found: {ff_path}")
 
     # Loader output, pinned to the published starting point (the default
     # "qfuerza" start intentionally overwrites OPT bond/angle scalars).
-    sys_data = load_system("heck-relay", starting_point="published")
-    loader_active = sys_data.forcefield.get_active_param_vector()
+    case = load_system("heck-relay", starting_point="published")
+    loader_problem = case.problem
+    loader_active = loader_problem.active_space.pack(loader_problem.layout.vector(loader_problem.starting_force_field))
 
     # Same .fld, same active-mask partition, but no Seminario re-projection.
-    expected_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=True)
-    opt_ff = ForceField.from_mm3_fld(str(ff_path), include_standard=False)
-    expected_ff.freeze_standard_params(opt_ff)
-    expected_active = expected_ff.get_active_param_vector()
+    expected_ff, opt_ff = load_published_opt(ff_path)
+    membership = opt_substructure_membership(expected_ff, opt_ff)
+    layout = ParameterLayout.from_force_field(expected_ff)
+    active_space = ActiveParameterSpace.from_membership(layout, expected_ff, membership)
+    expected_active = active_space.pack(layout.vector(expected_ff))
 
     assert loader_active.shape == expected_active.shape, (
         f"Active-mask shape mismatch: loader={loader_active.shape} vs expected={expected_active.shape}"

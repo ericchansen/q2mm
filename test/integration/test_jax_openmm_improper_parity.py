@@ -20,9 +20,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from q2mm.models.molecule import Molecule
+
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
 _HAS_OPENMM = importlib.util.find_spec("openmm") is not None
@@ -35,15 +36,13 @@ pytestmark = [
 ]
 
 
-def _make_formaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
+def _make_formaldehyde(out_of_plane: float = 0.0) -> Molecule:
     """Build HCHO (sp2 C with 3 substituents → 1 improper at C).
 
     ``out_of_plane`` displaces the carbon along z so the improper dihedral
     is non-zero and the torsion energy contributes a measurable amount.
     """
-    from q2mm.models.molecule import Q2MMMolecule as _Q2MMMolecule
-
-    return _Q2MMMolecule(
+    return Molecule(
         symbols=["C", "O", "H", "H"],
         geometry=np.array(
             [
@@ -57,7 +56,7 @@ def _make_formaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
     )
 
 
-def _make_acetaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
+def _make_acetaldehyde(out_of_plane: float = 0.0) -> Molecule:
     """Build CH3-CHO with both impropers and propers.
 
     Acetaldehyde has an sp2 carbonyl C (→ 1 improper) plus a C-C bond
@@ -65,9 +64,7 @@ def _make_acetaldehyde(out_of_plane: float = 0.0) -> Q2MMMolecule:
     ``out_of_plane`` displaces the carbonyl C along z so the improper
     dihedral is non-zero.
     """
-    from q2mm.models.molecule import Q2MMMolecule as _Q2MMMolecule
-
-    return _Q2MMMolecule(
+    return Molecule(
         symbols=["C", "O", "H", "C", "H", "H", "H"],
         geometry=np.array(
             [
@@ -138,7 +135,7 @@ def _make_ff_with_improper(
     )
 
 
-def _energy_pair(mol: Q2MMMolecule, ff: ForceField) -> tuple[float, float]:
+def _energy_pair(mol: Molecule, ff: ForceField) -> tuple[float, float]:
     """Return (jax_energy, openmm_energy) for a single (mol, ff).
 
     Forces OpenMM onto the CPU platform so parity assertions are

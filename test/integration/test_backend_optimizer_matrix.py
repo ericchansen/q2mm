@@ -2,7 +2,7 @@
 
 These tests verify that the ``q2mm.diagnostics`` package works correctly
 without re-running the expensive benchmark matrix (use ``q2mm-benchmark``
-for that).  Only one fast (backend, optimizer) combo is run to produce
+for that). Only one fast (backend, optimizer) combo is run to produce
 a real ``BenchmarkResult``; the rest of the library is tested with
 synthetic data.
 
@@ -18,9 +18,16 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from q2mm.diagnostics.benchmark import BenchmarkResult, frequency_mae, frequency_rmsd, real_frequencies
-from q2mm.diagnostics.report import detailed_report, full_report
-from q2mm.diagnostics.tables import TablePrinter
+from q2mm.diagnostics import (
+    BenchmarkResult,
+    TablePrinter,
+    detailed_report,
+    frequency_mae,
+    frequency_rmsd,
+    full_report,
+    real_frequencies,
+    run_combo,
+)
 
 # ---- Paths ----
 
@@ -135,7 +142,7 @@ class TestDiagnosticsHelpers:
             },
         )
         tables = detailed_report(r)
-        assert len(tables) >= 3  # frequency, timing, convergence at minimum
+        assert len(tables) >= 3
         for t in tables:
             assert isinstance(t, TablePrinter)
             s = t.to_string()
@@ -163,7 +170,6 @@ class TestDiagnosticsHelpers:
                 },
             )
         ]
-        # Should not raise
         full_report(results)
 
 
@@ -176,26 +182,19 @@ class TestDiagnosticsHelpers:
 @pytest.mark.openmm
 @pytest.mark.skipif(bool(_missing), reason=f"Missing fixtures: {_missing}")
 class TestBenchmarkPipeline:
-    """Run one real (OpenMM, L-BFGS-B) benchmark to validate run_combo().
-
-    This does NOT duplicate the E2E test: that test validates the full
-    Seminario -> optimize -> frequency pipeline in detail.  This test
-    validates that ``run_combo()`` (the function the CLI calls)
-    produces a correct, serializable ``BenchmarkResult``.
-    """
+    """Run one real (OpenMM, L-BFGS-B) benchmark to validate run_combo()."""
 
     @pytest.fixture(scope="class")
     def result(self) -> BenchmarkResult:
         from q2mm.backends.mm.openmm import OpenMMEngine
-        from q2mm.diagnostics.benchmark import run_combo
-        from q2mm.systems import load_system
+        from q2mm.benchmarks.systems import load_system
 
         engine = OpenMMEngine()
-        sys_data = load_system("ch3f", engine=engine)
+        case = load_system("ch3f", engine=engine, functional_form="mm3")
 
         return run_combo(
             engine=engine,
-            sys_data=sys_data,
+            case=case,
             optimizer_method="L-BFGS-B",
             maxiter=200,
             backend_name="OpenMM",
@@ -208,13 +207,7 @@ class TestBenchmarkPipeline:
         assert result.optimized is not None
 
     def test_optimization_made_progress(self, result: BenchmarkResult) -> None:
-        """Optimizer meaningfully improved the objective score.
-
-        L-BFGS-B on noisy Hessian landscapes may not hit strict ``gtol``
-        convergence within 200 iterations, but it should still make
-        substantial progress.  We require >50% score reduction from the
-        Seminario starting point.  Resolves #258.
-        """
+        """Optimizer meaningfully improved the objective score."""
         initial = result.optimized["initial_score"]
         final = result.optimized["final_score"]
         assert final < initial * 0.5, (

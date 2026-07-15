@@ -31,8 +31,12 @@ from q2mm.constants import (
     MASSES,
     SPEED_OF_LIGHT_MS,
 )
+from q2mm.io.fchk import load_fchk_reference
+from q2mm.models.forcefield import FunctionalForm
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction, ReferenceData
+from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 OUT_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop"
@@ -59,15 +63,16 @@ def main() -> None:
 
     print("Regenerating ethane GS golden fixture...")
 
-    ref, mol = ReferenceData.from_fchk(str(GS_FCHK), bond_tolerance=1.4)
+    ref, mol = load_fchk_reference(str(GS_FCHK), bond_tolerance=1.4)
     qm_freqs = qm_frequencies_from_hessian(mol.hessian, mol.symbols)
     qm_real = sorted(f for f in qm_freqs if f > 50.0)
 
     # Seminario
     t0 = time.perf_counter()
-    ff = qfuerza_fresh(mol, au_hessian=True)
+    ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
     t_sem = time.perf_counter() - t0
-    sem_vec = ff.get_param_vector().copy()
+    layout = ParameterLayout.from_force_field(ff)
+    sem_vec = layout.vector(ff)
 
     # MM frequencies + reference
     engine = OpenMMEngine()
@@ -75,22 +80,24 @@ def main() -> None:
     mm_real_idx = sorted(i for i, f in enumerate(mm_all) if f > 50.0)
     n = min(len(qm_real), len(mm_real_idx))
 
-    freq_ref = ReferenceData()
+    freq_ref = ObservationSet()
     for k in range(n):
-        freq_ref.add_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=0.001, molecule_idx=0)
+        freq_ref = freq_ref.with_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=0.001, case_id="0")
 
     # Score + optimize
-    obj = ObjectiveFunction(ff, engine, [mol], freq_ref)
+    obj = ObjectiveFunction(ff, engine, [mol], freq_ref, layout=layout)
     sem_score = obj(sem_vec)
 
     t0 = time.perf_counter()
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-    result = opt.optimize(obj)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    result = opt.optimize(obj, space)
     t_opt = time.perf_counter() - t0
-    final_vec = ff.get_param_vector()
+    final_vec = result.final_params
+    final_ff = layout.replace(ff, final_vec)
 
     # Frequency MAE
-    mm_opt = engine.frequencies(mol, ff)
+    mm_opt = engine.frequencies(mol, final_ff)
     mm_opt_real = sorted(f for f in mm_opt if f > 50.0)
     mae_sem = np.mean(np.abs(np.array(sorted([mm_all[i] for i in mm_real_idx])[:n]) - np.array(qm_real[:n])))
     mae_opt = np.mean(np.abs(np.array(sorted(mm_opt_real)[:n]) - np.array(qm_real[:n])))
@@ -100,7 +107,7 @@ def main() -> None:
         "ref_type": "frequency",
         "n_atoms": len(mol.symbols),
         "n_real_freqs": len(qm_real),
-        "n_params": ff.n_params,
+        "n_params": len(layout),
         "qm_frequencies_cm1": [round(f, 4) for f in qm_real],
         "seminario": {
             "params": sem_vec.tolist(),

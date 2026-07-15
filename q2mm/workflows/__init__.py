@@ -11,9 +11,9 @@ Implementations:
 - :class:`q2mm.workflows.SingleStageWorkflow` — the standard Q2MM
   workflow: one optimization pass against the
   :class:`~q2mm.optimizers.objective.ObjectiveFunction` built from
-  ``SystemData.reference``.  Equivalent to the current default
-  behavior used throughout the codebase; this class makes the pattern
-  composable and substitutable.
+  ``OptimizationProblem.observations``.  Equivalent to the current
+  default behavior used throughout the codebase; this class makes the
+  pattern composable and substitutable.
 - :class:`q2mm.workflows.MethodE2Workflow` — Limé & Norrby 2015's
   two-stage TSFF protocol: Method D Round 1 against the unmodified
   Hessian eigenmatrix, identify bond/angle force constants that

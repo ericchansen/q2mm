@@ -12,22 +12,33 @@ import numpy as np
 
 from q2mm import constants
 from q2mm.elements import ATOMIC_SYMBOLS as _ATOMIC_SYMBOLS
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
 
 _BOHR_TO_ANG = constants.BOHR_TO_ANG
 
 
-def parse_fchk(
+def load_fchk(
     path: Path,
-) -> tuple[list[str], np.ndarray, np.ndarray | None, int | None, int | None]:
-    """Parse a Gaussian .fchk file for geometry and Hessian.
+    *,
+    bond_tolerance: float = 1.3,
+    charge: int = 0,
+    multiplicity: int = 1,
+    name: str = "",
+) -> Molecule:
+    """Load a canonical molecule from a Gaussian ``.fchk`` file.
 
     Args:
         path: Path to the ``.fchk`` file.
+        bond_tolerance: Multiplier on covalent radii for inferred bonds.
+        charge: Charge used when the file omits it.
+        multiplicity: Multiplicity used when the file omits it.
+        name: Molecule name; defaults to the file stem.
 
     Returns:
-        ``(symbols, coords_angstrom, hessian_au_or_None, charge,
-        multiplicity)``. The Hessian is in Hartree/Bohr² (atomic
-        units) — the native .fchk format.
+        Molecule with geometry in Angstrom and an optional canonical
+        Hartree/Bohr² Hessian carrying FCHK provenance.
 
     Raises:
         ValueError: If atomic numbers or coordinates cannot be parsed.
@@ -37,8 +48,8 @@ def parse_fchk(
         lines = f.readlines()
 
     n_atoms = None
-    charge = None
-    multiplicity = None
+    file_charge = None
+    file_multiplicity = None
     atomic_numbers: list[int] = []
     coords_bohr: list[float] = []
     hessian_flat: list[float] = []
@@ -51,10 +62,10 @@ def parse_fchk(
             n_atoms = int(line.split()[-1])
             continue
         if line.startswith("Charge "):
-            charge = int(line.split()[-1])
+            file_charge = int(line.split()[-1])
             continue
         if line.startswith("Multiplicity"):
-            multiplicity = int(line.split()[-1])
+            file_multiplicity = int(line.split()[-1])
             continue
 
         # Array section headers
@@ -115,4 +126,63 @@ def parse_fchk(
                 hessian[j, i] = hessian_flat[idx]
                 idx += 1
 
-    return symbols, coords_ang, hessian, charge, multiplicity
+    provenance = (
+        HessianProvenance(
+            units=HessianUnits.ATOMIC,
+            source="fchk",
+            path=str(path.resolve()),
+        )
+        if hessian is not None
+        else None
+    )
+    return Molecule(
+        symbols=tuple(symbols),
+        geometry=coords_ang,
+        charge=file_charge if file_charge is not None else charge,
+        multiplicity=file_multiplicity if file_multiplicity is not None else multiplicity,
+        name=name or path.stem,
+        bond_tolerance=bond_tolerance,
+        hessian=hessian,
+        hessian_provenance=provenance,
+    )
+
+
+def load_fchk_reference(
+    path: str | Path,
+    *,
+    weights: dict[str, float] | None = None,
+    bond_tolerance: float = constants.DEFAULT_BOND_TOLERANCE,
+    charge: int = 0,
+    multiplicity: int = 1,
+) -> tuple[ObservationSet, Molecule]:
+    """Load a molecule from a Gaussian ``.fchk`` file and build its reference data.
+
+    Parses the ``.fchk`` file for geometry, Cartesian Force Constants
+    (Hessian), and atom data, then auto-populates bond lengths, angles,
+    and (when a Hessian is available) eigenmatrix training data via
+    :meth:`~q2mm.models.observations.ObservationSet.from_molecule`.
+
+    Args:
+        path (str | Path): Path to the Gaussian ``.fchk`` file.
+        weights (dict[str, float] | None): Weight overrides (same keys
+            as :meth:`~q2mm.models.observations.ObservationSet.from_molecule`).
+        bond_tolerance (float): Multiplier for covalent-radii bond
+            detection.
+        charge (int): Molecular charge (overridden by file values if
+            present).
+        multiplicity (int): Spin multiplicity (overridden by file
+            values if present).
+
+    Returns:
+        tuple[ObservationSet, Molecule]: Populated reference data and
+            the parsed molecule with Hessian.
+
+    """
+    mol = load_fchk(
+        Path(path),
+        bond_tolerance=bond_tolerance,
+        charge=charge,
+        multiplicity=multiplicity,
+    )
+    ref = ObservationSet.from_molecule(mol, weights=weights)
+    return ref, mol

@@ -108,10 +108,10 @@ The engine name includes the backend string (e.g., `JAX-MD (OPLSAA, gpu)`).
 
 ```python
 from q2mm.backends.mm import JaxMDEngine
+from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
 
-mol = Q2MMMolecule.from_xyz("molecule.xyz")
+mol = load_xyz("molecule.xyz")
 ff = ForceField.create_for_molecule(mol)
 
 engine = JaxMDEngine(box=(50.0, 50.0, 50.0))

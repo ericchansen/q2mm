@@ -18,34 +18,26 @@ pytestmark = [pytest.mark.benchmark, pytest.mark.nightly]
 
 def _run_and_validate(engine: object) -> None:
     """Run the benchmark pipeline and validate structure."""
+    from q2mm.benchmarks.systems import load_system
     from q2mm.diagnostics.benchmark import run_combo
-    from q2mm.systems import load_system
+    from test._shared import engine_functional_form
 
-    sys_data = load_system("ch3f", engine=engine)
+    case = load_system("ch3f", engine=engine, functional_form=engine_functional_form(engine).value)
     result = run_combo(
         engine=engine,
-        sys_data=sys_data,
+        case=case,
         optimizer_method="L-BFGS-B",
     )
 
-    # Pipeline must produce both baseline and optimized results
     assert result.seminario is not None
     assert result.optimized is not None
 
     seminario_rmsd: float = result.seminario["rmsd"]
     optimized_rmsd: float = result.optimized["rmsd"]
 
-    # RMSDs must be finite
     assert math.isfinite(seminario_rmsd), f"Seminario RMSD is {seminario_rmsd}"
     assert math.isfinite(optimized_rmsd), f"Optimized RMSD is {optimized_rmsd}"
-
-    # Optimizer must have run
     assert result.optimized["n_eval"] > 0
-
-
-# ---------------------------------------------------------------------------
-# Per-engine full-optimization benchmarks
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.openmm

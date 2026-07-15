@@ -12,9 +12,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from q2mm.models.hessian import decompose, reform_hessian
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Q2MMMolecule
 from q2mm.models.seminario import qfuerza_into
+from q2mm.io.mm3 import load_mm3_fld
+from q2mm.io.xyz import load_xyz
 from q2mm.resources import sn2_reference_dir
 
 QM_REF = sn2_reference_dir()
@@ -67,7 +67,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n[1/5] Loading QM reference data...")
 
-    molecule = Q2MMMolecule.from_xyz(
+    molecule = load_xyz(
         QM_REF / "sn2-ts-optimized.xyz",
         name="SN2_TS",
         bond_tolerance=1.5,
@@ -113,7 +113,7 @@ def main() -> None:
     fld_path = str(Path(__file__).parent / "sn2-ts-initial.fld")
     create_sn2_ff(fld_path)
 
-    initial_ff = ForceField.from_mm3_fld(fld_path)
+    initial_ff = load_mm3_fld(fld_path)
 
     print(f"  Parameters: {len(initial_ff.bonds) + len(initial_ff.angles)}")
     print("  Initial values:")
@@ -133,8 +133,7 @@ def main() -> None:
     # ------------------------------------------------------------------
     print("\n[4/5] Running QFUERZA estimation...")
 
-    estimated_ff = initial_ff.copy()
-    qfuerza_into(estimated_ff, molecule, zero_torsions=True, au_hessian=True, invalid_policy="skip")
+    estimated_ff = qfuerza_into(initial_ff, molecule, zero_torsions=True, au_hessian=True, invalid_policy="skip")
 
     print("  QFUERZA estimation completed successfully.")
     print("  Negative or complex TS estimates are skipped to preserve legacy semantics.")

@@ -33,11 +33,11 @@ def _collect_environment() -> dict[str, Any]:
     return _collect_environment()
 
 
-def _param_names(ff: Any) -> list[str]:
-    """Extract parameter names from force field."""
+def _param_names(layout: Any) -> list[str]:
+    """Extract parameter names from a :class:`~q2mm.models.parameters.ParameterLayout`."""
     from q2mm.diagnostics.benchmark import _param_names
 
-    return _param_names(ff)
+    return _param_names(layout)
 
 
 def run_workflow_b(
@@ -59,12 +59,12 @@ def run_workflow_b(
 
     """
     from q2mm.diagnostics.benchmark import run_combo
-    from q2mm.systems import SystemData
 
     results_dir = output_dir / "results"
     ff_dir = output_dir / "forcefields"
 
-    form = sys_data.forcefield.functional_form.value if sys_data.forcefield.functional_form else "unknown"
+    starting_ff = sys_data.problem.starting_force_field
+    form = starting_ff.functional_form.value
     molecule = sys_data.metadata.get("molecule_name", "unknown")
 
     print(f"\n{'=' * 60}")
@@ -103,15 +103,24 @@ def run_workflow_b(
 
     print("  Phase 2: optax Adam (100 steps) from phase-1 winner ...")
 
-    # Build new SystemData with the phase-1 optimized FF
-    sys_data_p2 = SystemData(
-        molecules=sys_data.molecules,
-        forcefield=p1_result.optimized_ff.copy(),
-        reference=sys_data.reference,
-        qm_freqs_per_mol=sys_data.qm_freqs_per_mol,
-        metadata=sys_data.metadata,
-        normal_modes=sys_data.normal_modes,
+    # Build a new BenchmarkCase/OptimizationProblem with the phase-1
+    # optimized FF as the new starting point.  Both are immutable, so
+    # dataclasses.replace() rebuilds them (re-validating structural
+    # consistency, e.g. layout/vector-length match) instead of mutating.
+    # The active space's baseline must move too — with_baseline() keeps
+    # its active/frozen partition but re-snapshots inactive values from
+    # the phase-1 FF, so phase 2 never silently reverts an inactive slot
+    # to the phase-1 *starting* value via a stale baseline.
+    import dataclasses
+
+    layout = sys_data.problem.layout
+    active_space_p2 = sys_data.problem.active_space.with_baseline(layout.vector(p1_result.optimized_ff))
+    problem_p2 = dataclasses.replace(
+        sys_data.problem,
+        starting_force_field=p1_result.optimized_ff,
+        active_space=active_space_p2,
     )
+    sys_data_p2 = dataclasses.replace(sys_data, problem=problem_p2)
 
     p2_result = run_combo(
         engine,
@@ -215,7 +224,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    from q2mm.systems import load_system
+    from q2mm.benchmarks.systems import load_system
 
     output_dir = args.output
     all_results: list[dict] = []

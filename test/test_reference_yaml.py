@@ -9,8 +9,8 @@ import pytest
 
 yaml = pytest.importorskip("yaml", reason="pyyaml not installed")
 
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.optimizers.objective import ReferenceData, ReferenceValue
+from q2mm.models.molecule import Molecule
+from q2mm.models.observations import Observation, ObservationSet
 from q2mm.io.reference import (
     ReferenceYAMLError,
     _reference_value_to_dict,
@@ -38,7 +38,7 @@ class TestLoadFixture:
         assert mol.n_atoms == 3
         assert mol.charge == 0
         assert mol.multiplicity == 1
-        assert mol.symbols == ["O", "H", "H"]
+        assert mol.symbols == ("O", "H", "H")
         np.testing.assert_allclose(mol.geometry[0], [0.0, 0.0, 0.0])
 
         # Check reference values
@@ -77,11 +77,11 @@ class TestLoadFixture:
 class TestRoundTrip:
     def test_basic_round_trip(self, tmp_path: Path) -> None:
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(-76.0267, weight=1.0, label="water energy")
-        ref.add_bond_length(0.96, atom_indices=(0, 1), weight=10.0)
-        ref.add_bond_angle(104.5, atom_indices=(1, 0, 2), weight=5.0)
-        ref.add_frequency(1648.0, data_idx=0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(-76.0267, weight=1.0, label="water energy", case_id="water")
+        ref = ref.with_bond_length(0.96, atom_indices=(0, 1), weight=10.0, case_id="water")
+        ref = ref.with_bond_angle(104.5, atom_indices=(1, 0, 2), weight=5.0, case_id="water")
+        ref = ref.with_frequency(1648.0, data_idx=0, weight=1.0, case_id="water")
 
         out_path = tmp_path / "round_trip.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -104,11 +104,11 @@ class TestRoundTrip:
         mol0 = make_water(name="water_gs")
         mol1 = make_water(angle_deg=109.0, name="water_ts")
 
-        ref = ReferenceData()
-        ref.add_energy(-76.0267, molecule_idx=0, label="GS energy")
-        ref.add_energy(-75.9, molecule_idx=1, label="TS energy")
-        ref.add_bond_length(0.96, atom_indices=(0, 1), molecule_idx=0, weight=10.0)
-        ref.add_bond_angle(109.0, atom_indices=(1, 0, 2), molecule_idx=1, weight=5.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(-76.0267, case_id="water_gs", label="GS energy")
+        ref = ref.with_energy(-75.9, case_id="water_ts", label="TS energy")
+        ref = ref.with_bond_length(0.96, atom_indices=(0, 1), case_id="water_gs", weight=10.0)
+        ref = ref.with_bond_angle(109.0, atom_indices=(1, 0, 2), case_id="water_ts", weight=5.0)
 
         out_path = tmp_path / "multi.yaml"
         save_reference_yaml(out_path, ref, [mol0, mol1])
@@ -119,16 +119,16 @@ class TestRoundTrip:
         assert mols2[1].name == "water_ts"
         assert ref2.n_observations == 4
 
-        # Verify molecule_idx preserved (values grouped by molecule)
-        mol_indices = [v.molecule_idx for v in ref2.values]
-        assert mol_indices == [0, 0, 1, 1]
+        # Verify case_id preserved (values grouped by molecule name)
+        case_ids = [v.case_id for v in ref2.values]
+        assert case_ids == ["water_gs", "water_gs", "water_ts", "water_ts"]
 
     def test_torsion_angle_round_trip(self, tmp_path: Path) -> None:
         from test._shared import make_ethane
 
         mol = make_ethane()
-        ref = ReferenceData()
-        ref.add_torsion_angle(60.0, atom_indices=(2, 0, 1, 5), weight=3.0, label="HCCH")
+        ref = ObservationSet()
+        ref = ref.with_torsion_angle(60.0, atom_indices=(2, 0, 1, 5), weight=3.0, label="HCCH", case_id="ethane")
 
         out_path = tmp_path / "torsion.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -143,9 +143,9 @@ class TestRoundTrip:
 
     def test_eig_diagonal_round_trip(self, tmp_path: Path) -> None:
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_hessian_eigenvalue(0.5, mode_idx=0, weight=0.1)
-        ref.add_hessian_eigenvalue(1.2, mode_idx=1, weight=0.1)
+        ref = ObservationSet()
+        ref = ref.with_hessian_eigenvalue(0.5, mode_idx=0, weight=0.1, case_id="water")
+        ref = ref.with_hessian_eigenvalue(1.2, mode_idx=1, weight=0.1, case_id="water")
 
         out_path = tmp_path / "eig.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -159,8 +159,8 @@ class TestRoundTrip:
 
     def test_eig_offdiagonal_round_trip(self, tmp_path: Path) -> None:
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_hessian_offdiagonal(0.01, row=0, col=1, weight=0.05)
+        ref = ObservationSet()
+        ref = ref.with_hessian_offdiagonal(0.01, row=0, col=1, weight=0.05, case_id="water")
 
         out_path = tmp_path / "eig_off.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -174,8 +174,8 @@ class TestRoundTrip:
 
     def test_bulk_frequencies_round_trip(self, tmp_path: Path) -> None:
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_frequencies_from_array([1648.0, 3832.0, 3943.0], weight=2.0)
+        ref = ObservationSet()
+        ref = ref.with_frequencies_from_array([1648.0, 3832.0, 3943.0], weight=2.0, case_id="water")
 
         out_path = tmp_path / "freqs.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -189,9 +189,9 @@ class TestRoundTrip:
     def test_geometry_data_idx_round_trip(self, tmp_path: Path) -> None:
         """Bond/angle refs identified by data_idx (no atom_indices) should round-trip."""
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_bond_length(0.96, data_idx=0, weight=10.0)
-        ref.add_bond_angle(104.5, data_idx=1, weight=5.0)
+        ref = ObservationSet()
+        ref = ref.with_bond_length(0.96, data_idx=0, weight=10.0, case_id="water")
+        ref = ref.with_bond_angle(104.5, data_idx=1, weight=5.0, case_id="water")
 
         out_path = tmp_path / "data_idx.yaml"
         save_reference_yaml(out_path, ref, [mol])
@@ -212,27 +212,27 @@ class TestRoundTrip:
 
 
 # ---------------------------------------------------------------------------
-# from_yaml / to_yaml on ReferenceData
+# from_yaml / to_yaml on ObservationSet
 # ---------------------------------------------------------------------------
 
 
-class TestReferenceDataMethods:
+class TestReferenceYAMLFunctions:
     def test_from_yaml(self) -> None:
-        ref, mols = ReferenceData.from_yaml(WATER_YAML)
-        assert isinstance(ref, ReferenceData)
+        ref, mols = load_reference_yaml(WATER_YAML)
+        assert isinstance(ref, ObservationSet)
         assert len(mols) == 1
         assert ref.n_observations > 0
 
     def test_to_yaml(self, tmp_path: Path) -> None:
         mol = make_water()
-        ref = ReferenceData()
-        ref.add_energy(-76.0, weight=1.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(-76.0, weight=1.0, case_id="water")
 
         out_path = tmp_path / "to_yaml.yaml"
-        ref.to_yaml(out_path, [mol])
+        save_reference_yaml(out_path, ref, [mol])
         assert out_path.exists()
 
-        ref2, mols2 = ReferenceData.from_yaml(out_path)
+        ref2, mols2 = load_reference_yaml(out_path)
         assert ref2.n_observations == 1
         assert ref2.values[0].value == pytest.approx(-76.0)
 
@@ -472,23 +472,23 @@ class TestEdgeCases:
         assert ref.values[0].weight == pytest.approx(1.0)
 
     def test_custom_atom_types(self, tmp_path: Path) -> None:
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["O", "H", "H"],
             geometry=np.array([[0.0, 0.0, 0.0], [0.96, 0.0, 0.0], [-0.24, 0.93, 0.0]]),
             atom_types=["OW", "HW", "HW"],
             name="water_tip3p",
         )
-        ref = ReferenceData()
-        ref.add_energy(-76.0)
+        ref = ObservationSet()
+        ref = ref.with_energy(-76.0, case_id="water_tip3p")
 
         out_path = tmp_path / "custom_types.yaml"
         save_reference_yaml(out_path, ref, [mol])
         ref2, mols2 = load_reference_yaml(out_path)
 
-        assert mols2[0].atom_types == ["OW", "HW", "HW"]
+        assert mols2[0].atom_types == ("OW", "HW", "HW")
 
     def test_eigenmatrix_loading(self, tmp_path: Path) -> None:
-        """kind: eigenmatrix should bulk-create ReferenceValues from a hessian."""
+        """kind: eigenmatrix should bulk-create Observation entries from a hessian."""
         # Create a tiny 3x3 symmetric positive-definite Hessian.
         hess = np.array([[2.0, 0.5, 0.1], [0.5, 3.0, 0.2], [0.1, 0.2, 1.5]])
         hess_path = tmp_path / "tiny_hessian.npy"
@@ -634,11 +634,11 @@ class TestEdgeCases:
 
     def test_eig_offdiagonal_serialize_missing_atom_indices(self) -> None:
         """eig_offdiagonal with None atom_indices should error on serialization."""
-        rv = ReferenceValue(
+        rv = Observation(
             kind="eig_offdiagonal",
             value=0.01,
             weight=0.05,
-            molecule_idx=0,
+            case_id="0",
             atom_indices=None,
         )
         with pytest.raises(ReferenceYAMLError, match="eig_offdiagonal requires row/col"):

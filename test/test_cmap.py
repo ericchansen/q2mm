@@ -18,7 +18,7 @@ import pytest
 if TYPE_CHECKING:
     import logging
 
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 from q2mm.models.forcefield import (
     AngleParam,
@@ -30,6 +30,7 @@ from q2mm.models.forcefield import (
     VdwParam,
 )
 from q2mm.io.cmap import load_cmap_from_prm, parse_cmap_section
+from q2mm.models.parameters import ParameterLayout
 
 # Path to the real CHARMM36 CMAP excerpt fixture
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -79,7 +80,7 @@ class TestCmapGrid:
             resolution=3,
             energy=energy,
         )
-        assert grid.energy == energy
+        assert grid.energy == tuple(energy)
 
     def test_label_default(self) -> None:
         grid = CmapGrid(
@@ -110,9 +111,9 @@ class TestForceFieldCmap:
     """Tests for CMAP fields on ForceField."""
 
     def test_empty_ff_has_no_cmap(self) -> None:
-        ff = ForceField()
+        ff = ForceField(functional_form=FunctionalForm.HARMONIC)
         assert not ff.has_cmap
-        assert ff.cmaps == []
+        assert ff.cmaps == ()
 
     def test_ff_with_cmap(self) -> None:
         grid = CmapGrid(
@@ -121,7 +122,7 @@ class TestForceFieldCmap:
             resolution=2,
             energy=[0.0, 1.0, 2.0, 3.0],
         )
-        ff = ForceField(cmaps=[grid])
+        ff = ForceField(cmaps=[grid], functional_form=FunctionalForm.HARMONIC)
         assert ff.has_cmap
         assert len(ff.cmaps) == 1
 
@@ -136,12 +137,13 @@ class TestForceFieldCmap:
         ff = ForceField(
             bonds=[BondParam(("C", "N"), equilibrium=1.47, force_constant=100.0)],
             cmaps=[grid],
+            functional_form=FunctionalForm.HARMONIC,
         )
-        # n_params should only count bonds (2 params: k + eq)
-        assert ff.n_params == 2
+        layout = ParameterLayout.from_force_field(ff)
+        assert len(layout) == 2
 
     def test_source_format_accepts_charmm_prm(self) -> None:
-        ff = ForceField(source_format="charmm_prm")
+        ff = ForceField(source_format="charmm_prm", functional_form=FunctionalForm.HARMONIC)
         assert ff.source_format == "charmm_prm"
 
 
@@ -169,7 +171,7 @@ class TestCmapParser:
         assert g.atom_types_phi == ("CT1", "N", "CA", "C")
         assert g.atom_types_psi == ("N", "CA", "C", "CT1")
         assert g.resolution == 4
-        assert g.energy == [float(i) for i in range(16)]
+        assert g.energy == tuple(float(i) for i in range(16))
 
     def test_parse_with_comments(self) -> None:
         text = textwrap.dedent("""\
@@ -183,7 +185,7 @@ class TestCmapParser:
         """)
         grids = parse_cmap_section(text)
         assert len(grids) == 1
-        assert grids[0].energy == [0.5, 1.5, 2.5, 3.5]
+        assert grids[0].energy == (0.5, 1.5, 2.5, 3.5)
 
     def test_parse_multiple_grids(self) -> None:
         text = textwrap.dedent("""\
@@ -199,8 +201,8 @@ class TestCmapParser:
         assert len(grids) == 2
         assert grids[0].atom_types_phi[0] == "CT1"
         assert grids[1].atom_types_phi[0] == "CT2"
-        assert grids[0].energy == [1.0, 2.0, 3.0, 4.0]
-        assert grids[1].energy == [5.0, 6.0, 7.0, 8.0]
+        assert grids[0].energy == (1.0, 2.0, 3.0, 4.0)
+        assert grids[1].energy == (5.0, 6.0, 7.0, 8.0)
 
     def test_parse_embedded_in_full_prm(self) -> None:
         text = textwrap.dedent("""\
@@ -236,7 +238,7 @@ class TestCmapParser:
         """)
         grids = parse_cmap_section(text)
         assert len(grids) == 1
-        assert grids[0].energy == [-1.5, -2.3, 0.8, -0.4]
+        assert grids[0].energy == (-1.5, -2.3, 0.8, -0.4)
 
 
 # ---------------------------------------------------------------------------
@@ -285,9 +287,9 @@ class TestCmapOpenMM:
         return ff
 
     @pytest.fixture
-    def _linear_chain_molecule(self) -> Q2MMMolecule:
+    def _linear_chain_molecule(self) -> Molecule:
         """5-atom linear chain molecule with atom types A-B-C-D-E."""
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.molecule import Molecule
 
         # Linear chain: 5 carbon atoms in a row with explicit atom types
         coords = np.array(
@@ -299,14 +301,14 @@ class TestCmapOpenMM:
                 [4.60, 2.44, 0.0],
             ]
         )
-        mol = Q2MMMolecule(
+        mol = Molecule(
             symbols=["C", "C", "C", "C", "C"],
             geometry=coords,
             atom_types=["A", "B", "C", "D", "E"],
         )
         return mol
 
-    def test_cmap_force_created(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule) -> None:
+    def test_cmap_force_created(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule) -> None:
         """CMAP force should be created when FF has cmap grids."""
         from q2mm.backends.mm.openmm import OpenMMEngine
 
@@ -315,7 +317,7 @@ class TestCmapOpenMM:
         assert handle.cmap_force is not None
         assert len(handle.cmap_terms) > 0
 
-    def test_no_cmap_when_ff_has_none(self, _linear_chain_molecule: Q2MMMolecule) -> None:
+    def test_no_cmap_when_ff_has_none(self, _linear_chain_molecule: Molecule) -> None:
         """No CMAP force when FF has no cmap grids."""
         from q2mm.backends.mm.openmm import OpenMMEngine
 
@@ -330,7 +332,7 @@ class TestCmapOpenMM:
         assert handle.cmap_terms == []
 
     def test_cmap_energy_contribution(
-        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule
+        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule
     ) -> None:
         """CMAP should contribute to the total energy."""
         from q2mm.backends.mm.openmm import OpenMMEngine
@@ -354,7 +356,7 @@ class TestCmapOpenMM:
         # The CMAP should change the energy
         assert energy_with_cmap != energy_without_cmap
 
-    def test_cmap_term_records(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule) -> None:
+    def test_cmap_term_records(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule) -> None:
         """CMAP term records should contain correct atom indices and types."""
         from q2mm.backends.mm.openmm import OpenMMEngine
 
@@ -370,7 +372,7 @@ class TestCmapOpenMM:
             assert term.phi_atoms[1:] == term.psi_atoms[:3]
 
     def test_cmap_immutable_during_update(
-        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule
+        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule
     ) -> None:
         """CMAP should not change when update_forcefield is called."""
         from q2mm.backends.mm.openmm import OpenMMEngine
@@ -398,7 +400,7 @@ class TestCmapOpenMM:
         # CMAP force should still be present
         assert handle.cmap_force is not None
 
-    def test_zero_cmap_grid_no_energy_change(self, _linear_chain_molecule: Q2MMMolecule) -> None:
+    def test_zero_cmap_grid_no_energy_change(self, _linear_chain_molecule: Molecule) -> None:
         """A CMAP grid of all zeros should not change the energy."""
         from q2mm.backends.mm.openmm import OpenMMEngine
 
@@ -431,7 +433,7 @@ class TestCmapOpenMM:
         assert abs(e_cmap - e_none) < 1e-10
 
     def test_energy_and_param_grad_includes_cmap(
-        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Q2MMMolecule
+        self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule
     ) -> None:
         """Analytical-gradient handle must include CMAP energy (F2).
 

@@ -44,6 +44,20 @@ def _json_default(value: Any) -> Any:
 
 
 def _load_upstream_modules(worktree_root: Path) -> dict[str, Any]:
+    """Import ``filetypes``/``seminario``/``constants`` from an *upstream* legacy worktree.
+
+    This deliberately loads a *different*, pre-refactor codebase (a sibling
+    ``-upstream-worktree`` checkout, inserted at the front of ``sys.path``
+    after evicting our own ``q2mm.*`` modules from ``sys.modules``) so this
+    script can regenerate parity fixtures by calling the legacy
+    ``q2mm.filetypes``/``q2mm.seminario`` implementations directly. Every
+    ``filetypes.MacroModel``/``filetypes.Mol2``/``.structures``/``.atoms``
+    reference below refers to *that* legacy upstream API, not to this
+    repository's current ``q2mm.io``/``q2mm.models.molecule`` (which has no
+    ``Structure`` type or ``.structures`` attribute) — this script's job is
+    literally to compare the two codebases' output, so it must speak the
+    legacy dialect.
+    """
     if not (worktree_root / "q2mm" / "seminario.py").exists():
         raise FileNotFoundError(f"Upstream worktree does not contain q2mm/seminario.py: {worktree_root}")
 
@@ -153,6 +167,9 @@ def _generate_rh_fixture(modules: dict[str, Any], upstream_commit: str) -> dict[
 
     legacy_ff = filetypes.MM3(str(mm3_path))
     legacy_ff.import_ff()
+    # `.structures` here is the legacy upstream `filetypes.MacroModel`'s own
+    # attribute (see `_load_upstream_modules`) — unrelated to this repo's
+    # current `q2mm.io.macromodel.MacroModel.molecules`.
     structures = filetypes.MacroModel(str(mmo_path)).structures
     hessian_files = sorted(jag_dir.glob("*.in"))
     if len(structures) != len(hessian_files):
@@ -198,6 +215,8 @@ def _generate_rh_fixture(modules: dict[str, Any], upstream_commit: str) -> dict[
             angle_equilibria_degrees[row_key] = float(seminario.average_ae_param(param, structures))
 
     first_hessian = filetypes.JaguarIn(str(first_hessian_path)).get_hessian(36)
+    # Again, the legacy upstream `filetypes.Mol2.structures` API (see
+    # `_load_upstream_modules`), not this repo's `q2mm.io.mol2.Mol2.molecules`.
     first_structure = filetypes.Mol2(str(mol2_path)).structures[0]
     direct_bonds = []
     for bond in first_structure.bonds:

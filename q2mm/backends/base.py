@@ -10,41 +10,42 @@ import numpy as np
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 
-def coerce_molecule(structure: Any, *, engine_name: str = "MMEngine") -> Q2MMMolecule:
-    """Coerce *structure* to a :class:`Q2MMMolecule`.
+def coerce_molecule(structure: Any, *, engine_name: str = "MMEngine") -> Molecule:
+    """Coerce *structure* to a :class:`Molecule`.
 
     Handles common input patterns across MM backends:
 
-    - :class:`Q2MMMolecule` — returned as-is.
+    - :class:`Molecule` — returned as-is.
     - Engine handle with a ``.molecule`` attribute — returns the molecule.
-    - ``str`` / ``Path`` — loaded via :meth:`Q2MMMolecule.from_xyz`.
+    - ``str`` / ``Path`` — loaded via :func:`~q2mm.io.xyz.load_xyz`.
 
     Args:
         structure: Input to coerce.
         engine_name: Name shown in ``TypeError`` messages.
 
     Returns:
-        Q2MMMolecule: The coerced molecule.
+        Molecule: The coerced molecule.
 
     Raises:
         TypeError: If *structure* cannot be coerced.
 
     """
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.io.xyz import load_xyz
+    from q2mm.models.molecule import Molecule
 
-    if isinstance(structure, Q2MMMolecule):
+    if isinstance(structure, Molecule):
         return structure
     # Duck-typed handle support (JaxHandle, JaxMDHandle, etc.)
     mol = getattr(structure, "molecule", None)
-    if mol is not None and isinstance(mol, Q2MMMolecule):
+    if mol is not None and isinstance(mol, Molecule):
         return mol
     if isinstance(structure, (str, Path)):
-        return Q2MMMolecule.from_xyz(structure)
+        return load_xyz(structure)
     raise TypeError(
-        f"{engine_name} expects a Q2MMMolecule, compatible handle, or XYZ path; got {type(structure).__name__}."
+        f"{engine_name} expects a Molecule, compatible handle, or XYZ path; got {type(structure).__name__}."
     )
 
 
@@ -72,7 +73,7 @@ class QMEngine(ABC):
         return False
 
     @abstractmethod
-    def energy(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> float:
+    def energy(self, structure: Molecule, method: str = "b3lyp", basis: str = "def2-svp") -> float:
         """Calculate single-point energy in Hartrees.
 
         Args:
@@ -87,7 +88,7 @@ class QMEngine(ABC):
         ...
 
     @abstractmethod
-    def hessian(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> np.ndarray:
+    def hessian(self, structure: Molecule, method: str = "b3lyp", basis: str = "def2-svp") -> np.ndarray:
         """Calculate Hessian matrix (second derivatives of energy).
 
         Args:
@@ -102,7 +103,7 @@ class QMEngine(ABC):
         ...
 
     @abstractmethod
-    def optimize(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> tuple:
+    def optimize(self, structure: Molecule, method: str = "b3lyp", basis: str = "def2-svp") -> tuple:
         """Optimize geometry.
 
         Args:
@@ -117,7 +118,7 @@ class QMEngine(ABC):
         ...
 
     @abstractmethod
-    def frequencies(self, structure: Q2MMMolecule, method: str = "b3lyp", basis: str = "def2-svp") -> list[float]:
+    def frequencies(self, structure: Molecule, method: str = "b3lyp", basis: str = "def2-svp") -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
@@ -202,7 +203,7 @@ class MMEngine(ABC):
         return False
 
     @abstractmethod
-    def energy(self, structure: Q2MMMolecule, forcefield: ForceField) -> float:
+    def energy(self, structure: Molecule, forcefield: ForceField) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
@@ -218,7 +219,7 @@ class MMEngine(ABC):
         ...
 
     @abstractmethod
-    def minimize(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple:
+    def minimize(self, structure: Molecule, forcefield: ForceField) -> tuple:
         """Energy-minimize structure.
 
         Args:
@@ -232,7 +233,7 @@ class MMEngine(ABC):
         ...
 
     @abstractmethod
-    def hessian(self, structure: Q2MMMolecule, forcefield: ForceField) -> np.ndarray:
+    def hessian(self, structure: Molecule, forcefield: ForceField) -> np.ndarray:
         """Calculate MM Hessian matrix.
 
         Args:
@@ -245,7 +246,7 @@ class MMEngine(ABC):
         """
         ...
 
-    def frequencies(self, structure: Q2MMMolecule, forcefield: ForceField, **kwargs: Any) -> list[float]:
+    def frequencies(self, structure: Molecule, forcefield: ForceField, **kwargs: Any) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Default implementation: compute Hessian via :meth:`hessian` then
@@ -313,7 +314,7 @@ class MMEngine(ABC):
 
     def batched_energy(
         self,
-        structure: Q2MMMolecule,
+        structure: Molecule,
         forcefield: ForceField,
         param_matrix: np.ndarray,
     ) -> np.ndarray:
@@ -332,13 +333,16 @@ class MMEngine(ABC):
             np.ndarray: Shape ``(batch,)`` energies in kcal/mol.
 
         """
+        from q2mm.models.parameters import ParameterLayout
+
+        layout = ParameterLayout.from_force_field(forcefield)
         energies = np.empty(len(param_matrix))
         for i, pvec in enumerate(param_matrix):
-            ff_i = forcefield.with_params(pvec)
+            ff_i = layout.replace(forcefield, pvec)
             energies[i] = self.energy(structure, ff_i)
         return energies
 
-    def energy_and_param_grad(self, structure: Q2MMMolecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
+    def energy_and_param_grad(self, structure: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. MM parameters.
 
         Must be implemented by engines for which
@@ -375,9 +379,7 @@ class MMEngine(ABC):
         """
         return False
 
-    def hessian_and_param_jacobian(
-        self, structure: Q2MMMolecule, forcefield: ForceField
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def hessian_and_param_jacobian(self, structure: Molecule, forcefield: ForceField) -> tuple[np.ndarray, np.ndarray]:
         """Compute Hessian and its Jacobian w.r.t. FF parameters.
 
         Must be implemented by engines for which
@@ -402,7 +404,7 @@ class MMEngine(ABC):
             "Override this method when supports_analytical_hessian_gradients() returns True."
         )
 
-    def create_context(self, structure: Q2MMMolecule, forcefield: ForceField) -> object:
+    def create_context(self, structure: Molecule, forcefield: ForceField) -> object:
         """Create a reusable engine context/handle for a molecule.
 
         Only needed when :meth:`supports_runtime_params` returns ``True``.
@@ -466,8 +468,7 @@ class MMEngine(ABC):
         """Raise ``ValueError`` if the force field's functional form is unsupported.
 
         Called by engines at the start of ``create_context`` / ``energy`` /
-        etc.  Does nothing when ``forcefield.functional_form`` is ``None``
-        (legacy / unset).
+        etc.
 
         Args:
             forcefield: Force field whose ``functional_form`` attribute is
@@ -478,12 +479,9 @@ class MMEngine(ABC):
                 set returned by :meth:`supported_functional_forms`.
 
         """
-        ff_form = getattr(forcefield, "functional_form", None)
-        if ff_form is None:
-            return
-        form_value = ff_form.value if hasattr(ff_form, "value") else str(ff_form)
+        ff_form = forcefield.functional_form
         supported = self.supported_functional_forms()
-        if form_value not in supported:
+        if ff_form.value not in supported:
             raise ValueError(
                 f"{self.name} does not support functional form {ff_form!r}. Supported: {sorted(supported)}"
             )

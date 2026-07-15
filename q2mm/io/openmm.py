@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 _WILDCARD_TYPES = frozenset({"00"})
 
 if TYPE_CHECKING:
-    from q2mm.models.molecule import Q2MMMolecule
+    from q2mm.models.molecule import Molecule
 
 
 def save_openmm_xml(
     ff: ForceField,
     path: str | Path,
-    molecule: Q2MMMolecule | list[Q2MMMolecule] | None = None,
+    molecule: Molecule | list[Molecule] | None = None,
 ) -> Path:
     """Write the force field to a standalone OpenMM ForceField XML file.
 
@@ -42,7 +42,7 @@ def save_openmm_xml(
     Args:
         ff (ForceField): Force field to export.
         path (str | Path): Output file path.
-        molecule (Q2MMMolecule | list[Q2MMMolecule] | None): Optional molecule
+        molecule (Molecule | list[Molecule] | None): Optional molecule
             or list thereof.  Used to generate ``<AtomTypes>`` and
             ``<Residues>`` sections.
 
@@ -77,9 +77,9 @@ def save_openmm_xml(
     # ---- Atom types & residues (if molecule provided) ----
     molecules = []
     if molecule is not None:
-        from q2mm.models.molecule import Q2MMMolecule
+        from q2mm.models.molecule import Molecule
 
-        if isinstance(molecule, Q2MMMolecule):
+        if isinstance(molecule, Molecule):
             molecules = [molecule]
         else:
             molecules = list(molecule)

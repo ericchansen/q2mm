@@ -630,17 +630,17 @@ def convergence_table(
 
     # RMSD change
     if initial_rmsd is not None and final_rmsd is not None:
-        arrow = "→"
+        arrow = "->"
         rmsd_init = f"{initial_rmsd:.1f}"
         rmsd_final = f"{final_rmsd:.1f}"
         if use_color:
             rmsd_init = colorize_rmsd(rmsd_init, initial_rmsd)
             rmsd_final = colorize_rmsd(rmsd_final, final_rmsd)
-        t.row(f"RMSD (cm⁻¹):       {rmsd_init} {arrow} {rmsd_final}")
+        t.row(f"RMSD (cm^-1):       {rmsd_init} {arrow} {rmsd_final}")
 
     # Score change
     improvement = (1.0 - final_score / initial_score) * 100 if initial_score > 0 else 0.0
-    t.row(f"Score:             {initial_score:.6f} → {final_score:.6f}  ({improvement:+.1f}%)")
+    t.row(f"Score:             {initial_score:.6f} -> {final_score:.6f}  ({improvement:+.1f}%)")
 
     t.row(f"Function evals:    {n_eval}")
     if elapsed_s is not None:
@@ -652,7 +652,7 @@ def convergence_table(
         t.row(f"Scipy message:     {message}")
         explanation = explain_scipy_message(message)
         if explanation:
-            t.row(f"  → {explanation}")
+            t.row(f"  -> {explanation}")
 
     t.bar()
     t.blank()
@@ -688,7 +688,7 @@ def leaderboard_table(
 
     hdr = (
         f"{'Backend':<{W_BE}}  {'Optimizer':<{W_OPT}}  "
-        f"{'RMSD₀':>6}  {'RMSD':>6}  {'MAE':>6}  "
+        f"{'RMSD0':>6}  {'RMSD':>6}  {'MAE':>6}  "
         f"{'Time':>7}  {'Evals':>5}  {'Score':>8}"
     )
     t.row(hdr)

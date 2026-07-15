@@ -1,127 +1,236 @@
-"""Reference data containers for force field optimization.
+"""Canonical observation vocabulary for Q2MM force field optimization.
 
-Defines :class:`ReferenceValue` (a single QM or experimental observation) and
-:class:`ReferenceData` (a collection of observations plus builder
-constructors).  Split out of :mod:`q2mm.optimizers.objective` so that code
-which only needs to *build* reference data does not pull in the heavier
-:class:`~q2mm.optimizers.objective.ObjectiveFunction` machinery.
+Defines :class:`Observation` (a single QM or experimental observation) and
+:class:`ObservationSet` (an immutable collection of observations plus the
+pure builder methods that populate it from a
+:class:`~q2mm.models.molecule.Molecule`). This is the *one* observation
+model in Q2MM: :mod:`q2mm.io.reference` (YAML), :mod:`q2mm.io.fchk`, and
+:mod:`q2mm.io.gaussian` construct :class:`ObservationSet` from parsed
+files, and :mod:`q2mm.optimizers.objective` consumes it — but this module
+itself never imports I/O, backends, objectives, optimizers, or workflows.
+
+Both :class:`Observation` and :class:`ObservationSet` are deeply
+immutable value objects: ``Observation`` is a frozen dataclass and
+``ObservationSet.values`` is a tuple. There is no in-place mutation
+anywhere in the public API — every ``with_*`` method returns a *new*
+:class:`ObservationSet` built from ``self.values`` plus the added
+entry/entries, leaving ``self`` untouched. Bulk loaders
+(:meth:`ObservationSet.with_eigenmatrix_from_hessian`,
+:meth:`ObservationSet.with_hessian_from_matrix`,
+:meth:`ObservationSet.with_frequencies_from_array`) build their batch of
+new :class:`Observation` instances in a private, transient list — an
+implementation detail invisible to callers — and freeze it into the
+returned :class:`ObservationSet` in one step.
+
+Each :class:`Observation` binds to a training case via the stable
+:attr:`Observation.case_id` string (matching
+:attr:`q2mm.models.problem.TrainingCase.case_id`), never a positional
+index — case order is free to change (reordering, insertion, filtering)
+without silently re-binding any observation to the wrong molecule.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 
-from q2mm.constants import DEFAULT_BOND_TOLERANCE
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.models.molecule import Molecule
+
+_ObservationKind = Literal[
+    "energy",
+    "frequency",
+    "bond_length",
+    "bond_angle",
+    "torsion_angle",
+    "eig_diagonal",
+    "eig_offdiagonal",
+    "hessian_element",
+]
 
 
-@dataclass
-class ReferenceValue:
-    """A single reference observation (QM or experimental)."""
+@dataclass(frozen=True)
+class Observation:
+    """A single, immutable reference observation (QM or experimental)."""
 
-    kind: Literal[
-        "energy",
-        "frequency",
-        "bond_length",
-        "bond_angle",
-        "torsion_angle",
-        "eig_diagonal",
-        "eig_offdiagonal",
-        "hessian_element",
-    ]
+    kind: _ObservationKind
     value: float
     weight: float = 1.0
     label: str = ""
+    # Stable identity of the training case this observation belongs to —
+    # matches q2mm.models.problem.TrainingCase.case_id. Never a positional
+    # index: case order must be free to change without silently re-binding
+    # observations to the wrong molecule.
+    case_id: str = "0"
     # Indices for matching to calculated data
-    molecule_idx: int = 0
     data_idx: int = 0
     # Atom-identity matching (preferred over positional data_idx for geometry)
     atom_indices: tuple[int, ...] | None = None
 
 
-@dataclass
-class ReferenceData:
-    """Complete set of reference data for an optimization.
+def _energy_observation(value: float, *, weight: float, case_id: str, label: str) -> Observation:
+    return Observation(kind="energy", value=value, weight=weight, case_id=case_id, label=label)
+
+
+def _frequency_observation(value: float, *, data_idx: int, weight: float, case_id: str, label: str) -> Observation:
+    return Observation(kind="frequency", value=value, weight=weight, case_id=case_id, data_idx=data_idx, label=label)
+
+
+def _bond_length_observation(
+    value: float,
+    *,
+    data_idx: int,
+    atom_indices: tuple[int, int] | None,
+    weight: float,
+    case_id: str,
+    label: str,
+) -> Observation:
+    if atom_indices is None and data_idx < 0:
+        raise ValueError("Either atom_indices or data_idx must be provided for bond_length.")
+    return Observation(
+        kind="bond_length",
+        value=value,
+        weight=weight,
+        case_id=case_id,
+        data_idx=max(data_idx, 0),
+        atom_indices=atom_indices,
+        label=label,
+    )
+
+
+def _bond_angle_observation(
+    value: float,
+    *,
+    data_idx: int,
+    atom_indices: tuple[int, int, int] | None,
+    weight: float,
+    case_id: str,
+    label: str,
+) -> Observation:
+    if atom_indices is None and data_idx < 0:
+        raise ValueError("Either atom_indices or data_idx must be provided for bond_angle.")
+    return Observation(
+        kind="bond_angle",
+        value=value,
+        weight=weight,
+        case_id=case_id,
+        data_idx=max(data_idx, 0),
+        atom_indices=atom_indices,
+        label=label,
+    )
+
+
+def _torsion_angle_observation(
+    value: float, *, atom_indices: tuple[int, int, int, int], weight: float, case_id: str, label: str
+) -> Observation:
+    return Observation(
+        kind="torsion_angle", value=value, weight=weight, case_id=case_id, atom_indices=atom_indices, label=label
+    )
+
+
+def _hessian_eigenvalue_observation(
+    value: float, *, mode_idx: int, weight: float, case_id: str, label: str
+) -> Observation:
+    return Observation(kind="eig_diagonal", value=value, weight=weight, case_id=case_id, data_idx=mode_idx, label=label)
+
+
+def _hessian_offdiagonal_observation(
+    value: float, *, row: int, col: int, weight: float, case_id: str, label: str
+) -> Observation:
+    return Observation(
+        kind="eig_offdiagonal", value=value, weight=weight, case_id=case_id, atom_indices=(row, col), label=label
+    )
+
+
+def _hessian_element_observation(
+    value: float, *, row: int, col: int, weight: float, case_id: str, label: str
+) -> Observation:
+    if row < 0 or col < 0:
+        raise ValueError(f"row and col must be non-negative, got row={row}, col={col}")
+    return Observation(
+        kind="hessian_element",
+        value=value,
+        weight=weight,
+        case_id=case_id,
+        atom_indices=(row, col),
+        label=label or f"hess[{row},{col}]",
+    )
+
+
+@dataclass(frozen=True)
+class ObservationSet:
+    """Complete, immutable set of reference observations for an optimization.
 
     Each entry describes one observable: an energy, a frequency, or a
-    geometric parameter that the force field should reproduce.
+    geometric parameter that the force field should reproduce. Every
+    ``with_*`` method is pure — it returns a new :class:`ObservationSet`
+    and never mutates ``self`` or any argument.
     """
 
-    values: list[ReferenceValue] = field(default_factory=list)
+    values: tuple[Observation, ...] = ()
 
-    def add_energy(
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "values", tuple(self.values))
+
+    def _with(self, *new_observations: Observation) -> ObservationSet:
+        """Return a new :class:`ObservationSet` with *new_observations* appended."""
+        return ObservationSet(values=(*self.values, *new_observations))
+
+    def with_energy(
         self,
         value: float,
         *,
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single energy reference value.
+    ) -> ObservationSet:
+        """Return a new set with a single energy reference value added.
 
         Args:
             value (float): Reference energy value.
             weight (float): Weight for this entry.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         """
-        self.values.append(
-            ReferenceValue(
-                kind="energy",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                label=label,
-            )
-        )
+        return self._with(_energy_observation(value, weight=weight, case_id=case_id, label=label))
 
-    def add_frequency(
+    def with_frequency(
         self,
         value: float,
         *,
         data_idx: int,
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single vibrational frequency reference value.
+    ) -> ObservationSet:
+        """Return a new set with a single vibrational frequency reference value added.
 
         Args:
             value (float): Reference frequency in cm⁻¹.
             data_idx (int): 0-based index of this frequency mode.
             weight (float): Weight for this entry.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         """
-        self.values.append(
-            ReferenceValue(
-                kind="frequency",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                data_idx=data_idx,
-                label=label,
-            )
-        )
+        return self._with(_frequency_observation(value, data_idx=data_idx, weight=weight, case_id=case_id, label=label))
 
-    def add_bond_length(
+    def with_bond_length(
         self,
         value: float,
         *,
         data_idx: int = -1,
         atom_indices: tuple[int, int] | None = None,
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single bond length reference value.
+    ) -> ObservationSet:
+        """Return a new set with a single bond length reference value added.
 
         Args:
             value (float): Reference bond length in Ångströms.
@@ -130,7 +239,8 @@ class ReferenceData:
             atom_indices (tuple[int, int] | None): Atom pair for
                 identity-based matching.
             weight (float): Weight for this entry.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         Raises:
@@ -138,31 +248,23 @@ class ReferenceData:
                 ``data_idx`` is provided.
 
         """
-        if atom_indices is None and data_idx < 0:
-            raise ValueError("Either atom_indices or data_idx must be provided for bond_length.")
-        self.values.append(
-            ReferenceValue(
-                kind="bond_length",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                data_idx=max(data_idx, 0),
-                atom_indices=atom_indices,
-                label=label,
+        return self._with(
+            _bond_length_observation(
+                value, data_idx=data_idx, atom_indices=atom_indices, weight=weight, case_id=case_id, label=label
             )
         )
 
-    def add_bond_angle(
+    def with_bond_angle(
         self,
         value: float,
         *,
         data_idx: int = -1,
         atom_indices: tuple[int, int, int] | None = None,
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single bond angle reference value.
+    ) -> ObservationSet:
+        """Return a new set with a single bond angle reference value added.
 
         Args:
             value (float): Reference bond angle in degrees.
@@ -171,7 +273,8 @@ class ReferenceData:
             atom_indices (tuple[int, int, int] | None): Atom triple
                 (i, j, k) for identity-based matching.
             weight (float): Weight for this entry.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         Raises:
@@ -179,61 +282,47 @@ class ReferenceData:
                 ``data_idx`` is provided.
 
         """
-        if atom_indices is None and data_idx < 0:
-            raise ValueError("Either atom_indices or data_idx must be provided for bond_angle.")
-        self.values.append(
-            ReferenceValue(
-                kind="bond_angle",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                data_idx=max(data_idx, 0),
-                atom_indices=atom_indices,
-                label=label,
+        return self._with(
+            _bond_angle_observation(
+                value, data_idx=data_idx, atom_indices=atom_indices, weight=weight, case_id=case_id, label=label
             )
         )
 
-    def add_torsion_angle(
+    def with_torsion_angle(
         self,
         value: float,
         *,
         atom_indices: tuple[int, int, int, int],
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single torsion (dihedral) angle reference value.
+    ) -> ObservationSet:
+        """Return a new set with a single torsion (dihedral) angle reference value added.
 
         Args:
             value (float): Reference torsion angle in degrees.
             atom_indices (tuple[int, int, int, int]): Four atom indices
                 defining the dihedral.
             weight (float): Weight for this entry.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         """
-        self.values.append(
-            ReferenceValue(
-                kind="torsion_angle",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                atom_indices=atom_indices,
-                label=label,
-            )
+        return self._with(
+            _torsion_angle_observation(value, atom_indices=atom_indices, weight=weight, case_id=case_id, label=label)
         )
 
-    def add_hessian_eigenvalue(
+    def with_hessian_eigenvalue(
         self,
         value: float,
         *,
         mode_idx: int,
         weight: float = 0.1,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a diagonal element (eigenvalue) of the eigenmatrix.
+    ) -> ObservationSet:
+        """Return a new set with a diagonal eigenmatrix element (eigenvalue) added.
 
         Args:
             value (float): QM eigenvalue for this mode.
@@ -241,32 +330,26 @@ class ReferenceData:
             weight (float): Weight for this entry. Legacy defaults: 0.10
                 for both low- and high-frequency modes, 0.00 for the
                 first (imaginary) mode.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         """
-        self.values.append(
-            ReferenceValue(
-                kind="eig_diagonal",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                data_idx=mode_idx,
-                label=label,
-            )
+        return self._with(
+            _hessian_eigenvalue_observation(value, mode_idx=mode_idx, weight=weight, case_id=case_id, label=label)
         )
 
-    def add_hessian_offdiagonal(
+    def with_hessian_offdiagonal(
         self,
         value: float,
         *,
         row: int,
         col: int,
         weight: float = 0.05,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add an off-diagonal element of the eigenmatrix.
+    ) -> ObservationSet:
+        """Return a new set with an off-diagonal eigenmatrix element added.
 
         Off-diagonal elements measure cross-coupling between modes.
         They should be close to zero when the MM Hessian closely
@@ -278,34 +361,28 @@ class ReferenceData:
             row (int): 0-based row index into the eigenmatrix.
             col (int): 0-based column index into the eigenmatrix.
             weight (float): Weight for this entry. Legacy default: 0.05.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case this observation
+                belongs to.
             label (str): Human-readable label.
 
         """
-        self.values.append(
-            ReferenceValue(
-                kind="eig_offdiagonal",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                atom_indices=(row, col),
-                label=label,
-            )
+        return self._with(
+            _hessian_offdiagonal_observation(value, row=row, col=col, weight=weight, case_id=case_id, label=label)
         )
 
-    def add_eigenmatrix_from_hessian(
+    def with_eigenmatrix_from_hessian(
         self,
         hessian: np.ndarray,
         *,
         symbols: Sequence[str] | None = None,
         diagonal_only: bool = False,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         weights: dict[str, float] | None = None,
         skip_first: bool = True,
         eigenvalue_threshold: float = 0.1173,
         n_rigid_modes: int = 6,
-    ) -> int:
-        """Bulk-load eigenmatrix training data from a QM Hessian.
+    ) -> ObservationSet:
+        """Return a new set with bulk eigenmatrix training data from a QM Hessian.
 
         Builds the reference eigenmatrix by projecting the Hessian onto the
         molecule's **normal modes** (the eigenvectors of the mass-weighted
@@ -328,7 +405,8 @@ class ReferenceData:
             diagonal_only (bool): If ``True``, add only diagonal elements
                 (eigenvalues). If ``False``, add all lower-triangular
                 elements.
-            molecule_idx (int): Index into the molecules list.
+            case_id (str): Stable ID of the training case these
+                observations belong to.
             weights (dict[str, float] | None): Weight overrides. Keys:
                 ``"eig_i"`` (1st eigenvalue), ``"eig_d_low"`` (diagonal,
                 value < threshold), ``"eig_d_high"`` (diagonal, value ≥
@@ -358,7 +436,7 @@ class ReferenceData:
                 rigid-body modes are always the few smallest.
 
         Returns:
-            int: Number of entries added.
+            ObservationSet: A new set with the eigenmatrix entries appended.
 
         """
         from q2mm.models.hessian import (
@@ -402,7 +480,7 @@ class ReferenceData:
             n_rigid = min(n_rigid_modes, len(rigid_candidates))
             excluded_modes.update(int(m) for m in rigid_candidates[:n_rigid])
 
-        added = 0
+        new_observations: list[Observation] = []
         for row, col, value in elements:
             if row == col:
                 # Diagonal element
@@ -412,91 +490,78 @@ class ReferenceData:
                     weight = w["eig_d_low"]
                 else:
                     weight = w["eig_d_high"]
-                self.add_hessian_eigenvalue(
-                    value,
-                    mode_idx=row,
-                    weight=weight,
-                    molecule_idx=molecule_idx,
-                    label=f"eig[{row}]",
+                new_observations.append(
+                    _hessian_eigenvalue_observation(
+                        value, mode_idx=row, weight=weight, case_id=case_id, label=f"eig[{row}]"
+                    )
                 )
             else:
                 # Off-diagonal element — zero-weighted if it couples an
                 # excluded (rigid-body / reaction-coordinate) mode.
                 weight = 0.0 if (row in excluded_modes or col in excluded_modes) else w["eig_o"]
-                self.add_hessian_offdiagonal(
-                    value,
-                    row=row,
-                    col=col,
-                    weight=weight,
-                    molecule_idx=molecule_idx,
-                    label=f"eig[{row},{col}]",
+                new_observations.append(
+                    _hessian_offdiagonal_observation(
+                        value, row=row, col=col, weight=weight, case_id=case_id, label=f"eig[{row},{col}]"
+                    )
                 )
-            added += 1
-        return added
+        return self._with(*new_observations)
 
-    def add_hessian_element(
+    def with_hessian_element(
         self,
         value: float,
         *,
         row: int,
         col: int,
         weight: float = 0.1,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         label: str = "",
-    ) -> None:
-        """Add a single raw Hessian matrix element as reference data.
+    ) -> ObservationSet:
+        """Return a new set with a single raw Hessian matrix element added.
 
         Args:
             value: QM Hessian element in Hartree/Bohr².
             row: 0-based row index.
             col: 0-based column index.
             weight: Weight for this entry.
-            molecule_idx: Index into the molecules list.
+            case_id: Stable ID of the training case this observation
+                belongs to.
             label: Human-readable label.
 
         Raises:
             ValueError: If *row* or *col* is negative.
 
         """
-        if row < 0 or col < 0:
-            raise ValueError(f"row and col must be non-negative, got row={row}, col={col}")
-        self.values.append(
-            ReferenceValue(
-                kind="hessian_element",
-                value=value,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                atom_indices=(row, col),
-                label=label or f"hess[{row},{col}]",
-            )
+        return self._with(
+            _hessian_element_observation(value, row=row, col=col, weight=weight, case_id=case_id, label=label)
         )
 
-    def add_hessian_from_matrix(
+    def with_hessian_from_matrix(
         self,
         hessian: np.ndarray,
         *,
         diagonal_only: bool = False,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         diagonal_weight: float = 0.1,
         offdiagonal_weight: float = 0.05,
         skip_translational: int = 0,
-    ) -> int:
-        """Bulk-load raw Hessian elements as reference data.
+    ) -> ObservationSet:
+        """Return a new set with bulk raw Hessian elements added.
 
-        Unlike :meth:`add_eigenmatrix_from_hessian`, this uses the raw
+        Unlike :meth:`with_eigenmatrix_from_hessian`, this uses the raw
         Cartesian Hessian directly without eigendecomposition.
 
         Args:
             hessian: QM Hessian (3N, 3N) in Hartree/Bohr².
             diagonal_only: If ``True``, only add diagonal elements.
-            molecule_idx: Index into molecules list.
+            case_id: Stable ID of the training case these observations
+                belong to.
             diagonal_weight: Weight for diagonal elements.
             offdiagonal_weight: Weight for off-diagonal elements.
             skip_translational: Number of leading rows/cols to skip
                 (e.g. 6 for trans+rot modes in Cartesian basis).
 
         Returns:
-            Number of entries added.
+            ObservationSet: A new set with the Hessian elements appended.
 
         """
         n = hessian.shape[0]
@@ -507,87 +572,79 @@ class ReferenceData:
         if skip_translational >= n:
             raise ValueError(f"skip_translational ({skip_translational}) must be less than matrix size ({n})")
 
-        added = 0
+        new_observations: list[Observation] = []
         start = skip_translational
         for i in range(start, n):
             for j in range(start, i + 1) if not diagonal_only else [i]:
                 weight = diagonal_weight if i == j else offdiagonal_weight
-                self.add_hessian_element(
-                    float(hessian[i, j]),
-                    row=i,
-                    col=j,
-                    weight=weight,
-                    molecule_idx=molecule_idx,
+                new_observations.append(
+                    _hessian_element_observation(
+                        float(hessian[i, j]), row=i, col=j, weight=weight, case_id=case_id, label=""
+                    )
                 )
-                added += 1
-        return added
+        return self._with(*new_observations)
 
     @property
     def n_observations(self) -> int:
         """Total number of reference observations.
 
         Returns:
-            int: Length of the ``values`` list.
+            int: Length of the ``values`` tuple.
 
         """
         return len(self.values)
 
     # ---- Bulk loaders ----
 
-    def add_frequencies_from_array(
+    def with_frequencies_from_array(
         self,
         frequencies: np.ndarray | list[float],
         *,
         weight: float = 1.0,
-        molecule_idx: int = 0,
+        case_id: str = "0",
         skip_imaginary: bool = False,
-    ) -> int:
-        """Add all frequencies from a 1-D array.
+    ) -> ObservationSet:
+        """Return a new set with all frequencies from a 1-D array added.
 
         Args:
             frequencies (np.ndarray | list[float]): Vibrational frequencies
                 (cm⁻¹). Imaginary modes should be negative values.
             weight (float): Weight applied to every frequency entry.
-            molecule_idx (int): Index into the molecules list for
-                multi-structure fits.
+            case_id (str): Stable ID of the training case these
+                observations belong to.
             skip_imaginary (bool): If ``True``, negative frequencies
                 (imaginary modes) are skipped.
 
         Returns:
-            int: Number of frequency entries added.
+            ObservationSet: A new set with the frequency entries appended.
 
         """
         freqs = np.asarray(frequencies, dtype=float).ravel()
-        added = 0
+        new_observations: list[Observation] = []
         for i, freq in enumerate(freqs):
             if skip_imaginary and freq < 0:
                 continue
-            self.add_frequency(
-                float(freq),
-                data_idx=i,
-                weight=weight,
-                molecule_idx=molecule_idx,
-                label=f"mode {i}",
+            new_observations.append(
+                _frequency_observation(float(freq), data_idx=i, weight=weight, case_id=case_id, label=f"mode {i}")
             )
-            added += 1
-        return added
+        return self._with(*new_observations)
 
     # ---- Factory methods ----
 
     @classmethod
     def from_molecule(
         cls,
-        mol: Q2MMMolecule,
+        mol: Molecule,
         *,
+        case_id: str = "0",
         weights: dict[str, float] | None = None,
-        molecule_idx: int = 0,
         frequencies: np.ndarray | list[float] | None = None,
         skip_imaginary: bool = False,
         include_geometry: bool = True,
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
         eigenmatrix_hessian: np.ndarray | None = None,
-    ) -> ReferenceData:
+    ) -> ObservationSet:
         """Auto-populate reference data from a molecule's detected geometry.
 
         Extracts all auto-detected bond lengths and bond angles from the
@@ -597,15 +654,17 @@ class ReferenceData:
         Hessian elements are **not** included by default.
 
         Args:
-            mol (Q2MMMolecule): Molecule with geometry (bonds/angles
+            mol (Molecule): Molecule with geometry (bonds/angles
                 auto-detected).
+            case_id (str): Stable ID of the training case (matches
+                :attr:`q2mm.models.problem.TrainingCase.case_id`) every
+                observation built from *mol* is bound to.
             weights (dict[str, float] | None): Weight overrides keyed by
                 data type. Supported keys: ``"bond_length"``,
                 ``"bond_angle"``, ``"frequency"``, and the eigenmatrix
                 keys ``"eig_i"``, ``"eig_d_low"``, ``"eig_d_high"``,
                 ``"eig_o"``. Defaults: ``{"bond_length": 10.0,
                 "bond_angle": 5.0, "frequency": 1.0}``.
-            molecule_idx (int): Index for multi-molecule fits.
             frequencies (np.ndarray | list[float] | None): Vibrational
                 frequencies (cm⁻¹) to include.
             skip_imaginary (bool): If ``True``, negative frequencies are
@@ -631,7 +690,7 @@ class ReferenceData:
                 unmodified ``mol.hessian`` / passed values).
 
         Returns:
-            ReferenceData: Populated with bond lengths, angles, and
+            ObservationSet: Populated with bond lengths, angles, and
                 (by default) eigenmatrix data when a Hessian is present.
 
         """
@@ -639,32 +698,40 @@ class ReferenceData:
         if weights:
             w.update(weights)
 
-        ref = cls()
+        new_observations: list[Observation] = []
 
         if include_geometry:
-            for bond in mol.bonds:
-                ref.add_bond_length(
-                    bond.length,
-                    atom_indices=(bond.atom_i, bond.atom_j),
-                    weight=w["bond_length"],
-                    molecule_idx=molecule_idx,
-                    label=f"{bond.element_pair} bond",
+            for bond in mol.bonds or ():
+                new_observations.append(
+                    _bond_length_observation(
+                        bond.length,
+                        data_idx=-1,
+                        atom_indices=(bond.atom_i, bond.atom_j),
+                        weight=w["bond_length"],
+                        case_id=case_id,
+                        label=f"{bond.element_pair} bond",
+                    )
                 )
 
-            for angle in mol.angles:
-                ref.add_bond_angle(
-                    angle.value,
-                    atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
-                    weight=w["bond_angle"],
-                    molecule_idx=molecule_idx,
-                    label=f"{angle.elements} angle",
+            for angle in mol.angles or ():
+                new_observations.append(
+                    _bond_angle_observation(
+                        angle.value,
+                        data_idx=-1,
+                        atom_indices=(angle.atom_i, angle.atom_j, angle.atom_k),
+                        weight=w["bond_angle"],
+                        case_id=case_id,
+                        label=f"{angle.elements} angle",
+                    )
                 )
+
+        ref = cls(values=tuple(new_observations))
 
         if frequencies is not None:
-            ref.add_frequencies_from_array(
+            ref = ref.with_frequencies_from_array(
                 frequencies,
                 weight=w["frequency"],
-                molecule_idx=molecule_idx,
+                case_id=case_id,
                 skip_imaginary=skip_imaginary,
             )
 
@@ -675,12 +742,14 @@ class ReferenceData:
             # available, no eigenmatrix block is built.
             hess_for_eigenmatrix = eigenmatrix_hessian if eigenmatrix_hessian is not None else mol.hessian
             if hess_for_eigenmatrix is not None:
-                eig_weights = {k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w}
-                ref.add_eigenmatrix_from_hessian(
+                eig_weights: dict[str, float] = {
+                    k: w[k] for k in ("eig_i", "eig_d_low", "eig_d_high", "eig_o") if k in w
+                }
+                ref = ref.with_eigenmatrix_from_hessian(
                     hess_for_eigenmatrix,
                     symbols=list(mol.symbols),
                     diagonal_only=eigenmatrix_diagonal_only,
-                    molecule_idx=molecule_idx,
+                    case_id=case_id,
                     weights=eig_weights or None,
                 )
 
@@ -689,7 +758,8 @@ class ReferenceData:
     @classmethod
     def from_molecules(
         cls,
-        molecules: list[Q2MMMolecule],
+        molecules: Sequence[Molecule],
+        case_ids: Sequence[str],
         *,
         weights: dict[str, float] | None = None,
         frequencies_list: list[np.ndarray | list[float]] | None = None,
@@ -698,14 +768,18 @@ class ReferenceData:
         include_eigenmatrix: bool = True,
         eigenmatrix_diagonal_only: bool = False,
         eigenmatrix_hessians: list[np.ndarray] | None = None,
-    ) -> ReferenceData:
+    ) -> ObservationSet:
         """Auto-populate reference data from multiple molecules.
 
-        Each molecule is assigned a sequential ``molecule_idx`` starting
-        from 0.  Delegates to :meth:`from_molecule` per molecule.
+        Each molecule is bound to the corresponding entry of *case_ids*
+        (matching :attr:`q2mm.models.problem.TrainingCase.case_id`).
+        Delegates to :meth:`from_molecule` per molecule.
 
         Args:
-            molecules (list[Q2MMMolecule]): Training set molecules.
+            molecules (Sequence[Molecule]): Training set molecules.
+            case_ids (Sequence[str]): Stable case ID for each molecule, in
+                the same order as *molecules*. Must have the same length
+                as *molecules*.
             weights (dict[str, float] | None): Weight overrides (same
                 keys as :meth:`from_molecule`).
             frequencies_list (list[np.ndarray | list[float]] | None):
@@ -730,13 +804,16 @@ class ReferenceData:
                 the Method E2 protocol).
 
         Returns:
-            ReferenceData: Combined reference data for all molecules.
+            ObservationSet: Combined reference data for all molecules.
 
         Raises:
-            ValueError: If ``frequencies_list`` or ``eigenmatrix_hessians``
-                length does not match ``molecules`` length.
+            ValueError: If ``case_ids``, ``frequencies_list``, or
+                ``eigenmatrix_hessians`` length does not match
+                ``molecules`` length.
 
         """
+        if len(case_ids) != len(molecules):
+            raise ValueError(f"case_ids length ({len(case_ids)}) must match molecules length ({len(molecules)}).")
         if frequencies_list is not None and len(frequencies_list) != len(molecules):
             raise ValueError(
                 f"frequencies_list length ({len(frequencies_list)}) must match molecules length ({len(molecules)})."
@@ -747,12 +824,12 @@ class ReferenceData:
                 f"molecules length ({len(molecules)})."
             )
 
-        ref = cls()
+        combined: list[Observation] = []
         for idx, mol in enumerate(molecules):
             single = cls.from_molecule(
                 mol,
+                case_id=case_ids[idx],
                 weights=weights,
-                molecule_idx=idx,
                 frequencies=frequencies_list[idx] if frequencies_list is not None else None,
                 skip_imaginary=skip_imaginary,
                 include_geometry=include_geometry,
@@ -760,183 +837,5 @@ class ReferenceData:
                 eigenmatrix_diagonal_only=eigenmatrix_diagonal_only,
                 eigenmatrix_hessian=eigenmatrix_hessians[idx] if eigenmatrix_hessians is not None else None,
             )
-            ref.values.extend(single.values)
-
-        return ref
-
-    @classmethod
-    def from_gaussian(
-        cls,
-        path: str | Path,
-        *,
-        weights: dict[str, float] | None = None,
-        bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
-        charge: int | None = None,
-        multiplicity: int | None = None,
-        include_frequencies: bool = False,
-        skip_imaginary: bool = False,
-        au_hessian: bool = True,
-        include_eigenmatrix: bool = True,
-    ) -> tuple[ReferenceData, Q2MMMolecule]:
-        """Build reference data from a Gaussian log file.
-
-        Parses the log file for the optimised geometry and vibrational
-        frequencies, then auto-populates bond lengths, angles, and
-        (when a Hessian is available) eigenmatrix data.
-
-        By default, **frequencies are not included** — eigenmatrix
-        training from the Hessian is the standard Q2MM approach per
-        Norrby & Liljefors (1998). Set ``include_frequencies=True``
-        to add them.
-
-        Args:
-            path (str | Path): Path to the Gaussian ``.log`` file
-                (from an ``opt freq`` job).
-            weights (dict[str, float] | None): Weight overrides (same
-                keys as :meth:`from_molecule`).
-            bond_tolerance (float): Multiplier for covalent-radii bond
-                detection. Use 1.4+ for TS.
-            charge (int | None): Molecular charge override. ``None`` preserves
-                the value parsed from the Gaussian archive.
-            multiplicity (int | None): Spin multiplicity override. ``None``
-                preserves the value parsed from the Gaussian archive.
-            include_frequencies (bool): Whether to add frequency data
-                from the log file. Default is ``False``.
-            skip_imaginary (bool): If ``True``, negative frequencies are
-                skipped.
-            au_hessian (bool): Keep Hessian in atomic units
-                (Hartree/Bohr²).
-            include_eigenmatrix (bool): If ``True`` (the default) and a
-                Hessian is available, add eigenmatrix training data.
-
-        Returns:
-            tuple[ReferenceData, Q2MMMolecule]: Populated reference data
-                and the parsed molecule (with Hessian attached if
-                available).
-
-        """
-        from q2mm.io.gaussian import GaussLog
-
-        log = GaussLog(str(path), au_hessian=au_hessian)
-
-        # Build molecule from the last (optimised) structure
-        mol = log.molecules[-1]
-        if charge is not None:
-            mol.charge = charge
-        if multiplicity is not None:
-            mol.multiplicity = multiplicity
-        mol.bond_tolerance = bond_tolerance
-
-        # ``mol.hessian`` carries the archive Cartesian Hessian (Hartree/Bohr²,
-        # full rank 3N, imaginary mode intact) in a frame consistent with the
-        # geometry.  Do NOT override it with a reconstruction from
-        # ``log.evals``/``log.evecs`` — those come from Gaussian's mass-weighted
-        # frequency analysis and would reintroduce a ~√(mᵢmⱼ) error into every
-        # heavy-atom force constant.
-
-        # Frequencies in cm⁻¹ from the Gaussian log
-        # Note: log.evals are eigenvalues (mass-weighted force constants in
-        # atomic units), NOT frequencies.  Use log.frequencies for cm⁻¹ values.
-        frequencies = None
-        if include_frequencies and log.frequencies is not None and len(log.frequencies):
-            frequencies = np.array(log.frequencies)
-
-        ref = cls.from_molecule(
-            mol,
-            weights=weights,
-            frequencies=frequencies,
-            skip_imaginary=skip_imaginary,
-            include_eigenmatrix=include_eigenmatrix,
-        )
-
-        return ref, mol
-
-    @classmethod
-    def from_fchk(
-        cls,
-        path: str | Path,
-        *,
-        weights: dict[str, float] | None = None,
-        bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
-        charge: int = 0,
-        multiplicity: int = 1,
-    ) -> tuple[ReferenceData, Q2MMMolecule]:
-        """Build reference data from a Gaussian formatted checkpoint file.
-
-        Parses the ``.fchk`` file for geometry, Cartesian Force Constants
-        (Hessian), and atom data. Auto-populates bond lengths and angles.
-
-        Args:
-            path (str | Path): Path to the Gaussian ``.fchk`` file.
-            weights (dict[str, float] | None): Weight overrides (same
-                keys as :meth:`from_molecule`).
-            bond_tolerance (float): Multiplier for covalent-radii bond
-                detection.
-            charge (int): Molecular charge (overridden by file values
-                if present).
-            multiplicity (int): Spin multiplicity (overridden by file
-                values if present).
-
-        Returns:
-            tuple[ReferenceData, Q2MMMolecule]: Populated reference data
-                and the parsed molecule with Hessian.
-
-        """
-        path = Path(path)
-        from q2mm.io.fchk import parse_fchk as _parse_fchk  # noqa: E402
-
-        symbols, coords_ang, hessian, file_charge, file_mult = _parse_fchk(path)
-
-        mol = Q2MMMolecule(
-            symbols=symbols,
-            geometry=coords_ang,
-            charge=file_charge if file_charge is not None else charge,
-            multiplicity=file_mult if file_mult is not None else multiplicity,
-            name=path.stem,
-            bond_tolerance=bond_tolerance,
-            hessian=hessian,
-        )
-
-        ref = cls.from_molecule(mol, weights=weights)
-
-        return ref, mol
-
-    @classmethod
-    def from_yaml(
-        cls,
-        path: str | Path,
-    ) -> tuple[ReferenceData, list[Q2MMMolecule]]:
-        """Load reference data and molecules from a YAML file.
-
-        Delegates to :func:`q2mm.io.reference.load_reference_yaml`.
-
-        Args:
-            path (str | Path): Path to the YAML reference file.
-
-        Returns:
-            tuple[ReferenceData, list[Q2MMMolecule]]: Loaded reference
-                data and parsed molecules.
-
-        """
-        from q2mm.io.reference import load_reference_yaml
-
-        return load_reference_yaml(path)
-
-    def to_yaml(
-        self,
-        path: str | Path,
-        molecules: list[Q2MMMolecule],
-    ) -> None:
-        """Save this reference data and molecules to a YAML file.
-
-        Delegates to :func:`q2mm.io.reference.save_reference_yaml`.
-
-        Args:
-            path (str | Path): Output file path.
-            molecules (list[Q2MMMolecule]): Molecules corresponding to
-                the reference values.
-
-        """
-        from q2mm.io.reference import save_reference_yaml
-
-        save_reference_yaml(path, self, molecules)
+            combined.extend(single.values)
+        return cls(values=tuple(combined))

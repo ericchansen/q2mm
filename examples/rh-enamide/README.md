@@ -38,20 +38,25 @@ Master files: `rh_enamide_training_set.mae`, `.mol2`, `.mmo`
 ## Quick start
 
 ```python
-from q2mm.models.molecule import Q2MMMolecule
-from q2mm.models.forcefield import ForceField
+from q2mm.io.xyz import load_xyz
+from q2mm.io.mm3 import load_mm3_fld
 from q2mm.models.seminario import qfuerza_into
 
 # Load a structure with its QM Hessian
-mol = Q2MMMolecule.from_xyz("rh_enamide_training_set/raw_xyz/1_zdmp.xyz")
+mol = load_xyz("rh_enamide_training_set/raw_xyz/1_zdmp.xyz")
 
 # Load the starting force field
-ff = ForceField.from_mm3_fld("mm3.fld")
+ff = load_mm3_fld("mm3.fld")
 
-# Overwrite all unfrozen params with QFUERZA-projected values.
-# Frozen params (the standard MM3 backbone if you call
-# ff.freeze_standard_params first) are preserved as-is.
-qfuerza_into(ff, mol, au_hessian=True)
+# Overwrite active bond/angle params with QFUERZA-projected values;
+# returns a NEW ForceField (ff itself is immutable and never mutated).
+# Pass active_bonds=.../active_angles=... (0-based indices into
+# ff.bonds/ff.angles) to restrict which rows QFUERZA may overwrite —
+# see q2mm.models.parameters.opt_substructure_membership for deriving
+# that set from a published-OPT-only force field, and
+# q2mm.models.parameters.ActiveParameterSpace for the resulting
+# active/frozen projection used by the optimizers.
+estimated_ff = qfuerza_into(ff, mol, au_hessian=True)
 ```
 
 ## See also

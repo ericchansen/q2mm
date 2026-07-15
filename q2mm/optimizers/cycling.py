@@ -35,6 +35,7 @@ from typing import Literal
 
 import numpy as np
 
+from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.optimizers._metrics import fractional_improvement
 from q2mm.optimizers.objective import ObjectiveFunction
 
@@ -79,6 +80,12 @@ class LoopResult:
         initial_score (float): Objective value before any optimisation.
         final_score (float): Objective value after the last cycle.
         n_cycles (int): Number of grad-simp cycles completed.
+        initial_params (np.ndarray): Full-length parameter vector before
+            any optimisation.
+        final_params (np.ndarray): Full-length parameter vector after the
+            last cycle.  ``ObjectiveFunction.forcefield`` is never
+            mutated in place — materialize the optimised force field via
+            ``objective.layout.replace(objective.forcefield, result.final_params)``.
         n_eval (int): Total objective function evaluations across all
             cycles (grad + sensitivity + simp).
         cycle_scores (list[float]): Objective value at the end of each
@@ -95,6 +102,8 @@ class LoopResult:
     initial_score: float
     final_score: float
     n_cycles: int
+    initial_params: np.ndarray
+    final_params: np.ndarray
     n_eval: int = 0
     cycle_scores: list[float] = field(default_factory=list)
     selected_indices: list[list[int]] = field(default_factory=list)
@@ -234,8 +243,8 @@ class SubspaceObjective:
                 active parameter.
 
         """
-        all_bounds = self.objective.forcefield.get_bounds()
-        return [all_bounds[i] for i in self.active_indices]
+        all_bounds = self.objective.layout.bounds
+        return [tuple(all_bounds[i]) for i in self.active_indices]
 
 
 # ---------------------------------------------------------------------------
@@ -280,8 +289,12 @@ def compute_sensitivity(
         objective (ObjectiveFunction): Must already be evaluable (engine
             and molecules configured).
         step_sizes (np.ndarray | None): Per-parameter step sizes.
-            Defaults to :meth:`ForceField.get_step_sizes` if not
-            provided.
+            Defaults to :attr:`ParameterLayout.steps` (from
+            ``objective.layout``) if not provided.  Callers wanting to
+            restrict candidates to a subset (e.g. only active
+            parameters) should zero out the step for any index to
+            exclude — a zero step is treated as "not a candidate" and
+            skipped entirely (no evaluation cost, ``simp_var = inf``).
         metric (str): Ranking criterion — ``"simp_var"`` or
             ``"abs_d1"``.
         bounds (list[tuple[float, float]] | None): Per-parameter
@@ -296,12 +309,12 @@ def compute_sensitivity(
             vector, or if *metric* is unknown.
 
     """
-    ff = objective.forcefield
-    x0 = ff.get_param_vector().copy()
+    layout = objective.layout
+    x0 = layout.vector(objective.forcefield)
     n = len(x0)
 
     if step_sizes is None:
-        step_sizes = ff.get_step_sizes()
+        step_sizes = layout.steps
     step_sizes = np.asarray(step_sizes, dtype=float)
     if len(step_sizes) != n:
         raise ValueError(f"step_sizes length {len(step_sizes)} != param vector length {n}")
@@ -402,15 +415,22 @@ class OptimizationLoop:
 
     Each cycle:
       1. **Full-space pass** — run ``full_method`` (default L-BFGS-B) on
-         all parameters.
-      2. **Sensitivity analysis** — central differentiation to rank params.
+         all *active* parameters (respecting ``space``).
+      2. **Sensitivity analysis** — central differentiation to rank the
+         active parameters (frozen parameters are never candidates).
       3. **Subspace simplex** — run ``simp_method`` (default Nelder-Mead)
-         on only the top ``max_params`` most sensitive parameters.
+         on only the top ``max_params`` most sensitive active parameters
+         — a temporary subspace derived from ``space``.
       4. **Convergence check** — stop if the fractional improvement in the
          objective falls below ``convergence``.
 
     Args:
         objective (ObjectiveFunction): The objective function to minimise.
+        space (ActiveParameterSpace): The active/frozen projection over
+            ``objective.layout``.  Only active parameters are ever
+            selected as full-space or subspace candidates;
+            ``objective.forcefield`` is never mutated — read the
+            optimised parameters from :attr:`LoopResult.final_params`.
         max_params (int): Number of parameters per simplex pass (upstream
             default: 3).
         convergence (float): Stop when ``(score_before - score_after) /
@@ -435,6 +455,7 @@ class OptimizationLoop:
     def __init__(
         self,
         objective: ObjectiveFunction,
+        space: ActiveParameterSpace,
         *,
         max_params: int = 3,
         convergence: float = 0.01,
@@ -453,6 +474,8 @@ class OptimizationLoop:
         Args:
             objective (ObjectiveFunction): The objective function to
                 minimise.
+            space (ActiveParameterSpace): The active/frozen projection
+                over ``objective.layout``.
             max_params (int): Number of parameters per simplex pass.
             convergence (float): Fractional improvement threshold.
             max_cycles (int): Maximum number of grad-simp cycles.
@@ -469,6 +492,7 @@ class OptimizationLoop:
 
         """
         self.objective = objective
+        self.space = space
         self.max_params = max_params
         self.convergence = convergence
         self.max_cycles = max_cycles
@@ -491,8 +515,11 @@ class OptimizationLoop:
         """
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        ff = self.objective.forcefield
-        x0 = ff.get_param_vector().copy()
+        layout = self.objective.layout
+        space = self.space
+        original_forcefield = self.objective.forcefield
+        current_full = layout.vector(original_forcefield)
+        initial_params = current_full.copy()
 
         # Enable penalty fallback for eigendecomposition failures during
         # optimisation.  This lets the optimizer retreat from pathological
@@ -500,7 +527,7 @@ class OptimizationLoop:
         prev_on_error = self.objective.on_error
         self.objective.on_error = "penalty"
 
-        initial_score = float(self.objective(x0))
+        initial_score = float(self.objective(current_full))
 
         n_eval_start = self.objective.n_eval  # track cumulative evals
         cycle_scores: list[float] = [initial_score]
@@ -514,6 +541,16 @@ class OptimizationLoop:
         use_basinhopping = self.full_method.startswith("basinhopping")
         use_multistart = self.full_method.startswith("multi:")
 
+        # Frozen parameters are never sensitivity/simplex candidates:
+        # zero out their step size so compute_sensitivity() skips them
+        # entirely (no evaluation cost, simp_var=inf, sorted last).
+        candidate_step_sizes = layout.steps.copy()
+        frozen_mask = np.ones(len(layout), dtype=bool)
+        frozen_mask[space.active_indices] = False
+        candidate_step_sizes[frozen_mask] = 0.0
+        full_bounds = layout.bounds
+        param_labels = [kind.value for kind in layout.kinds]
+
         try:
             if self.verbose:
                 logger.info(
@@ -525,7 +562,13 @@ class OptimizationLoop:
             for cycle in range(1, self.max_cycles + 1):
                 score_before = cycle_scores[-1]
 
-                # --- Step 1: Full-space optimisation ---
+                # Sync objective.forcefield and derive this cycle's active
+                # space from the current full vector before the
+                # full-space pass reads them.
+                self.objective.forcefield = layout.replace(original_forcefield, current_full)
+                cycle_space = space.with_baseline(current_full)
+
+                # --- Step 1: Full-space optimisation (active params only) ---
                 if use_optax:
                     from q2mm.optimizers.optax import OptaxOptimizer
 
@@ -541,7 +584,7 @@ class OptimizationLoop:
                         schedule=schedule,
                         verbose=False,
                     )
-                    full_result = full_opt.optimize(self.objective)
+                    full_result = full_opt.optimize(self.objective, cycle_space)
                 elif use_jaxopt:
                     from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
@@ -551,7 +594,7 @@ class OptimizationLoop:
                         maxiter=self.full_maxiter,
                         verbose=False,
                     )
-                    full_result = full_opt.optimize(self.objective)
+                    full_result = full_opt.optimize(self.objective, cycle_space)
                 elif use_basinhopping:
                     from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
 
@@ -565,7 +608,7 @@ class OptimizationLoop:
                         jac=self.full_jac,
                         verbose=False,
                     )
-                    full_result = full_opt.optimize(self.objective)
+                    full_result = full_opt.optimize(self.objective, cycle_space)
                 elif use_multistart:
                     from q2mm.optimizers.multistart import MultiStartOptimizer
 
@@ -582,7 +625,7 @@ class OptimizationLoop:
                         n_starts=5,
                         verbose=False,
                     )
-                    full_result = full_opt.optimize(self.objective)
+                    full_result = full_opt.optimize(self.objective, cycle_space)
                 else:
                     full_opt = ScipyOptimizer(
                         method=self.full_method,
@@ -591,8 +634,9 @@ class OptimizationLoop:
                         jac=self.full_jac,
                         verbose=False,
                     )
-                    full_result = full_opt.optimize(self.objective)
+                    full_result = full_opt.optimize(self.objective, cycle_space)
                 score_after_grad = full_result.final_score
+                current_full = full_result.final_params
 
                 if self.verbose:
                     logger.info(
@@ -603,30 +647,31 @@ class OptimizationLoop:
                         score_after_grad,
                     )
 
-                # --- Step 2: Sensitivity analysis ---
-                step_sizes = ff.get_step_sizes()
-                bounds = ff.get_bounds()
+                # Sync objective.forcefield to the post-grad state before
+                # sensitivity analysis reads it.
+                self.objective.forcefield = layout.replace(original_forcefield, current_full)
+
+                # --- Step 2: Sensitivity analysis (active params only) ---
                 sens = compute_sensitivity(
                     self.objective,
-                    step_sizes=step_sizes,
+                    step_sizes=candidate_step_sizes,
                     metric=self.sensitivity_metric,
-                    bounds=bounds,
+                    bounds=full_bounds,
                 )
                 sensitivity_results.append(sens)
 
                 # Select top max_params; ensure we have at least one active parameter
-                n_active = min(self.max_params, ff.n_params)
-                if n_active < 1:
+                n_selected = min(self.max_params, space.n_active)
+                if n_selected < 1:
                     raise ValueError(
                         f"OptimizationLoop requires at least one active parameter, "
-                        f"but max_params={self.max_params} and ff.n_params={ff.n_params}."
+                        f"but max_params={self.max_params} and space.n_active={space.n_active}."
                     )
-                active = sens.ranking[:n_active].tolist()
+                active = sens.ranking[:n_selected].tolist()
                 selected_indices.append(active)
 
                 if self.verbose:
-                    labels = ff.get_param_type_labels()
-                    selected_labels = [f"{labels[i]}[{i}]" for i in active]
+                    selected_labels = [f"{param_labels[i]}[{i}]" for i in active]
                     logger.info(
                         "  Cycle %d sensitivity (%s): selected %s",
                         cycle,
@@ -635,7 +680,6 @@ class OptimizationLoop:
                     )
 
                 # --- Step 3: Subspace simplex ---
-                current_full = ff.get_param_vector().copy()
                 sub_obj = SubspaceObjective(self.objective, active, current_full)
 
                 from scipy import optimize as sp_opt
@@ -666,11 +710,11 @@ class OptimizationLoop:
                 score_after_simp = float(self.objective(best_full))
 
                 if score_after_simp < score_after_grad:
-                    ff.set_param_vector(best_full)
+                    current_full = best_full
                 else:
-                    # Simplex didn't improve — FF already has post-gradient
-                    # parameters (set by ScipyOptimizer.optimize), no restore
-                    # needed since objective evaluations are non-mutating.
+                    # Simplex didn't improve — keep the post-gradient vector
+                    # (current_full already holds it; no restore needed
+                    # since objective evaluations are non-mutating).
                     score_after_simp = score_after_grad
                     if self.verbose:
                         logger.info(
@@ -685,7 +729,7 @@ class OptimizationLoop:
                         "  Cycle %d SIMP (%s, %d params): %.6f → %.6f",
                         cycle,
                         self.simp_method,
-                        n_active,
+                        n_selected,
                         score_after_grad,
                         score_after_simp,
                     )
@@ -714,6 +758,7 @@ class OptimizationLoop:
 
         finally:
             self.objective.on_error = prev_on_error
+            self.objective.forcefield = original_forcefield
 
         final_score = cycle_scores[-1]
         n_cycles = len(cycle_scores) - 1  # exclude initial
@@ -724,6 +769,8 @@ class OptimizationLoop:
             initial_score=initial_score,
             final_score=final_score,
             n_cycles=n_cycles,
+            initial_params=initial_params,
+            final_params=current_full,
             n_eval=total_evals,
             cycle_scores=cycle_scores,
             selected_indices=selected_indices,

@@ -11,7 +11,7 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from q2mm.models.molecule import Q2MMMolecule
+from q2mm.io.xyz import load_xyz
 from q2mm.models.seminario import seminario_bond_fc
 from q2mm.resources import sn2_reference_dir
 
@@ -24,7 +24,7 @@ HESSIAN_PATH = QM_REF / "sn2-ts-hessian.npy"
 def main(title: str = "Fixture-backed SN2 Seminario Comparison") -> int:
     """Compare SN2 Seminario bond projections against the pinned fixture."""
     fixture = json.loads(FIXTURE_PATH.read_text())
-    molecule = Q2MMMolecule.from_xyz(XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
+    molecule = load_xyz(XYZ_PATH, name="sn2_ts", bond_tolerance=1.5)
     hessian = np.load(str(HESSIAN_PATH))
     scaling = float(fixture["metadata"]["dft_scaling"])
 
