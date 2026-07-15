@@ -48,7 +48,7 @@ def load_system(key: str, **kwargs: Any) -> BenchmarkCase:
     available keys) and calls its ``load(**kwargs)`` function. Keyword
     arguments are forwarded verbatim — see each system module's ``load``
     signature for what it accepts (e.g. ``ch3f``/``ch3f-sn2`` require an
-    ``engine=``; the published-FF systems accept ``data_roots=``,
+    ``backend=``; the published-FF systems accept ``data_roots=``,
     ``starting_point=``, ``qfuerza_replace_with=``, ``functional_form=``).
 
     Args:

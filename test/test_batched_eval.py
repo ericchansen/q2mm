@@ -5,15 +5,22 @@ Covers:
 - Batched Hessian parity with sequential evaluation
 - Batched frequency parity
 - ObjectiveFunction integration (batched vs sequential)
-- Graceful fallback for non-JAX engines
+- Graceful fallback for non-JAX backends
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+    HessianRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import mock_backend_info, param_vector, prepare_case
 
 import importlib.util
 
 import numpy as np
 import pytest
+
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
 
@@ -40,11 +47,11 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -72,37 +79,33 @@ def _water_ff() -> ForceField:
 # ---------------------------------------------------------------------------
 
 
-class TestTopologySignature:
-    """Test _topology_signature produces correct groupings."""
+class TestTopologyGrouping:
+    """Test topology-compatibility grouping into typed batches."""
 
-    def test_same_topology_different_coords(self) -> None:
-        """Two conformations of the same molecule produce the same signature."""
-        from q2mm.backends.mm.batched import _topology_signature
-        from q2mm.backends.mm.jax_engine import JaxEngine
+    def test_same_topology_grouped_into_one_batch(self) -> None:
+        """Two conformations of the same molecule land in one batch."""
+        from q2mm.backends.mm.batched import group_by_topology
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _h2_ff()
-        mol_a = make_diatomic(distance=0.74)
-        mol_b = make_diatomic(distance=0.84)
+        s_a = prepare_case(backend, make_diatomic(distance=0.74), ff, "a")
+        s_b = prepare_case(backend, make_diatomic(distance=0.84), ff, "b")
 
-        handle_a = engine.create_context(mol_a, ff)
-        handle_b = engine.create_context(mol_b, ff)
+        batches = group_by_topology([s_a, s_b])
+        assert len(batches) == 1
+        assert batches[0].case_ids == ("a", "b")
 
-        assert _topology_signature(handle_a) == _topology_signature(handle_b)
+    def test_different_topology_separate_batches(self) -> None:
+        """Different molecules land in different batches."""
+        from q2mm.backends.mm.batched import group_by_topology
 
-    def test_different_topology_different_signature(self) -> None:
-        """Different molecules produce different signatures."""
-        from q2mm.backends.mm.batched import _topology_signature
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        backend = load_backend("jax")
+        s_h2 = prepare_case(backend, make_diatomic(), _h2_ff(), "h2")
+        s_water = prepare_case(backend, make_water(), _water_ff(), "water")
 
-        engine = JaxEngine()
-        h2_ff = _h2_ff()
-        water_ff = _water_ff()
-
-        handle_h2 = engine.create_context(make_diatomic(), h2_ff)
-        handle_water = engine.create_context(make_water(), water_ff)
-
-        assert _topology_signature(handle_h2) != _topology_signature(handle_water)
+        batches = group_by_topology([s_h2, s_water])
+        assert len(batches) == 2
+        assert {cid for b in batches for cid in b.case_ids} == {"h2", "water"}
 
 
 # ---------------------------------------------------------------------------
@@ -111,28 +114,26 @@ class TestTopologySignature:
 
 
 class TestGroupByTopology:
-    """Test molecule grouping logic."""
+    """Test prepared-session grouping logic."""
 
     def test_same_molecules_grouped(self) -> None:
-        """Two conformations of the same molecule land in one group."""
+        """Two conformations of the same molecule land in one batch."""
         from q2mm.backends.mm.batched import group_by_topology
-        from q2mm.backends.mm.jax_engine import JaxEngine
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _h2_ff()
         mols = [make_diatomic(distance=0.74), make_diatomic(distance=0.84)]
+        sessions = [prepare_case(backend, m, ff, str(i)) for i, m in enumerate(mols)]
 
-        groups = group_by_topology(mols, ff, engine)
-        assert len(groups) == 1
-        assert len(groups[0].mol_indices) == 2
-        assert len(groups[0].geometries) == 2
+        batches = group_by_topology(sessions)
+        assert len(batches) == 1
+        assert batches[0].case_ids == ("0", "1")
 
     def test_different_molecules_separate_groups(self) -> None:
-        """Molecules with different topologies get separate groups."""
+        """Molecules with different topologies get separate batches."""
         from q2mm.backends.mm.batched import group_by_topology
-        from q2mm.backends.mm.jax_engine import JaxEngine
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         # Use a combined FF that supports both molecules
         ff = ForceField(
             bonds=[
@@ -143,26 +144,75 @@ class TestGroupByTopology:
             functional_form=FunctionalForm.MM3,
         )
         mols = [make_diatomic(distance=0.74), make_water()]
+        sessions = [prepare_case(backend, m, ff, str(i)) for i, m in enumerate(mols)]
 
-        groups = group_by_topology(mols, ff, engine)
-        assert len(groups) == 2
+        batches = group_by_topology(sessions)
+        assert len(batches) == 2
 
-    def test_uses_prebuilt_handles(self) -> None:
-        """Pre-built handles are reused instead of creating new ones."""
+    def test_batch_preserves_case_ids_and_isolation(self) -> None:
+        """The batch tracks each session's stable case ID; cases stay isolated.
+
+        Isolation is proven by distinct case IDs plus different-coordinate
+        numerical parity: the batched Hessian of each case equals that case's
+        own independent Hessian, so no case's state leaks into another's.
+        """
+        from q2mm.backends.contracts import BatchedHessianRequest, HessianRequest
         from q2mm.backends.mm.batched import group_by_topology
-        from q2mm.backends.mm.jax_engine import JaxEngine
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _h2_ff()
-        mols = [make_diatomic(distance=0.74), make_diatomic(distance=0.84)]
+        # Two conformers with clearly different coordinates.
+        s0 = prepare_case(backend, make_diatomic(distance=0.72), ff, "case-0")
+        s1 = prepare_case(backend, make_diatomic(distance=0.95), ff, "case-1")
+        vec = param_vector(ff)
 
-        # Pre-build handle for first molecule
-        prebuilt = {0: engine.create_context(mols[0], ff)}
-        groups = group_by_topology(mols, ff, engine, handles=prebuilt)
+        batches = group_by_topology([s0, s1])
+        assert len(batches) == 1
+        batch = batches[0]
+        assert batch.case_ids == ("case-0", "case-1")
 
-        assert len(groups) == 1
-        # The handle in the group should be the pre-built one
-        assert groups[0].handle is prebuilt[0]
+        result = batch.hessians(BatchedHessianRequest(parameters=vec))
+        assert result.case_ids == ("case-0", "case-1")
+        # Each batched row equals the corresponding session's own Hessian at its
+        # own coordinates (distinct coords -> distinct Hessians, no cross-leak).
+        h0 = s0.hessian(HessianRequest(parameters=vec)).hessian
+        h1 = s1.hessian(HessianRequest(parameters=vec)).hessian
+        np.testing.assert_allclose(result.hessians[0], h0, rtol=1e-10)
+        np.testing.assert_allclose(result.hessians[1], h1, rtol=1e-10)
+        assert not np.allclose(result.hessians[0], result.hessians[1])
+
+
+class TestIncompatibleBatch:
+    """PreparedJaxBatch construction rejects incompatible/ill-formed inputs."""
+
+    def test_duplicate_case_ids_rejected(self) -> None:
+        from q2mm.backends.contracts import EvaluationError
+        from q2mm.backends.mm.batched import PreparedJaxBatch
+
+        backend = load_backend("jax")
+        ff = _h2_ff()
+        s0 = prepare_case(backend, make_diatomic(distance=0.74), ff, "dup")
+        s1 = prepare_case(backend, make_diatomic(distance=0.84), ff, "dup")
+        with pytest.raises(EvaluationError):
+            PreparedJaxBatch([s0, s1])
+
+    def test_topology_mismatch_rejected(self) -> None:
+        from q2mm.backends.contracts import EvaluationError
+        from q2mm.backends.mm.batched import PreparedJaxBatch
+
+        backend = load_backend("jax")
+        s_h2 = prepare_case(backend, make_diatomic(), _h2_ff(), "h2")
+        s_water = prepare_case(backend, make_water(), _water_ff(), "water")
+        # Different atom count / topology signature -> rejected.
+        with pytest.raises(EvaluationError):
+            PreparedJaxBatch([s_h2, s_water])
+
+    def test_non_prepared_jax_rejected(self) -> None:
+        from q2mm.backends.contracts import EvaluationError
+        from q2mm.backends.mm.batched import PreparedJaxBatch
+
+        with pytest.raises(EvaluationError):
+            PreparedJaxBatch([object()])  # type: ignore[list-item]
 
 
 # ---------------------------------------------------------------------------
@@ -171,127 +221,106 @@ class TestGroupByTopology:
 
 
 class TestBatchedHessians:
-    """Test batched_hessians produces correct results."""
+    """Test PreparedJaxBatch.hessians produces correct results."""
 
     def test_single_molecule_matches_standard(self) -> None:
-        """Single-molecule batched path matches JaxEngine.hessian()."""
-        from q2mm.backends.mm.batched import TopologyGroup, batched_hessians
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        """Single-case batch matches the prepared-session Hessian."""
+        from q2mm.backends.contracts import BatchedHessianRequest, HessianRequest, HessianUnit
+        from q2mm.backends.mm.batched import group_by_topology
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _h2_ff()
         mol = make_diatomic(distance=0.80)
-        handle = engine.create_context(mol, ff)
+        session = prepare_case(backend, mol, ff, "only")
+        vec = param_vector(ff)
 
-        # Standard path
-        hess_std = engine.hessian(handle, ff)
+        # Standard path (same prepared session, reused)
+        hess_std = session.hessian(HessianRequest(parameters=vec)).hessian
 
-        # Batched path (single molecule)
-        group = TopologyGroup(
-            handle=handle,
-            mol_indices=[0],
-            geometries=[np.asarray(mol.geometry, dtype=np.float64)],
-        )
-        hess_batch = batched_hessians(group, ff)
+        # Batched path (single case)
+        batches = group_by_topology([session])
+        assert len(batches) == 1
+        result = batches[0].hessians(BatchedHessianRequest(parameters=vec))
 
-        assert len(hess_batch) == 1
-        np.testing.assert_allclose(hess_batch[0], hess_std, rtol=1e-10)
+        assert result.unit is HessianUnit.HARTREE_PER_BOHR2
+        assert result.case_ids == ("only",)
+        assert result.hessians.shape[0] == 1
+        np.testing.assert_allclose(result.hessians[0], hess_std, rtol=1e-10)
 
     def test_multi_molecule_matches_sequential(self) -> None:
-        """Multi-molecule vmap path matches sequential Hessians."""
-        from q2mm.backends.mm.batched import TopologyGroup, batched_hessians
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        """Multi-case vmap path matches independent per-session Hessians."""
+        from q2mm.backends.contracts import BatchedHessianRequest, HessianRequest
+        from q2mm.backends.mm.batched import group_by_topology
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _h2_ff()
         distances = [0.70, 0.74, 0.80, 0.90]
-        mols = [make_diatomic(distance=d) for d in distances]
+        sessions = [prepare_case(backend, make_diatomic(distance=d), ff, str(i)) for i, d in enumerate(distances)]
+        vec = param_vector(ff)
 
-        # Build shared handle from first molecule
-        handle = engine.create_context(mols[0], ff)
+        # Independent per-session Hessians
+        sequential = [s.hessian(HessianRequest(parameters=vec)).hessian for s in sessions]
 
-        # Sequential Hessians
-        sequential = []
-        for mol in mols:
-            h = engine.create_context(mol, ff)
-            sequential.append(engine.hessian(h, ff))
+        # Batched Hessians (one topology batch)
+        batches = group_by_topology(sessions)
+        assert len(batches) == 1
+        result = batches[0].hessians(BatchedHessianRequest(parameters=vec))
 
-        # Batched Hessians
-        group = TopologyGroup(
-            handle=handle,
-            mol_indices=list(range(len(mols))),
-            geometries=[np.asarray(m.geometry, dtype=np.float64) for m in mols],
-        )
-        batched = batched_hessians(group, ff)
-
-        assert len(batched) == len(sequential)
-        for b, s in zip(batched, sequential):
-            np.testing.assert_allclose(b, s, rtol=1e-10)
+        assert result.hessians.shape[0] == len(sequential)
+        for i, s in enumerate(sequential):
+            np.testing.assert_allclose(result.hessians[i], s, rtol=1e-10)
 
     def test_water_multi_conformation(self) -> None:
         """Batched Hessians work for water at different angles."""
-        from q2mm.backends.mm.batched import TopologyGroup, batched_hessians
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.backends.contracts import BatchedHessianRequest, HessianRequest
+        from q2mm.backends.mm.batched import group_by_topology
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         angles = [100.0, 104.5, 110.0]
-        mols = [make_water(angle_deg=a) for a in angles]
+        sessions = [prepare_case(backend, make_water(angle_deg=a), ff, str(i)) for i, a in enumerate(angles)]
+        vec = param_vector(ff)
 
-        handle = engine.create_context(mols[0], ff)
+        sequential = [s.hessian(HessianRequest(parameters=vec)).hessian for s in sessions]
 
-        # Sequential
-        sequential = []
-        for mol in mols:
-            h = engine.create_context(mol, ff)
-            sequential.append(engine.hessian(h, ff))
+        batches = group_by_topology(sessions)
+        assert len(batches) == 1
+        result = batches[0].hessians(BatchedHessianRequest(parameters=vec))
 
-        # Batched
-        group = TopologyGroup(
-            handle=handle,
-            mol_indices=list(range(len(mols))),
-            geometries=[np.asarray(m.geometry, dtype=np.float64) for m in mols],
-        )
-        batched = batched_hessians(group, ff)
-
-        for b, s in zip(batched, sequential):
-            np.testing.assert_allclose(b, s, rtol=1e-10, atol=1e-15)
+        for i, s in enumerate(sequential):
+            np.testing.assert_allclose(result.hessians[i], s, rtol=1e-10, atol=1e-15)
 
 
 # ---------------------------------------------------------------------------
-# Batched frequencies tests
+# Batched frequencies (derived from batched Hessians)
 # ---------------------------------------------------------------------------
 
 
 class TestBatchedFrequencies:
-    """Test batched_frequencies produces correct results."""
+    """Frequencies derived from batched Hessians match per-session frequencies."""
 
     def test_frequencies_match_sequential(self) -> None:
-        """Batched frequencies match sequential engine.frequencies()."""
-        from q2mm.backends.mm.batched import TopologyGroup, batched_frequencies
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        """Batched-Hessian frequencies match independent per-session frequencies."""
+        from q2mm.backends.contracts import BatchedHessianRequest, FrequencyRequest
+        from q2mm.backends.mm.batched import group_by_topology
+        from q2mm.models.hessian import hessian_to_frequencies
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         angles = [100.0, 104.5, 110.0]
         mols = [make_water(angle_deg=a) for a in angles]
+        sessions = [prepare_case(backend, m, ff, str(i)) for i, m in enumerate(mols)]
+        vec = param_vector(ff)
 
-        handle = engine.create_context(mols[0], ff)
+        # Independent per-session frequencies
+        sequential = [
+            [float(_f) for _f in s.frequencies(FrequencyRequest(parameters=vec)).frequencies] for s in sessions
+        ]
 
-        # Sequential
-        sequential = []
-        for mol in mols:
-            h = engine.create_context(mol, ff)
-            sequential.append(engine.frequencies(h, ff))
-
-        # Batched
-        group = TopologyGroup(
-            handle=handle,
-            mol_indices=list(range(len(mols))),
-            geometries=[np.asarray(m.geometry, dtype=np.float64) for m in mols],
-        )
-        symbols = [list(m.symbols) for m in mols]
-        batched = batched_frequencies(group, ff, symbols)
+        batches = group_by_topology(sessions)
+        assert len(batches) == 1
+        result = batches[0].hessians(BatchedHessianRequest(parameters=vec))
+        batched = [hessian_to_frequencies(result.hessians[i], list(m.symbols)) for i, m in enumerate(mols)]
 
         assert len(batched) == len(sequential)
         for b_freqs, s_freqs in zip(batched, sequential):
@@ -307,11 +336,10 @@ class TestObjectiveFunctionIntegration:
     """Test batched path through ObjectiveFunction."""
 
     def test_can_batch_hessians_true(self) -> None:
-        """_can_batch_hessians returns True for JaxEngine with freq refs."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        """_can_batch_hessians returns True for JaxBackend with freq refs."""
         from q2mm.models.observations import ObservationSet
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
@@ -319,30 +347,28 @@ class TestObjectiveFunctionIntegration:
         ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
         ref = ref.with_frequency(1000.0, data_idx=0, case_id="1")
 
-        obj = _make_objective(ff, engine, mols, ref)
+        obj = _make_objective(ff, backend, mols, ref)
         assert obj._can_batch_hessians() is True
 
     def test_can_batch_hessians_false_single_mol(self) -> None:
         """_can_batch_hessians returns False with only one molecule."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.models.observations import ObservationSet
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         mols = [make_water()]
 
         ref = ObservationSet()
         ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
 
-        obj = _make_objective(ff, engine, mols, ref)
+        obj = _make_objective(ff, backend, mols, ref)
         assert obj._can_batch_hessians() is False
 
     def test_can_batch_hessians_false_energy_only(self) -> None:
         """_can_batch_hessians returns False for energy-only refs."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.models.observations import ObservationSet
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
@@ -350,23 +376,26 @@ class TestObjectiveFunctionIntegration:
         ref = ref.with_energy(1.0, case_id="0")
         ref = ref.with_energy(2.0, case_id="1")
 
-        obj = _make_objective(ff, engine, mols, ref)
+        obj = _make_objective(ff, backend, mols, ref)
         assert obj._can_batch_hessians() is False
 
     def test_batched_vs_sequential_parity(self) -> None:
         """Objective score is identical whether batched or sequential."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.models.observations import ObservationSet
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
-        # Compute reference frequencies using the engine directly
+        # Compute reference frequencies using the backend directly
         ref_freqs = []
         for mol in mols:
-            h = engine.create_context(mol, ff)
-            freqs = engine.frequencies(h, ff)
+            freqs = [
+                float(_f)
+                for _f in prepare_case(backend, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ]
             ref_freqs.append(freqs)
 
         ref = ObservationSet()
@@ -376,7 +405,7 @@ class TestObjectiveFunctionIntegration:
                 ref = ref.with_frequency(f * 1.05, data_idx=i, case_id=str(mol_idx))
 
         # Compute score with batching enabled (the default for 2+ mols)
-        obj_batched = _make_objective(ff, engine, mols, ref)
+        obj_batched = _make_objective(ff, backend, mols, ref)
         params = _params(ff)
         score_batched = obj_batched(params)
 
@@ -387,7 +416,7 @@ class TestObjectiveFunctionIntegration:
             ref_single = ObservationSet()
             for i, f in enumerate(ref_freqs[mol_idx]):
                 ref_single = ref_single.with_frequency(f * 1.05, data_idx=i, case_id="0")
-            obj_single = _make_objective(ff, engine, [mol], ref_single)
+            obj_single = _make_objective(ff, backend, [mol], ref_single)
             score_sequential += obj_single(params)
 
         assert score_batched == pytest.approx(score_sequential, rel=1e-10)
@@ -399,15 +428,19 @@ class TestObjectiveFunctionIntegration:
         path: it must use the same mass-weighted normal-mode basis as the
         per-molecule ``EigenmatrixEvaluator`` (sequential) path.
         """
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.models.observations import ObservationSet
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ff_ref = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
         # Use each molecule's MM Hessian at ff_ref as its 'QM' Hessian.
-        mols = [mol.with_hessian(engine.hessian(mol, ff_ref)) for mol in mols]
+        mols = [
+            mol.with_hessian(
+                prepare_case(backend, mol, ff_ref).hessian(HessianRequest(parameters=param_vector(ff_ref))).hessian
+            )
+            for mol in mols
+        ]
 
         # Perturbed FF so the eigenmatrix residuals are non-zero.
         ff = ForceField(
@@ -425,7 +458,7 @@ class TestObjectiveFunctionIntegration:
                 diagonal_only=False,
                 case_id=str(mol_idx),
             )
-        obj_batched = _make_objective(ff, engine, mols, ref)
+        obj_batched = _make_objective(ff, backend, mols, ref)
         score_batched = obj_batched(params)
 
         score_sequential = 0.0
@@ -434,7 +467,7 @@ class TestObjectiveFunctionIntegration:
             ref_single = ref_single.with_eigenmatrix_from_hessian(
                 mol.hessian, symbols=list(mol.symbols), diagonal_only=False, case_id="0"
             )
-            obj_single = _make_objective(ff, engine, [mol], ref_single)
+            obj_single = _make_objective(ff, backend, [mol], ref_single)
             score_sequential += obj_single(params)
 
         assert score_batched > 0.0
@@ -442,17 +475,16 @@ class TestObjectiveFunctionIntegration:
 
 
 class TestFallback:
-    """Test graceful fallback for non-JAX engines."""
+    """Test graceful fallback for non-JAX backends."""
 
     def test_can_batch_false_for_non_jax(self) -> None:
-        """_can_batch_hessians returns False for a non-JAX engine."""
+        """_can_batch_hessians returns False for a non-JAX backend."""
         from unittest.mock import MagicMock
 
         from q2mm.models.observations import ObservationSet
 
         mock_engine = MagicMock()
-        mock_engine.supports_runtime_params.return_value = False
-        mock_engine.supports_batched_energy.return_value = False
+        mock_engine.info = mock_backend_info(batched=False)
         ff = _water_ff()
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 

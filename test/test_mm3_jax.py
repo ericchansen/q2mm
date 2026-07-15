@@ -1,13 +1,20 @@
-"""Tests for MM3 functional forms in JaxEngine (issue #91).
+"""Tests for MM3 functional forms in JaxBackend (issue #91).
 
 Verifies:
 - MM3 cubic bond, sextic angle, and Buckingham exp-6 vdW energy functions
-- JaxEngine(functional_form="mm3") produces correct energies
+- load_backend("jax", functional_form="mm3") produces correct energies
 - jax.grad works correctly through all MM3 forms
 - Parity with OpenMM MM3 implementation (when OpenMM available)
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    HessianRequest,
+    ParameterGradientRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 
@@ -61,27 +68,27 @@ def _init_jax() -> None:
         ensure_jax()
     except ImportError as exc:
         pytest.skip(f"JAX not usable: {exc}")
-    # Make jax/jnp and engine symbols available as module globals for tests.
-    global jax, jnp, JaxEngine, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy, _mm3_dipole_energy, _MM3_DIPOLE_CONST  # noqa: PLW0603, E501
+    # Make jax/jnp and backend symbols available as module globals for tests.
+    global jax, jnp, JaxBackend, _mm3_bond_energy, _mm3_angle_energy, _mm3_vdw_energy, _mm3_dipole_energy, _MM3_DIPOLE_CONST  # noqa: PLW0603, E501
     import jax as _jax
     import jax.numpy as _jnp
 
     from q2mm.backends.mm.jax_engine import (
-        JaxEngine as _JaxEngine,
+        JaxBackend as _JaxBackend,
         _MM3_DIPOLE_CONST as _dipole_const,
-        _ensure_jax as _ensure_jax_engine,
+        _ensure_jax as _ensure_jax_backend,
         _mm3_angle_energy as _angle,
         _mm3_bond_energy as _bond,
         _mm3_dipole_energy as _dipole,
         _mm3_vdw_energy as _vdw,
     )
 
-    # Initialize jax_engine module-level jnp (needed for standalone functions)
-    _ensure_jax_engine()
+    # Initialize jax_backend module-level jnp (needed for standalone functions)
+    _ensure_jax_backend()
 
     jax = _jax
     jnp = _jnp
-    JaxEngine = _JaxEngine
+    JaxBackend = _JaxBackend
     _mm3_bond_energy = _bond
     _mm3_angle_energy = _angle
     _mm3_vdw_energy = _vdw
@@ -342,68 +349,68 @@ class TestMM3VdwEnergy:
 
 
 # ---------------------------------------------------------------------------
-# Integration tests: JaxEngine with functional_form="mm3"
+# Integration tests: JaxBackend with functional_form="mm3"
 # ---------------------------------------------------------------------------
 
 
-class TestJaxEngineMM3:
-    """Test JaxEngine with MM3 functional form end-to-end."""
+class TestJaxBackendMM3:
+    """Test JaxBackend with MM3 functional form end-to-end."""
 
     def test_supported_forms_includes_mm3(self) -> None:
-        """JaxEngine now supports both harmonic and mm3."""
-        engine = JaxEngine()
-        forms = engine.supported_functional_forms()
+        """JaxBackend now supports both harmonic and mm3."""
+        backend = load_backend("jax")
+        forms = backend.info.functional_forms
         assert "harmonic" in forms
         assert "mm3" in forms
 
     def test_mm3_energy_diatomic(self) -> None:
         """MM3 energy computation for H₂."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff_mm3()
-        e = engine.energy(mol, ff)
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert isinstance(e, float)
         assert np.isfinite(e)
         assert e > 0  # displaced from equilibrium
 
     def test_mm3_energy_at_equilibrium(self) -> None:
         """MM3 energy is zero at equilibrium geometry."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_diatomic(distance=0.74, bond_tolerance=2.0)
         ff = _h2_ff_mm3()
-        e = engine.energy(mol, ff)
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert e == pytest.approx(0.0, abs=1e-8)
 
     def test_mm3_energy_water(self) -> None:
         """MM3 energy computation for water (bonds + angles)."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_water(angle_deg=110.0, bond_length=1.0)
         ff = _water_ff_mm3()
-        e = engine.energy(mol, ff)
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert isinstance(e, float)
         assert np.isfinite(e)
 
     def test_mm3_hessian(self) -> None:
         """MM3 Hessian computation produces valid matrix."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff_mm3()
-        hess = engine.hessian(mol, ff)
+        hess = prepare_case(backend, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian
         assert hess.shape == (6, 6)
         # Hessian should be symmetric
         np.testing.assert_allclose(hess, hess.T, atol=1e-10)
 
     def test_mm3_differs_from_harmonic(self) -> None:
         """MM3 energy differs from harmonic for same parameters."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff_mm3 = _h2_ff_mm3()
         ff_harm = ForceField(
             bonds=[BondParam(elements=("H", "H"), force_constant=5.0, equilibrium=0.74)],
             functional_form=FunctionalForm.HARMONIC,
         )
-        e_mm3 = engine.energy(mol, ff_mm3)
-        e_harm = engine.energy(mol, ff_harm)
+        e_mm3 = prepare_case(backend, mol, ff_mm3).energy(EnergyRequest(parameters=param_vector(ff_mm3))).energy
+        e_harm = prepare_case(backend, mol, ff_harm).energy(EnergyRequest(parameters=param_vector(ff_harm))).energy
         # Both should be positive (displaced from equilibrium) but different
         assert e_mm3 > 0
         assert e_harm > 0
@@ -411,10 +418,11 @@ class TestJaxEngineMM3:
 
     def test_mm3_analytical_gradient(self) -> None:
         """jax.grad through full MM3 energy matches finite differences."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff_mm3()
-        _e, grad_anal = engine.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _e, grad_anal = _pg.energy, _pg.gradient
 
         # Finite difference gradient
         params = _params(ff).copy()
@@ -424,18 +432,26 @@ class TestJaxEngineMM3:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            e_plus = engine.energy(mol, _materialize(ff, p_plus))
-            e_minus = engine.energy(mol, _materialize(ff, p_minus))
+            e_plus = (
+                prepare_case(backend, mol, _materialize(ff, p_plus))
+                .energy(EnergyRequest(parameters=param_vector(_materialize(ff, p_plus))))
+                .energy
+            )
+            e_minus = (
+                prepare_case(backend, mol, _materialize(ff, p_minus))
+                .energy(EnergyRequest(parameters=param_vector(_materialize(ff, p_minus))))
+                .energy
+            )
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
 
         np.testing.assert_allclose(grad_anal, grad_fd, atol=1e-4, rtol=1e-4)
 
     def test_mm3_vdw_energy(self) -> None:
         """MM3 vdW energy computation for He pair."""
-        engine = JaxEngine()
+        backend = load_backend("jax")
         mol = make_noble_gas_pair(distance=3.0, bond_tolerance=0.5)
         ff = _he2_ff_mm3()
-        e = engine.energy(mol, ff)
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert isinstance(e, float)
         assert np.isfinite(e)
 
@@ -446,41 +462,48 @@ class TestJaxEngineMM3:
 
 
 @pytest.mark.openmm
+@pytest.mark.cross_backend
 @pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed")
 class TestMM3ParityJaxVsOpenMM:
     """Verify JAX MM3 produces identical energies to OpenMM MM3."""
 
     def test_bond_parity(self) -> None:
         """MM3 bond energy: JAX vs OpenMM within 1e-6 kcal/mol."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff_mm3()
 
-        jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
+        jax_e = prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        omm_e = (
+            prepare_case(load_backend("openmm", platform_name="CPU"), mol, ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
         assert jax_e == pytest.approx(omm_e, abs=1e-6)
 
     def test_water_parity(self) -> None:
         """MM3 bond+angle energy: JAX vs OpenMM within 1e-5 kcal/mol."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = make_water(angle_deg=110.0, bond_length=1.0)
         ff = _water_ff_mm3()
 
-        jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
+        jax_e = prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        omm_e = (
+            prepare_case(load_backend("openmm", platform_name="CPU"), mol, ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
         assert jax_e == pytest.approx(omm_e, abs=1e-5)
 
     def test_vdw_parity(self) -> None:
         """MM3 vdW energy: JAX vs OpenMM within 1e-6 kcal/mol."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = make_noble_gas_pair(distance=3.5, bond_tolerance=0.5)
         ff = _he2_ff_mm3()
 
-        jax_e = JaxEngine().energy(mol, ff)
-        omm_e = OpenMMEngine(platform_name="CPU").energy(mol, ff)
+        jax_e = prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        omm_e = (
+            prepare_case(load_backend("openmm", platform_name="CPU"), mol, ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
         assert jax_e == pytest.approx(omm_e, abs=1e-6)
 
 
@@ -544,8 +567,8 @@ class TestNearLinearTorsionDamping:
         """Torsion energy at 109.5° central angle is NOT suppressed."""
         mol = _make_four_atom_chain(central_angle_deg=109.5)
         ff = _torsion_ff()
-        engine = JaxEngine()
-        e = engine.energy(mol, ff)
+        backend = load_backend("jax")
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         # Energy should be non-trivial (torsion + angle + bond contributions)
         assert abs(e) > 0.01, f"Energy too small: {e}"
 
@@ -570,9 +593,9 @@ class TestNearLinearTorsionDamping:
         mol_linear = _make_four_atom_chain(central_angle_deg=179.0)
         mol_normal = _make_four_atom_chain(central_angle_deg=120.0)
         ff = _torsion_ff()
-        engine = JaxEngine()
-        e_linear = engine.energy(mol_linear, ff)
-        e_normal = engine.energy(mol_normal, ff)
+        backend = load_backend("jax")
+        e_linear = prepare_case(backend, mol_linear, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        e_normal = prepare_case(backend, mol_normal, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         # Both have bond + angle energy, but 179° should have near-zero
         # torsion contribution.  The angle energy at 179° is large (far
         # from 109.5° equilibrium), so total energy is still substantial.
@@ -584,12 +607,12 @@ class TestNearLinearTorsionDamping:
         """Gradient (force) at 179° central angle is finite and bounded."""
         mol = _make_four_atom_chain(central_angle_deg=179.0)
         ff = _torsion_ff()
-        engine = JaxEngine()
-        handle = engine._get_handle(mol, ff)
+        backend = load_backend("jax")
+        state = backend._build_state(mol, ff)
         params = jnp.array(_params(ff), dtype=jnp.float64)
         coords = jnp.array(mol.geometry, dtype=jnp.float64)
 
-        grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
+        grad = jax.grad(state._energy_fn, argnums=1)(params, coords)
         grad_np = np.array(grad)
         max_force = float(np.abs(grad_np).max())
         assert np.all(np.isfinite(grad_np)), "Gradient contains NaN/Inf"
@@ -605,12 +628,12 @@ class TestNearLinearTorsionDamping:
         """Hessian at 179° central angle is finite (no 10⁹ frequencies)."""
         mol = _make_four_atom_chain(central_angle_deg=179.0)
         ff = _torsion_ff()
-        engine = JaxEngine()
-        handle = engine._get_handle(mol, ff)
+        backend = load_backend("jax")
+        state = backend._build_state(mol, ff)
         params = jnp.array(_params(ff), dtype=jnp.float64)
 
         flat = jnp.array(mol.geometry.flatten(), dtype=jnp.float64)
-        hess = jax.hessian(lambda fc: handle._energy_fn(params, fc.reshape(-1, 3)))(flat)
+        hess = jax.hessian(lambda fc: state._energy_fn(params, fc.reshape(-1, 3)))(flat)
         hess_np = np.array(hess)
         assert np.all(np.isfinite(hess_np)), "Hessian contains NaN/Inf"
         max_elem = float(np.abs(hess_np).max())
@@ -671,15 +694,17 @@ class TestStretchBendEnergy:
             ],
             functional_form=FunctionalForm.MM3,
         )
-        engine = JaxEngine()
+        backend = load_backend("jax")
         # Total energy includes bond + angle + SB; extract SB by subtraction
         ff_no_sb = ForceField(
             bonds=ff.bonds,
             angles=ff.angles,
             functional_form=FunctionalForm.MM3,
         )
-        e_with_sb = engine.energy(mol, ff)
-        e_without_sb = engine.energy(mol, ff_no_sb)
+        e_with_sb = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        e_without_sb = (
+            prepare_case(backend, mol, ff_no_sb).energy(EnergyRequest(parameters=param_vector(ff_no_sb))).energy
+        )
         sb_energy = e_with_sb - e_without_sb
 
         dr_sum = 2 * (1.0 - 0.96)
@@ -699,8 +724,11 @@ class TestStretchBendEnergy:
             functional_form=FunctionalForm.MM3,
         )
         ff_no_sb = ForceField(bonds=ff.bonds, angles=ff.angles, functional_form=FunctionalForm.MM3)
-        engine = JaxEngine()
-        sb_energy = engine.energy(mol, ff) - engine.energy(mol, ff_no_sb)
+        backend = load_backend("jax")
+        sb_energy = (
+            prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+            - prepare_case(backend, mol, ff_no_sb).energy(EnergyRequest(parameters=param_vector(ff_no_sb))).energy
+        )
         assert abs(sb_energy) < 1e-10
 
     def test_differentiable(self) -> None:
@@ -714,11 +742,11 @@ class TestStretchBendEnergy:
             ],
             functional_form=FunctionalForm.MM3,
         )
-        engine = JaxEngine()
-        handle = engine._get_handle(mol, ff)
+        backend = load_backend("jax")
+        state = backend._build_state(mol, ff)
         params = jnp.array(_params(ff), dtype=jnp.float64)
         coords = jnp.array(mol.geometry, dtype=jnp.float64)
-        grad = jax.grad(handle._energy_fn, argnums=1)(params, coords)
+        grad = jax.grad(state._energy_fn, argnums=1)(params, coords)
         assert np.all(np.isfinite(np.array(grad))), "SB gradient contains NaN/Inf"
 
     def test_unit_conversion_matches_allinger(self) -> None:
@@ -809,7 +837,7 @@ class TestMM3DipoleElectrostatics:
         assert np.all(np.isfinite(np.array(grad))), "Dipole gradient contains NaN/Inf"
 
     def test_engine_with_dipoles(self) -> None:
-        """JaxEngine MM3 includes dipole energy for non-bonded bond pairs."""
+        """JaxBackend MM3 includes dipole energy for non-bonded bond pairs."""
         from test._shared import make_ethane
 
         mol = make_ethane()  # C₂H₆ has C-H bonds on different carbons
@@ -821,8 +849,8 @@ class TestMM3DipoleElectrostatics:
             angles=[AngleParam(elements=("H", "C", "H"), force_constant=0.5, equilibrium=109.5)],
             functional_form=FunctionalForm.MM3,
         )
-        engine = JaxEngine()
-        E_with = engine.energy(mol, ff)
+        backend = load_backend("jax")
+        E_with = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
 
         ff_no_dipole = ForceField(
             bonds=[
@@ -832,6 +860,8 @@ class TestMM3DipoleElectrostatics:
             angles=[AngleParam(elements=("H", "C", "H"), force_constant=0.5, equilibrium=109.5)],
             functional_form=FunctionalForm.MM3,
         )
-        E_without = engine.energy(mol, ff_no_dipole)
+        E_without = (
+            prepare_case(backend, mol, ff_no_dipole).energy(EnergyRequest(parameters=param_vector(ff_no_dipole))).energy
+        )
 
         assert E_with != pytest.approx(E_without, abs=1e-6), "Dipole moment should contribute non-zero energy"

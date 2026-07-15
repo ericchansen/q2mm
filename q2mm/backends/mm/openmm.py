@@ -2,7 +2,7 @@
 
 Provides a full-featured MM engine using OpenMM for energy, minimization,
 Hessian, and frequency calculations.  Supports both harmonic and MM3
-functional forms with runtime parameter updates via :class:`OpenMMHandle`.
+functional forms with runtime parameter updates via :class:`_OpenMMState`.
 """
 
 from __future__ import annotations
@@ -10,14 +10,38 @@ from __future__ import annotations
 import logging
 from typing import Any
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from q2mm.backends.base import MMEngine
-from q2mm.backends.registry import register_mm
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendConfigurationError,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    BackendUnavailableError,
+    Capability,
+    EnergyRequest,
+    EnergyResult,
+    EnergyUnit,
+    EvaluationError,
+    FrequencyRequest,
+    FrequencyResult,
+    FrequencyUnit,
+    GeometryResult,
+    HessianRequest,
+    HessianResult,
+    HessianUnit,
+    LengthUnit,
+    MinimizationRequest,
+    ParameterGradientRequest,
+    ParameterGradientResult,
+    PreparationError,
+    PreparationRequest,
+    readonly_array,
+)
 from q2mm.backends.mm._openmm_terms import (
     _AngleTerm,
     _BondTerm,
@@ -61,6 +85,7 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.molecule import Molecule
 
 try:
+    from openmm import OpenMMException as _OpenMMException
     from openmm import openmm as mm
     from openmm import unit
 
@@ -68,11 +93,12 @@ try:
 except ImportError:  # pragma: no cover - exercised when OpenMM is not installed
     mm = None
     unit = None
+    _OpenMMException = Exception  # type: ignore[assignment,misc]
     _HAS_OPENMM = False
 
 
 @dataclass
-class OpenMMHandle:
+class _OpenMMState:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
     Attributes:
@@ -93,7 +119,7 @@ class OpenMMHandle:
         ub_terms: Mapping of Urey-Bradley 1-3 pairs to force indices.
         cmap_terms: Mapping of CMAP corrections to force indices.
         exceptions_14: 1-4 nonbonded exceptions (harmonic form only).
-        functional_form: The functional form used when the handle was created.
+        functional_form: The functional form used when the state was created.
 
     """
 
@@ -118,10 +144,10 @@ class OpenMMHandle:
 
 
 @dataclass
-class _DiffHandle:
+class _OpenMMDiffState:
     """Handle for differentiable OpenMM evaluation with global parameters.
 
-    Unlike :class:`OpenMMHandle`, this uses global parameters so that
+    Unlike :class:`_OpenMMState`, this uses global parameters so that
     ``addEnergyParameterDerivative()`` can compute exact dE/d(param).
 
     Attributes:
@@ -132,7 +158,7 @@ class _DiffHandle:
         param_names: Global parameter names registered for derivatives.
         param_vector_indices: Indices into the flat param vector.
         grad_unit_factors: Chain-rule conversion factors (dp_openmm/dp_canonical).
-        functional_form: The functional form used when the handle was created.
+        functional_form: The functional form used when the state was created.
 
     """
 
@@ -153,6 +179,18 @@ def _ensure_openmm() -> None:
     """
     if not _HAS_OPENMM:
         raise ImportError('OpenMM is not installed. Install with `pip install openmm` or `pip install -e ".[openmm]"`.')
+
+
+def _openmm_version() -> str:
+    """Return the installed OpenMM version string, or ``""`` if unknown."""
+    if not _HAS_OPENMM:
+        return ""
+    try:
+        import openmm
+
+        return str(openmm.version.version)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 _PLATFORM_PRIORITY = ("CUDA", "OpenCL", "CPU", "Reference")
@@ -212,45 +250,6 @@ def detect_best_platform() -> str:
             return name
     # Fallback — shouldn't happen since OpenMM always has Reference
     return mm.Platform.getPlatform(0).getName()  # pragma: no cover
-
-
-def _as_molecule(structure: Molecule | str | Path) -> Molecule:
-    """Coerce *structure* to a :class:`Molecule`.
-
-    Args:
-        structure: A :class:`Molecule`, file path (``str`` or ``Path``),
-            or any other type (which will raise ``TypeError``).
-
-    Returns:
-        Molecule: The coerced molecule object.
-
-    Raises:
-        TypeError: If *structure* is not a recognised type.
-
-    """
-    if isinstance(structure, Molecule):
-        return structure
-    if isinstance(structure, (str, Path)):
-        from q2mm.io.xyz import load_xyz
-
-        return load_xyz(structure)
-    raise TypeError("OpenMMEngine expects a Molecule or path to an XYZ file.")
-
-
-def _coerce_forcefield(forcefield: ForceField | None, molecule: Molecule) -> ForceField:
-    """Return *forcefield* or create a default one from *molecule*.
-
-    Args:
-        forcefield: An explicit force field, or ``None`` to auto-generate.
-        molecule: Molecule used when generating a default force field.
-
-    Returns:
-        ForceField: The provided or auto-generated force field.
-
-    """
-    if forcefield is not None:
-        return forcefield
-    return ForceField.create_for_molecule(molecule, functional_form=FunctionalForm.MM3)
 
 
 def _collect_bond_assignments(
@@ -478,7 +477,7 @@ def _find_dihedral_atoms(
 def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[object | None, list[_CmapTerm]]:
     """Build a ``CMAPTorsionForce`` for the molecule's matching phi/psi pairs.
 
-    Shared by ``create_context`` (scalar energy) and ``_create_diff_handle``
+    Shared by ``_build_context`` (scalar energy) and the diff-state builder
     (analytical-gradient) so both include identical CMAP energy.  CMAP grids
     carry no tunable parameters, so this contributes to the potential energy
     only — not to the parameter-gradient vector.
@@ -543,13 +542,12 @@ def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[objec
     return cmap_force, cmap_terms
 
 
-@register_mm("openmm")
-class OpenMMEngine(MMEngine):
+class OpenMMBackend:
     """Molecular mechanics backend powered by OpenMM.
 
-    Supports both harmonic (AMBER-style) and MM3 functional forms.
-    Provides reusable :class:`OpenMMHandle` objects for fast parameter
-    updates during optimization loops.
+    Supports both harmonic (AMBER-style) and MM3 functional forms.  A prepared
+    session holds a reusable :class:`_OpenMMState` so parameter updates during
+    an optimization loop do not rebuild the OpenMM system.
     """
 
     def __init__(
@@ -557,26 +555,27 @@ class OpenMMEngine(MMEngine):
         platform_name: str | None = None,
         precision: str | None = None,
     ) -> None:
-        """Initialize the OpenMM engine.
+        """Initialize the OpenMM backend.
 
         Args:
             platform_name: OpenMM platform to use (e.g. ``"CPU"``,
                 ``"CUDA"``, ``"OpenCL"``).  When ``None``, the fastest
                 available platform is auto-detected via
                 :func:`detect_best_platform` (CUDA > OpenCL > CPU >
-                Reference).  WSL2 is recommended for CUDA on modern
-                GPUs (e.g. RTX 5090 Blackwell) when running on Windows
-                hardware.
+                Reference).
             precision: Floating-point precision for GPU platforms
                 (``"single"``, ``"mixed"``, or ``"double"``).  Ignored
-                for CPU/Reference platforms.  Defaults to ``"mixed"``
-                when a GPU platform is selected.
+                for CPU/Reference platforms.
 
         Raises:
-            ImportError: If OpenMM is not installed.
+            BackendUnavailableError: If OpenMM is not installed.
+            BackendConfigurationError: If *precision* is invalid.
 
         """
-        _ensure_openmm()
+        if not _HAS_OPENMM:
+            raise BackendUnavailableError(
+                'OpenMM is not installed. Install with `pip install openmm` or `pip install -e ".[openmm]"`.'
+            )
         if platform_name is None:
             platform_name = detect_best_platform()
         self._platform_name = platform_name
@@ -585,71 +584,93 @@ class OpenMMEngine(MMEngine):
         if precision is not None:
             precision = precision.strip().lower()
             if precision not in _VALID_PRECISIONS:
-                raise ValueError(
+                raise BackendConfigurationError(
                     f"Invalid precision {precision!r}. Allowed values: {', '.join(sorted(_VALID_PRECISIONS))}."
                 )
         self._precision = precision
         logger.info("OpenMM platform: %s", self._platform_name)
 
     @property
-    def name(self) -> str:
-        """Human-readable engine name including the active platform.
+    def info(self) -> BackendInfo:
+        """Immutable capability declaration for this backend.
+
+        The platform name is baked into the provenance/name, so this is built
+        per instance.  Both HARMONIC and MM3 forms use ``CustomForce`` objects
+        with global parameters, so analytical parameter gradients are
+        available; batched energy and Hessian-parameter Jacobians are not.
+        """
+        provenance = BackendProvenance(
+            backend="openmm",
+            role=BackendRole.MM,
+            version=_openmm_version(),
+            detail=self._platform_name,
+        )
+        return BackendInfo(
+            name=f"OpenMM ({self._platform_name})",
+            role=BackendRole.MM,
+            capabilities=frozenset(
+                {
+                    Capability.ENERGY,
+                    Capability.MINIMIZE,
+                    Capability.HESSIAN,
+                    Capability.FREQUENCIES,
+                    Capability.PARAMETER_GRADIENT,
+                    Capability.REUSABLE_STATE,
+                }
+            ),
+            functional_forms=frozenset({"harmonic", "mm3"}),
+            provenance=provenance,
+        )
+
+    def prepare(self, request: PreparationRequest) -> PreparedOpenMM:
+        """Build a prepared session for one training case.
+
+        Args:
+            request: Preparation request carrying the molecule and base
+                force field.
 
         Returns:
-            str: e.g. ``"OpenMM (CUDA)"``.
+            PreparedOpenMM: A per-case session owning a reusable
+                :class:`_OpenMMState`.
+
+        Raises:
+            PreparationError: If no force field is supplied, its functional
+                form is unsupported, or the OpenMM system cannot be built.
 
         """
-        return f"OpenMM ({self._platform_name})"
+        from q2mm.models.parameters import ParameterLayout
 
-    def supported_functional_forms(self) -> frozenset[str]:
-        """Functional forms this engine can evaluate.
+        if request.force_field is None:
+            raise PreparationError("OpenMM requires a base ForceField in the PreparationRequest.")
+        info = self.info
+        form = request.force_field.functional_form.value
+        if not info.supports_form(form):
+            raise PreparationError(
+                f"OpenMM does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
+            )
+        layout = ParameterLayout.from_force_field(request.force_field)
+        try:
+            state = self._build_state(request.molecule, request.force_field)
+        except (BackendConfigurationError, PreparationError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise PreparationError(f"OpenMM failed to prepare case {request.case_id!r}: {exc}") from exc
+        return PreparedOpenMM(
+            backend=self,
+            info=info,
+            case_id=request.case_id,
+            molecule=request.molecule,
+            force_field=request.force_field,
+            layout=layout,
+            state=state,
+        )
 
-        Returns:
-            frozenset[str]: ``{"harmonic", "mm3"}``.
-
-        """
-        return frozenset({"harmonic", "mm3"})
-
-    def is_available(self) -> bool:
-        """Check if OpenMM is installed.
-
-        Returns:
-            bool: ``True`` if the ``openmm`` package is importable.
-
-        """
-        return _HAS_OPENMM
-
-    @classmethod
-    def deps_available(cls) -> bool:
-        """Check if OpenMM is importable without platform detection."""
-        return _HAS_OPENMM
-
-    def supports_runtime_params(self) -> bool:
-        """Whether parameters can be updated without rebuilding the system.
-
-        Returns:
-            bool: Always ``True`` for OpenMM.
-
-        """
-        return True
-
-    def supports_analytical_gradients(self) -> bool:
-        """Whether this engine provides analytical parameter gradients.
-
-        Both HARMONIC and MM3 functional forms use ``CustomBondForce``,
-        ``CustomAngleForce``, and ``CustomTorsionForce`` with global
-        parameters, so ``addEnergyParameterDerivative()`` provides exact
-        dE/d(param) for bond, angle, and torsion parameters.
-
-        vdW parameters use per-particle values and are supplemented
-        with central finite differences inside ``energy_and_param_grad``,
-        so the returned gradient is always complete.
-
-        Returns:
-            bool: Always ``True``.
-
-        """
-        return True
+    def _validate_forcefield(self, forcefield: ForceField) -> None:
+        """Raise ``ValueError`` if the FF functional form is unsupported."""
+        form = forcefield.functional_form.value
+        supported = self.info.functional_forms
+        if form not in supported:
+            raise ValueError(f"OpenMM does not support functional form {form!r}. Supported: {sorted(supported)}")
 
     def _positions(self, molecule: Molecule) -> Any:
         """Convert molecule geometry to OpenMM position array.
@@ -663,23 +684,15 @@ class OpenMMEngine(MMEngine):
         """
         return np.asarray(molecule.geometry, dtype=float) * unit.angstrom
 
-    def _create_context(self, system: Any, *, precision: str | None = None) -> tuple[Any, Any]:
+    def _build_context(self, system: Any, *, precision: str | None = None) -> tuple[Any, Any]:
         """Create an OpenMM integrator and context for *system*.
 
-        Attempts to create a context on the engine's selected platform.
-        If the platform is a GPU platform (CUDA or OpenCL) and context
-        creation fails (e.g. PTX version mismatch, missing CUDA plugin,
-        or unsupported GPU architecture), the method logs a warning and
-        **silently falls back to CPU**. The fallback chain is:
-
-        1. Try the selected platform (e.g. CUDA) with the configured
-           precision.
-        2. On failure, mutate ``self._platform_name`` to ``"CPU"`` and
-           create a new context on the CPU platform.
-
-        No exception is raised on GPU failure — callers should check
-        ``self._platform_name`` after context creation if they need to
-        know which platform is in use.
+        The context is created on the backend's explicitly-selected platform.
+        If that platform fails to create a context (e.g. PTX version mismatch,
+        missing CUDA plugin, unsupported GPU architecture), a typed
+        :class:`~q2mm.backends.contracts.BackendConfigurationError` is raised
+        with platform context — there is **no** silent GPU→CPU fallback and no
+        backend-state mutation.
 
         Args:
             system: An ``openmm.System`` object.
@@ -690,64 +703,61 @@ class OpenMMEngine(MMEngine):
         Returns:
             tuple: ``(integrator, context)`` pair.
 
+        Raises:
+            BackendConfigurationError: If the selected platform cannot create a
+                context.
+
         """
         integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
-        platform = mm.Platform.getPlatformByName(self._platform_name)
-        # Set precision for GPU platforms (CUDA/OpenCL).
+        try:
+            platform = mm.Platform.getPlatformByName(self._platform_name)
+        except _OpenMMException as exc:
+            raise BackendConfigurationError(
+                f"OpenMM platform {self._platform_name!r} is not available: {exc}. "
+                "Select a registered platform (e.g. platform_name='CPU')."
+            ) from exc
         gpu_platforms = {"CUDA", "OpenCL"}
-        if self._platform_name in gpu_platforms:
-            precision = precision or self._precision or "mixed"
-            _VALID_PRECISIONS = {"single", "mixed", "double"}
-            if precision not in _VALID_PRECISIONS:
-                raise ValueError(
-                    f"Invalid precision {precision!r}. Expected one of: {', '.join(sorted(_VALID_PRECISIONS))}."
-                )
-            prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
-            try:
+        try:
+            if self._platform_name in gpu_platforms:
+                precision = precision or self._precision or "mixed"
+                _VALID_PRECISIONS = {"single", "mixed", "double"}
+                if precision not in _VALID_PRECISIONS:
+                    raise BackendConfigurationError(
+                        f"Invalid precision {precision!r}. Expected one of: {', '.join(sorted(_VALID_PRECISIONS))}."
+                    )
+                prop_key = "CudaPrecision" if self._platform_name == "CUDA" else "OpenCLPrecision"
                 context = mm.Context(system, integrator, platform, {prop_key: precision})
-            except mm.OpenMMException as e:
-                import logging
-
-                logging.getLogger(__name__).warning(
-                    "%s platform failed (%s), falling back to CPU. "
-                    "This often means the GPU architecture is not supported "
-                    "by the installed OpenMM CUDA plugin.",
-                    self._platform_name,
-                    e,
-                )
-                self._platform_name = "CPU"
-                integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
-                platform = mm.Platform.getPlatformByName("CPU")
+            else:
                 context = mm.Context(system, integrator, platform)
-        else:
-            context = mm.Context(system, integrator, platform)
+        except _OpenMMException as exc:
+            raise BackendConfigurationError(
+                f"OpenMM platform {self._platform_name!r} failed to create a context: {exc}. "
+                "Select a different platform (e.g. platform_name='CPU') or fix the GPU plugin."
+            ) from exc
         return integrator, context
 
-    def create_context(
+    def _build_state(
         self,
-        structure: Molecule | str | Path,
-        forcefield: ForceField | None = None,
+        molecule: Molecule,
+        forcefield: ForceField,
         *,
         precision: str | None = None,
-    ) -> OpenMMHandle:
-        """Build an OpenMM system and context for a molecule.
+    ) -> _OpenMMState:
+        """Build an OpenMM system and context for a molecule + force field.
 
         Creates force objects (bond, angle, vdW) matching the force field's
         functional form and assigns per-term parameters from *forcefield*.
 
         Args:
-            structure (Molecule | str | Path): A
-                :class:`~q2mm.models.molecule.Molecule` or path to an
-                XYZ file.
-            forcefield: Force field to apply. Auto-generated from the
-                molecule if ``None``.
+            molecule: The molecule to build native state for.
+            forcefield: The force field to apply (required).
             precision: Override GPU precision (``"single"``, ``"mixed"``,
                 ``"double"``).  When ``None`` (default) uses the
                 engine-level setting.
 
         Returns:
-            OpenMMHandle: Reusable handle for energy evaluation and parameter
-                updates.
+            _OpenMMState: Reusable native state for energy evaluation and
+                parameter updates.
 
         Raises:
             KeyError: If an atom's element has no defined mass.
@@ -755,18 +765,15 @@ class OpenMMEngine(MMEngine):
                 field, or if a vdW parameter is missing for an atom.
 
         """
-        molecule = _as_molecule(structure)
-        forcefield = _coerce_forcefield(forcefield, molecule)
         self._validate_forcefield(forcefield)
 
         if forcefield.stretch_bends:
             raise NotImplementedError(
-                "OpenMMEngine does not support stretch-bend cross terms. "
-                "Use JaxEngine for force fields with stretch-bend parameters."
+                "OpenMMBackend does not support stretch-bend cross terms. "
+                "Use the JAX backend for force fields with stretch-bend parameters."
             )
 
-        # Functional form is always explicit on the (possibly auto-generated,
-        # always MM3-tagged by _coerce_forcefield) force field.
+        # Functional form comes directly from the supplied force field.
         ff_form = forcefield.functional_form
         use_harmonic = ff_form == FunctionalForm.HARMONIC
 
@@ -1039,10 +1046,10 @@ class OpenMMEngine(MMEngine):
         else:
             cmap_force = None
 
-        integrator, context = self._create_context(system, precision=precision)
+        integrator, context = self._build_context(system, precision=precision)
         context.setPositions(self._positions(molecule))
 
-        return OpenMMHandle(
+        return _OpenMMState(
             molecule=molecule,
             system=system,
             integrator=integrator,
@@ -1063,33 +1070,33 @@ class OpenMMEngine(MMEngine):
             functional_form=ff_form,
         )
 
-    def update_forcefield(self, handle: OpenMMHandle, forcefield: ForceField) -> None:
-        """Update per-term parameters in an existing OpenMM Context.
+    def _update_params(self, state: _OpenMMState, forcefield: ForceField) -> None:
+        """Update per-term parameters in an existing OpenMM native state.
 
         Modifies bond, angle, and vdW parameters in-place, then pushes
         changes to the OpenMM context.  Much faster than rebuilding the
         system from scratch.
 
         Args:
-            handle: An existing :class:`OpenMMHandle` to update.
+            state: An existing :class:`_OpenMMState` to update.
             forcefield: New force field parameters to apply.
 
         Raises:
             ValueError: If the force field's functional form does not match
-                the handle's form, or if a required parameter is missing.
+                the state's form, or if a required parameter is missing.
 
         """
         incoming_form = forcefield.functional_form
-        if incoming_form != handle.functional_form:
+        if incoming_form != state.functional_form:
             raise ValueError(
                 f"Force field functional form {incoming_form!r} does not match "
-                f"the handle's form {handle.functional_form!r}. "
-                f"Create a new context instead of reusing this handle."
+                f"the state's form {state.functional_form!r}. "
+                f"Create a new context instead of reusing this state."
             )
-        use_harmonic = handle.functional_form == FunctionalForm.HARMONIC
+        use_harmonic = state.functional_form == FunctionalForm.HARMONIC
 
-        if handle.bond_force is not None:
-            for term in handle.bond_terms:
+        if state.bond_force is not None:
+            for term in state.bond_terms:
                 param = forcefield.match_bond(
                     term.elements,
                     env_id=term.env_id,
@@ -1100,7 +1107,7 @@ class OpenMMEngine(MMEngine):
                 if param is None:
                     raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
                 if use_harmonic:
-                    handle.bond_force.setBondParameters(
+                    state.bond_force.setBondParameters(
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
@@ -1108,21 +1115,21 @@ class OpenMMEngine(MMEngine):
                         _bond_k_to_harmonic(param.force_constant),
                     )
                 else:
-                    handle.bond_force.setBondParameters(
+                    state.bond_force.setBondParameters(
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
                         [_bond_k_to_openmm(param.force_constant), ang_to_nm(param.equilibrium)],
                     )
-            handle.bond_force.updateParametersInContext(handle.context)
+            state.bond_force.updateParametersInContext(state.context)
 
-        if handle.angle_force is not None:
-            for term in handle.angle_terms:
+        if state.angle_force is not None:
+            for term in state.angle_terms:
                 param = forcefield.match_angle(term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing angle parameter for {term.elements}.")
                 if use_harmonic:
-                    handle.angle_force.setAngleParameters(
+                    state.angle_force.setAngleParameters(
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
@@ -1131,17 +1138,17 @@ class OpenMMEngine(MMEngine):
                         _angle_k_to_harmonic(param.force_constant),
                     )
                 else:
-                    handle.angle_force.setAngleParameters(
+                    state.angle_force.setAngleParameters(
                         term.force_index,
                         term.atom_i,
                         term.atom_j,
                         term.atom_k,
                         [_angle_k_to_openmm(param.force_constant), np.deg2rad(float(param.equilibrium))],
                     )
-            handle.angle_force.updateParametersInContext(handle.context)
+            state.angle_force.updateParametersInContext(state.context)
 
-        if handle.torsion_force is not None:
-            for term in handle.torsion_terms:
+        if state.torsion_force is not None:
+            for term in state.torsion_terms:
                 params = forcefield.match_torsion(
                     term.elements, env_id=term.env_id, ff_row=term.ff_row, is_improper=term.is_improper
                 )
@@ -1152,7 +1159,7 @@ class OpenMMEngine(MMEngine):
                         f"{term.elements} periodicity={term.periodicity}."
                     )
                 param = matched[0]
-                handle.torsion_force.setTorsionParameters(
+                state.torsion_force.setTorsionParameters(
                     term.force_index,
                     term.atom_i,
                     term.atom_j,
@@ -1162,44 +1169,44 @@ class OpenMMEngine(MMEngine):
                     np.deg2rad(float(param.phase)),
                     canonical_to_openmm_torsion_k(param.force_constant),
                 )
-            handle.torsion_force.updateParametersInContext(handle.context)
+            state.torsion_force.updateParametersInContext(state.context)
 
-        if handle.vdw_force is not None:
-            for term in handle.vdw_terms:
+        if state.vdw_force is not None:
+            for term in state.vdw_terms:
                 param = forcefield.match_vdw(atom_type=term.atom_type, element=term.element, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(
                         f"Updated force field is missing vdW parameter for {term.atom_type or term.element}."
                     )
                 if use_harmonic:
-                    handle.vdw_force.setParticleParameters(
+                    state.vdw_force.setParticleParameters(
                         term.particle_index,
                         0.0,
                         _vdw_sigma_nm(param.radius),
                         _vdw_epsilon_to_openmm(param.epsilon),
                     )
                 else:
-                    handle.vdw_force.setParticleParameters(
+                    state.vdw_force.setParticleParameters(
                         term.particle_index,
                         [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)],
                     )
 
             # Recompute 1-4 exception params from updated particle params
-            if use_harmonic and handle.exceptions_14:
+            if use_harmonic and state.exceptions_14:
                 SCNB = 2.0
-                for exc in handle.exceptions_14:
-                    _, sig1, eps1 = handle.vdw_force.getParticleParameters(exc.particle_i)
-                    _, sig2, eps2 = handle.vdw_force.getParticleParameters(exc.particle_j)
+                for exc in state.exceptions_14:
+                    _, sig1, eps1 = state.vdw_force.getParticleParameters(exc.particle_i)
+                    _, sig2, eps2 = state.vdw_force.getParticleParameters(exc.particle_j)
                     sig_14 = 0.5 * (sig1 + sig2)
                     eps_14 = (eps1 * eps2) ** 0.5 / SCNB
-                    handle.vdw_force.setExceptionParameters(
+                    state.vdw_force.setExceptionParameters(
                         exc.exception_index, exc.particle_i, exc.particle_j, 0.0, sig_14, eps_14
                     )
 
-            handle.vdw_force.updateParametersInContext(handle.context)
+            state.vdw_force.updateParametersInContext(state.context)
 
-        if handle.ub_force is not None:
-            for term in handle.ub_terms:
+        if state.ub_force is not None:
+            for term in state.ub_terms:
                 param = forcefield.match_angle(term.elements, env_id=term.env_id, ff_row=term.ff_row)
                 if param is None:
                     raise ValueError(f"Updated force field is missing UB parameter for angle {term.elements}.")
@@ -1211,96 +1218,20 @@ class OpenMMEngine(MMEngine):
                         f"{term.elements} (env_id={term.env_id}, ff_row={term.ff_row}): "
                         "both 'ub_force_constant' and 'ub_equilibrium' must be set or both must be None."
                     )
-                handle.ub_force.setBondParameters(
+                state.ub_force.setBondParameters(
                     term.force_index,
                     term.atom_i,
                     term.atom_k,
                     ang_to_nm(param.ub_equilibrium),
                     _bond_k_to_harmonic(param.ub_force_constant),
                 )
-            handle.ub_force.updateParametersInContext(handle.context)
-
-    def export_system_xml(
-        self,
-        path: str | Path,
-        structure: Molecule | str | Path | OpenMMHandle,
-        forcefield: ForceField | None = None,
-    ) -> Path:
-        """Serialize the OpenMM System to XML.
-
-        Produces a topology-specific XML file containing the force objects
-        (``HarmonicBondForce``/``CustomBondForce``, etc. depending on the
-        functional form) with all per-term parameters.  The file can be
-        loaded back with ``openmm.XmlSerializer.deserialize()``.
-
-        Args:
-            path: Output file path.
-            structure (Molecule | str | Path | OpenMMHandle): A
-                :class:`~q2mm.models.molecule.Molecule`, path to an XYZ
-                file, or an existing :class:`OpenMMHandle`.
-            forcefield: Force field to apply.  When *structure* is not an
-                :class:`OpenMMHandle`, this is used to build the OpenMM
-                system.  When *structure* is an existing
-                :class:`OpenMMHandle`, providing a non-None *forcefield*
-                updates the per-term parameters of that handle; if
-                *forcefield* is ``None``, the handle's current parameters
-                are used unchanged.
-
-        Returns:
-            Path: The resolved output path.
-
-        """
-        handle = self._prepare_handle(structure, forcefield)
-        xml_string = mm.XmlSerializer.serialize(handle.system)
-        output = Path(path)
-        output.write_text(xml_string, encoding="utf-8")
-        return output
-
-    @staticmethod
-    def load_system_xml(path: str | Path) -> object:
-        """Deserialize an OpenMM System from XML.
-
-        Args:
-            path: Path to the XML file.
-
-        Returns:
-            object: An ``openmm.System`` object.
-
-        """
-        _ensure_openmm()
-        xml_string = Path(path).read_text(encoding="utf-8")
-        return mm.XmlSerializer.deserialize(xml_string)
-
-    def _prepare_handle(
-        self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None
-    ) -> OpenMMHandle:
-        """Get or create an :class:`OpenMMHandle`.
-
-        If *structure* is already an :class:`OpenMMHandle`, optionally update
-        its parameters.  Otherwise, build a new handle.
-
-        Args:
-            structure (Molecule | str | Path | OpenMMHandle): A
-                :class:`Molecule`, XYZ path, or existing
-                :class:`OpenMMHandle`.
-            forcefield: Force field to apply (used for creation or update).
-
-        Returns:
-            OpenMMHandle: Ready-to-use handle.
-
-        """
-        if isinstance(structure, OpenMMHandle):
-            handle = structure
-            if forcefield is not None:
-                self.update_forcefield(handle, forcefield)
-            return handle
-        return self.create_context(structure, forcefield)
+            state.ub_force.updateParametersInContext(state.context)
 
     # ------------------------------------------------------------------
     # Analytical parameter gradients via addEnergyParameterDerivative
     # ------------------------------------------------------------------
 
-    def _create_diff_handle(self, molecule: Molecule, forcefield: ForceField) -> _DiffHandle:
+    def _build_diff_state(self, molecule: Molecule, forcefield: ForceField) -> _OpenMMDiffState:
         """Build an OpenMM system with global parameters for analytical gradients.
 
         Each unique FF parameter becomes a named global parameter on the
@@ -1318,7 +1249,7 @@ class OpenMMEngine(MMEngine):
             forcefield: Force field with canonical-unit parameters.
 
         Returns:
-            _DiffHandle with the context and parameter mapping.
+            _OpenMMDiffState with the context and parameter mapping.
 
         """
         self._validate_forcefield(forcefield)
@@ -1468,7 +1399,7 @@ class OpenMMEngine(MMEngine):
 
         # --- vdW: advance pv_idx past vdW params ---
         # vdW uses per-particle parameters (no global-param derivatives).
-        # Gradients are computed via finite differences in energy_and_param_grad().
+        # Gradients are computed via finite differences in _evaluate_param_grad().
         pv_idx += 2 * len(forcefield.vdws)
 
         if forcefield.vdws:
@@ -1527,17 +1458,17 @@ class OpenMMEngine(MMEngine):
 
         # --- CMAP: correction grids carry no tunable parameters, so they
         # contribute to the scalar energy only.  Add them here so that
-        # energy_and_param_grad's energy agrees with energy(). ---
+        # _evaluate_param_grad's energy agrees with _evaluate_energy(). ---
         cmap_force, _cmap_terms = _build_cmap_force(molecule, forcefield)
         if cmap_force is not None:
             system.addForce(cmap_force)
 
         # Use double precision on GPU so that analytical derivatives
         # (getParameterDerivatives) are computed in float64.
-        integrator, context = self._create_context(system, precision="double")
+        integrator, context = self._build_context(system, precision="double")
         context.setPositions(self._positions(molecule))
 
-        return _DiffHandle(
+        return _OpenMMDiffState(
             integrator=integrator,
             context=context,
             param_names=param_names,
@@ -1546,7 +1477,7 @@ class OpenMMEngine(MMEngine):
             functional_form=forcefield.functional_form,
         )
 
-    def energy_and_param_grad(self, structure: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
+    def _evaluate_param_grad(self, molecule: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
@@ -1556,22 +1487,20 @@ class OpenMMEngine(MMEngine):
         computed via central finite differences automatically.
 
         Args:
-            structure (Molecule): Molecular structure.
-            forcefield (ForceField): Force field parameters.
+            molecule: Molecule to evaluate.
+            forcefield: Force field parameters.
 
         Returns:
-            tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy``
-                is in kcal/mol and ``grad`` has the same length as
-                ``ParameterLayout.from_force_field(forcefield).vector(forcefield)``.
+            tuple[float, np.ndarray]: ``(energy, grad)`` in kcal/mol; ``grad``
+                has length ``len(ParameterLayout.from_force_field(forcefield))``.
 
         """
-        molecule = _as_molecule(structure)
         if forcefield.stretch_bends:
             raise NotImplementedError(
-                "OpenMMEngine does not support stretch-bend cross terms. "
-                "Use JaxEngine for force fields with stretch-bend parameters."
+                "OpenMMBackend does not support stretch-bend cross terms. "
+                "Use the JAX backend for force fields with stretch-bend parameters."
             )
-        diff = self._create_diff_handle(molecule, forcefield)
+        diff = self._build_diff_state(molecule, forcefield)
 
         state = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
         energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
@@ -1591,7 +1520,7 @@ class OpenMMEngine(MMEngine):
 
         # vdW parameters use per-particle values without global-parameter
         # derivatives.  Supplement with central finite differences.
-        # Reuse a single OpenMMHandle to avoid rebuilding the OpenMM
+        # Reuse a single _OpenMMState to avoid rebuilding the OpenMM
         # context for each perturbation.  Use double precision on GPU
         # so the finite differences are not lost to float32 rounding.
         if forcefield.vdws:
@@ -1599,88 +1528,66 @@ class OpenMMEngine(MMEngine):
             vdw_start = min(vdw_radius_indices)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
-            handle = self.create_context(molecule, forcefield, precision="double")
+            state = self._build_state(molecule, forcefield, precision="double")
             for i in range(vdw_start, vdw_end):
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step
                 pv_minus = param_vector.copy()
                 pv_minus[i] -= step
-                e_plus = self.energy(handle, layout.replace(forcefield, pv_plus))
-                e_minus = self.energy(handle, layout.replace(forcefield, pv_minus))
+                e_plus = self._evaluate_energy(state, layout.replace(forcefield, pv_plus))
+                e_minus = self._evaluate_energy(state, layout.replace(forcefield, pv_minus))
                 grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
 
-    def energy(self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None) -> float:
-        """Calculate MM energy in kcal/mol.
+    def _evaluate_energy(self, state: _OpenMMState, forcefield: ForceField) -> float:
+        """Update *state* to *forcefield* and return its energy in kcal/mol."""
+        self._update_params(state, forcefield)
+        s = state.context.getState(getEnergy=True)
+        return float(s.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
 
-        Args:
-            structure (Molecule | str | Path | OpenMMHandle): Molecule,
-                XYZ path, or :class:`OpenMMHandle`.
-            forcefield: Force field to apply. Auto-generated if ``None``.
-
-        Returns:
-            float: Potential energy in kcal/mol.
-
-        """
-        handle = self._prepare_handle(structure, forcefield)
-        state = handle.context.getState(getEnergy=True)
-        return float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
-
-    def minimize(
+    def _evaluate_minimize(
         self,
-        structure: Molecule | str | Path | OpenMMHandle,
-        forcefield: ForceField | None = None,
+        state: _OpenMMState,
+        *,
         tolerance: float = 1.0,
         max_iterations: int = 200,
-    ) -> tuple:
-        """Energy-minimize structure using L-BFGS.
+    ) -> tuple[float, list[str], np.ndarray]:
+        """Energy-minimize a prepared native state using L-BFGS.
 
         Args:
-            structure (Molecule | str | Path | OpenMMHandle): Molecule,
-                XYZ path, or :class:`OpenMMHandle`.
-            forcefield: Force field to apply. Auto-generated if ``None``.
+            state: A prepared OpenMM native state (parameters already applied).
             tolerance: Energy convergence tolerance in kJ/mol.
             max_iterations: Maximum minimization steps.
 
         Returns:
             tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
-                where energy is in kcal/mol and coords are in Å.
+                with energy in kcal/mol and coords in Å.
 
         """
-        handle = self._prepare_handle(structure, forcefield)
-        mm.LocalEnergyMinimizer.minimize(handle.context, tolerance, max_iterations)
-        state = handle.context.getState(getEnergy=True, getPositions=True)
-        coords = np.array(state.getPositions(asNumpy=True).value_in_unit(unit.angstrom))
-        handle.molecule = handle.molecule.with_geometry(coords)
-        energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
-        return energy, list(handle.molecule.symbols), coords
+        mm.LocalEnergyMinimizer.minimize(state.context, tolerance, max_iterations)
+        s = state.context.getState(getEnergy=True, getPositions=True)
+        coords = np.array(s.getPositions(asNumpy=True).value_in_unit(unit.angstrom))
+        state.molecule = state.molecule.with_geometry(coords)
+        energy = float(s.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
+        return energy, list(state.molecule.symbols), coords
 
-    def hessian(
-        self,
-        structure: Molecule | str | Path | OpenMMHandle,
-        forcefield: ForceField | None = None,
-        step: float = 1.0e-4,
-    ) -> np.ndarray:
-        """Finite-difference Hessian in canonical units (Hartree/Bohr²).
+    def _evaluate_hessian(self, state: _OpenMMState, *, step: float = 1.0e-4) -> np.ndarray:
+        """Finite-difference Hessian in Hartree/Bohr² for a prepared state.
 
-        Internally computed in kJ/mol/nm² (OpenMM native) and converted
-        to Hartree/Bohr² before returning, matching the canonical unit
-        contract defined in :class:`~q2mm.backends.base.MMEngine`.
+        Internally computed in kJ/mol/nm² (OpenMM native) and converted to
+        Hartree/Bohr² before returning.
 
         Args:
-            structure (Molecule | str | Path | OpenMMHandle): Molecule,
-                XYZ path, or :class:`OpenMMHandle`.
-            forcefield: Force field to apply. Auto-generated if ``None``.
+            state: A prepared OpenMM native state (parameters already applied).
             step: Finite-difference displacement in nm.
 
         Returns:
             np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
 
         """
-        handle = self._prepare_handle(structure, forcefield)
         positions = np.array(
-            handle.context.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+            state.context.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(unit.nanometer)
         )
         n_atoms = positions.shape[0]
         hessian = np.zeros((3 * n_atoms, 3 * n_atoms))
@@ -1694,47 +1601,136 @@ class OpenMMEngine(MMEngine):
                 displaced_plus[atom_index, coord_index] += step
                 displaced_minus[atom_index, coord_index] -= step
 
-                handle.context.setPositions(displaced_plus * unit.nanometer)
+                state.context.setPositions(displaced_plus * unit.nanometer)
                 forces_plus = np.array(
-                    handle.context.getState(getForces=True)
+                    state.context.getState(getForces=True)
                     .getForces(asNumpy=True)
                     .value_in_unit(unit.kilojoule_per_mole / unit.nanometer)
                 )
 
-                handle.context.setPositions(displaced_minus * unit.nanometer)
+                state.context.setPositions(displaced_minus * unit.nanometer)
                 forces_minus = np.array(
-                    handle.context.getState(getForces=True)
+                    state.context.getState(getForces=True)
                     .getForces(asNumpy=True)
                     .value_in_unit(unit.kilojoule_per_mole / unit.nanometer)
                 )
 
                 hessian[:, column] = -((forces_plus - forces_minus) / (2.0 * step)).reshape(-1)
 
-        handle.context.setPositions(positions * unit.nanometer)
+        state.context.setPositions(positions * unit.nanometer)
         hessian_symmetric = 0.5 * (hessian + hessian.T)
 
         # Convert from OpenMM native kJ/mol/nm² to canonical Hartree/Bohr²
         return hessian_symmetric * hessian_kjmolnm2_to_au(1.0)
 
-    def frequencies(
-        self, structure: Molecule | str | Path | OpenMMHandle, forcefield: ForceField | None = None, **kwargs: Any
-    ) -> list[float]:
-        """Approximate harmonic frequencies in cm⁻¹ from the numerical Hessian.
 
-        Args:
-            structure (Molecule | str | Path | OpenMMHandle): Molecule,
-                XYZ path, or :class:`OpenMMHandle`.
-            forcefield: Force field to apply. Auto-generated if ``None``.
-            **kwargs: Forwarded to
-                :func:`~q2mm.models.hessian.hessian_to_frequencies`
-                (e.g. ``on_error="penalty"``).
+class PreparedOpenMM(AbstractPreparedBackend):
+    """Prepared OpenMM session for a single training case.
 
-        Returns:
-            list[float]: Vibrational frequencies in cm⁻¹.
+    Owns the molecule, base force field, parameter layout, and one reusable
+    private :class:`_OpenMMState`.  Energy, Hessian, and frequency evaluations
+    update the state's global parameters in place (reusing native state), while
+    minimization and analytical parameter gradients build a throwaway state so
+    they never mutate the reusable energy/Hessian state.
+    """
 
+    def __init__(
+        self,
+        *,
+        backend: OpenMMBackend,
+        info: BackendInfo,
+        case_id: str,
+        molecule: Molecule,
+        force_field: ForceField,
+        layout: Any,
+        state: _OpenMMState,
+    ) -> None:
+        super().__init__(
+            info=info,
+            case_id=case_id,
+            molecule=molecule,
+            force_field=force_field,
+            layout=layout,
+        )
+        self._backend = backend
+        self._state = state
+
+    def _ff_for(self, parameters: np.ndarray) -> ForceField:
+        vec = self._validate_vector(parameters)
+        return self.layout.replace(self.force_field, vec)
+
+    def _openmm_system(self) -> object:
+        """Return this session's OpenMM ``System`` (I/O-boundary accessor).
+
+        Used only by :func:`q2mm.io.openmm.save_openmm_system_xml` to serialize
+        the backend-specific system; never a generic evaluation surface.
         """
+        return self._state.system
+
+    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            value = self._backend._evaluate_energy(self._state, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"OpenMM energy evaluation failed: {exc}") from exc
+        return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance)
+
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        tolerance = request.tolerance if request.tolerance is not None else 1.0
+        max_iterations = request.max_iterations if request.max_iterations is not None else 200
+        try:
+            # Build a fresh throwaway native state so minimization does not
+            # pollute the reusable energy/Hessian state's positions.
+            fresh = self._backend._build_state(self.molecule, ff)
+            energy, atoms, coords = self._backend._evaluate_minimize(
+                fresh, tolerance=tolerance, max_iterations=max_iterations
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"OpenMM minimization failed: {exc}") from exc
+        return GeometryResult(
+            energy=float(energy),
+            energy_unit=EnergyUnit.KCAL_PER_MOL,
+            symbols=tuple(atoms),
+            coordinates=readonly_array(coords),
+            coordinate_unit=LengthUnit.ANGSTROM,
+            provenance=self._info.provenance,
+        )
+
+    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            self._backend._update_params(self._state, ff)
+            hess = self._backend._evaluate_hessian(self._state)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"OpenMM Hessian evaluation failed: {exc}") from exc
+        return HessianResult(
+            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
+        )
+
+    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
         from q2mm.models.hessian import hessian_to_frequencies
 
-        handle = self._prepare_handle(structure, forcefield)
-        hessian_au = self.hessian(handle)  # Hartree/Bohr²
-        return hessian_to_frequencies(hessian_au, list(handle.molecule.symbols), **kwargs)
+        ff = self._ff_for(request.parameters)
+        try:
+            self._backend._update_params(self._state, ff)
+            hess_au = self._backend._evaluate_hessian(self._state)
+            freqs = hessian_to_frequencies(hess_au, list(self.molecule.symbols), on_error=request.on_error)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"OpenMM frequency evaluation failed: {exc}") from exc
+        return FrequencyResult(
+            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._info.provenance
+        )
+
+    def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            energy, grad = self._backend._evaluate_param_grad(self.molecule, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"OpenMM parameter-gradient evaluation failed: {exc}") from exc
+        return ParameterGradientResult(
+            energy=float(energy),
+            gradient=readonly_array(grad),
+            unit=EnergyUnit.KCAL_PER_MOL,
+            provenance=self._info.provenance,
+        )

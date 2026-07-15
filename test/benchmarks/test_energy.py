@@ -1,4 +1,4 @@
-"""Energy calculation benchmarks across engines.
+"""Energy calculation benchmarks across backends.
 
 Each test measures the wall-clock time of a single-point energy evaluation
 using ``pytest-benchmark`` and asserts the result is a finite float.
@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from q2mm.backends.contracts import EnergyRequest
+from test.backend_fixtures import param_vector, prepare_case
+
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
@@ -21,20 +24,26 @@ if TYPE_CHECKING:
 pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
 
 
+def _energy(backend: object, molecule: Molecule, force_field: ForceField) -> float:
+    prepared = prepare_case(backend, molecule, force_field)
+    result = prepared.energy(EnergyRequest(parameters=param_vector(force_field)))
+    return float(result.energy)
+
+
 # ---------------------------------------------------------------------------
-# Per-engine energy benchmarks
+# Per-backend energy benchmarks
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.openmm
 def test_energy_openmm(
     benchmark: object,
-    openmm_engine: object,
+    openmm_backend: object,
     ch3f_mol: Molecule,
     ch3f_ff: ForceField,
 ) -> None:
     """Benchmark single-point energy with OpenMM."""
-    result: float = benchmark(openmm_engine.energy, ch3f_mol, ch3f_ff)  # type: ignore[attr-defined]
+    result: float = benchmark(_energy, openmm_backend, ch3f_mol, ch3f_ff)  # type: ignore[operator]
     assert isinstance(result, float)
     assert np.isfinite(result)
 
@@ -42,12 +51,12 @@ def test_energy_openmm(
 @pytest.mark.tinker
 def test_energy_tinker(
     benchmark: object,
-    tinker_engine: object,
+    tinker_backend: object,
     ch3f_mol: Molecule,
     ch3f_ff: ForceField,
 ) -> None:
     """Benchmark single-point energy with Tinker."""
-    result: float = benchmark(tinker_engine.energy, ch3f_mol, ch3f_ff)  # type: ignore[attr-defined]
+    result: float = benchmark(_energy, tinker_backend, ch3f_mol, ch3f_ff)  # type: ignore[operator]
     assert isinstance(result, float)
     assert np.isfinite(result)
 
@@ -55,12 +64,12 @@ def test_energy_tinker(
 @pytest.mark.jax
 def test_energy_jax(
     benchmark: object,
-    jax_engine: object,
+    jax_backend: object,
     ch3f_mol: Molecule,
     ch3f_ff_harmonic: ForceField,
 ) -> None:
     """Benchmark single-point energy with JAX (harmonic)."""
-    result: float = benchmark(jax_engine.energy, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[attr-defined]
+    result: float = benchmark(_energy, jax_backend, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[operator]
     assert isinstance(result, float)
     assert np.isfinite(result)
 
@@ -68,11 +77,11 @@ def test_energy_jax(
 @pytest.mark.jax_md
 def test_energy_jax_md(
     benchmark: object,
-    jax_md_engine: object,
+    jax_md_backend: object,
     ch3f_mol: Molecule,
     ch3f_ff_harmonic: ForceField,
 ) -> None:
     """Benchmark single-point energy with JAX-MD (OPLSAA)."""
-    result: float = benchmark(jax_md_engine.energy, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[attr-defined]
+    result: float = benchmark(_energy, jax_md_backend, ch3f_mol, ch3f_ff_harmonic)  # type: ignore[operator]
     assert isinstance(result, float)
     assert np.isfinite(result)

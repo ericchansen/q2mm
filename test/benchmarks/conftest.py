@@ -1,11 +1,12 @@
 """Shared fixtures for benchmark and validation tests.
 
-Provides molecule, force-field, and engine fixtures used across the
+Provides molecule, force-field, and backend fixtures used across the
 benchmark suite.  Engine fixtures auto-skip when the corresponding
 backend is not installed.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 from typing import TYPE_CHECKING
 
@@ -71,10 +72,10 @@ def ch3f_ff(ch3f_mol: Molecule) -> ForceField:
     """Create a default MM3-tagged force field for CH3F.
 
     Used by OpenMM/Tinker (both MM3-only-or-MM3-capable) and by the
-    MM3-only cross-engine parity tests in ``test_cross_engine.py``. JAX
+    MM3-only cross-backend parity tests in ``test_cross_engine.py``. JAX
     and JAX-MD only evaluate the harmonic functional form — see
     :func:`ch3f_ff_harmonic` for the same auto-generated bond/angle
-    values re-tagged for those two engines.
+    values re-tagged for those two backends.
     """
     from q2mm.models.forcefield import ForceField, FunctionalForm
 
@@ -89,9 +90,9 @@ def ch3f_ff_harmonic(ch3f_ff: ForceField) -> ForceField:
     (JAX-MD is harmonic-only; JAX supports both but the same values are
     equally valid interpreted as harmonic springs). Every
     :class:`~q2mm.models.forcefield.ForceField` must carry an explicit,
-    correct functional form for the engine that will evaluate it — the
+    correct functional form for the backend that will evaluate it — the
     same numeric bond_k/bond_eq/angle_k/angle_eq values cannot be
-    silently shared as "unset" across engines that disagree on
+    silently shared as "unset" across backends that disagree on
     functional form.
     """
     import dataclasses
@@ -148,52 +149,49 @@ _BACKEND_AVAILABILITY: dict[str, bool] = {}
 def _backend_available(name: str) -> bool:
     """Check whether a backend is available (cached)."""
     if name not in _BACKEND_AVAILABILITY:
-        from q2mm.backends.registry import available_engines
+        from test.backend_fixtures import backend_is_usable
 
-        _avail = set(available_engines())
         for key in ("openmm", "tinker", "jax", "jax-md"):
-            _BACKEND_AVAILABILITY[key] = key in _avail
+            _BACKEND_AVAILABILITY[key] = backend_is_usable(key)
     return _BACKEND_AVAILABILITY.get(name, False)
 
 
 @pytest.fixture(scope="session")
-def openmm_engine() -> object:
-    """Create an OpenMM engine, skipping if unavailable."""
+def openmm_backend() -> object:
+    """Create an OpenMM backend, skipping if unavailable."""
     if not _backend_available("openmm"):
         pytest.skip("OpenMM not available")
-    from q2mm.backends.mm.openmm import OpenMMEngine
 
-    return OpenMMEngine()
+    return load_backend("openmm")
 
 
 @pytest.fixture(scope="session")
-def tinker_engine() -> object:
-    """Create a Tinker engine, skipping if unavailable."""
+def tinker_backend() -> object:
+    """Create a Tinker backend, skipping if unavailable."""
     if not _backend_available("tinker"):
         pytest.skip("Tinker not available")
-    from q2mm.backends.mm.tinker import TinkerEngine
 
-    return TinkerEngine()
+    from test.backend_fixtures import load_test_backend
+
+    return load_test_backend("tinker")
 
 
 @pytest.fixture(scope="session")
-def jax_engine() -> object:
-    """Create a JAX (harmonic) engine, skipping if unavailable."""
+def jax_backend() -> object:
+    """Create a JAX (harmonic) backend, skipping if unavailable."""
     if not _backend_available("jax"):
         pytest.skip("JAX not available")
-    from q2mm.backends.mm.jax_engine import JaxEngine
 
-    return JaxEngine()
+    return load_backend("jax")
 
 
 @pytest.fixture(scope="session")
-def jax_md_engine() -> object:
-    """Create a JAX-MD (OPLSAA) engine, skipping if unavailable."""
+def jax_md_backend() -> object:
+    """Create a JAX-MD (OPLSAA) backend, skipping if unavailable."""
     if not _backend_available("jax-md"):
         pytest.skip("JAX-MD not available")
-    from q2mm.backends.mm.jax_md_engine import JaxMDEngine
 
-    return JaxMDEngine()
+    return load_backend("jax-md")
 
 
 # ---------------------------------------------------------------------------

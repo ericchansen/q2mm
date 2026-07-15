@@ -2,7 +2,7 @@
 
 "Check 1" is the foundational Q2MM validation: take the force field the
 authors actually *published*, evaluate it against the same QM reference data
-with our engines, and pin the result as a golden fixture so future engine
+with our backends, and pin the result as a golden fixture so future backend
 changes can't silently move it.
 
 This module runs Check 1 for every registered publication TS system through a
@@ -12,7 +12,7 @@ single, uniform pipeline:
   ``load_system(key, starting_point="published")`` (one loader path for all
  systems — see :mod:`q2mm.benchmarks.systems`);
 * frequencies come from :func:`q2mm.models.hessian.hessian_to_frequencies`
-  (QM) and ``JaxEngine.frequencies`` (MM);
+  (QM) and ``JaxBackend.frequencies`` (MM);
 * the objective score is the real :class:`~q2mm.optimizers.objective.
   ObjectiveFunction` frequency penalty;
 * R² is the coefficient of determination (``1 - SSres/SStot``).
@@ -23,14 +23,14 @@ a sixth system is a single dict entry plus a regenerated golden.
 
 Regression, not quality gate
 ----------------------------
-The published force fields were optimized for MacroModel's MM3* engine, which
+The published force fields were optimized for MacroModel's MM3* backend, which
 has physics ours does not yet reproduce (stretch-bend cross terms, metal-center
 torsion rules — ericchansen/q2mm#255, tracked for the backend-parity audit).
-Under ``JaxEngine`` the cross-engine agreement ranges from good
+Under ``JaxBackend`` the cross-backend agreement ranges from good
 (rh-enamide R² ≈ 0.80) to poor (pd-allyl R² < 0).  This module therefore does
 **not** assert an absolute R² floor — it pins each system's score and R² to a
 committed golden and fails only on *regression* from that pinned value.  The
-absolute quality of the cross-engine reproduction is the subject of #255, not
+absolute quality of the cross-backend reproduction is the subject of #255, not
 of this test.
 
 Regenerating goldens
@@ -53,6 +53,11 @@ References
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 import json
@@ -230,7 +235,7 @@ def _build_frequency_reference(
 def _evaluate_ff_on_training_set(
     ff: Any,
     molecules: list[Any],
-    engine: Any,
+    backend: Any,
     *,
     upper_threshold: float = 4000.0,
 ) -> dict[str, Any]:
@@ -244,7 +249,12 @@ def _evaluate_ff_on_training_set(
     per_molecule: list[dict[str, Any]] = []
 
     for mol_idx, mol in enumerate(molecules):
-        mm_freqs = engine.frequencies(mol, ff)
+        mm_freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
 
         freq_ref, qm_real = _build_frequency_reference(
@@ -284,7 +294,7 @@ def _evaluate_ff_on_training_set(
     from q2mm.models.parameters import ParameterLayout
 
     layout = ParameterLayout.from_force_field(ff)
-    obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
+    obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
     params = layout.vector(ff)
     score = float(obj(params))
 
@@ -304,12 +314,12 @@ def _evaluate_ff_on_training_set(
 def _golden_payload(spec: Check1Spec, results: dict[str, Any]) -> dict[str, Any]:
     """Assemble the on-disk golden fixture from an evaluation result."""
     metadata = dict(spec.metadata)
-    metadata.setdefault("engine", "JaxEngine")
+    metadata.setdefault("backend", "JaxBackend")
     metadata["description"] = (
-        "Check 1: published FF evaluated with q2mm JaxEngine. "
+        "Check 1: published FF evaluated with q2mm JaxBackend. "
         "Reaction-coordinate frequencies (>4000 cm⁻¹) excluded from comparison, "
         "matching the eig_i = 0.00 weight convention. The published FF was "
-        "optimized for MacroModel/MM3*; cross-engine differences are expected "
+        "optimized for MacroModel/MM3*; cross-backend differences are expected "
         "and tracked by ericchansen/q2mm#255."
     )
     return {
@@ -332,17 +342,15 @@ def _golden_payload(spec: Check1Spec, results: dict[str, Any]) -> dict[str, Any]
 # Memoized per-system evaluation (one GPU pass per system)
 # ---------------------------------------------------------------------------
 
-_ENGINE: Any = None
+_BACKEND: Any = None
 _RESULTS_CACHE: dict[str, dict[str, Any]] = {}
 
 
-def _get_engine() -> Any:
-    global _ENGINE
-    if _ENGINE is None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
-
-        _ENGINE = JaxEngine()
-    return _ENGINE
+def _get_backend() -> Any:
+    global _BACKEND
+    if _BACKEND is None:
+        _BACKEND = load_backend("jax")
+    return _BACKEND
 
 
 def _results_for(spec: Check1Spec) -> dict[str, Any]:
@@ -362,7 +370,7 @@ def _results_for(spec: Check1Spec) -> dict[str, Any]:
 
     t0 = time.perf_counter()
     results = _evaluate_ff_on_training_set(
-        case.problem.starting_force_field, list(case.problem.molecules), _get_engine()
+        case.problem.starting_force_field, list(case.problem.molecules), _get_backend()
     )
     results["wall_time"] = time.perf_counter() - t0
 
@@ -417,7 +425,7 @@ class TestPublishedFFCheck1:
         """Score, R², and structural counts match the committed golden.
 
         This is the real gate: it detects *regression* from the pinned
-        cross-engine behavior.  It does not judge whether that behavior is
+        cross-backend behavior.  It does not judge whether that behavior is
         good (see the module docstring and #255).
         """
         results = _results_for(spec)

@@ -1,6 +1,12 @@
 """Execution contracts that must survive the capability-core rewrite."""
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    FrequencyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import numpy as np
 import pytest
@@ -22,7 +28,6 @@ def _water_forcefield() -> ForceField:
 
 
 def _mixed_conformer_objective() -> tuple:
-    from q2mm.backends.mm.jax_engine import JaxEngine
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.models.observations import ObservationSet
 
@@ -32,14 +37,22 @@ def _mixed_conformer_objective() -> tuple:
         make_water(angle_deg=100.0, bond_length=0.94, name="water-a"),
         make_water(angle_deg=112.0, bond_length=1.04, name="water-b"),
     ]
-    engine = JaxEngine()
+    backend = load_backend("jax")
     references = ObservationSet()
     per_case: list[tuple[float, float]] = []
 
     for case_index, molecule in enumerate(molecules):
-        handle = engine.create_context(molecule, forcefield)
-        energy = engine.energy(handle, forcefield)
-        frequencies = engine.frequencies(handle, forcefield)
+        energy = (
+            prepare_case(backend, molecule, forcefield)
+            .energy(EnergyRequest(parameters=param_vector(forcefield)))
+            .energy
+        )
+        frequencies = [
+            float(_f)
+            for _f in prepare_case(backend, molecule, forcefield)
+            .frequencies(FrequencyRequest(parameters=param_vector(forcefield)))
+            .frequencies
+        ]
         frequency = float(frequencies[-1])
         per_case.append((energy, frequency))
         offset = float(case_index + 1)
@@ -51,7 +64,7 @@ def _mixed_conformer_objective() -> tuple:
             weight=0.01,
         )
 
-    objective = ObjectiveFunction(forcefield, engine, molecules, references, layout=layout)
+    objective = ObjectiveFunction(forcefield, backend, molecules, references, layout=layout)
     return objective, forcefield, layout, molecules, per_case
 
 
@@ -60,7 +73,6 @@ def _independent_case_score(
     molecules: list,
     per_case: list[tuple[float, float]],
 ) -> float:
-    from q2mm.backends.mm.jax_engine import JaxEngine
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.models.observations import ObservationSet
 
@@ -77,7 +89,7 @@ def _independent_case_score(
             data_idx=3 * molecule.n_atoms - 1,
             weight=0.01,
         )
-        score += ObjectiveFunction(forcefield, JaxEngine(), [molecule], reference, layout=layout)(parameters)
+        score += ObjectiveFunction(forcefield, load_backend("jax"), [molecule], reference, layout=layout)(parameters)
     return score
 
 
@@ -99,9 +111,9 @@ def test_case_handles_are_distinct_and_reused() -> None:
     parameters = layout.vector(forcefield)
 
     objective(parameters)
-    first_handles = {case_index: id(handle) for case_index, handle in objective._handles.items()}
+    first_handles = {ci: id(prepared) for ci, prepared in objective._prepared.items()}
     objective(parameters)
-    second_handles = {case_index: id(handle) for case_index, handle in objective._handles.items()}
+    second_handles = {ci: id(prepared) for ci, prepared in objective._prepared.items()}
 
     assert len(first_handles) == 2
     assert len(set(first_handles.values())) == 2

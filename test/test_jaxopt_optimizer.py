@@ -5,11 +5,17 @@ on simple energy objectives.
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import importlib.util
 
 import numpy as np
 import pytest
+
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
 _HAS_JAXOPT = importlib.util.find_spec("jaxopt") is not None
@@ -27,7 +33,7 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
 
 # Module-level globals populated by autouse fixture
-JaxEngine = None
+JaxBackend = None
 
 
 def _layout(forcefield: ForceField) -> ParameterLayout:
@@ -43,11 +49,11 @@ def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -86,10 +92,10 @@ def _init_jax() -> None:
 
     ensure_jax()
     ensure_jaxopt()
-    global JaxEngine  # noqa: PLW0603
-    from q2mm.backends.mm.jax_engine import JaxEngine as _JE
+    global JaxBackend  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxBackend as _JE
 
-    JaxEngine = _JE
+    JaxBackend = _JE
 
 
 class TestJaxOptOptimizerValidation:
@@ -108,7 +114,7 @@ class TestJaxOptOptimizerValidation:
             opt = JaxOptOptimizer(method=method)
             assert opt.method == method
 
-    def test_engine_type_check(self) -> None:
+    def test_backend_type_check(self) -> None:
         from unittest.mock import MagicMock
 
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -119,12 +125,12 @@ class TestJaxOptOptimizerValidation:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        fake_engine = MagicMock()
-        fake_engine.__class__.__name__ = "FakeEngine"
-        obj = _make_objective(forcefield=ff, engine=fake_engine, molecules=[mol], reference=ref)
+        fake_backend = MagicMock()
+        fake_backend.__class__.__name__ = "FakeBackend"
+        obj = _make_objective(forcefield=ff, backend=fake_backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
-        with pytest.raises(TypeError, match="JaxOptOptimizer requires a JaxEngine"):
+        with pytest.raises(TypeError, match="JaxOptOptimizer requires a JaxBackend"):
             optimizer.optimize(obj, _all_active_space(obj))
 
 
@@ -139,12 +145,12 @@ class TestJaxOptOptimizerConvergence:
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         # Perturbed r0 so energy at geometry != 0 (gives non-zero initial loss)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -161,12 +167,12 @@ class TestJaxOptOptimizerConvergence:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -189,12 +195,12 @@ class TestJaxOptOptimizerConvergence:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -212,12 +218,12 @@ class TestJaxOptOptimizerConvergence:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -239,12 +245,12 @@ class TestJaxOptOptimizerConvergence:
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=104.5)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -258,14 +264,14 @@ class TestJaxOptOptimizerConvergence:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         initial_params = _params(ff).copy()
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
 
@@ -285,12 +291,12 @@ class TestJaxOptOptimizerConvergence:
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
         initial_params = _params(ff).copy()
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         full_space = _all_active_space(obj)
         active_indices = [slot.index for slot in obj.layout if slot.owner != "bonds"]
@@ -331,7 +337,7 @@ class TestJaxOptFrequencyConvergence:
             params[2 * i] *= 0.8  # force constant
         ff = _materialize(ff, params)
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Add only real vibrational frequencies (skip first 6 trans/rot)
         n3 = 3 * mol.n_atoms
@@ -340,7 +346,7 @@ class TestJaxOptFrequencyConvergence:
             if abs(freqs_qm[i]) > 10.0:
                 ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -351,8 +357,18 @@ class TestJaxOptFrequencyConvergence:
 
         # Final sorted frequencies should be closer to QM
         final_ff = _materialize(ff, result.final_params)
-        final_freqs = engine.frequencies(mol, final_ff)
-        initial_freqs = engine.frequencies(mol, _materialize(ff, result.initial_params))
+        final_freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, final_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(final_ff)))
+            .frequencies
+        ]
+        initial_freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, _materialize(ff, result.initial_params))
+            .frequencies(FrequencyRequest(parameters=param_vector(_materialize(ff, result.initial_params))))
+            .frequencies
+        ]
 
         qm_real = [freqs_qm[i] for i in range(6, n3) if abs(freqs_qm[i]) > 10.0]
         final_real = [final_freqs[i] for i in range(6, n3) if abs(freqs_qm[i]) > 10.0]
@@ -378,12 +394,12 @@ class TestJaxOptBoundsActive:
         # We start at bond_r0=0.88 and constrain to [0.85, 0.90].
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=553.0, bond_r0=0.88, angle_k=49.9, angle_eq=104.5)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
         spec = obj.to_jax_spec()
 
         # Override bounds: constrain bond_r0 (index 1) to [0.85, 0.90]
@@ -396,7 +412,7 @@ class TestJaxOptBoundsActive:
         # Build JaxLoss + optimizer manually with custom spec
         from q2mm.optimizers.jaxloss import JaxLoss
 
-        jax_loss = JaxLoss(spec, engine, [mol], ff)
+        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
 
         from q2mm.backends.mm._jax_common import ensure_jaxopt, jnp
 
@@ -436,12 +452,12 @@ class TestScipyJaxLossTelemetry:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, jac="auto", ratio_tol=None, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))

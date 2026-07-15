@@ -1,5 +1,5 @@
-"""Quantum mechanics engine backends.
+"""Quantum mechanics backends.
 
-Provides :class:`~q2mm.backends.qm.psi4.Psi4Engine` for QM energy, Hessian,
+Provides :class:`~q2mm.backends.qm.psi4.Psi4Backend` for QM energy, Hessian,
 optimization, and frequency calculations.
 """

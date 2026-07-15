@@ -123,14 +123,14 @@ from pathlib import Path
 sys.path.insert(0, '.')
 # JAX_PLATFORMS left unset — let JAX auto-detect GPU
 
-from q2mm.backends.mm.jax_engine import JaxEngine
+from q2mm.backends.mm.jax_engine import JaxBackend
 from q2mm.benchmarks.systems import load_system
 from q2mm.io.mm3 import load_mm3_fld
 from q2mm.models.parameters import ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
 
-engine = JaxEngine()
-case = load_system('rh-enamide', engine=engine)
+backend = JaxBackend()
+case = load_system('rh-enamide', backend=backend)
 qfuerza_dir = Path(os.environ['Q2MM_DATA_REPO']) / 'qfuerza-zenodo'
 
 # Load Zenodo optimized FF (final iteration)
@@ -141,7 +141,7 @@ print(f'Zenodo FF: {len(zenodo_ff.bonds)} bonds, {len(zenodo_ff.angles)} angles'
 layout = ParameterLayout.from_force_field(zenodo_ff)
 obj = ObjectiveFunction(
     forcefield=zenodo_ff,
-    engine=engine,
+    backend=backend,
     molecules=list(case.problem.molecules),
     reference=case.problem.observations,
     case_ids=list(case.problem.case_ids),
@@ -154,7 +154,7 @@ print(f'Zenodo FF score on our objective: {score:.4f}')
 result = {
     'source': 'zenodo_qfuerza_mm3_010',
     'score_on_our_objective': float(score),
-    'note': 'Zenodo QFUERZA-optimized FF evaluated with our JaxEngine + rh-enamide objective. Comparable to our benchmark final_score values.',
+    'note': 'Zenodo QFUERZA-optimized FF evaluated with our JaxBackend + rh-enamide objective. Comparable to our benchmark final_score values.',
 }
 out = qfuerza_dir / 'rh_enamide_zenodo_ff_on_our_objective.json'
 out.parent.mkdir(parents=True, exist_ok=True)

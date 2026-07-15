@@ -40,6 +40,10 @@ import numpy as np
 from q2mm.optimizers._metrics import fractional_improvement
 from q2mm.optimizers.objective import ObjectiveFunction
 
+from q2mm.backends.contracts import Capability as _Capability
+
+_PARAM_GRAD_CAP = _Capability.PARAMETER_GRADIENT
+
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
 
@@ -67,8 +71,8 @@ class _ActiveObjectiveWrapper:
         return self._objective.n_eval
 
     @property
-    def engine(self) -> Any:
-        return self._objective.engine
+    def backend(self) -> Any:
+        return self._objective.backend
 
     @property
     def forcefield(self) -> Any:
@@ -172,12 +176,12 @@ class ScipyOptimizer:
         verbose (bool): Log progress during optimization.
         jac (str | None): Jacobian computation strategy.
             ``None`` (default) uses scipy's built-in finite differences.
-            ``'auto'`` probes the engine: if it supports analytical
+            ``'auto'`` probes the backend: if it supports analytical
             gradients and the method is gradient-based, uses
             :meth:`ObjectiveFunction.gradient` for a hybrid
             analytical+FD Jacobian; otherwise falls back to scipy FD.
             ``'analytical'`` forces :meth:`ObjectiveFunction.gradient`
-            regardless of engine support. Only applies to
+            regardless of backend support. Only applies to
             ``scipy.optimize.minimize`` paths; not supported for
             ``method='least_squares'``.
         divergence_factor (float | None): Early stopping threshold. If
@@ -259,7 +263,7 @@ class ScipyOptimizer:
 
         Args:
             objective (ObjectiveFunction): Configured objective with
-                forcefield, engine, molecules, and reference data.
+                forcefield, backend, molecules, and reference data.
             space (ActiveParameterSpace): The active/frozen projection
                 over ``objective.layout``. ``objective.forcefield`` is
                 never mutated — materialize the optimized force field
@@ -408,8 +412,8 @@ class ScipyOptimizer:
 
         # Resolve Jacobian strategy:
         #   - jac="analytical" → always use objective.gradient
-        #   - jac="auto" + gradient-based method + JaxEngine → JaxLoss analytical gradients
-        #   - jac="auto" + gradient-based method + engine supports it → auto-enable
+        #   - jac="auto" + gradient-based method + JAX backend → JaxLoss analytical gradients
+        #   - jac="auto" + gradient-based method + backend supports it → auto-enable
         #   - jac=None → scipy's own finite differences (default, safest)
         jac = None
         uses_scipy_fd = False
@@ -425,9 +429,9 @@ class ScipyOptimizer:
             # Try JaxLoss path first — per-molecule JIT dispatch,
             # analytical gradients for all ref types including geometry.
             try:
-                from q2mm.backends.mm.jax_engine import JaxEngine
+                from q2mm.backends.mm.jax_engine import JaxBackend
 
-                if isinstance(objective.engine, JaxEngine):
+                if isinstance(objective.backend, JaxBackend):
                     from q2mm.optimizers.jaxloss import JaxLoss
 
                     # Unwrap _ActiveObjectiveWrapper to get the raw
@@ -436,7 +440,13 @@ class ScipyOptimizer:
                     raw_obj = objective._objective if isinstance(objective, _ActiveObjectiveWrapper) else objective
                     space = objective._space if isinstance(objective, _ActiveObjectiveWrapper) else None
                     spec = raw_obj.to_jax_spec()
-                    jax_loss = JaxLoss(spec, raw_obj.engine, raw_obj.molecules, raw_obj.forcefield)
+                    jax_loss = JaxLoss(
+                        spec,
+                        raw_obj.backend,
+                        raw_obj.molecules,
+                        raw_obj.forcefield,
+                        sessions=raw_obj.jax_sessions(spec),
+                    )
 
                     def _jax_loss_fun(x_active: np.ndarray) -> tuple[float, np.ndarray]:
                         full = space.expand(x_active) if space is not None else np.asarray(x_active, dtype=float)
@@ -480,12 +490,12 @@ class ScipyOptimizer:
             except (ImportError, AttributeError) as exc:
                 logger.debug("JaxLoss auto-path unavailable (%s: %s)", type(exc).__name__, exc)
 
-            if use_jax_loss_fun is None and objective.engine.supports_analytical_gradients():
+            if use_jax_loss_fun is None and objective.backend.info.supports(_PARAM_GRAD_CAP):
                 jac = objective.gradient
                 if self.verbose:
                     logger.info(
                         "  Auto-detected analytical gradient support from %s — using analytical+FD hybrid Jacobian",
-                        type(objective.engine).__name__,
+                        type(objective.backend).__name__,
                     )
         if jac is None and use_jax_loss_fun is None and self.method not in self.DERIVATIVE_FREE_METHODS:
             uses_scipy_fd = True

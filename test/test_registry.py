@@ -1,190 +1,308 @@
-"""Tests for the engine registry."""
+"""Tests for the descriptor-based backend registry."""
 
 import pytest
 
+from q2mm.backends.contracts import (
+    BackendConfigurationError,
+    BackendRole,
+    BackendUnavailableError,
+)
 from q2mm.backends.registry import (
-    EngineNotAvailable,
-    _check_available,
-    available_engines,
-    available_mm_engines,
-    available_qm_engines,
-    get_engine,
-    get_mm_engine,
-    get_qm_engine,
-    registered_engines,
-    registered_mm_engines,
-    registered_qm_engines,
+    BackendNotRegistered,
+    available_backends,
+    available_mm_backends,
+    available_qm_backends,
+    catalog,
+    descriptors,
+    get_descriptor,
+    load_backend,
+    registered_backends,
 )
 
 
-class TestRegisteredEngines:
-    """Verify that all engines are discovered and registered."""
+class TestRegisteredDescriptors:
+    """Verify that all built-in backends are described and validated."""
 
-    def test_discover_registers_all_mm_engines(self) -> None:
-        engines = registered_mm_engines()
-        assert "openmm" in engines
-        assert "tinker" in engines
-        assert "jax" in engines
-        assert "jax-md" in engines
+    def test_all_mm_backends_registered(self) -> None:
+        names = set(registered_backends(role=BackendRole.MM))
+        assert {"openmm", "tinker", "jax", "jax-md"} <= names
 
-    def test_discover_registers_qm_engines(self) -> None:
-        engines = registered_qm_engines()
-        assert "psi4" in engines
+    def test_qm_backend_registered(self) -> None:
+        assert "psi4" in registered_backends(role=BackendRole.QM)
 
-    def test_registered_engines_has_all(self) -> None:
-        engines = registered_engines()
-        assert len(engines) >= 5
+    def test_registered_backends_has_all(self) -> None:
+        names = set(registered_backends())
         for name in ("openmm", "tinker", "jax", "jax-md", "psi4"):
-            assert name in engines
+            assert name in names
+
+    def test_descriptors_keys_match_catalog(self) -> None:
+        assert set(descriptors()) == {s.name for s in catalog()}
+
+    def test_batched_hessian_capability_matrix(self) -> None:
+        """Only JAX declares BATCHED_HESSIAN in its static descriptor info."""
+        from q2mm.backends.contracts import Capability
+
+        descs = descriptors()
+        assert Capability.BATCHED_HESSIAN in descs["jax"].info.capabilities
+        for name in ("jax-md", "openmm", "tinker", "psi4"):
+            assert Capability.BATCHED_HESSIAN not in descs[name].info.capabilities, name
 
 
-class TestAvailableEngines:
-    """Verify that availability checks work."""
+class TestAvailability:
+    """Verify cheap, side-effect-free availability reporting."""
 
-    def test_available_engines_returns_list(self) -> None:
-        result = available_engines()
-        assert isinstance(result, list)
+    def test_available_backends_returns_list(self) -> None:
+        assert isinstance(available_backends(), list)
 
-    def test_available_mm_engines_subset_of_available(self) -> None:
-        mm = set(available_mm_engines())
-        all_ = set(available_engines())
-        assert mm <= all_
+    def test_available_mm_subset(self) -> None:
+        assert set(available_mm_backends()) <= set(available_backends())
 
-    def test_available_qm_engines_subset_of_available(self) -> None:
-        qm = set(available_qm_engines())
-        all_ = set(available_engines())
-        assert qm <= all_
+    def test_available_qm_subset(self) -> None:
+        assert set(available_qm_backends()) <= set(available_backends())
 
-    def test_available_engines_sorted(self) -> None:
-        result = available_engines()
+    def test_available_sorted(self) -> None:
+        result = available_backends()
         assert result == sorted(result)
 
+    def test_catalog_reports_unavailable_explicitly(self) -> None:
+        # Every descriptor appears in the catalog with an explicit status.
+        for status in catalog():
+            assert isinstance(status.healthy, bool)
+            if not status.healthy:
+                assert status.reason
 
-class TestGetEngine:
-    """Verify engine instantiation through the registry."""
 
-    @pytest.mark.openmm
-    def test_get_engine_openmm(self) -> None:
-        from q2mm.backends.base import MMEngine
-
-        engine = get_engine("openmm")
-        assert isinstance(engine, MMEngine)
-        assert engine.is_available()
-
-    @pytest.mark.openmm
-    def test_get_mm_engine_openmm(self) -> None:
-        engine = get_mm_engine("openmm")
-        assert engine.is_available()
-
-    def test_get_engine_unknown_raises(self) -> None:
-        with pytest.raises(EngineNotAvailable, match="not-a-real-engine"):
-            get_engine("not-a-real-engine")
-
-    def test_get_mm_engine_unknown_raises(self) -> None:
-        with pytest.raises(EngineNotAvailable):
-            get_mm_engine("not-a-real-engine")
-
-    def test_get_qm_engine_unknown_raises(self) -> None:
-        with pytest.raises(EngineNotAvailable):
-            get_qm_engine("not-a-real-engine")
+class TestLoadBackend:
+    """Verify backend construction through the registry."""
 
     @pytest.mark.openmm
-    def test_get_engine_passes_kwargs(self) -> None:
-        engine = get_engine("openmm", platform_name="CPU")
-        assert engine.is_available()
-
-    def test_engine_not_available_message_includes_registered(self) -> None:
-        with pytest.raises(EngineNotAvailable) as exc_info:
-            get_engine("nonexistent")
-        # Should list at least some registered engines in the error message
-        assert "Registered engines:" in str(exc_info.value)
-
-
-class TestCheckAvailable:
-    """Verify the _check_available helper."""
+    def test_load_openmm(self) -> None:
+        backend = load_backend("openmm")
+        assert backend.info.role is BackendRole.MM
+        assert backend.info.provenance.backend == "openmm"
 
     @pytest.mark.openmm
-    def test_check_available_with_real_engine(self) -> None:
-        from q2mm.backends.mm.openmm import OpenMMEngine
+    def test_load_openmm_passes_kwargs(self) -> None:
+        backend = load_backend("openmm", platform_name="CPU")
+        assert "CPU" in backend.info.name
 
-        assert _check_available(OpenMMEngine) is True
+    def test_load_unknown_raises(self) -> None:
+        with pytest.raises(BackendNotRegistered, match="not-a-real-backend"):
+            load_backend("not-a-real-backend")
 
-    def test_check_available_prefers_deps_available(self) -> None:
-        """_check_available should call deps_available() and never __init__."""
+    def test_not_registered_message_lists_registered(self) -> None:
+        with pytest.raises(BackendNotRegistered) as exc_info:
+            load_backend("nonexistent")
+        assert "Registered backends:" in str(exc_info.value)
 
-        class LightweightEngine:
-            init_called = False
+    def test_load_unavailable_raises_typed(self) -> None:
+        # Find an unavailable descriptor and confirm load() raises typed error.
+        for status in catalog():
+            if not status.healthy:
+                with pytest.raises(BackendUnavailableError):
+                    load_backend(status.name)
+                return
+        pytest.skip("all backends available")
 
-            def __init__(self) -> None:
-                LightweightEngine.init_called = True
 
-            @classmethod
-            def deps_available(cls) -> bool:
-                return True
+class TestDescriptorValidation:
+    """Built-ins go through the same descriptor validation path."""
 
-            def is_available(self) -> bool:
-                return True
+    def test_get_descriptor_openmm(self) -> None:
+        desc = get_descriptor("openmm")
+        assert desc.role is BackendRole.MM
+        assert ":" in desc.factory
 
-        assert _check_available(LightweightEngine) is True
-        assert not LightweightEngine.init_called
+    def test_descriptor_rejects_bad_factory(self) -> None:
+        from q2mm.backends.contracts import BackendDescriptor, BackendInfo, BackendProvenance
 
-    def test_check_available_deps_available_false(self) -> None:
-        class UnavailableEngine:
-            @classmethod
-            def deps_available(cls) -> bool:
-                return False
+        info = BackendInfo(
+            name="x", role=BackendRole.MM, provenance=BackendProvenance(backend="x", role=BackendRole.MM)
+        )
+        with pytest.raises(ValueError):
+            BackendDescriptor(name="x", info=info, factory="missing_colon")
 
-        assert _check_available(UnavailableEngine) is False
+    def test_descriptor_rejects_empty_name(self) -> None:
+        from q2mm.backends.contracts import BackendDescriptor, BackendInfo, BackendProvenance
 
-    def test_check_available_with_broken_class(self) -> None:
-        class BrokenEngine:
-            @classmethod
-            def deps_available(cls) -> bool:
-                raise RuntimeError("boom")
+        info = BackendInfo(
+            name="x", role=BackendRole.MM, provenance=BackendProvenance(backend="x", role=BackendRole.MM)
+        )
+        # An empty descriptor name is rejected before the provenance-match check.
+        with pytest.raises(ValueError):
+            BackendDescriptor(name="", info=info, factory="a:b")
 
-        assert _check_available(BrokenEngine) is False
+    def test_descriptor_load_bad_attr_raises_config_error(self) -> None:
+        from q2mm.backends.contracts import (
+            BackendDescriptor,
+            BackendInfo,
+            BackendProvenance,
+            DependencyProbe,
+        )
 
-    def test_check_available_legacy_fallback(self) -> None:
-        """Classes without deps_available fall back to instantiation."""
+        # Point at a real module but a missing attribute; probe passes (numpy
+        # is installed) so load() reaches the attribute lookup.
+        info = BackendInfo(
+            name="fake", role=BackendRole.MM, provenance=BackendProvenance(backend="fake", role=BackendRole.MM)
+        )
+        desc = BackendDescriptor(
+            name="fake",
+            info=info,
+            factory="numpy:ThisAttrDoesNotExist",
+            probe=DependencyProbe(modules=("numpy",)),
+        )
+        with pytest.raises(BackendConfigurationError):
+            desc.load()
 
-        class LegacyEngine:
-            def is_available(self) -> bool:
-                return True
 
-        assert _check_available(LegacyEngine) is True
+# ---------------------------------------------------------------------------
+# Fake backends for descriptor factory-validation tests
+# ---------------------------------------------------------------------------
 
-    def test_check_available_legacy_unavailable(self) -> None:
-        class LegacyUnavailable:
-            def is_available(self) -> bool:
-                return False
+from typing import Any
 
-        assert _check_available(LegacyUnavailable) is False
+from q2mm.backends.contracts import BackendInfo, BackendProvenance, Capability
 
-    def test_subclass_without_override_falls_back(self) -> None:
-        """Engine subclass inheriting base deps_available() uses instantiation."""
-        from q2mm.backends.base import MMEngine
 
-        class CustomEngine(MMEngine):
-            @property
-            def name(self) -> str:
-                return "custom"
+def _mk_info(
+    name: str,
+    caps: frozenset[Capability] = frozenset(),
+    forms: frozenset[str] = frozenset(),
+    *,
+    prov_backend: str | None = None,
+) -> BackendInfo:
+    prov = BackendProvenance(backend=prov_backend or name, role=BackendRole.MM)
+    return BackendInfo(name=name, role=BackendRole.MM, capabilities=caps, functional_forms=forms, provenance=prov)
 
-            def is_available(self) -> bool:
-                return True
 
-            def energy(self, *a: object, **kw: object) -> None:
-                pass
+class _PreparedNoop:
+    pass
 
-            def gradient(self, *a: object, **kw: object) -> None:
-                pass
 
-            def hessian(self, *a: object, **kw: object) -> None:
-                pass
+class GoodFakeBackend:
+    """A well-formed fake backend matching the ``good-fake`` descriptor info."""
 
-            def frequencies(self, *a: object, **kw: object) -> None:
-                pass
+    def __init__(self, **kwargs: object) -> None:
+        pass
 
-            def minimize(self, *a: object, **kw: object) -> None:
-                pass
+    @property
+    def info(self) -> BackendInfo:
+        return _mk_info("good-fake", frozenset({Capability.ENERGY}), frozenset({"harmonic"}))
 
-        assert _check_available(CustomEngine) is True
+    def prepare(self, request: object) -> _PreparedNoop:
+        return _PreparedNoop()
+
+
+class MismatchedCapsBackend:
+    """Runtime info declares different capabilities than its descriptor."""
+
+    def __init__(self, **kwargs: object) -> None:
+        pass
+
+    @property
+    def info(self) -> BackendInfo:
+        return _mk_info("mismatch", frozenset({Capability.ENERGY, Capability.HESSIAN}), frozenset({"harmonic"}))
+
+    def prepare(self, request: object) -> _PreparedNoop:
+        return _PreparedNoop()
+
+
+class WrongProvenanceBackend:
+    """Runtime provenance.backend differs from the descriptor name."""
+
+    def __init__(self, **kwargs: object) -> None:
+        pass
+
+    @property
+    def info(self) -> BackendInfo:
+        return _mk_info(
+            "provwrong",
+            frozenset({Capability.ENERGY}),
+            frozenset({"harmonic"}),
+            prov_backend="something-else",
+        )
+
+    def prepare(self, request: object) -> _PreparedNoop:
+        return _PreparedNoop()
+
+
+class NotABackend:
+    """Missing the ``prepare`` method — does not satisfy the Backend protocol."""
+
+    def __init__(self, **kwargs: object) -> None:
+        pass
+
+    @property
+    def info(self) -> BackendInfo:
+        return _mk_info("notbackend", frozenset(), frozenset())
+
+
+def _descriptor(
+    name: str,
+    factory: str,
+    *,
+    caps: frozenset[Capability] | None = None,
+    forms: frozenset[str] | None = None,
+    probe: Any = None,
+) -> Any:
+    from q2mm.backends.contracts import BackendDescriptor, DependencyProbe
+
+    caps = caps if caps is not None else frozenset({Capability.ENERGY})
+    forms = forms if forms is not None else frozenset({"harmonic"})
+    info = _mk_info(name, caps, forms)
+    return BackendDescriptor(
+        name=name,
+        info=info,
+        factory=factory,
+        probe=probe if probe is not None else DependencyProbe(),
+    )
+
+
+class TestFactoryValidation:
+    """Descriptor.load() validates the factory's runtime object structurally."""
+
+    def test_good_factory_loads(self) -> None:
+        desc = _descriptor("good-fake", "test.test_registry:GoodFakeBackend")
+        backend = desc.load()
+        assert backend.info.provenance.backend == "good-fake"
+
+    def test_capabilities_mismatch_raises(self) -> None:
+        # Descriptor declares only ENERGY; runtime declares ENERGY+HESSIAN.
+        desc = _descriptor("mismatch", "test.test_registry:MismatchedCapsBackend")
+        with pytest.raises(BackendConfigurationError):
+            desc.load()
+
+    def test_provenance_backend_mismatch_raises(self) -> None:
+        desc = _descriptor("provwrong", "test.test_registry:WrongProvenanceBackend")
+        with pytest.raises(BackendConfigurationError):
+            desc.load()
+
+    def test_missing_protocol_raises(self) -> None:
+        desc = _descriptor("notbackend", "test.test_registry:NotABackend", caps=frozenset(), forms=frozenset())
+        with pytest.raises(BackendConfigurationError):
+            desc.load()
+
+    def test_api_version_mismatch_rejected(self) -> None:
+        from q2mm.backends.contracts import BackendDescriptor
+
+        info = _mk_info("good-fake")
+        with pytest.raises(ValueError):
+            BackendDescriptor(
+                name="good-fake", info=info, factory="test.test_registry:GoodFakeBackend", api_version=999
+            )
+
+
+class TestExplicitConfigBypassesProbe:
+    """An unhealthy PATH probe must not block an explicit valid load."""
+
+    def test_unhealthy_probe_still_loads_valid_backend(self) -> None:
+        from q2mm.backends.contracts import DependencyProbe
+
+        # Probe is unhealthy (module does not exist), but load() must bypass it
+        # and construct the valid backend anyway.
+        probe = DependencyProbe(modules=("definitely_not_installed_xyz_123",))
+        healthy, _ = probe.check()
+        assert healthy is False
+        desc = _descriptor("good-fake", "test.test_registry:GoodFakeBackend", probe=probe)
+        backend = desc.load()
+        assert backend.info.provenance.backend == "good-fake"

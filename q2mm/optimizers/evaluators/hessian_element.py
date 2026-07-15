@@ -11,9 +11,13 @@ from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import (
+    Capability,
+    HessianJacobianRequest,
+    HessianRequest,
+    PreparedBackend,
+    UnsupportedCapabilityError,
+)
 from q2mm.models.observations import Observation
 
 
@@ -40,26 +44,20 @@ class HessianElementEvaluator:
 
     def compute(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
-        *,
-        structure: Any | None = None,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
     ) -> HessianResult:
         """Compute the raw MM Hessian.
 
         Args:
-            engine: The MM backend.
-            mol: The molecule being evaluated.
-            ff: The current force field.
-            structure: Optional pre-built engine context/handle.
+            prepared: The prepared per-case backend session.
+            parameters: Full parameter vector.
 
         Returns:
             HessianResult with the computed Hessian in Hartree/Bohr².
 
         """
-        target = structure if structure is not None else mol
-        hess = engine.hessian(target, ff)
+        hess = np.asarray(prepared.hessian(HessianRequest(parameters=parameters)).hessian)
         return HessianResult(hessian=hess)
 
     def residuals(
@@ -106,27 +104,25 @@ class HessianElementEvaluator:
             raise IndexError(f"Hessian indices ({row}, {col}) out of range for {n}×{n} matrix. Label: {ref.label!r}")
         return float(computed.hessian[row, col])
 
-    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Check if the engine supports Hessian parameter Jacobians.
+    def supports_analytical_gradient(self, prepared: PreparedBackend) -> bool:
+        """Check if the backend declares Hessian parameter Jacobians.
 
         Args:
-            engine: The MM backend to check.
+            prepared: The prepared backend session to check.
 
         Returns:
-            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
+            ``True`` if the backend declares ``HESSIAN_PARAMETER_JACOBIAN``.
 
         """
-        return engine.supports_analytical_hessian_gradients()
+        return prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN)
 
     def gradient(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         references: list[Observation],
         n_params: int,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> np.ndarray:
         """Compute analytical gradient of the Hessian element score contribution.
@@ -135,26 +131,23 @@ class HessianElementEvaluator:
         Jacobian tensor.
 
         Args:
-            engine: The MM backend (must support Hessian parameter Jacobians).
-            mol: The molecule being evaluated.
-            ff: The current force field.
+            prepared: The prepared backend session (must support Hessian
+                parameter Jacobians).
+            parameters: Full parameter vector.
             references: Reference Hessian element values for this molecule.
             n_params: Length of the gradient vector.
-            structure: Optional pre-built engine context/handle.
             mol_idx: Molecule index (unused).
 
         Returns:
             Gradient vector of shape ``(n_params,)``.
 
         """
-        if not engine.supports_analytical_hessian_gradients():
-            raise TypeError(
-                f"{engine.name} does not support hessian_and_param_jacobian(). "
-                "Cannot compute analytical Hessian element gradient."
-            )
+        if not prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN):
+            raise UnsupportedCapabilityError(prepared.info.name, Capability.HESSIAN_PARAMETER_JACOBIAN)
 
-        target = structure if structure is not None else mol
-        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
+        result = prepared.hessian_parameter_jacobian(HessianJacobianRequest(parameters=parameters))
+        hess = np.asarray(result.hessian)
+        dH_dp = np.asarray(result.jacobian)
 
         n = hess.shape[0]
         grad = np.zeros(n_params)

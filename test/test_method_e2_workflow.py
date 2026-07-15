@@ -1,6 +1,7 @@
 """Tests for :class:`q2mm.workflows.MethodE2Workflow`."""
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 import numpy as np
 import pytest
@@ -82,19 +83,18 @@ class TestShortCircuit:
 
     @staticmethod
     def _load() -> tuple[object, object]:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        engine = JaxEngine()
-        return load_system("ch3f", engine=engine, functional_form="harmonic"), engine
+        backend = load_backend("jax")
+        return load_system("ch3f", backend=backend, functional_form="harmonic"), backend
 
     def test_no_candidates_returns_single_stage(self) -> None:
         """CH3F ground state has no near-zero / negative FCs → 1 stage only."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(case.problem, engine, opt, n_evals=0)
+        result = MethodE2Workflow().run(case.problem, backend, opt, n_evals=0)
 
         assert result.workflow_name == "method-e2"
         assert len(result.stages) == 1, (
@@ -112,18 +112,17 @@ class TestProblemImmutability:
 
     def test_active_space_unchanged_on_short_circuit(self) -> None:
         """Single-stage path derives no new active space on the problem object."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        engine = JaxEngine()
-        case = load_system("ch3f", engine=engine, functional_form="harmonic")
+        backend = load_backend("jax")
+        case = load_system("ch3f", backend=backend, functional_form="harmonic")
         problem = case.problem
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(problem, engine, opt, n_evals=0)
+        result = MethodE2Workflow().run(problem, backend, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
         np.testing.assert_array_equal(problem.active_space.baseline, baseline_before)
@@ -137,19 +136,18 @@ class TestTwoStageOnSn2:
 
     @staticmethod
     def _load() -> tuple[object, object]:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        engine = JaxEngine()
-        return load_system("ch3f-sn2", engine=engine, qfuerza_replace_with=0.03, functional_form="harmonic"), engine
+        backend = load_backend("jax")
+        return load_system("ch3f-sn2", backend=backend, qfuerza_replace_with=0.03, functional_form="harmonic"), backend
 
     def test_round1_runs_and_candidates_field_populated(self) -> None:
         """Round 1 always runs; candidates list is populated (possibly empty)."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(case.problem, engine, opt, n_evals=0)
+        result = MethodE2Workflow().run(case.problem, backend, opt, n_evals=0)
 
         assert result.workflow_name == "method-e2"
         assert len(result.stages) >= 1
@@ -163,14 +161,14 @@ class TestTwoStageOnSn2:
         """Running Method E2 does not mutate the caller's active space."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, engine, opt, n_evals=0)
+        result = wf.run(problem, backend, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
         np.testing.assert_array_equal(problem.active_space.baseline, baseline_before)
@@ -195,11 +193,11 @@ class TestTwoStageOnSn2:
         """
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, engine, opt, n_evals=0)
+        result = wf.run(problem, backend, opt, n_evals=0)
 
         if len(result.stages) != 2:
             pytest.skip("System did not produce Round 2; nothing to check here.")
@@ -246,14 +244,14 @@ class TestTwoStageOnSn2:
         """If every active FC is locked, Round 2 is skipped without mutating the problem."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=1e30)
-        result = wf.run(problem, engine, opt, n_evals=0)
+        result = wf.run(problem, backend, opt, n_evals=0)
 
         assert len(result.stages) == 1
         assert result.stages[0].notes.get("round_2_skipped") == "no_active_params_after_lock"
@@ -264,11 +262,11 @@ class TestTwoStageOnSn2:
         """Default Approxn replacements lift locked FC values above zero."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, engine, opt, n_evals=0)
+        result = wf.run(problem, backend, opt, n_evals=0)
 
         replacements = result.stages[0].notes.get("near_zero_replacements", [])
         if not replacements:
@@ -283,11 +281,11 @@ class TestTwoStageOnSn2:
         """Opt-out: no replacements recorded, candidates lock at Round-1 values."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5, near_zero_replace_with={})
-        result = wf.run(problem, engine, opt, n_evals=0)
+        result = wf.run(problem, backend, opt, n_evals=0)
 
         assert "near_zero_replacements" not in result.stages[0].notes
         candidates = result.stages[0].notes.get("method_e2_candidates", [])
@@ -305,10 +303,9 @@ class TestHelpers:
     @pytest.mark.jax
     def test_iter_active_force_constants_covers_bonds_and_angles(self) -> None:
         """The walker yields one entry per active bond_k + angle_k + ub_k."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
         items = _iter_active_force_constants(case.problem.layout, case.problem.active_space)
         types_found = [kind.value for _idx, kind in items]
         assert types_found.count("bond_k") >= 1
@@ -318,10 +315,9 @@ class TestHelpers:
     @pytest.mark.jax
     def test_identify_candidates_threshold_inclusive(self) -> None:
         """With threshold above all FC magnitudes, every active FC is a candidate."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
         problem = case.problem
         all_fcs = _iter_active_force_constants(problem.layout, problem.active_space)
         candidates = _identify_method_e2_candidates(
@@ -336,10 +332,9 @@ class TestHelpers:
     @pytest.mark.jax
     def test_identify_candidates_threshold_zero(self) -> None:
         """With threshold=0 and allow_negative=True, no candidates emerge."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
         problem = case.problem
         candidates = _identify_method_e2_candidates(
             problem.layout,

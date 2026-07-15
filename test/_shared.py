@@ -178,20 +178,17 @@ def make_ethane() -> Molecule:
 # ---------------------------------------------------------------------------
 
 
-def engine_functional_form(engine: object) -> FunctionalForm:
-    """Pick the :class:`~q2mm.models.forcefield.FunctionalForm` *engine* actually supports.
+def backend_functional_form(backend: object) -> FunctionalForm:
+    """Pick the :class:`~q2mm.models.forcefield.FunctionalForm` *backend* actually supports.
 
     Several benchmark/optimizer tests parametrize the exact same helper
-    function or fixture across multiple engine types (OpenMM/Tinker are
+    function or fixture across multiple backend types (OpenMM/Tinker are
     MM3-only-or-MM3-capable; JAX/JAX-MD are harmonic-only-or-harmonic-
-    preferred), so a single call site cannot hardcode one form for every
-    engine it might receive. Prefers harmonic when an engine supports
-    both (JAX historically defaulted to it before ``functional_form``
-    became required everywhere).
+    preferred).  Prefers harmonic when a backend supports both.
     """
     from q2mm.models.forcefield import FunctionalForm
 
-    supported = engine.supported_functional_forms()  # type: ignore[attr-defined]
+    supported = backend.info.functional_forms  # type: ignore[attr-defined]
     if "harmonic" in supported:
         return FunctionalForm.HARMONIC
     if "mm3" in supported:
@@ -199,4 +196,4 @@ def engine_functional_form(engine: object) -> FunctionalForm:
     for name in sorted(supported):
         if hasattr(FunctionalForm, name.upper()):
             return getattr(FunctionalForm, name.upper())  # type: ignore[no-any-return]
-    raise RuntimeError(f"Engine {engine!r} reports no mappable functional forms: {supported!r}")
+    raise RuntimeError(f"Backend {backend!r} reports no mappable functional forms: {supported!r}")

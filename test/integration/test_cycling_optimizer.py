@@ -4,6 +4,12 @@ Requires OpenMM.
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    FrequencyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import numpy as np
 import pytest
@@ -13,7 +19,7 @@ pytestmark = pytest.mark.openmm
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
@@ -53,12 +59,12 @@ def _h2_ff(k: float = 359.7, r0: float = 0.74) -> ForceField:
 
 def _build_objective(
     ff: ForceField,
-    engine: OpenMMEngine,
+    backend: OpenMMBackend,
     molecules: list,
     reference: ObservationSet,
 ) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
     layout = ParameterLayout.from_force_field(ff)
-    objective = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    objective = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     space = ActiveParameterSpace.all_active(layout, ff)
     return objective, layout, space
 
@@ -69,16 +75,21 @@ def _make_water_objective(
 ) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
     """Build an objective that fits guess_ff toward true_ff using energy + frequencies."""
     mol = make_water()
-    engine = OpenMMEngine()
-    target_energy = engine.energy(mol, true_ff)
-    target_freqs = engine.frequencies(mol, true_ff)
+    backend = load_backend("openmm")
+    target_energy = prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+    target_freqs = [
+        float(_f)
+        for _f in prepare_case(backend, mol, true_ff)
+        .frequencies(FrequencyRequest(parameters=param_vector(true_ff)))
+        .frequencies
+    ]
 
     ref = ObservationSet()
     ref = ref.with_energy(target_energy, weight=1.0)
     for i in range(len(target_freqs)):
         ref = ref.with_frequency(target_freqs[i], data_idx=i, weight=0.001)
 
-    return _build_objective(guess_ff, engine, [mol], ref)
+    return _build_objective(guess_ff, backend, [mol], ref)
 
 
 # ---- SubspaceObjective ----
@@ -89,14 +100,16 @@ class TestSubspaceObjective:
         """When all indices are active, SubspaceObjective == ObjectiveFunction."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.78)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         full_vec = layout.vector(guess_ff)
 
         sub_obj = SubspaceObjective(obj, [0, 1], full_vec)
@@ -106,14 +119,16 @@ class TestSubspaceObjective:
         """Optimising one param while holding the other fixed."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         full_vec = layout.vector(guess_ff)
 
         sub_obj = SubspaceObjective(obj, [0], full_vec)
@@ -125,14 +140,16 @@ class TestSubspaceObjective:
         """residuals() returns array of correct length."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         full_vec = layout.vector(guess_ff)
         sub_obj = SubspaceObjective(obj, [0], full_vec)
 
@@ -144,10 +161,10 @@ class TestSubspaceObjective:
         """Bounds are correctly subset."""
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         mol = make_diatomic(0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
         ref = ref.with_energy(0.0)
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
 
         full_vec = layout.vector(guess_ff)
         sub_obj = SubspaceObjective(obj, [1], full_vec)
@@ -158,10 +175,10 @@ class TestSubspaceObjective:
     def test_empty_indices_raises(self) -> None:
         guess_ff = _h2_ff()
         mol = make_diatomic(0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
         ref = ref.with_energy(0.0)
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
 
         with pytest.raises(ValueError, match="empty"):
             SubspaceObjective(obj, [], layout.vector(guess_ff))
@@ -175,14 +192,16 @@ class TestSensitivity:
         """Sensitivity analysis returns valid ranking."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         sens = compute_sensitivity(obj, metric="simp_var")
 
         assert len(sens.d1) == 2
@@ -195,14 +214,16 @@ class TestSensitivity:
         """abs_d1 metric ranks by largest normalised |d1/step| descending."""
         mol = make_diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         sens = compute_sensitivity(obj, metric="abs_d1")
 
         step_sizes = layout.steps
@@ -213,14 +234,16 @@ class TestSensitivity:
         """A parameter at its optimal value should have near-zero d1."""
         mol = make_diatomic(0.74)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=359.7, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, _space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, _space = _build_objective(guess_ff, backend, [mol], ref)
         sens = compute_sensitivity(obj)
 
         assert np.all(np.abs(sens.d1) < 0.01)
@@ -228,10 +251,10 @@ class TestSensitivity:
     def test_invalid_metric_raises(self) -> None:
         mol = make_diatomic(0.74)
         ff = _h2_ff()
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
         ref = ref.with_energy(0.0)
-        obj, _layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, _layout, _space = _build_objective(ff, backend, [mol], ref)
 
         with pytest.raises(ValueError, match="Unknown metric"):
             compute_sensitivity(obj, metric="bad")
@@ -300,11 +323,14 @@ class TestConvergence:
         true_ff = _h2_ff(k=359.7, r0=0.74)
         guess_ff = _h2_ff(k=359.7, r0=0.74)
         mol = make_diatomic(0.80)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0)
+        ref = ref.with_energy(
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+        )
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
         loop = OptimizationLoop(
             obj,
             space,
@@ -348,11 +374,14 @@ class TestConvergence:
         true_ff = _h2_ff(k=359.7, r0=0.74)
         guess_ff = _h2_ff(k=503.6, r0=0.78)
         mol = make_diatomic(0.80)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0)
+        ref = ref.with_energy(
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+        )
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
         loop = OptimizationLoop(
             obj,
             space,

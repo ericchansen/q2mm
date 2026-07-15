@@ -1,16 +1,22 @@
-"""OpenMM-engine-specific tests.
+"""OpenMM-backend-specific tests.
 
 Contract tests (energy, hessian, frequencies, minimize, gradients) are
-in test_engine_contract.py and run for every registered engine.  This
+in test_engine_contract.py and run for every registered backend.  This
 file covers only behaviour unique to the OpenMM backend:
 
 * MM3 formula known-value checks (cubic bond, sextic angle, buffered 14-7 vdW)
-* Context reuse / update_forcefield API
+* Native-state reuse across parameter vectors in a prepared session
 * Cross-backend parity with Tinker
 * Seminario force-constant estimation pipeline
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+    HessianRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import optional_test_backend, param_vector, prepare_case
 
 import importlib.util
 
@@ -24,28 +30,23 @@ pytestmark = [
 
 from test._shared import SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.backends.contracts import EnergyRequest, PreparationRequest
 from q2mm.io.tinker import load_tinker_prm
 from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam, FunctionalForm
 from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.molecule import Molecule
+from q2mm.models.parameters import ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
 
-try:
-    from q2mm.backends.mm.tinker import TinkerEngine
-
-    _tinker_engine = TinkerEngine()
-    HAS_TINKER = _tinker_engine.is_available()
-    TINKER_PARAMS = _tinker_engine._params_file
-except (ImportError, FileNotFoundError):
-    HAS_TINKER = False
-    TINKER_PARAMS = None
+_tinker_backend = optional_test_backend("tinker")
+HAS_TINKER = _tinker_backend is not None
+TINKER_PARAMS = getattr(_tinker_backend, "_params_file", None)
 
 
-class TestOpenMMEngine:
+class TestOpenMMBackend:
     def setup_method(self) -> None:
-        self.engine = OpenMMEngine()
+        self.backend = load_backend("openmm")
 
     @staticmethod
     def _load_sn2_ts_molecule() -> Molecule:
@@ -67,7 +68,9 @@ class TestOpenMMEngine:
 
         delta = 0.84 - 0.74
         expected_kcal = 71.9 * delta**2 * (1.0 - 2.55 * delta + (7.0 / 12.0) * 2.55**2 * delta**2)
-        assert self.engine.energy(molecule, forcefield) == pytest.approx(expected_kcal)
+        assert prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        ).energy == pytest.approx(expected_kcal)
 
     def test_mm3_angle_energy_matches_reference_formula(self) -> None:
         molecule = make_water(angle_deg=120.0)
@@ -84,7 +87,9 @@ class TestOpenMMEngine:
             * delta_rad**2
             * (1.0 - 0.014 * delta_deg + 5.6e-5 * delta_deg**2 - 7.0e-7 * delta_deg**3 + 9.0e-10 * delta_deg**4)
         )
-        assert self.engine.energy(molecule, forcefield) == pytest.approx(expected_kcal)
+        assert prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        ).energy == pytest.approx(expected_kcal)
 
     def test_mm3_vdw_energy_matches_reference_formula(self) -> None:
         molecule = make_noble_gas_pair(distance=3.5)
@@ -92,35 +97,42 @@ class TestOpenMMEngine:
 
         rv = 2.4
         expected = 0.02 * (-2.25 * (rv / 3.5) ** 6 + 184000.0 * np.exp(-12.0 * 3.5 / rv))
-        assert self.engine.energy(molecule, forcefield) == pytest.approx(expected)
+        assert prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        ).energy == pytest.approx(expected)
 
-    def test_update_forcefield_reuses_context(self) -> None:
+    def test_prepared_session_reuses_native_state(self) -> None:
         molecule = make_diatomic(distance=1.00)
         initial_ff = ForceField(
             bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
         )
-        handle = self.engine.create_context(molecule, initial_ff)
-        initial_energy = self.engine.energy(handle)
+        # A single prepared session reuses native state across parameter vectors.
+        prepared = self.backend.prepare(PreparationRequest(case_id="0", molecule=molecule, force_field=initial_ff))
+        layout = ParameterLayout.from_force_field(initial_ff)
+        initial_energy = prepared.energy(EnergyRequest(parameters=layout.vector(initial_ff))).energy
 
         updated_ff = ForceField(
             bonds=[BondParam(("H", "H"), equilibrium=1.00, force_constant=71.9)], functional_form=FunctionalForm.MM3
         )
-        self.engine.update_forcefield(handle, updated_ff)
-        assert self.engine.energy(handle) < initial_energy
+        updated_energy = prepared.energy(EnergyRequest(parameters=layout.vector(updated_ff))).energy
+        assert updated_energy < initial_energy
 
-    def test_update_forcefield_reuses_context_for_vdw(self) -> None:
+    def test_prepared_session_reuses_native_state_for_vdw(self) -> None:
         molecule = make_noble_gas_pair(distance=3.0)
         initial_ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.01)], functional_form=FunctionalForm.MM3)
-        handle = self.engine.create_context(molecule, initial_ff)
-        initial_energy = self.engine.energy(handle)
+        prepared = self.backend.prepare(PreparationRequest(case_id="0", molecule=molecule, force_field=initial_ff))
+        layout = ParameterLayout.from_force_field(initial_ff)
+        initial_energy = prepared.energy(EnergyRequest(parameters=layout.vector(initial_ff))).energy
 
         updated_ff = ForceField(vdws=[VdwParam("He", radius=1.6, epsilon=0.02)], functional_form=FunctionalForm.MM3)
-        self.engine.update_forcefield(handle, updated_ff)
-        assert self.engine.energy(handle) != pytest.approx(initial_energy)
+        updated_energy = prepared.energy(EnergyRequest(parameters=layout.vector(updated_ff))).energy
+        assert updated_energy != pytest.approx(initial_energy)
 
     @pytest.mark.skipif(not HAS_TINKER or not TINKER_PARAMS, reason="Tinker not installed")
+    @pytest.mark.cross_backend
+    @pytest.mark.tinker
     def test_openmm_matches_tinker_for_mm3_bond_energy(self) -> None:
-        tinker = TinkerEngine()
+        assert _tinker_backend is not None
         forcefield = load_tinker_prm(TINKER_PARAMS)
         molecule = Molecule(
             symbols=["C", "H"],
@@ -129,13 +141,20 @@ class TestOpenMMEngine:
             name="CH-bond",
             bond_tolerance=1.5,
         )
-        assert self.engine.energy(molecule, forcefield) == pytest.approx(
-            tinker.energy(molecule, forcefield), abs=1.0e-3
+        assert prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        ).energy == pytest.approx(
+            prepare_case(_tinker_backend, molecule, forcefield)
+            .energy(EnergyRequest(parameters=param_vector(forcefield)))
+            .energy,
+            abs=1.0e-3,
         )
 
     @pytest.mark.skipif(not HAS_TINKER or not TINKER_PARAMS, reason="Tinker not installed")
+    @pytest.mark.cross_backend
+    @pytest.mark.tinker
     def test_openmm_matches_tinker_for_mm3_vdw_energy(self) -> None:
-        tinker = TinkerEngine()
+        assert _tinker_backend is not None
         forcefield = load_tinker_prm(TINKER_PARAMS)
         molecule = Molecule(
             symbols=["F", "F"],
@@ -144,16 +163,29 @@ class TestOpenMMEngine:
             name="F2-nonbonded",
             bond_tolerance=0.5,
         )
-        assert self.engine.energy(molecule, forcefield) == pytest.approx(
-            tinker.energy(molecule, forcefield), abs=1.0e-3
+        assert prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        ).energy == pytest.approx(
+            prepare_case(_tinker_backend, molecule, forcefield)
+            .energy(EnergyRequest(parameters=param_vector(forcefield)))
+            .energy,
+            abs=1.0e-3,
         )
 
     def test_sn2_seminario_pipeline_energy_is_finite(self) -> None:
         molecule = self._load_sn2_ts_molecule()
         forcefield = qfuerza_fresh(molecule, functional_form=FunctionalForm.MM3)
 
-        energy = self.engine.energy(molecule, forcefield)
-        hessian = self.engine.hessian(molecule, forcefield)
+        energy = (
+            prepare_case(self.backend, molecule, forcefield)
+            .energy(EnergyRequest(parameters=param_vector(forcefield)))
+            .energy
+        )
+        hessian = (
+            prepare_case(self.backend, molecule, forcefield)
+            .hessian(HessianRequest(parameters=param_vector(forcefield)))
+            .hessian
+        )
 
         assert np.isfinite(energy)
         assert hessian.shape == (18, 18)
@@ -163,7 +195,12 @@ class TestOpenMMEngine:
         molecule = self._load_sn2_ts_molecule()
         forcefield = qfuerza_fresh(molecule, functional_form=FunctionalForm.MM3)
 
-        frequencies = self.engine.frequencies(molecule, forcefield)
+        frequencies = [
+            float(_f)
+            for _f in prepare_case(self.backend, molecule, forcefield)
+            .frequencies(FrequencyRequest(parameters=param_vector(forcefield)))
+            .frequencies
+        ]
 
         assert len(frequencies) == 18
         assert all(np.isfinite(freq) for freq in frequencies)

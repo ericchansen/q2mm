@@ -276,7 +276,7 @@ def compute_sensitivity(
     Parameters where no symmetric step is possible (i.e. ``x0`` is at a
     bound) are skipped and assigned ``inf`` simp_var / zero d1.
 
-    When the engine supports :meth:`~MMEngine.batched_energy` and all
+    When the backend declares batched-energy support and all
     references are energy-only, all required ``2K + 1`` evaluations
     (for the ``K`` parameters with nonzero step sizes, ``K ≤ N``) are
     vectorised into a single call where possible (e.g. ``jax.vmap`` on GPU).

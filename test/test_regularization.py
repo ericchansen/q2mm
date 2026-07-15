@@ -1,6 +1,7 @@
 """Tests for L2 regularization in ObjectiveFunction."""
 
 from __future__ import annotations
+from test.backend_fixtures import mock_backend_info
 
 from dataclasses import dataclass
 from unittest.mock import MagicMock
@@ -42,17 +43,17 @@ def _make_objective(
     reference_params: np.ndarray | None = None,
     n_params: int = 3,
 ) -> ObjectiveFunction:
-    """Build a minimal ObjectiveFunction with mock engine and no data."""
+    """Build a minimal ObjectiveFunction with mock backend and no data."""
     ff = MockForceField(tuple(np.ones(n_params, dtype=np.float64).tolist()))
     layout = MockLayout(n_params)
 
-    engine = MagicMock()
-    engine.supports_batched_energy.return_value = False
+    backend = MagicMock()
+    backend.info = mock_backend_info(batched=False)
 
     ref = ObservationSet()
     return ObjectiveFunction(
         ff,
-        engine,
+        backend,
         [],
         ref,
         layout=layout,

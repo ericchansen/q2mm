@@ -1,7 +1,7 @@
 """Workflow-driven benchmark runner shared by ``q2mm.benchmark()`` and ``scripts/benchmark.py``.
 
 This module is the single source of truth for the convergence-style
-benchmark pipeline: load a registered system, build a JAX engine,
+benchmark pipeline: load a registered system, build a JAX backend,
 choose a :class:`~q2mm.workflows.Workflow` (single-stage or Method E2),
 run it with a :class:`~q2mm.optimizers.scipy_opt.ScipyOptimizer`, and
 report the result.
@@ -219,7 +219,7 @@ def per_category_metrics(obj: Any, ff: Any) -> dict[str, dict[str, float]]:
     for every reference value in order.  We bucket by ``ref.kind``, undo the
     weight to recover ``calc``, and compute statistics on the raw values.
     """
-    residuals = obj._compute_residuals(ff)  # noqa: SLF001 — direct API for diagnostics
+    residuals = obj._compute_residuals(obj.layout.vector(ff))  # noqa: SLF001 — direct API for diagnostics
     buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for ref, weighted in zip(obj.reference.values, residuals, strict=True):
         if ref.weight == 0.0:
@@ -296,13 +296,13 @@ def classify_ratio(ratio: float, tol: float | None) -> dict[str, Any]:
 
 def _initial_jaxloss(obj: Any) -> float:
     """Compute the JaxLoss surrogate at the current params, ``inf`` on failure."""
-    from q2mm.backends.mm.jax_engine import JaxEngine
+    from q2mm.backends.mm.jax_engine import JaxBackend
     from q2mm.optimizers.jaxloss import JaxLoss
 
-    if not isinstance(obj.engine, JaxEngine):
+    if not isinstance(obj.backend, JaxBackend):
         return float("inf")
     spec = obj.to_jax_spec()
-    jl = JaxLoss(spec, obj.engine, obj.molecules, obj.forcefield)
+    jl = JaxLoss(spec, obj.backend, obj.molecules, obj.forcefield, sessions=obj.jax_sessions(spec))
     x = obj.layout.vector(obj.forcefield)
     val_jax, _ = jl.value_and_grad_jax(x)
     val = float(val_jax)
@@ -445,7 +445,7 @@ def run_benchmark(
         for the canonical write path).
 
     """
-    from q2mm.backends.mm.jax_engine import JaxEngine
+    from q2mm.backends.mm.jax_engine import JaxBackend
     from q2mm.benchmarks.systems import SYSTEM_KEYS, load_system
     from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
@@ -456,13 +456,13 @@ def run_benchmark(
     workflow_obj = resolve_workflow(workflow)
 
     logger.info("[%s] loading (starting_point=%s)", system_key, starting_point)
-    engine = JaxEngine()
+    backend = JaxBackend()
     # CH3F/CH3F-SN2 support both forms and therefore require an explicit
     # choice. This runner always uses JAX; preserving its former unset-form
     # behavior means selecting harmonic here. Published systems resolve
     # their MM3 form from the source force field.
     load_kwargs: dict[str, Any] = {
-        "engine": engine,
+        "backend": backend,
         "starting_point": starting_point,
         "qfuerza_replace_with": qfuerza_replace_with,
     }
@@ -476,7 +476,7 @@ def run_benchmark(
 
     # ---- Seminario fit quality at the starting FF -----------------------
     obj_initial = ObjectiveFunction(
-        initial_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+        initial_ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
     )
     initial_score = float(obj_initial(layout.vector(initial_ff)))
     seminario_categories = per_category_metrics(obj_initial, initial_ff)
@@ -548,7 +548,7 @@ def run_benchmark(
         eq_fraction=eq_fraction,
     )
     t0 = time.perf_counter()
-    wf_result = workflow_obj.run(problem, engine, optimizer, n_evals=n_evals)
+    wf_result = workflow_obj.run(problem, backend, optimizer, n_evals=n_evals)
     elapsed = time.perf_counter() - t0
 
     final_ff = wf_result.final_ff
@@ -558,7 +558,7 @@ def run_benchmark(
     # reference), so the improvement number is comparable across
     # workflows and to historical baselines.
     obj_real_at_final = ObjectiveFunction(
-        final_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+        final_ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
     )
     final_obj_score = float(obj_real_at_final(layout.vector(final_ff)))
     optimized_categories = per_category_metrics(obj_real_at_final, final_ff)

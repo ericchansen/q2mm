@@ -1,7 +1,6 @@
 """Tests for q2mm.models (molecule, forcefield, seminario)."""
 
 from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -2045,7 +2044,7 @@ class TestSeminario:
         (now-removed) ``functional_form or FunctionalForm.MM3`` fallback
         then silently reinterpreted as MM3 — two different backends
         disagreeing about the same unset field. There is no
-        scientifically correct default across engines, so the caller
+        scientifically correct default across backends, so the caller
         must always decide.
         """
         with pytest.raises(TypeError, match="functional_form"):
@@ -2248,24 +2247,26 @@ class TestFunctionalFormIsRequired:
             ForceField.create_for_molecule(mol)  # type: ignore[call-arg]
 
     def test_wrong_form_type_rejected_by_engine(self) -> None:
-        """An engine must reject an unsupported functional form rather than silently accept it.
+        """A backend must reject an unsupported functional form at preparation.
 
         Regression guard for the removed ``functional_form or FunctionalForm.MM3``
-        (and similar) None-inference fallbacks: engines must now always
+        (and similar) None-inference fallbacks: backends must now always
         validate the *actual*, always-explicit form against what they support.
         """
-        from q2mm.backends.mm.tinker import TinkerEngine
+        from q2mm.backends.contracts import PreparationError, PreparationRequest
+        from test.backend_fixtures import backend_is_usable, load_test_backend
+
+        if not backend_is_usable("tinker"):
+            pytest.skip("Tinker not installed")
 
         harmonic_ff = ForceField(
             bonds=[BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54)],
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = TinkerEngine()
-        if not engine.is_available():
-            pytest.skip("Tinker not installed")
+        backend = load_test_backend("tinker")
         mol = load_xyz(CH3F_XYZ)
-        with pytest.raises(ValueError, match="does not support functional form"):
-            engine.energy(mol, harmonic_ff)
+        with pytest.raises(PreparationError, match="does not support functional form"):
+            backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=harmonic_ff))
 
 
 class TestFrozenParamInvariant:

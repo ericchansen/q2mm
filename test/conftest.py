@@ -6,7 +6,7 @@ Tests are categorized by purpose and time budget:
 
 - **core** (unmarked): < 1 second. Unit tests, parsers, models. Always run.
 - **integration** (``@pytest.mark.integration``): 1–10 seconds. Backend
-  integration: engine contracts, optimizer convergence, parity checks.
+  integration: backend contracts, optimizer convergence, parity checks.
 - **validation** (``@pytest.mark.validation``): 1–30 seconds. Correctness
   validation with *no* optimizer loops — QFUERZA estimation, published
   FF evaluation, ethane TS.
@@ -123,6 +123,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "integration: backend integration tests (~1-10s each)")
     config.addinivalue_line("markers", "validation: correctness validation, no optimizer loops (~1-30s each)")
     config.addinivalue_line("markers", "nightly: heavy tests with optimizer loops (~1-10min each)")
+    config.addinivalue_line("markers", "cross_backend: parity tests executing two or more backends")
     config.addinivalue_line(
         "markers",
         "benchmark: benchmark timing disabled by default; use --benchmark-enable to collect timing",
@@ -187,14 +188,15 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             if "integration" in item.keywords:
                 item.add_marker(skip_integration)
 
-    # Auto-skip tests that require a missing backend.
+    # Auto-skip tests that require a backend unusable under the test
+    # configuration. The production catalog is intentionally only a cheap
+    # dependency probe; Tinker also needs a parameter file to be testable.
     # Import lazily so that the JAX_PLATFORMS guard above takes effect first.
-    from q2mm.backends.registry import available_engines
+    from test.backend_fixtures import backend_is_usable
 
-    available = set(available_engines())
     for marker_name, registry_key in _MARKER_TO_REGISTRY.items():
-        if registry_key not in available:
-            skip_marker = pytest.mark.skip(reason=f"{registry_key} not available")
+        if not backend_is_usable(registry_key):
+            skip_marker = pytest.mark.skip(reason=f"{registry_key} not usable with the test configuration")
             for item in items:
                 if marker_name in item.keywords:
                     item.add_marker(skip_marker)

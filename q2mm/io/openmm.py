@@ -16,7 +16,54 @@ logger = logging.getLogger(__name__)
 _WILDCARD_TYPES = frozenset({"00"})
 
 if TYPE_CHECKING:
+    from q2mm.backends.mm.openmm import PreparedOpenMM
     from q2mm.models.molecule import Molecule
+
+
+def save_openmm_system_xml(prepared: PreparedOpenMM, path: str | Path) -> Path:
+    """Serialize a prepared OpenMM session's ``System`` to XML.
+
+    This is the I/O boundary for backend-specific OpenMM ``System``
+    serialization; the concrete backend exposes only ``info``/``prepare``.  The
+    produced XML is a topology-specific ``<System>`` document loadable with
+    :func:`load_openmm_system_xml`.
+
+    Args:
+        prepared: A prepared OpenMM session
+            (:class:`~q2mm.backends.mm.openmm.PreparedOpenMM`).
+        path: Output file path.
+
+    Returns:
+        Path: The resolved output path.
+
+    """
+    from openmm import openmm as mm
+
+    system = prepared._openmm_system()
+    xml_string = mm.XmlSerializer.serialize(system)
+    output = Path(path)
+    output.write_text(xml_string, encoding="utf-8")
+    return output
+
+
+def load_openmm_system_xml(path: str | Path) -> object:
+    """Deserialize an OpenMM ``System`` from an XML file.
+
+    Args:
+        path: Path to the ``<System>`` XML file (produced by
+            :func:`save_openmm_system_xml`).
+
+    Returns:
+        object: An ``openmm.System`` object.
+
+    Raises:
+        ImportError: If OpenMM is not installed.
+
+    """
+    from openmm import openmm as mm
+
+    xml_string = Path(path).read_text(encoding="utf-8")
+    return mm.XmlSerializer.deserialize(xml_string)
 
 
 def save_openmm_xml(
@@ -30,7 +77,7 @@ def save_openmm_xml(
     ``openmm.app.ForceField(path)``.  Custom force definitions use MM3
     functional forms (cubic bond stretch, sextic angle bend, buffered
     14-7 vdW) so the resulting system is physically equivalent to what
-    :class:`~q2mm.backends.mm.openmm.OpenMMEngine` builds
+    :class:`~q2mm.backends.mm.openmm.OpenMMBackend` builds
     programmatically.
 
     A *molecule* (or iterable of molecules) can be provided to generate

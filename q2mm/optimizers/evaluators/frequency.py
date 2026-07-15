@@ -7,9 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import (
+    Capability,
+    FrequencyRequest,
+    HessianJacobianRequest,
+    PreparedBackend,
+    UnsupportedCapabilityError,
+)
 from q2mm.models.observations import Observation
 
 
@@ -28,7 +32,7 @@ class FrequencyResult:
 class FrequencyEvaluator:
     """Evaluates MM vibrational frequencies against QM reference frequencies.
 
-    Calls ``engine.frequencies()`` once per molecule and matches by
+    Calls ``prepared.frequencies()`` once per molecule and matches by
     positional mode index (``data_idx``).
     """
 
@@ -36,20 +40,16 @@ class FrequencyEvaluator:
 
     def compute(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         *,
-        structure: Any | None = None,
         on_error: str = "raise",
     ) -> FrequencyResult:
         """Compute MM vibrational frequencies.
 
         Args:
-            engine: The MM backend.
-            mol: The molecule being evaluated.
-            ff: The current force field.
-            structure: Optional pre-built engine context/handle.
+            prepared: The prepared per-case backend session.
+            parameters: Full parameter vector.
             on_error: Error handling for eigendecomposition failures.
                 ``"raise"`` (default) propagates exceptions.
                 ``"penalty"`` returns large penalty frequencies so the
@@ -59,9 +59,8 @@ class FrequencyEvaluator:
             FrequencyResult with computed frequencies.
 
         """
-        target = structure if structure is not None else mol
-        freqs = engine.frequencies(target, ff, on_error=on_error)
-        return FrequencyResult(frequencies=list(freqs))
+        result = prepared.frequencies(FrequencyRequest(parameters=parameters, on_error=on_error))
+        return FrequencyResult(frequencies=[float(f) for f in result.frequencies])
 
     def residuals(
         self,
@@ -94,27 +93,25 @@ class FrequencyEvaluator:
             result.append(ref.weight * diff)
         return result
 
-    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Check if the engine supports Hessian parameter Jacobians.
+    def supports_analytical_gradient(self, prepared: PreparedBackend) -> bool:
+        """Check if the backend declares Hessian parameter Jacobians.
 
         Args:
-            engine: The MM backend to check.
+            prepared: The prepared backend session to check.
 
         Returns:
-            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
+            ``True`` if the backend declares ``HESSIAN_PARAMETER_JACOBIAN``.
 
         """
-        return engine.supports_analytical_hessian_gradients()
+        return prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN)
 
     def gradient(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         references: list[Observation],
         n_params: int,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> np.ndarray:
         """Compute analytical gradient of the frequency score contribution.
@@ -124,12 +121,11 @@ class FrequencyEvaluator:
         the eigendecomposition backward pass.
 
         Args:
-            engine: The MM backend (must support Hessian parameter Jacobians).
-            mol: The molecule being evaluated.
-            ff: The current force field.
+            prepared: The prepared backend session (must support Hessian
+                parameter Jacobians).
+            parameters: Full parameter vector.
             references: Reference frequency values for this molecule.
             n_params: Length of the gradient vector.
-            structure: Optional pre-built engine context/handle.
             mol_idx: Molecule index (unused).
 
         Returns:
@@ -138,15 +134,14 @@ class FrequencyEvaluator:
         """
         from q2mm.models.hessian import frequency_param_jacobian
 
-        if not engine.supports_analytical_hessian_gradients():
-            raise TypeError(
-                f"{engine.name} does not support hessian_and_param_jacobian(). "
-                "Cannot compute analytical frequency gradient."
-            )
+        if not prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN):
+            raise UnsupportedCapabilityError(prepared.info.name, Capability.HESSIAN_PARAMETER_JACOBIAN)
 
-        target = structure if structure is not None else mol
-        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
-        freqs, d_freq_dp = frequency_param_jacobian(hess, dH_dp, mol.symbols)
+        result = prepared.hessian_parameter_jacobian(HessianJacobianRequest(parameters=parameters))
+        hess = np.asarray(result.hessian)
+        dH_dp = np.asarray(result.jacobian)
+        symbols = prepared.molecule.symbols
+        freqs, d_freq_dp = frequency_param_jacobian(hess, dH_dp, symbols)
 
         grad = np.zeros(n_params)
         for ref in references:

@@ -210,16 +210,16 @@ q2mm/
 │   ├── units.py          # Conversion constants and helpers
 │   └── identifiers.py    # Atom type matching utilities
 │
-├── backends/             # MM and QM engine integrations
-│   ├── base.py           # MMEngine and QMEngine ABCs
-│   ├── registry.py       # Decorator + lazy-discovery backend registry
+├── backends/             # MM and QM backend integrations
+│   ├── contracts.py      # Capability contracts, prepared-session protocols, typed requests/results, descriptors
+│   ├── registry.py       # Descriptor-based backend registry (cheap dependency probes)
 │   ├── mm/
-│   │   ├── openmm.py        # OpenMM engine (harmonic + MM3 dual-mode)
+│   │   ├── openmm.py        # OpenMM backend (harmonic + MM3 dual-mode)
 │   │   ├── _openmm_terms.py # OpenMM internal term records
 │   │   ├── _openmm_units.py # OpenMM scalar unit converters
-│   │   ├── tinker.py        # Tinker engine (subprocess-based)
-│   │   ├── jax_engine.py    # JAX engine (differentiable, analytical gradients)
-│   │   ├── jax_md_engine.py # JAX-MD engine (periodic, neighbor lists)
+│   │   ├── tinker.py        # Tinker backend (subprocess-based)
+│   │   ├── jax_engine.py    # JAX backend (differentiable, analytical gradients)
+│   │   ├── jax_md_engine.py # JAX-MD backend (periodic, neighbor lists)
 │   │   ├── batched.py       # Batched multi-molecule energy helpers
 │   │   └── _jax_common.py   # Backend jax/jnp/jaxopt globals + ForceField match/offset helpers (JAX import guard itself lives in q2mm/_jax_support.py)
 │   └── qm/

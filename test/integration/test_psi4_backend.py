@@ -1,10 +1,15 @@
-"""Integration tests for Psi4Engine.
+"""Integration tests for Psi4Backend.
 
 These tests require Psi4 to be installed (conda install psi4 -c conda-forge).
 Tests that only validate saved fixtures (TestPsi4HessianFixture) run without Psi4.
 Tests that call Psi4 directly are marked with ``@pytest.mark.psi4``.
 """
 
+from q2mm.backends.contracts import (
+    QMEnergyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import qm_prepare_case
 from pathlib import Path
 
 import numpy as np
@@ -17,22 +22,29 @@ FIXTURE_DIR = REPO_ROOT / "examples" / "sn2-test"
 QM_REF = sn2_reference_dir()
 
 try:
-    from q2mm.backends.qm.psi4 import Psi4Engine
+    from q2mm.backends.qm.psi4 import Psi4Backend  # noqa: F401
 
     HAS_PSI4 = True
 except ImportError:
     HAS_PSI4 = False
 
 
+def _load(xyz: str, charge: int = 0) -> object:
+    from q2mm.io.xyz import load_xyz
+
+    return load_xyz(xyz, charge=charge, bond_tolerance=1.5)
+
+
 @pytest.mark.psi4
-class TestPsi4EngineAvailability:
+class TestPsi4BackendAvailability:
     def test_name(self) -> None:
-        engine = Psi4Engine()
-        assert "Psi4" in engine.name
+        backend = load_backend("psi4")
+        assert "Psi4" in backend.info.name
 
     def test_is_available(self) -> None:
-        engine = Psi4Engine()
-        assert engine.is_available()
+        from q2mm.backends.registry import available_backends
+
+        assert "psi4" in available_backends()
 
 
 @pytest.mark.psi4
@@ -44,37 +56,42 @@ class TestPsi4EnergyCH3F:
 
     @pytest.fixture(autouse=True)
     def setup(self) -> None:
-        self.engine = Psi4Engine(charge=0, multiplicity=1)
-        self.xyz = str(QM_REF / "ch3f-optimized.xyz")
+        self.backend = load_backend("psi4", charge=0, multiplicity=1)
+        self.mol = _load(str(QM_REF / "ch3f-optimized.xyz"))
 
     def test_energy_returns_float(self) -> None:
-        energy = self.engine.energy(self.xyz)
+        energy = qm_prepare_case(self.backend, self.mol).energy(QMEnergyRequest()).energy
         assert isinstance(energy, float)
 
     def test_energy_matches_reference(self) -> None:
         """Energy should match the saved reference within 1e-5 Ha."""
-        energy = self.engine.energy(self.xyz)
+        energy = qm_prepare_case(self.backend, self.mol).energy(QMEnergyRequest()).energy
         ref_energy = -139.751112913417
         assert energy == pytest.approx(ref_energy, abs=1e-5), f"Energy {energy} differs from reference {ref_energy}"
 
 
 @pytest.mark.psi4
-class TestPsi4EngineLoadMolecule:
-    """Test that Psi4Engine can load molecules from different sources."""
+class TestPsi4BackendLoadMolecule:
+    """Test that Psi4Backend can evaluate energies for molecules."""
 
-    def test_load_from_xyz_file(self) -> None:
-        engine = Psi4Engine(charge=0)
+    def test_energy_from_molecule(self) -> None:
+        backend = load_backend("psi4", charge=0)
         xyz = str(QM_REF / "ch3f-optimized.xyz")
         if not Path(xyz).exists():
             pytest.skip("CH3F fixture not found")
-        energy = engine.energy(xyz)
+        energy = qm_prepare_case(backend, _load(xyz)).energy(QMEnergyRequest()).energy
         assert np.isfinite(energy)
 
-    def test_load_from_atoms_coords(self) -> None:
-        engine = Psi4Engine(charge=0)
-        atoms = ["H", "H"]
-        coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]])
-        energy = engine.energy((atoms, coords))
+    def test_energy_h2(self) -> None:
+        from q2mm.models.molecule import Molecule
+
+        backend = load_backend("psi4", charge=0)
+        mol = Molecule(
+            symbols=["H", "H"],
+            geometry=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]]),
+            atom_types=["H", "H"],
+        )
+        energy = qm_prepare_case(backend, mol).energy(QMEnergyRequest()).energy
         assert np.isfinite(energy)
         # H2 energy should be around -1.17 Ha at B3LYP/6-31+G(d)
         assert energy == pytest.approx(-1.17, abs=0.05)

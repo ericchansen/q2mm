@@ -23,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from q2mm.backends.mm import OpenMMEngine
+from q2mm.backends.registry import load_backend
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
@@ -56,6 +56,15 @@ def qm_frequencies_from_hessian(hessian_au: np.ndarray, symbols: list[str]) -> n
     return freqs
 
 
+def _mm_frequencies(backend: object, mol: object, ff: object) -> list[float]:
+    """MM vibrational frequencies via a prepared session."""
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+
+    prepared = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+    params = ParameterLayout.from_force_field(ff).vector(ff)
+    return [float(f) for f in prepared.frequencies(FrequencyRequest(parameters=params)).frequencies]
+
+
 def main() -> None:
     """Regenerate ethane GS golden fixture for full-loop parity tests."""
     if not GS_FCHK.exists():
@@ -75,8 +84,8 @@ def main() -> None:
     sem_vec = layout.vector(ff)
 
     # MM frequencies + reference
-    engine = OpenMMEngine()
-    mm_all = engine.frequencies(mol, ff)
+    backend = load_backend("openmm")
+    mm_all = _mm_frequencies(backend, mol, ff)
     mm_real_idx = sorted(i for i, f in enumerate(mm_all) if f > 50.0)
     n = min(len(qm_real), len(mm_real_idx))
 
@@ -85,7 +94,7 @@ def main() -> None:
         freq_ref = freq_ref.with_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=0.001, case_id="0")
 
     # Score + optimize
-    obj = ObjectiveFunction(ff, engine, [mol], freq_ref, layout=layout)
+    obj = ObjectiveFunction(ff, backend, [mol], freq_ref, layout=layout)
     sem_score = obj(sem_vec)
 
     t0 = time.perf_counter()
@@ -97,7 +106,7 @@ def main() -> None:
     final_ff = layout.replace(ff, final_vec)
 
     # Frequency MAE
-    mm_opt = engine.frequencies(mol, final_ff)
+    mm_opt = _mm_frequencies(backend, mol, final_ff)
     mm_opt_real = sorted(f for f in mm_opt if f > 50.0)
     mae_sem = np.mean(np.abs(np.array(sorted([mm_all[i] for i in mm_real_idx])[:n]) - np.array(qm_real[:n])))
     mae_opt = np.mean(np.abs(np.array(sorted(mm_opt_real)[:n]) - np.array(qm_real[:n])))

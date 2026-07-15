@@ -1,6 +1,12 @@
 """Tests for q2mm.optimizers (objective, scipy_opt)."""
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    FrequencyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import pytest
 
@@ -9,7 +15,7 @@ pytestmark = pytest.mark.openmm
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
@@ -53,12 +59,12 @@ def _water_ff(
 
 def _build_objective(
     ff: ForceField,
-    engine: OpenMMEngine,
+    backend: OpenMMBackend,
     molecules: list,
     reference: ObservationSet,
 ) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
     layout = ParameterLayout.from_force_field(ff)
-    objective = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    objective = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     space = ActiveParameterSpace.all_active(layout, ff)
     return objective, layout, space
 
@@ -100,13 +106,13 @@ class TestObjectiveFunction:
         """Objective is callable and returns a float."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        target_energy = engine.energy(mol, ff)
+        target_energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         score = obj(layout.vector(ff))
         assert isinstance(score, float)
         assert score == pytest.approx(0.0, abs=1e-10)
@@ -115,12 +121,14 @@ class TestObjectiveFunction:
         """Perturbing parameters away from reference should increase score."""
         mol = _diatomic(0.80)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, ff), weight=1.0)
+        ref = ref.with_energy(
+            prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy, weight=1.0
+        )
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         base_score = obj(layout.vector(ff))
 
         perturbed = layout.vector(ff).copy()
@@ -132,12 +140,14 @@ class TestObjectiveFunction:
         """residuals() returns a weighted residual vector."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, ff) + 1.0, weight=2.0)
+        ref = ref.with_energy(
+            prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy + 1.0, weight=2.0
+        )
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         r = obj.residuals(layout.vector(ff))
         assert r.shape == (1,)
         assert r[0] == pytest.approx(2.0, abs=0.1)
@@ -146,12 +156,12 @@ class TestObjectiveFunction:
         """Objective tracks evaluation count and score history."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, ff))
+        ref = ref.with_energy(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy)
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         params = layout.vector(ff)
         obj(params)
         obj(params)
@@ -163,11 +173,11 @@ class TestObjectiveFunction:
         """reset() clears history."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
         ref = ref.with_energy(0.0)
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         obj(layout.vector(ff))
         obj.reset()
         assert obj.n_eval == 0
@@ -177,13 +187,18 @@ class TestObjectiveFunction:
         """Objective works with frequency reference data."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
-        freqs = engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         ref = ObservationSet()
         ref = ref.with_frequency(freqs[-1], data_idx=len(freqs) - 1, weight=0.01)
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         score = obj(layout.vector(ff))
         assert score == pytest.approx(0.0, abs=1e-6)
 
@@ -191,12 +206,12 @@ class TestObjectiveFunction:
         """Out-of-range data_idx raises IndexError, not silent zero."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
         ref = ref.with_frequency(1000.0, data_idx=999)
 
-        obj, layout, _space = _build_objective(ff, engine, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         with pytest.raises(IndexError, match="data_idx=999 out of range"):
             obj(layout.vector(ff))
 
@@ -239,15 +254,23 @@ class TestScipyOptimizer:
         mol_short = _diatomic(0.70)
         mol_long = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol_short, true_ff), weight=1.0, case_id="0")
-        ref = ref.with_energy(engine.energy(mol_long, true_ff), weight=1.0, case_id="1")
+        ref = ref.with_energy(
+            prepare_case(backend, mol_short, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+            case_id="0",
+        )
+        ref = ref.with_energy(
+            prepare_case(backend, mol_long, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+            case_id="1",
+        )
 
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol_short, mol_long], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol_short, mol_long], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         result = opt.optimize(obj, space)
 
@@ -258,14 +281,16 @@ class TestScipyOptimizer:
         """Nelder-Mead can optimize without bounds."""
         mol = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=503.6, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
         opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
         result = opt.optimize(obj, space)
 
@@ -275,14 +300,16 @@ class TestScipyOptimizer:
         """least_squares method uses residual vector."""
         mol = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
 
         guess_ff = _h2_ff(k=575.5, r0=0.74)
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
         opt = ScipyOptimizer(method="least_squares", maxiter=200, verbose=False)
         result = opt.optimize(obj, space)
 
@@ -293,11 +320,11 @@ class TestScipyOptimizer:
         """OptimizationResult.summary() returns readable string."""
         mol = _diatomic(0.74)
         ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol, ff))
+        ref = ref.with_energy(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy)
 
-        obj, _layout, space = _build_objective(ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(ff, backend, [mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=10, verbose=False)
         result = opt.optimize(obj, space)
 
@@ -310,9 +337,16 @@ class TestScipyOptimizer:
         """Optimizer can recover both bond and angle parameters."""
         mol = _water()
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
-        engine = OpenMMEngine()
-        target_energy = engine.energy(mol, true_ff)
-        target_freqs = engine.frequencies(mol, true_ff)
+        backend = load_backend("openmm")
+        target_energy = (
+            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
+        )
+        target_freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, true_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(true_ff)))
+            .frequencies
+        ]
 
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         ref = ObservationSet()
@@ -320,7 +354,7 @@ class TestScipyOptimizer:
         for i in range(len(target_freqs)):
             ref = ref.with_frequency(target_freqs[i], data_idx=i, weight=0.001)
 
-        obj, _layout, space = _build_objective(guess_ff, engine, [mol], ref)
+        obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
         result = opt.optimize(obj, space)
 
@@ -332,15 +366,23 @@ class TestScipyOptimizer:
         mol_short = _diatomic(0.70)
         mol_long = _diatomic(0.80)
         true_ff = _h2_ff(k=359.7, r0=0.74)
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
 
         ref = ObservationSet()
-        ref = ref.with_energy(engine.energy(mol_short, true_ff), weight=1.0, case_id="0")
-        ref = ref.with_energy(engine.energy(mol_long, true_ff), weight=1.0, case_id="1")
+        ref = ref.with_energy(
+            prepare_case(backend, mol_short, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+            case_id="0",
+        )
+        ref = ref.with_energy(
+            prepare_case(backend, mol_long, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy,
+            weight=1.0,
+            case_id="1",
+        )
 
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
-        obj, layout, space = _build_objective(guess_ff, engine, [mol_short, mol_long], ref)
+        obj, layout, space = _build_objective(guess_ff, backend, [mol_short, mol_long], ref)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         result = opt.optimize(obj, space)
 

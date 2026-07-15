@@ -6,6 +6,7 @@ multi-start baseline on a simple system.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 
@@ -27,7 +28,7 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
 
-JaxEngine = None
+JaxBackend = None
 
 
 def _layout(forcefield: ForceField) -> ParameterLayout:
@@ -39,11 +40,11 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: object, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -82,10 +83,10 @@ def _init_jax() -> None:
 
     ensure_jax()
     ensure_jaxopt()
-    global JaxEngine  # noqa: PLW0603
-    from q2mm.backends.mm.jax_engine import JaxEngine as _JE
+    global JaxBackend  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxBackend as _JE
 
-    JaxEngine = _JE
+    JaxBackend = _JE
 
 
 class TestJaxMultiStartValidation:
@@ -116,7 +117,7 @@ class TestJaxMultiStartValidation:
             opt = JaxMultiStartOptimizer(method=method)
             assert opt.method == method
 
-    def test_engine_type_check(self) -> None:
+    def test_backend_type_check(self) -> None:
         from unittest.mock import MagicMock
 
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
@@ -127,12 +128,12 @@ class TestJaxMultiStartValidation:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        fake_engine = MagicMock()
-        fake_engine.__class__.__name__ = "FakeEngine"
-        obj = _make_objective(forcefield=ff, engine=fake_engine, molecules=[mol], reference=ref)
+        fake_backend = MagicMock()
+        fake_backend.__class__.__name__ = "FakeBackend"
+        obj = _make_objective(forcefield=ff, backend=fake_backend, molecules=[mol], reference=ref)
 
         optimizer = JaxMultiStartOptimizer(method="lbfgs", n_starts=3, maxiter=10, verbose=False)
-        with pytest.raises(TypeError, match="JaxMultiStartOptimizer requires a JaxEngine"):
+        with pytest.raises(TypeError, match="JaxMultiStartOptimizer requires a JaxBackend"):
             optimizer.optimize(obj, _all_active_space(obj))
 
 
@@ -144,12 +145,12 @@ class TestJaxMultiStartConvergence:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff()
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        return _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        return _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
     def test_lbfgs_converges(self) -> None:
         """3-start L-BFGS reduces H2 energy loss."""
@@ -240,7 +241,7 @@ class TestJaxMultiStartConvergence:
         result = opt.optimize(obj, _all_active_space(obj))
 
         spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, obj.engine, obj.molecules, obj.forcefield)
+        jax_loss = JaxLoss(spec, obj.backend, obj.molecules, obj.forcefield, sessions=obj.jax_sessions(spec))
         score_at_returned = float(jax_loss(result.final_params))
 
         assert abs(score_at_returned - result.final_score) < 1e-6
@@ -271,10 +272,10 @@ class TestJaxMultiStartConvergence:
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff()
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         opt = JaxMultiStartOptimizer(
             method="lbfgs",
@@ -301,10 +302,10 @@ class TestJaxMultiStartBackendGuard:
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff()
-        engine = JaxEngine()
+        backend = load_backend("jax")
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxMultiStartOptimizer(method="lbfgsb", n_starts=2, maxiter=10, verbose=False)
 

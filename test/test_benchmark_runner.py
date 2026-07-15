@@ -112,7 +112,7 @@ class TestClassifyRatio:
 
 
 class TestRunBenchmarkInputValidation:
-    """Argument validation paths that don't require an engine."""
+    """Argument validation paths that don't require an backend."""
 
     def test_unknown_system_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown system"):
@@ -121,7 +121,7 @@ class TestRunBenchmarkInputValidation:
 
 @pytest.mark.jax
 class TestRunBenchmarkEndToEnd:
-    """Single-system end-to-end with JAX engine."""
+    """Single-system end-to-end with JAX backend."""
 
     def test_run_benchmark_ch3f_skip_optimization(self) -> None:
         """Skip-only path: Seminario metrics, no workflow execution."""

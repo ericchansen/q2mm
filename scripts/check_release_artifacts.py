@@ -307,15 +307,55 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
     )
     smoke_code = """
 import numpy as np
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    Capability,
+    FrequencyResult,
+    FrequencyUnit,
+)
+from q2mm.models.parameters import ParameterLayout
 from q2mm.resources import validate_sn2_resources
 from q2mm.benchmarks.systems import load_system
 
-class SmokeEngine:
-    def frequencies(self, molecule, forcefield):
-        return np.full(3 * molecule.n_atoms, 100.0)
+_PROV = BackendProvenance(backend="smoke", role=BackendRole.MM)
+_INFO = BackendInfo(
+    name="smoke",
+    role=BackendRole.MM,
+    capabilities=frozenset({Capability.FREQUENCIES}),
+    functional_forms=frozenset({"harmonic"}),
+    provenance=_PROV,
+)
+
+
+class _SmokePrepared(AbstractPreparedBackend):
+    def _frequencies(self, request):
+        n = 3 * len(self.molecule.symbols)
+        return FrequencyResult(
+            frequencies=np.full(n, 100.0), unit=FrequencyUnit.INVERSE_CM, provenance=_PROV
+        )
+
+
+class SmokeBackend:
+    @property
+    def info(self):
+        return _INFO
+
+    def prepare(self, request):
+        layout = ParameterLayout.from_force_field(request.force_field)
+        return _SmokePrepared(
+            info=_INFO,
+            case_id=request.case_id,
+            molecule=request.molecule,
+            force_field=request.force_field,
+            layout=layout,
+        )
+
 
 validate_sn2_resources()
-case = load_system("ch3f", engine=SmokeEngine(), functional_form="harmonic")
+case = load_system("ch3f", backend=SmokeBackend(), functional_form="harmonic")
 assert case.problem.molecules[0].hessian.shape == (15, 15)
 print("installed-import=ok cli-help=ok sn2-resource=ok ch3f-system=ok")
 """

@@ -1,20 +1,32 @@
-"""Parametrized contract tests for all MM engine backends.
+"""Parametrized contract tests for all MM backends.
 
-Uses the engine registry to discover available backends at collection
-time and runs the same behavioral tests on every engine.  This
-guarantees that all engines satisfy the :class:`MMEngine` ABC contract.
+Uses the backend registry to discover available backends at collection
+time and runs the same behavioral tests on every backend.  This
+guarantees that all backends satisfy the :class:`Backend` ABC contract.
 
 Engine-specific tests (MM3 formula known-values, cross-backend parity,
 internal helpers, context/handle reuse) stay in their own backend files.
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    EnergyUnit,
+    FrequencyRequest,
+    GeometryResult,
+    HessianJacobianRequest,
+    HessianRequest,
+    LengthUnit,
+    MinimizationRequest,
+    ParameterGradientRequest,
+)
+from test.backend_fixtures import backend_is_usable, load_test_backend, param_vector, prepare_case
 
 import numpy as np
 import pytest
 
-from q2mm.backends.base import MMEngine
-from q2mm.backends.registry import available_mm_engines, get_mm_engine
+from q2mm.backends.contracts import Backend, Capability
+from q2mm.backends.registry import available_mm_backends, load_backend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
@@ -28,15 +40,15 @@ from test._shared import (
 )
 
 
-_AVAILABLE = available_mm_engines()
+_AVAILABLE = sorted(name for name in set(available_mm_backends()) | {"tinker"} if backend_is_usable(name))
 
 if not _AVAILABLE:
-    pytest.skip("no MM engines available", allow_module_level=True)
+    pytest.skip("no MM backends available", allow_module_level=True)
 
 
-def _functional_form(engine: MMEngine) -> FunctionalForm:
-    """Pick a FunctionalForm supported by *engine*."""
-    supported = engine.supported_functional_forms()
+def _functional_form(backend: Backend) -> FunctionalForm:
+    """Pick a FunctionalForm supported by *backend*."""
+    supported = backend.info.functional_forms
     if "harmonic" in supported:
         return FunctionalForm.HARMONIC
     if "mm3" in supported:
@@ -44,44 +56,44 @@ def _functional_form(engine: MMEngine) -> FunctionalForm:
     for name in sorted(supported):
         if hasattr(FunctionalForm, name.upper()):
             return getattr(FunctionalForm, name.upper())
-    raise RuntimeError(f"Engine {engine.name} reports no mappable functional forms: {supported!r}")
+    raise RuntimeError(f"Engine {backend.info.name} reports no mappable functional forms: {supported!r}")
 
 
-def _is_harmonic(engine: MMEngine) -> bool:
-    return "harmonic" in engine.supported_functional_forms()
+def _is_harmonic(backend: Backend) -> bool:
+    return "harmonic" in backend.info.functional_forms
 
 
-def _h2_ff(engine: MMEngine, bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
+def _h2_ff(backend: Backend, bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
     return ForceField(
-        functional_form=_functional_form(engine),
+        functional_form=_functional_form(backend),
         bonds=(BondParam(elements=("H", "H"), force_constant=bond_k, equilibrium=bond_r0),),
     )
 
 
 def _water_ff(
-    engine: MMEngine,
+    backend: Backend,
     bond_k: float = 553.0,
     bond_r0: float = 0.96,
     angle_k: float = 49.9,
     angle_eq: float = 104.5,
 ) -> ForceField:
     return ForceField(
-        functional_form=_functional_form(engine),
+        functional_form=_functional_form(backend),
         bonds=(BondParam(elements=("H", "O"), force_constant=bond_k, equilibrium=bond_r0),),
         angles=(AngleParam(elements=("H", "O", "H"), force_constant=angle_k, equilibrium=angle_eq),),
     )
 
 
-def _vdw_ff(engine: MMEngine) -> ForceField:
+def _vdw_ff(backend: Backend) -> ForceField:
     return ForceField(
-        functional_form=_functional_form(engine),
+        functional_form=_functional_form(backend),
         vdws=(VdwParam(atom_type="He", element="He", radius=1.40, epsilon=0.02),),
     )
 
 
-def _ethane_ff(engine: MMEngine, torsion_k: float = 0.15) -> ForceField:
+def _ethane_ff(backend: Backend, torsion_k: float = 0.15) -> ForceField:
     return ForceField(
-        functional_form=_functional_form(engine),
+        functional_form=_functional_form(backend),
         bonds=(
             BondParam(elements=("C", "C"), force_constant=300.0, equilibrium=1.54),
             BondParam(elements=("C", "H"), force_constant=340.0, equilibrium=1.09),
@@ -99,64 +111,66 @@ def _ethane_ff(engine: MMEngine, torsion_k: float = 0.15) -> ForceField:
 
 @pytest.fixture(scope="module", params=_AVAILABLE, ids=_AVAILABLE)
 def engine_name(request: pytest.FixtureRequest) -> str:
-    """Yield each available MM engine name in turn."""
+    """Yield each available MM backend name in turn."""
     return request.param
 
 
 @pytest.fixture(scope="module")
-def engine(engine_name: str) -> MMEngine:
-    """Instantiate the engine from the registry (reused across the module)."""
-    return get_mm_engine(engine_name)
+def backend(engine_name: str) -> Backend:
+    """Instantiate the backend from the registry (reused across the module)."""
+    return load_test_backend(engine_name)
 
 
 @pytest.fixture
-def h2(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def h2(backend: Backend) -> tuple[Molecule, ForceField]:
     """H₂ at equilibrium with matching force field."""
-    return make_diatomic(distance=0.74, bond_tolerance=2.0), _h2_ff(engine)
+    return make_diatomic(distance=0.74, bond_tolerance=2.0), _h2_ff(backend)
 
 
 @pytest.fixture
-def h2_displaced(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def h2_displaced(backend: Backend) -> tuple[Molecule, ForceField]:
     """H₂ stretched 20 % beyond equilibrium."""
-    return make_diatomic(distance=0.74 * 1.2, bond_tolerance=2.0), _h2_ff(engine)
+    return make_diatomic(distance=0.74 * 1.2, bond_tolerance=2.0), _h2_ff(backend)
 
 
 @pytest.fixture
-def water(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def water(backend: Backend) -> tuple[Molecule, ForceField]:
     """Water at equilibrium with matching force field."""
-    return make_water(), _water_ff(engine)
+    return make_water(), _water_ff(backend)
 
 
 @pytest.fixture
-def water_bent(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def water_bent(backend: Backend) -> tuple[Molecule, ForceField]:
     """Water with angle displaced from equilibrium."""
-    return make_water(angle_deg=115.0, bond_length=1.02), _water_ff(engine)
+    return make_water(angle_deg=115.0, bond_length=1.02), _water_ff(backend)
 
 
 @pytest.fixture
-def noble_pair(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def noble_pair(backend: Backend) -> tuple[Molecule, ForceField]:
     """He₂ at moderate distance with vdW force field."""
-    return make_noble_gas_pair(distance=3.0), _vdw_ff(engine)
+    return make_noble_gas_pair(distance=3.0), _vdw_ff(backend)
 
 
 @pytest.fixture
-def ethane(engine: MMEngine) -> tuple[Molecule, ForceField]:
+def ethane(backend: Backend) -> tuple[Molecule, ForceField]:
     """Staggered ethane with bond + angle + torsion FF."""
-    return make_ethane(), _ethane_ff(engine)
+    return make_ethane(), _ethane_ff(backend)
 
 
 class TestEngineMetadata:
-    """Every engine must expose basic metadata correctly."""
+    """Every backend must expose basic metadata correctly."""
 
-    def test_name_returns_string(self, engine: MMEngine) -> None:
-        assert isinstance(engine.name, str)
-        assert len(engine.name) > 0
+    def test_name_returns_string(self, backend: Backend) -> None:
+        assert isinstance(backend.info.name, str)
+        assert len(backend.info.name) > 0
 
-    def test_is_available(self, engine: MMEngine) -> None:
-        assert engine.is_available() is True
+    def test_is_available(self, backend: Backend, engine_name: str) -> None:
+        from q2mm.backends.registry import available_backends
 
-    def test_supported_functional_forms_nonempty(self, engine: MMEngine) -> None:
-        forms = engine.supported_functional_forms()
+        assert engine_name in available_backends()
+
+    def test_supported_functional_forms_nonempty(self, backend: Backend) -> None:
+        forms = backend.info.functional_forms
         assert isinstance(forms, frozenset)
         assert len(forms) > 0
 
@@ -164,135 +178,174 @@ class TestEngineMetadata:
 class TestBondEnergy:
     """Bond energy must behave like a well-behaved potential."""
 
-    def test_returns_float(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_returns_float(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        assert isinstance(engine.energy(mol, ff), float)
+        assert isinstance(
+            prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy, float
+        )
 
-    def test_near_zero_at_equilibrium(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_near_zero_at_equilibrium(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        assert abs(engine.energy(mol, ff)) < 1.0
+        assert abs(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy) < 1.0
 
     def test_increases_with_stretch(
         self,
-        engine: MMEngine,
+        backend: Backend,
         h2: tuple[Molecule, ForceField],
         h2_displaced: tuple[Molecule, ForceField],
     ) -> None:
         mol_eq, ff = h2
         mol_disp, _ = h2_displaced
-        assert engine.energy(mol_disp, ff) > engine.energy(mol_eq, ff)
+        assert (
+            prepare_case(backend, mol_disp, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+            > prepare_case(backend, mol_eq, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
-    def test_increases_with_compression(self, engine: MMEngine) -> None:
+    def test_increases_with_compression(self, backend: Backend) -> None:
         mol_eq = make_diatomic(distance=0.74, bond_tolerance=2.0)
         mol_comp = make_diatomic(distance=0.64, bond_tolerance=2.0)
-        ff = _h2_ff(engine)
-        assert engine.energy(mol_comp, ff) > engine.energy(mol_eq, ff)
+        ff = _h2_ff(backend)
+        assert (
+            prepare_case(backend, mol_comp, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+            > prepare_case(backend, mol_eq, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
-    def test_symmetric_for_harmonic(self, engine: MMEngine) -> None:
+    def test_symmetric_for_harmonic(self, backend: Backend) -> None:
         """Harmonic potential is symmetric about equilibrium."""
-        if not _is_harmonic(engine):
+        if not _is_harmonic(backend):
             pytest.skip("symmetry test applies to harmonic form only")
-        ff = _h2_ff(engine)
-        e_up = engine.energy(make_diatomic(distance=0.80, bond_tolerance=2.0), ff)
-        e_down = engine.energy(make_diatomic(distance=0.68, bond_tolerance=2.0), ff)
+        ff = _h2_ff(backend)
+        e_up = (
+            prepare_case(backend, make_diatomic(distance=0.80, bond_tolerance=2.0), ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
+        e_down = (
+            prepare_case(backend, make_diatomic(distance=0.68, bond_tolerance=2.0), ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
         assert abs(e_up - e_down) < 1e-6
 
-    def test_energy_scales_with_force_constant(self, engine: MMEngine) -> None:
+    def test_energy_scales_with_force_constant(self, backend: Backend) -> None:
         """Doubling k should double the energy (harmonic only)."""
-        if not _is_harmonic(engine):
+        if not _is_harmonic(backend):
             pytest.skip("scaling test applies to harmonic form only")
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
-        e1 = engine.energy(mol, _h2_ff(engine, bond_k=359.7))
-        e2 = engine.energy(mol, _h2_ff(engine, bond_k=719.4))
+        e1 = (
+            prepare_case(backend, mol, _h2_ff(backend, bond_k=359.7))
+            .energy(EnergyRequest(parameters=param_vector(_h2_ff(backend, bond_k=359.7))))
+            .energy
+        )
+        e2 = (
+            prepare_case(backend, mol, _h2_ff(backend, bond_k=719.4))
+            .energy(EnergyRequest(parameters=param_vector(_h2_ff(backend, bond_k=719.4))))
+            .energy
+        )
         assert abs(e2 / e1 - 2.0) < 1e-6
 
 
 class TestAngleEnergy:
     """Angle energy on a water molecule."""
 
-    def test_near_zero_at_equilibrium(self, engine: MMEngine, water: tuple[Molecule, ForceField]) -> None:
+    def test_near_zero_at_equilibrium(self, backend: Backend, water: tuple[Molecule, ForceField]) -> None:
         mol, ff = water
-        assert abs(engine.energy(mol, ff)) < 1.0
+        assert abs(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy) < 1.0
 
     def test_increases_when_bent(
         self,
-        engine: MMEngine,
+        backend: Backend,
         water: tuple[Molecule, ForceField],
         water_bent: tuple[Molecule, ForceField],
     ) -> None:
         mol_eq, ff = water
         mol_bent, _ = water_bent
-        assert engine.energy(mol_bent, ff) > engine.energy(mol_eq, ff)
+        assert (
+            prepare_case(backend, mol_bent, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+            > prepare_case(backend, mol_eq, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
 
 class TestVdwEnergy:
     """Van der Waals energy on a noble-gas pair."""
 
-    def test_nonzero_at_typical_distance(self, engine: MMEngine, noble_pair: tuple[Molecule, ForceField]) -> None:
+    def test_nonzero_at_typical_distance(self, backend: Backend, noble_pair: tuple[Molecule, ForceField]) -> None:
         mol, ff = noble_pair
-        assert engine.energy(mol, ff) != 0.0
+        assert prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy != 0.0
 
-    def test_repulsive_at_close_range(self, engine: MMEngine) -> None:
-        ff = _vdw_ff(engine)
-        e_close = engine.energy(make_noble_gas_pair(distance=1.5), ff)
-        e_far = engine.energy(make_noble_gas_pair(distance=4.0), ff)
+    def test_repulsive_at_close_range(self, backend: Backend) -> None:
+        ff = _vdw_ff(backend)
+        e_close = (
+            prepare_case(backend, make_noble_gas_pair(distance=1.5), ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
+        e_far = (
+            prepare_case(backend, make_noble_gas_pair(distance=4.0), ff)
+            .energy(EnergyRequest(parameters=param_vector(ff)))
+            .energy
+        )
         assert e_close > e_far
 
 
 class TestAnalyticalGradients:
     """Engines reporting supports_analytical_gradients() must match FD."""
 
-    def _skip_if_unsupported(self, engine: MMEngine) -> None:
-        if not engine.supports_analytical_gradients():
-            pytest.skip("engine does not support analytical gradients")
+    def _skip_if_unsupported(self, backend: Backend) -> None:
+        if not backend.info.supports(Capability.PARAMETER_GRADIENT):
+            pytest.skip("backend does not support analytical gradients")
 
     @staticmethod
-    def _fd_engine(engine: MMEngine) -> MMEngine:
-        """Return an engine suitable for double-precision FD reference.
+    def _fd_engine(backend: Backend) -> Backend:
+        """Return an backend suitable for double-precision FD reference.
 
         CUDA/OpenCL mixed precision loses too many digits for small FD
-        perturbations.  When the engine is OpenMM on a GPU, return a
-        CPU OpenMM engine so the FD baseline is computed in float64.
+        perturbations.  When the backend is OpenMM on a GPU, return a
+        CPU OpenMM backend so the FD baseline is computed in float64.
         """
         try:
-            from q2mm.backends.mm.openmm import OpenMMEngine
+            from q2mm.backends.mm.openmm import OpenMMBackend
 
-            if isinstance(engine, OpenMMEngine) and ("CUDA" in engine.name or "OpenCL" in engine.name):
-                return OpenMMEngine(platform_name="CPU")
+            if isinstance(backend, OpenMMBackend) and ("CUDA" in backend.info.name or "OpenCL" in backend.info.name):
+                return load_backend("openmm", platform_name="CPU")
         except ImportError:
             pass
-        return engine
+        return backend
 
-    def test_gradient_has_correct_length(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
-        self._skip_if_unsupported(engine)
+    def test_gradient_has_correct_length(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
+        self._skip_if_unsupported(backend)
         mol, ff = h2_displaced
         layout = ParameterLayout.from_force_field(ff)
-        _energy, grad = engine.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _energy, grad = _pg.energy, _pg.gradient
         assert isinstance(grad, np.ndarray)
         assert len(grad) == len(layout)
 
-    def test_gradient_near_zero_at_equilibrium(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
-        self._skip_if_unsupported(engine)
+    def test_gradient_near_zero_at_equilibrium(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
+        self._skip_if_unsupported(backend)
         mol, ff = h2
-        _energy, grad = engine.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _energy, grad = _pg.energy, _pg.gradient
         np.testing.assert_allclose(grad, 0.0, atol=1e-8)
 
     def test_gradient_nonzero_away_from_equilibrium(
-        self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]
+        self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]
     ) -> None:
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol, ff = h2_displaced
-        _energy, grad = engine.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _energy, grad = _pg.energy, _pg.gradient
         assert not np.all(grad == 0.0)
 
-    def test_gradient_vs_finite_difference_bonds(self, engine: MMEngine) -> None:
+    def test_gradient_vs_finite_difference_bonds(self, backend: Backend) -> None:
         """Analytical gradient must match central finite differences."""
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
-        ff = _h2_ff(engine)
-        _energy, grad_anal = engine.energy_and_param_grad(mol, ff)
+        ff = _h2_ff(backend)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _energy, grad_anal = _pg.energy, _pg.gradient
 
-        fd_engine = self._fd_engine(engine)
+        fd_engine = self._fd_engine(backend)
         layout = ParameterLayout.from_force_field(ff)
         params = layout.vector(ff).copy()
         grad_fd = np.zeros_like(params)
@@ -301,20 +354,29 @@ class TestAnalyticalGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            e_plus = fd_engine.energy(mol, layout.replace(ff, p_plus))
-            e_minus = fd_engine.energy(mol, layout.replace(ff, p_minus))
+            e_plus = (
+                prepare_case(fd_engine, mol, layout.replace(ff, p_plus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, p_plus))))
+                .energy
+            )
+            e_minus = (
+                prepare_case(fd_engine, mol, layout.replace(ff, p_minus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, p_minus))))
+                .energy
+            )
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
 
         np.testing.assert_allclose(grad_anal, grad_fd, atol=1e-4, rtol=1e-4)
 
-    def test_gradient_vs_finite_difference_water(self, engine: MMEngine) -> None:
+    def test_gradient_vs_finite_difference_water(self, backend: Backend) -> None:
         """Multi-parameter gradient (bonds + angles) vs FD."""
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol = make_water(angle_deg=110.0, bond_length=1.0)
-        ff = _water_ff(engine)
-        _energy, grad_anal = engine.energy_and_param_grad(mol, ff)
+        ff = _water_ff(backend)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _energy, grad_anal = _pg.energy, _pg.gradient
 
-        fd_engine = self._fd_engine(engine)
+        fd_engine = self._fd_engine(backend)
         layout = ParameterLayout.from_force_field(ff)
         params = layout.vector(ff).copy()
         grad_fd = np.zeros_like(params)
@@ -323,8 +385,16 @@ class TestAnalyticalGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            e_plus = fd_engine.energy(mol, layout.replace(ff, p_plus))
-            e_minus = fd_engine.energy(mol, layout.replace(ff, p_minus))
+            e_plus = (
+                prepare_case(fd_engine, mol, layout.replace(ff, p_plus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, p_plus))))
+                .energy
+            )
+            e_minus = (
+                prepare_case(fd_engine, mol, layout.replace(ff, p_minus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, p_minus))))
+                .energy
+            )
             grad_fd[i] = (e_plus - e_minus) / (2 * h)
 
         np.testing.assert_allclose(grad_anal, grad_fd, atol=1e-4, rtol=1e-4)
@@ -333,26 +403,32 @@ class TestAnalyticalGradients:
 class TestAnalyticalHessianGradients:
     """Engines reporting supports_analytical_hessian_gradients() must match FD."""
 
-    def _skip_if_unsupported(self, engine: MMEngine) -> None:
-        if not engine.supports_analytical_hessian_gradients():
-            pytest.skip("engine does not support analytical Hessian gradients")
+    def _skip_if_unsupported(self, backend: Backend) -> None:
+        if not backend.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN):
+            pytest.skip("backend does not support analytical Hessian gradients")
 
-    def test_hessian_jacobian_shapes(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
+    def test_hessian_jacobian_shapes(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
         """H is (3N, 3N) and dH_dp is (3N, 3N, n_params)."""
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol, ff = h2_displaced
         layout = ParameterLayout.from_force_field(ff)
-        hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        hess, dH_dp = _hj.hessian, _hj.jacobian
         n3 = 3 * len(mol.symbols)
         assert hess.shape == (n3, n3)
         assert dH_dp.shape == (n3, n3, len(layout))
 
-    def test_hessian_jacobian_symmetric(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
+    def test_hessian_jacobian_symmetric(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
         """Hessian and each Jacobian slice must be symmetric."""
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol, ff = h2_displaced
         layout = ParameterLayout.from_force_field(ff)
-        hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        hess, dH_dp = _hj.hessian, _hj.jacobian
         np.testing.assert_allclose(hess, hess.T, atol=1e-8)
         for j in range(len(layout)):
             np.testing.assert_allclose(
@@ -362,12 +438,15 @@ class TestAnalyticalHessianGradients:
                 err_msg=f"dH_dp[:,:,{j}] not symmetric",
             )
 
-    def test_hessian_jacobian_vs_fd_bonds(self, engine: MMEngine) -> None:
-        """dH/dp must match central finite differences of engine.hessian()."""
-        self._skip_if_unsupported(engine)
+    def test_hessian_jacobian_vs_fd_bonds(self, backend: Backend) -> None:
+        """dH/dp must match central finite differences of bk.hessian(backend)."""
+        self._skip_if_unsupported(backend)
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
-        ff = _h2_ff(engine)
-        _hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        ff = _h2_ff(backend)
+        _hj = prepare_case(backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        _hess, dH_dp = _hj.hessian, _hj.jacobian
 
         layout = ParameterLayout.from_force_field(ff)
         params = layout.vector(ff).copy()
@@ -378,18 +457,29 @@ class TestAnalyticalHessianGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            h_plus = engine.hessian(mol, layout.replace(ff, p_plus))
-            h_minus = engine.hessian(mol, layout.replace(ff, p_minus))
+            h_plus = (
+                prepare_case(backend, mol, layout.replace(ff, p_plus))
+                .hessian(HessianRequest(parameters=param_vector(layout.replace(ff, p_plus))))
+                .hessian
+            )
+            h_minus = (
+                prepare_case(backend, mol, layout.replace(ff, p_minus))
+                .hessian(HessianRequest(parameters=param_vector(layout.replace(ff, p_minus))))
+                .hessian
+            )
             dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
 
         np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
 
-    def test_hessian_jacobian_vs_fd_water(self, engine: MMEngine) -> None:
+    def test_hessian_jacobian_vs_fd_water(self, backend: Backend) -> None:
         """Multi-parameter Hessian Jacobian (bonds + angles) vs FD."""
-        self._skip_if_unsupported(engine)
+        self._skip_if_unsupported(backend)
         mol = make_water(angle_deg=110.0, bond_length=1.0)
-        ff = _water_ff(engine)
-        _hess, dH_dp = engine.hessian_and_param_jacobian(mol, ff)
+        ff = _water_ff(backend)
+        _hj = prepare_case(backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        _hess, dH_dp = _hj.hessian, _hj.jacobian
 
         layout = ParameterLayout.from_force_field(ff)
         params = layout.vector(ff).copy()
@@ -400,8 +490,16 @@ class TestAnalyticalHessianGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            h_plus = engine.hessian(mol, layout.replace(ff, p_plus))
-            h_minus = engine.hessian(mol, layout.replace(ff, p_minus))
+            h_plus = (
+                prepare_case(backend, mol, layout.replace(ff, p_plus))
+                .hessian(HessianRequest(parameters=param_vector(layout.replace(ff, p_plus))))
+                .hessian
+            )
+            h_minus = (
+                prepare_case(backend, mol, layout.replace(ff, p_minus))
+                .hessian(HessianRequest(parameters=param_vector(layout.replace(ff, p_minus))))
+                .hessian
+            )
             dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
 
         np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
@@ -410,26 +508,26 @@ class TestAnalyticalHessianGradients:
 class TestHessian:
     """Hessian calculations must return a valid matrix."""
 
-    def _skip_if_unsupported(self, engine: MMEngine, mol: Molecule, ff: ForceField) -> np.ndarray:
+    def _skip_if_unsupported(self, backend: Backend, mol: Molecule, ff: ForceField) -> np.ndarray:
         try:
-            return engine.hessian(mol, ff)
+            return prepare_case(backend, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian
         except NotImplementedError:
-            pytest.skip("engine does not implement hessian()")
+            pytest.skip("backend does not implement hessian()")
 
-    def test_shape(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_shape(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        hess = self._skip_if_unsupported(engine, mol, ff)
+        hess = self._skip_if_unsupported(backend, mol, ff)
         n = 3 * len(mol.symbols)
         assert hess.shape == (n, n)
 
-    def test_symmetric(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_symmetric(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        hess = self._skip_if_unsupported(engine, mol, ff)
+        hess = self._skip_if_unsupported(backend, mol, ff)
         np.testing.assert_allclose(hess, hess.T, atol=1e-6)
 
-    def test_water_shape(self, engine: MMEngine, water: tuple[Molecule, ForceField]) -> None:
+    def test_water_shape(self, backend: Backend, water: tuple[Molecule, ForceField]) -> None:
         mol, ff = water
-        hess = self._skip_if_unsupported(engine, mol, ff)
+        hess = self._skip_if_unsupported(backend, mol, ff)
         assert hess.shape == (9, 9)
         np.testing.assert_allclose(hess, hess.T, atol=1e-6)
 
@@ -437,24 +535,47 @@ class TestHessian:
 class TestFrequencies:
     """Frequency calculations must return the correct number of modes."""
 
-    def test_returns_list_or_array(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_returns_list_or_array(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        assert isinstance(engine.frequencies(mol, ff), (list, np.ndarray))
+        assert isinstance(
+            [
+                float(_f)
+                for _f in prepare_case(backend, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ],
+            (list, np.ndarray),
+        )
 
-    def test_count_equals_3n(self, engine: MMEngine, h2: tuple[Molecule, ForceField]) -> None:
+    def test_count_equals_3n(self, backend: Backend, h2: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2
-        freqs = engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         assert len(freqs) == 3 * len(mol.symbols)
 
-    def test_all_finite(self, engine: MMEngine, water: tuple[Molecule, ForceField]) -> None:
+    def test_all_finite(self, backend: Backend, water: tuple[Molecule, ForceField]) -> None:
         mol, ff = water
-        freqs = engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         assert all(np.isfinite(f) for f in freqs)
 
-    def test_translation_rotation_modes_near_zero(self, engine: MMEngine, water: tuple[Molecule, ForceField]) -> None:
+    def test_translation_rotation_modes_near_zero(self, backend: Backend, water: tuple[Molecule, ForceField]) -> None:
         """Nonlinear molecule should have ≥5 near-zero modes."""
         mol, ff = water
-        freqs = engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         sorted_abs = sorted(abs(f) for f in freqs)
         for i in range(5):
             assert sorted_abs[i] < 50.0, f"Mode {i} should be near-zero, got {sorted_abs[i]} cm⁻¹"
@@ -463,69 +584,79 @@ class TestFrequencies:
 class TestMinimize:
     """Minimization must return valid results and lower energy."""
 
-    def test_returns_tuple(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
+    def test_returns_geometry_result(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2_displaced
-        result = engine.minimize(mol, ff)
-        assert isinstance(result, tuple)
-        assert len(result) >= 3
+        result = prepare_case(backend, mol, ff).minimize(MinimizationRequest(parameters=param_vector(ff)))
+        assert isinstance(result, GeometryResult)
+        assert result.energy_unit is EnergyUnit.KCAL_PER_MOL
+        assert result.coordinate_unit is LengthUnit.ANGSTROM
+        assert len(result.symbols) >= 2
 
-    def test_lowers_energy(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
+    def test_lowers_energy(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2_displaced
-        e_before = engine.energy(mol, ff)
-        e_after, _atoms, _coords, *_ = engine.minimize(mol, ff)
+        e_before = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        e_after = prepare_case(backend, mol, ff).minimize(MinimizationRequest(parameters=param_vector(ff))).energy
         assert e_after <= e_before + 1e-6
 
-    def test_converges_near_equilibrium(self, engine: MMEngine, h2_displaced: tuple[Molecule, ForceField]) -> None:
+    def test_converges_near_equilibrium(self, backend: Backend, h2_displaced: tuple[Molecule, ForceField]) -> None:
         mol, ff = h2_displaced
-        _energy, atoms, coords, *_ = engine.minimize(mol, ff)
+        _min = prepare_case(backend, mol, ff).minimize(MinimizationRequest(parameters=param_vector(ff)))
+        atoms, coords = list(_min.symbols), np.asarray(_min.coordinates)
         assert len(atoms) == 2
         dist = np.linalg.norm(coords[0] - coords[1])
         assert abs(dist - 0.74) < 0.05
 
     @pytest.mark.integration
-    def test_minimize_water(self, engine: MMEngine, water_bent: tuple[Molecule, ForceField]) -> None:
+    def test_minimize_water(self, backend: Backend, water_bent: tuple[Molecule, ForceField]) -> None:
         mol, ff = water_bent
-        e_before = engine.energy(mol, ff)
-        e_after, atoms, coords, *_ = engine.minimize(mol, ff)
+        e_before = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        _min = prepare_case(backend, mol, ff).minimize(MinimizationRequest(parameters=param_vector(ff)))
+        e_after, atoms, coords = _min.energy, list(_min.symbols), np.asarray(_min.coordinates)
         assert e_after <= e_before + 1e-6
         assert len(atoms) == len(mol.symbols)
         assert coords.shape == (len(mol.symbols), 3)
 
 
 class TestRealMolecule:
-    """Every engine should handle a realistic molecule."""
+    """Every backend should handle a realistic molecule."""
 
     @pytest.fixture
-    def sn2(self, engine: MMEngine) -> tuple[Molecule, ForceField]:
+    def sn2(self, backend: Backend) -> tuple[Molecule, ForceField]:
         mol = load_xyz(SN2_XYZ, bond_tolerance=1.5)
-        ff = ForceField.create_for_molecule(mol, functional_form=_functional_form(engine))
+        ff = ForceField.create_for_molecule(mol, functional_form=_functional_form(backend))
         return mol, ff
 
-    def test_energy_is_finite(self, engine: MMEngine, sn2: tuple[Molecule, ForceField]) -> None:
+    def test_energy_is_finite(self, backend: Backend, sn2: tuple[Molecule, ForceField]) -> None:
         mol, ff = sn2
-        assert np.isfinite(engine.energy(mol, ff))
+        assert np.isfinite(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy)
 
-    def test_hessian_shape_and_symmetry(self, engine: MMEngine, sn2: tuple[Molecule, ForceField]) -> None:
+    def test_hessian_shape_and_symmetry(self, backend: Backend, sn2: tuple[Molecule, ForceField]) -> None:
         mol, ff = sn2
         try:
-            hess = engine.hessian(mol, ff)
+            hess = prepare_case(backend, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian
         except NotImplementedError:
-            pytest.skip("engine does not implement hessian()")
+            pytest.skip("backend does not implement hessian()")
         n = 3 * len(mol.symbols)
         assert hess.shape == (n, n)
         np.testing.assert_allclose(hess, hess.T, atol=1e-4)
 
-    def test_frequencies_finite(self, engine: MMEngine, sn2: tuple[Molecule, ForceField]) -> None:
+    def test_frequencies_finite(self, backend: Backend, sn2: tuple[Molecule, ForceField]) -> None:
         mol, ff = sn2
-        freqs = engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         assert len(freqs) == 3 * len(mol.symbols)
         assert all(np.isfinite(f) for f in freqs)
 
-    def test_gradient_finite(self, engine: MMEngine, sn2: tuple[Molecule, ForceField]) -> None:
-        if not engine.supports_analytical_gradients():
-            pytest.skip("engine does not support analytical gradients")
+    def test_gradient_finite(self, backend: Backend, sn2: tuple[Molecule, ForceField]) -> None:
+        if not backend.info.supports(Capability.PARAMETER_GRADIENT):
+            pytest.skip("backend does not support analytical gradients")
         mol, ff = sn2
-        energy, grad = engine.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        energy, grad = _pg.energy, _pg.gradient
         assert np.isfinite(energy)
         assert np.all(np.isfinite(grad))
 
@@ -534,58 +665,62 @@ class TestTorsionEnergy:
     """Engines must compute torsion energy contributions."""
 
     @staticmethod
-    def _skip_if_requires_torsion_params(engine: MMEngine) -> None:
-        """Skip engines that require torsion params when torsion topology exists.
+    def _skip_if_requires_torsion_params(backend: Backend) -> None:
+        """Skip backends that require torsion params when torsion topology exists.
 
         Tinker auto-detects torsions from bond topology and errors if
         the PRM file lacks a matching torsion line.  Tests that create
         torsion-free FFs for molecules with torsion topology must skip.
         """
-        if engine.name == "Tinker":
-            pytest.skip(f"{engine.name} requires torsion params when torsion topology exists")
+        if backend.info.name == "Tinker":
+            pytest.skip(f"{backend.info.name} requires torsion params when torsion topology exists")
 
-    def test_energy_finite_with_torsions(self, engine: MMEngine, ethane: tuple[Molecule, ForceField]) -> None:
+    def test_energy_finite_with_torsions(self, backend: Backend, ethane: tuple[Molecule, ForceField]) -> None:
         mol, ff = ethane
-        e = engine.energy(mol, ff)
+        e = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert np.isfinite(e)
 
-    def test_energy_changes_with_torsion_k(self, engine: MMEngine) -> None:
+    def test_energy_changes_with_torsion_k(self, backend: Backend) -> None:
         """Changing torsion k should change total energy."""
         mol = make_ethane()
-        ff_low = _ethane_ff(engine, torsion_k=0.05)
-        ff_high = _ethane_ff(engine, torsion_k=1.00)
-        e_low = engine.energy(mol, ff_low)
-        e_high = engine.energy(mol, ff_high)
+        ff_low = _ethane_ff(backend, torsion_k=0.05)
+        ff_high = _ethane_ff(backend, torsion_k=1.00)
+        e_low = prepare_case(backend, mol, ff_low).energy(EnergyRequest(parameters=param_vector(ff_low))).energy
+        e_high = prepare_case(backend, mol, ff_high).energy(EnergyRequest(parameters=param_vector(ff_high))).energy
         assert np.isfinite(e_low)
         assert np.isfinite(e_high)
         assert e_low != e_high
 
-    def test_torsion_energy_nonzero_for_nonzero_k(self, engine: MMEngine) -> None:
+    def test_torsion_energy_nonzero_for_nonzero_k(self, backend: Backend) -> None:
         """With torsion k > 0, total energy should differ from torsion-free."""
-        self._skip_if_requires_torsion_params(engine)
+        self._skip_if_requires_torsion_params(backend)
         mol = make_ethane()
-        ff_with = _ethane_ff(engine, torsion_k=0.50)
+        ff_with = _ethane_ff(backend, torsion_k=0.50)
         ff_without = ForceField(
-            functional_form=_functional_form(engine),
+            functional_form=_functional_form(backend),
             bonds=ff_with.bonds,
             angles=ff_with.angles,
             torsions=(),
         )
-        e_with = engine.energy(mol, ff_with)
-        e_without = engine.energy(mol, ff_without)
+        e_with = prepare_case(backend, mol, ff_with).energy(EnergyRequest(parameters=param_vector(ff_with))).energy
+        e_without = (
+            prepare_case(backend, mol, ff_without).energy(EnergyRequest(parameters=param_vector(ff_without))).energy
+        )
         assert abs(e_with - e_without) > 1e-6
 
-    def test_torsion_energy_matches_openmm(self, engine: MMEngine, ethane: tuple[Molecule, ForceField]) -> None:
-        """Cross-engine parity: torsion energy must agree with OpenMM reference."""
-        if engine.name.startswith("OpenMM"):
-            pytest.skip("Reference engine")
-        if "openmm" not in available_mm_engines():
+    @pytest.mark.cross_backend
+    @pytest.mark.openmm
+    def test_torsion_energy_matches_openmm(self, backend: Backend, ethane: tuple[Molecule, ForceField]) -> None:
+        """Cross-backend parity: torsion energy must agree with OpenMM reference."""
+        if backend.info.name.startswith("OpenMM"):
+            pytest.skip("Reference backend")
+        if "openmm" not in available_mm_backends():
             pytest.skip("OpenMM not available for reference comparison")
-        openmm = get_mm_engine("openmm")
+        openmm = load_backend("openmm")
         mol, ff = ethane
-        e_engine = engine.energy(mol, ff)
-        e_openmm = openmm.energy(mol, ff)
-        assert abs(e_engine - e_openmm) < 1e-4, (
-            f"{engine.name} torsion energy {e_engine:.6f} != OpenMM {e_openmm:.6f} "
-            f"(diff={abs(e_engine - e_openmm):.2e})"
+        e_backend = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        e_openmm = prepare_case(openmm, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        assert abs(e_backend - e_openmm) < 1e-4, (
+            f"{backend.info.name} torsion energy {e_backend:.6f} != OpenMM {e_openmm:.6f} "
+            f"(diff={abs(e_backend - e_openmm):.2e})"
         )

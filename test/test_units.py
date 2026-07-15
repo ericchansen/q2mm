@@ -1,6 +1,6 @@
 """Tests for q2mm.models.units — type-safe unit conversions.
 
-Covers round-trip identity, known-value correctness, and all engine
+Covers round-trip identity, known-value correctness, and all backend
 boundary conversion pairs.
 """
 
@@ -95,7 +95,7 @@ def _assert_roundtrip(
 
 
 # =====================================================================
-# Round-trip tests: canonical → engine → canonical = identity
+# Round-trip tests: canonical → backend → canonical = identity
 # =====================================================================
 
 

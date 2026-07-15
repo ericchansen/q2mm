@@ -9,7 +9,7 @@ The compiled loss supports **energy**, **frequency**, **hessian-element**,
 **eigenmatrix**, and **geometry** (bond_length / bond_angle /
 torsion_angle) reference types.  Geometry references are handled via
 implicit differentiation: each loss call runs an inner
-``jaxopt.LBFGS(fun=handle._energy_fn, implicit_diff=True)`` geometry
+``jaxopt.LBFGS(fun=session._energy_kernel(), implicit_diff=True)`` geometry
 minimization at the current parameters, computes bond/angle/torsion
 observables from the relaxed coordinates, and accumulates weighted
 residuals.  The implicit-function theorem gives the exact gradient of
@@ -22,7 +22,8 @@ Usage::
     from q2mm.optimizers.jaxloss import JaxLoss
 
     spec = objective_function.to_jax_spec()
-    jax_loss = JaxLoss(spec, engine, molecules, forcefield)
+    sessions = objective_function.jax_sessions(spec)  # reuse the objective's sessions
+    jax_loss = JaxLoss(spec, backend, molecules, forcefield, sessions=sessions)
 
     loss = jax_loss(params)
     loss, grad = jax_loss.loss_and_grad(params)
@@ -32,7 +33,7 @@ Usage::
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -40,7 +41,7 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from q2mm.backends.mm.jax_engine import JaxEngine, JaxHandle
+    from q2mm.backends.mm.jax_engine import JaxBackend, PreparedJax
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
     from q2mm.optimizers.spec import ObjectiveSpec
@@ -80,7 +81,7 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
 
     Args:
         energy_fn: ``(params, coords) -> scalar`` energy function
-            (typically ``handle._energy_fn``).  Coords shape ``(N, 3)``.
+            (typically ``session._energy_kernel()``).  Coords shape ``(N, 3)``.
         params: Current parameter vector (JAX array).
         coords0: Initial coordinates, shape ``(N, 3)``.
 
@@ -207,38 +208,64 @@ class JaxLoss:
 
     Args:
         spec: Compiled objective specification.
-        engine: JaxEngine instance (must be a JaxEngine).
+        backend: JaxBackend instance (must be a JaxBackend).
         molecules: Training set molecules (same order as spec).
-        forcefield: Base force field (for topology/handle creation).
+        forcefield: Base force field (topology metadata).
+        sessions: Required ``{mol_idx: PreparedJax}`` map of already-prepared
+            per-case sessions (e.g. the objective's).  JaxLoss reuses these
+            exclusively and **never** calls ``backend.prepare`` itself, so each
+            case is prepared exactly once across the Objective + JaxLoss path.
+            The map must cover exactly the ``mol_spec.mol_idx`` set of *spec*.
 
     Raises:
-        TypeError: If engine is not a JaxEngine.
-        ValueError: If spec has no supported categories.
+        TypeError: If backend is not a JaxBackend.
+        ValueError: If spec has no supported categories, or *sessions* does not
+            cover exactly the spec's molecule indices, or a session's layout
+            does not match the spec.
 
     """
 
     def __init__(
         self,
         spec: ObjectiveSpec,
-        engine: JaxEngine,
+        backend: JaxBackend,
         molecules: list[Molecule],
         forcefield: ForceField,
+        sessions: Mapping[int, PreparedJax],
     ) -> None:
         from q2mm.backends.mm._jax_common import ensure_jax
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.backends.mm.jax_engine import JaxBackend
 
-        if not isinstance(engine, JaxEngine):
-            raise TypeError(f"JaxLoss requires a JaxEngine, got {type(engine).__name__}")
+        if not isinstance(backend, JaxBackend):
+            raise TypeError(f"JaxLoss requires a JaxBackend, got {type(backend).__name__}")
 
         ensure_jax(engine_name="JaxLoss")
 
+        # Sessions are mandatory: validate the map covers exactly the spec's
+        # molecule indices.  JaxLoss never prepares sessions itself.
+        spec_indices = {ms.mol_idx for ms in spec.molecules}
+        supplied = dict(sessions)
+        if set(supplied) != spec_indices:
+            raise ValueError(
+                f"JaxLoss: sessions must cover exactly the spec molecule indices {sorted(spec_indices)}; "
+                f"got {sorted(supplied)}."
+            )
+        if spec.n_params is not None:
+            for mol_idx, session in supplied.items():
+                if len(session.layout) != spec.n_params:
+                    raise ValueError(
+                        f"JaxLoss: session for molecule {mol_idx} has layout length "
+                        f"{len(session.layout)} != spec.n_params {spec.n_params}."
+                    )
+
         self._spec = spec
-        self._engine = engine
+        self._backend = backend
         self._molecules = molecules
         self._forcefield = forcefield
+        self._supplied_sessions = supplied
 
-        # Pre-build handles and compile per-molecule loss fragments
-        self._handles: dict[int, JaxHandle] = {}
+        # Compile per-molecule loss fragments (sessions already prepared)
+        self._sessions: dict[int, PreparedJax] = {}
         self._loss_fn: Callable | None = None
         self._compiled_nongeom_vag_fns: list = []
         self._compiled_geom_vag_fns: list = []
@@ -247,7 +274,7 @@ class JaxLoss:
         self._build()
 
     def _build(self) -> None:
-        """Pre-build JaxHandles and compile per-molecule loss functions.
+        """Compile per-molecule loss functions over the reused prepared sessions.
 
         Each molecule's Hessian-derived loss (eigenmatrix, frequency,
         hessian-element, energy) and geometry loss are JIT-compiled
@@ -266,25 +293,25 @@ class JaxLoss:
         from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 
         spec = self._spec
-        engine = self._engine
-        forcefield = self._forcefield
 
-        # Pre-build handles for all molecules in the spec
+        # Reuse the caller-supplied per-case sessions exclusively — JaxLoss never
+        # prepares a session itself, so each case is prepared exactly once across
+        # the Objective + JaxLoss path.  Each session owns its own compiled
+        # kernel/native state; compatible conformers only share the compiled
+        # kernel, never coordinates or state.
         for mol_spec in spec.molecules:
-            mol = self._molecules[mol_spec.mol_idx]
-            handle = engine._get_handle(mol, forcefield)
-            self._handles[mol_spec.mol_idx] = handle
+            self._sessions[mol_spec.mol_idx] = self._supplied_sessions[mol_spec.mol_idx]
 
         # Pre-compute static data for each molecule
         mol_data = []
         for mol_spec in spec.molecules:
-            handle = self._handles[mol_spec.mol_idx]
+            session = self._sessions[mol_spec.mol_idx]
             mol = self._molecules[mol_spec.mol_idx]
             coords = jnp.array(mol.geometry, dtype=jnp.float64)
 
             entry: dict = {
                 "mol_spec": mol_spec,
-                "handle": handle,
+                "session": session,
                 "coords": coords,
             }
 
@@ -343,7 +370,7 @@ class JaxLoss:
         # Build a Hessian function per topology group.  Each per-molecule
         # loss is JIT-compiled independently, preventing XLA compilation
         # OOM on multi-molecule systems.
-        hess_fn_cache: dict[int, object] = {}  # id(handle) → hess_fn
+        hess_fn_cache: dict[int, object] = {}  # id(session) → hess_fn
 
         hess_au_scale = float(KCALMOLA2_TO_HESSIAN_AU)
 
@@ -356,10 +383,10 @@ class JaxLoss:
             return jax.hessian(_energy_of_flat, argnums=0)
 
         for entry in mol_data:
-            handle = entry["handle"]
-            h_id = id(handle)
+            session = entry["session"]
+            h_id = id(session)
             if h_id not in hess_fn_cache and entry["mol_spec"].needs_hessian_computation:
-                hess_fn_cache[h_id] = _make_hess_fn(handle._energy_fn)
+                hess_fn_cache[h_id] = _make_hess_fn(session._energy_kernel())
 
         # ---- Per-molecule non-geometry loss factory ----
 
@@ -368,8 +395,8 @@ class JaxLoss:
             ms = entry_data["mol_spec"]
             coords = entry_data["coords"]
             flat_coords = coords.reshape(-1)
-            handle = entry_data["handle"]
-            energy_fn = handle._energy_fn
+            session = entry_data["session"]
+            energy_fn = session._energy_kernel()
 
             def _mol_loss(params: np.ndarray) -> np.ndarray:
                 total = jnp.float64(0.0)
@@ -430,7 +457,7 @@ class JaxLoss:
             ms = entry["mol_spec"]
             if not ms.needs_hessian_computation and not ms.has_energy:
                 continue
-            h_id = id(entry["handle"])
+            h_id = id(entry["session"])
             mol_hess_fn = hess_fn_cache.get(h_id)
             nongeom_loss_fns.append(_make_mol_nongeom_loss(entry, mol_hess_fn, hess_au_scale))
 
@@ -441,10 +468,10 @@ class JaxLoss:
 
         def _geometry_loss_from_entry(entry: dict, params: np.ndarray) -> np.ndarray:
             total = jnp.float64(0.0)
-            handle = entry["handle"]
+            session = entry["session"]
             coords = entry["coords"]
             mol_spec = entry["mol_spec"]
-            energy_fn = handle._energy_fn
+            energy_fn = session._energy_kernel()
 
             relaxed = _relax_coords(energy_fn, params, coords)
 

@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.backends.registry import load_backend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
@@ -68,12 +68,29 @@ def _water_ff(
     )
 
 
+def _mm_energy(backend: object, mol: object, ff: object) -> float:
+    """Single-point MM energy via a prepared session."""
+    from q2mm.backends.contracts import EnergyRequest, PreparationRequest
+
+    prepared = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+    return float(prepared.energy(EnergyRequest(parameters=ParameterLayout.from_force_field(ff).vector(ff))).energy)
+
+
+def _mm_frequencies(backend: object, mol: object, ff: object) -> list[float]:
+    """MM vibrational frequencies via a prepared session."""
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+
+    prepared = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+    params = ParameterLayout.from_force_field(ff).vector(ff)
+    return [float(f) for f in prepared.frequencies(FrequencyRequest(parameters=params)).frequencies]
+
+
 def _make_water_problem(
-    engine: OpenMMEngine | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
-) -> tuple[ForceField, ForceField, list[Molecule], ObservationSet, OpenMMEngine]:
+    backend: object | None = None, perturb_k: float = 1.5, perturb_eq: float = 5.0
+) -> tuple[ForceField, ForceField, list[Molecule], ObservationSet, object]:
     """Create a water optimization problem with known true parameters."""
-    if engine is None:
-        engine = OpenMMEngine()
+    if backend is None:
+        backend = load_backend("openmm")
     true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
 
     mol_eq = _water(104.5, 0.96)
@@ -82,10 +99,9 @@ def _make_water_problem(
 
     ref = ObservationSet()
     for i, mol in enumerate([mol_eq, mol_wide, mol_long]):
-        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0, case_id=str(i))
+        ref = ref.with_energy(_mm_energy(backend, mol, true_ff), weight=1.0, case_id=str(i))
 
-    openmm = OpenMMEngine()
-    freqs = openmm.frequencies(mol_eq, true_ff)
+    freqs = _mm_frequencies(backend, mol_eq, true_ff)
     for j, f in enumerate(freqs):
         if abs(f) > 50.0:
             ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
@@ -97,17 +113,17 @@ def _make_water_problem(
         angle_eq=true_ff.angles[0].equilibrium + perturb_eq,
     )
 
-    return true_ff, guess_ff, [mol_eq, mol_wide, mol_long], ref, engine
+    return true_ff, guess_ff, [mol_eq, mol_wide, mol_long], ref, backend
 
 
 def main() -> int:
     """Generate and save optimization golden fixture data."""
     print("Generating optimization golden fixture ...")
 
-    true_ff, guess_ff, mols, ref, engine = _make_water_problem()
+    true_ff, guess_ff, mols, ref, backend = _make_water_problem()
     layout = ParameterLayout.from_force_field(guess_ff)
     space = ActiveParameterSpace.all_active(layout, guess_ff)
-    obj = ObjectiveFunction(guess_ff, engine, mols, ref, layout=layout)
+    obj = ObjectiveFunction(guess_ff, backend, mols, ref, layout=layout)
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
     result = opt.optimize(obj, space)
 

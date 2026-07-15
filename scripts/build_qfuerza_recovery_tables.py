@@ -136,7 +136,7 @@ def main() -> int:
         "",
         "Per-system, per-category goodness of fit between MM predictions and the QM training data. "
         "_Same reference data is used for both q2mm columns_ (the published TSFF papers use the same training set, "
-        "evaluated through MacroModel/MM3* instead of q2mm/JaxEngine).",
+        "evaluated through MacroModel/MM3* instead of q2mm/JaxBackend).",
         "",
     ]
     for sys_dir, sys_short in SYSTEM_ORDER:

@@ -32,7 +32,7 @@ try:
 except ImportError:
     raise SystemExit("Psi4 not installed — run in the ci-psi4 Docker container")
 
-from q2mm.backends.qm.psi4 import Psi4Engine
+from q2mm.backends.registry import load_backend
 from q2mm.constants import (
     AMU_TO_KG,
     BOHR_TO_ANG,
@@ -87,7 +87,7 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     results = []
 
-    # Psi4 memory is configured via Psi4Engine constructor; threads via n_threads=16.
+    # Psi4 memory is configured via Psi4Backend constructor; threads via n_threads=16.
 
     for i, (base_mol, jag_path) in enumerate(zip(base_molecules, jag_files)):
         label = jag_path.stem
@@ -101,11 +101,13 @@ def main() -> None:
         jag_hessian = mol.hessian
 
         # Compute Psi4 Hessian at B3LYP/def2-SVP (charge=+1 for cationic Rh complex)
-        structure = (list(mol.symbols), mol.geometry)
+        from q2mm.backends.contracts import PreparationRequest, QMEnergyRequest, QMHessianRequest
+
         t0 = time.perf_counter()
-        with Psi4Engine(method="b3lyp", basis="def2-svp", charge=1, n_threads=16, memory="8 GB") as engine:
-            psi4_hessian = engine.hessian(structure)
-            psi4_energy = engine.energy(structure)
+        with load_backend("psi4", method="b3lyp", basis="def2-svp", charge=1, n_threads=16, memory="8 GB") as backend:
+            prepared = backend.prepare(PreparationRequest(case_id=label, molecule=mol))
+            psi4_hessian = np.asarray(prepared.hessian(QMHessianRequest()).hessian)
+            psi4_energy = float(prepared.energy(QMEnergyRequest()).energy)
         elapsed = time.perf_counter() - t0
         print(f"  Psi4 Hessian computed in {elapsed:.1f}s")
 

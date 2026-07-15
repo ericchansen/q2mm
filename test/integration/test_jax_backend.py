@@ -1,7 +1,7 @@
-"""JAX-engine-specific tests.
+"""JAX-backend-specific tests.
 
 Contract tests (energy, hessian, frequencies, minimize, gradients) are
-in test_engine_contract.py and run for every registered engine.  This
+in test_engine_contract.py and run for every registered backend.  This
 file covers only behaviour unique to the JAX backend:
 
 * Known-value energy check using internal ``_BOND_K_CONV`` constant
@@ -11,6 +11,17 @@ file covers only behaviour unique to the JAX backend:
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    HessianRequest,
+)
+from q2mm.backends.contracts import (
+    BatchedEnergyRequest,
+    EnergyRequest,
+    FrequencyRequest,
+    HessianJacobianRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import importlib.util
 import subprocess
@@ -31,6 +42,30 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.backends.contracts import BackendInfo, Capability as _Cap
+
+
+def _fd_only(base: object) -> object:
+    """Wrap *base* so its ``info`` drops analytical-gradient capabilities.
+
+    Forces the objective onto the finite-difference gradient path while still
+    delegating preparation to the real backend.
+    """
+    import dataclasses
+
+    reduced = base.info.capabilities - {_Cap.PARAMETER_GRADIENT, _Cap.HESSIAN_PARAMETER_JACOBIAN}
+    info = dataclasses.replace(base.info, capabilities=frozenset(reduced))
+
+    class _Wrapper:
+        @property
+        def info(self) -> BackendInfo:
+            return info
+
+        def prepare(self, request: object) -> object:
+            return base.prepare(request)
+
+    return _Wrapper()
+
 
 # Pinned QFUERZA parameters for CH₃F — decouples gradient tests from
 # Seminario estimation.  These are the current default values.
@@ -61,11 +96,11 @@ def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: ObservationSet, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: ObservationSet, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -99,10 +134,10 @@ def _init_jax() -> None:
     from q2mm.backends.mm._jax_common import ensure_jax
 
     ensure_jax()
-    global JaxEngine, _build_vdw_pairs  # noqa: PLW0603
-    from q2mm.backends.mm.jax_engine import JaxEngine as _JE, _build_vdw_pairs as _bvp
+    global JaxBackend, _build_vdw_pairs  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxBackend as _JE, _build_vdw_pairs as _bvp
 
-    JaxEngine = _JE
+    JaxBackend = _JE
     _build_vdw_pairs = _bvp
 
 
@@ -157,43 +192,49 @@ def _water_ff(
     )
 
 
-class TestJaxEngineKnownValue:
+class TestJaxBackendKnownValue:
     """Verify energy against hand calculation using internal constant."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_energy_known_value(self) -> None:
         from q2mm.backends.mm.jax_engine import _BOND_K_CONV
 
         mol = make_diatomic(distance=0.84, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
-        energy = self.engine.energy(mol, ff)
+        energy = prepare_case(self.backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         expected = _BOND_K_CONV * 359.7 * 0.1**2
         assert abs(energy - expected) < 1e-8
 
 
-class TestJaxEngineHandle:
-    """Context/handle reuse tests."""
+class TestJaxBackendReuse:
+    """Prepared-session state-reuse tests."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
-    def test_create_context_and_reuse(self) -> None:
+    def test_same_session_reused_across_calls(self) -> None:
+        from q2mm.backends.contracts import Capability
+
         mol = make_diatomic(distance=0.84, bond_tolerance=1.5)
         ff = _h2_ff()
-        handle = self.engine.create_context(mol, ff)
-        e1 = self.engine.energy(handle, ff)
-        e2 = self.engine.energy(handle, ff)
+        session = prepare_case(self.backend, mol, ff)
+        e1 = session.energy(EnergyRequest(parameters=param_vector(ff))).energy
+        e2 = session.energy(EnergyRequest(parameters=param_vector(ff))).energy
+        # Repeated evaluation on the SAME session reuses native state and is
+        # deterministic; the backend declares REUSABLE_STATE.
         assert e1 == e2
+        assert session.info.supports(Capability.REUSABLE_STATE)
 
-    def test_handle_with_different_params(self) -> None:
+    def test_session_with_different_params(self) -> None:
         mol = make_diatomic(distance=0.84, bond_tolerance=1.5)
         ff1 = _h2_ff(bond_k=359.7)
         ff2 = _h2_ff(bond_k=719.4)
-        handle = self.engine.create_context(mol, ff1)
-        e1 = self.engine.energy(handle, ff1)
-        e2 = self.engine.energy(handle, ff2)
+        # The SAME session is reused across differing parameter vectors.
+        session = prepare_case(self.backend, mol, ff1)
+        e1 = session.energy(EnergyRequest(parameters=param_vector(ff1))).energy
+        e2 = session.energy(EnergyRequest(parameters=param_vector(ff2))).energy
         assert abs(e2 / e1 - 2.0) < 1e-10
 
 
@@ -220,10 +261,10 @@ class TestBuildVdwPairs:
 
 
 class TestJaxOptimizerIntegration:
-    """Test JaxEngine + ScipyOptimizer with analytical gradients."""
+    """Test JaxBackend + ScipyOptimizer with analytical gradients."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_analytical_gradient_optimization(self) -> None:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
@@ -234,7 +275,7 @@ class TestJaxOptimizerIntegration:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=100, jac="analytical", verbose=False)
         result = optimizer.optimize(objective, _all_active_space(objective))
         assert result.final_score < 1e-10
@@ -250,11 +291,11 @@ class TestJaxOptimizerIntegration:
         ref = ObservationSet()
         ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
-        obj_a = _make_objective(forcefield=ff_analytical, engine=self.engine, molecules=[mol], reference=ref)
+        obj_a = _make_objective(forcefield=ff_analytical, backend=self.backend, molecules=[mol], reference=ref)
         opt_a = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
         res_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
-        obj_fd = _make_objective(forcefield=ff_fd, engine=self.engine, molecules=[mol], reference=ref)
+        obj_fd = _make_objective(forcefield=ff_fd, backend=self.backend, molecules=[mol], reference=ref)
         opt_fd = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac=None, verbose=False)
         res_fd = opt_fd.optimize(obj_fd, _all_active_space(obj_fd))
 
@@ -267,7 +308,7 @@ class TestJaxOptimizerIntegration:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         grad = obj.gradient(_params(ff))
         assert len(grad) == len(_params(ff))
         assert isinstance(grad, np.ndarray)
@@ -278,7 +319,7 @@ class TestJaxOptimizerIntegration:
         ref = ObservationSet()
         ref = ref.with_energy(value=2.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff).copy()
         analytical_grad = obj.gradient(vec)
 
@@ -298,16 +339,15 @@ class TestJaxOptimizerIntegration:
 
 
 class TestJaxBatchedSensitivity:
-    """Test vmap-batched sensitivity analysis on JaxEngine."""
+    """Test vmap-batched sensitivity analysis on JaxBackend."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_batched_energy_matches_sequential(self) -> None:
         """batched_energy should match individual energy calls."""
         mol = make_diatomic(distance=0.80, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
-        handle = self.engine.create_context(mol, ff)
 
         vecs = np.array(
             [
@@ -316,20 +356,33 @@ class TestJaxBatchedSensitivity:
                 _params(ff) - [10.0, 0.01],
             ]
         )
-        batched = self.engine.batched_energy(handle, ff, vecs)
+        batched = (
+            prepare_case(self.backend, mol, ff)
+            .batched_energy(BatchedEnergyRequest(parameter_matrix=np.asarray(vecs, dtype=float)))
+            .energies
+        )
 
-        sequential = np.array([self.engine.energy(handle, _materialize(ff, v)) for v in vecs])
+        sequential = np.array(
+            [
+                prepare_case(self.backend, mol, _materialize(ff, v))
+                .energy(EnergyRequest(parameters=param_vector(_materialize(ff, v))))
+                .energy
+                for v in vecs
+            ]
+        )
         np.testing.assert_allclose(batched, sequential, atol=1e-10)
 
     def test_supports_batched_energy(self) -> None:
-        assert self.engine.supports_batched_energy() is True
+        from q2mm.backends.contracts import Capability
+
+        assert self.backend.info.supports(Capability.BATCHED_ENERGY) is True
 
     def test_is_energy_only(self) -> None:
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff()
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         assert obj.is_energy_only() is True
 
     def test_batched_scores_matches_sequential(self) -> None:
@@ -339,8 +392,8 @@ class TestJaxBatchedSensitivity:
         ref = ObservationSet()
         ref = ref.with_energy(value=5.0, case_id="0", weight=1.0)
 
-        obj_batch = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
-        obj_seq = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj_batch = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
+        obj_seq = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
 
         vecs = np.array(
             [
@@ -363,11 +416,11 @@ class TestJaxBatchedSensitivity:
         ref = ObservationSet()
         ref = ref.with_energy(value=5.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
 
         # Verify the batched path is used (energy-only + JAX)
         assert obj.is_energy_only()
-        assert self.engine.supports_batched_energy()
+        assert self.backend.info.supports(_Cap.BATCHED_ENERGY)
 
         sens = compute_sensitivity(obj, metric="simp_var")
 
@@ -404,13 +457,16 @@ class TestJaxAnalyticalHessianGradients:
     """End-to-end tests for hessian_and_param_jacobian + frequency gradient."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_hessian_and_param_jacobian_h2_shapes(self) -> None:
         """Basic shape validation for H₂."""
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff()
-        hess, dH_dp = self.engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(self.backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        hess, dH_dp = _hj.hessian, _hj.jacobian
         assert hess.shape == (6, 6)
         assert dH_dp.shape == (6, 6, 2)
 
@@ -418,16 +474,22 @@ class TestJaxAnalyticalHessianGradients:
         """Hessian and each Jacobian slice must be symmetric."""
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff()
-        hess, dH_dp = self.engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(self.backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        hess, dH_dp = _hj.hessian, _hj.jacobian
         np.testing.assert_allclose(hess, hess.T, atol=1e-8)
         for j in range(len(_params(ff))):
             np.testing.assert_allclose(dH_dp[:, :, j], dH_dp[:, :, j].T, atol=1e-6)
 
     def test_hessian_jacobian_matches_fd_h2(self) -> None:
-        """dH/dp matches finite-difference of engine.hessian()."""
+        """dH/dp matches finite-difference of the prepared session's hessian()."""
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff()
-        _hess, dH_dp = self.engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(self.backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        _hess, dH_dp = _hj.hessian, _hj.jacobian
 
         params = _params(ff).copy()
         h = 1e-5
@@ -436,8 +498,16 @@ class TestJaxAnalyticalHessianGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            h_plus = self.engine.hessian(mol, _materialize(ff, p_plus))
-            h_minus = self.engine.hessian(mol, _materialize(ff, p_minus))
+            h_plus = (
+                prepare_case(self.backend, mol, _materialize(ff, p_plus))
+                .hessian(HessianRequest(parameters=param_vector(_materialize(ff, p_plus))))
+                .hessian
+            )
+            h_minus = (
+                prepare_case(self.backend, mol, _materialize(ff, p_minus))
+                .hessian(HessianRequest(parameters=param_vector(_materialize(ff, p_minus))))
+                .hessian
+            )
             dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
 
         np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
@@ -446,7 +516,10 @@ class TestJaxAnalyticalHessianGradients:
         """Multi-param (bonds + angles) Hessian Jacobian vs FD."""
         mol = make_water(angle_deg=110.0, bond_length=1.0)
         ff = _water_ff()
-        _hess, dH_dp = self.engine.hessian_and_param_jacobian(mol, ff)
+        _hj = prepare_case(self.backend, mol, ff).hessian_parameter_jacobian(
+            HessianJacobianRequest(parameters=param_vector(ff))
+        )
+        _hess, dH_dp = _hj.hessian, _hj.jacobian
 
         params = _params(ff).copy()
         h = 1e-5
@@ -455,8 +528,16 @@ class TestJaxAnalyticalHessianGradients:
             p_plus, p_minus = params.copy(), params.copy()
             p_plus[i] += h
             p_minus[i] -= h
-            h_plus = self.engine.hessian(mol, _materialize(ff, p_plus))
-            h_minus = self.engine.hessian(mol, _materialize(ff, p_minus))
+            h_plus = (
+                prepare_case(self.backend, mol, _materialize(ff, p_plus))
+                .hessian(HessianRequest(parameters=param_vector(_materialize(ff, p_plus))))
+                .hessian
+            )
+            h_minus = (
+                prepare_case(self.backend, mol, _materialize(ff, p_minus))
+                .hessian(HessianRequest(parameters=param_vector(_materialize(ff, p_minus))))
+                .hessian
+            )
             dH_dp_fd[:, :, i] = (h_plus - h_minus) / (2 * h)
 
         np.testing.assert_allclose(dH_dp, dH_dp_fd, atol=1e-4, rtol=1e-4)
@@ -465,13 +546,18 @@ class TestJaxAnalyticalHessianGradients:
         """Analytical frequency objective gradient matches FD for H₂."""
         mol = make_diatomic(distance=0.80, bond_tolerance=2.0)
         ff = _h2_ff(bond_k=300.0, bond_r0=0.74)
-        freqs = self.engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(freqs):
             ref = ref.with_frequency(value=f * 1.1, data_idx=i, weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff).copy()
 
         analytical = obj.gradient(vec)
@@ -483,13 +569,18 @@ class TestJaxAnalyticalHessianGradients:
         """Analytical frequency objective gradient matches FD for water."""
         mol = make_water(angle_deg=108.0, bond_length=0.98)
         ff = _water_ff(bond_k=500.0, bond_r0=0.96, angle_k=45.0, angle_eq=104.5)
-        freqs = self.engine.frequencies(mol, ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(freqs):
             ref = ref.with_frequency(value=f * 1.05, data_idx=i, weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff).copy()
 
         analytical = obj.gradient(vec)
@@ -503,13 +594,18 @@ class TestJaxAnalyticalHessianGradients:
 
         mol = make_diatomic(distance=0.80, bond_tolerance=2.0)
         ff = _h2_ff(bond_k=250.0, bond_r0=0.70)
-        target_freqs = self.engine.frequencies(mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+        target_freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+            .frequencies(FrequencyRequest(parameters=param_vector(_h2_ff(bond_k=359.7, bond_r0=0.74))))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(target_freqs):
             ref = ref.with_frequency(value=f, data_idx=i, weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
 
@@ -520,19 +616,24 @@ class TestJaxAnalyticalHessianGradients:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         mol = make_diatomic(distance=0.80, bond_tolerance=2.0)
-        target_freqs = self.engine.frequencies(mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+        target_freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+            .frequencies(FrequencyRequest(parameters=param_vector(_h2_ff(bond_k=359.7, bond_r0=0.74))))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(target_freqs):
             ref = ref.with_frequency(value=f, data_idx=i, weight=1.0)
 
         ff_a = _h2_ff(bond_k=250.0, bond_r0=0.70)
-        obj_a = _make_objective(forcefield=ff_a, engine=self.engine, molecules=[mol], reference=ref)
+        obj_a = _make_objective(forcefield=ff_a, backend=self.backend, molecules=[mol], reference=ref)
         opt_a = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
         res_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
         ff_fd = _h2_ff(bond_k=250.0, bond_r0=0.70)
-        obj_fd = _make_objective(forcefield=ff_fd, engine=self.engine, molecules=[mol], reference=ref)
+        obj_fd = _make_objective(forcefield=ff_fd, backend=self.backend, molecules=[mol], reference=ref)
         opt_fd = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac=None, verbose=False)
         res_fd = opt_fd.optimize(obj_fd, _all_active_space(obj_fd))
 
@@ -548,20 +649,20 @@ class TestJaxHessianElementGradients:
     """End-to-end hessian_element evaluator gradient tests."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_hessian_element_gradient_vs_fd(self) -> None:
         """Analytical hessian_element gradient matches FD for H₂."""
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff(bond_k=300.0, bond_r0=0.74)
-        hess = self.engine.hessian(mol, ff)
+        hess = prepare_case(self.backend, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian
 
         ref = ObservationSet()
         ref = ref.with_hessian_element(value=float(hess[0, 0]) * 1.1, row=0, col=0, weight=1.0)
         ref = ref.with_hessian_element(value=float(hess[0, 3]) * 1.1, row=0, col=3, weight=1.0)
         ref = ref.with_hessian_element(value=float(hess[3, 3]) * 1.1, row=3, col=3, weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff).copy()
 
         analytical = obj.gradient(vec)
@@ -574,14 +675,18 @@ class TestJaxHessianElementGradients:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
-        target_hess = self.engine.hessian(mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+        target_hess = (
+            prepare_case(self.backend, mol, _h2_ff(bond_k=359.7, bond_r0=0.74))
+            .hessian(HessianRequest(parameters=param_vector(_h2_ff(bond_k=359.7, bond_r0=0.74))))
+            .hessian
+        )
 
         ref = ObservationSet()
         ref = ref.with_hessian_element(value=float(target_hess[0, 0]), row=0, col=0, weight=1.0)
         ref = ref.with_hessian_element(value=float(target_hess[3, 3]), row=3, col=3, weight=1.0)
 
         ff = _h2_ff(bond_k=250.0, bond_r0=0.70)
-        obj = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
 
@@ -592,13 +697,13 @@ class TestJaxEigenmatrixGradients:
     """End-to-end eigenmatrix evaluator gradient tests."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_eigenmatrix_gradient_vs_fd(self) -> None:
         """Analytical eigenmatrix gradient matches FD."""
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff = _h2_ff(bond_k=300.0, bond_r0=0.74)
-        qm_hess = self.engine.hessian(mol, ff)
+        qm_hess = prepare_case(self.backend, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian
         mol_with_hess = mol.with_hessian(qm_hess)
 
         ref = ObservationSet()
@@ -612,7 +717,7 @@ class TestJaxEigenmatrixGradients:
         ff2 = _h2_ff(bond_k=280.0, bond_r0=0.72)
         obj = _make_objective(
             forcefield=ff2,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[mol_with_hess],
             reference=ref,
         )
@@ -629,7 +734,11 @@ class TestJaxEigenmatrixGradients:
 
         mol = make_diatomic(distance=0.84, bond_tolerance=2.0)
         ff_target = _h2_ff(bond_k=359.7, bond_r0=0.74)
-        qm_hess = self.engine.hessian(mol, ff_target)
+        qm_hess = (
+            prepare_case(self.backend, mol, ff_target)
+            .hessian(HessianRequest(parameters=param_vector(ff_target)))
+            .hessian
+        )
         mol_with_hess = mol.with_hessian(qm_hess)
 
         ref = ObservationSet()
@@ -642,7 +751,7 @@ class TestJaxEigenmatrixGradients:
         ff = _h2_ff(bond_k=250.0, bond_r0=0.70)
         obj = _make_objective(
             forcefield=ff,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[mol_with_hess],
             reference=ref,
         )
@@ -663,13 +772,13 @@ class TestCH3FAnalyticalGradients:
     gradient vs FD test is intentionally excluded: CH₃F's C₃v symmetry
     produces near-degenerate E-mode frequency pairs (57 cm⁻¹ gap with
     QFUERZA), and FD diverges at eigenvalue crossings.  Frequency gradient
-    correctness is validated by ``TestFrequencyParamJacobian`` (mock engines),
+    correctness is validated by ``TestFrequencyParamJacobian`` (mock backends),
     ``TestJaxAnalyticalHessianGradients`` (H₂/water), and the optimisation
     convergence test below.
     """
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
         self.mol = load_xyz(CH3F_XYZ, bond_tolerance=1.5)
         self.qm_hessian = np.load(CH3F_HESS)
         self.mol_with_hess = self.mol.with_hessian(self.qm_hessian)
@@ -677,7 +786,11 @@ class TestCH3FAnalyticalGradients:
 
     def test_ch3f_hessian_element_gradient(self) -> None:
         """Analytical hessian element gradient on CH₃F."""
-        hess = self.engine.hessian(self.mol, self.ff)
+        hess = (
+            prepare_case(self.backend, self.mol, self.ff)
+            .hessian(HessianRequest(parameters=param_vector(self.ff)))
+            .hessian
+        )
         ref = ObservationSet()
         ref = ref.with_hessian_element(value=float(hess[0, 0]) * 1.05, row=0, col=0)
         ref = ref.with_hessian_element(value=float(hess[1, 1]) * 1.05, row=1, col=1)
@@ -685,7 +798,7 @@ class TestCH3FAnalyticalGradients:
 
         obj = _make_objective(
             forcefield=self.ff,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[self.mol],
             reference=ref,
         )
@@ -711,7 +824,7 @@ class TestCH3FAnalyticalGradients:
 
         obj = _make_objective(
             forcefield=ff,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[self.mol_with_hess],
             reference=ref,
         )
@@ -739,7 +852,7 @@ class TestCH3FAnalyticalGradients:
         ff_a = self.ff
         obj_a = _make_objective(
             forcefield=ff_a,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[self.mol],
             reference=ref,
         )
@@ -750,7 +863,7 @@ class TestCH3FAnalyticalGradients:
         ff_fd = self.ff
         obj_fd = _make_objective(
             forcefield=ff_fd,
-            engine=self.engine,
+            backend=self.backend,
             molecules=[self.mol],
             reference=ref,
         )
@@ -775,7 +888,7 @@ class TestAnalyticalGradientPerformance:
     """
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def _time_gradient(self, obj: Any, vec: np.ndarray, n_iters: int = 20) -> float:
         """Time n_iters gradient evaluations and return mean seconds."""
@@ -807,23 +920,25 @@ class TestAnalyticalGradientPerformance:
         """Measure analytical vs FD speedup on water (4 params)."""
         mol = make_water(angle_deg=108.0, bond_length=0.98)
         ff_a = _water_ff()
-        freqs = self.engine.frequencies(mol, ff_a)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, ff_a)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff_a)))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(freqs):
             ref = ref.with_frequency(value=f * 1.05, data_idx=i, weight=1.0)
 
-        obj_a = _make_objective(forcefield=ff_a, engine=self.engine, molecules=[mol], reference=ref)
+        obj_a = _make_objective(forcefield=ff_a, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff_a).copy()
 
         t_analytical = self._time_gradient(obj_a, vec)
 
         ff_fd = _water_ff()
-        engine_fd = JaxEngine()
-        # Monkey-patch to force FD gradient path
-        engine_fd.supports_analytical_hessian_gradients = lambda: False
-        engine_fd.supports_analytical_gradients = lambda: False
-        obj_fd = _make_objective(forcefield=ff_fd, engine=engine_fd, molecules=[mol], reference=ref)
+        backend_fd = _fd_only(load_backend("jax"))
+        obj_fd = _make_objective(forcefield=ff_fd, backend=backend_fd, molecules=[mol], reference=ref)
         t_fd = self._time_fd_gradient(obj_fd, vec)
 
         speedup = t_fd / t_analytical if t_analytical > 0 else float("inf")
@@ -833,22 +948,25 @@ class TestAnalyticalGradientPerformance:
         """Measure analytical vs FD speedup on CH₃F (8 params)."""
         mol = load_xyz(CH3F_XYZ, bond_tolerance=1.5)
         ff_a = _ch3f_ff()
-        freqs = self.engine.frequencies(mol, ff_a)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(self.backend, mol, ff_a)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff_a)))
+            .frequencies
+        ]
 
         ref = ObservationSet()
         for i, f in enumerate(freqs):
             ref = ref.with_frequency(value=f * 1.05, data_idx=i, weight=1.0)
 
-        obj_a = _make_objective(forcefield=ff_a, engine=self.engine, molecules=[mol], reference=ref)
+        obj_a = _make_objective(forcefield=ff_a, backend=self.backend, molecules=[mol], reference=ref)
         vec = _params(ff_a).copy()
 
         t_analytical = self._time_gradient(obj_a, vec)
 
         ff_fd = _ch3f_ff()
-        engine_fd = JaxEngine()
-        engine_fd.supports_analytical_hessian_gradients = lambda: False
-        engine_fd.supports_analytical_gradients = lambda: False
-        obj_fd = _make_objective(forcefield=ff_fd, engine=engine_fd, molecules=[mol], reference=ref)
+        backend_fd = _fd_only(load_backend("jax"))
+        obj_fd = _make_objective(forcefield=ff_fd, backend=backend_fd, molecules=[mol], reference=ref)
         t_fd = self._time_fd_gradient(obj_fd, vec, n_iters=3)
 
         speedup = t_fd / t_analytical if t_analytical > 0 else float("inf")

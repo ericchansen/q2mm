@@ -32,28 +32,19 @@ if TYPE_CHECKING:
     from q2mm.benchmarks.systems import SystemMetadata
 
 
-def _discover_backends() -> list[tuple[str, type, str]]:
-    """Discover available MM backends at runtime via the engine registry.
+def _discover_backends() -> list[str]:
+    """Discover available MM backends at runtime via the backend registry.
+
+    Uses only cheap, side-effect-free dependency probes — no backend is
+    constructed and no device/platform is initialized during discovery.
 
     Returns:
-        list[tuple[str, type, str]]: List of ``(display_name, engine_class,
-            registry_key)`` tuples for each available backend.
+        list[str]: Registry keys of the available MM backends.
 
     """
-    from q2mm.backends.registry import available_mm_engines, registered_mm_engines
+    from q2mm.backends.registry import available_mm_backends
 
-    engines = registered_mm_engines()
-    backends = []
-    for key in available_mm_engines():
-        cls = engines[key]
-        # Use the engine's display name (from the ``name`` property).
-        # Fall back to the registry key if instantiation fails.
-        try:
-            display_name = cls().name
-        except Exception:
-            display_name = key
-        backends.append((display_name, cls, key))
-    return backends
+    return available_mm_backends()
 
 
 def _optimizer_configs() -> list[tuple[str, str, dict]]:
@@ -169,7 +160,7 @@ def _run_matrix(
         data_dir (Path | None): Override for QM reference data directory
             (only used for CH3F system).
         platform (str | None): OpenMM platform override (e.g. ``"CUDA"``).
-            Passed to :class:`OpenMMEngine` when instantiating OpenMM
+            Passed to :class:`OpenMMBackend` when instantiating OpenMM
             backends.  ``None`` triggers auto-detection.
         system_key (str): Benchmark system to run (e.g. ``"ch3f"``,
             ``"rh-enamide"``).
@@ -209,21 +200,24 @@ def _run_matrix(
         results_dir.mkdir(parents=True, exist_ok=True)
         ff_dir.mkdir(parents=True, exist_ok=True)
 
-    for backend_name, engine_cls, registry_key in backends:
+    for registry_key in backends:
+        backend_name = registry_key
         try:
+            from q2mm.backends.registry import load_backend
+
             if registry_key == "openmm" and platform is not None:
-                engine = engine_cls(platform_name=platform)
+                backend = load_backend(registry_key, platform_name=platform)
             else:
-                engine = engine_cls()
-            backend_name = engine.name
+                backend = load_backend(registry_key)
+            backend_name = backend.info.name
         except Exception as e:
             print(f"  Skipping {backend_name}: {e}")
             print(f"  Skipping {backend_name}: {e}", file=sys.stderr)
             n_skipped += 1
             continue
 
-        # Determine which forms this engine supports
-        supported = getattr(engine, "supported_functional_forms", lambda: frozenset())()
+        # Determine which forms this backend supports
+        supported = backend.info.functional_forms
 
         for form_label, form_value in forms:
             if supported and form_value not in supported:
@@ -234,7 +228,7 @@ def _run_matrix(
                 from q2mm.benchmarks.systems import load_system
 
                 load_kwargs: dict[str, Any] = {
-                    "engine": engine,
+                    "backend": backend,
                     "functional_form": form_value,
                     "starting_point": starting_point,
                 }
@@ -266,7 +260,7 @@ def _run_matrix(
                     t0 = time.perf_counter()
 
                     r = run_combo(
-                        engine,
+                        backend,
                         case,
                         optimizer_method=method,
                         optimizer_kwargs=extra_kwargs,
@@ -669,14 +663,16 @@ def main(argv: list[str] | None = None) -> int:
 
         print("\nAvailable backends:")
         if all_backends:
-            for name, engine_cls, marker in all_backends:
+            from q2mm.backends.registry import load_backend
+
+            for registry_key in all_backends:
                 try:
-                    eng = engine_cls()
-                    supported = eng.supported_functional_forms()
-                    forms_str = ", ".join(sorted(supported))
+                    eng = load_backend(registry_key)
+                    supported = eng.info.functional_forms
+                    forms_str = ", ".join(sorted(supported)) if supported else "n/a"
                 except Exception:
                     forms_str = "unknown"
-                print(f"  {name:<12} (marker: {marker}, forms: {forms_str})")
+                print(f"  {registry_key:<12} (marker: {registry_key}, forms: {forms_str})")
         else:
             print("  (none detected)")
 
@@ -713,10 +709,10 @@ def main(argv: list[str] | None = None) -> int:
         backends = all_backends
         if args.backend:
             filter_names = {b.lower() for b in args.backend}
-            backends = [(n, c, m) for n, c, m in all_backends if m.lower() in filter_names]
+            backends = [k for k in all_backends if k.lower() in filter_names]
             if not backends:
                 print(f"Error: no matching backends for {args.backend}", file=sys.stderr)
-                print(f"Available: {[m for _, _, m in all_backends]}", file=sys.stderr)
+                print(f"Available: {all_backends}", file=sys.stderr)
                 return 1
 
         # Filter optimizers by unique key (exact match only)
@@ -771,7 +767,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Forms:      {', '.join(l for l, _ in forms)}")
         print(f"  Optimizers: {', '.join(l for _, l, _ in optimizers)}")
         print(f"  Max combos: {len(backends) * len(forms) * len(optimizers)}")
-        print("  (combos filtered by engine support)\n")
+        print("  (combos filtered by backend support)\n")
 
         results = _run_matrix(
             backends,

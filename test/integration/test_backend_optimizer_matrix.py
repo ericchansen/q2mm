@@ -10,6 +10,7 @@ Requires ``--run-integration`` and OpenMM.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 import math
 import tempfile
@@ -186,14 +187,13 @@ class TestBenchmarkPipeline:
 
     @pytest.fixture(scope="class")
     def result(self) -> BenchmarkResult:
-        from q2mm.backends.mm.openmm import OpenMMEngine
         from q2mm.benchmarks.systems import load_system
 
-        engine = OpenMMEngine()
-        case = load_system("ch3f", engine=engine, functional_form="mm3")
+        backend = load_backend("openmm")
+        case = load_system("ch3f", backend=backend, functional_form="mm3")
 
         return run_combo(
-            engine=engine,
+            backend=backend,
             case=case,
             optimizer_method="L-BFGS-B",
             maxiter=200,

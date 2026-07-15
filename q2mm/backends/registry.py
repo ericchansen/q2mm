@@ -1,255 +1,261 @@
-"""Central engine registry for Q2MM backends.
+"""Descriptor-based backend registry for Q2MM.
 
-Provides decorator-based registration and lazy discovery of MM and QM
-engines.  Import this module and use :func:`get_engine` to obtain an
-engine instance by name, or :func:`available_engines` to list engines
-whose dependencies are installed.
+Built-in backends are described by lightweight, validated
+:class:`~q2mm.backends.contracts.BackendDescriptor` records.  Each descriptor
+carries a **static** :class:`~q2mm.backends.contracts.BackendInfo` (generic
+provenance) plus an import-string factory and a cheap, side-effect-free
+dependency probe (:class:`~q2mm.backends.contracts.DependencyProbe`, which uses
+only ``importlib.util.find_spec`` and ``shutil.which``).
 
-Example::
+Listing the catalog never constructs a backend, enumerates a device, or
+initializes CUDA/XLA/OpenMM platforms — it reports each descriptor's exact
+capabilities/forms from its static info plus the probe's health via
+:class:`~q2mm.backends.contracts.BackendStatus`.
 
-    from q2mm.backends.registry import get_engine, available_engines
+A backend is imported and constructed only on explicit :func:`load_backend`,
+which does **not** gate on the probe (so explicit user configuration is
+honoured even when a generic PATH probe is unhealthy) and validates the
+constructed backend's runtime info against the static descriptor info.
 
-    engine = get_engine("openmm")
-    print(available_engines())  # ["openmm", "jax", ...]
+.. warning::
+
+   This is an internal, unstable API framing.  Out-of-tree plugin discovery
+   (entry points) is intentionally deferred to a later phase; the descriptor
+   API (versioned via
+   :data:`~q2mm.backends.contracts.DESCRIPTOR_API_VERSION`) is designed to be
+   extended for it without a compatibility bridge.
 """
 
 from __future__ import annotations
 
-import importlib
-import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from q2mm.backends.contracts import (
+    BackendDescriptor,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    BackendStatus,
+    BackendUnavailableError,
+    Capability,
+    DependencyProbe,
+)
 
 if TYPE_CHECKING:
-    from q2mm.backends.base import MMEngine, QMEngine
-
-logger = logging.getLogger(__name__)
+    from q2mm.backends.contracts import Backend
 
 
-class EngineNotAvailable(RuntimeError):
-    """Raised when a requested engine name is not found in the registry."""
+class BackendNotRegistered(BackendUnavailableError):
+    """Raised when a requested backend name is not in the registry."""
 
-    def __init__(self, name: str, *, available: list[str] | None = None) -> None:
+    def __init__(self, name: str, *, registered: list[str] | None = None) -> None:
         self.name = name
-        self.available = available or []
-        msg = f"Engine {name!r} is not registered."
-        if self.available:
-            msg += f" Registered engines: {', '.join(sorted(self.available))}"
+        self.registered = registered or []
+        msg = f"Backend {name!r} is not registered."
+        if self.registered:
+            msg += f" Registered backends: {', '.join(sorted(self.registered))}"
         super().__init__(msg)
 
 
-# ---- Internal state ----------------------------------------------------------
-
-_MM_ENGINES: dict[str, type[MMEngine]] = {}
-_QM_ENGINES: dict[str, type[QMEngine]] = {}
-_discovered = False
-
-# Modules containing engine classes decorated with @register_mm / @register_qm.
-# Each module guards its own third-party imports with try/except so importing
-# the module always succeeds — is_available() handles runtime checks.
-_ENGINE_MODULES = [
-    "q2mm.backends.mm.openmm",
-    "q2mm.backends.mm.tinker",
-    "q2mm.backends.mm.jax_engine",
-    "q2mm.backends.mm.jax_md_engine",
-    "q2mm.backends.qm.psi4",
-]
+def _info(name: str, role: BackendRole, capabilities: set[Capability], forms: set[str]) -> BackendInfo:
+    return BackendInfo(
+        name=name,
+        role=role,
+        capabilities=frozenset(capabilities),
+        functional_forms=frozenset(forms),
+        provenance=BackendProvenance(backend=name, role=role),
+    )
 
 
-# ---- Decorators --------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Built-in descriptors (static capability declarations)
+# ---------------------------------------------------------------------------
+_BUILTIN_DESCRIPTORS: tuple[BackendDescriptor, ...] = (
+    BackendDescriptor(
+        name="openmm",
+        info=_info(
+            "openmm",
+            BackendRole.MM,
+            {
+                Capability.ENERGY,
+                Capability.MINIMIZE,
+                Capability.HESSIAN,
+                Capability.FREQUENCIES,
+                Capability.PARAMETER_GRADIENT,
+                Capability.REUSABLE_STATE,
+            },
+            {"harmonic", "mm3"},
+        ),
+        factory="q2mm.backends.mm.openmm:OpenMMBackend",
+        probe=DependencyProbe(modules=("openmm",)),
+    ),
+    BackendDescriptor(
+        name="tinker",
+        info=_info(
+            "tinker",
+            BackendRole.MM,
+            {Capability.ENERGY, Capability.MINIMIZE, Capability.HESSIAN, Capability.FREQUENCIES},
+            {"mm3"},
+        ),
+        factory="q2mm.backends.mm.tinker:TinkerBackend",
+        probe=DependencyProbe(executables=("analyze",)),
+    ),
+    BackendDescriptor(
+        name="jax",
+        info=_info(
+            "jax",
+            BackendRole.MM,
+            {
+                Capability.ENERGY,
+                Capability.MINIMIZE,
+                Capability.HESSIAN,
+                Capability.FREQUENCIES,
+                Capability.PARAMETER_GRADIENT,
+                Capability.HESSIAN_PARAMETER_JACOBIAN,
+                Capability.BATCHED_ENERGY,
+                Capability.BATCHED_HESSIAN,
+                Capability.REUSABLE_STATE,
+            },
+            {"harmonic", "mm3"},
+        ),
+        factory="q2mm.backends.mm.jax_engine:JaxBackend",
+        probe=DependencyProbe(modules=("jax", "jaxlib")),
+    ),
+    BackendDescriptor(
+        name="jax-md",
+        info=_info(
+            "jax-md",
+            BackendRole.MM,
+            {
+                Capability.ENERGY,
+                Capability.MINIMIZE,
+                Capability.HESSIAN,
+                Capability.FREQUENCIES,
+                Capability.PARAMETER_GRADIENT,
+                Capability.BATCHED_ENERGY,
+                Capability.REUSABLE_STATE,
+            },
+            {"harmonic"},
+        ),
+        factory="q2mm.backends.mm.jax_md_engine:JaxMdBackend",
+        probe=DependencyProbe(modules=("jax", "jaxlib", "jax_md")),
+    ),
+    BackendDescriptor(
+        name="psi4",
+        info=_info(
+            "psi4",
+            BackendRole.QM,
+            {
+                Capability.ENERGY,
+                Capability.HESSIAN,
+                Capability.FREQUENCIES,
+                Capability.GEOMETRY_OPTIMIZATION,
+            },
+            set(),
+        ),
+        factory="q2mm.backends.qm.psi4:Psi4Backend",
+        probe=DependencyProbe(modules=("psi4",)),
+    ),
+)
+
+_DESCRIPTORS: dict[str, BackendDescriptor] = {}
+for _desc in _BUILTIN_DESCRIPTORS:
+    if _desc.name in _DESCRIPTORS:
+        raise ValueError(f"Duplicate built-in backend descriptor {_desc.name!r}.")
+    _DESCRIPTORS[_desc.name] = _desc
 
 
-def register_mm(name: str) -> Callable[[type[MMEngine]], type[MMEngine]]:
-    """Class decorator that registers an :class:`MMEngine` subclass.
+# ---------------------------------------------------------------------------
+# Catalog / listing (side-effect free)
+# ---------------------------------------------------------------------------
+
+
+def descriptors() -> dict[str, BackendDescriptor]:
+    """Return all registered descriptors keyed by name (regardless of health)."""
+    return dict(_DESCRIPTORS)
+
+
+def catalog(*, role: BackendRole | None = None) -> list[BackendStatus]:
+    """Report every descriptor's health via cheap probes only.
+
+    Both healthy and unavailable descriptors are reported explicitly; nothing
+    is silently omitted.  No backend is constructed and no device/platform is
+    initialized.  Exact capabilities/forms are available from each status's
+    static :attr:`~q2mm.backends.contracts.BackendStatus.info`.
 
     Args:
-        name: Short lowercase key (e.g. ``"openmm"``, ``"jax-md"``).
+        role: Optional filter to MM or QM descriptors.
 
-    Usage::
-
-        @register_mm("openmm")
-        class OpenMMEngine(MMEngine):
-            ...
+    Returns:
+        list[BackendStatus]: One status per descriptor, sorted by name.
 
     """
-
-    def decorator(cls: type[MMEngine]) -> type[MMEngine]:
-        _MM_ENGINES[name] = cls
-        return cls
-
-    return decorator
-
-
-def register_qm(name: str) -> Callable[[type[QMEngine]], type[QMEngine]]:
-    """Class decorator that registers a :class:`QMEngine` subclass.
-
-    Args:
-        name: Short lowercase key (e.g. ``"psi4"``).
-
-    Usage::
-
-        @register_qm("psi4")
-        class Psi4Engine(QMEngine):
-            ...
-
-    """
-
-    def decorator(cls: type[QMEngine]) -> type[QMEngine]:
-        _QM_ENGINES[name] = cls
-        return cls
-
-    return decorator
+    statuses: list[BackendStatus] = []
+    for name in sorted(_DESCRIPTORS):
+        desc = _DESCRIPTORS[name]
+        if role is not None and desc.role is not role:
+            continue
+        healthy, reason = desc.is_available()
+        statuses.append(BackendStatus(descriptor=desc, healthy=healthy, reason=reason))
+    return statuses
 
 
-# ---- Lazy discovery ----------------------------------------------------------
+def available_backends(*, role: BackendRole | None = None) -> list[str]:
+    """Return names of backends whose cheap dependency probe passes."""
+    return [status.name for status in catalog(role=role) if status.healthy]
 
 
-def _discover() -> None:
-    """Import all known engine modules to trigger ``@register_*`` decorators.
-
-    ``ImportError`` (and its subclasses) is the expected failure mode here:
-    optional backends raise it when their native deps are missing, and we
-    silently skip those — the engine simply won't be registered.
-
-    Any *other* exception during import indicates a real bug (syntax error,
-    misconfigured registration, JAX/OpenMM raising ``RuntimeError`` from
-    init code) that we should surface. Log it at WARNING so the user
-    sees why a backend they expect to be available isn't there.
-    """
-    global _discovered
-    if _discovered:
-        return
-    _discovered = True
-    for module_path in _ENGINE_MODULES:
-        try:
-            importlib.import_module(module_path)
-        except ImportError as exc:
-            logger.debug("Optional backend %s unavailable: %s", module_path, exc)
-        except Exception as exc:
-            logger.warning(
-                "Unexpected error importing engine module %s: %s",
-                module_path,
-                exc,
-                exc_info=True,
-            )
+def available_mm_backends() -> list[str]:
+    """Return names of available MM backends."""
+    return available_backends(role=BackendRole.MM)
 
 
-def _check_available(cls: type) -> bool:
-    """Check whether an engine's dependencies are installed.
+def available_qm_backends() -> list[str]:
+    """Return names of available QM backends."""
+    return available_backends(role=BackendRole.QM)
 
-    Prefers the lightweight :meth:`deps_available` classmethod which
-    avoids ``__init__`` side effects (JAX CUDA initialization, OpenMM
-    platform detection).  Falls back to instantiation for engines that
-    have not been updated.
+
+def registered_backends(*, role: BackendRole | None = None) -> list[str]:
+    """Return all registered backend names (regardless of availability)."""
+    return sorted(name for name, desc in _DESCRIPTORS.items() if role is None or desc.role is role)
+
+
+# ---------------------------------------------------------------------------
+# Loading (explicit request only)
+# ---------------------------------------------------------------------------
+
+
+def get_descriptor(name: str) -> BackendDescriptor:
+    """Return the descriptor for *name*.
+
+    Raises:
+        BackendNotRegistered: If *name* is not registered.
+
     """
     try:
-        if "deps_available" in cls.__dict__:
-            return cls.deps_available()
-        return cls().is_available()
-    except Exception:
-        return False
+        return _DESCRIPTORS[name]
+    except KeyError:
+        raise BackendNotRegistered(name, registered=list(_DESCRIPTORS)) from None
 
 
-# ---- Public API: retrieval ---------------------------------------------------
+def load_backend(name: str, **kwargs: object) -> Backend:
+    """Construct a registered backend by name.
 
-
-def get_engine(name: str, **kwargs: Any) -> MMEngine | QMEngine:
-    """Instantiate a registered engine by name.
-
-    Searches both MM and QM registries.
+    This is the only path that imports a backend module and constructs it.  It
+    does not gate on the dependency probe (explicit configuration is honoured),
+    validates the runtime info against the static descriptor, and returns typed
+    :class:`~q2mm.backends.contracts.BackendUnavailableError` /
+    :class:`~q2mm.backends.contracts.BackendConfigurationError` on failure.
 
     Args:
         name: Registry key (e.g. ``"openmm"``, ``"psi4"``).
-        **kwargs: Forwarded to the engine constructor.
-
-    Returns:
-        An engine instance.
+        **kwargs: Forwarded to the backend factory.
 
     Raises:
-        EngineNotAvailable: If *name* is not registered.
+        BackendNotRegistered: If *name* is not registered.
+        BackendUnavailableError: If the backend's dependencies are missing.
+        BackendConfigurationError: If the backend is mis-configured or its
+            runtime info disagrees with the descriptor.
 
     """
-    _discover()
-    if name in _MM_ENGINES:
-        return _MM_ENGINES[name](**kwargs)
-    if name in _QM_ENGINES:
-        return _QM_ENGINES[name](**kwargs)
-    all_names = sorted(set(list(_MM_ENGINES) + list(_QM_ENGINES)))
-    raise EngineNotAvailable(name, available=all_names)
-
-
-def get_mm_engine(name: str, **kwargs: Any) -> MMEngine:
-    """Instantiate a registered MM engine by name.
-
-    Args:
-        name: Registry key (e.g. ``"openmm"``).
-        **kwargs: Forwarded to the engine constructor.
-
-    Raises:
-        EngineNotAvailable: If *name* is not in the MM registry.
-
-    """
-    _discover()
-    if name not in _MM_ENGINES:
-        raise EngineNotAvailable(name, available=sorted(_MM_ENGINES))
-    return _MM_ENGINES[name](**kwargs)
-
-
-def get_qm_engine(name: str, **kwargs: Any) -> QMEngine:
-    """Instantiate a registered QM engine by name.
-
-    Args:
-        name: Registry key (e.g. ``"psi4"``).
-        **kwargs: Forwarded to the engine constructor.
-
-    Raises:
-        EngineNotAvailable: If *name* is not in the QM registry.
-
-    """
-    _discover()
-    if name not in _QM_ENGINES:
-        raise EngineNotAvailable(name, available=sorted(_QM_ENGINES))
-    return _QM_ENGINES[name](**kwargs)
-
-
-# ---- Public API: introspection -----------------------------------------------
-
-
-def available_engines() -> list[str]:
-    """Return names of all engines whose dependencies are installed.
-
-    This instantiates each engine to call ``is_available()``, catching
-    any exceptions silently.
-    """
-    _discover()
-    return sorted(name for name, cls in {**_MM_ENGINES, **_QM_ENGINES}.items() if _check_available(cls))
-
-
-def available_mm_engines() -> list[str]:
-    """Return names of available MM engines."""
-    _discover()
-    return sorted(name for name, cls in _MM_ENGINES.items() if _check_available(cls))
-
-
-def available_qm_engines() -> list[str]:
-    """Return names of available QM engines."""
-    _discover()
-    return sorted(name for name, cls in _QM_ENGINES.items() if _check_available(cls))
-
-
-def registered_engines() -> dict[str, type]:
-    """Return all registered engine classes (regardless of availability)."""
-    _discover()
-    return {**_MM_ENGINES, **_QM_ENGINES}
-
-
-def registered_mm_engines() -> dict[str, type[MMEngine]]:
-    """Return all registered MM engine classes."""
-    _discover()
-    return dict(_MM_ENGINES)
-
-
-def registered_qm_engines() -> dict[str, type[QMEngine]]:
-    """Return all registered QM engine classes."""
-    _discover()
-    return dict(_QM_ENGINES)
+    return get_descriptor(name).load(**kwargs)

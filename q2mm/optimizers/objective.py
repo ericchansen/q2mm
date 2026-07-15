@@ -1,6 +1,6 @@
 """Objective function for force field optimization.
 
-Wraps the ForceField ↔ MM-engine ↔ reference-data loop into a single
+Wraps the ForceField ↔ MM-backend ↔ reference-data loop into a single
 callable that :func:`scipy.optimize.minimize` can drive.
 
 Scoring approach
@@ -21,7 +21,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
+from q2mm.backends.contracts import (
+    Backend,
+    BatchedEnergyRequest,
+    Capability,
+    PreparationRequest,
+    PreparedBackend,
+)
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import Observation, ObservationSet
@@ -48,7 +54,7 @@ class ObjectiveFunction:
     Args:
         forcefield (ForceField): The force field whose parameters are
             being optimized.
-        engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
+        backend (Backend): The MM backend (OpenMM, Tinker, etc.).
         molecules (list[Molecule]): Training set molecules.
         reference (ObservationSet): QM/experimental reference observations.
         layout (ParameterLayout | None): The full-vector layout for
@@ -61,7 +67,7 @@ class ObjectiveFunction:
     def __init__(
         self,
         forcefield: ForceField | None,
-        engine: MMEngine,
+        backend: Backend,
         molecules: list[Molecule],
         reference: ObservationSet,
         *,
@@ -75,31 +81,19 @@ class ObjectiveFunction:
         Args:
             forcefield (ForceField | None): The force field whose
                 parameters are being optimized.
-            engine (MMEngine): The MM backend (OpenMM, Tinker, etc.).
+            backend (Backend): The MM backend (OpenMM, Tinker, JAX, ...).
+                One prepared session is built per training case.
             molecules (list[Molecule]): Training set molecules.
             reference (ObservationSet): QM/experimental reference
                 observations.
             case_ids (Sequence[str] | None): Stable case ID for each
-                entry of *molecules*, in the same order (matches
-                :attr:`~q2mm.models.observations.Observation.case_id` /
-                :attr:`~q2mm.models.problem.TrainingCase.case_id`).  When
-                ``None`` (default), positions are auto-labelled
-                ``"0"``, ``"1"``, ... — this matches
-                :class:`~q2mm.models.observations.Observation`'s own
-                single-case default of ``case_id="0"``, so simple
-                single-molecule callers need not pass this explicitly.
+                entry of *molecules*, in the same order.  When ``None``
+                (default), positions are auto-labelled ``"0"``, ``"1"``, ...
             layout (ParameterLayout | None): Layout for *forcefield*'s
                 scalar parameters.  Required whenever *forcefield* is
                 not ``None``.
-            regularization: L2 penalty strength (λ).  The total loss
-                becomes ``loss_data + λ * ||params - ref||²``.  Keeps
-                optimised parameters near their physical starting
-                values, preventing overfitting on under-determined
-                small-molecule systems.  Default ``0.0`` (no penalty).
-            reference_params: Parameter vector treated as the L2
-                "anchor."  If *None* (default), the force field's
-                initial parameter vector is used — typically the
-                QFUERZA-derived starting point.
+            regularization: L2 penalty strength (λ).
+            reference_params: Parameter vector treated as the L2 "anchor."
 
         Raises:
             ValueError: If *forcefield* is given without *layout*, if
@@ -114,7 +108,7 @@ class ObjectiveFunction:
             raise ValueError("layout is required whenever forcefield is provided.")
         self.forcefield = forcefield
         self.layout = layout
-        self.engine = engine
+        self.backend = backend
         self.molecules = molecules
         self.reference = reference
 
@@ -152,10 +146,10 @@ class ObjectiveFunction:
         #: ``"raise"`` (default) propagates exceptions; ``"penalty"``
         #: returns large penalty frequencies so the optimizer retreats.
         self.on_error: str = "raise"
-        # Reusable engine handles for backends that support runtime parameter
-        # updates (e.g., OpenMM). Avoids rebuilding simulation contexts each
-        # evaluation — critical for optimization performance.
-        self._handles: dict[int, object] = {}
+        # One prepared backend session per case ID (built lazily, reused).
+        # The prepared session owns the molecule, base force field, layout,
+        # and any reusable native state.
+        self._prepared: dict[int, PreparedBackend] = {}
         # Per-data-type evaluator instances (created once, reused).
         # Lazy imports to break circular dependency (evaluators import
         # Observation from this module).
@@ -207,9 +201,7 @@ class ObjectiveFunction:
             float: Sum-of-squared weighted residuals.
 
         """
-        ff = self.layout.replace(self.forcefield, param_vector)
-
-        residuals = self._compute_residuals(ff)
+        residuals = self._compute_residuals(param_vector)
         score = float(np.sum(residuals**2))
 
         if self.regularization > 0:
@@ -235,8 +227,7 @@ class ObjectiveFunction:
             with optional L2 regularization terms appended.
 
         """
-        ff = self.layout.replace(self.forcefield, param_vector)
-        r = self._compute_residuals(ff)
+        r = self._compute_residuals(param_vector)
 
         if self.regularization > 0:
             diff = param_vector - self._reference_params
@@ -250,7 +241,7 @@ class ObjectiveFunction:
     def is_energy_only(self) -> bool:
         """Return ``True`` if every reference is an energy value.
 
-        When true, :meth:`batched_scores` can use the engine's vectorised
+        When true, :meth:`batched_scores` can use the backend's vectorised
         ``batched_energy`` path (e.g. ``jax.vmap``) for GPU-parallel
         sensitivity analysis.
         """
@@ -259,7 +250,7 @@ class ObjectiveFunction:
     def batched_scores(self, param_matrix: np.ndarray) -> np.ndarray:
         """Evaluate objective for multiple parameter vectors in one call.
 
-        When the engine supports :meth:`~MMEngine.batched_energy` and all
+        When the backend declares ``BATCHED_ENERGY`` and all
         references are energy-only, energy evaluations are vectorised
         (e.g. via ``jax.vmap``) for GPU-parallel evaluation.
 
@@ -279,7 +270,7 @@ class ObjectiveFunction:
         if param_matrix.ndim != 2 or param_matrix.shape[1] != len(self.layout):
             raise ValueError(f"param_matrix must have shape (batch, {len(self.layout)}), got {param_matrix.shape}")
 
-        use_batched = self.engine.supports_batched_energy() and self.is_energy_only()
+        use_batched = self._prepared_for(0).info.supports(Capability.BATCHED_ENERGY) and self.is_energy_only()
         if not use_batched:
             return np.array([self(pvec) for pvec in param_matrix])
 
@@ -288,8 +279,8 @@ class ObjectiveFunction:
     def _batched_energy_scores(self, param_matrix: np.ndarray) -> np.ndarray:
         """Compute scores for a batch of param vectors (energy-only fast path).
 
-        Uses :meth:`MMEngine.batched_energy` to evaluate all parameter
-        vectors in a single vectorised call per molecule.
+        Uses each prepared session's ``batched_energy`` to evaluate all
+        parameter vectors in a single vectorised call per molecule.
         """
         batch_size = len(param_matrix)
         # Group energy references by molecule index
@@ -300,12 +291,9 @@ class ObjectiveFunction:
         # For each molecule, batch-evaluate energies
         mol_energies: dict[int, np.ndarray] = {}
         for mol_idx in mol_refs:
-            structure = self._get_structure(mol_idx)
-            mol_energies[mol_idx] = self.engine.batched_energy(
-                structure,
-                self.forcefield,
-                param_matrix,
-            )
+            prepared = self._prepared_for(mol_idx)
+            result = prepared.batched_energy(BatchedEnergyRequest(parameter_matrix=param_matrix))
+            mol_energies[mol_idx] = np.asarray(result.energies)
 
         # Compute residuals and scores
         scores = np.zeros(batch_size)
@@ -329,17 +317,14 @@ class ObjectiveFunction:
     def _can_batch_hessians(self) -> bool:
         """Check whether batched Hessian evaluation can be used.
 
-        Batching is possible when the engine is a
-        :class:`~q2mm.backends.mm.jax_engine.JaxEngine`, there are at
-        least two molecules, and some references require Hessian-derived
-        data (frequencies or eigenmatrix).
+        Batching is possible when the backend declares the
+        :attr:`~q2mm.backends.contracts.Capability.BATCHED_HESSIAN` capability,
+        there are at least two molecules, and some references require
+        Hessian-derived data (frequencies or eigenmatrix).
         """
-        try:
-            from q2mm.backends.mm.jax_engine import JaxEngine
-        except ImportError:
-            return False
+        from q2mm.backends.contracts import Capability
 
-        if not isinstance(self.engine, JaxEngine):
+        if not self.backend.info.supports(Capability.BATCHED_HESSIAN):
             return False
         if len(self.molecules) < 2:
             return False
@@ -349,19 +334,27 @@ class ObjectiveFunction:
 
     def _precompute_batched_hessians(
         self,
-        forcefield: ForceField,
+        param_vector: np.ndarray,
     ) -> dict[int, np.ndarray]:
-        """Pre-compute Hessians for topology-compatible molecule groups.
+        """Pre-compute Hessians for topology-compatible prepared sessions.
 
-        Groups molecules that share the same topology and uses
-        ``jax.vmap`` via :func:`~q2mm.backends.mm.batched.batched_hessians`
-        to compute all Hessians in a single vectorised call per group.
+        Groups the objective's per-case prepared sessions into typed Hessian
+        batches through the backend-neutral
+        :func:`~q2mm.backends.contracts.prepare_hessian_batches` helper (which
+        checks :attr:`~q2mm.backends.contracts.Capability.BATCHED_HESSIAN` and
+        the batch-preparer protocol), then evaluates each batch with a typed
+        :class:`~q2mm.backends.contracts.BatchedHessianRequest` carrying the full
+        parameter vector.  The typed
+        :class:`~q2mm.backends.contracts.BatchedHessianResult` is mapped back to
+        molecule indices via each batched case's stable case ID.
 
-        Returns a mapping from molecule index to its ``(3N, 3N)`` Hessian
-        in Hartree/Bohr².  Only molecules that need Hessian-derived data
-        are included.
+        Returns a mapping from molecule index to its ``(3N, 3N)`` Hessian in
+        Hartree/Bohr^2.  Only molecules that need Hessian-derived data are
+        included.  A genuine batched-evaluation failure raises a typed
+        :class:`~q2mm.backends.contracts.EvaluationError` — there is no silent
+        sequential fallback.
         """
-        from q2mm.backends.mm.batched import batched_hessians, group_by_topology
+        from q2mm.backends.contracts import BatchedHessianRequest, prepare_hessian_batches
 
         hessian_kinds = {"frequency", "eig_diagonal", "eig_offdiagonal"}
         mol_indices_needing_hess: set[int] = set()
@@ -372,73 +365,46 @@ class ObjectiveFunction:
         if not mol_indices_needing_hess:
             return {}
 
-        mols_subset = [self.molecules[i] for i in sorted(mol_indices_needing_hess)]
         idx_list = sorted(mol_indices_needing_hess)
 
-        # Build handle cache for molecules that already have handles
-        handle_cache: dict[int, object] = {}
-        for pos, mol_idx in enumerate(idx_list):
-            if mol_idx in self._handles:
-                handle_cache[pos] = self._handles[mol_idx]
-
-        groups = group_by_topology(
-            mols_subset,
-            forcefield,
-            self.engine,  # type: ignore[arg-type]
-            handles=handle_cache,  # type: ignore[arg-type]
-        )
+        # Reuse the compiled per-case prepared sessions already owned by the
+        # objective — batches share one topology executable per group, but every
+        # session keeps its own coordinates/native state.  Cases are mapped back
+        # to molecule indices by their stable case IDs.  Batching goes entirely
+        # through the backend-neutral contracts helper — no concrete backend
+        # batching module is imported here.
+        sessions = [self._prepared_for(i) for i in idx_list]
+        request = BatchedHessianRequest(parameters=param_vector)
 
         hess_map: dict[int, np.ndarray] = {}
-        for group in groups:
-            if len(group.case_handles) != len(group.mol_indices):
-                raise RuntimeError(
-                    "Topology group lost molecule-specific handles: "
-                    f"{len(group.case_handles)} handles for {len(group.mol_indices)} molecules."
-                )
-
-            # Batched kernels share one topology executable, but every case
-            # keeps its own coordinates/native state for energy and other
-            # non-batched calculations.
-            for local_i, mol_local_idx in enumerate(group.mol_indices):
-                original_idx = idx_list[mol_local_idx]
-                if original_idx not in self._handles:
-                    self._handles[original_idx] = group.case_handles[local_i]
-
-            hessians = batched_hessians(group, forcefield)
-            for local_i, hess in enumerate(hessians):
-                original_idx = idx_list[group.mol_indices[local_i]]
-                hess_map[original_idx] = hess
+        for batch in prepare_hessian_batches(self.backend, sessions):
+            result = batch.hessians(request)
+            for case_id, hess in zip(result.case_ids, result.hessians):
+                hess_map[self._case_id_to_index[case_id]] = np.asarray(hess)
 
         return hess_map
 
-    def _compute_residuals(self, forcefield: ForceField) -> np.ndarray:
+    def _compute_residuals(self, param_vector: np.ndarray) -> np.ndarray:
         """Compute weighted residuals for all reference observations.
 
-        When the engine is a :class:`~q2mm.backends.mm.jax_engine.JaxEngine`
-        and multiple molecules share the same topology, Hessians are
-        computed in a single ``jax.vmap`` call per topology group
-        (batched path).  Otherwise, falls back to per-molecule sequential
-        evaluation.
+        When the backend declares batched-Hessian support and multiple molecules
+        share the same topology, Hessians are computed in a single ``jax.vmap``
+        call per topology group (batched path).  Otherwise, falls back to
+        per-molecule sequential evaluation.
 
         Args:
-            forcefield: The force field to evaluate (typically a temporary
-                instance from :meth:`~q2mm.models.parameters.ParameterLayout.replace`).
+            param_vector: Full parameter vector (length ``len(layout)``).
 
         Returns:
             np.ndarray: Array of ``w_i * (ref_i - calc_i)`` residuals.
 
         """
-        # Attempt batched Hessian pre-computation
+        # Batched Hessian pre-computation (capability-gated).  A genuine
+        # batched-evaluation failure propagates as a typed error rather than
+        # silently falling back to sequential evaluation.
         precomputed_hessians: dict[int, np.ndarray] = {}
         if self._can_batch_hessians():
-            try:
-                precomputed_hessians = self._precompute_batched_hessians(forcefield)
-            except Exception:
-                logger.warning(
-                    "Batched Hessian pre-computation failed; falling back to sequential evaluation.",
-                    exc_info=True,
-                )
-                precomputed_hessians = {}
+            precomputed_hessians = self._precompute_batched_hessians(param_vector)
 
         calc_cache: dict[int, dict] = {}
 
@@ -448,7 +414,7 @@ class ObjectiveFunction:
             if mol_idx not in calc_cache:
                 calc_cache[mol_idx] = self._evaluate_molecule(
                     mol_idx,
-                    forcefield,
+                    param_vector,
                     precomputed_hessian=precomputed_hessians.get(mol_idx),
                 )
 
@@ -491,7 +457,7 @@ class ObjectiveFunction:
 
         Note:
             Evaluators that support analytical gradients (e.g. energy via
-            ``energy_and_param_grad``) are used directly.  Evaluators that
+            ``parameter_gradient``) are used directly.  Evaluators that
             do not support them are handled transparently via central
             finite-difference fallback — no error is raised.
 
@@ -503,7 +469,6 @@ class ObjectiveFunction:
             those counters.
 
         """
-        ff = self.layout.replace(self.forcefield, param_vector)
         n_params = len(param_vector)
         total_grad = np.zeros(n_params)
 
@@ -517,22 +482,16 @@ class ObjectiveFunction:
 
         # Process each molecule's evaluator contributions
         for mol_idx, category_refs in refs_by_mol.items():
-            mol = self.molecules[mol_idx]
+            prepared = self._prepared_for(mol_idx)
 
             for category, refs in category_refs.items():
                 evaluator = self._get_evaluator(category)
-                if evaluator.supports_analytical_gradient(self.engine):
-                    # _get_structure returns a cached handle for engines
-                    # that support runtime params, or the raw molecule
-                    # for stateless backends — no exception-based dispatch.
-                    structure = self._get_structure(mol_idx)
+                if evaluator.supports_analytical_gradient(prepared):
                     grad = evaluator.gradient(
-                        self.engine,
-                        mol,
-                        ff,
+                        prepared,
+                        param_vector,
                         refs,
                         n_params,
-                        structure=structure,
                         mol_idx=mol_idx,
                     )
                     total_grad += grad
@@ -564,7 +523,7 @@ class ObjectiveFunction:
         return total_grad
 
     def per_evaluator_gradient_support(self) -> dict[str, bool]:
-        """Return per-category analytical gradient support for the current engine.
+        """Return per-category analytical gradient support for the current backend.
 
         Queries each evaluator's :meth:`supports_analytical_gradient` for
         the categories that have at least one reference value.  The result
@@ -582,7 +541,8 @@ class ObjectiveFunction:
             cat = self._kind_to_category(ref.kind)
             if cat not in categories:
                 evaluator = self._get_evaluator(cat)
-                categories[cat] = evaluator.supports_analytical_gradient(self.engine)
+                prepared = self._prepared_for(self._mol_idx(ref))
+                categories[cat] = evaluator.supports_analytical_gradient(prepared)
         return dict(sorted(categories.items()))
 
     def to_jax_spec(
@@ -657,6 +617,16 @@ class ObjectiveFunction:
             upper_bounds=upper,
             supported_categories=frozenset(categories),
         )
+
+    def jax_sessions(self, spec: ObjectiveSpec) -> dict[int, PreparedBackend]:
+        """Return the objective's per-case prepared sessions for a JAX spec.
+
+        Reuses the objective's own :meth:`_prepared_for` cache so each stable
+        case is prepared exactly once.  The returned map (``mol_idx ->``
+        prepared session) is passed to :class:`~q2mm.optimizers.jaxloss.JaxLoss`
+        so the Objective + JaxLoss path never prepares a case twice.
+        """
+        return {ms.mol_idx: self._prepared_for(ms.mol_idx) for ms in spec.molecules}
 
     def _finite_difference_gradient(
         self,
@@ -742,36 +712,24 @@ class ObjectiveFunction:
             Sum-of-squared weighted residuals for the given references.
 
         """
-        ff = self.layout.replace(self.forcefield, param_vector)
-        mol = self.molecules[mol_idx]
+        prepared = self._prepared_for(mol_idx)
         evaluator = self._get_evaluator(category)
 
         if category == "geometry":
             needed_kinds = frozenset(r.kind for r in refs)
-            computed = evaluator.compute(self.engine, mol, ff, needed_kinds=needed_kinds)
+            computed = evaluator.compute(prepared, param_vector, needed_kinds=needed_kinds)
         elif category == "eigenmatrix":
             # NOTE: Evaluates the Hessian at the *original* (unperturbed)
             # geometry, which is an approximation.  A more rigorous approach
             # would re-optimize the geometry at the perturbed parameters first
-            # (see issue #149).  In practice the error is small for small
-            # parameter perturbations and is dominated by the frequency
-            # weighting in the objective function.
-            structure = self._get_structure(mol_idx)
-            computed = evaluator.compute(
-                self.engine,
-                mol,
-                ff,
-                structure=structure,
-                mol_idx=mol_idx,
-            )
+            # (see issue #149).
+            computed = evaluator.compute(prepared, param_vector, mol_idx=mol_idx)
         elif category == "frequency":
             # NOTE: Same approximation as eigenmatrix — Hessian evaluated at
             # original geometry rather than re-optimized (see issue #149).
-            structure = self._get_structure(mol_idx)
-            computed = evaluator.compute(self.engine, mol, ff, structure=structure, on_error=self.on_error)
+            computed = evaluator.compute(prepared, param_vector, on_error=self.on_error)
         else:
-            structure = self._get_structure(mol_idx)
-            computed = evaluator.compute(self.engine, mol, ff, structure=structure)
+            computed = evaluator.compute(prepared, param_vector)
 
         residuals = evaluator.residuals(computed, refs)
         return float(np.sum(np.array(residuals) ** 2))
@@ -827,32 +785,34 @@ class ObjectiveFunction:
                     return ev
         raise ValueError(f"Unknown evaluator category: {category}")
 
-    def _get_structure(self, mol_idx: int) -> Any:
-        """Get the structure handle for a molecule, reusing if possible.
+    def _prepared_for(self, mol_idx: int) -> PreparedBackend:
+        """Return the prepared backend session for a molecule, building once.
 
-        For backends that support runtime parameter updates (OpenMM), this
-        creates the simulation context once and reuses it across evaluations.
-        For stateless backends (Tinker), this returns the raw molecule.
+        Exactly one prepared session is built per stable case ID.  The session
+        owns the molecule, base force field, parameter layout, and any reusable
+        native state, and is reused across every evaluation of that case.
 
         Args:
             mol_idx (int): Index into the molecules list.
 
         Returns:
-            object: Engine-specific structure handle or raw molecule.
+            PreparedBackend: The cached per-case session.
 
         """
-        mol = self.molecules[mol_idx]
-        if not self.engine.supports_runtime_params():
-            return mol
-        if mol_idx not in self._handles:
-            # First call — let the engine create its context/handle
-            self._handles[mol_idx] = self.engine.create_context(mol, self.forcefield)
-        return self._handles[mol_idx]
+        if mol_idx not in self._prepared:
+            self._prepared[mol_idx] = self.backend.prepare(
+                PreparationRequest(
+                    case_id=self.case_ids[mol_idx],
+                    molecule=self.molecules[mol_idx],
+                    force_field=self.forcefield,
+                )
+            )
+        return self._prepared[mol_idx]
 
     def _evaluate_molecule(
         self,
         mol_idx: int,
-        forcefield: ForceField,
+        param_vector: np.ndarray,
         *,
         precomputed_hessian: np.ndarray | None = None,
     ) -> dict:
@@ -863,22 +823,20 @@ class ObjectiveFunction:
 
         When *precomputed_hessian* is provided (from batched vmap
         evaluation), it is used directly for frequency and eigenmatrix
-        calculations, avoiding a redundant ``engine.hessian()`` call.
+        calculations, avoiding a redundant Hessian evaluation.
 
         Args:
             mol_idx (int): Index into the molecules list.
-            forcefield: The force field to evaluate (typically a temporary
-                instance from :meth:`~q2mm.models.parameters.ParameterLayout.replace`).
+            param_vector: Full parameter vector (length ``len(layout)``).
             precomputed_hessian: Optional ``(3N, 3N)`` Hessian in
                 Hartree/Bohr² from batched evaluation.
 
         Returns:
-            dict: Calculated results keyed by data type (e.g.
-                ``"energy"``, ``"frequencies"``, ``"bond_lengths"``).
+            dict: Calculated results keyed by data type.
 
         """
         mol = self.molecules[mol_idx]
-        structure = self._get_structure(mol_idx)
+        prepared = self._prepared_for(mol_idx)
         result: dict = {}
 
         # Determine what data types are needed for this molecule
@@ -890,7 +848,7 @@ class ObjectiveFunction:
         eigm_ev = self._kind_to_evaluator.get("eig_diagonal")
 
         if "energy" in needed and energy_ev is not None:
-            er = energy_ev.compute(self.engine, mol, forcefield, structure=structure)
+            er = energy_ev.compute(prepared, param_vector)
             result["energy"] = er.energy
 
         if "frequency" in needed and freq_ev is not None:
@@ -903,18 +861,12 @@ class ObjectiveFunction:
                     on_error=self.on_error,
                 )
             else:
-                fr = freq_ev.compute(self.engine, mol, forcefield, structure=structure, on_error=self.on_error)
+                fr = freq_ev.compute(prepared, param_vector, on_error=self.on_error)
                 result["frequencies"] = fr.frequencies
 
         if geom_ev is not None and needed & geom_ev.HANDLED_KINDS:
             geo_needed = frozenset(needed & geom_ev.HANDLED_KINDS)
-            # Geometry evaluator runs minimize internally on the raw molecule.
-            gr = geom_ev.compute(
-                self.engine,
-                mol,
-                forcefield,
-                needed_kinds=geo_needed,
-            )
+            gr = geom_ev.compute(prepared, param_vector, needed_kinds=geo_needed)
             if "bond_length" in geo_needed:
                 result["bond_lengths"] = gr.bond_lengths
                 result["bond_lengths_by_atoms"] = gr.bond_lengths_by_atoms
@@ -949,18 +901,12 @@ class ObjectiveFunction:
                     mol.symbols,
                 )
             else:
-                emr = eigm_ev.compute(
-                    self.engine,
-                    mol,
-                    forcefield,
-                    structure=structure,
-                    mol_idx=mol_idx,
-                )
+                emr = eigm_ev.compute(prepared, param_vector, mol_idx=mol_idx)
                 result["eigenmatrix"] = emr.eigenmatrix
 
         hess_ev = self._kind_to_evaluator.get("hessian_element")
         if "hessian_element" in needed and hess_ev is not None:
-            hr = hess_ev.compute(self.engine, mol, forcefield, structure=structure)
+            hr = hess_ev.compute(prepared, param_vector)
             result["raw_hessian"] = hr.hessian
 
         return result
@@ -1005,10 +951,10 @@ class ObjectiveFunction:
         raise ValueError(f"Unknown reference kind: {ref.kind}")
 
     def reset(self) -> None:
-        """Reset evaluation counter, history, and cached engine handles."""
+        """Reset evaluation counter, history, and cached prepared sessions."""
         self.n_eval = 0
         self.history.clear()
-        self._handles.clear()
+        self._prepared.clear()
         for ev in self._evaluators:
             if hasattr(ev, "reset"):
                 ev.reset()

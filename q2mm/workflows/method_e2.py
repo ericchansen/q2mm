@@ -275,7 +275,7 @@ class MethodE2Workflow:
     def run(
         self,
         problem: OptimizationProblem,
-        engine: Any,  # noqa: ANN401
+        backend: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
@@ -288,12 +288,12 @@ class MethodE2Workflow:
                 expressed as a derived, rebased
                 :class:`~q2mm.models.parameters.ActiveParameterSpace`,
                 not by freezing rows in place.
-            engine: MM backend used to evaluate both rounds.
+            backend: MM backend used to evaluate both rounds.
             optimizer: Pre-configured optimizer.  The same instance
                 is used for both Round 1 and Round 2; for a single
                 run this is fine, but be aware the optimizer's
                 internal state may carry between rounds (e.g.
-                cached engine handles).
+                cached backend sessions).
             n_evals: Real-objective samples at initial and final
                 parameter vectors for noise quantification.
 
@@ -311,7 +311,7 @@ class MethodE2Workflow:
 
         # --- Round 1: Method D (unmodified Hessian; existing behaviour)
         obj_round1 = ObjectiveFunction(
-            initial_ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
+            initial_ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
         )
         t0 = time.perf_counter()
         round1_result = optimizer.optimize(obj_round1, problem.active_space)
@@ -447,7 +447,7 @@ class MethodE2Workflow:
         round2_start_ff = layout.replace(initial_ff, round2_baseline)
         obj_round2 = ObjectiveFunction(
             round2_start_ff,
-            engine,
+            backend,
             molecules,
             round2_problem.observations,
             case_ids=list(round2_problem.case_ids),

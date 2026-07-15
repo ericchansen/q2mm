@@ -6,19 +6,92 @@ integration for raw Hessian matrix element training.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    Capability,
+    HessianJacobianResult,
+    HessianResult as _CHessianResult,
+    HessianUnit,
+    readonly_array,
+)
 from q2mm.optimizers.evaluators.hessian_element import (
     HessianElementEvaluator,
     HessianResult,
 )
 from q2mm.models.observations import Observation, ObservationSet
 from q2mm.models.parameters import ParameterLayout
+from test.backend_fixtures import MockLayout, mock_molecule
+
+#: Dummy full parameter vector (the fakes ignore it).
+P = np.zeros(2)
+
+
+class _FakePrepared(AbstractPreparedBackend):
+    """Prepared-session double returning fixed Hessian/Jacobian data."""
+
+    def __init__(
+        self, *, hessian: object = None, hess_jac: object = None, supports_jac: bool = False, molecule: object = None
+    ) -> None:
+        caps = {Capability.HESSIAN}
+        if supports_jac:
+            caps.add(Capability.HESSIAN_PARAMETER_JACOBIAN)
+        info = BackendInfo(
+            name="mock",
+            role=BackendRole.MM,
+            capabilities=frozenset(caps),
+            functional_forms=frozenset({"harmonic"}),
+            provenance=BackendProvenance(backend="mock", role=BackendRole.MM),
+        )
+        # Derive a physically-consistent molecule (N = 3N/3 atoms) from the
+        # Hessian so central (3N, 3N) result validation can run.
+        if molecule is None and hessian is not None:
+            n3 = np.asarray(hessian).shape[0]
+            molecule = mock_molecule(["X"] * (n3 // 3))
+        super().__init__(
+            info=info,
+            case_id="0",
+            molecule=molecule,
+            force_field=None,
+            layout=MockLayout(np.asarray(hess_jac).shape[2]) if hess_jac is not None else None,
+        )
+        self._h = hessian
+        self._j = hess_jac
+
+    def _hessian(self, request: object) -> _CHessianResult:
+        return _CHessianResult(
+            hessian=readonly_array(self._h), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
+        )
+
+    def _hessian_parameter_jacobian(self, request: object) -> HessianJacobianResult:
+        return HessianJacobianResult(
+            hessian=readonly_array(self._h),
+            jacobian=readonly_array(self._j),
+            unit=HessianUnit.HARTREE_PER_BOHR2,
+            provenance=self._info.provenance,
+        )
+
+
+class _FakeBackend:
+    """Backend double whose ``prepare`` returns a fixed prepared session."""
+
+    def __init__(self, prepared: _FakePrepared) -> None:
+        self._p = prepared
+        self.info = prepared.info
+
+    def prepare(self, request: object) -> _FakePrepared:
+        self._p._molecule = request.molecule  # type: ignore[attr-defined]
+        return self._p
+
+
 # ---- Fixtures ----
 
 
@@ -37,12 +110,9 @@ def hessian_6x6() -> np.ndarray:
 
 
 @pytest.fixture
-def mock_engine(small_hessian: np.ndarray) -> MagicMock:
-    """Mock MM engine returning the small_hessian."""
-    engine = MagicMock()
-    engine.hessian.return_value = small_hessian
-    engine.name = "mock"
-    return engine
+def mock_engine(small_hessian: np.ndarray) -> _FakePrepared:
+    """Prepared-session double returning the small_hessian."""
+    return _FakePrepared(hessian=small_hessian)
 
 
 @pytest.fixture
@@ -57,32 +127,24 @@ class TestHessianElementCompute:
     def test_compute_returns_hessian(
         self,
         evaluator: HessianElementEvaluator,
-        mock_engine: MagicMock,
+        mock_engine: _FakePrepared,
         small_hessian: np.ndarray,
     ) -> None:
-        """compute() calls engine.hessian and wraps result."""
-        mol = MagicMock()
-        ff = MagicMock()
-
-        result = evaluator.compute(mock_engine, mol, ff)
+        """compute() calls prepared.hessian and wraps result."""
+        result = evaluator.compute(mock_engine, P)
 
         assert isinstance(result, HessianResult)
         np.testing.assert_array_equal(result.hessian, small_hessian)
-        mock_engine.hessian.assert_called_once_with(mol, ff)
 
-    def test_compute_uses_structure_when_provided(
+    def test_compute_reuses_prepared_session(
         self,
         evaluator: HessianElementEvaluator,
-        mock_engine: MagicMock,
+        mock_engine: _FakePrepared,
+        small_hessian: np.ndarray,
     ) -> None:
-        """compute() passes structure instead of mol when given."""
-        mol = MagicMock()
-        ff = MagicMock()
-        structure = MagicMock()
-
-        evaluator.compute(mock_engine, mol, ff, structure=structure)
-
-        mock_engine.hessian.assert_called_once_with(structure, ff)
+        """compute() reads the Hessian from the prepared session's typed result."""
+        result = evaluator.compute(mock_engine, P)
+        np.testing.assert_array_equal(result.hessian, small_hessian)
 
 
 # ---- HessianElementEvaluator._extract ----
@@ -452,14 +514,12 @@ class TestObjectiveFunctionHessianElement:
         from q2mm.models.forcefield import ForceField, FunctionalForm
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        hessian = np.array([[4.0, 1.0], [1.0, 3.0]])
-        mol = MagicMock()
+        hessian = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
+        mol = mock_molecule(["X"])
         mol.name = "test"
         mol.hessian = None  # Not needed for raw Hessian (no eigendecomposition)
 
-        engine = MagicMock()
-        engine.hessian.return_value = hessian
-        engine.supports_runtime_params.return_value = False
+        backend = _FakeBackend(_FakePrepared(hessian=hessian))
 
         ref = ObservationSet()
         ref = ref.with_hessian_element(4.0, row=0, col=0, weight=0.1)
@@ -467,53 +527,48 @@ class TestObjectiveFunctionHessianElement:
 
         ff = ForceField(functional_form=FunctionalForm.HARMONIC)
         layout = ParameterLayout.from_force_field(ff)
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, layout=layout)
+        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=ref, layout=layout)
 
-        result = obj._evaluate_molecule(0, ff)
+        result = obj._evaluate_molecule(0, layout.vector(ff))
         assert "raw_hessian" in result
         np.testing.assert_array_equal(result["raw_hessian"], hessian)
-        engine.hessian.assert_called_once()
 
     def test_full_objective_with_hessian_elements(self) -> None:
         """Full objective evaluation with hessian_element references."""
         from q2mm.models.forcefield import ForceField, FunctionalForm
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        qm_hessian = np.array([[4.0, 1.0], [1.0, 3.0]])
-        mm_hessian = np.array([[4.1, 1.1], [1.1, 2.9]])
+        qm_hessian = np.array([[4.0, 1.0, 0.5], [1.0, 3.0, 0.2], [0.5, 0.2, 2.0]])
+        mm_hessian = np.array([[4.1, 1.1, 0.5], [1.1, 2.9, 0.2], [0.5, 0.2, 2.0]])
 
-        mol = MagicMock()
+        mol = mock_molecule(["X"])
         mol.name = "test"
         mol.hessian = None
 
-        engine = MagicMock()
-        engine.hessian.return_value = mm_hessian
-        engine.supports_runtime_params.return_value = False
+        backend = _FakeBackend(_FakePrepared(hessian=mm_hessian))
 
         ref = ObservationSet()
         ref = ref.with_hessian_from_matrix(qm_hessian, diagonal_only=True)
 
         ff = ForceField(functional_form=FunctionalForm.HARMONIC)
         layout = ParameterLayout.from_force_field(ff)
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=ref, layout=layout)
+        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=ref, layout=layout)
 
         score = obj(layout.vector(ff))
         assert score > 0  # Non-zero since MM != QM
         assert isinstance(score, float)
 
     def test_supports_analytical_gradient_false(self) -> None:
-        """HessianElementEvaluator returns False when engine does not support Hessian Jacobians."""
+        """HessianElementEvaluator returns False when backend has no Hessian Jacobians."""
         ev = HessianElementEvaluator()
-        engine = MagicMock()
-        engine.supports_analytical_hessian_gradients.return_value = False
-        assert ev.supports_analytical_gradient(engine) is False
+        backend = _FakePrepared(supports_jac=False)
+        assert ev.supports_analytical_gradient(backend) is False
 
     def test_supports_analytical_gradient_true(self) -> None:
-        """HessianElementEvaluator returns True when engine supports Hessian Jacobians."""
+        """HessianElementEvaluator returns True when backend supports Hessian Jacobians."""
         ev = HessianElementEvaluator()
-        engine = MagicMock()
-        engine.supports_analytical_hessian_gradients.return_value = True
-        assert ev.supports_analytical_gradient(engine) is True
+        backend = _FakePrepared(supports_jac=True)
+        assert ev.supports_analytical_gradient(backend) is True
 
     def test_gradient_computes(self) -> None:
         """gradient() computes an actual gradient array."""
@@ -521,12 +576,9 @@ class TestObjectiveFunctionHessianElement:
         hess = np.eye(3)
         dH_dp = np.zeros((3, 3, 2))
         dH_dp[0, 1, 0] = 1.0
-        engine = MagicMock()
-        engine.hessian_and_param_jacobian.return_value = (hess, dH_dp)
-        mol = MagicMock()
-        ff = MagicMock()
+        backend = _FakePrepared(hessian=hess, hess_jac=dH_dp, supports_jac=True, molecule=mock_molecule(["X"]))
         refs = [Observation(kind="hessian_element", value=0.5, weight=1.0, data_idx=0, atom_indices=(0, 1))]
-        result = ev.gradient(engine, mol, ff, refs, 2)
+        result = ev.gradient(backend, P, refs, 2)
         assert isinstance(result, np.ndarray)
         assert result.shape == (2,)
 
